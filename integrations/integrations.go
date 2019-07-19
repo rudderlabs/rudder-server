@@ -87,7 +87,7 @@ func GetPostInfo(destID string) PostParameterT {
 //GetDestinationIDs parses the destination names from the
 //input JSON and returns the IDSs
 func GetDestinationIDs(clientEvent interface{}) (retVal []string) {
-	clientIntgs, ok := misc.GetRudderEventVal("integrations", clientEvent)
+	clientIntgs, ok := misc.GetRudderEventVal("rl_integrations", clientEvent)
 	if !ok {
 		return
 	}
@@ -193,7 +193,7 @@ func (integ *HandleT) Setup() {
 }
 
 //TransformJS function is used to invoke transformer API
-func (integ *HandleT) TransformJS(clientEvents []*interface{}, destID string) ([]interface{}, bool) {
+func (integ *HandleT) TransformJS(clientEvents []interface{}, destID string) ([]interface{}, bool) {
 
 	//Get the transform URL
 	_, ok := destJSTransformerMap[destID]
@@ -214,7 +214,7 @@ func (integ *HandleT) TransformJS(clientEvents []*interface{}, destID string) ([
 	for {
 		var rawJSON json.RawMessage
 		if reqQ != nil {
-			rawJSON, _ = json.Marshal(*clientEvents[inputIdx])
+			rawJSON, _ = json.Marshal(clientEvents[inputIdx])
 		}
 		select {
 		case reqQ <- &transformMessageT{index: inputIdx, data: rawJSON, dest: destID}:

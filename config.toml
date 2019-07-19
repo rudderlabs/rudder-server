@@ -37,12 +37,12 @@ retrySleepInMS = 100
 [Router]
 jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
-sinkProcesses = 8
 readSleepInS = 1
-noOfWorkers = 3
+noOfWorkers = 8
 noOfJobsPerChannel = 1000
 ser = 3
-maxSleep = 10
+maxSleepInS = 5
+maxStatusUpdateWaitInS = 5
 userIDPath = "cid" 
 
 [Processor]

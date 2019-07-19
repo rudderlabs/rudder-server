@@ -87,7 +87,7 @@ func (proc *HandleT) mainLoop() {
 
 		var destJobs []*jobsdb.JobT
 		var statusList []*jobsdb.JobStatusT
-		var eventsByDest = make(map[string][]*interface{})
+		var eventsByDest = make(map[string][]interface{})
 
 		//Each block we receive from a client has a bunch of
 		//requests. We parse the block and take out individual
@@ -120,10 +120,10 @@ func (proc *HandleT) mainLoop() {
 						goodJSON = true
 						_, ok := eventsByDest[destID]
 						if !ok {
-							eventsByDest[destID] = make([]*interface{}, 0)
+							eventsByDest[destID] = make([]interface{}, 0)
 						}
 						eventsByDest[destID] = append(eventsByDest[destID],
-							&singularEvent)
+							singularEvent)
 					}
 				}
 			}
@@ -182,7 +182,7 @@ func (proc *HandleT) mainLoop() {
 		proc.statsDBW.Start()
 		//XX: Need to do this in a transaction
 		proc.routerDB.Store(destJobs)
-		proc.gatewayDB.UpdateJobStatus(statusList)
+		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
 		//XX: End of transaction
 		proc.statsDBW.End(len(statusList))
 

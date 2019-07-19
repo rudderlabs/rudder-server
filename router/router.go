@@ -35,20 +35,20 @@ type Worker struct {
 }
 
 var (
-	jobQueryBatchSize, updateStatusBatchSize, sinkProcesses, noOfWorkers, noOfJobsPerChannel, ser int
-	readSleep, maxSleep                                                                           time.Duration
-	userIDPath                                                                                    string
+	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
+	readSleep, maxSleep, maxStatusUpdateWait                                       time.Duration
+	userIDPath                                                                     string
 )
 
 func loadConfig() {
 	jobQueryBatchSize = viper.GetInt("Router.jobQueryBatchSize")
 	updateStatusBatchSize = viper.GetInt("Router.updateStatusBatchSize")
-	sinkProcesses = viper.GetInt("Router.sinkProcesses")
 	readSleep = viper.GetDuration("Router.readSleepInS") * time.Second
 	noOfWorkers = viper.GetInt("Router.noOfWorkers")
 	noOfJobsPerChannel = viper.GetInt("Router.noOfJobsPerChannel")
 	ser = viper.GetInt("Router.ser")
-	maxSleep = time.Duration(viper.GetInt("Router.maxSleep"))
+	maxSleep = viper.GetDuration("Router.maxSleepInS") * time.Second
+	maxStatusUpdateWait = viper.GetDuration("Router.maxStatusUpdateWaitInS") * time.Second
 	userIDPath = viper.GetString("Router.userIDPath") //"batch.#.message.context.traits.anonymous_id" // need to change this after transformation module
 }
 
@@ -62,7 +62,6 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 
 		// tryout send for ser times
 		for attempts = 0; attempts < ser; attempts++ {
-
 			log.Printf("trying to send payload %v of %v", attempts, ser)
 
 			// ToDo: handle error in network send gracefully!!
@@ -156,7 +155,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *Worker {
 			break
 		}
 	}
-
 	return w
 }
 
@@ -182,19 +180,28 @@ func (rt *HandleT) statusInsertLoop() {
 	var statusList []*jobsdb.JobStatusT
 	respCount := 0
 	//Wait for the responses from statusQ
+	lastUpdate := time.Now()
 	for {
 		rt.perfStats.Start()
-		status := <-rt.responseQ
-		rt.perfStats.End(1)
-		statusList = append(statusList, status)
-		respCount++
-		if respCount >= updateStatusBatchSize {
+		select {
+		case status := <-rt.responseQ:
+			statusList = append(statusList, status)
+			respCount++
+			rt.perfStats.End(1)
+		case <-time.After(maxStatusUpdateWait):
+			rt.perfStats.End(0)
+			//Ideally should sleep for duration maxStatusUpdateWait-(time.Now()-lastUpdate)
+			//but approx is good enough at the cost of reduced computation.
+		}
+
+		if respCount >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
 			rt.perfStats.Print()
 			log.Printf("flushing batch of %v status", updateStatusBatchSize)
 			//Update the status
-			rt.jobsDB.UpdateJobStatus(statusList)
+			rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
 			respCount = 0
 			statusList = nil
+			lastUpdate = time.Now()
 		}
 	}
 
@@ -236,7 +243,7 @@ func (rt *HandleT) generatorLoop() {
 			}
 			statusList = append(statusList, &status)
 		}
-		rt.jobsDB.UpdateJobStatus(statusList)
+		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
 
 		//Send the jobs to the jobQ
 		for _, job := range combinedList {
@@ -271,7 +278,7 @@ func (rt *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		rt.jobsDB.UpdateJobStatus(statusList)
+		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
 	}
 }
 
