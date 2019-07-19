@@ -1,0 +1,1 @@
+~ubuntu/wrk/wrk -t100 -c100 -d120s -s post.lua http://localhost:8080/hello?key=bar
