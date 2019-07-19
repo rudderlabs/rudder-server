@@ -38,7 +38,6 @@ func main() {
 	var routerDB jobsdb.HandleT
 	runtime.GOMAXPROCS(maxProcess)
 
-	jobsdb.SetupEnumTypes()
 	//Flag determines if we reset the databases
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	flag.Parse()

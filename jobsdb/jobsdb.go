@@ -193,6 +193,8 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	log.Println("Sent Ping")
 
+	jd.setupEnumTypes()
+
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
@@ -1453,35 +1455,32 @@ func (jd *HandleT) dropTables() error {
 
 }
 
-func SetupEnumTypes() {
+func (jd *HandleT) setupEnumTypes() {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
-
+	
 	dbHandle, err := sql.Open("postgres", psqlInfo)
 	defer dbHandle.Close()
-	if err != nil {
-		panic(err)
-	}
+	jd.assertError(err)	
+
 
 	fmt.Println("Creating enum types in db")
 	sqlStatement := `DO $$ BEGIN
-                                                                               CREATE TYPE job_state_type
-                                                                                       AS ENUM(
-                                                                                                       'waiting',
-                                                                                                       'executing',
-                                                                                                       'succeeded',
-                                                                                                       'waiting_retry',
-                                                                                                       'failed',
-                                                                                                       'aborted');
-                                                                       EXCEPTION
-                                                                                       WHEN duplicate_object THEN null;
-                                                                       END $$;`
+                                CREATE TYPE job_state_type
+                                     AS ENUM(
+                                              'waiting',
+                                              'executing',
+                                              'succeeded',
+                                              'waiting_retry',
+                                              'failed',
+                                              'aborted');
+                                     EXCEPTION
+                                        WHEN duplicate_object THEN null;
+                            END $$;`
 
 	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
+	jd.assertError(err)
 }
 
 func (jd *HandleT) createTables() error {
