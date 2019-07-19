@@ -195,6 +195,38 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	go jd.mainCheckLoop()
 }
 
+//SetupEnumTypes Function is used to create custom defined enum types
+func SetupEnumTypes() {
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+
+	dbHandle, err := sql.Open("postgres", psqlInfo)
+	defer dbHandle.Close()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Creating enum types in db")
+	sqlStatement := `DO $$ BEGIN
+										CREATE TYPE job_state_type
+											AS ENUM(
+													'waiting',
+													'executing',
+													'succeeded',
+													'waiting_retry',
+													'failed',
+													'aborted');
+									EXCEPTION
+											WHEN duplicate_object THEN null;
+									END $$;`
+
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+}
+
 /*
 TearDown releases all the resources
 */
