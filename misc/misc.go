@@ -34,7 +34,7 @@ func GetRudderEventMap(rudderEvent interface{}) (map[string]interface{}, bool) {
 	if !ok {
 		return nil, false
 	}
-	rudderMsg, ok := rudderEventMap["message"]
+	rudderMsg, ok := rudderEventMap["rl_message"]
 	if !ok {
 		return nil, false
 	}

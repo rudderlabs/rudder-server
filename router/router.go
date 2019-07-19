@@ -36,12 +36,12 @@ type Worker struct {
 const (
 	jobQueryBatchSize     = 10000
 	updateStatusBatchSize = 1000
-	sinkProcesses         = 8
 	readSleep             = 1 * time.Second
-	noOfWorkers           = 3
+	noOfWorkers           = 8
 	noOfJobsPerChannel    = 1000
 	ser                   = 3
-	maxSleep              = time.Duration(10)
+	maxSleep              = time.Duration(5 * time.Second)
+	maxStatusUpdateWait   = time.Duration(5 * time.Second)
 	userIDPath            = "cid" //"batch.#.message.context.traits.anonymous_id" // need to change this after transformation module
 )
 
@@ -55,7 +55,6 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 
 		// tryout send for ser times
 		for attempts = 0; attempts < ser; attempts++ {
-
 			log.Printf("trying to send payload %v of %v", attempts, ser)
 
 			// ToDo: handle error in network send gracefully!!
@@ -149,7 +148,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *Worker {
 			break
 		}
 	}
-
 	return w
 }
 
@@ -175,19 +173,28 @@ func (rt *HandleT) statusInsertLoop() {
 	var statusList []*jobsdb.JobStatusT
 	respCount := 0
 	//Wait for the responses from statusQ
+	lastUpdate := time.Now()
 	for {
 		rt.perfStats.Start()
-		status := <-rt.responseQ
-		rt.perfStats.End(1)
-		statusList = append(statusList, status)
-		respCount++
-		if respCount >= updateStatusBatchSize {
+		select {
+		case status := <-rt.responseQ:
+			statusList = append(statusList, status)
+			respCount++
+			rt.perfStats.End(1)
+		case <-time.After(maxStatusUpdateWait):
+			rt.perfStats.End(0)
+			//Ideally should sleep for duration maxStatusUpdateWait-(time.Now()-lastUpdate)
+			//but approx is good enough at the cost of reduced computation.
+		}
+
+		if respCount >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
 			rt.perfStats.Print()
 			log.Printf("flushing batch of %v status", updateStatusBatchSize)
 			//Update the status
-			rt.jobsDB.UpdateJobStatus(statusList)
+			rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
 			respCount = 0
 			statusList = nil
+			lastUpdate = time.Now()
 		}
 	}
 
@@ -229,7 +236,7 @@ func (rt *HandleT) generatorLoop() {
 			}
 			statusList = append(statusList, &status)
 		}
-		rt.jobsDB.UpdateJobStatus(statusList)
+		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
 
 		//Send the jobs to the jobQ
 		for _, job := range combinedList {
@@ -264,7 +271,7 @@ func (rt *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		rt.jobsDB.UpdateJobStatus(statusList)
+		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
 	}
 }
 
