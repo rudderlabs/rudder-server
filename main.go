@@ -6,16 +6,26 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/joho/godotenv"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
+	"github.com/spf13/viper"
 )
 
-var maxProcess = 12
-var gwDBRetention = time.Duration(1) * time.Hour
-var routerDBRetention = time.Duration(0)
+var (
+	maxProcess                       int
+	gwDBRetention, routerDBRetention time.Duration
+)
+
+func loadConfig() {
+	maxProcess = viper.GetInt("maxProcess")
+	gwDBRetention = viper.GetDuration("gwDBRetention") * time.Hour
+	routerDBRetention = viper.GetDuration("routerDBRetention")
+}
 
 // Test Function
 func readIOforResume(router router.HandleT) {
@@ -30,8 +40,15 @@ func readIOforResume(router router.HandleT) {
 	}
 }
 
-func main() {
+func init() {
+	if err := godotenv.Load(); err != nil {
+		fmt.Println("No .env file found")
+	}
+	config.Initialize()
+}
 
+func main() {
+	loadConfig()
 	misc.SetupLogger()
 	fmt.Println("Main starting")
 	var gatewayDB jobsdb.HandleT

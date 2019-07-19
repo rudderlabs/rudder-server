@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/viper"
+
 	"github.com/rudderlabs/rudder-server/integrations/google"
 	"github.com/rudderlabs/rudder-server/misc"
 )
@@ -120,12 +122,17 @@ func (integ *HandleT) Transform(clientEvent []*interface{}, destID string) ([]*i
 	return outEvents, true
 }
 
-const (
-	maxChanSize        = 2048
-	numTransformWorker = 32
-	maxRetry           = 3
-	retrySleep         = time.Duration(100) * time.Millisecond
+var (
+	maxChanSize, numTransformWorker, maxRetry int
+	retrySleep                                time.Duration
 )
+
+func loadConfig() {
+	maxChanSize = viper.GetInt("Integrations.maxChanSize")
+	numTransformWorker = viper.GetInt("Integrations.numTransformWorker")
+	maxRetry = viper.GetInt("Integrations.maxRetry")
+	retrySleep = viper.GetDuration("Integrations.retrySleepInMS") * time.Millisecond
+}
 
 func (integ *HandleT) transformWorker() {
 	for job := range integ.requestQ {
@@ -174,6 +181,7 @@ func (integ *HandleT) transformWorker() {
 
 //Setup initializes this class
 func (integ *HandleT) Setup() {
+	loadConfig()
 	integ.requestQ = make(chan *transformMessageT, maxChanSize)
 	integ.responseQ = make(chan *transformMessageT, maxChanSize)
 	integ.perfStats = &misc.PerfStats{}

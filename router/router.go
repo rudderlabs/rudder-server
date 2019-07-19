@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/spf13/viper"
 	"github.com/tidwall/gjson"
 )
 
@@ -33,17 +34,23 @@ type Worker struct {
 	sleepTime  time.Duration     //the sleep duration for every job of the worker
 }
 
-const (
-	jobQueryBatchSize     = 10000
-	updateStatusBatchSize = 1000
-	sinkProcesses         = 8
-	readSleep             = 1 * time.Second
-	noOfWorkers           = 3
-	noOfJobsPerChannel    = 1000
-	ser                   = 3
-	maxSleep              = time.Duration(10)
-	userIDPath            = "cid" //"batch.#.message.context.traits.anonymous_id" // need to change this after transformation module
+var (
+	jobQueryBatchSize, updateStatusBatchSize, sinkProcesses, noOfWorkers, noOfJobsPerChannel, ser int
+	readSleep, maxSleep                                                                           time.Duration
+	userIDPath                                                                                    string
 )
+
+func loadConfig() {
+	jobQueryBatchSize = viper.GetInt("Router.jobQueryBatchSize")
+	updateStatusBatchSize = viper.GetInt("Router.updateStatusBatchSize")
+	sinkProcesses = viper.GetInt("Router.sinkProcesses")
+	readSleep = viper.GetDuration("Router.readSleepInS") * time.Second
+	noOfWorkers = viper.GetInt("Router.noOfWorkers")
+	noOfJobsPerChannel = viper.GetInt("Router.noOfJobsPerChannel")
+	ser = viper.GetInt("Router.ser")
+	maxSleep = time.Duration(viper.GetInt("Router.maxSleep"))
+	userIDPath = viper.GetString("Router.userIDPath") //"batch.#.message.context.traits.anonymous_id" // need to change this after transformation module
+}
 
 func (rt *HandleT) workerProcess(worker *Worker) {
 	for {
@@ -270,6 +277,7 @@ func (rt *HandleT) crashRecover() {
 
 //Setup initializes this module
 func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
+	loadConfig()
 	fmt.Println("Router started")
 	rt.jobsDB = jobsDB
 	rt.destID = destID
