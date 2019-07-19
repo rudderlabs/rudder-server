@@ -121,9 +121,9 @@ func (jd *HandleT) assert(cond bool) {
 const (
 	host     = "localhost"
 	port     = 5432
-	user     = "srikanth"
-	password = "srikanth"
-	dbname   = "rudder"
+	user     = "ubuntu"
+	password = "ubuntu"
+	dbname   = "ubuntu"
 )
 
 /*Migration related parameters
