@@ -140,11 +140,11 @@ func (jd *HandleT) checkValidJobState(stateFilters []string) {
 
 //DB connection related parameters
 const (
-	host     = "localhost"
+	host     = "db"
 	port     = 5432
-	user     = "ubuntu"
-	password = "ubuntu"
-	dbname   = "ubuntu"
+	user     = "postgres"
+	password = ""
+	dbname   = "postgres"
 )
 
 /*Migration related parameters
@@ -327,7 +327,7 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 		jobName, ok := jobNameMap[dnum]
 		jd.assert(ok)
 		jobStatusName, ok := jobStatusNameMap[dnum]
-		jd.assert(ok)
+		// jd.assert(ok)
 		jd.datasetList = append(jd.datasetList,
 			dataSetT{JobTable: jobName,
 				JobStatusTable: jobStatusName, Index: dnum})

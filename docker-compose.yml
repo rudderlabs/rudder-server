@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+  db:
+    image: postgres:latest
+    environment:
+      host: db
+      port: 5432 
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 
+      POSTGRES_DB: ubuntu
+
+  rudder:
+    depends_on:
+      - db
+    build: 
+      context: ./
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
