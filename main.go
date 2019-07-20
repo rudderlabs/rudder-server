@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
-	"github.com/spf13/viper"
 )
 
 var (
@@ -22,9 +21,9 @@ var (
 )
 
 func loadConfig() {
-	maxProcess = viper.GetInt("maxProcess")
-	gwDBRetention = viper.GetDuration("gwDBRetention") * time.Hour
-	routerDBRetention = viper.GetDuration("routerDBRetention")
+	maxProcess = config.GetInt("maxProcess")
+	gwDBRetention = config.GetDuration("gwDBRetention") * time.Hour
+	routerDBRetention = config.GetDuration("routerDBRetention")
 }
 
 // Test Function

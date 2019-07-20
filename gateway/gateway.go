@@ -7,8 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/spf13/viper"
-
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	uuid "github.com/satori/go.uuid"
 )
@@ -41,18 +40,18 @@ var CustomVal string
 
 func loadConfig() {
 	//Port where GW is running
-	webPort = viper.GetInt("Gateway.webPort")
+	webPort = config.GetInt("Gateway.webPort")
 	//Number of incoming requests that are batched before initiating write
-	maxBatchSize = viper.GetInt("Gateway.maxBatchSize")
+	maxBatchSize = config.GetInt("Gateway.maxBatchSize")
 	//Timeout after which batch is formed anyway with whatever requests
 	//are available
-	batchTimeout = (viper.GetDuration("Gateway.batchTimeoutInMS") * time.Millisecond)
+	batchTimeout = (config.GetDuration("Gateway.batchTimeoutInMS") * time.Millisecond)
 	//Multiple DB writers are used to write data to DB
-	maxDBWriterProcess = viper.GetInt("Gateway.maxDBWriterProcess")
+	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess")
 	// CustomVal is used as a key in the jobsDB customval column
-	CustomVal = viper.GetString("Gateway.CustomVal")
+	CustomVal = config.GetString("Gateway.CustomVal")
 	//Reponse message sent to client
-	respMessage = viper.GetString("Gateway.respMessage")
+	respMessage = config.GetString("Gateway.respMessage")
 }
 
 //HandleT is the struct returned by the Setup call

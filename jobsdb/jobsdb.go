@@ -32,8 +32,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 
-	"github.com/spf13/viper"
-
 	"github.com/lib/pq"
 	uuid "github.com/satori/go.uuid"
 )
@@ -155,10 +153,10 @@ var (
 
 // Loads db config and migration related config from config file
 func loadConfig() {
-	host = viper.GetString("JobsDB.host")
-	user = viper.GetString("JobsDB.user")
-	dbname = viper.GetString("JobsDB.dbname")
-	port = viper.GetInt("JobsDB.port")
+	host = config.GetString("JobsDB.host")
+	user = config.GetString("JobsDB.user")
+	dbname = config.GetString("JobsDB.dbname")
+	port = config.GetInt("JobsDB.port")
 	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 
 	/*Migration related parameters
@@ -169,11 +167,11 @@ func loadConfig() {
 	maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
 	mainCheckSleepDuration: How often is the loop (which checks for adding/migrating DS) run
 	*/
-	jobDoneMigrateThres = viper.GetFloat64("JobsDB.jobDoneMigrateThres")
-	jobStatusMigrateThres = viper.GetFloat64("JobsDB.jobStatusMigrateThres")
-	maxDSSize = viper.GetInt("JobsDB.maxDSSize")
-	maxMigrateOnce = viper.GetInt("JobsDB.maxMigrateOnce")
-	mainCheckSleepDuration = (viper.GetDuration("JobsDB.mainCheckSleepDurationInS") * time.Second)
+	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres")
+	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres")
+	maxDSSize = config.GetInt("JobsDB.maxDSSize")
+	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce")
+	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS") * time.Second)
 	fmt.Println(maxDSSize, maxMigrateOnce, jobDoneMigrateThres, mainCheckSleepDuration)
 }
 

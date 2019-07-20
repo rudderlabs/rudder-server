@@ -6,8 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/spf13/viper"
-
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -49,8 +48,8 @@ var (
 )
 
 func loadConfig() {
-	loopSleep = viper.GetDuration("Processor.loopSleepInMS") * time.Millisecond
-	batchSize = viper.GetInt("Processor.batchSize")
+	loopSleep = config.GetDuration("Processor.loopSleepInMS") * time.Millisecond
+	batchSize = config.GetInt("Processor.batchSize")
 }
 
 func (proc *HandleT) mainLoop() {

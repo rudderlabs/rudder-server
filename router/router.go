@@ -9,9 +9,9 @@ import (
 	"sort"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
-	"github.com/spf13/viper"
 	"github.com/tidwall/gjson"
 )
 
@@ -41,15 +41,15 @@ var (
 )
 
 func loadConfig() {
-	jobQueryBatchSize = viper.GetInt("Router.jobQueryBatchSize")
-	updateStatusBatchSize = viper.GetInt("Router.updateStatusBatchSize")
-	readSleep = viper.GetDuration("Router.readSleepInS") * time.Second
-	noOfWorkers = viper.GetInt("Router.noOfWorkers")
-	noOfJobsPerChannel = viper.GetInt("Router.noOfJobsPerChannel")
-	ser = viper.GetInt("Router.ser")
-	maxSleep = viper.GetDuration("Router.maxSleepInS") * time.Second
-	maxStatusUpdateWait = viper.GetDuration("Router.maxStatusUpdateWaitInS") * time.Second
-	userIDPath = viper.GetString("Router.userIDPath") //"batch.#.message.context.traits.anonymous_id" // need to change this after transformation module
+	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize")
+	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize")
+	readSleep = config.GetDuration("Router.readSleepInS") * time.Second
+	noOfWorkers = config.GetInt("Router.noOfWorkers")
+	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel")
+	ser = config.GetInt("Router.ser")
+	maxSleep = config.GetDuration("Router.maxSleepInS") * time.Second
+	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS") * time.Second
+	userIDPath = config.GetString("Router.userIDPath") //"batch.#.message.context.traits.anonymous_id" // need to change this after transformation module
 }
 
 func (rt *HandleT) workerProcess(worker *Worker) {

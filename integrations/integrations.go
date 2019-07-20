@@ -11,8 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
-
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/integrations/google"
 	"github.com/rudderlabs/rudder-server/misc"
 )
@@ -128,10 +127,10 @@ var (
 )
 
 func loadConfig() {
-	maxChanSize = viper.GetInt("Integrations.maxChanSize")
-	numTransformWorker = viper.GetInt("Integrations.numTransformWorker")
-	maxRetry = viper.GetInt("Integrations.maxRetry")
-	retrySleep = viper.GetDuration("Integrations.retrySleepInMS") * time.Millisecond
+	maxChanSize = config.GetInt("Integrations.maxChanSize")
+	numTransformWorker = config.GetInt("Integrations.numTransformWorker")
+	maxRetry = config.GetInt("Integrations.maxRetry")
+	retrySleep = config.GetDuration("Integrations.retrySleepInMS") * time.Millisecond
 }
 
 func (integ *HandleT) transformWorker() {
