@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	uuid "github.com/satori/go.uuid"
 )
@@ -28,21 +29,30 @@ type batchWebRequestT struct {
 	batchRequest []*webRequestT
 }
 
-const (
+var (
+	webPort, maxBatchSize, maxDBWriterProcess int
+	batchTimeout                              time.Duration
+	respMessage                               string
+)
+
+// CustomVal is used as a key in the jobsDB customval column
+var CustomVal string
+
+func loadConfig() {
 	//Port where GW is running
-	webPort = 8080
+	webPort = config.GetInt("Gateway.webPort")
 	//Number of incoming requests that are batched before initiating write
-	maxBatchSize = 32
+	maxBatchSize = config.GetInt("Gateway.maxBatchSize")
 	//Timeout after which batch is formed anyway with whatever requests
 	//are available
-	batchTimeout = (20 * time.Millisecond)
+	batchTimeout = (config.GetDuration("Gateway.batchTimeoutInMS") * time.Millisecond)
 	//Multiple DB writers are used to write data to DB
-	maxDBWriterProcess = 4
-	//CustomVal is used as a key in the jobsDB customval column
-	CustomVal = "GW"
+	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess")
+	// CustomVal is used as a key in the jobsDB customval column
+	CustomVal = config.GetString("Gateway.CustomVal")
 	//Reponse message sent to client
-	respMessage = "OK"
-)
+	respMessage = config.GetString("Gateway.respMessage")
+}
 
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
@@ -129,6 +139,7 @@ func (gateway *HandleT) startWebHandler() {
 
 //Setup initializes this module
 func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT) {
+	loadConfig()
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB

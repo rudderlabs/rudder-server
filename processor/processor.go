@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -25,6 +26,7 @@ type HandleT struct {
 
 //Setup initializes the module
 func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) {
+	loadConfig()
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.integ = &integrations.HandleT{}
@@ -38,12 +40,17 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) 
 	go proc.mainLoop()
 }
 
-const (
-	loopSleep = 10 * time.Millisecond
-	batchSize = 1000
+var (
+	loopSleep time.Duration
+	batchSize int
 	//DestEndPointVal is a placeholder for now. Need to replace with destination
 	//specific keys
 )
+
+func loadConfig() {
+	loopSleep = config.GetDuration("Processor.loopSleepInMS") * time.Millisecond
+	batchSize = config.GetInt("Processor.batchSize")
+}
 
 func (proc *HandleT) mainLoop() {
 

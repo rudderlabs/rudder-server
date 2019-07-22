@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/tidwall/gjson"
@@ -33,17 +34,23 @@ type Worker struct {
 	sleepTime  time.Duration     //the sleep duration for every job of the worker
 }
 
-const (
-	jobQueryBatchSize     = 10000
-	updateStatusBatchSize = 1000
-	readSleep             = 1 * time.Second
-	noOfWorkers           = 8
-	noOfJobsPerChannel    = 1000
-	ser                   = 3
-	maxSleep              = time.Duration(5 * time.Second)
-	maxStatusUpdateWait   = time.Duration(5 * time.Second)
-	userIDPath            = "cid" //"batch.#.message.context.traits.anonymous_id" // need to change this after transformation module
+var (
+	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
+	readSleep, maxSleep, maxStatusUpdateWait                                       time.Duration
+	userIDPath                                                                     string
 )
+
+func loadConfig() {
+	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize")
+	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize")
+	readSleep = config.GetDuration("Router.readSleepInS") * time.Second
+	noOfWorkers = config.GetInt("Router.noOfWorkers")
+	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel")
+	ser = config.GetInt("Router.ser")
+	maxSleep = config.GetDuration("Router.maxSleepInS") * time.Second
+	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS") * time.Second
+	userIDPath = config.GetString("Router.userIDPath") //"batch.#.message.context.traits.anonymous_id" // need to change this after transformation module
+}
 
 func (rt *HandleT) workerProcess(worker *Worker) {
 	for {
@@ -277,6 +284,7 @@ func (rt *HandleT) crashRecover() {
 
 //Setup initializes this module
 func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
+	loadConfig()
 	fmt.Println("Router started")
 	rt.jobsDB = jobsDB
 	rt.destID = destID

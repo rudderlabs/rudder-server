@@ -30,6 +30,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
+
 	"github.com/lib/pq"
 	uuid "github.com/satori/go.uuid"
 )
@@ -138,31 +140,40 @@ func (jd *HandleT) checkValidJobState(stateFilters []string) {
 	}
 }
 
-//DB connection related parameters
-const (
-	host     = "localhost"
-	port     = 5432
-	user     = "ubuntu"
-	password = "ubuntu"
-	dbname   = "ubuntu"
+var (
+	host, user, password, dbname string
+	port                         int
 )
 
-/*Migration related parameters
-jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
-jobStatusMigrateThres: A DS is migrated if the job_status exceeds this (* no_of_jobs)
-maxDSSize: Maximum size of a DS. The process which adds new DS runs in the background
-           (every few seconds) so a DS may go beyond this size
-maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
-mainCheckSleepDuration: How often is the loop (which checks for adding/migrating DS) run
-*/
-
-const (
-	jobDoneMigrateThres    = 0.8
-	jobStatusMigrateThres  = 5
-	maxDSSize              = 100000
-	maxMigrateOnce         = 10
-	mainCheckSleepDuration = (2 * time.Second)
+var (
+	maxDSSize, maxMigrateOnce                  int
+	jobDoneMigrateThres, jobStatusMigrateThres float64
+	mainCheckSleepDuration                     time.Duration
 )
+
+// Loads db config and migration related config from config file
+func loadConfig() {
+	host = config.GetString("JobsDB.host")
+	user = config.GetString("JobsDB.user")
+	dbname = config.GetString("JobsDB.dbname")
+	port = config.GetInt("JobsDB.port")
+	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+
+	/*Migration related parameters
+	jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
+	jobStatusMigrateThres: A DS is migrated if the job_status exceeds this (* no_of_jobs)
+	maxDSSize: Maximum size of a DS. The process which adds new DS runs in the background
+			(every few seconds) so a DS may go beyond this size
+	maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
+	mainCheckSleepDuration: How often is the loop (which checks for adding/migrating DS) run
+	*/
+	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres")
+	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres")
+	maxDSSize = config.GetInt("JobsDB.maxDSSize")
+	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce")
+	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS") * time.Second)
+	fmt.Println(maxDSSize, maxMigrateOnce, jobDoneMigrateThres, mainCheckSleepDuration)
+}
 
 /*
 Setup is used to initialize the HandleT structure.
@@ -174,6 +185,7 @@ in the retention time
 */
 func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration) {
 
+	loadConfig()
 	var err error
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
@@ -1459,11 +1471,10 @@ func (jd *HandleT) setupEnumTypes() {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
-	
+
 	dbHandle, err := sql.Open("postgres", psqlInfo)
 	defer dbHandle.Close()
-	jd.assertError(err)	
-
+	jd.assertError(err)
 
 	fmt.Println("Creating enum types in db")
 	sqlStatement := `DO $$ BEGIN
