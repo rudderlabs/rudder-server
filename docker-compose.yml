@@ -3,10 +3,8 @@ version: '3.7'
 services:
   db:
     image: postgres:11-alpine
-    environment:
-      POSTGRES_USER: loki
-      POSTGRES_PASSWORD: abc
-      POSTGRES_DB: jobsdb
+    env_file:
+      - .env
     ports:
       - "5432:5432"
 
@@ -16,7 +14,12 @@ services:
     build: 
       context: ./
       dockerfile: Dockerfile
+
+    entrypoint: sh -c './wait-for db:5432 -- rudder-server'
+
     ports:
       - "8080:8080"
+    env_file:
+      - .env
     environment:
-      - JOBS_DB_PASSWORD=abc
+      - JOBS_DB_HOST=db
