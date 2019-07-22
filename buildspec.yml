@@ -14,7 +14,9 @@ phases:
   build:
     commands:
       - docker build -t ${image}:latest .
-      - go install -mod vendor
+      - ls
+      - echo "********** Checking files *********"
+      - go build -mod vendor
   post_build:
     commands:
       - docker tag ${image}:latest ${image}:${datetime}
