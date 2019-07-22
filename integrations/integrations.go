@@ -127,10 +127,10 @@ var (
 )
 
 func loadConfig() {
-	maxChanSize = config.GetInt("Integrations.maxChanSize")
-	numTransformWorker = config.GetInt("Integrations.numTransformWorker")
-	maxRetry = config.GetInt("Integrations.maxRetry")
-	retrySleep = config.GetDuration("Integrations.retrySleepInMS") * time.Millisecond
+	maxChanSize = config.GetInt("Integrations.maxChanSize", 2048)
+	numTransformWorker = config.GetInt("Integrations.numTransformWorker", 32)
+	maxRetry = config.GetInt("Integrations.maxRetry", 3)
+	retrySleep = config.GetDuration("Integrations.retrySleepInMS", time.Duration(100)) * time.Millisecond
 }
 
 func (integ *HandleT) transformWorker() {

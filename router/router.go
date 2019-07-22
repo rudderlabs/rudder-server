@@ -41,15 +41,15 @@ var (
 )
 
 func loadConfig() {
-	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize")
-	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize")
-	readSleep = config.GetDuration("Router.readSleepInS") * time.Second
-	noOfWorkers = config.GetInt("Router.noOfWorkers")
-	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel")
-	ser = config.GetInt("Router.ser")
-	maxSleep = config.GetDuration("Router.maxSleepInS") * time.Second
-	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS") * time.Second
-	userIDPath = config.GetString("Router.userIDPath") //"batch.#.message.context.traits.anonymous_id" // need to change this after transformation module
+	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
+	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
+	readSleep = config.GetDuration("Router.readSleepInS", time.Duration(1)) * time.Second
+	noOfWorkers = config.GetInt("Router.noOfWorkers", 8)
+	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
+	ser = config.GetInt("Router.ser", 3)
+	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(5)) * time.Second
+	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
+	userIDPath = config.GetString("Router.userIDPath", "cid") //"batch.#.message.context.traits.anonymous_id" // need to change this after transformation module
 }
 
 func (rt *HandleT) workerProcess(worker *Worker) {
