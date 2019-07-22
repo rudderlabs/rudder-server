@@ -16,7 +16,7 @@ phases:
       - docker build -t ${image}:latest .
       - ls
       - echo "********** Checking files *********"
-      - go build -mod vendor
+      - go build
   post_build:
     commands:
       - docker tag ${image}:latest ${image}:${datetime}
