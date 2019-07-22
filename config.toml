@@ -16,7 +16,7 @@ respMessage = "OK"
 
 [JobsDB]
 # DB related parameters
-host = "localhost"
+host = "db"
 port = 5432
 user = "loki"
 dbname = "jobsdb"

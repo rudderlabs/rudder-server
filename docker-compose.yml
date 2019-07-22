@@ -2,12 +2,11 @@ version: '3.7'
 
 services:
   db:
-    image: postgres:latest
+    image: postgres:11-alpine
     environment:
-      host: db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 
-      POSTGRES_DB: postgres
+      POSTGRES_USER: loki
+      POSTGRES_PASSWORD: abc
+      POSTGRES_DB: jobsdb
     ports:
       - "5432:5432"
 
@@ -19,3 +18,5 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
+    environment:
+      - JOBS_DB_PASSWORD=abc
