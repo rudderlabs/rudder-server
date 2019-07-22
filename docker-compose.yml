@@ -5,10 +5,11 @@ services:
     image: postgres:latest
     environment:
       host: db
-      port: 5432 
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 
-      POSTGRES_DB: ubuntu
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
 
   rudder:
     depends_on:

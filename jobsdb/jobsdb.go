@@ -199,7 +199,9 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		jd.dropAllDS()
 		jd.delJournal()
 	} else {
-		jd.recoverFromJournal()
+		if len(jd.datasetList) != 0 {
+			jd.recoverFromJournal()
+		}
 	}
 
 	//Refresh in memory list. We don't take lock
@@ -327,7 +329,7 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 		jobName, ok := jobNameMap[dnum]
 		jd.assert(ok)
 		jobStatusName, ok := jobStatusNameMap[dnum]
-		// jd.assert(ok)
+		jd.assert(ok)
 		jd.datasetList = append(jd.datasetList,
 			dataSetT{JobTable: jobName,
 				JobStatusTable: jobStatusName, Index: dnum})
@@ -1459,11 +1461,10 @@ func (jd *HandleT) setupEnumTypes() {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
-	
+
 	dbHandle, err := sql.Open("postgres", psqlInfo)
 	defer dbHandle.Close()
-	jd.assertError(err)	
-
+	jd.assertError(err)
 
 	fmt.Println("Creating enum types in db")
 	sqlStatement := `DO $$ BEGIN
