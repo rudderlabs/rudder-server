@@ -15,8 +15,8 @@ phases:
     commands:
       - docker build -t ${image}:latest .
       - ls
-      - echo "********** Checking files *********"
-      - go build
+      - export GO111MODULE=on
+      - go build -mod vendor
   post_build:
     commands:
       - docker tag ${image}:latest ${image}:${datetime}
