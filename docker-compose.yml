@@ -1,0 +1,21 @@
+version: '3.7'
+
+services:
+  db:
+    image: postgres:latest
+    environment:
+      host: db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+
+  rudder:
+    depends_on:
+      - db
+    build: 
+      context: ./
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"

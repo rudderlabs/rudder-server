@@ -211,7 +211,9 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		jd.dropAllDS()
 		jd.delJournal()
 	} else {
-		jd.recoverFromJournal()
+		if len(jd.datasetList) != 0 {
+			jd.recoverFromJournal()
+		}
 	}
 
 	//Refresh in memory list. We don't take lock
