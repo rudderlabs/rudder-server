@@ -15,12 +15,6 @@ respMessage = "OK"
 
 
 [JobsDB]
-# DB related parameters
-host = "localhost"
-port = 5432
-user = "loki"
-dbname = "jobsdb"
-
 # Migration related parameters
 jobDoneMigrateThres = 0.8
 jobStatusMigrateThres = 5

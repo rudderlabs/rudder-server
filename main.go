@@ -21,9 +21,9 @@ var (
 )
 
 func loadConfig() {
-	maxProcess = config.GetInt("maxProcess")
-	gwDBRetention = config.GetDuration("gwDBRetention") * time.Hour
-	routerDBRetention = config.GetDuration("routerDBRetention")
+	maxProcess = config.GetInt("maxProcess", 12)
+	gwDBRetention = config.GetDuration("gwDBRetention", time.Duration(1)) * time.Hour
+	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 }
 
 // Test Function

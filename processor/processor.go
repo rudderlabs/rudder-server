@@ -48,8 +48,8 @@ var (
 )
 
 func loadConfig() {
-	loopSleep = config.GetDuration("Processor.loopSleepInMS") * time.Millisecond
-	batchSize = config.GetInt("Processor.batchSize")
+	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
+	batchSize = config.GetInt("Processor.batchSize", 1000)
 }
 
 func (proc *HandleT) mainLoop() {
