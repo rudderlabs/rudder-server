@@ -172,7 +172,6 @@ func loadConfig() {
 	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
-	fmt.Println(jobDoneMigrateThres, jobStatusMigrateThres, maxDSSize, maxMigrateOnce, mainCheckSleepDuration)
 }
 
 /*

@@ -52,7 +52,6 @@ func loadConfig() {
 	CustomVal = config.GetString("Gateway.CustomVal", "GW")
 	//Reponse message sent to client
 	respMessage = config.GetString("Gateway.respMessage", "OK")
-	fmt.Println(webPort, maxDBWriterProcess, maxBatchSize, batchTimeout, CustomVal, respMessage)
 }
 
 //HandleT is the struct returned by the Setup call
