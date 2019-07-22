@@ -153,10 +153,10 @@ var (
 
 // Loads db config and migration related config from config file
 func loadConfig() {
-	host = config.GetString("JobsDB.host")
-	user = config.GetString("JobsDB.user")
-	dbname = config.GetString("JobsDB.dbname")
-	port = config.GetInt("JobsDB.port")
+	host = config.GetEnv("JOBS_DB_HOST", "localhost")
+	user = config.GetEnv("JOBS_DB_USER", "ubuntu")
+	dbname = config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
+	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 
 	/*Migration related parameters
@@ -172,7 +172,6 @@ func loadConfig() {
 	maxDSSize = config.GetInt("JobsDB.maxDSSize")
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce")
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS") * time.Second)
-	fmt.Println(maxDSSize, maxMigrateOnce, jobDoneMigrateThres, mainCheckSleepDuration)
 }
 
 /*
