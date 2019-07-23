@@ -4,7 +4,7 @@ services:
   db:
     image: postgres:11-alpine
     env_file:
-      - .env
+      - docker.env
     ports:
       - "5433:5432"
 
@@ -17,7 +17,7 @@ services:
     ports:
       - "8081:8080"
     env_file:
-      - .env
+      - docker.env
     environment:
       - JOBS_DB_HOST=db
 
@@ -26,4 +26,4 @@ services:
     ports:
       - "9091:9090"
     env_file:
-      - .env
+      - docker.env
