@@ -31,5 +31,6 @@ phases:
 artifacts:
   files: 
     - rudder-server
+    - appspec.yml
     - config.toml
     - imagedefinitions.json
