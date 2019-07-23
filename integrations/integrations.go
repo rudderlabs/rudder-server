@@ -78,10 +78,10 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	}
 	postInfo.URL, ok = transformMap["endpoint"].(string)
 	misc.Assert(ok)
-	postInfo.UserID, ok = transformMap["endpoint"].(string)
-	misc.Assert(ok)
 	postInfo.Payload, ok = transformMap["payload"]
 	misc.Assert(ok)
+	postInfo.UserID, ok = transformMap["user_id"].(string)
+	misc.Assert(ok)	
 	return postInfo
 }
 
