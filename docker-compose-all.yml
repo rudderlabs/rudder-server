@@ -6,7 +6,7 @@ services:
     env_file:
       - .env
     ports:
-      - "5432:5432"
+      - "5433:5432"
 
   rudder:
     image: 454531037350.dkr.ecr.us-east-1.amazonaws.com/rudder-server:latest
@@ -15,7 +15,7 @@ services:
       - transformer
     entrypoint: sh -c './wait-for db:5432 -- rudder-server'
     ports:
-      - "8080:8080"
+      - "8081:8080"
     env_file:
       - .env
     environment:
@@ -24,6 +24,6 @@ services:
   transformer:
     image: 454531037350.dkr.ecr.us-east-1.amazonaws.com/rudder-transformer:latest
     ports:
-      - "9090:9090"
+      - "9091:9090"
     env_file:
       - .env
