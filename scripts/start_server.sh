@@ -6,4 +6,4 @@ cp /home/ubuntu/.env /home/ubuntu/rudder-server/.env
 
 # Stop all servers and start the server as a daemon
 kill $(lsof -t -i:8080) || true
-./rudder-server
+nohup ./rudder-server &
