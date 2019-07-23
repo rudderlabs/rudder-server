@@ -1,6 +1,6 @@
 {
     "batch": true,
-    "integrations": ["AM"],
+    "integrations": ["AM", "GA"],
     "events": [
         {
             "name": "Product Clicked",

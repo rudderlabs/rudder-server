@@ -233,8 +233,10 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 	var userIDpath, gauserIDpath string
 
 	for _, itgr := range integrations {
+		fmt.Println("====starting for sink: ", itgr.Value())
 		countLoop = 0
 		for {
+			fmt.Println("====looping ni number of times, creating batch====", countLoop)
 			if count > 0 && countLoop >= count {
 				break
 			}
@@ -261,7 +263,7 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 				gaJSONData = []byte(gaJSON.Raw)
 
 				for k, v := range mapping {
-					fmt.Printf("key %v, val %v \n", k, v.Value())
+					//fmt.Printf("key %v, val %v \n", k, v.Value())
 
 					if strings.Contains(k, "anonymous_id") {
 						userIDpath = k
@@ -293,6 +295,7 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 
 				fmt.Println(unmarshalleGAData)
 
+				fmt.Println("====trying sending to sink====")
 				if sendToDest[itgr.Value().(string)] {
 					if netMapping["type"].Value() == "KV" {
 						sendToGA(&unmarshalleGAData, netMapping["url"].Value().(string))
@@ -308,6 +311,8 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 
 			}
 			// Unmarshal
+
+			fmt.Println("===end of a batch=== trying rudder send if enabled===")
 
 			if isBatchToBeMade {
 				value, _ := sjson.Set("", "batch", rudderEvents)
