@@ -149,7 +149,7 @@ func (proc *HandleT) mainLoop() {
 		for destID, destEventList := range eventsByDest {
 			//Call transform for this destination. Returns
 			//the JSON we can send to the destination
-			destTransformEventList, ok := proc.integ.TransformJS(destEventList, destID)
+			destTransformEventList, ok := proc.integ.Transform(destEventList, destID)
 			if !ok {
 				continue
 			}

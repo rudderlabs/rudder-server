@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/integrations/google"
 	"github.com/rudderlabs/rudder-server/misc"
 )
 
@@ -30,13 +29,6 @@ type HandleT struct {
 	perfStats *misc.PerfStats
 }
 
-//DestTransformer interface provides a generic interface which
-//every destination implements to transform the JSON
-type DestTransformer interface {
-	Transform(clientEvent *interface{}) (interface{}, bool)
-}
-
-//destNameIDMap is the mapping between the names provided in integration field
 //our internal ID for that destination. We save this ID in the customval field
 //in JobsDB
 var destNameIDMap = map[string]string{
@@ -44,16 +36,11 @@ var destNameIDMap = map[string]string{
 	"rudderlabs":       "GA",
 }
 
-//destTransformerMap keeps a mapping between the destinationID and the corresponding
-//transformation function. The functions are in integration folder
-var destTransformerMap = map[string]DestTransformer{
-	"GA": google.HandleT{},
-}
-
 //destJSTransformerMap keeps a mapping between the destinationID and
 //the NodeJS URL end point where the transformation function is hosted
+//This should be coming from the config when that's ready
 var destJSTransformerMap = map[string]string{
-	"GA": "http://localhost:9090",
+	"GA": "http://localhost:9090/v0/ga",
 }
 
 const (
@@ -68,17 +55,32 @@ const (
 //PostParameterT  has post related parameters, the URL and the data type
 type PostParameterT struct {
 	URL     string
-	Payload int //PostDataKV or PostDataJSON or PostDataXML
-}
-
-//destPostURLMap keeps mapping between destinationID and the post URL
-var destPostInfoMap = map[string]PostParameterT{
-	"GA": PostParameterT{URL: "https://www.google-analytics.com/collect", Payload: PostDataKV},
+	Type    int
+	UserID  string
+	Payload interface{} //PostDataKV or PostDataJSON or PostDataXML
 }
 
 //GetPostInfo provides the post parameters for this destination
-func GetPostInfo(destID string) PostParameterT {
-	postInfo, ok := destPostInfoMap[destID]
+func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
+
+	var transformMap map[string]interface{}
+	err := json.Unmarshal(transformRaw, &transformMap)
+	misc.AssertError(err)
+
+	var postInfo PostParameterT
+	pType, ok := transformMap["request-format"].(string)
+	misc.Assert(ok)
+	switch pType {
+	case "PARAMS":
+		postInfo.Type = PostDataKV
+	default:
+		misc.Assert(false)
+	}
+	postInfo.URL, ok = transformMap["endpoint"].(string)
+	misc.Assert(ok)
+	postInfo.UserID, ok = transformMap["endpoint"].(string)
+	misc.Assert(ok)
+	postInfo.Payload, ok = transformMap["payload"]
 	misc.Assert(ok)
 	return postInfo
 }
@@ -104,21 +106,6 @@ func GetDestinationIDs(clientEvent interface{}) (retVal []string) {
 	}
 	retVal = outVal
 	return
-}
-
-//Transform calls the right destination specific transform function
-func (integ *HandleT) Transform(clientEvent []*interface{}, destID string) ([]*interface{}, bool) {
-	destHandle, ok := destTransformerMap[destID]
-	if !ok {
-		return nil, false
-	}
-	outEvents := make([]*interface{}, 0)
-	for _, event := range clientEvent {
-		respEvent, ok := destHandle.Transform(event)
-		misc.Assert(ok)
-		outEvents = append(outEvents, &respEvent)
-	}
-	return outEvents, true
 }
 
 var (
@@ -191,8 +178,8 @@ func (integ *HandleT) Setup() {
 	}
 }
 
-//TransformJS function is used to invoke transformer API
-func (integ *HandleT) TransformJS(clientEvents []interface{}, destID string) ([]interface{}, bool) {
+//Transform function is used to invoke transformer API
+func (integ *HandleT) Transform(clientEvents []interface{}, destID string) ([]interface{}, bool) {
 
 	//Get the transform URL
 	_, ok := destJSTransformerMap[destID]
