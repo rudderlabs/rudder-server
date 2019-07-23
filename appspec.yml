@@ -1,7 +1,7 @@
 version: 0.0
 os: linux
 files:
-	- source: scripts/rudder.conf
+  - source: scripts/rudder.conf
     destination: /etc/init/
   - source: /
     destination: /home/ubuntu/rudder-server
