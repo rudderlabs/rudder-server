@@ -70,7 +70,7 @@ func main() {
 	//all the enabled destinations
 	router.Setup(&routerDB, "GA")
 
-	go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+	// go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 
 	processor.Setup(&gatewayDB, &routerDB)
 	gateway.Setup(&gatewayDB)

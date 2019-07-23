@@ -1,0 +1,34 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      golang: 1.12
+  pre_build:
+    commands:
+      - $(aws ecr get-login --region us-east-1 --no-include-email)
+      - datetime="$(date +'%Y%m%d%H%M')"
+      - version="$(cat .version)"
+      - git_hash=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - image=454531037350.dkr.ecr.us-east-1.amazonaws.com/rudder-server
+  build:
+    commands:
+      - docker build -t ${image}:latest .
+      - ls
+      - export GO111MODULE=on
+      - go build -mod vendor
+  post_build:
+    commands:
+      - docker tag ${image}:latest ${image}:${datetime}
+      - docker tag ${image}:latest ${image}:${git_hash}
+      - docker tag ${image}:latest ${image}:${version}
+      - docker push ${image}:latest
+      - docker push ${image}:${datetime}
+      - docker push ${image}:${git_hash}
+      - docker push ${image}:${version}
+      - printf '[{"name":"rudder-server","imageUri":"%s"}]' ${image}:${version} > imagedefinitions.json
+
+artifacts:
+  files: 
+    - '**/*'
+    - imagedefinitions.json
