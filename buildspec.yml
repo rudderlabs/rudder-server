@@ -33,4 +33,5 @@ artifacts:
     - rudder-server
     - appspec.yml
     - config.toml
+    - scripts/*
     - imagedefinitions.json
