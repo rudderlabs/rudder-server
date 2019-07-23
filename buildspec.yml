@@ -30,8 +30,5 @@ phases:
 
 artifacts:
   files: 
-    - rudder-server
-    - appspec.yml
-    - config.toml
-    - scripts/*
+    - '**/*'
     - imagedefinitions.json
