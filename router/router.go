@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"log"
 	"math"
+	"math/rand"
 	"net/http"
 	"sort"
 	"time"
@@ -42,7 +43,7 @@ var (
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
-	readSleep = config.GetDuration("Router.readSleepInS", time.Duration(1)) * time.Second
+	readSleep = config.GetDuration("Router.readSleepInMS", time.Duration(10)) * time.Millisecond
 	noOfWorkers = config.GetInt("Router.noOfWorkers", 8)
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	ser = config.GetInt("Router.ser", 3)
@@ -145,6 +146,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *Worker {
 	postInfo := integrations.GetPostInfo(job.EventPayload)
 	// log.Println(userID)
 	index := int(math.Abs(float64(getHash(postInfo.UserID) % noOfWorkers)))
+	//index = rand.Intn(noOfWorkers)
 	// log.Printf("userId: %s index: %d", userID, index)
 	for _, worker := range rt.workers {
 		if worker.workerID == index {

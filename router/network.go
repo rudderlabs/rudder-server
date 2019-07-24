@@ -22,6 +22,8 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	postInfo := integrations.GetPostInfo(jsonData)
 
 	req, err := http.NewRequest("GET", postInfo.URL, nil)
+	//req, err := http.NewRequest("GET", "http://localhost:8181/", nil)
+
 	misc.AssertError(err)
 	queryParams := req.URL.Query()
 	if postInfo.Type == integrations.PostDataKV {
