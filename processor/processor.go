@@ -89,6 +89,7 @@ type HandleT struct {
 	userJobPQ          pqT
 	userPQLock         sync.Mutex
 }
+
 //Print the internal structure
 func (proc *HandleT) Print() {
 	log.Println("PriorityQueue")
@@ -126,7 +127,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) 
 	proc.integ.Setup()
 	go proc.mainLoop()
 	if processSessions {
-		fmt.Println("Starting session processor")
+		log.Println("Starting session processor")
 		go proc.processSessionJobs()
 	}
 }
@@ -152,6 +153,9 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 
 	proc.userPQLock.Lock()
 
+	//List of users whose jobs need to be processed
+	processUserIDs := make(map[string]bool)
+
 	for _, job := range jobList {
 		userID, ok := misc.GetRudderEventUserID(job.EventPayload)
 		if !ok {
@@ -171,16 +175,9 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		}
 		proc.userJobListMap[userID] = append(proc.userJobListMap[userID], job)
 		proc.userEventLengthMap[userID] += len(eventList)
+		//If we have a lot of events from that user, we process jobs
 		if proc.userEventLengthMap[userID] > sessionThresholdEvents {
-			procJobs := proc.userJobListMap[userID]
-			delete(proc.userJobListMap, userID)
-			delete(proc.userEventLengthMap, userID)
-			proc.userJobPQ.Remove(proc.userPQItemMap[userID])
-			delete(proc.userPQItemMap, userID)
-			proc.userPQLock.Unlock()
-			proc.processJobs(procJobs)
-			proc.userPQLock.Lock()
-			continue
+			processUserIDs[userID] = true
 		}
 		pqItem, ok := proc.userPQItemMap[userID]
 		if !ok {
@@ -197,44 +194,74 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		}
 
 	}
-	log.Println("Add Jobs")
+
+	log.Println("Post Add")
 	proc.Print()
+
+	//Now process events from those users
+	var toProcessJobs []*jobsdb.JobT
+	for userID := range processUserIDs {
+		toProcessJobs = append(toProcessJobs, proc.userJobListMap[userID]...)
+		delete(proc.userJobListMap, userID)
+		delete(proc.userEventLengthMap, userID)
+		proc.userJobPQ.Remove(proc.userPQItemMap[userID])
+		delete(proc.userPQItemMap, userID)
+	}
+	//We can release the lock
 	proc.userPQLock.Unlock()
+	if len(toProcessJobs) > 0 {
+		log.Println("Processing")
+		proc.Print()
+		proc.processJobs(toProcessJobs)
+	}
 }
 
 func (proc *HandleT) processSessionJobs() {
 
 	for {
 		proc.userPQLock.Lock()
+		//Now jobs
 		if proc.userJobPQ.Len() == 0 {
 			proc.userPQLock.Unlock()
 			time.Sleep(loopSleep)
 			continue
 		}
-		log.Println("Process Sessions")
-		proc.Print()
+
+		//Enough time hasn't transpired since last
 		oldestItem := proc.userJobPQ.Top()
-		if time.Since(oldestItem.lastTS) > time.Duration(sessionThresholdInS) {
-			log.Println("Processing session jobs")
-			userID := oldestItem.userID
-			pqItem, ok := proc.userPQItemMap[userID]
-			misc.Assert(ok && pqItem == oldestItem)
-			proc.userJobPQ.Pop()
-			//Now process the jobs
-			jobList := proc.userJobListMap[userID]
-			delete(proc.userJobListMap, userID)
-			delete(proc.userEventLengthMap, userID)
-			delete(proc.userPQItemMap, userID)
-			//We release the lock before processing
-			proc.userPQLock.Unlock()
-			proc.processJobs(jobList)
-			log.Println("Post processing")
-			proc.Print()
-		} else {
+		if time.Since(oldestItem.lastTS) < time.Duration(sessionThresholdInS) {
 			proc.userPQLock.Unlock()
 			sleepTime := time.Duration(sessionThresholdInS) - time.Since(oldestItem.lastTS)
 			log.Println("Sleeping", sleepTime)
 			time.Sleep(sleepTime)
+			continue
+		}
+
+		var toProcessJobs []*jobsdb.JobT
+		//Find all jobs that need to be processed
+		for {
+			if proc.userJobPQ.Len() == 0 {
+				break
+			}
+			oldestItem := proc.userJobPQ.Top()
+			if time.Since(oldestItem.lastTS) > time.Duration(sessionThresholdInS) {
+				userID := oldestItem.userID
+				pqItem, ok := proc.userPQItemMap[userID]
+				misc.Assert(ok && pqItem == oldestItem)
+				toProcessJobs = append(toProcessJobs, proc.userJobListMap[userID]...)
+				delete(proc.userJobListMap, userID)
+				delete(proc.userEventLengthMap, userID)
+				proc.userJobPQ.Remove(proc.userPQItemMap[userID])
+				delete(proc.userPQItemMap, userID)
+			} else {
+				break
+			}
+		}
+		proc.userPQLock.Unlock()
+		if len(toProcessJobs) > 0 {
+			log.Println("Processing ession Check")
+			proc.Print()
+			proc.processJobs(toProcessJobs)
 		}
 	}
 }
