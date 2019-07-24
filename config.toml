@@ -37,7 +37,12 @@ noOfJobsPerChannel = 1000
 ser = 3
 maxSleepInS = 3600
 maxStatusUpdateWaitInS = 5
+randomWorkerAssign = false
+useTestSink = false
 
 [Processor]
 loopSleepInMS = 10
 batchSize = 1000
+sessionThresholdEvents = 20
+sessionThresholdInS = 20
+processSessions = true

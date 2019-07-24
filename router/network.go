@@ -21,10 +21,16 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	//Parse the response to get parameters
 	postInfo := integrations.GetPostInfo(jsonData)
 
-	req, err := http.NewRequest("GET", postInfo.URL, nil)
-	//req, err := http.NewRequest("GET", "http://localhost:8181/", nil)
+	var req *http.Request
+	var err error
+	if useTestSink {
+		req, err = http.NewRequest("GET", "http://localhost:8181/", nil)
+		misc.AssertError(err)
+	} else {
+		req, err = http.NewRequest("GET", postInfo.URL, nil)
+		misc.AssertError(err)
+	}
 
-	misc.AssertError(err)
 	queryParams := req.URL.Query()
 	if postInfo.Type == integrations.PostDataKV {
 		payloadKV, ok := postInfo.Payload.(map[string]interface{})

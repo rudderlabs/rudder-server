@@ -38,6 +38,7 @@ type Worker struct {
 var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
 	readSleep, maxSleep, maxStatusUpdateWait                                       time.Duration
+	randomWorkerAssign, useTestSink                                                bool
 )
 
 func loadConfig() {
@@ -49,6 +50,8 @@ func loadConfig() {
 	ser = config.GetInt("Router.ser", 3)
 	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(5)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
+	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
+	useTestSink = config.GetBool("Router.userTestSink", false)
 }
 
 func (rt *HandleT) workerProcess(worker *Worker) {
@@ -144,9 +147,13 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *Worker {
 	// also insert a find a free worker logic
 
 	postInfo := integrations.GetPostInfo(job.EventPayload)
-	// log.Println(userID)
-	index := int(math.Abs(float64(getHash(postInfo.UserID) % noOfWorkers)))
-	//index = rand.Intn(noOfWorkers)
+
+	var index int
+	if randomWorkerAssign {
+		index = rand.Intn(noOfWorkers)
+	} else {
+		index = int(math.Abs(float64(getHash(postInfo.UserID) % noOfWorkers)))
+	}
 	// log.Printf("userId: %s index: %d", userID, index)
 	for _, worker := range rt.workers {
 		if worker.workerID == index {
