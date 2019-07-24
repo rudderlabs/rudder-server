@@ -305,11 +305,12 @@ func (proc *HandleT) processJobs(jobList []*jobsdb.JobT) {
 
 	//Event count for performance stat monitoring
 	totalEvents := 0
-	goodJSON := false
 
 	for _, batchEvent := range jobList {
 
+		goodJSON := false
 		eventList, ok := misc.ParseRudderEventBatch(batchEvent.EventPayload)
+		
 		if ok {
 			//Iterate through all the events in the batch
 			for _, singularEvent := range eventList {
