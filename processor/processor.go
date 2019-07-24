@@ -128,7 +128,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) 
 	go proc.mainLoop()
 	if processSessions {
 		log.Println("Starting session processor")
-		go proc.processSessionJobs()
+		go proc.createSessions()
 	}
 }
 
@@ -173,9 +173,10 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			//bad event
 			continue
 		}
+		//Add the job to the userID specific lists
 		proc.userJobListMap[userID] = append(proc.userJobListMap[userID], job)
 		proc.userEventLengthMap[userID] += len(eventList)
-		//If we have a lot of events from that user, we process jobs
+		//If we have enough events from that user, we process jobs
 		if proc.userEventLengthMap[userID] > sessionThresholdEvents {
 			processUserIDs[userID] = true
 		}
@@ -195,28 +196,41 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 
 	}
 
-	log.Println("Post Add")
-	proc.Print()
+	if len(processUserIDs) > 0 {
+		userJobsToProcess := make(map[string][]*jobsdb.JobT)
+		log.Println("Post Add Processing")
+		proc.Print()
 
-	//Now process events from those users
-	var toProcessJobs []*jobsdb.JobT
-	for userID := range processUserIDs {
-		toProcessJobs = append(toProcessJobs, proc.userJobListMap[userID]...)
-		delete(proc.userJobListMap, userID)
-		delete(proc.userEventLengthMap, userID)
-		proc.userJobPQ.Remove(proc.userPQItemMap[userID])
-		delete(proc.userPQItemMap, userID)
-	}
-	//We can release the lock
-	proc.userPQLock.Unlock()
-	if len(toProcessJobs) > 0 {
+		//We clear the data structure for these users
+		for userID := range processUserIDs {
+			userJobsToProcess[userID] = proc.userJobListMap[userID]
+			delete(proc.userJobListMap, userID)
+			delete(proc.userEventLengthMap, userID)
+			proc.userJobPQ.Remove(proc.userPQItemMap[userID])
+			delete(proc.userPQItemMap, userID)
+		}
 		log.Println("Processing")
 		proc.Print()
+		//We release the block before actually processing
+		proc.userPQLock.Unlock()
+		proc.processUserJobs(userJobsToProcess)
+		return
+	}
+	proc.userPQLock.Unlock()
+}
+
+func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT) {
+	var toProcessJobs []*jobsdb.JobT
+	for userID := range userJobs {
+		//This is where we should call transform too
+		toProcessJobs = append(toProcessJobs, userJobs[userID]...)
+	}
+	if len(toProcessJobs) > 0 {
 		proc.processJobs(toProcessJobs)
 	}
 }
 
-func (proc *HandleT) processSessionJobs() {
+func (proc *HandleT) createSessions() {
 
 	for {
 		proc.userPQLock.Lock()
@@ -237,7 +251,8 @@ func (proc *HandleT) processSessionJobs() {
 			continue
 		}
 
-		var toProcessJobs []*jobsdb.JobT
+		userJobsToProcess := make(map[string][]*jobsdb.JobT)
+
 		//Find all jobs that need to be processed
 		for {
 			if proc.userJobPQ.Len() == 0 {
@@ -248,20 +263,22 @@ func (proc *HandleT) processSessionJobs() {
 				userID := oldestItem.userID
 				pqItem, ok := proc.userPQItemMap[userID]
 				misc.Assert(ok && pqItem == oldestItem)
-				toProcessJobs = append(toProcessJobs, proc.userJobListMap[userID]...)
+				userJobsToProcess[userID] = proc.userJobListMap[userID]
+
+				//Clear from the map
 				delete(proc.userJobListMap, userID)
 				delete(proc.userEventLengthMap, userID)
 				proc.userJobPQ.Remove(proc.userPQItemMap[userID])
 				delete(proc.userPQItemMap, userID)
-			} else {
-				break
+				continue
 			}
+			break
 		}
 		proc.userPQLock.Unlock()
-		if len(toProcessJobs) > 0 {
-			log.Println("Processing ession Check")
+		if len(userJobsToProcess) > 0 {
+			log.Println("Processing Session Check")
 			proc.Print()
-			proc.processJobs(toProcessJobs)
+			proc.processUserJobs(userJobsToProcess)
 		}
 	}
 }
