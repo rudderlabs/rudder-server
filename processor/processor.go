@@ -85,7 +85,7 @@ func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
 	batchSize = config.GetInt("Processor.batchSize", 1000)
 	sessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
-	processSessions = config.GetBool("Processor.processSessions", true)
+	processSessions = config.GetBool("Processor.processSessions", false)
 	sessionThresholdInS = config.GetDuration("Processor.sessionThresholdInS", time.Duration(20)) * time.Second
 	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
 	numTransformWorker = config.GetInt("Processor.numTransformWorker", 32)
