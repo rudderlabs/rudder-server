@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -18,13 +19,15 @@ import (
 
 //HandleT is the handle to this module.
 type HandleT struct {
-	requestQ  chan *jobsdb.JobT
-	responseQ chan *jobsdb.JobStatusT
-	jobsDB    *jobsdb.HandleT
-	netHandle *NetHandleT
-	destID    string
-	workers   []*Worker
-	perfStats *misc.PerfStats
+	requestQ     chan *jobsdb.JobT
+	responseQ    chan *jobsdb.JobStatusT
+	jobsDB       *jobsdb.HandleT
+	netHandle    *NetHandleT
+	destID       string
+	workers      []*Worker
+	perfStats    *misc.PerfStats
+	successCount uint64
+	failCount    uint64
 }
 
 // Worker a structure to define a worker for sending events to sinks
@@ -70,6 +73,8 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 
 			if respStatusCode, respStatus, body = rt.netHandle.sendPost(job.EventPayload); respStatusCode != http.StatusOK {
 
+				atomic.AddUint64(&rt.failCount, 1)
+
 				// the sleep may have gone to zero, to start things off again, assign it to 1
 				if worker.sleepTime < 1 {
 					worker.sleepTime = 1
@@ -90,6 +95,7 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 				continue
 
 			} else {
+				atomic.AddUint64(&rt.successCount, 1)
 				// success
 				worker.sleepTime = worker.sleepTime / 2
 				log.Printf("sleep for worker %v decreased to %v", worker.workerID, worker.sleepTime)
@@ -288,6 +294,13 @@ func (rt *HandleT) crashRecover() {
 	}
 }
 
+func (rt *HandleT) printStatsLoop() {
+	for {
+		time.Sleep(5 * time.Second)
+		fmt.Println("Network Success/Fail", rt.successCount, rt.failCount)
+	}
+}
+
 //Setup initializes this module
 func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	loadConfig()
@@ -304,7 +317,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.perfStats.Setup("StatsUpdate:" + destID)
 
 	rt.initWorkers()
-
+	go rt.printStatsLoop()
 	go rt.statusInsertLoop()
 	go rt.generatorLoop()
 }

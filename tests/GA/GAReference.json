@@ -1,0 +1,8 @@
+{
+    "t": "string",
+    "v": "int",
+    "pr1ps": "int",
+    "pr1qt": "int",
+    "pr1pr": "float",
+    "ev": "int"
+}
