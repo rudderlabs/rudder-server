@@ -200,7 +200,7 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT) {
 	misc.Assert(ok)
 
 	//Create jobs that can be processed further
-	toProcessJobs := createDummpyJobsFromEvents(transformUserEventList, userIDList, userJobs)
+	toProcessJobs := createUserTransformedJobsFromEvents(transformUserEventList, userIDList, userJobs)
 
 	//Some sanity check to make sure we have all the jobs
 	misc.Assert(len(toProcessJobs) == totalJobs)
@@ -219,7 +219,7 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT) {
 //Those sesssion events are transformed and we have a transformed set of
 //events that must be processed further via destination specific transformations
 //(in processJobsForDest). This function creates dummy jobs from eventList
-func createDummpyJobsFromEvents(transformUserEventList []interface{},
+func createUserTransformedJobsFromEvents(transformUserEventList []interface{},
 	userIDList []string, userJobs map[string][]*jobsdb.JobT) []*jobsdb.JobT {
 
 	dummyJobList := make([]*jobsdb.JobT, 0)
