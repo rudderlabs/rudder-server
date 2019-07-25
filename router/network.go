@@ -1,7 +1,7 @@
 package router
 
 import (
-	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -12,24 +12,31 @@ import (
 
 //NetHandleT is the wrapper holding private variables
 type NetHandleT struct {
-	postInfo   integrations.PostParameterT
 	httpClient *http.Client
 }
 
 func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 
 	client := network.httpClient
-	req, err := http.NewRequest("GET", network.postInfo.URL, nil)
-	misc.AssertError(err)
 
-	var eventMap map[string]interface{}
+	//Parse the response to get parameters
+	postInfo := integrations.GetPostInfo(jsonData)
 
-	err = json.Unmarshal(jsonData, &eventMap)
-	misc.AssertError(err)
+	var req *http.Request
+	var err error
+	if useTestSink {
+		req, err = http.NewRequest("GET", "http://localhost:8181/", nil)
+		misc.AssertError(err)
+	} else {
+		req, err = http.NewRequest("GET", postInfo.URL, nil)
+		misc.AssertError(err)
+	}
 
 	queryParams := req.URL.Query()
-	if network.postInfo.Payload == integrations.PostDataKV {
-		for key, val := range eventMap {
+	if postInfo.Type == integrations.PostDataKV {
+		payloadKV, ok := postInfo.Payload.(map[string]interface{})
+		misc.Assert(ok)
+		for key, val := range payloadKV {
 			queryParams.Add(key, val.(string))
 		}
 	} else {
@@ -59,6 +66,6 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 
 //Setup initializes the module
 func (network *NetHandleT) Setup(destID string) {
-	network.postInfo = integrations.GetPostInfo(destID)
+	fmt.Println("Network Handler Startup")
 	network.httpClient = &http.Client{}
 }

@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"runtime/debug"
+	//"runtime/debug"
 	"time"
 )
 
 //AssertError panics if error
 func AssertError(err error) {
 	if err != nil {
-		debug.SetTraceback("all")
-		debug.PrintStack()
+		//debug.SetTraceback("all")
+		//debug.PrintStack()
 		panic(err)
 	}
 }
@@ -21,8 +21,8 @@ func AssertError(err error) {
 //Assert panics if false
 func Assert(cond bool) {
 	if !cond {
-		debug.SetTraceback("all")
-		debug.PrintStack()
+		//debug.SetTraceback("all")
+		//debug.PrintStack()
 		panic("Assertion failed")
 	}
 }
@@ -75,6 +75,20 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
 		return nil, false
 	}
 	return eventListJSONBatchType, true
+}
+
+//GetRudderEventUserID return the UserID from the object
+func GetRudderEventUserID(eventPayload json.RawMessage) (string, bool) {
+	eventList, ok := ParseRudderEventBatch(eventPayload)
+	if !ok || len(eventList) == 0 {
+		return "", false
+	}
+	userID, ok := GetRudderEventVal("rl_anonymous_id", eventList[0])
+	if !ok {
+		return "", false
+	}
+	userIDStr, ok := userID.(string)
+	return userIDStr, true
 }
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
