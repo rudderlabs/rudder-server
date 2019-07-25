@@ -51,7 +51,7 @@ func loadConfig() {
 	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(5)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
 	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
-	useTestSink = config.GetBool("Router.userTestSink", false)
+	useTestSink = config.GetBool("Router.useTestSink", false)
 }
 
 func (rt *HandleT) workerProcess(worker *Worker) {
@@ -109,12 +109,12 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 		}
 
 		if respStatusCode == http.StatusOK {
-			status.JobState = "succeeded"
+			status.JobState = jobsdb.SucceededState
 			log.Println("sending success status to response")
 		} else {
 			// the job failed
 			worker.failedJobs++
-			status.JobState = "failed"
+			status.JobState = jobsdb.FailedState
 			log.Println("sending failed status to response with done")
 		}
 
@@ -241,7 +241,7 @@ func (rt *HandleT) generatorLoop() {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-				JobState:      "executing",
+				JobState:      jobsdb.ExecutingState,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
@@ -278,7 +278,7 @@ func (rt *HandleT) crashRecover() {
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
-				JobState:      "failed",
+				JobState:      jobsdb.FailedState,
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check
 			}
@@ -301,7 +301,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.netHandle.Setup(destID)
 
 	rt.perfStats = &misc.PerfStats{}
-	rt.perfStats.Setup("StatsUpdate")
+	rt.perfStats.Setup("StatsUpdate:" + destID)
 
 	rt.initWorkers()
 

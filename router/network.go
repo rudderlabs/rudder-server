@@ -1,6 +1,7 @@
 package router
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -65,5 +66,6 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 
 //Setup initializes the module
 func (network *NetHandleT) Setup(destID string) {
+	fmt.Println("Network Handler Startup")
 	network.httpClient = &http.Client{}
 }

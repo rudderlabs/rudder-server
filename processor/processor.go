@@ -1,7 +1,6 @@
 package processor
 
 import (
-	"container/heap"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -17,69 +16,11 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
-//We keep a priority queue of user_id to last event
-//timestamp from that user
-type pqItemT struct {
-	userID string    //userID
-	lastTS time.Time //last timestamp
-	index  int       //index in priority queue
-}
-
-type pqT []*pqItemT
-
-func (pq pqT) Len() int { return len(pq) }
-
-func (pq pqT) Less(i, j int) bool {
-	return pq[i].lastTS.Before(pq[j].lastTS)
-}
-
-func (pq pqT) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-	pq[i].index = i
-	pq[j].index = j
-}
-
-func (pq *pqT) Push(x interface{}) {
-	n := len(*pq)
-	item := x.(*pqItemT)
-	item.index = n
-	*pq = append(*pq, item)
-}
-
-func (pq *pqT) Pop() interface{} {
-	old := *pq
-	n := len(old)
-	item := old[n-1]
-	item.index = -1
-	*pq = old[0 : n-1]
-	return item
-}
-
-func (pq *pqT) Top() *pqItemT {
-	item := (*pq)[len(*pq)-1]
-	return item
-}
-
-func (pq *pqT) Remove(item *pqItemT) {
-	heap.Remove(pq, item.index)
-}
-
-func (pq *pqT) Update(item *pqItemT, newTS time.Time) {
-	item.lastTS = newTS
-	heap.Fix(pq, item.index)
-}
-
-func (pq *pqT) Print() {
-	for _, v := range *pq {
-		log.Println(*v)
-	}
-}
-
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
 	gatewayDB          *jobsdb.HandleT
 	routerDB           *jobsdb.HandleT
-	integ              *integrations.HandleT
+	transformer        *transformerHandleT
 	statsJobs          *misc.PerfStats
 	statsDBR           *misc.PerfStats
 	statsDBW           *misc.PerfStats
@@ -113,7 +54,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) 
 	loadConfig()
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
-	proc.integ = &integrations.HandleT{}
+	proc.transformer = &transformerHandleT{}
 	proc.statsJobs = &misc.PerfStats{}
 	proc.statsDBR = &misc.PerfStats{}
 	proc.statsDBW = &misc.PerfStats{}
@@ -124,7 +65,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) 
 	proc.statsJobs.Setup("ProcessorJobs")
 	proc.statsDBR.Setup("ProcessorDBRead")
 	proc.statsDBW.Setup("ProcessorDBWrite")
-	proc.integ.Setup()
+	proc.transformer.Setup()
 	go proc.mainLoop()
 	if processSessions {
 		log.Println("Starting session processor")
@@ -146,6 +87,10 @@ func loadConfig() {
 	sessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	processSessions = config.GetBool("Processor.processSessions", true)
 	sessionThresholdInS = config.GetDuration("Processor.sessionThresholdInS", time.Duration(20)) * time.Second
+	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
+	numTransformWorker = config.GetInt("Processor.numTransformWorker", 32)
+	maxRetry = config.GetInt("Processor.maxRetry", 3)
+	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 
 }
 
@@ -188,7 +133,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 				index:  -1,
 			}
 			proc.userPQItemMap[userID] = pqItem
-			heap.Push(&proc.userJobPQ, pqItem)
+			proc.userJobPQ.Add(pqItem)
 		} else {
 			misc.Assert(pqItem.index != -1)
 			proc.userJobPQ.Update(pqItem, time.Now())
@@ -220,14 +165,83 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 }
 
 func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT) {
-	var toProcessJobs []*jobsdb.JobT
+
+	userEventsMap := make(map[string][]interface{})
+
+	totalJobs := 0
+	allJobIDs := make(map[int64]bool)
+	//We extract the individual events from the batch structure
+	//and create a single list of events per user
 	for userID := range userJobs {
-		//This is where we should call transform too
-		toProcessJobs = append(toProcessJobs, userJobs[userID]...)
+		userEventsMap[userID] = make([]interface{}, 0)
+		for _, job := range userJobs[userID] {
+			totalJobs++
+			allJobIDs[job.JobID] = true
+			eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
+			if !ok {
+				continue
+			}
+			userEventsMap[userID] = append(userEventsMap[userID], eventList...)
+		}
 	}
-	if len(toProcessJobs) > 0 {
-		proc.processJobs(toProcessJobs)
+
+	//Create a list of list of user events which is passed to transformer
+	userEventsList := make([]interface{}, 0)
+	userIDList := make([]string, 0) //Order of users which are added to list
+	for userID := range userEventsMap {
+		userEventsList = append(userEventsList, userEventsMap[userID])
+		userIDList = append(userIDList, userID)
 	}
+	misc.Assert(len(userEventsList) == len(userEventsMap))
+
+	//Call the transformation function
+	transformUserEventList, ok := proc.transformer.Transform(userEventsList,
+		integrations.GetUserTransformURL(), false)
+	misc.Assert(ok)
+
+	//Create jobs that can be processed further
+	toProcessJobs := createUserTransformedJobsFromEvents(transformUserEventList, userIDList, userJobs)
+
+	//Some sanity check to make sure we have all the jobs
+	misc.Assert(len(toProcessJobs) == totalJobs)
+	for _, job := range toProcessJobs {
+		_, ok := allJobIDs[job.JobID]
+		misc.Assert(ok)
+		delete(allJobIDs, job.JobID)
+	}
+	misc.Assert(len(allJobIDs) == 0)
+
+	//Process
+	proc.processJobsForDest(toProcessJobs)
+}
+
+//We create sessions (of individul events) from set of input jobs  from a user
+//Those sesssion events are transformed and we have a transformed set of
+//events that must be processed further via destination specific transformations
+//(in processJobsForDest). This function creates jobs from eventList
+func createUserTransformedJobsFromEvents(transformUserEventList []interface{},
+	userIDList []string, userJobs map[string][]*jobsdb.JobT) []*jobsdb.JobT {
+
+	transJobList := make([]*jobsdb.JobT, 0)
+
+	misc.Assert(len(transformUserEventList) == len(userIDList))
+	for idx, userID := range userIDList {
+		userEvents := transformUserEventList[idx]
+		transPayload := map[string]interface{}{"batch": userEvents}
+		transPayloadRaw, err := json.Marshal(transPayload)
+		misc.AssertError(err)
+		for idx, job := range userJobs[userID] {
+			//We put all the transformed event on the first job
+			//and empty out the remaining payloads
+			if idx == 0 {
+				job.EventPayload = transPayloadRaw
+			} else {
+				job.EventPayload = make([]byte, 0)
+			}
+			transJobList = append(transJobList, job)
+		}
+	}
+	return transJobList
 }
 
 func (proc *HandleT) createSessions() {
@@ -283,7 +297,7 @@ func (proc *HandleT) createSessions() {
 	}
 }
 
-func (proc *HandleT) processJobs(jobList []*jobsdb.JobT) {
+func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT) {
 
 	proc.statsJobs.Start()
 
@@ -308,9 +322,8 @@ func (proc *HandleT) processJobs(jobList []*jobsdb.JobT) {
 
 	for _, batchEvent := range jobList {
 
-		goodJSON := false
 		eventList, ok := misc.ParseRudderEventBatch(batchEvent.EventPayload)
-		
+
 		if ok {
 			//Iterate through all the events in the batch
 			for _, singularEvent := range eventList {
@@ -325,7 +338,6 @@ func (proc *HandleT) processJobs(jobList []*jobsdb.JobT) {
 
 				for _, destID := range destIDs {
 					//We have at-least one event so marking it good
-					goodJSON = true
 					_, ok := eventsByDest[destID]
 					if !ok {
 						eventsByDest[destID] = make([]interface{}, 0)
@@ -337,13 +349,9 @@ func (proc *HandleT) processJobs(jobList []*jobsdb.JobT) {
 		}
 
 		//Mark the batch event as processed
-		state := "aborted"
-		if goodJSON {
-			state = "succeeded"
-		}
 		newStatus := jobsdb.JobStatusT{
 			JobID:         batchEvent.JobID,
-			JobState:      state,
+			JobState:      jobsdb.SucceededState,
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
@@ -358,7 +366,11 @@ func (proc *HandleT) processJobs(jobList []*jobsdb.JobT) {
 	for destID, destEventList := range eventsByDest {
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
-		destTransformEventList, ok := proc.integ.Transform(destEventList, destID)
+		url, ok := integrations.GetDestinationURL(destID)
+		if !ok {
+			continue
+		}
+		destTransformEventList, ok := proc.transformer.Transform(destEventList, url, true)
 		if !ok {
 			continue
 		}
@@ -429,7 +441,7 @@ func (proc *HandleT) mainLoop() {
 			for _, batchEvent := range combinedList {
 				newStatus := jobsdb.JobStatusT{
 					JobID:         batchEvent.JobID,
-					JobState:      "executing",
+					JobState:      jobsdb.ExecutingState,
 					AttemptNum:    1,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
@@ -441,7 +453,7 @@ func (proc *HandleT) mainLoop() {
 			proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
 			proc.addJobsToSessions(combinedList)
 		} else {
-			proc.processJobs(combinedList)
+			proc.processJobsForDest(combinedList)
 		}
 
 	}
