@@ -10,14 +10,14 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"io/ioutil"
-	"log"
 	"math"
 	"math/rand"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 	"sync/atomic"
+
+	"github.com/rudderlabs/rudder-server/misc"
 )
 
 const (
@@ -29,20 +29,13 @@ const (
 	variations       = 5
 )
 
+
 var (
-	gaReferenceMap []byte
 	totalCount uint64
 )
 
-func check(e error) {
-	if e != nil {
-		panic(e)
-	}
-}
-
 var done chan bool
 func main() {
-	//fmt.Println("starting..")
 	
 	done = make(chan bool)
 
@@ -51,18 +44,15 @@ func main() {
 	eventPtr := flag.String("event", "Track", "give the event name you want the jobs for, default is track")
 	numberOfIterPtr := flag.Int("ni", -1, "number of iterations, default is infinite")
 	sendToRuderPtr := flag.Bool("rudder", true, "true/false for sending to rudder BE, default true")
-	sendToGAPtr := flag.Bool("ga", true, "true/false for sending to GA, default true")
 
 	flag.Parse()
 
-	gaReferenceMap, _ = ioutil.ReadFile("GAReference.json")
-
 	for i := 1; i <= *numberOfUsers; i++ {
-		id, _ := uuid.NewV4()
+		id := uuid.NewV4()
 		if *numberOfEventPtr == "one" {
-			go generateJobsForSameEvent(id.String(), *eventPtr, *numberOfIterPtr, *sendToRuderPtr, *sendToGAPtr)
+			go generateJobsForSameEvent(id.String(), *eventPtr, *numberOfIterPtr, *sendToRuderPtr)
 		} else {
-			go generateJobsForMulitpleEvent(id.String(), *numberOfIterPtr, *sendToRuderPtr, *sendToGAPtr)
+			go generateJobsForMulitpleEvent(id.String(), *numberOfIterPtr, *sendToRuderPtr)
 		}
 	}
 
@@ -73,15 +63,14 @@ func main() {
 	fmt.Println("Total Sent", totalCount)
 }
 
-func generateJobsForSameEvent(uid string, eventName string, count int, rudder bool, ga bool) {
+func generateJobsForSameEvent(uid string, eventName string, count int, rudder bool) {
 	////fmt.Println("event name input: ", eventName)
 	var err error
-	var data, gaJSONData []byte
+	var data []byte
 	var rudderEvents []map[string]interface{}
-	var unmarshalleRudderdData, unmarshalleGAData map[string]interface{}
+	var unmarshalleRudderdData map[string]interface{}
 	data, err = ioutil.ReadFile("mapping.json")
-	check(err)
-	////fmt.Println(string(data))
+	misc.AssertError(err)
 
 	result := gjson.GetBytes(data, isBatchPath)
 
@@ -93,7 +82,6 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 
 	for _, event := range events {
 		unmarshalleRudderdData = nil
-		unmarshalleGAData = nil
 		eventMap := event.Map()
 		////fmt.Println(eventMap["name"])
 
@@ -102,57 +90,35 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 		}
 		mapping := eventMap["mapping"].Map()
 		rudderJSON := eventMap["rudder"]
-		gaJSON := eventMap["GA"]
 
 		rudderData := []byte(rudderJSON.Raw)
-		gaJSONData = []byte(gaJSON.Raw)
 
-		var userIDpath, gauserIDpath string
+		var userIDpath string
 
 		for {
 			if count > 0 && countLoop >= count {
 				break
 			}
-
-			for k, v := range mapping {
+			
+			for k, _ := range mapping {
 				////fmt.Printf("key %v, val %v \n", k, v.Value())
 
 				if strings.Contains(k, "anonymous_id") {
 					userIDpath = k
-					gauserIDpath = v.Value().(string)
 				}
 
 				// Use this to generate random data for rudder-stack
 				//rudderData, err = sjson.SetBytes(rudderData, k, "abc")
-				//check(err)
+				//misc.AssertError(err)
 				rudderData = generateData(&rudderData, k, gjson.Get(rudderJSON.Raw, k).Value())
-
-				//gaJSONData, err = sjson.SetBytes(gaJSONData, v.Value().(string), gjson.Get(rudderJSON.Raw, k).Value())
-				// build the json to be pushed to GA, with the updated/changed rudderdata
-				////fmt.Println("substituting ", v.Value().(string), gjson.Get(string(rudderData), k).Value())
-				gaJSONData, err = sjson.SetBytes(gaJSONData, v.Value().(string), gjson.Get(string(rudderData), k).Value())
-				check(err)
 			}
 
 			rudderData, err = sjson.SetBytes(rudderData, userIDpath, uid)
-			check(err)
-
-			//gaJSONData, err = sjson.SetBytes(gaJSONData, v.Value().(string), gjson.Get(rudderJSON.Raw, k).Value())
-			// build the json to be pushed to GA, with the updated/changed rudderdata
-			gaJSONData, err = sjson.SetBytes(gaJSONData, gauserIDpath, uid)
-			check(err)
-
-			err = json.Unmarshal(gaJSONData, &unmarshalleGAData)
-
-			////fmt.Println(unmarshalleGAData)
-
-			if ga {
-				sendToGA(&unmarshalleGAData)
-			}
+			misc.AssertError(err)
 
 			// Unmarshal
 			err = json.Unmarshal(rudderData, &unmarshalleRudderdData)
-			check(err)
+			misc.AssertError(err)
 
 			//append to list to be send to rudder-stack
 			rudderEvents = append(rudderEvents, unmarshalleRudderdData)
@@ -179,24 +145,22 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 
 }
 
-func generateJobsForMulitpleEvent(uid string, count int, rudder bool, ga bool) {
+func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 	var err error
-	var data, gaJSONData []byte
+	var data []byte
 	var rudderEvents []map[string]interface{}
-	var unmarshalleRudderdData, unmarshalleGAData map[string]interface{}
+	var unmarshalleRudderdData map[string]interface{}
 	data, err = ioutil.ReadFile("mapping.json")
-	check(err)
-	////fmt.Println(string(data))
+	misc.AssertError(err)
 
 	result := gjson.GetBytes(data, isBatchPath)
 
 	isBatchToBeMade := result.Bool()
-	////fmt.Println(isBatchToBeMade)
 
 	events := gjson.GetBytes(data, eventsPath).Array()
 	countLoop := 0
 
-	var userIDpath, gauserIDpath string
+	var userIDpath string
 
 	for {
 		if count > 0 && countLoop >= count {
@@ -205,7 +169,6 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool, ga bool) {
 
 		for _, event := range events {
 			unmarshalleRudderdData = nil
-			unmarshalleGAData = nil
 			eventMap := event.Map()
 			////fmt.Println(eventMap["name"])
 
@@ -214,50 +177,26 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool, ga bool) {
 			} */
 			mapping := eventMap["mapping"].Map()
 			rudderJSON := eventMap["rudder"]
-			gaJSON := eventMap["GA"]
 
 			rudderData := []byte(rudderJSON.Raw)
-			gaJSONData = []byte(gaJSON.Raw)
 
-			for k, v := range mapping {
+			for k, _ := range mapping {
 				////fmt.Printf("key %v, val %v \n", k, v.Value())
 
 				if strings.Contains(k, "anonymous_id") {
 					userIDpath = k
-					gauserIDpath = v.Value().(string)
 				}
 
-				// Use this to generate random data for rudder-stack
-				//rudderData, err = sjson.SetBytes(rudderData, k, "abc")
-				//check(err)
 				rudderData = generateData(&rudderData, k, gjson.Get(rudderJSON.Raw, k).Value())
 
-				//gaJSONData, err = sjson.SetBytes(gaJSONData, v.Value().(string), gjson.Get(rudderJSON.Raw, k).Value())
-				// build the json to be pushed to GA, with the updated/changed rudderdata
-				gaJSONData, err = sjson.SetBytes(gaJSONData, v.Value().(string), gjson.Get(string(rudderData), k).Value())
-				check(err)
 			}
 
 			rudderData, err = sjson.SetBytes(rudderData, userIDpath, uid)
-			check(err)
-
-			//gaJSONData, err = sjson.SetBytes(gaJSONData, v.Value().(string), gjson.Get(rudderJSON.Raw, k).Value())
-			// build the json to be pushed to GA, with the updated/changed rudderdata
-			gaJSONData, err = sjson.SetBytes(gaJSONData, gauserIDpath, uid)
-			check(err)
-
-			err = json.Unmarshal(gaJSONData, &unmarshalleGAData)
-
-			////fmt.Println(unmarshalleGAData)
-
-			if ga {
-				sendToGA(&unmarshalleGAData)
-			}
+			misc.AssertError(err)
 
 			err = json.Unmarshal(rudderData, &unmarshalleRudderdData)
-			check(err)
+			misc.AssertError(err)
 
-			//append to list to be send to rudder-stack
 			rudderEvents = append(rudderEvents, unmarshalleRudderdData)
 
 		}
@@ -288,16 +227,16 @@ func generateData(payload *[]byte, path string, value interface{}) []byte {
 	switch value.(type) {
 	case int:
 		*payload, err = sjson.SetBytes(*payload, path, rand.Intn(100))
-		check(err)
+		misc.AssertError(err)
 
 	case float64:
 		*payload, err = sjson.SetBytes(*payload, path, math.Round(rand.Float64()+5))
-		check(err)
+		misc.AssertError(err)
 
 	default:
 		i := rand.Intn(len(randStr))
 		*payload, err = sjson.SetBytes(*payload, path, randStr[i])
-		check(err)
+		misc.AssertError(err)
 
 	}
 
@@ -323,74 +262,4 @@ func sendToRudder(jsonPayload string) {
 	atomic.AddUint64(&totalCount, 1)	
 }
 
-func sendToGA(payload *map[string]interface{}) {
-	client := http.Client{}
-	req, err := http.NewRequest("GET", "https://www.google-analytics.com/collect", nil)
-	check(err)
 
-	queryParams := req.URL.Query()
-
-	for key, val := range *payload {
-		var value string
-		// special handling of version
-		result := gjson.GetBytes(gaReferenceMap, key)
-
-		//special handling of types requires as gjson and sjson takes all numbers as float but GA restricts on the typr
-		switch result.String() {
-		case "int":
-			switch val.(type) {
-			case int:
-				value = strconv.Itoa(val.(int))
-				//fmt.Println("int int ", value)
-
-			case float64:
-				value = strconv.Itoa(int(val.(float64)))
-			default:
-				value = string(val.(string))
-
-			}
-		case "float":
-			switch val.(type) {
-			case int:
-				value = fmt.Sprintf("%.2f", float64(val.(int)))
-				//fmt.Println("float int ", value)
-			case float64:
-				value = fmt.Sprintf("%.2f", val.(float64))
-				//fmt.Println("float float ", value)
-			default:
-				value = string(val.(string))
-			}
-		default:
-			switch val.(type) {
-			case int:
-				value = string(val.(int))
-
-			case float64:
-				value = fmt.Sprintf("%.2f", val.(float64))
-			default:
-				value = string(val.(string))
-			}
-
-		}
-
-		if len(value) > 0 {
-			queryParams.Add(key, value)
-		}
-	}
-
-	req.URL.RawQuery = queryParams.Encode()
-
-	log.Printf("url for GA: %s", req.URL.String())
-
-	req.Header.Add("User-Agent", "RudderLabs")
-
-	resp, err := client.Do(req)
-
-	check(err)
-
-	defer resp.Body.Close()
-	ioutil.ReadAll(resp.Body)
-	//respBody, _ := ioutil.ReadAll(resp.Body)
-	//fmt.Println(string(respBody))
-
-}
