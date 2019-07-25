@@ -5,14 +5,15 @@ import (
 	"hash/fnv"
 	"log"
 	"math"
+	"math/rand"
 	"net/http"
 	"sort"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
-	"github.com/tidwall/gjson"
 )
 
 //HandleT is the handle to this module.
@@ -37,19 +38,20 @@ type Worker struct {
 var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
 	readSleep, maxSleep, maxStatusUpdateWait                                       time.Duration
-	userIDPath                                                                     string
+	randomWorkerAssign, useTestSink                                                bool
 )
 
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
-	readSleep = config.GetDuration("Router.readSleepInS", time.Duration(1)) * time.Second
+	readSleep = config.GetDuration("Router.readSleepInMS", time.Duration(10)) * time.Millisecond
 	noOfWorkers = config.GetInt("Router.noOfWorkers", 8)
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	ser = config.GetInt("Router.ser", 3)
 	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(5)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
-	userIDPath = config.GetString("Router.userIDPath", "cid") //"batch.#.message.context.traits.anonymous_id" // need to change this after transformation module
+	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
+	useTestSink = config.GetBool("Router.userTestSink", false)
 }
 
 func (rt *HandleT) workerProcess(worker *Worker) {
@@ -141,13 +143,17 @@ func getHash(s string) int {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *Worker {
 	var w *Worker
-	// get userid from job.payload.
-	// also insert a find a free worker logic
-	userIDArray := gjson.GetBytes(job.EventPayload, userIDPath).Array()
-	userID := userIDArray[0].String()
 
-	// log.Println(userID)
-	index := int(math.Abs(float64(getHash(userID) % noOfWorkers)))
+	// also insert a find a free worker logic
+
+	postInfo := integrations.GetPostInfo(job.EventPayload)
+
+	var index int
+	if randomWorkerAssign {
+		index = rand.Intn(noOfWorkers)
+	} else {
+		index = int(math.Abs(float64(getHash(postInfo.UserID) % noOfWorkers)))
+	}
 	// log.Printf("userId: %s index: %d", userID, index)
 	for _, worker := range rt.workers {
 		if worker.workerID == index {

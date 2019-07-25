@@ -1259,6 +1259,10 @@ Later we can move this to query
 */
 func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string) {
 
+	if len(statusList) == 0 {
+		return
+	}
+
 	//First we sort by JobID
 	sort.Slice(statusList, func(i, j int) bool {
 		return statusList[i].JobID < statusList[j].JobID

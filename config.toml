@@ -24,21 +24,25 @@ mainCheckSleepDurationInS = 2
 
 [Integrations]
 maxChanSize = 2048
-numTransformWorker = 32
+numTransformWorker = 16
 maxRetry = 3
 retrySleepInMS = 100
 
 [Router]
 jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
-readSleepInS = 1
-noOfWorkers = 8
+readSleepInMS = 10
+noOfWorkers = 16
 noOfJobsPerChannel = 1000
 ser = 3
-maxSleepInS = 5
+maxSleepInS = 3600
 maxStatusUpdateWaitInS = 5
-userIDPath = "cid" 
+randomWorkerAssign = false
+useTestSink = false
 
 [Processor]
 loopSleepInMS = 10
 batchSize = 1000
+sessionThresholdEvents = 20
+sessionThresholdInS = 20
+processSessions = true

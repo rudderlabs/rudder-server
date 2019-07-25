@@ -76,6 +76,19 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
 	}
 	return eventListJSONBatchType, true
 }
+//Return the UserID from the object
+func GetRudderEventUserID(eventPayload json.RawMessage) (string, bool) {
+	eventList, ok := ParseRudderEventBatch(eventPayload)
+	if !ok || len(eventList) == 0 {
+		return "", false
+	}
+	userID, ok := GetRudderEventVal("rl_anonymous_id", eventList[0])
+	if !ok {
+		return "", false
+	}
+	userIDStr, ok := userID.(string)
+	return userIDStr, true
+}
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
 type PerfStats struct {
