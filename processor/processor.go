@@ -218,30 +218,30 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT) {
 //We create sessions (of individul events) from set of input jobs  from a user
 //Those sesssion events are transformed and we have a transformed set of
 //events that must be processed further via destination specific transformations
-//(in processJobsForDest). This function creates dummy jobs from eventList
+//(in processJobsForDest). This function creates jobs from eventList
 func createUserTransformedJobsFromEvents(transformUserEventList []interface{},
 	userIDList []string, userJobs map[string][]*jobsdb.JobT) []*jobsdb.JobT {
 
-	dummyJobList := make([]*jobsdb.JobT, 0)
+	transJobList := make([]*jobsdb.JobT, 0)
 
 	misc.Assert(len(transformUserEventList) == len(userIDList))
 	for idx, userID := range userIDList {
 		userEvents := transformUserEventList[idx]
-		dummyPayload := map[string]interface{}{"batch": userEvents}
-		dummyPayloadRaw, err := json.Marshal(dummyPayload)
+		transPayload := map[string]interface{}{"batch": userEvents}
+		transPayloadRaw, err := json.Marshal(transPayload)
 		misc.AssertError(err)
 		for idx, job := range userJobs[userID] {
 			//We put all the transformed event on the first job
-			//and empty out the remaining bayloads
+			//and empty out the remaining payloads
 			if idx == 0 {
-				job.EventPayload = dummyPayloadRaw
+				job.EventPayload = transPayloadRaw
 			} else {
 				job.EventPayload = make([]byte, 0)
 			}
-			dummyJobList = append(dummyJobList, job)
+			transJobList = append(transJobList, job)
 		}
 	}
-	return dummyJobList
+	return transJobList
 }
 
 func (proc *HandleT) createSessions() {
