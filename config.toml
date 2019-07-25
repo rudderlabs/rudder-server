@@ -22,12 +22,6 @@ maxDSSize = 100000
 maxMigrateOnce = 10
 mainCheckSleepDurationInS = 2
 
-[Integrations]
-maxChanSize = 2048
-numTransformWorker = 16
-maxRetry = 3
-retrySleepInMS = 100
-
 [Router]
 jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
@@ -44,5 +38,11 @@ useTestSink = false
 loopSleepInMS = 10
 batchSize = 1000
 sessionThresholdEvents = 20
-sessionThresholdInS = 20
+sessionThresholdInS = 3
 processSessions = true
+maxChanSize = 2048
+numTransformWorker = 8
+maxRetry = 3
+retrySleepInMS = 100
+
+
