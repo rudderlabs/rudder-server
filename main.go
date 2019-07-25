@@ -9,6 +9,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
+	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/rudderlabs/rudder-server/processor"
@@ -63,14 +64,18 @@ func main() {
 
 	//Setup the three modules, the gateway, the router and the processor
 	var gateway gateway.HandleT
-	var router router.HandleT
+
 	var processor processor.HandleT
 
 	//The router module should be setup for
 	//all the enabled destinations
-	router.Setup(&routerDB, "GA")
+	for _, dest := range integrations.GetAllDestinations() {
+		var router router.HandleT
+		fmt.Println("Enabling Destination", dest)
+		router.Setup(&routerDB, dest)
+	}
 
-	go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 
 	processor.Setup(&gatewayDB, &routerDB)
 	gateway.Setup(&gatewayDB)

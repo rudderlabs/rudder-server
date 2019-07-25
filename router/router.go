@@ -301,7 +301,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.netHandle.Setup(destID)
 
 	rt.perfStats = &misc.PerfStats{}
-	rt.perfStats.Setup("StatsUpdate")
+	rt.perfStats.Setup("StatsUpdate:" + destID)
 
 	rt.initWorkers()
 

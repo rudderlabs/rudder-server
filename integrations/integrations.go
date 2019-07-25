@@ -13,6 +13,7 @@ import (
 var destNameIDMap = map[string]string{
 	"google_analytics": "GA",
 	"rudderlabs":       "GA",
+	"amplitude":        "AM",
 }
 
 var (
@@ -34,6 +35,7 @@ func loadConfig() {
 //This should be coming from the config when that's ready
 var destJSTransformerMap = map[string]string{
 	"GA": "/v0/ga",
+	"AM": "/v0/amplitude",
 }
 
 const (
@@ -76,6 +78,16 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	postInfo.UserID, ok = transformMap["user_id"].(string)
 	misc.Assert(ok)
 	return postInfo
+}
+
+//GetAllDestinations returns all the destinations that have been
+//enabled
+func GetAllDestinations() []string {
+	allDest := make([]string, 0)
+	for dest := range destJSTransformerMap {
+		allDest = append(allDest, dest)
+	}
+	return allDest
 }
 
 //GetDestinationIDs parses the destination names from the
