@@ -93,7 +93,7 @@ func (trans *transformerHandleT) Setup() {
 }
 
 //Transform function is used to invoke transformer API
-//Transformer is not thread. If performance becomes
+//Transformer is not thread safe. If performance becomes
 //an issue we can create multiple transformer instances
 //but given that they are hitting the same NodeJS
 //process it may not be an issue if batch sizes (len clientEvents)
