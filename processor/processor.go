@@ -69,6 +69,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) 
 	proc.statsDBR.Setup("ProcessorDBRead")
 	proc.statsDBW.Setup("ProcessorDBWrite")
 	proc.transformer.Setup()
+	proc.crashRecover()
 	go proc.mainLoop()
 	if processSessions {
 		log.Println("Starting session processor")
@@ -424,7 +425,6 @@ func (proc *HandleT) mainLoop() {
 		//Should not have any failure while processing (in v0) so
 		//retryList should be empty. Remove the assert
 		retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery)
-		misc.Assert(len(retryList) == 0)
 
 		unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery)
 
@@ -459,5 +459,34 @@ func (proc *HandleT) mainLoop() {
 			proc.processJobsForDest(combinedList)
 		}
 
+	}
+}
+
+func (proc *HandleT) crashRecover() {
+
+	for {
+		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, batchSize)
+
+		if len(execList) == 0 {
+			break
+		}
+		log.Println("Processor crash recovering", len(execList))
+		fmt.Println("Processor crash recovering", len(execList))
+
+		var statusList []*jobsdb.JobStatusT
+
+		for _, job := range execList {
+			status := jobsdb.JobStatusT{
+				JobID:         job.JobID,
+				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				JobState:      jobsdb.FailedState,
+				ErrorCode:     "",
+				ErrorResponse: []byte(`{}`), // check
+			}
+			statusList = append(statusList, &status)
+		}
+		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
 	}
 }
