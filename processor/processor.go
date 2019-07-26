@@ -18,17 +18,17 @@ import (
 
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
-	gatewayDB          *jobsdb.HandleT
-	routerDB           *jobsdb.HandleT
-	transformer        *transformerHandleT
-	statsJobs          *misc.PerfStats
-	statsDBR           *misc.PerfStats
-	statsDBW           *misc.PerfStats
-	userJobListMap     map[string][]*jobsdb.JobT
-	userEventLengthMap map[string]int
-	userPQItemMap      map[string]*pqItemT
-	userJobPQ          pqT
-	userPQLock         sync.Mutex
+	gatewayDB      *jobsdb.HandleT
+	routerDB       *jobsdb.HandleT
+	transformer    *transformerHandleT
+	statsJobs      *misc.PerfStats
+	statsDBR       *misc.PerfStats
+	statsDBW       *misc.PerfStats
+	userJobListMap map[string][]*jobsdb.JobT
+	userEventsMap  map[string][]interface{}
+	userPQItemMap  map[string]*pqItemT
+	userJobPQ      pqT
+	userPQLock     sync.Mutex
 }
 
 //Print the internal structure
@@ -40,8 +40,8 @@ func (proc *HandleT) Print() {
 		log.Println(k, ":", len(v))
 	}
 	log.Println("EventLength")
-	for k, v := range proc.userEventLengthMap {
-		log.Println(k, ":", v)
+	for k, v := range proc.userEventsMap {
+		log.Println(k, ":", len(v))
 	}
 	log.Println("PQItem")
 	for k, v := range proc.userPQItemMap {
@@ -62,7 +62,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) 
 	proc.statsDBR = &misc.PerfStats{}
 	proc.statsDBW = &misc.PerfStats{}
 	proc.userJobListMap = make(map[string][]*jobsdb.JobT)
-	proc.userEventLengthMap = make(map[string]int)
+	proc.userEventsMap = make(map[string][]interface{})
 	proc.userPQItemMap = make(map[string]*pqItemT)
 	proc.userJobPQ = make(pqT, 0)
 	proc.statsJobs.Setup("ProcessorJobs")
@@ -108,7 +108,13 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 	processUserIDs := make(map[string]bool)
 
 	for _, job := range jobList {
-		userID, ok := misc.GetRudderEventUserID(job.EventPayload)
+		//Append to job to list. If over threshold, just process them
+		eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
+		if !ok {
+			//bad event
+			continue
+		}
+		userID, ok := misc.GetRudderEventUserID(eventList)
 		if !ok {
 			log.Println("Failed to get userID for job")
 			continue
@@ -116,19 +122,13 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		_, ok = proc.userJobListMap[userID]
 		if !ok {
 			proc.userJobListMap[userID] = make([]*jobsdb.JobT, 0)
-			proc.userEventLengthMap[userID] = 0
-		}
-		//Append to job to list. If over threshold, just process them
-		eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
-		if !ok {
-			//bad event
-			continue
+			proc.userEventsMap[userID] = make([]interface{}, 0)
 		}
 		//Add the job to the userID specific lists
 		proc.userJobListMap[userID] = append(proc.userJobListMap[userID], job)
-		proc.userEventLengthMap[userID] += len(eventList)
+		proc.userEventsMap[userID] = append(proc.userEventsMap[userID], eventList...)
 		//If we have enough events from that user, we process jobs
-		if proc.userEventLengthMap[userID] > sessionThresholdEvents {
+		if len(proc.userEventsMap[userID]) > sessionThresholdEvents {
 			processUserIDs[userID] = true
 		}
 		pqItem, ok := proc.userPQItemMap[userID]
@@ -149,14 +149,16 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 
 	if len(processUserIDs) > 0 {
 		userJobsToProcess := make(map[string][]*jobsdb.JobT)
+		userEventsToProcess := make(map[string][]interface{})
 		log.Println("Post Add Processing")
 		proc.Print()
 
 		//We clear the data structure for these users
 		for userID := range processUserIDs {
 			userJobsToProcess[userID] = proc.userJobListMap[userID]
+			userEventsToProcess[userID] = proc.userEventsMap[userID]
 			delete(proc.userJobListMap, userID)
-			delete(proc.userEventLengthMap, userID)
+			delete(proc.userEventsMap, userID)
 			proc.userJobPQ.Remove(proc.userPQItemMap[userID])
 			delete(proc.userPQItemMap, userID)
 		}
@@ -164,41 +166,33 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		proc.Print()
 		//We release the block before actually processing
 		proc.userPQLock.Unlock()
-		proc.processUserJobs(userJobsToProcess)
+		proc.processUserJobs(userJobsToProcess, userEventsToProcess)
 		return
 	}
 	proc.userPQLock.Unlock()
 }
 
-func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT) {
+func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEvents map[string][]interface{}) {
 
-	userEventsMap := make(map[string][]interface{})
+	misc.Assert(len(userEvents) == len(userJobs))
 
 	totalJobs := 0
 	allJobIDs := make(map[int64]bool)
-	//We extract the individual events from the batch structure
-	//and create a single list of events per user
 	for userID := range userJobs {
-		userEventsMap[userID] = make([]interface{}, 0)
 		for _, job := range userJobs[userID] {
 			totalJobs++
 			allJobIDs[job.JobID] = true
-			eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
-			if !ok {
-				continue
-			}
-			userEventsMap[userID] = append(userEventsMap[userID], eventList...)
 		}
 	}
 
 	//Create a list of list of user events which is passed to transformer
 	userEventsList := make([]interface{}, 0)
 	userIDList := make([]string, 0) //Order of users which are added to list
-	for userID := range userEventsMap {
-		userEventsList = append(userEventsList, userEventsMap[userID])
+	for userID := range userEvents {
+		userEventsList = append(userEventsList, userEvents[userID])
 		userIDList = append(userIDList, userID)
 	}
-	misc.Assert(len(userEventsList) == len(userEventsMap))
+	misc.Assert(len(userEventsList) == len(userEvents))
 
 	//Call the transformation function
 	transformUserEventList, ok := proc.transformer.Transform(userEventsList,
@@ -206,10 +200,11 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT) {
 	misc.Assert(ok)
 
 	//Create jobs that can be processed further
-	toProcessJobs := createUserTransformedJobsFromEvents(transformUserEventList, userIDList, userJobs)
+	toProcessJobs, toProcessEvents := createUserTransformedJobsFromEvents(transformUserEventList, userIDList, userJobs)
 
 	//Some sanity check to make sure we have all the jobs
 	misc.Assert(len(toProcessJobs) == totalJobs)
+	misc.Assert(len(toProcessEvents) == totalJobs)
 	for _, job := range toProcessJobs {
 		_, ok := allJobIDs[job.JobID]
 		misc.Assert(ok)
@@ -218,7 +213,7 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT) {
 	misc.Assert(len(allJobIDs) == 0)
 
 	//Process
-	proc.processJobsForDest(toProcessJobs)
+	proc.processJobsForDest(toProcessJobs, toProcessEvents)
 }
 
 //We create sessions (of individul events) from set of input jobs  from a user
@@ -226,28 +221,27 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT) {
 //events that must be processed further via destination specific transformations
 //(in processJobsForDest). This function creates jobs from eventList
 func createUserTransformedJobsFromEvents(transformUserEventList []interface{},
-	userIDList []string, userJobs map[string][]*jobsdb.JobT) []*jobsdb.JobT {
+	userIDList []string, userJobs map[string][]*jobsdb.JobT) ([]*jobsdb.JobT, [][]interface{}) {
 
 	transJobList := make([]*jobsdb.JobT, 0)
-
+	transEventList := make([][]interface{}, 0)
 	misc.Assert(len(transformUserEventList) == len(userIDList))
 	for idx, userID := range userIDList {
 		userEvents := transformUserEventList[idx]
-		transPayload := map[string]interface{}{"batch": userEvents}
-		transPayloadRaw, err := json.Marshal(transPayload)
-		misc.AssertError(err)
+		userEventsList, ok := userEvents.([]interface{})
+		misc.Assert(ok)
 		for idx, job := range userJobs[userID] {
 			//We put all the transformed event on the first job
 			//and empty out the remaining payloads
-			if idx == 0 {
-				job.EventPayload = transPayloadRaw
-			} else {
-				job.EventPayload = make([]byte, 0)
-			}
 			transJobList = append(transJobList, job)
+			if idx == 0 {
+				transEventList = append(transEventList, userEventsList)
+			} else {
+				transEventList = append(transEventList, nil)
+			}
 		}
 	}
-	return transJobList
+	return transJobList, transEventList
 }
 
 func (proc *HandleT) createSessions() {
@@ -272,7 +266,7 @@ func (proc *HandleT) createSessions() {
 		}
 
 		userJobsToProcess := make(map[string][]*jobsdb.JobT)
-
+		userEventsToProcess := make(map[string][]interface{})
 		//Find all jobs that need to be processed
 		for {
 			if proc.userJobPQ.Len() == 0 {
@@ -284,10 +278,10 @@ func (proc *HandleT) createSessions() {
 				pqItem, ok := proc.userPQItemMap[userID]
 				misc.Assert(ok && pqItem == oldestItem)
 				userJobsToProcess[userID] = proc.userJobListMap[userID]
-
+				userEventsToProcess[userID] = proc.userEventsMap[userID]
 				//Clear from the map
 				delete(proc.userJobListMap, userID)
-				delete(proc.userEventLengthMap, userID)
+				delete(proc.userEventsMap, userID)
 				proc.userJobPQ.Remove(proc.userPQItemMap[userID])
 				delete(proc.userPQItemMap, userID)
 				continue
@@ -298,12 +292,12 @@ func (proc *HandleT) createSessions() {
 		if len(userJobsToProcess) > 0 {
 			log.Println("Processing Session Check")
 			proc.Print()
-			proc.processUserJobs(userJobsToProcess)
+			proc.processUserJobs(userJobsToProcess, userEventsToProcess)
 		}
 	}
 }
 
-func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT) {
+func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]interface{}) {
 
 	proc.statsJobs.Start()
 
@@ -311,11 +305,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT) {
 	var statusList []*jobsdb.JobStatusT
 	var eventsByDest = make(map[string][]interface{})
 
-	//Sort by JOBID
-	sort.Slice(jobList, func(i, j int) bool {
-		return jobList[i].JobID < jobList[j].JobID
-	})
-
+	misc.Assert(parsedEventList == nil || len(jobList) == len(parsedEventList))
 	//Each block we receive from a client has a bunch of
 	//requests. We parse the block and take out individual
 	//requests, call the destination specific transformation
@@ -326,9 +316,16 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT) {
 	//Event count for performance stat monitoring
 	totalEvents := 0
 
-	for _, batchEvent := range jobList {
+	for idx, batchEvent := range jobList {
 
-		eventList, ok := misc.ParseRudderEventBatch(batchEvent.EventPayload)
+		var eventList []interface{}
+		var ok bool
+		if parsedEventList == nil {
+			eventList, ok = misc.ParseRudderEventBatch(batchEvent.EventPayload)
+		} else {
+			eventList = parsedEventList[idx]
+			ok = (eventList != nil)
+		}
 
 		if ok {
 			//Iterate through all the events in the batch
@@ -440,6 +437,11 @@ func (proc *HandleT) mainLoop() {
 		proc.statsDBR.End(len(combinedList))
 		proc.statsDBR.Print()
 
+		//Sort by JOBID
+		sort.Slice(combinedList, func(i, j int) bool {
+			return combinedList[i].JobID < combinedList[j].JobID
+		})
+
 		if processSessions {
 			//Mark all as executing so next query doesn't pick it up
 			var statusList []*jobsdb.JobStatusT
@@ -458,7 +460,7 @@ func (proc *HandleT) mainLoop() {
 			proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
 			proc.addJobsToSessions(combinedList)
 		} else {
-			proc.processJobsForDest(combinedList)
+			proc.processJobsForDest(combinedList, nil)
 		}
 
 	}
