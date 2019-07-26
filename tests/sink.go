@@ -3,13 +3,19 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"net/http/httputil"
 	"sync/atomic"
 	"time"
 )
 
 var count uint64
+var showPayload = true
 
 func handleReq(rw http.ResponseWriter, req *http.Request) {
+	if showPayload {
+		requestDump, _ := httputil.DumpRequest(req, true)
+		fmt.Println(string(requestDump))
+	}
 	atomic.AddUint64(&count, 1)
 	respMessage := "OK"
 	rw.Write([]byte(respMessage))
