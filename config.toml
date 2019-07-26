@@ -45,4 +45,8 @@ numTransformWorker = 8
 maxRetry = 3
 retrySleepInMS = 100
 
+[SinkServer]
+rate = 1000
+burst = 10000
+
 
