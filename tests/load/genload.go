@@ -19,7 +19,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/misc"
 )
-
 const (
 	isBatchPath      = "batch"
 	eventsPath       = "events"
@@ -27,11 +26,14 @@ const (
 	rudderJSONPath   = "events.#.rudder"
 	gaJSONPath       = "events.#.GA"
 	variations       = 5
+	//serverIP	 = "http://localhost:8080/hello"
+	serverIP	 = "http://172.31.94.69:8080/hello"
 )
 
 
 var (
 	totalCount uint64
+	failCount uint64
 )
 
 var done chan bool
@@ -46,6 +48,8 @@ func main() {
 	sendToRuderPtr := flag.Bool("rudder", true, "true/false for sending to rudder BE, default true")
 
 	flag.Parse()
+
+	go printStats()
 
 	for i := 1; i <= *numberOfUsers; i++ {
 		id := uuid.NewV4()
@@ -243,13 +247,20 @@ func generateData(payload *[]byte, path string, value interface{}) []byte {
 	return *payload
 }
 
+func printStats() {
+	for {
+		time.Sleep(5*time.Second)
+		fmt.Println("Success/Fail", totalCount, failCount)
+	}
+}
 func sendToRudder(jsonPayload string) {
-	req, err := http.NewRequest("POST", "http://localhost:8080/hello", bytes.NewBuffer([]byte(jsonPayload)))
+	req, err := http.NewRequest("POST", serverIP, bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		atomic.AddUint64(&failCount, 1)	
 		return
 	}
 	defer resp.Body.Close()
