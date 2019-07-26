@@ -79,7 +79,8 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) 
 
 var (
 	loopSleep              time.Duration
-	batchSize              int
+	dbReadBatchSize        int
+	transformBatchSize     int
 	sessionThresholdInS    time.Duration
 	sessionThresholdEvents int
 	processSessions        bool
@@ -87,7 +88,8 @@ var (
 
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
-	batchSize = config.GetInt("Processor.batchSize", 1000)
+	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 100000)
+	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	sessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	processSessions = config.GetBool("Processor.processSessions", true)
 	sessionThresholdInS = config.GetDuration("Processor.sessionThresholdInS", time.Duration(20)) * time.Second
@@ -200,7 +202,7 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT) {
 
 	//Call the transformation function
 	transformUserEventList, ok := proc.transformer.Transform(userEventsList,
-		integrations.GetUserTransformURL(), false)
+		integrations.GetUserTransformURL(), 0, false)
 	misc.Assert(ok)
 
 	//Create jobs that can be processed further
@@ -374,7 +376,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT) {
 		if !ok {
 			continue
 		}
-		destTransformEventList, ok := proc.transformer.Transform(destEventList, url, true)
+		destTransformEventList, ok := proc.transformer.Transform(destEventList, url, transformBatchSize, true)
 		if !ok {
 			continue
 		}
@@ -421,7 +423,7 @@ func (proc *HandleT) mainLoop() {
 
 		proc.statsDBR.Start()
 
-		toQuery := batchSize
+		toQuery := dbReadBatchSize
 		//Should not have any failure while processing (in v0) so
 		//retryList should be empty. Remove the assert
 		retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery)
@@ -465,7 +467,7 @@ func (proc *HandleT) mainLoop() {
 func (proc *HandleT) crashRecover() {
 
 	for {
-		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, batchSize)
+		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize)
 
 		if len(execList) == 0 {
 			break
