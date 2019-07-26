@@ -49,9 +49,12 @@ func (proc *HandleT) Print() {
 	}
 }
 
+func init() {
+	loadConfig()
+}
+
 //Setup initializes the module
 func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) {
-	loadConfig()
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.transformer = &transformerHandleT{}

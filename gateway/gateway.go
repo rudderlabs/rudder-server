@@ -54,6 +54,10 @@ func loadConfig() {
 	respMessage = config.GetString("Gateway.respMessage", "OK")
 }
 
+func init() {
+	loadConfig()
+}
+
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
 	webRequestQ   chan *webRequestT
@@ -139,7 +143,6 @@ func (gateway *HandleT) startWebHandler() {
 
 //Setup initializes this module
 func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT) {
-	loadConfig()
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB

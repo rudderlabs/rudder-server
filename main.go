@@ -3,7 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
+	"os/signal"
 	"runtime"
+	"runtime/pprof"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -46,18 +50,39 @@ func init() {
 	}
 	config.Initialize()
 }
-
 func main() {
-	loadConfig()
-	misc.SetupLogger()
 	fmt.Println("Main starting")
+	clearDB := flag.Bool("cleardb", false, "a bool")
+	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
+	flag.Parse()
+
+	var f *os.File 
+	if *cpuprofile != "" {
+		var err error
+		f, err = os.Create(*cpuprofile)
+		misc.AssertError(err)
+		err = pprof.StartCPUProfile(f)
+		misc.AssertError(err)
+	}
+
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		if *cpuprofile != "" {
+			pprof.StopCPUProfile()
+			f.Close()
+		}
+		os.Exit(1)
+	}()
+
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
-	runtime.GOMAXPROCS(maxProcess)
 
-	//Flag determines if we reset the databases
-	clearDB := flag.Bool("cleardb", false, "a bool")
-	flag.Parse()
+	loadConfig()
+	misc.SetupLogger()
+
+	runtime.GOMAXPROCS(maxProcess)
 	fmt.Println("Clearing DB", *clearDB)
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention)

@@ -184,6 +184,10 @@ func loadConfig() {
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 }
 
+func init() {
+	loadConfig()
+}
+
 /*
 Setup is used to initialize the HandleT structure.
 clearAll = True means it will remove all existing tables
@@ -194,7 +198,6 @@ in the retention time
 */
 func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration) {
 
-	loadConfig()
 	var err error
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
