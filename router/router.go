@@ -5,25 +5,29 @@ import (
 	"hash/fnv"
 	"log"
 	"math"
+	"math/rand"
 	"net/http"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
-	"github.com/tidwall/gjson"
 )
 
 //HandleT is the handle to this module.
 type HandleT struct {
-	requestQ  chan *jobsdb.JobT
-	responseQ chan *jobsdb.JobStatusT
-	jobsDB    *jobsdb.HandleT
-	netHandle *NetHandleT
-	destID    string
-	workers   []*Worker
-	perfStats *misc.PerfStats
+	requestQ     chan *jobsdb.JobT
+	responseQ    chan *jobsdb.JobStatusT
+	jobsDB       *jobsdb.HandleT
+	netHandle    *NetHandleT
+	destID       string
+	workers      []*Worker
+	perfStats    *misc.PerfStats
+	successCount uint64
+	failCount    uint64
 }
 
 // Worker a structure to define a worker for sending events to sinks
@@ -37,19 +41,20 @@ type Worker struct {
 var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
 	readSleep, maxSleep, maxStatusUpdateWait                                       time.Duration
-	userIDPath                                                                     string
+	randomWorkerAssign, useTestSink                                                bool
 )
 
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
-	readSleep = config.GetDuration("Router.readSleepInS", time.Duration(1)) * time.Second
+	readSleep = config.GetDuration("Router.readSleepInMS", time.Duration(10)) * time.Millisecond
 	noOfWorkers = config.GetInt("Router.noOfWorkers", 8)
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	ser = config.GetInt("Router.ser", 3)
 	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(5)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
-	userIDPath = config.GetString("Router.userIDPath", "cid") //"batch.#.message.context.traits.anonymous_id" // need to change this after transformation module
+	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
+	useTestSink = config.GetBool("Router.useTestSink", false)
 }
 
 func (rt *HandleT) workerProcess(worker *Worker) {
@@ -67,6 +72,8 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 			// ToDo: handle error in network send gracefully!!
 
 			if respStatusCode, respStatus, body = rt.netHandle.sendPost(job.EventPayload); respStatusCode != http.StatusOK {
+
+				atomic.AddUint64(&rt.failCount, 1)
 
 				// the sleep may have gone to zero, to start things off again, assign it to 1
 				if worker.sleepTime < 1 {
@@ -88,6 +95,7 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 				continue
 
 			} else {
+				atomic.AddUint64(&rt.successCount, 1)
 				// success
 				worker.sleepTime = worker.sleepTime / 2
 				log.Printf("sleep for worker %v decreased to %v", worker.workerID, worker.sleepTime)
@@ -107,12 +115,12 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 		}
 
 		if respStatusCode == http.StatusOK {
-			status.JobState = "succeeded"
+			status.JobState = jobsdb.SucceededState
 			log.Println("sending success status to response")
 		} else {
 			// the job failed
 			worker.failedJobs++
-			status.JobState = "failed"
+			status.JobState = jobsdb.FailedState
 			log.Println("sending failed status to response with done")
 		}
 
@@ -141,13 +149,17 @@ func getHash(s string) int {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *Worker {
 	var w *Worker
-	// get userid from job.payload.
-	// also insert a find a free worker logic
-	userIDArray := gjson.GetBytes(job.EventPayload, userIDPath).Array()
-	userID := userIDArray[0].String()
 
-	// log.Println(userID)
-	index := int(math.Abs(float64(getHash(userID) % noOfWorkers)))
+	// also insert a find a free worker logic
+
+	postInfo := integrations.GetPostInfo(job.EventPayload)
+
+	var index int
+	if randomWorkerAssign {
+		index = rand.Intn(noOfWorkers)
+	} else {
+		index = int(math.Abs(float64(getHash(postInfo.UserID) % noOfWorkers)))
+	}
 	// log.Printf("userId: %s index: %d", userID, index)
 	for _, worker := range rt.workers {
 		if worker.workerID == index {
@@ -235,7 +247,7 @@ func (rt *HandleT) generatorLoop() {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-				JobState:      "executing",
+				JobState:      jobsdb.ExecutingState,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
@@ -272,13 +284,20 @@ func (rt *HandleT) crashRecover() {
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
-				JobState:      "failed",
+				JobState:      jobsdb.FailedState,
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check
 			}
 			statusList = append(statusList, &status)
 		}
 		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
+	}
+}
+
+func (rt *HandleT) printStatsLoop() {
+	for {
+		time.Sleep(5 * time.Second)
+		fmt.Println("Network Success/Fail", rt.successCount, rt.failCount)
 	}
 }
 
@@ -295,10 +314,10 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.netHandle.Setup(destID)
 
 	rt.perfStats = &misc.PerfStats{}
-	rt.perfStats.Setup("StatsUpdate")
+	rt.perfStats.Setup("StatsUpdate:" + destID)
 
 	rt.initWorkers()
-
+	go rt.printStatsLoop()
 	go rt.statusInsertLoop()
 	go rt.generatorLoop()
 }

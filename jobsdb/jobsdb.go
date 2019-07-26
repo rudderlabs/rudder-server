@@ -123,14 +123,24 @@ func (jd *HandleT) assert(cond bool) {
 	}
 }
 
+const (
+	SucceededState    = "succeeded"
+	FailedState       = "failed"
+	ExecutingState    = "executing"
+	AbortedState      = "aborted"
+	WaitingState      = "waiting"
+	WaitingRetryState = "waiting_retry"
+	InternalState     = "NP"
+)
+
 var validJobStates = map[string]bool{
-	"NP":            false, //False means internal state
-	"succeeded":     true,
-	"failed":        true,
-	"executing":     true,
-	"aborted":       true,
-	"waiting":       true,
-	"waiting_retry": true,
+	InternalState:     false, //False means internal state
+	SucceededState:    true,
+	FailedState:       true,
+	ExecutingState:    true,
+	AbortedState:      true,
+	WaitingState:      true,
+	WaitingRetryState: true,
 }
 
 func (jd *HandleT) checkValidJobState(stateFilters []string) {
@@ -174,6 +184,10 @@ func loadConfig() {
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 }
 
+func init() {
+	loadConfig()
+}
+
 /*
 Setup is used to initialize the HandleT structure.
 clearAll = True means it will remove all existing tables
@@ -184,7 +198,6 @@ in the retention time
 */
 func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration) {
 
-	loadConfig()
 	var err error
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
@@ -401,8 +414,9 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	//Jobs which have either succeded or expired
 	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(id)) 
                                       FROM %s 
-                                      WHERE job_state = 'succeeded' OR
-                                            job_state = 'aborted'`, ds.JobStatusTable)
+                                      WHERE job_state = '%s' OR
+                                            job_state = '%s'`,
+		ds.JobStatusTable, SucceededState, AbortedState)
 	row = jd.dbHandle.QueryRow(sqlStatement)
 	err = row.Scan(&delCount)
 	jd.assertError(err)
@@ -649,7 +663,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
 
 	//Jobs which haven't finished processing
 	retryList, err := jd.getProcessedJobsDS(srcDS, true,
-		[]string{"failed", "waiting", "waiting_retry", "executing"}, []string{}, 0)
+		[]string{FailedState, WaitingState, WaitingRetryState, ExecutingState}, []string{}, 0)
 
 	jd.assertError(err)
 
@@ -1259,6 +1273,10 @@ Later we can move this to query
 */
 func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string) {
 
+	if len(statusList) == 0 {
+		return
+	}
+
 	//First we sort by JobID
 	sort.Slice(statusList, func(i, j int) bool {
 		return statusList[i].JobID < statusList[j].JobID
@@ -1439,14 +1457,14 @@ GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
 func (jd *HandleT) GetWaiting(customValFilters []string, count int) []*JobT {
-	return jd.GetProcessed([]string{"waiting"}, customValFilters, count)
+	return jd.GetProcessed([]string{WaitingState}, customValFilters, count)
 }
 
 /*
 GetExecuting returns events which  in executing state
 */
 func (jd *HandleT) GetExecuting(customValFilters []string, count int) []*JobT {
-	return jd.GetProcessed([]string{"executing"}, customValFilters, count)
+	return jd.GetProcessed([]string{ExecutingState}, customValFilters, count)
 }
 
 /*
@@ -1575,7 +1593,7 @@ func (jd *HandleT) staticDSTest() {
 		for _, job := range append(unprocessedList, retryList...) {
 			newStatus := JobStatusT{
 				JobID:         job.JobID,
-				JobState:      "executing",
+				JobState:      ExecutingState,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
@@ -1591,9 +1609,9 @@ func (jd *HandleT) staticDSTest() {
 		statusList = nil
 		var maxAttempt = 0
 		for _, job := range append(unprocessedList, retryList...) {
-			stat := "succeeded"
+			stat := SucceededState
 			if rand.Intn(testFailRatio) == 0 {
-				stat = "failed"
+				stat = FailedState
 			}
 			if job.LastJobStatus.AttemptNum > maxAttempt {
 				maxAttempt = job.LastJobStatus.AttemptNum
@@ -1702,9 +1720,9 @@ func (jd *HandleT) dynamicTest() {
 			combinedList[len(combinedList)-1].JobID)
 
 		for _, job := range append(unprocessedList, retryList...) {
-			stat := "succeeded"
+			stat := SucceededState
 			if rand.Intn(testFailRatio) == 0 {
-				stat = "failed"
+				stat = FailedState
 			}
 			newStatus := JobStatusT{
 				JobID:         job.JobID,

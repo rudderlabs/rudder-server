@@ -3,12 +3,17 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
+	"os/signal"
 	"runtime"
+	"runtime/pprof"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
+	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/rudderlabs/rudder-server/processor"
@@ -45,32 +50,57 @@ func init() {
 	}
 	config.Initialize()
 }
-
 func main() {
-	loadConfig()
-	misc.SetupLogger()
 	fmt.Println("Main starting")
+	clearDB := flag.Bool("cleardb", false, "a bool")
+	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
+	flag.Parse()
+
+	var f *os.File 
+	if *cpuprofile != "" {
+		var err error
+		f, err = os.Create(*cpuprofile)
+		misc.AssertError(err)
+		err = pprof.StartCPUProfile(f)
+		misc.AssertError(err)
+	}
+
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		if *cpuprofile != "" {
+			pprof.StopCPUProfile()
+			f.Close()
+		}
+		os.Exit(1)
+	}()
+
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
-	runtime.GOMAXPROCS(maxProcess)
 
-	//Flag determines if we reset the databases
-	clearDB := flag.Bool("cleardb", false, "a bool")
-	flag.Parse()
+	loadConfig()
+	misc.SetupLogger()
+
+	runtime.GOMAXPROCS(maxProcess)
 	fmt.Println("Clearing DB", *clearDB)
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention)
 
 	//Setup the three modules, the gateway, the router and the processor
 	var gateway gateway.HandleT
-	var router router.HandleT
+
 	var processor processor.HandleT
 
 	//The router module should be setup for
 	//all the enabled destinations
-	router.Setup(&routerDB, "GA")
+	for _, dest := range integrations.GetAllDestinations() {
+		var router router.HandleT
+		fmt.Println("Enabling Destination", dest)
+		router.Setup(&routerDB, dest)
+	}
 
-	go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+	// go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 
 	processor.Setup(&gatewayDB, &routerDB)
 	gateway.Setup(&gatewayDB)

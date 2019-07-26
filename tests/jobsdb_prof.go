@@ -151,9 +151,9 @@ func readProcess(jd *jobsdb.HandleT) {
 			//Save UUID Map
 			uuidReadMap[job.UUID] = true
 
-			stat := "succeeded"
+			stat := jobsdb.SucceededState
 			if rand.Intn(failRatio) == 0 {
-				stat = "failed"
+				stat = jobsdb.FailedState
 			}
 			newStatus := jobsdb.JobStatusT{
 				JobID:         job.JobID,

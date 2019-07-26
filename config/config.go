@@ -16,8 +16,16 @@ func Initialize() {
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig() // Find and read the config file
 	if err != nil {             // Handle errors reading the config file
-		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+		panic(fmt.Errorf("Fatal error config file: %s", err))
 	}
+}
+
+//GetBool is a wrapper for viper's GetBool
+func GetBool(key string, defaultValue bool) bool {
+	if !viper.IsSet(key) {
+		return defaultValue
+	}
+	return viper.GetBool(key)
 }
 
 // GetInt is wrapper for viper's GetInt
