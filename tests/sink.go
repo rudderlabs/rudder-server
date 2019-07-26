@@ -9,7 +9,7 @@ import (
 )
 
 var count uint64
-var showPayload = true
+var showPayload = false
 
 func handleReq(rw http.ResponseWriter, req *http.Request) {
 	if showPayload {
