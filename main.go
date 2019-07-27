@@ -54,9 +54,11 @@ func main() {
 	fmt.Println("Main starting")
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
+	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
+
 	flag.Parse()
 
-	var f *os.File 
+	var f *os.File
 	if *cpuprofile != "" {
 		var err error
 		f, err = os.Create(*cpuprofile)
@@ -74,6 +76,14 @@ func main() {
 			fmt.Println("Stopping CPU profile")
 			pprof.StopCPUProfile()
 			f.Close()
+		}
+		if *memprofile != "" {
+			f, err := os.Create(*memprofile)
+			misc.AssertError(err)
+			defer f.Close()
+			runtime.GC() // get up-to-date statistics
+			err = pprof.WriteHeapProfile(f)
+			misc.AssertError(err)
 		}
 		os.Exit(1)
 	}()

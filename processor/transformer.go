@@ -62,7 +62,6 @@ func (trans *transformerHandleT) transformWorker() {
 			}
 			break
 		}
-		defer resp.Body.Close()
 
 		misc.Assert(resp.StatusCode == http.StatusOK ||
 			resp.StatusCode == http.StatusBadRequest)
@@ -75,6 +74,7 @@ func (trans *transformerHandleT) transformWorker() {
 		} else {
 			io.Copy(ioutil.Discard, resp.Body)
 		}
+		resp.Body.Close()
 
 		trans.responseQ <- &transformMessageT{data: respData, index: job.index}
 	}

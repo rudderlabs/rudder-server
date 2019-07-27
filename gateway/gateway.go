@@ -76,7 +76,11 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 		var jobList []*jobsdb.JobT
 		for _, req := range breq.batchRequest {
+			if req.request.Body == nil {
+				continue
+			}
 			body, err := ioutil.ReadAll(req.request.Body)
+			req.request.Body.Close()
 			if err != nil {
 				fmt.Println("Failed to read body from request")
 				continue
