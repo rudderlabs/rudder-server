@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"sync/atomic"
@@ -16,6 +17,7 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 		requestDump, _ := httputil.DumpRequest(req, true)
 		fmt.Println(string(requestDump))
 	}
+	ioutil.ReadAll(req.Body)
 	atomic.AddUint64(&count, 1)
 	respMessage := "OK"
 	rw.Write([]byte(respMessage))

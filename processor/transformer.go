@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/misc"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -34,6 +35,8 @@ var (
 )
 
 func (trans *transformerHandleT) transformWorker() {
+	tr := &http.Transport{}
+	client := &http.Client{Transport: tr}
 	for job := range trans.requestQ {
 		//Call remote transformation
 		postData := new(bytes.Buffer)
@@ -44,7 +47,7 @@ func (trans *transformerHandleT) transformWorker() {
 		var err error
 		//We should rarely have error communicating with our JS
 		for {
-			resp, err = http.Post(job.url, "application/json; charset=utf-8",
+			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				postData)
 			if err != nil {
 				log.Println("JS HTTP connection error", err)
@@ -54,6 +57,7 @@ func (trans *transformerHandleT) transformWorker() {
 				}
 				retryCount++
 				time.Sleep(retrySleep)
+				//Refresh the connection
 				continue
 			}
 			break
@@ -68,6 +72,8 @@ func (trans *transformerHandleT) transformWorker() {
 		if resp.StatusCode == http.StatusOK {
 			respData, err = ioutil.ReadAll(resp.Body)
 			misc.AssertError(err)
+		} else {
+			io.Copy(ioutil.Discard, resp.Body)
 		}
 
 		trans.responseQ <- &transformMessageT{data: respData, index: job.index}
@@ -110,7 +116,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	resQ := trans.responseQ
 
 	trans.perfStats.Start()
-	var rawJSON json.RawMessage 
+	var rawJSON json.RawMessage
 
 	for {
 		var err error
@@ -171,7 +177,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 
 	for _, resp := range transformResponse {
 		var respObj interface{}
-	 	if resp.data == nil {
+		if resp.data == nil {
 			if !oneToMany {
 				outClientEvents = append(outClientEvents, nil)
 			}
@@ -181,10 +187,10 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		//This is returned by our JS engine so should  be parsable
 		//but still handling it
 		misc.AssertError(err)
-		
+
 		if oneToMany {
 			respArray, ok := respObj.([]interface{})
-			misc.Assert(ok)			
+			misc.Assert(ok)
 			//Transform is one to many mapping so returned
 			//response for each is an array. We flatten it out
 			for _, respElem := range respArray {
@@ -196,7 +202,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 			outClientEvents = append(outClientEvents, respObj)
 		}
 	}
-	misc.Assert(oneToMany || len(outClientEvents) ==  len(clientEvents))
+	misc.Assert(oneToMany || len(outClientEvents) == len(clientEvents))
 	trans.perfStats.End(len(clientEvents))
 	trans.perfStats.Print()
 
