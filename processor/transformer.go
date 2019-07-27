@@ -67,9 +67,7 @@ func (trans *transformerHandleT) transformWorker() {
 
 		if resp.StatusCode == http.StatusOK {
 			respData, err = ioutil.ReadAll(resp.Body)
-			if err != nil {
-				respData = nil
-			}
+			misc.AssertError(err)
 		}
 
 		trans.responseQ <- &transformMessageT{data: respData, index: job.index}
@@ -173,18 +171,20 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 
 	for _, resp := range transformResponse {
 		var respObj interface{}
-		//Bad JSON
-		if resp.data == nil {
+	 	if resp.data == nil {
+			if !oneToMany {
+				outClientEvents = append(outClientEvents, nil)
+			}
 			continue
 		}
 		err := json.Unmarshal(resp.data, &respObj)
 		//This is returned by our JS engine so should  be parsable
 		//but still handling it
-		if err != nil {
-			continue
-		}
+		misc.AssertError(err)
+		
 		if oneToMany {
-			respArray := respObj.([]interface{})
+			respArray, ok := respObj.([]interface{})
+			misc.Assert(ok)			
 			//Transform is one to many mapping so returned
 			//response for each is an array. We flatten it out
 			for _, respElem := range respArray {
@@ -196,6 +196,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 			outClientEvents = append(outClientEvents, respObj)
 		}
 	}
+	misc.Assert(oneToMany || len(outClientEvents) ==  len(clientEvents))
 	trans.perfStats.End(len(clientEvents))
 	trans.perfStats.Print()
 
