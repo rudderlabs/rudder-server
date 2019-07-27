@@ -49,7 +49,9 @@ func init() {
 		fmt.Println("No .env file found")
 	}
 	config.Initialize()
+	loadConfig()
 }
+
 func main() {
 	fmt.Println("Main starting")
 	clearDB := flag.Bool("cleardb", false, "a bool")
@@ -91,7 +93,6 @@ func main() {
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
 
-	loadConfig()
 	misc.SetupLogger()
 
 	runtime.GOMAXPROCS(maxProcess)

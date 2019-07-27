@@ -82,7 +82,6 @@ func (trans *transformerHandleT) transformWorker() {
 
 //Setup initializes this class
 func (trans *transformerHandleT) Setup() {
-	loadConfig()
 	trans.requestQ = make(chan *transformMessageT, maxChanSize)
 	trans.responseQ = make(chan *transformMessageT, maxChanSize)
 	trans.perfStats = &misc.PerfStats{}
