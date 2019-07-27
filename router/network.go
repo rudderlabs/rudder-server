@@ -50,15 +50,16 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	log.Println("making sink request")
 	resp, err := client.Do(req)
 
+	defer resp.Body.Close()
+
 	if err != nil {
 		log.Println("Errored when sending request to the server", err)
 		return http.StatusGatewayTimeout, "", "" // sending generic status code
 	}
 
-	defer resp.Body.Close()
-	respBody, _ := ioutil.ReadAll(resp.Body)
-
 	log.Println("respBody: ", respBody)
+
+	respBody, _ := ioutil.ReadAll(resp.Body)
 
 	//return resp.StatusCode, resp.Status, "`{}`"
 	return resp.StatusCode, resp.Status, string(respBody) // need to check if respBody is not a json as job status need it to be one
