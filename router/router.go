@@ -134,6 +134,7 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 func (rt *HandleT) initWorkers() {
 	rt.workers = make([]*Worker, noOfWorkers)
 	for i := 0; i < noOfWorkers; i++ {
+		fmt.Println("Worker Started", i)
 		var worker *Worker
 		workerChannel := make(chan *jobsdb.JobT, noOfJobsPerChannel)
 		worker = &Worker{channel: workerChannel, workerID: i, failedJobs: 0, sleepTime: 1}
