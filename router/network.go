@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net"
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/misc"
 )
@@ -76,17 +75,5 @@ func (network *NetHandleT) Setup(destID string) {
 	defaultTransport.MaxIdleConns = 100
 	defaultTransport.MaxIdleConnsPerHost = 100
 	network.httpClient = &http.Client{Transport: &defaultTransport}
-	/*
-	network.httpClient = &http.Client{ 
-		Transport: &http.Transport{ 
-			Dial: func(network, addr string) (net.Conn, error) { 
-				fmt.Println("dial!", addr) 
-				return net.Dial(network, addr) 
-			}, 
-			MaxIdleConnsPerHost: 100,
-			MaxIdleConns: 100, 			
-		}, 
-	}
-	*/
 	//network.httpClient = &http.Client{}
 }
