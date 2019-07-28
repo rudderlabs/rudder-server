@@ -49,18 +49,23 @@ func init() {
 		fmt.Println("No .env file found")
 	}
 	config.Initialize()
+	loadConfig()
 }
+
 func main() {
 	fmt.Println("Main starting")
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
+	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
+
 	flag.Parse()
 
-	var f *os.File 
+	var f *os.File
 	if *cpuprofile != "" {
 		var err error
 		f, err = os.Create(*cpuprofile)
 		misc.AssertError(err)
+		runtime.SetBlockProfileRate(1)
 		err = pprof.StartCPUProfile(f)
 		misc.AssertError(err)
 	}
@@ -70,8 +75,17 @@ func main() {
 	go func() {
 		<-c
 		if *cpuprofile != "" {
+			fmt.Println("Stopping CPU profile")
 			pprof.StopCPUProfile()
 			f.Close()
+		}
+		if *memprofile != "" {
+			f, err := os.Create(*memprofile)
+			misc.AssertError(err)
+			defer f.Close()
+			runtime.GC() // get up-to-date statistics
+			err = pprof.WriteHeapProfile(f)
+			misc.AssertError(err)
 		}
 		os.Exit(1)
 	}()
@@ -79,7 +93,6 @@ func main() {
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
 
-	loadConfig()
 	misc.SetupLogger()
 
 	runtime.GOMAXPROCS(maxProcess)
