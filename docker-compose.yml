@@ -4,22 +4,51 @@ services:
   db:
     image: postgres:11-alpine
     env_file:
-      - .env
+      - docker.env
     ports:
       - "5432:5432"
 
-  rudder:
+  backend:
     depends_on:
       - db
+      - d-transformer
+      - u-transformer
     build: 
       context: ./
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile-dev
 
-    entrypoint: sh -c './wait-for db:5432 -- rudder-server'
+    entrypoint: sh -c './wait-for db:5432 -- go run -mod vendor main.go'
 
     ports:
       - "8080:8080"
     env_file:
-      - .env
+      - docker.env
     environment:
       - JOBS_DB_HOST=db
+
+  d-transformer:
+    build: 
+      context: ../rudder-transformer/
+      dockerfile: Dockerfile
+    ports:
+      - "9090:9090"
+    env_file:
+      - docker.env
+
+  u-transformer:
+    build: 
+      context: ../rudder-transformer/
+      dockerfile: Dockerfile-ut
+    ports:
+      - "9191:9191"
+    env_file:
+      - docker.env
+
+  test-sink:
+    build: 
+      context: ./
+      dockerfile: Dockerfile-sink
+    ports:
+      - "8181:8181"
+    env_file:
+      - docker.env

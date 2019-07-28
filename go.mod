@@ -8,5 +8,5 @@ require (
 	github.com/satori/go.uuid v1.2.0
 	github.com/spf13/viper v1.4.0
 	github.com/tidwall/gjson v1.3.2
-	github.com/tidwall/sjson v1.0.4 // indirect
+	github.com/tidwall/sjson v1.0.4
 )
