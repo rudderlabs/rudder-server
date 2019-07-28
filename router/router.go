@@ -22,7 +22,6 @@ type HandleT struct {
 	requestQ     chan *jobsdb.JobT
 	responseQ    chan *jobsdb.JobStatusT
 	jobsDB       *jobsdb.HandleT
-	netHandle    *NetHandleT
 	destID       string
 	workers      []*Worker
 	perfStats    *misc.PerfStats
@@ -36,6 +35,7 @@ type Worker struct {
 	workerID   int               // identifies the worker
 	failedJobs int               // counts the failed jobs of a worker till it gets reset by external channel
 	sleepTime  time.Duration     //the sleep duration for every job of the worker
+	netHandle  *NetHandleT
 }
 
 var (
@@ -73,7 +73,7 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 
 			// ToDo: handle error in network send gracefully!!
 
-			if respStatusCode, respStatus, body = rt.netHandle.sendPost(job.EventPayload); respStatusCode != http.StatusOK {
+			if respStatusCode, respStatus, body = worker.netHandle.sendPost(job.EventPayload); respStatusCode != http.StatusOK {
 
 				atomic.AddUint64(&rt.failCount, 1)
 
@@ -136,7 +136,9 @@ func (rt *HandleT) initWorkers() {
 	for i := 0; i < noOfWorkers; i++ {
 		var worker *Worker
 		workerChannel := make(chan *jobsdb.JobT, noOfJobsPerChannel)
-		worker = &Worker{channel: workerChannel, workerID: i, failedJobs: 0, sleepTime: 1}
+		netHandle := &NetHandleT{}
+		netHandle.Setup(rt.destID)
+		worker = &Worker{channel: workerChannel, workerID: i, failedJobs: 0, sleepTime: 1, netHandle: netHandle}
 		rt.workers[i] = worker
 		go rt.workerProcess(worker)
 
@@ -316,8 +318,6 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.crashRecover()
 	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
 	rt.responseQ = make(chan *jobsdb.JobStatusT, jobQueryBatchSize)
-	rt.netHandle = &NetHandleT{}
-	rt.netHandle.Setup(destID)
 
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destID)
