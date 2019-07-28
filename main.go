@@ -23,12 +23,15 @@ import (
 var (
 	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
+	enableProcessor, enableRouter    bool
 )
 
 func loadConfig() {
 	maxProcess = config.GetInt("maxProcess", 12)
 	gwDBRetention = config.GetDuration("gwDBRetention", time.Duration(1)) * time.Hour
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
+	enableProcessor = config.GetBool("enableProcessor", true)
+	enableRouter = config.GetBool("enableRouter", true)
 }
 
 // Test Function
@@ -101,20 +104,23 @@ func main() {
 	routerDB.Setup(*clearDB, "rt", routerDBRetention)
 
 	//Setup the three modules, the gateway, the router and the processor
-	var gateway gateway.HandleT
 
-	var processor processor.HandleT
-
-	//The router module should be setup for
-	//all the enabled destinations
-	for _, dest := range integrations.GetAllDestinations() {
-		var router router.HandleT
-		fmt.Println("Enabling Destination", dest)
-		router.Setup(&routerDB, dest)
+	if enableRouter {
+		//The router module should be setup for
+		//all the enabled destinations
+		for _, dest := range integrations.GetAllDestinations() {
+			var router router.HandleT
+			fmt.Println("Enabling Destination", dest)
+			router.Setup(&routerDB, dest)
+		}
 	}
 
-	// go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+	if enableProcessor {
+		var processor processor.HandleT
+		processor.Setup(&gatewayDB, &routerDB)
+	}
 
-	processor.Setup(&gatewayDB, &routerDB)
+	var gateway gateway.HandleT
 	gateway.Setup(&gatewayDB)
+	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
