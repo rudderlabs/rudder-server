@@ -23,6 +23,7 @@ import (
 var (
 	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
+	dstToRouter                      = make(map[string]*router.HandleT)
 )
 
 func loadConfig() {
@@ -44,6 +45,48 @@ func readIOforResume(router router.HandleT) {
 	}
 }
 
+func readDestinations(routeDb *jobsdb.HandleT) {
+	//The router module should be setup for
+	//all the enabled destinations
+	for _, dest := range integrations.GetAllDestinations() {
+		var router router.HandleT
+		fmt.Println("Enabling Destination", dest)
+		// router.Setup(&routerDB, dest)
+		rt, ok := dstToRouter[dest]
+		if !ok {
+			// router.Setup(&routerDB, "GA")
+			router.Setup(routeDb, dest)
+			dstToRouter[dest] = &router
+			// go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+		} else {
+			rt.Enabled = true
+			rt.IsSinkAPIKeyError = false
+			rt.IsSinkDown = false
+		}
+	}
+
+	for k, rtdst := range dstToRouter {
+		found := false
+		for _, dstID := range integrations.GetAllDestinations() {
+			if k == dstID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			rtdst.Enabled = false
+		}
+	}
+}
+
+func checkDestination(routeDb *jobsdb.HandleT) {
+	for {
+		<-time.After(5 * time.Second)
+		fmt.Println("enabling destinations from main...")
+		readDestinations(routeDb)
+	}
+}
+
 func init() {
 	if err := godotenv.Load(); err != nil {
 		fmt.Println("No .env file found")
@@ -56,7 +99,7 @@ func main() {
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	flag.Parse()
 
-	var f *os.File 
+	var f *os.File
 	if *cpuprofile != "" {
 		var err error
 		f, err = os.Create(*cpuprofile)
@@ -92,16 +135,11 @@ func main() {
 
 	var processor processor.HandleT
 
-	//The router module should be setup for
-	//all the enabled destinations
-	for _, dest := range integrations.GetAllDestinations() {
-		var router router.HandleT
-		fmt.Println("Enabling Destination", dest)
-		router.Setup(&routerDB, dest)
-	}
-
-	// go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+	//readDestinations(&routerDB)
+	// test code to refresh destination list
+	go checkDestination(&routerDB)
 
 	processor.Setup(&gatewayDB, &routerDB)
 	gateway.Setup(&gatewayDB)
+
 }

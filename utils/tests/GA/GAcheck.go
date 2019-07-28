@@ -34,6 +34,11 @@ const (
 var (
 	gaReferenceMap []byte
 	sendToDest     map[string]bool
+	destNameIDMap  = map[string]string{
+		"GA": "google_analytics",
+		//"rudderlabs":       "GA",
+		"AM": "google_analytics",
+	}
 )
 
 func check(e error) {
@@ -161,7 +166,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 
 				rudderData, err = sjson.SetBytes(rudderData, userIDpath, uid)
 				check(err)
-				rudderData, err = sjson.SetBytes(rudderData, rudderIntegrationPath, []string{itgr.Value().(string)})
+				rudderData, err = sjson.SetBytes(rudderData, rudderIntegrationPath, []string{destNameIDMap[itgr.Value().(string)]})
 				check(err)
 
 				//gaJSONData, err = sjson.SetBytes(gaJSONData, v.Value().(string), gjson.Get(rudderJSON.Raw, k).Value())
@@ -172,7 +177,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 				err = json.Unmarshal(gaJSONData, &unmarshalleGAData)
 
 				//fmt.Println(unmarshalleGAData)
-				fmt.Println("sendToDest ", sendToDest[itgr.Value().(string)], "netMapping", netMapping["type"].Value())
+				//fmt.Println("sendToDest ", sendToDest[itgr.Value().(string)], "netMapping", netMapping["type"].Value())
 				if sendToDest[itgr.Value().(string)] {
 					if netMapping["type"].Value() == "KV" {
 						sendToGA(&unmarshalleGAData, netMapping["url"].Value().(string))
@@ -191,7 +196,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 					value, _ := sjson.Set("", "batch", rudderEvents)
 					value, _ = sjson.Set(value, "sent_at", time.Now())
 					fmt.Println("==================")
-					fmt.Println(value)
+					//fmt.Println(value)
 					//fmt.Println("iter : ", countLoop)
 					//Push the value as json to rudder-stack
 					if rudder {
@@ -318,7 +323,7 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 				value, _ := sjson.Set("", "batch", rudderEvents)
 				value, _ = sjson.Set(value, "sent_at", time.Now())
 				fmt.Println("==================")
-				fmt.Println(value)
+				//fmt.Println(value)
 
 				//Push the value as json to rudder-stack
 				if rudder {
@@ -357,7 +362,8 @@ func generateData(payload *[]byte, path string, value interface{}) []byte {
 }
 
 func sendToRudder(jsonPayload string) {
-	req, err := http.NewRequest("POST", "http://54.172.64.144:8080/hello", bytes.NewBuffer([]byte(jsonPayload)))
+	fmt.Println("sending to rudder...")
+	req, err := http.NewRequest("POST", "http://localhost:8080/hello", bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}

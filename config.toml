@@ -7,10 +7,10 @@ routerDBRetention = 0
 
 [Gateway]
 webPort = 8080
-maxBatchSize = 32
-batchTimeoutInMS = 20
 maxDBWriterProcess = 4
 CustomVal = "GW"
+maxBatchSize = 2
+batchTimeoutInMS = 2
 respMessage = "OK"
 
 
@@ -24,7 +24,7 @@ mainCheckSleepDurationInS = 2
 
 [Router]
 jobQueryBatchSize = 10000
-updateStatusBatchSize = 1000
+updateStatusBatchSize = 1
 readSleepInMS = 10
 noOfWorkers = 16
 noOfJobsPerChannel = 1000
@@ -32,14 +32,15 @@ ser = 3
 maxSleepInS = 3600
 maxStatusUpdateWaitInS = 5
 randomWorkerAssign = false
-useTestSink = false
+useTestSink = true
+maxFailedCountForJob = 8
 
 [Processor]
 loopSleepInMS = 10
 batchSize = 1000
 sessionThresholdEvents = 20
 sessionThresholdInS = 3
-processSessions = true
+processSessions = false
 maxChanSize = 2048
 numTransformWorker = 8
 maxRetry = 3
