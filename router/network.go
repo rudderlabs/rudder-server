@@ -67,5 +67,15 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 //Setup initializes the module
 func (network *NetHandleT) Setup(destID string) {
 	fmt.Println("Network Handler Startup")
+	//Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
+	/*
+	defaultRoundTripper := http.DefaultTransport
+	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
+	misc.Assert(ok)
+	defaultTransport := *defaultTransportPointer
+	defaultTransport.MaxIdleConns = 100
+	defaultTransport.MaxIdleConnsPerHost = 100
+	network.httpClient = &http.Client{Transport: &defaultTransport}
+	*/
 	network.httpClient = &http.Client{}
 }
