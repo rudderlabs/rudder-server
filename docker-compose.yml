@@ -45,6 +45,8 @@ services:
       - docker.env
 
   test-sink:
+    depends_on:
+      - redis
     build: 
       context: ./
       dockerfile: Dockerfile-sink
@@ -52,3 +54,10 @@ services:
       - "8181:8181"
     env_file:
       - docker.env
+
+  redis:
+    image: redis:5.0.5-alpine
+    env_file:
+      - docker.env
+    ports:
+      - "6379:6379"
