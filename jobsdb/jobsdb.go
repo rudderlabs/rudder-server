@@ -217,15 +217,14 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	log.Println("Sent Ping")
 
-	jd.setupEnumTypes()
-	jd.setupJournal()
-
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
-	} else {
-		jd.recoverFromJournal()
 	}
+
+	jd.setupEnumTypes()
+	jd.setupJournal()
+	jd.recoverFromJournal()
 
 	//Refresh in memory list. We don't take lock
 	//here because this is called before anything
@@ -1494,7 +1493,6 @@ func (jd *HandleT) setupEnumTypes() {
 	defer dbHandle.Close()
 	jd.assertError(err)
 
-	fmt.Println("Creating enum types in db")
 	sqlStatement := `DO $$ BEGIN
                                 CREATE TYPE job_state_type
                                      AS ENUM(

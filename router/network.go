@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/misc"
 )
@@ -50,11 +51,11 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	resp, err := client.Do(req)
 
 	var respBody []byte
-	
+
 	if resp != nil && resp.Body != nil {
 		respBody, _ = ioutil.ReadAll(resp.Body)
 		defer resp.Body.Close()
-	} 
+	}
 
 	if err != nil {
 		log.Println("Errored when sending request to the server", err)

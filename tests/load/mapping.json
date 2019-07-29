@@ -15,7 +15,9 @@
                 "rl_message.rl_properties.coupon": "pr1cc",
                 "rl_message.rl_properties.price": "pr1pr",
                 "rl_message.rl_properties.dimensions.0": "pr1cd0",
-                "rl_message.rl_properties.dimensions.1": "pr1cd1"
+                "rl_message.rl_message_id": "mid",
+                "rl_message.rl_timestamp": "ts",
+                "rl_message.rl_event": "event"
             },
             "rudder": {
                 "rl_message": {
@@ -96,7 +98,10 @@
                 "rl_message.rl_context.rl_traits.rl_anonymous_id": "cid",
                 "rl_message.rl_properties.category": "ec",
                 "rl_message.rl_properties.label": "el",
-                "rl_message.rl_properties.value": "ev"
+                "rl_message.rl_properties.value": "ev",
+                "rl_message.rl_message_id": "mid",
+                "rl_message.rl_timestamp": "ts",
+                "rl_message.rl_event": "event"
             },
             "rudder": {
                 "rl_message": {

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/misc"
 	"io"
 	"io/ioutil"
 	"log"
@@ -12,6 +11,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/misc"
 )
 
 //Structure which is used to pass message to the transformer workers
