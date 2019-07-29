@@ -4,6 +4,8 @@
 maxProcess = 12 # Max number of cpu process to be used by go runtime 
 gwDBRetention = 1
 routerDBRetention = 0
+enableProcessor = true
+enableRouter = true
 
 [Gateway]
 webPort = 8080
@@ -26,7 +28,7 @@ mainCheckSleepDurationInS = 2
 jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
 readSleepInMS = 10
-noOfWorkers = 16
+noOfWorkers = 8
 noOfJobsPerChannel = 1000
 ser = 3
 maxSleepInS = 3600
@@ -39,7 +41,7 @@ loopSleepInMS = 10
 dbReadBatchSize = 10000
 transformBatchSize = 10
 sessionThresholdEvents = 20
-sessionThresholdInS = 3
+sessionThresholdInS = 10
 processSessions = true
 maxChanSize = 2048
 numTransformWorker = 8

@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"net/http/httputil"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -17,7 +15,7 @@ import (
 
 const (
 	redisServer = "redis:6379"
-	testName    = "Test8"
+	testName    = "Test9"
 )
 
 var count uint64
@@ -27,24 +25,26 @@ var enableTestStats = true
 var redisChan chan string
 
 func handleReq(rw http.ResponseWriter, req *http.Request) {
-	if showPayload {
-		requestDump, _ := httputil.DumpRequest(req, true)
-		fmt.Println(string(requestDump))
-	}
-	if req.Body != nil {
-		ioutil.ReadAll(req.Body)
-		defer req.Body.Close()
-	}
+	/*
+		if showPayload {
+			requestDump, _ := httputil.DumpRequest(req, true)
+			fmt.Println(string(requestDump))
+		}
+		if req.Body != nil {
+			ioutil.ReadAll(req.Body)
+			defer req.Body.Close()
+		}
+		respMessage := "OK"
+		rw.Write([]byte(respMessage))
+	*/
+
+	atomic.AddUint64(&count, 1)
 
 	if enableTestStats {
 		redisChan <- req.URL.Query().Get("ea")
 	}
-
-	atomic.AddUint64(&count, 1)
-	respMessage := "OK"
-	rw.Write([]byte(respMessage))
-
 }
+
 func printCounter() {
 	startTime := time.Now()
 	for {
@@ -87,9 +87,6 @@ func redisLoop() {
 			if eventAdded {
 				_, err := pipe.Exec()
 				misc.AssertError(err)
-				// fmt.Println("*******************************")
-				// fmt.Println("*******************************")
-				// fmt.Println(responses)
 			}
 			eventAdded = false
 		}

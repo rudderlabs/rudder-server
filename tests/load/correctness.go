@@ -39,9 +39,8 @@ var (
 var testTimeUp bool
 var done chan bool
 var redisChan chan []RudderEvent
-var startTime int64
 
-const testName = "Test8"
+const testName = "Test9"
 
 var redisUserSet = fmt.Sprintf("%s_user_src", testName)
 var redisEventSet = fmt.Sprintf("%s_event_src", testName)
@@ -60,12 +59,12 @@ func isArraySorted(arr []string) bool {
 	return true
 }
 
-func computeTestResults() {
+func computeTestResults(testDuration int) {
 
 	fmt.Println("Processing Test Results ... ")
-	totalTime := time.Now().Unix() - startTime
-	ingestionRate := totalCount / uint64(totalTime)
-	fmt.Println(ingestionRate)
+	fmt.Println(totalCount)
+	ingestionRate := totalCount / uint64(testDuration)
+	fmt.Printf("Ingestion Rate: %d req/sec\n", ingestionRate)
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: redisServer,
@@ -115,6 +114,7 @@ func computeTestResults() {
 
 		if numSrcEvents != numDstEvents {
 			fmt.Printf("User: %s, Src Events: %d, Dest Events: %d \n", user, numSrcEvents, numDstEvents)
+			inOrder = false
 		} else {
 			//TODO: Batching for larger data sets
 			dstEvents := redisClient.LRange(userDstEventListKey, 0, numDstEvents-1).Val()
@@ -235,8 +235,11 @@ func redisLoop() {
 		Addr: redisServer,
 	})
 
-	pong, err := redisClient.Ping().Result()
-	fmt.Println(pong, err)
+	_, err := redisClient.Ping().Result()
+	if err != nil {
+		panic("Failed to connect to redis server")
+	}
+
 	pipe := redisClient.Pipeline()
 
 	for {
@@ -271,14 +274,15 @@ func main() {
 
 	numUsers := *flag.Int("n", 5, "number of user threads that does the send, default is 1")
 	eventDelayInMs := *flag.Int("d", 1000, "Delay between two events for a given user in Millisec")
-	testDurationInSec := *flag.Int("t", 60, "Time to run the test in sec. Default is forever")
-	waitTimeInSec := *flag.Int("w", 20, "Time to wait till the events are synced to sink in sec. Default is 60s")
+	testDurationInSec := *flag.Int("t", 60, "Duration of the test in seconds. Set it to -1 to run forever. Default is 60 sec")
+	waitTimeInSec := *flag.Int("w", 10, "Time to wait till the events are synced to sink in sec. Default is 60s")
 
 	flag.Parse()
 
 	go redisLoop()
 
-	startTime = time.Now().Unix()
+	fmt.Printf("Setting up test with %d users.\n", numUsers)
+	fmt.Printf("Running test for %d seconds. -1 means forever. \n", testDurationInSec)
 
 	for i := 0; i < numUsers; i++ {
 		userID := ksuid.New()
@@ -294,9 +298,9 @@ func main() {
 		<-done
 	}
 
-	fmt.Println("Generation complete. Waiting to let the events flow to sink..")
+	fmt.Printf("Generation complete. Waiting to %d sec let the events flow to sink...\n", waitTimeInSec)
 
 	time.Sleep(time.Duration(waitTimeInSec) * time.Second)
 
-	computeTestResults()
+	computeTestResults(testDurationInSec)
 }

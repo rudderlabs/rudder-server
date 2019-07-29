@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/misc"
 	"io"
 	"io/ioutil"
 	"log"
@@ -12,12 +11,14 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/misc"
 )
 
 //Structure which is used to pass message to the transformer workers
 type transformMessageT struct {
 	index int
-	data  json.RawMessage
+	data  interface{}
 	url   string
 }
 
@@ -39,16 +40,14 @@ func (trans *transformerHandleT) transformWorker() {
 	client := &http.Client{Transport: tr}
 	for job := range trans.requestQ {
 		//Call remote transformation
-		postData := new(bytes.Buffer)
-		json.NewEncoder(postData).Encode(job.data)
-
+		rawJSON, err := json.Marshal(job.data)
+		misc.AssertError(err)
 		retryCount := 0
 		var resp *http.Response
-		var err error
 		//We should rarely have error communicating with our JS
 		for {
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
-				postData)
+				bytes.NewBuffer(rawJSON))
 			if err != nil {
 				log.Println("JS HTTP connection error", err)
 				fmt.Println("JS HTTP connection error", err)
@@ -66,17 +65,20 @@ func (trans *transformerHandleT) transformWorker() {
 		misc.Assert(resp.StatusCode == http.StatusOK ||
 			resp.StatusCode == http.StatusBadRequest)
 
-		var respData json.RawMessage
-
+		var toSendData interface{}
 		if resp.StatusCode == http.StatusOK {
-			respData, err = ioutil.ReadAll(resp.Body)
+			respData, err := ioutil.ReadAll(resp.Body)
+			misc.AssertError(err)
+			err = json.Unmarshal(respData, &toSendData)
+			//This is returned by our JS engine so should  be parsable
+			//but still handling it
 			misc.AssertError(err)
 		} else {
 			io.Copy(ioutil.Discard, resp.Body)
 		}
 		resp.Body.Close()
 
-		trans.responseQ <- &transformMessageT{data: respData, index: job.index}
+		trans.responseQ <- &transformMessageT{data: toSendData, index: job.index}
 	}
 }
 
@@ -115,13 +117,12 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	resQ := trans.responseQ
 
 	trans.perfStats.Start()
-	var rawJSON json.RawMessage
+	var toSendData interface{}
 
 	for {
-		var err error
 		//The channel is still live and the last batch has been sent
 		//Construct the next batch
-		if reqQ != nil && rawJSON == nil {
+		if reqQ != nil && toSendData == nil {
 			if batchSize > 0 {
 				clientBatch := make([]interface{}, 0)
 				batchCount := 0
@@ -133,19 +134,17 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 					batchCount++
 					inputIdx++
 				}
-				rawJSON, err = json.Marshal(clientBatch)
-				misc.AssertError(err)
+				toSendData = clientBatch
 			} else {
-				rawJSON, err = json.Marshal(clientEvents[inputIdx])
-				misc.AssertError(err)
+				toSendData = clientEvents[inputIdx]
 				inputIdx++
 			}
 		}
 		select {
 		//In case of batch event, index is the next Index
-		case reqQ <- &transformMessageT{index: inputIdx, data: rawJSON, url: url}:
+		case reqQ <- &transformMessageT{index: inputIdx, data: toSendData, url: url}:
 			totalSent++
-			rawJSON = nil
+			toSendData = nil
 			if inputIdx == len(clientEvents) {
 				reqQ = nil
 			}
@@ -175,20 +174,14 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	outClientEvents := make([]interface{}, 0)
 
 	for _, resp := range transformResponse {
-		var respObj interface{}
 		if resp.data == nil {
 			if !oneToMany {
 				outClientEvents = append(outClientEvents, nil)
 			}
 			continue
 		}
-		err := json.Unmarshal(resp.data, &respObj)
-		//This is returned by our JS engine so should  be parsable
-		//but still handling it
-		misc.AssertError(err)
-
 		if oneToMany {
-			respArray, ok := respObj.([]interface{})
+			respArray, ok := resp.data.([]interface{})
 			misc.Assert(ok)
 			//Transform is one to many mapping so returned
 			//response for each is an array. We flatten it out
@@ -198,7 +191,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		} else {
 			//One to one mapping so no flattening is
 			//required
-			outClientEvents = append(outClientEvents, respObj)
+			outClientEvents = append(outClientEvents, resp.data)
 		}
 	}
 	misc.Assert(oneToMany || len(outClientEvents) == len(clientEvents))

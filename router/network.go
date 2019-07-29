@@ -50,22 +50,31 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	log.Println("making sink request")
 	resp, err := client.Do(req)
 
+	var respBody []byte
+
 	if resp != nil && resp.Body != nil {
+		respBody, _ = ioutil.ReadAll(resp.Body)
 		defer resp.Body.Close()
 	}
 
 	if err != nil {
 		log.Println("Errored when sending request to the server", err)
-		return http.StatusGatewayTimeout, "", "" // sending generic status code
+		return http.StatusGatewayTimeout, "", string(respBody)
 	}
 
-	respBody, _ := ioutil.ReadAll(resp.Body)
-
-	return resp.StatusCode, resp.Status, string(respBody) // need to check if respBody is not a json as job status need it to be one
+	return resp.StatusCode, resp.Status, string(respBody)
 }
 
 //Setup initializes the module
 func (network *NetHandleT) Setup(destID string) {
 	fmt.Println("Network Handler Startup")
-	network.httpClient = &http.Client{}
+	//Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
+	defaultRoundTripper := http.DefaultTransport
+	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
+	misc.Assert(ok)
+	defaultTransport := *defaultTransportPointer
+	defaultTransport.MaxIdleConns = 100
+	defaultTransport.MaxIdleConnsPerHost = 100
+	network.httpClient = &http.Client{Transport: &defaultTransport}
+	//network.httpClient = &http.Client{}
 }
