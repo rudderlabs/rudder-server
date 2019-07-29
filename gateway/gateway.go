@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -55,6 +56,7 @@ func loadConfig() {
 }
 
 func init() {
+	config.Initialize()
 	loadConfig()
 }
 
@@ -63,6 +65,8 @@ type HandleT struct {
 	webRequestQ   chan *webRequestT
 	batchRequestQ chan *batchWebRequestT
 	jobsDB        *jobsdb.HandleT
+	ackCount      uint64
+	recvCount     uint64
 }
 
 //Function to process the batch requests. It saves data in DB and
@@ -73,7 +77,11 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 		var jobList []*jobsdb.JobT
 		for _, req := range breq.batchRequest {
+			if req.request.Body == nil {
+				continue
+			}
 			body, err := ioutil.ReadAll(req.request.Body)
+			req.request.Body.Close()
 			if err != nil {
 				fmt.Println("Failed to read body from request")
 				continue
@@ -124,13 +132,22 @@ func (gateway *HandleT) webRequestBatcher() {
 	}
 }
 
+func (gateway *HandleT) printStats() {
+	for {
+		time.Sleep(10 * time.Second)
+		fmt.Println("Gateway Recv/Ack", gateway.recvCount, gateway.ackCount)
+	}
+}
+
 //Main handler function for incoming requets
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
+	atomic.AddUint64(&gateway.recvCount, 1)
 	done := make(chan struct{})
 	req := webRequestT{request: r, writer: &w, done: done}
 	gateway.webRequestQ <- &req
 	//Wait for batcher process to be done
 	<-done
+	atomic.AddUint64(&gateway.ackCount, 1)
 	w.Write([]byte(respMessage))
 
 }
@@ -147,6 +164,7 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT) {
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB
 	go gateway.webRequestBatcher()
+	go gateway.printStats()
 	for i := 0; i < maxDBWriterProcess; i++ {
 		go gateway.webRequestBatchDBWriter(i)
 	}
