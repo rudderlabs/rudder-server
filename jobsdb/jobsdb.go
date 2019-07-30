@@ -34,8 +34,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/lib/pq"
 	uuid "github.com/satori/go.uuid"
@@ -99,7 +97,8 @@ type HandleT struct {
 	dsRetentionPeriod  time.Duration
 	dsEmptyResultCache map[dataSetT]map[string]map[string]bool
 	dsCacheLock        sync.Mutex
-	backupDS           dataSetT
+	toBackup           bool
+	fileUploader       fileUploaderT
 }
 
 //The struct which is written to the journal
@@ -193,23 +192,8 @@ func loadConfig() {
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 }
 
-var region string
-
-// Sets config for S3 uploader
-func setupS3Uploader() {
-	region = config.GetString("Aws.region", "us-east-2")
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(region)},
-	)
-	if err != nil {
-		panic(err)
-	}
-	uploader = s3manager.NewUploader(sess)
-}
-
 func init() {
 	loadConfig()
-	setupS3Uploader()
 }
 
 /*
@@ -220,7 +204,7 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration) {
+func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, toBackup bool) {
 
 	var err error
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
@@ -230,6 +214,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.assert(tablePrefix != "")
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
+	jd.toBackup = toBackup
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]bool{}
 
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
@@ -261,7 +246,11 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		jd.addNewDS(true, dataSetT{})
 	}
 
-	go jd.backupDSLoop()
+	if jd.toBackup {
+		jd.fileUploader = fileUploaderT{provider: "s3"}
+		jd.fileUploader.Setup()
+		go jd.backupDSLoop()
+	}
 	go jd.mainCheckLoop()
 }
 
@@ -662,22 +651,29 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	} else {
 		sqlStatement = fmt.Sprintf(`DROP TABLE %s`, ds.JobTable)
 	}
-
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 }
 
 //Rename a dataset
-func (jd *HandleT) renameDS(ds dataSetT) {
+func (jd *HandleT) renameDS(ds dataSetT, allowMissing bool) {
 	var sqlStatement string
 	var renamedJobStatusTable = fmt.Sprintf(`pre_drop_%s`, ds.JobStatusTable)
 	var renamedJobTable = fmt.Sprintf(`pre_drop_%s`, ds.JobTable)
 
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s RENAME TO %s`, ds.JobStatusTable, renamedJobStatusTable)
+	if allowMissing {
+		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS %s RENAME TO %s`, ds.JobStatusTable, renamedJobStatusTable)
+	} else {
+		sqlStatement = fmt.Sprintf(`ALTER TABLE %s RENAME TO %s`, ds.JobStatusTable, renamedJobStatusTable)
+	}
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s RENAME TO %s`, ds.JobTable, renamedJobTable)
+	if allowMissing {
+		sqlStatement = fmt.Sprintf(`ALTER TABLE IF EXISTS %s RENAME TO %s`, ds.JobTable, renamedJobTable)
+	} else {
+		sqlStatement = fmt.Sprintf(`ALTER TABLE %s RENAME TO %s`, ds.JobTable, renamedJobTable)
+	}
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 }
@@ -742,11 +738,15 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
 	return nil
 }
 
-func (jd *HandleT) postMigrateDeleteDS(migrateFrom []dataSetT) error {
+func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 
 	//Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
-		jd.renameDS(ds)
+		if jd.toBackup {
+			jd.renameDS(ds, false)
+		} else {
+			jd.dropDS(ds, false)
+		}
 	}
 
 	//Refresh the in-memory lists
@@ -1170,10 +1170,10 @@ func (jd *HandleT) mainCheckLoop() {
 			//del the destination as some sources may have been deleted
 			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
 			jd.assertError(err)
-			opID := jd.journalMarkStart(migrateDelOperation, opPayload)
+			opID := jd.journalMarkStart(postMigrateDSOperation, opPayload)
 
 			jd.dsListLock.Lock()
-			jd.postMigrateDeleteDS(migrateFrom)
+			jd.postMigrateHandleDS(migrateFrom)
 			jd.dsListLock.Unlock()
 
 			jd.journalMarkDone(opID)
@@ -1229,6 +1229,7 @@ func (jd *HandleT) backupToS3(tableName string) (success bool, err error) {
 	dumpOptions = append(dumpOptions, fmt.Sprintf(`-h%v`, host))
 	dumpOptions = append(dumpOptions, fmt.Sprintf(`-p%v`, port))
 	dumpOptions = append(dumpOptions, fmt.Sprintf(`-U%v`, user))
+	dumpOptions = append(dumpOptions, fmt.Sprintf(`-t%v`, fmt.Sprintf(`public.%v`, tableName)))
 	dumpOptions = append(dumpOptions, "-Fc", fmt.Sprintf(`-f%v`, path))
 
 	_, err = exec.Command("pg_dump", dumpOptions...).Output()
@@ -1245,20 +1246,13 @@ func (jd *HandleT) backupToS3(tableName string) (success bool, err error) {
 	defer os.Remove(path)
 	defer file.Close()
 
-	log.Printf("Uploading %q to s3:%q\n", file.Name(), "srikanth-dump-test")
-	_, err = uploader.Upload(&s3manager.UploadInput{
-		Bucket: aws.String("srikanth-dump-test"),
-		Key:    aws.String(file.Name()),
-		Body:   file,
-	})
+	err = jd.fileUploader.upload(file)
 	if err != nil {
 		log.Println(err)
 		return false, err
 	}
-	log.Printf("Successfully uploaded %q to s3:%q\n", file.Name(), "srikanth-dump-test")
 
 	return true, nil
-
 }
 
 func (jd *HandleT) getBackupDS() dataSetT {
@@ -1267,20 +1261,11 @@ func (jd *HandleT) getBackupDS() dataSetT {
 	//Read the table names from PG
 	tableNames := jd.getAllTableNames()
 
-	jobNameMap := map[string]string{}
-	jobStatusNameMap := map[string]string{}
 	dnumList := []string{}
-
 	for _, t := range tableNames {
 		if strings.HasPrefix(t, "pre_drop_"+jd.tablePrefix+"_jobs_") {
 			dnum := t[len("pre_drop_"+jd.tablePrefix+"_jobs_"):]
-			jobNameMap[dnum] = t
 			dnumList = append(dnumList, dnum)
-			continue
-		}
-		if strings.HasPrefix(t, "pre_drop_"+jd.tablePrefix+"_job_status_") {
-			dnum := t[len("pre_drop_"+jd.tablePrefix+"_job_status_"):]
-			jobStatusNameMap[dnum] = t
 			continue
 		}
 	}
@@ -1291,8 +1276,8 @@ func (jd *HandleT) getBackupDS() dataSetT {
 	jd.sortDnumList(dnumList)
 
 	backupDS = dataSetT{
-		JobTable:       jobNameMap[dnumList[0]],
-		JobStatusTable: jobStatusNameMap[dnumList[0]],
+		JobTable:       fmt.Sprintf("pre_drop_%s_jobs_%s", jd.tablePrefix, dnumList[0]),
+		JobStatusTable: fmt.Sprintf("pre_drop_%s_job_status_%s", jd.tablePrefix, dnumList[0]),
 		Index:          dnumList[0],
 	}
 	return backupDS
@@ -1302,10 +1287,10 @@ func (jd *HandleT) getBackupDS() dataSetT {
 We keep a journal of all the operations. The journal helps
 */
 const (
-	addDSOperation       = "ADD_DS"
-	migrateCopyOperation = "MIGRATE_COPY"
-	migrateDelOperation  = "MIGRATE_DEL"
-	dropDSOperation      = "DROP_DS"
+	addDSOperation         = "ADD_DS"
+	migrateCopyOperation   = "MIGRATE_COPY"
+	postMigrateDSOperation = "POST_MIGRATE_DS_OP"
+	dropDSOperation        = "DROP_DS"
 )
 
 func (jd *HandleT) setupJournal() {
@@ -1331,7 +1316,7 @@ func (jd *HandleT) delJournal() {
 
 func (jd *HandleT) journalMarkStart(opType string, opPayload json.RawMessage) int64 {
 
-	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == migrateDelOperation || opType == dropDSOperation)
+	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == dropDSOperation)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
                                        VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
@@ -1411,11 +1396,15 @@ func (jd *HandleT) recoverFromJournal() {
 		log.Println("Recovering migrateCopy operation", migrateDest)
 		jd.dropDS(migrateDest, true)
 		undoOp = true
-	case migrateDelOperation:
+	case postMigrateDSOperation:
 		//Some of the source datasets would have been
 		migrateSrc := opPayloadJSON.From
 		for _, ds := range migrateSrc {
-			jd.dropDS(ds, true)
+			if jd.toBackup {
+				jd.renameDS(ds, true)
+			} else {
+				jd.dropDS(ds, true)
+			}
 		}
 		fmt.Println("Recovering migrateDel operation", migrateSrc)
 		log.Println("Recovering migrateDel operation", migrateSrc)
@@ -1832,7 +1821,7 @@ func (jd *HandleT) dynamicDSTestMigrate() {
 		dsList := jd.getDSList(false)
 		if i > 0 {
 			jd.migrateJobs(dsList[0], dsList[1])
-			jd.postMigrateDeleteDS([]dataSetT{dsList[0]})
+			jd.postMigrateHandleDS([]dataSetT{dsList[0]})
 		}
 	}
 
