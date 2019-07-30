@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
+	"os/exec"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -32,6 +34,9 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/lib/pq"
 	uuid "github.com/satori/go.uuid"
 )
@@ -94,6 +99,7 @@ type HandleT struct {
 	dsRetentionPeriod  time.Duration
 	dsEmptyResultCache map[dataSetT]map[string]map[string]bool
 	dsCacheLock        sync.Mutex
+	backupDS           dataSetT
 }
 
 //The struct which is written to the journal
@@ -153,12 +159,14 @@ func (jd *HandleT) checkValidJobState(stateFilters []string) {
 var (
 	host, user, password, dbname string
 	port                         int
+	uploader                     *s3manager.Uploader
 )
 
 var (
 	maxDSSize, maxMigrateOnce                  int
 	jobDoneMigrateThres, jobStatusMigrateThres float64
 	mainCheckSleepDuration                     time.Duration
+	backupCheckSleepDuration                   time.Duration
 )
 
 // Loads db config and migration related config from config file
@@ -182,10 +190,26 @@ func loadConfig() {
 	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
+	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
+}
+
+var region string
+
+// Sets config for S3 uploader
+func setupS3Uploader() {
+	region = config.GetString("Aws.region", "us-east-2")
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String(region)},
+	)
+	if err != nil {
+		panic(err)
+	}
+	uploader = s3manager.NewUploader(sess)
 }
 
 func init() {
 	loadConfig()
+	setupS3Uploader()
 }
 
 /*
@@ -238,6 +262,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		jd.addNewDS(true, dataSetT{})
 	}
 
+	go jd.backupDSLoop()
 	go jd.mainCheckLoop()
 }
 
@@ -249,71 +274,11 @@ func (jd *HandleT) TearDown() {
 }
 
 /*
-Function to return an ordered list of datasets and datasetRanges
-Most callers use the in-memory list of dataset and datasetRanges
-Caller must have the dsListLock readlocked
+Function to sort table suffixes. We should not have any use case
+for having > 2 len suffixes (e.g. 1_1_1 - see comment below)
+but this sort handles the general case
 */
-func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
-
-	if !refreshFromDB {
-		return jd.datasetList
-	}
-
-	//At this point we MUST have write-locked dsListLock
-	//since we are modiying the list
-
-	//Reset the global list
-	jd.datasetList = nil
-
-	//Read the table names from PG
-	stmt, err := jd.dbHandle.Prepare(`SELECT tablename
-                                        FROM pg_catalog.pg_tables
-                                        WHERE schemaname != 'pg_catalog' AND
-                                        schemaname != 'information_schema'`)
-	jd.assertError(err)
-	defer stmt.Close()
-
-	rows, err := stmt.Query()
-	defer rows.Close()
-	jd.assertError(err)
-
-	tableNames := []string{}
-	for rows.Next() {
-		var tbName string
-		err = rows.Scan(&tbName)
-		jd.assertError(err)
-		tableNames = append(tableNames, tbName)
-	}
-
-	//Tables are of form jobs_ and job_status_. Iterate
-	//through them and sort them to produce and
-	//ordered list of datasets
-
-	jobNameMap := map[string]string{}
-	jobStatusNameMap := map[string]string{}
-	dnumList := []string{}
-
-	for _, t := range tableNames {
-		if strings.HasPrefix(t, jd.tablePrefix+"_jobs_") {
-			dnum := t[len(jd.tablePrefix+"_jobs_"):]
-			jobNameMap[dnum] = t
-			dnumList = append(dnumList, dnum)
-			continue
-		}
-		if strings.HasPrefix(t, jd.tablePrefix+"_job_status_") {
-			dnum := t[len(jd.tablePrefix+"_job_status_"):]
-			jobStatusNameMap[dnum] = t
-			continue
-		}
-	}
-	if len(dnumList) == 0 {
-		return jd.datasetList
-	}
-
-	//Sort the suffixes. We should not have any use case
-	//for having > 2 len suffixes (e.g. 1_1_1 - see comment below)
-	//but this sort handles the general case
-
+func (jd *HandleT) sortDnumList(dnumList []string) {
 	sort.Slice(dnumList, func(i, j int) bool {
 		src := strings.Split(dnumList[i], "_")
 		dst := strings.Split(dnumList[j], "_")
@@ -345,6 +310,80 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 			return srcInt < dstInt
 		}
 	})
+}
+
+//Function to get all table names form Postgres
+func (jd *HandleT) getAllTableNames() []string {
+	//Read the table names from PG
+	stmt, err := jd.dbHandle.Prepare(`SELECT tablename
+                                        FROM pg_catalog.pg_tables
+                                        WHERE schemaname != 'pg_catalog' AND
+                                        schemaname != 'information_schema'`)
+	jd.assertError(err)
+	defer stmt.Close()
+
+	rows, err := stmt.Query()
+	defer rows.Close()
+	jd.assertError(err)
+
+	tableNames := []string{}
+	for rows.Next() {
+		var tbName string
+		err = rows.Scan(&tbName)
+		jd.assertError(err)
+		tableNames = append(tableNames, tbName)
+	}
+
+	return tableNames
+}
+
+/*
+Function to return an ordered list of datasets and datasetRanges
+Most callers use the in-memory list of dataset and datasetRanges
+Caller must have the dsListLock readlocked
+*/
+func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
+
+	if !refreshFromDB {
+		return jd.datasetList
+	}
+
+	//At this point we MUST have write-locked dsListLock
+	//since we are modiying the list
+
+	//Reset the global list
+	jd.datasetList = nil
+
+	//Read the table names from PG
+	tableNames := jd.getAllTableNames()
+
+	//Tables are of form jobs_ and job_status_. Iterate
+	//through them and sort them to produce and
+	//ordered list of datasets
+
+	jobNameMap := map[string]string{}
+	jobStatusNameMap := map[string]string{}
+	dnumList := []string{}
+
+	for _, t := range tableNames {
+		if strings.HasPrefix(t, jd.tablePrefix+"_jobs_") {
+			dnum := t[len(jd.tablePrefix+"_jobs_"):]
+			jobNameMap[dnum] = t
+			dnumList = append(dnumList, dnum)
+			continue
+		}
+		if strings.HasPrefix(t, jd.tablePrefix+"_job_status_") {
+			dnum := t[len(jd.tablePrefix+"_job_status_"):]
+			jobStatusNameMap[dnum] = t
+			continue
+		}
+	}
+
+	if len(dnumList) == 0 {
+		return jd.datasetList
+	}
+
+	jd.sortDnumList(dnumList)
 
 	//Create the structure
 	for _, dnum := range dnumList {
@@ -410,8 +449,8 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	jd.assertError(err)
 
 	//Jobs which have either succeded or expired
-	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(id)) 
-                                      FROM %s 
+	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(id))
+                                      FROM %s
                                       WHERE job_state = '%s' OR
                                             job_state = '%s'`,
 		ds.JobStatusTable, SucceededState, AbortedState)
@@ -629,6 +668,21 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	jd.assertError(err)
 }
 
+//Rename a dataset
+func (jd *HandleT) renameDS(ds dataSetT) {
+	var sqlStatement string
+	var renamedJobStatusTable = fmt.Sprintf(`pre_drop_%s`, ds.JobStatusTable)
+	var renamedJobTable = fmt.Sprintf(`pre_drop_%s`, ds.JobTable)
+
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s RENAME TO %s`, ds.JobStatusTable, renamedJobStatusTable)
+	_, err := jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s RENAME TO %s`, ds.JobTable, renamedJobTable)
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+}
+
 func (jd *HandleT) dropAllDS() error {
 
 	jd.dsListLock.Lock()
@@ -691,9 +745,9 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
 
 func (jd *HandleT) postMigrateDeleteDS(migrateFrom []dataSetT) error {
 
-	//Now drop the source. Ideally we should dump into S3
+	//Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
-		jd.dropDS(ds, false)
+		jd.renameDS(ds)
 	}
 
 	//Refresh the in-memory lists
@@ -869,18 +923,18 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 
 	var rows *sql.Rows
 	if getAll {
-		sqlStatement := fmt.Sprintf(`SELECT 
+		sqlStatement := fmt.Sprintf(`SELECT
                                   %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val, %[1]s.event_payload,
-                                  %[1]s.created_at, %[1]s.expire_at, 
+                                  %[1]s.created_at, %[1]s.expire_at,
                                   job_latest_state.job_state, job_latest_state.attempt,
                                   job_latest_state.exec_time, job_latest_state.retry_time,
                                   job_latest_state.error_code, job_latest_state.error_response
-                                 FROM  
-                                  %[1]s, 
-                                  (SELECT job_id, job_state, attempt, exec_time, retry_time, 
-                                    error_code, error_response FROM %[2]s WHERE id IN 
+                                 FROM
+                                  %[1]s,
+                                  (SELECT job_id, job_state, attempt, exec_time, retry_time,
+                                    error_code, error_response FROM %[2]s WHERE id IN
                                     (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
-                                  AS job_latest_state 
+                                  AS job_latest_state
                                    WHERE %[1]s.job_id=job_latest_state.job_id`,
 			ds.JobTable, ds.JobStatusTable, stateQuery)
 		var err error
@@ -888,19 +942,19 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 		defer rows.Close()
 		jd.assertError(err)
 	} else {
-		sqlStatement := fmt.Sprintf(`SELECT 
+		sqlStatement := fmt.Sprintf(`SELECT
                                                %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val, %[1]s.event_payload,
-                                               %[1]s.created_at, %[1]s.expire_at, 
+                                               %[1]s.created_at, %[1]s.expire_at,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
                                                job_latest_state.error_code, job_latest_state.error_response
-                                            FROM  
-                                               %[1]s, 
+                                            FROM
+                                               %[1]s,
                                                (SELECT job_id, job_state, attempt, exec_time, retry_time,
-                                                 error_code, error_response FROM %[2]s WHERE id IN 
-                                                   (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s) 
-                                               AS job_latest_state 
-                                            WHERE %[1]s.job_id=job_latest_state.job_id 
+                                                 error_code, error_response FROM %[2]s WHERE id IN
+                                                   (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
+                                               AS job_latest_state
+                                            WHERE %[1]s.job_id=job_latest_state.job_id
                                              %[4]s
                                              AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[5]s`,
 			ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, limitQuery)
@@ -945,9 +999,9 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	}
 
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
-                                               %[1]s.event_payload, %[1]s.created_at, 
-                                               %[1]s.expire_at 
-                                             FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id 
+                                               %[1]s.event_payload, %[1]s.created_at,
+                                               %[1]s.expire_at
+                                             FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
                                              WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable)
 
 	//log.Println(sqlStatement)
@@ -1131,6 +1185,120 @@ func (jd *HandleT) mainCheckLoop() {
 	}
 }
 
+func (jd *HandleT) backupDSLoop() {
+	for {
+		time.Sleep(backupCheckSleepDuration)
+		fmt.Println(("BackupDS check:Start"))
+		backupDS := jd.getBackupDS()
+		// check if non empty dataset is present to backup
+		// else continue
+		if (dataSetT{} == backupDS) {
+			// sleep for more duration if no dataset is found
+			time.Sleep(5 * backupCheckSleepDuration)
+			continue
+		}
+
+		// write jobs table to s3
+		_, err := jd.backupToS3(backupDS.JobTable)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		// write job_status table to s3
+		_, err = jd.backupToS3(backupDS.JobStatusTable)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		// jd.journalMarkDone(opID)
+
+		// drop dataset after successfully uploading both jobs and jobs_status to s3
+		opPayload, err := json.Marshal(&backupDS)
+		jd.assertError(err)
+		opID := jd.journalMarkStart(dropDSOperation, opPayload)
+		jd.dropDS(backupDS, false)
+		jd.journalMarkDone(opID)
+
+	}
+}
+
+func (jd *HandleT) backupToS3(tableName string) (success bool, err error) {
+	path := fmt.Sprintf(`%v.sql.tar.gz`, strings.Split(tableName, "pre_drop_")[1])
+
+	var dumpOptions []string
+	dumpOptions = append(dumpOptions, fmt.Sprintf(`-d%v`, dbname))
+	dumpOptions = append(dumpOptions, fmt.Sprintf(`-h%v`, host))
+	dumpOptions = append(dumpOptions, fmt.Sprintf(`-p%v`, port))
+	dumpOptions = append(dumpOptions, fmt.Sprintf(`-U%v`, user))
+	dumpOptions = append(dumpOptions, "-Fc", fmt.Sprintf(`-f%v`, path))
+
+	_, err = exec.Command("pg_dump", dumpOptions...).Output()
+	if err != nil {
+		log.Println(err)
+		return false, err
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		log.Println(err)
+		return false, err
+	}
+	defer os.Remove(path)
+	defer file.Close()
+
+	log.Printf("Uploading %q to s3:%q\n", file.Name(), "srikanth-dump-test")
+	_, err = uploader.Upload(&s3manager.UploadInput{
+		Bucket: aws.String("srikanth-dump-test"),
+		Key:    aws.String(file.Name()),
+		Body:   file,
+	})
+	if err != nil {
+		log.Println(err)
+		return false, err
+	}
+	log.Printf("Successfully uploaded %q to s3:%q\n", file.Name(), "srikanth-dump-test")
+
+	return true, nil
+
+}
+
+func (jd *HandleT) getBackupDS() dataSetT {
+	var backupDS dataSetT
+
+	//Read the table names from PG
+	tableNames := jd.getAllTableNames()
+
+	jobNameMap := map[string]string{}
+	jobStatusNameMap := map[string]string{}
+	dnumList := []string{}
+
+	for _, t := range tableNames {
+		if strings.HasPrefix(t, "pre_drop_"+jd.tablePrefix+"_jobs_") {
+			dnum := t[len("pre_drop_"+jd.tablePrefix+"_jobs_"):]
+			jobNameMap[dnum] = t
+			dnumList = append(dnumList, dnum)
+			continue
+		}
+		if strings.HasPrefix(t, "pre_drop_"+jd.tablePrefix+"_job_status_") {
+			dnum := t[len("pre_drop_"+jd.tablePrefix+"_job_status_"):]
+			jobStatusNameMap[dnum] = t
+			continue
+		}
+	}
+	if len(dnumList) == 0 {
+		return backupDS
+	}
+
+	jd.sortDnumList(dnumList)
+
+	backupDS = dataSetT{
+		JobTable:       jobNameMap[dnumList[0]],
+		JobStatusTable: jobStatusNameMap[dnumList[0]],
+		Index:          dnumList[0],
+	}
+	return backupDS
+}
+
 /*
 We keep a journal of all the operations. The journal helps
 */
@@ -1138,6 +1306,7 @@ const (
 	addDSOperation       = "ADD_DS"
 	migrateCopyOperation = "MIGRATE_COPY"
 	migrateDelOperation  = "MIGRATE_DEL"
+	dropDSOperation      = "DROP_DS"
 )
 
 func (jd *HandleT) setupJournal() {
@@ -1163,9 +1332,9 @@ func (jd *HandleT) delJournal() {
 
 func (jd *HandleT) journalMarkStart(opType string, opPayload json.RawMessage) int64 {
 
-	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == migrateDelOperation)
+	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == migrateDelOperation || opType == dropDSOperation)
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)  
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
                                        VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	defer stmt.Close()
@@ -1186,10 +1355,10 @@ func (jd *HandleT) journalMarkDone(opID int64) {
 
 func (jd *HandleT) recoverFromJournal() {
 
-	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload 
+	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
                                      FROM %s_journal
-                                     WHERE 
-                                     done=False 
+                                     WHERE
+                                     done=False
                                      ORDER BY id`, jd.tablePrefix)
 
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
@@ -1251,6 +1420,13 @@ func (jd *HandleT) recoverFromJournal() {
 		}
 		fmt.Println("Recovering migrateDel operation", migrateSrc)
 		log.Println("Recovering migrateDel operation", migrateSrc)
+		undoOp = false
+	case dropDSOperation:
+		//Some of the source datasets would have been
+		var dataset dataSetT
+		json.Unmarshal(opPayload, &dataset)
+		jd.dropDS(dataset, true)
+		log.Println("Recovering dropDS operation", dataset)
 		undoOp = false
 	}
 
