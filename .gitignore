@@ -2,3 +2,4 @@
 rudder-server
 .env
 runtime.log
+.vscode
