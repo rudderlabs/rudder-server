@@ -34,7 +34,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/lib/pq"
 	uuid "github.com/satori/go.uuid"
 )
@@ -158,7 +157,6 @@ func (jd *HandleT) checkValidJobState(stateFilters []string) {
 var (
 	host, user, password, dbname string
 	port                         int
-	uploader                     *s3manager.Uploader
 )
 
 var (
@@ -1198,13 +1196,13 @@ func (jd *HandleT) backupDSLoop() {
 		}
 
 		// write jobs table to s3
-		_, err := jd.backupToS3(backupDS.JobTable)
+		_, err := jd.backupTable(backupDS.JobTable)
 		if err != nil {
 			log.Println(err)
 			continue
 		}
 		// write job_status table to s3
-		_, err = jd.backupToS3(backupDS.JobStatusTable)
+		_, err = jd.backupTable(backupDS.JobStatusTable)
 		if err != nil {
 			log.Println(err)
 			continue
@@ -1221,7 +1219,7 @@ func (jd *HandleT) backupDSLoop() {
 	}
 }
 
-func (jd *HandleT) backupToS3(tableName string) (success bool, err error) {
+func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	path := fmt.Sprintf(`%v.sql.tar.gz`, strings.Split(tableName, "pre_drop_")[1])
 
 	var dumpOptions []string
