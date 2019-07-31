@@ -97,7 +97,7 @@ type HandleT struct {
 	dsEmptyResultCache map[dataSetT]map[string]map[string]bool
 	dsCacheLock        sync.Mutex
 	toBackup           bool
-	fileUploader       fileUploaderT
+	fileUploader       FileUploaderT
 }
 
 //The struct which is written to the journal
@@ -245,7 +245,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	}
 
 	if jd.toBackup {
-		jd.fileUploader = fileUploaderT{provider: "s3"}
+		jd.fileUploader = FileUploaderT{provider: "s3"}
 		jd.fileUploader.Setup()
 		go jd.backupDSLoop()
 	}
@@ -1244,7 +1244,7 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	defer os.Remove(path)
 	defer file.Close()
 
-	err = jd.fileUploader.upload(file)
+	err = jd.fileUploader.Upload(file)
 	if err != nil {
 		log.Println(err)
 		return false, err
