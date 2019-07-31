@@ -104,6 +104,7 @@ func main() {
 		var err error
 		f, err = os.Create(*cpuprofile)
 		misc.AssertError(err)
+		runtime.SetBlockProfileRate(1)
 		err = pprof.StartCPUProfile(f)
 		misc.AssertError(err)
 	}
@@ -113,6 +114,7 @@ func main() {
 	go func() {
 		<-c
 		if *cpuprofile != "" {
+			fmt.Println("Stopping CPU profile")
 			pprof.StopCPUProfile()
 			f.Close()
 		}
