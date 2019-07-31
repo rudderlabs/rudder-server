@@ -217,16 +217,14 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	log.Println("Sent Ping")
 
-	jd.setupEnumTypes()
-
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
-	} else {
-		if len(jd.datasetList) != 0 {
-			jd.recoverFromJournal()
-		}
 	}
+
+	jd.setupEnumTypes()
+	jd.setupJournal()
+	jd.recoverFromJournal()
 
 	//Refresh in memory list. We don't take lock
 	//here because this is called before anything
@@ -236,7 +234,6 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	//If no DS present, add one
 	if len(jd.datasetList) == 0 {
-		jd.createJournal()
 		jd.addNewDS(true, dataSetT{})
 	}
 
@@ -1102,6 +1099,7 @@ func (jd *HandleT) mainCheckLoop() {
 				//Mark the start of copy operation. If we fail here
 				//we just delete the new DS being copied into. The
 				//sources are still around
+
 				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: migrateTo})
 				jd.assertError(err)
 				opID := jd.journalMarkStart(migrateCopyOperation, opPayload)
@@ -1141,9 +1139,9 @@ const (
 	migrateDelOperation  = "MIGRATE_DEL"
 )
 
-func (jd *HandleT) createJournal() {
+func (jd *HandleT) setupJournal() {
 
-	sqlStatement := fmt.Sprintf(`CREATE TABLE %s_journal (
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s_journal (
                                       id BIGSERIAL PRIMARY KEY,
                                       operation VARCHAR(32) NOT NULL,
                                       done BOOLEAN,
@@ -1495,7 +1493,6 @@ func (jd *HandleT) setupEnumTypes() {
 	defer dbHandle.Close()
 	jd.assertError(err)
 
-	fmt.Println("Creating enum types in db")
 	sqlStatement := `DO $$ BEGIN
                                 CREATE TYPE job_state_type
                                      AS ENUM(
