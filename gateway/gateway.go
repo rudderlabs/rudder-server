@@ -8,9 +8,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils"
 	uuid "github.com/satori/go.uuid"
+	"github.com/tidwall/gjson"
 )
 
 /*
@@ -34,6 +37,7 @@ var (
 	webPort, maxBatchSize, maxDBWriterProcess int
 	batchTimeout                              time.Duration
 	respMessage                               string
+	enabledWriteKeys                          []string
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -86,6 +90,9 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				fmt.Println("Failed to read body from request")
 				continue
 			}
+			if !gateway.verifyRequestBodyConfig(body) {
+				continue
+			}
 			id := uuid.NewV4()
 			//Should be function of body
 			newJob := jobsdb.JobT{
@@ -105,6 +112,24 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		}
 
 	}
+}
+
+func contains(slice []string, str string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+	return false
+}
+
+func (gateway *HandleT) verifyRequestBodyConfig(body []byte) bool {
+	bodyJSON := fmt.Sprintf("%s", body)
+	writeKey := gjson.Get(bodyJSON, "writeKey")
+	if !contains(enabledWriteKeys, writeKey.Str) {
+		return false
+	}
+	return true
 }
 
 //Function to batch incoming web requests
@@ -158,6 +183,23 @@ func (gateway *HandleT) startWebHandler() {
 	http.ListenAndServe(":"+strconv.Itoa(webPort), nil)
 }
 
+func backendConfigSubscriber() {
+	ch1 := make(chan utils.DataEvent)
+	backendconfig.Eb.Subscribe("backendconfig", ch1)
+	for {
+		select {
+		case config := <-ch1:
+			enabledWriteKeys = []string{}
+			sources := config.Data.(backendconfig.SourcesT)
+			for _, source := range sources.Sources {
+				if source.Enabled {
+					enabledWriteKeys = append(enabledWriteKeys, source.WriteKey)
+				}
+			}
+		}
+	}
+}
+
 //Setup initializes this module
 func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT) {
 	gateway.webRequestQ = make(chan *webRequestT)
@@ -165,6 +207,7 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT) {
 	gateway.jobsDB = jobsDB
 	go gateway.webRequestBatcher()
 	go gateway.printStats()
+	go backendConfigSubscriber()
 	for i := 0; i < maxDBWriterProcess; i++ {
 		go gateway.webRequestBatchDBWriter(i)
 	}

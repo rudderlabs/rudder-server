@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/integrations"
@@ -100,6 +101,8 @@ func main() {
 
 	runtime.GOMAXPROCS(maxProcess)
 	fmt.Println("Clearing DB", *clearDB)
+
+	backendconfig.Setup()
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention)
 

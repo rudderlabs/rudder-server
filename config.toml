@@ -48,4 +48,5 @@ numTransformWorker = 8
 maxRetry = 3
 retrySleepInMS = 100
 
-
+[BackendConfig]
+pollIntervalInS = 5
