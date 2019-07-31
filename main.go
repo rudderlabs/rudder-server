@@ -23,13 +23,15 @@ import (
 var (
 	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
-	dstToRouter                      = make(map[string]*router.HandleT)
+	enableProcessor, enableRouter    bool
 )
 
 func loadConfig() {
 	maxProcess = config.GetInt("maxProcess", 12)
 	gwDBRetention = config.GetDuration("gwDBRetention", time.Duration(1)) * time.Hour
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
+	enableProcessor = config.GetBool("enableProcessor", true)
+	enableRouter = config.GetBool("enableRouter", true)
 }
 
 // Test Function
@@ -45,45 +47,40 @@ func readIOforResume(router router.HandleT) {
 	}
 }
 
-func readDestinations(routeDb *jobsdb.HandleT) {
-	//The router module should be setup for
-	//all the enabled destinations
-	for _, dest := range integrations.GetAllDestinations() {
-		var router router.HandleT
-		fmt.Println("Enabling Destination", dest)
-		// router.Setup(&routerDB, dest)
-		rt, ok := dstToRouter[dest]
-		if !ok {
-			// router.Setup(&routerDB, "GA")
-			router.Setup(routeDb, dest)
-			dstToRouter[dest] = &router
-			// go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
-		} else {
-			rt.Enabled = true
-			rt.IsSinkAPIKeyError = false
-			rt.IsSinkDown = false
-		}
-	}
-
-	for k, rtdst := range dstToRouter {
-		found := false
-		for _, dstID := range integrations.GetAllDestinations() {
-			if k == dstID {
-				found = true
-				break
+func enableMonitorDestRouters(routeDb *jobsdb.HandleT) {
+	dstToRouter := make(map[string]*router.HandleT)
+	for {
+		//Get all the destinations and start the rotuer if
+		//not already enabled
+		for _, dest := range integrations.GetAllDestinations() {
+			rt, ok := dstToRouter[dest]
+			if !ok {
+				fmt.Println("Enabling Destination", dest)
+				var router router.HandleT
+				router.Setup(routeDb, dest)
+				dstToRouter[dest] = &router
+			} else {
+				rt.Enable()
 			}
 		}
-		if !found {
-			rtdst.Enabled = false
-		}
-	}
-}
 
-func checkDestination(routeDb *jobsdb.HandleT) {
-	for {
+		//Iterate through the existing routers and disable
+		//which have been removed from config
+		for d, rtHandle := range dstToRouter {
+			found := false
+			for _, dstID := range integrations.GetAllDestinations() {
+				if d == dstID {
+					found = true
+					break
+				}
+			}
+			//Router is not in enabled list. Disable it
+			if !found {
+				rtHandle.Disable()
+			}
+		}
+		//Sleep before the next round
 		<-time.After(5 * time.Second)
-		fmt.Println("enabling destinations from main...")
-		readDestinations(routeDb)
 	}
 }
 
@@ -92,11 +89,15 @@ func init() {
 		fmt.Println("No .env file found")
 	}
 	config.Initialize()
+	loadConfig()
 }
+
 func main() {
 	fmt.Println("Main starting")
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
+	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
+
 	flag.Parse()
 
 	var f *os.File
@@ -118,13 +119,20 @@ func main() {
 			pprof.StopCPUProfile()
 			f.Close()
 		}
+		if *memprofile != "" {
+			f, err := os.Create(*memprofile)
+			misc.AssertError(err)
+			defer f.Close()
+			runtime.GC() // get up-to-date statistics
+			err = pprof.WriteHeapProfile(f)
+			misc.AssertError(err)
+		}
 		os.Exit(1)
 	}()
 
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
 
-	loadConfig()
 	misc.SetupLogger()
 
 	runtime.GOMAXPROCS(maxProcess)
@@ -133,15 +141,17 @@ func main() {
 	routerDB.Setup(*clearDB, "rt", routerDBRetention)
 
 	//Setup the three modules, the gateway, the router and the processor
+
+	if enableRouter {
+		go enableMonitorDestRouters(&routerDB)
+	}
+
+	if enableProcessor {
+		var processor processor.HandleT
+		processor.Setup(&gatewayDB, &routerDB)
+	}
+
 	var gateway gateway.HandleT
-
-	var processor processor.HandleT
-
-	//readDestinations(&routerDB)
-	// test code to refresh destination list
-	go checkDestination(&routerDB)
-
-	processor.Setup(&gatewayDB, &routerDB)
 	gateway.Setup(&gatewayDB)
-
+	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }

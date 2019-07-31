@@ -1,0 +1,6 @@
+FROM golang:1.12-alpine
+RUN mkdir /app
+ADD . /app
+WORKDIR /app
+EXPOSE 8080
+ENTRYPOINT ["go", "run", "-mod", "vendor", "main.go"] 

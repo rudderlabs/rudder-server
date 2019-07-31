@@ -3,9 +3,10 @@ package integrations
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/misc"
-	"strings"
 )
 
 //our internal ID for that destination. We save this ID in the customval field
@@ -17,7 +18,7 @@ var destNameIDMap = map[string]string{
 }
 
 var (
-	nodeBaseURL, nodePortDestTransform, nodePortUserTransform string
+	destTransformURL, userTransformURL string
 )
 
 func init() {
@@ -25,9 +26,8 @@ func init() {
 }
 
 func loadConfig() {
-	nodeBaseURL = config.GetEnv("NODE_BASE_URL", "http://localhost")
-	nodePortDestTransform = config.GetEnv("NODE_PORT_DEST_TRANSFORM", "9090")
-	nodePortUserTransform = config.GetEnv("NODE_PORT_USER_TRANSFORM", "9191")
+	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	userTransformURL = config.GetEnv("USER_TRANSFORM_URL", "http://localhost:9191")
 }
 
 //destJSTransformerMap keeps a mapping between the destinationID and
@@ -119,10 +119,10 @@ func GetDestinationURL(destID string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return fmt.Sprintf("%s:%s/%s", nodeBaseURL, nodePortDestTransform, path), true
+	return fmt.Sprintf("%s/%s", destTransformURL, path), true
 }
 
 //GetUserTransformURL returns the port of running user transform
 func GetUserTransformURL() string {
-	return fmt.Sprintf("%s:%s", nodeBaseURL, nodePortUserTransform)
+	return userTransformURL
 }
