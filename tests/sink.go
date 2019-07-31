@@ -30,8 +30,9 @@ var redisChan chan string
 var timeOfStart = time.Now()
 var errorCodes = []int{200, 200, 200, 200, 200, 400, 400, 500}
 var authorizationError = false
-
-var limiter = rate.NewLimiter(rate.Limit(config.GetInt("SinkServer.rate", 100)), config.GetInt("SinkServer.burst", 1000))
+var limitRate = 100
+var limitBurst = 1000
+var limiter = rate.NewLimiter(rate.Limit(limitRate), limitBurst)
 
 func limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
