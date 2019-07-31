@@ -26,7 +26,7 @@ mainCheckSleepDurationInS = 2
 
 [Router]
 jobQueryBatchSize = 10000
-updateStatusBatchSize = 1
+updateStatusBatchSize = 1000
 readSleepInMS = 10
 noOfWorkers = 8
 noOfJobsPerChannel = 1000

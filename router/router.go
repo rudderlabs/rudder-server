@@ -72,13 +72,12 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 
 		log.Println("Router :: trying to send payload to GA")
 
-		//If sink is not enabled OR is not working, mark all jobs
-		//as waiting
+		//If sink is not enabled mark all jobs as waiting
 		if !rt.isEnabled {
 			log.Println("Router is disabled")
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+				AttemptNum:    job.LastJobStatus.AttemptNum,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
@@ -99,7 +98,7 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 			log.Printf("Router :: prev id %v, current id %v", previousFailedJobID, job.JobID)
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+				AttemptNum:    job.LastJobStatus.AttemptNum,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     respStatus,
@@ -165,8 +164,8 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 			worker.failedJobs++
 			atomic.AddUint64(&rt.failCount, 1)
 
+			//Add it to fail map
 			if !isPrevFailedUser {
-				//Regular failure. Mark worker as done
 				log.Printf("Router :: userId %v failed for the first time adding to map", userID)
 				worker.userLastFailedJobIDMap[userID] = job.JobID
 			}
@@ -174,12 +173,13 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 			switch {
 
 			case len(worker.userLastFailedJobIDMap) > int(0.05*float64(noOfJobsPerChannel)):
-				//Lot of jobs are failing in this wrker. Likely the sink is down
+				//Lot of jobs are failing in this worker. Likely the sink is down
 				//so we mark future jobs as waiting
 				status.JobState = jobsdb.WaitingState
+				status.AttemptNum--
 				break
 			case status.AttemptNum > maxFailedCountForJob:
-				//The job has failed enough number of times so mark it done
+				//The job has failed enough number of times so mark it aborted
 				//The reason for doing this is to filter out jobs with bad payload
 				//which can never succeed.
 				//However, there is a risk that if sink is down, a set of jobs can
