@@ -3,19 +3,22 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/misc"
-
 	"github.com/go-redis/redis"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/misc"
 )
 
-var redisServer = os.Getenv("REDIS_URL")
-var testName = os.Getenv("TEST_NAME")
+const (
+	redisServerDefault = "localhost:6379"
+)
+
+var redisServer = config.GetEnv("REDIS_URL", redisServerDefault)
+var testName = config.GetEnv("TEST_NAME", "TEST-default")
 
 var count uint64
 var showPayload = false

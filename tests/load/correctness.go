@@ -43,7 +43,7 @@ var testTimeUp bool
 var done chan bool
 var redisChan chan []RudderEvent
 
-var testName = config.GetEnv("TEST_NAME", "TEST-"+string(time.Now().Unix()))
+var testName = config.GetEnv("TEST_NAME", "TEST-default")
 var redisServer = config.GetEnv("REDIS_SERVER", redisServerDefault)
 var sinkServer = config.GetEnv("SINK_SERVER", sinkServerDefault)
 var rudderServer = config.GetEnv("RUDDER_SERVER", rudderServerDefault)
@@ -122,16 +122,19 @@ func computeTestResults(testDuration int) {
 			fmt.Printf("User: %s, Src Events: %d, Dest Events: %d \n", user, numSrcEvents, numDstEvents)
 			inOrder = false
 		} else {
-			//TODO: Batching for larger data sets
-			dstEvents := redisClient.LRange(userDstEventListKey, 0, numDstEvents-1).Val()
-			srcEvents := redisClient.LRange(userSrcEventListKey, 0, numSrcEvents-1).Val()
+			// Batching for larger data sets
+			var batchSize int64 = 10000
+			var currStart int64
+			for i := currStart; i < (numDstEvents/batchSize)+1; i++ {
+				dstEvents := redisClient.LRange(userDstEventListKey, currStart, currStart+batchSize).Val()
+				srcEvents := redisClient.LRange(userSrcEventListKey, currStart, currStart+batchSize).Val()
 
-			var i int64
-			for i = 0; i < numDstEvents; i++ {
-				if dstEvents[i] != srcEvents[i] {
-					inOrder = false
-					fmt.Printf("Did not match: index: %d, Source Event: %s, Destination event: %s", i, srcEvents[i], dstEvents[i])
-					break
+				for j := 0; j < len(dstEvents); j++ {
+					if dstEvents[j] != srcEvents[j] {
+						inOrder = false
+						fmt.Printf("Did not match: index: %d, Source Event: %s, Destination event: %s", i, srcEvents[j], dstEvents[j])
+						break
+					}
 				}
 			}
 		}
@@ -218,7 +221,7 @@ func generateEvents(userID string, eventDelay int) {
 }
 
 func sendToRudder(jsonPayload string) {
-	req, err := http.NewRequest("POST", serverIP, bytes.NewBuffer([]byte(jsonPayload)))
+	req, err := http.NewRequest("POST", rudderServer, bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
@@ -275,15 +278,12 @@ func redisLoop() {
 
 func main() {
 
-	if len(testName) == 0 {
-		panic("TEST_NAME env variable can't be empty")
-	}
 	done = make(chan bool)
 	redisChan = make(chan []RudderEvent)
 
-	numUsers := *flag.Int("n", 100, "number of user threads that does the send, default is 1")
-	eventDelayInMs := *flag.Int("d", 200, "Delay between two events for a given user in Millisec")
-	testDurationInSec := *flag.Int("t", 60, "Duration of the test in seconds. Set it to -1 to run forever. Default is 60 sec")
+	numUsers := *flag.Int("n", 10, "number of user threads that does the send, default is 1")
+	eventDelayInMs := *flag.Int("d", 1000, "Delay between two events for a given user in Millisec")
+	testDurationInSec := *flag.Int("t", 60, "Duration of the test in seconds. Default is 60 sec")
 	pollTimeInSec := *flag.Int("p", 2, "Polling interval in sec to find if sink is inactive")
 	waitTimeInSec := *flag.Int("w", 600, "Max wait-time in sec waiting for sink. Default 600s")
 
@@ -292,7 +292,7 @@ func main() {
 	go redisLoop()
 
 	fmt.Printf("Setting up test with %d users.\n", numUsers)
-	fmt.Printf("Running test for %d seconds. -1 means forever. \n", testDurationInSec)
+	fmt.Printf("Running test for %d seconds. \n", testDurationInSec)
 
 	for i := 0; i < numUsers; i++ {
 		userID := ksuid.New()
