@@ -1,0 +1,197 @@
+{
+    "batch": true,
+    "integrations": ["AM", "GA"],
+    "events": [
+        {
+            "name": "Product Clicked",
+            "GANet": {
+                "url": "https://www.google-analytics.com/collect",
+                "type": "KV"
+            },
+            "AMNet": {
+                "url": "https://api.amplitude.com/httpapi",
+                "type": "KV"
+            },
+            "GAMapping": {
+                "rl_message.rl_context.rl_traits.rl_anonymous_id": "cid",
+                "rl_message.rl_properties.url": "dl",
+                "rl_message.rl_properties.product_id": "pr1id",
+                "rl_message.rl_properties.name": "pr1nm",
+                "rl_message.rl_properties.sku": "pr1id",
+                "rl_message.rl_properties.category": "pr1ca",
+                "rl_message.rl_properties.brand": "pr1br",
+                "rl_message.rl_properties.variant": "pr1va",
+                "rl_message.rl_properties.coupon": "pr1cc",
+                "rl_message.rl_properties.price": "pr1pr",
+                "rl_message.rl_properties.dimensions.0": "pr1cd0",
+                "rl_message.rl_properties.dimensions.1": "pr1cd1"
+            },
+            "AMMapping": {
+                "rl_message.rl_context.rl_traits.rl_anonymous_id":  "event.0.user_id",
+                "rl_message.rl_event": "event.0.event_type",
+                "rl_message.rl_properties.product_id": "event.0.productId",
+                "rl_message.rl_properties.price": "event.0.price",
+                "rl_message.rl_properties.quantity": "event.0.quantity"
+            },
+            "rudder": {
+                "rl_message": {
+                    "rl_channel": "Test Channel",
+                    "rl_context": {
+                        "rl_app": {
+                            "rl_build": "0",
+                            "rl_name": "com.rudderlabs.android.library.test",
+                            "rl_namespace": "com.rudderlabs.android.library.test",
+                            "rl_version": "1.0.0"
+                        },
+                        "rl_traits": {
+                            "rl_anonymous_id": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6"
+                        },
+                        "rl_library": {
+                            "rl_name": "com.rudderlabs.android.library",
+                            "rl_version": "1.0"
+                        },
+                        "rl_os": {
+                            "rl_name": "Android",
+                            "rl_version": "9"
+                        },
+                        "rl_screen": {
+                            "rl_density": 1,
+                            "rl_width": 470,
+                            "rl_height": 320
+                        },
+                        "rl_user_agent": "",
+                        "rl_locale": "en-US",
+                        "rl_device": {
+                            "rl_id": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6",
+                            "rl_manufacturer": "unknown",
+                            "rl_model": "robolectric",
+                            "rl_name": "robolectric"
+                        },
+                        "rl_network": {
+                            "rl_carrier": ""
+                        }
+                    },
+                    "rl_type": "track",
+                    "rl_message_id": "d6a75a2d-43a2-4d0c-9bcc-5f6e6705299b",
+                    "rl_timestamp": "2019-07-19 10:38:03+0000",
+                    "rl_anonymous_id": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6",
+                    "rl_event": "Product Clicked",
+                    "rl_properties": {
+                        "product_id": "507f1f77bcf86cd799439011",
+                        "sku": "45790-32",
+                        "category": "Games",
+                        "name": "Monopoly: 3rd Edition",
+                        "brand": "Monopoly",
+                        "variant": "Single User",
+                        "price": 19.0,
+                        "quantity": 1,
+                        "coupon": "MAY_DEALS_3",
+                        "position": 1,
+                        "url": "https://www.example.com/product/path",
+                        "image_url": "https://www.example.com/product/path.jpg"
+                    },
+                    "rl_integrations": [
+                        "rudderlabs"
+                    ]
+                }
+            },
+            "GA": {
+                "t": "event",
+                "tid": "UA-143161493-2",
+                "v": 1,
+                "pa": "click",
+                "ec":  "Product Clicked",
+                "ea": "Product Clicked",
+                "pr1ps": 1,
+                "pr1qt": 1
+            },
+            "AM" : {
+                "api_key": "b718269870595f4ceed44609d3de5cdc"
+            }
+
+        },
+        {
+            "name": "Track",
+            "GANet": {
+                "url": "https://www.google-analytics.com/collect",
+                "type": "KV"
+            },
+            "AMNet": {
+                "url": "https://api.amplitude.com/httpapi",
+                "type": "KV"
+            },
+            "GAMapping": {
+                "rl_message.rl_context.rl_traits.rl_anonymous_id": "cid",
+                "rl_message.rl_properties.category": "ec",
+                "rl_message.rl_properties.label": "el",
+                "rl_message.rl_properties.value": "ev"
+            },
+            "AMMapping": {
+                "rl_message.rl_context.rl_traits.rl_anonymous_id":  "event.0.user_id",
+                "rl_message.rl_event": "event.0.event_type"
+            },
+            "rudder": {
+                "rl_message": {
+                    "rl_channel": "Test Channel",
+                    "rl_context": {
+                        "rl_app": {
+                            "rl_build": "0",
+                            "rl_name": "com.rudderlabs.android.library.test",
+                            "rl_namespace": "com.rudderlabs.android.library.test",
+                            "rl_version": "1.0.0"
+                        },
+                        "rl_traits": {
+                            "rl_anonymous_id": "19702fee-6184-482e-aa05-8ab21402e1f3"
+                        },
+                        "rl_library": {
+                            "rl_name": "com.rudderlabs.android.library",
+                            "rl_version": "1.0"
+                        },
+                        "rl_os": {
+                            "rl_name": "Android",
+                            "rl_version": "9"
+                        },
+                        "rl_screen": {
+                            "rl_density": 1,
+                            "rl_width": 470,
+                            "rl_height": 320
+                        },
+                        "rl_user_agent": "",
+                        "rl_locale": "en-US",
+                        "rl_device": {
+                            "rl_id": "19702fee-6184-482e-aa05-8ab21402e1f3",
+                            "rl_manufacturer": "unknown",
+                            "rl_model": "robolectric",
+                            "rl_name": "robolectric"
+                        },
+                        "rl_network": {
+                            "rl_carrier": ""
+                        }
+                    },
+                    "rl_type": "track",
+                    "rl_message_id": "6def71bd-eae8-4cb1-bfe7-0b5e7eaf89fd",
+                    "rl_timestamp": "2019-07-19 10:12:22+0000",
+                    "rl_anonymous_id": "19702fee-6184-482e-aa05-8ab21402e1f3",
+                    "rl_event": "Test Track",
+                    "rl_properties": {
+                        "category": "Test Category",
+                        "label": "Test Label",
+                        "value": 5
+                    },
+                    "rl_integrations": [
+                        "rudderlabs"
+                    ]
+                }
+            },
+            "GA": {
+                "t": "event",
+                "tid": "UA-143161493-2",
+                "ea": "clicked",
+                "v": 1
+            },
+            "AM" : {
+                "api_key": "b718269870595f4ceed44609d3de5cdc"
+            }
+        }
+    ]
+}
