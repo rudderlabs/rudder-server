@@ -3,6 +3,7 @@ module github.com/rudderlabs/rudder-server
 go 1.12
 
 require (
+	github.com/aws/aws-sdk-go v1.21.7
 	github.com/go-redis/redis v6.15.2+incompatible
 	github.com/gomodule/redigo v2.0.0+incompatible // indirect
 	github.com/joho/godotenv v1.3.0

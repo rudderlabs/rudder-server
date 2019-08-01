@@ -100,8 +100,8 @@ func main() {
 
 	runtime.GOMAXPROCS(maxProcess)
 	fmt.Println("Clearing DB", *clearDB)
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention)
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, true)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
 
 	//Setup the three modules, the gateway, the router and the processor
 
