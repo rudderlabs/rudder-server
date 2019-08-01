@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -38,6 +39,7 @@ var (
 	batchTimeout                              time.Duration
 	respMessage                               string
 	enabledWriteKeys                          []string
+	configSubscriberLock                      sync.RWMutex
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -126,6 +128,8 @@ func contains(slice []string, str string) bool {
 func (gateway *HandleT) verifyRequestBodyConfig(body []byte) bool {
 	bodyJSON := fmt.Sprintf("%s", body)
 	writeKey := gjson.Get(bodyJSON, "writeKey")
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
 	if !contains(enabledWriteKeys, writeKey.Str) {
 		return false
 	}
@@ -183,12 +187,14 @@ func (gateway *HandleT) startWebHandler() {
 	http.ListenAndServe(":"+strconv.Itoa(webPort), nil)
 }
 
+// Gets the config from config backend and extracts enabled writekeys
 func backendConfigSubscriber() {
 	ch1 := make(chan utils.DataEvent)
 	backendconfig.Eb.Subscribe("backendconfig", ch1)
 	for {
 		select {
 		case config := <-ch1:
+			configSubscriberLock.Lock()
 			enabledWriteKeys = []string{}
 			sources := config.Data.(backendconfig.SourcesT)
 			for _, source := range sources.Sources {
@@ -196,6 +202,7 @@ func backendConfigSubscriber() {
 					enabledWriteKeys = append(enabledWriteKeys, source.WriteKey)
 				}
 			}
+			configSubscriberLock.Unlock()
 		}
 	}
 }
