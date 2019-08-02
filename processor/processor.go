@@ -8,12 +8,15 @@ import (
 	"sync"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/utils"
 	uuid "github.com/satori/go.uuid"
+	"github.com/tidwall/gjson"
 )
 
 //HandleT is an handle to this object used in main.go
@@ -69,6 +72,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) 
 	proc.statsJobs.Setup("ProcessorJobs")
 	proc.statsDBR.Setup("ProcessorDBRead")
 	proc.statsDBW.Setup("ProcessorDBWrite")
+	go backendConfigSubscriber()
 	proc.transformer.Setup()
 	proc.crashRecover()
 	go proc.mainLoop()
@@ -85,6 +89,8 @@ var (
 	sessionThresholdInS    time.Duration
 	sessionThresholdEvents int
 	processSessions        bool
+	writeKeyDestinationMap map[string][]backendconfig.DestinationT
+	configSubscriberLock   sync.RWMutex
 )
 
 func loadConfig() {
@@ -98,6 +104,23 @@ func loadConfig() {
 	numTransformWorker = config.GetInt("Processor.numTransformWorker", 32)
 	maxRetry = config.GetInt("Processor.maxRetry", 3)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
+}
+
+func backendConfigSubscriber() {
+	ch := make(chan utils.DataEvent)
+	backendconfig.Eb.Subscribe("backendconfig", ch)
+	for {
+		config := <-ch
+		configSubscriberLock.Lock()
+		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
+		sources := config.Data.(backendconfig.SourcesT)
+		for _, source := range sources.Sources {
+			if source.Enabled {
+				writeKeyDestinationMap[source.WriteKey] = source.Destinations
+			}
+		}
+		configSubscriberLock.Unlock()
+	}
 }
 
 func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
@@ -297,6 +320,18 @@ func (proc *HandleT) createSessions() {
 	}
 }
 
+func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+	var enabledDests []backendconfig.DestinationT
+	for _, dest := range writeKeyDestinationMap[writeKey] {
+		if destinationName == dest.DestinationDefinition.Name && dest.Enabled {
+			enabledDests = append(enabledDests, dest)
+		}
+	}
+	return enabledDests
+}
+
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]interface{}) {
 
 	proc.statsJobs.Start()
@@ -326,6 +361,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			eventList = parsedEventList[idx]
 			ok = (eventList != nil)
 		}
+		writeKey := gjson.Get(string(batchEvent.EventPayload), "writeKey").Str
 
 		if ok {
 			//Iterate through all the events in the batch
@@ -334,19 +370,26 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				totalEvents++
 				//Getting all the destinations which are enabled for this
 				//event
-				destIDs := integrations.GetDestinationIDs(singularEvent)
-				if len(destIDs) == 0 {
+				destTypes := integrations.GetDestinationIDs(singularEvent)
+
+				if len(destTypes) == 0 {
 					continue
 				}
-
-				for _, destID := range destIDs {
-					//We have at-least one event so marking it good
-					_, ok := eventsByDest[destID]
-					if !ok {
-						eventsByDest[destID] = make([]interface{}, 0)
+				for _, destType := range destTypes {
+					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
+					// Adding a singular event multiple times if there are multiple destinations of same type
+					for _, destination := range enabledDestinationsList {
+						fmt.Println("destination ", destination)
+						singularEvent.(map[string]interface{})["rl_message"].(map[string]interface{})["rl_destination"] = destination
+						fmt.Println(singularEvent.(map[string]interface{})["rl_message"].(map[string]interface{})["rl_destination"])
+						//We have at-least one event so marking it good
+						_, ok := eventsByDest[destType]
+						if !ok {
+							eventsByDest[destType] = make([]interface{}, 0)
+						}
+						eventsByDest[destType] = append(eventsByDest[destType],
+							singularEvent)
 					}
-					eventsByDest[destID] = append(eventsByDest[destID],
-						singularEvent)
 				}
 			}
 		}

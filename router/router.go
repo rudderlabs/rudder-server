@@ -315,6 +315,7 @@ func (rt *HandleT) generatorLoop() {
 
 	for {
 		if !rt.isEnabled {
+			time.Sleep(1000)
 			continue
 		}
 		toQuery := jobQueryBatchSize

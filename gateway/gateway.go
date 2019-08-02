@@ -192,18 +192,16 @@ func backendConfigSubscriber() {
 	ch1 := make(chan utils.DataEvent)
 	backendconfig.Eb.Subscribe("backendconfig", ch1)
 	for {
-		select {
-		case config := <-ch1:
-			configSubscriberLock.Lock()
-			enabledWriteKeys = []string{}
-			sources := config.Data.(backendconfig.SourcesT)
-			for _, source := range sources.Sources {
-				if source.Enabled {
-					enabledWriteKeys = append(enabledWriteKeys, source.WriteKey)
-				}
+		config := <-ch1
+		configSubscriberLock.Lock()
+		enabledWriteKeys = []string{}
+		sources := config.Data.(backendconfig.SourcesT)
+		for _, source := range sources.Sources {
+			if source.Enabled {
+				enabledWriteKeys = append(enabledWriteKeys, source.WriteKey)
 			}
-			configSubscriberLock.Unlock()
 		}
+		configSubscriberLock.Unlock()
 	}
 }
 
