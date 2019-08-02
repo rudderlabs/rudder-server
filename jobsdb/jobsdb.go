@@ -191,6 +191,7 @@ func loadConfig() {
 }
 
 func init() {
+	config.Initialize()
 	loadConfig()
 }
 
@@ -1224,7 +1225,7 @@ func (jd *HandleT) backupDSLoop() {
 func (jd *HandleT) removeTableJSONDumps() {
 	dir, _ := os.Getwd()
 	var findOptions []string
-	findOptions = append(findOptions, dir, "-name", fmt.Sprintf("pre_drop_%v_job*", jd.tablePrefix))
+	findOptions = append(findOptions, dir, "-name", fmt.Sprintf("%v_job*", jd.tablePrefix))
 	filePathsString, _ := exec.Command("find", findOptions...).Output()
 	filePaths := strings.Split(strings.TrimSpace(string(filePathsString)), "\n")
 	for _, filePath := range filePaths {
@@ -1233,7 +1234,7 @@ func (jd *HandleT) removeTableJSONDumps() {
 }
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
-	path := fmt.Sprintf(`%v%v.json`, os.Getenv("TMPDIR"), strings.Split(tableName, "pre_drop_")[1])
+	path := fmt.Sprintf(`%v%v.json`, os.Getenv("TMPDIR"), strings.TrimPrefix(tableName, "pre_drop_"))
 
 	// dump table into a file (gives file with json of each row in single line)
 	var dumpOptions []string
@@ -1255,13 +1256,13 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	var splitOptions []string
 	splitOptions = append(splitOptions, fmt.Sprintf(`-l%v`, 10))
 	splitOptions = append(splitOptions, path)
-	splitOptions = append(splitOptions, fmt.Sprintf("%v_part_", tableName))
+	splitOptions = append(splitOptions, fmt.Sprintf("%v_part_", strings.TrimPrefix(tableName, "pre_drop_")))
 	_, err = exec.Command("split", splitOptions...).Output()
 
 	// find all the split files
 	dir, err := os.Getwd()
 	var findOptions []string
-	findOptions = append(findOptions, dir, "-name", fmt.Sprintf("%v_part_*", tableName))
+	findOptions = append(findOptions, dir, "-name", fmt.Sprintf("%v_part_*", strings.TrimPrefix(tableName, "pre_drop_")))
 	filePathsString, err := exec.Command("find", findOptions...).Output()
 	filePaths := strings.Split(strings.TrimSpace(string(filePathsString)), "\n")
 
