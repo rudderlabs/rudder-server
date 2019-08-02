@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/misc"
 )

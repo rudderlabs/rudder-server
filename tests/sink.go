@@ -8,21 +8,38 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/misc"
-
 	"github.com/go-redis/redis"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/misc"
 )
 
 const (
-	redisServer = "redis:6379"
-	testName    = "Test9"
+	redisServerDefault = "localhost:6379"
 )
+
+var redisServer = config.GetEnv("REDIS_URL", redisServerDefault)
+var testName = config.GetEnv("TEST_NAME", "TEST-default")
 
 var count uint64
 var showPayload = false
 
 var enableTestStats = true
 var redisChan chan string
+
+// Correctness Test parameters
+var batchTimeout = 1000 * time.Millisecond
+
+// After these many empty batch timeouts, we mark the test inactive
+var inactivityBatchesThreshold = 30
+var isInactive int32
+
+func handleActiveReq(rw http.ResponseWriter, req *http.Request) {
+	if atomic.LoadInt32(&isInactive) == 1 {
+		rw.Write([]byte("no"))
+	} else {
+		rw.Write([]byte("yes"))
+	}
+}
 
 func handleReq(rw http.ResponseWriter, req *http.Request) {
 	/*
@@ -54,8 +71,6 @@ func printCounter() {
 }
 
 func redisLoop() {
-	var batchTimeout = 1000 * time.Millisecond
-
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: redisServer,
 	})
@@ -66,11 +81,17 @@ func redisLoop() {
 
 	pipe := redisClient.Pipeline()
 	var eventAdded bool
+	var inactiveBatchCount int
 
 	for {
 		select {
 		case eventData := <-redisChan:
 			data := strings.Split(eventData, "-")
+			if len(data) < 3 {
+				fmt.Println("Invalid Event data")
+				break
+			}
+
 			userID := data[0]
 			messageID := data[1]
 			eventTime, err := strconv.Atoi(data[2])
@@ -87,6 +108,13 @@ func redisLoop() {
 			if eventAdded {
 				_, err := pipe.Exec()
 				misc.AssertError(err)
+				atomic.StoreInt32(&isInactive, 0)
+				inactiveBatchCount = 0
+			} else {
+				inactiveBatchCount++
+				if inactiveBatchCount > inactivityBatchesThreshold {
+					atomic.StoreInt32(&isInactive, 1)
+				}
 			}
 			eventAdded = false
 		}
@@ -99,7 +127,12 @@ func main() {
 	go printCounter()
 
 	if enableTestStats {
+		if len(redisServer) == 0 || len(testName) == 0 {
+			panic("REDIS_URL or TEST_NAME variables can't be empty")
+		}
+
 		go redisLoop()
+		http.HandleFunc("/isActive", handleActiveReq)
 	}
 
 	http.HandleFunc("/", handleReq)

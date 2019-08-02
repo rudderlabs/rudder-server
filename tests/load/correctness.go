@@ -1,6 +1,7 @@
 package main
 
 import (
+
 	//"encoding/json"
 
 	"bytes"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/gjson"
@@ -24,9 +26,10 @@ import (
 )
 
 const (
-	eventsPath  = "events"
-	serverIP    = "http://localhost:8080/hello"
-	redisServer = "localhost:6379"
+	eventsPath          = "events"
+	rudderServerDefault = "http://localhost:8080/hello"
+	redisServerDefault  = "localhost:6379"
+	sinkServerDefault   = "http://localhost:8181/isActive"
 )
 
 type RudderEvent map[string]interface{}
@@ -40,7 +43,10 @@ var testTimeUp bool
 var done chan bool
 var redisChan chan []RudderEvent
 
-const testName = "Test9"
+var testName = config.GetEnv("TEST_NAME", "TEST-default")
+var redisServer = config.GetEnv("REDIS_SERVER", redisServerDefault)
+var sinkServer = config.GetEnv("SINK_SERVER", sinkServerDefault)
+var rudderServer = config.GetEnv("RUDDER_SERVER", rudderServerDefault)
 
 var redisUserSet = fmt.Sprintf("%s_user_src", testName)
 var redisEventSet = fmt.Sprintf("%s_event_src", testName)
@@ -116,16 +122,19 @@ func computeTestResults(testDuration int) {
 			fmt.Printf("User: %s, Src Events: %d, Dest Events: %d \n", user, numSrcEvents, numDstEvents)
 			inOrder = false
 		} else {
-			//TODO: Batching for larger data sets
-			dstEvents := redisClient.LRange(userDstEventListKey, 0, numDstEvents-1).Val()
-			srcEvents := redisClient.LRange(userSrcEventListKey, 0, numSrcEvents-1).Val()
+			// Batching for larger data sets
+			var batchSize int64 = 10000
+			var currStart int64
+			for i := currStart; i < (numDstEvents/batchSize)+1; i++ {
+				dstEvents := redisClient.LRange(userDstEventListKey, currStart, currStart+batchSize).Val()
+				srcEvents := redisClient.LRange(userSrcEventListKey, currStart, currStart+batchSize).Val()
 
-			var i int64
-			for i = 0; i < numDstEvents; i++ {
-				if dstEvents[i] != srcEvents[i] {
-					inOrder = false
-					fmt.Printf("Did not match: index: %d, Source Event: %s, Destination event: %s", i, srcEvents[i], dstEvents[i])
-					break
+				for j := 0; j < len(dstEvents); j++ {
+					if dstEvents[j] != srcEvents[j] {
+						inOrder = false
+						fmt.Printf("Did not match: index: %d, Source Event: %s, Destination event: %s", i, srcEvents[j], dstEvents[j])
+						break
+					}
 				}
 			}
 		}
@@ -212,7 +221,7 @@ func generateEvents(userID string, eventDelay int) {
 }
 
 func sendToRudder(jsonPayload string) {
-	req, err := http.NewRequest("POST", serverIP, bytes.NewBuffer([]byte(jsonPayload)))
+	req, err := http.NewRequest("POST", rudderServer, bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
@@ -272,17 +281,18 @@ func main() {
 	done = make(chan bool)
 	redisChan = make(chan []RudderEvent)
 
-	numUsers := *flag.Int("n", 5, "number of user threads that does the send, default is 1")
+	numUsers := *flag.Int("n", 10, "number of user threads that does the send, default is 1")
 	eventDelayInMs := *flag.Int("d", 1000, "Delay between two events for a given user in Millisec")
-	testDurationInSec := *flag.Int("t", 60, "Duration of the test in seconds. Set it to -1 to run forever. Default is 60 sec")
-	waitTimeInSec := *flag.Int("w", 10, "Time to wait till the events are synced to sink in sec. Default is 60s")
+	testDurationInSec := *flag.Int("t", 60, "Duration of the test in seconds. Default is 60 sec")
+	pollTimeInSec := *flag.Int("p", 2, "Polling interval in sec to find if sink is inactive")
+	waitTimeInSec := *flag.Int("w", 600, "Max wait-time in sec waiting for sink. Default 600s")
 
 	flag.Parse()
 
 	go redisLoop()
 
 	fmt.Printf("Setting up test with %d users.\n", numUsers)
-	fmt.Printf("Running test for %d seconds. -1 means forever. \n", testDurationInSec)
+	fmt.Printf("Running test for %d seconds. \n", testDurationInSec)
 
 	for i := 0; i < numUsers; i++ {
 		userID := ksuid.New()
@@ -298,9 +308,26 @@ func main() {
 		<-done
 	}
 
-	fmt.Printf("Generation complete. Waiting to %d sec let the events flow to sink...\n", waitTimeInSec)
+	fmt.Printf("Generation complete. Waiting for test sink at %s...\n", sinkServer)
 
-	time.Sleep(time.Duration(waitTimeInSec) * time.Second)
+	var retryCount int
+
+	for {
+		time.Sleep(time.Duration(pollTimeInSec) * time.Second)
+		resp, err := http.Get(sinkServer)
+		if err != nil {
+			fmt.Println("Invalid Sink URL")
+		}
+		defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
+		if string(body) == "no" {
+			break
+		}
+		retryCount++
+		if retryCount > (waitTimeInSec / pollTimeInSec) {
+			fmt.Println("Wait time exceeded. Exiting... ")
+		}
+	}
 
 	computeTestResults(testDurationInSec)
 }
