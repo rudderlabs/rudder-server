@@ -1195,8 +1195,11 @@ func (jd *HandleT) backupDSLoop() {
 			continue
 		}
 
+		opPayload, err := json.Marshal(&backupDS)
+		jd.assertError(err)
+		opID := jd.journalMarkStart(backupDSOperation, opPayload)
 		// write jobs table to s3
-		_, err := jd.backupTable(backupDS.JobTable)
+		_, err = jd.backupTable(backupDS.JobTable)
 		if err != nil {
 			log.Println(err)
 			continue
@@ -1207,47 +1210,87 @@ func (jd *HandleT) backupDSLoop() {
 			log.Println(err)
 			continue
 		}
-		// jd.journalMarkDone(opID)
-
-		// drop dataset after successfully uploading both jobs and jobs_status to s3
-		opPayload, err := json.Marshal(&backupDS)
-		jd.assertError(err)
-		opID := jd.journalMarkStart(dropDSOperation, opPayload)
-		jd.dropDS(backupDS, false)
 		jd.journalMarkDone(opID)
 
+		// drop dataset after successfully uploading both jobs and jobs_status to s3
+		opPayload, err = json.Marshal(&backupDS)
+		jd.assertError(err)
+		opID = jd.journalMarkStart(dropDSOperation, opPayload)
+		jd.dropDS(backupDS, false)
+		jd.journalMarkDone(opID)
+	}
+}
+
+func (jd *HandleT) removeTableJSONDumps() {
+	dir, _ := os.Getwd()
+	var findOptions []string
+	findOptions = append(findOptions, dir, "-name", fmt.Sprintf("pre_drop_%v_job*", jd.tablePrefix))
+	filePathsString, _ := exec.Command("find", findOptions...).Output()
+	filePaths := strings.Split(strings.TrimSpace(string(filePathsString)), "\n")
+	for _, filePath := range filePaths {
+		os.Remove(filePath)
 	}
 }
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
-	path := fmt.Sprintf(`%v.sql.tar.gz`, strings.Split(tableName, "pre_drop_")[1])
+	path := fmt.Sprintf(`%v%v.json`, os.Getenv("TMPDIR"), strings.Split(tableName, "pre_drop_")[1])
 
+	// dump table into a file (gives file with json of each row in single line)
 	var dumpOptions []string
 	dumpOptions = append(dumpOptions, fmt.Sprintf(`-d%v`, dbname))
 	dumpOptions = append(dumpOptions, fmt.Sprintf(`-h%v`, host))
 	dumpOptions = append(dumpOptions, fmt.Sprintf(`-p%v`, port))
 	dumpOptions = append(dumpOptions, fmt.Sprintf(`-U%v`, user))
-	dumpOptions = append(dumpOptions, fmt.Sprintf(`-t%v`, fmt.Sprintf(`public.%v`, tableName)))
-	dumpOptions = append(dumpOptions, "-Fc", fmt.Sprintf(`-f%v`, path))
+	copyCommand := fmt.Sprintf(`COPY (SELECT row_to_json(%v) FROM (SELECT * FROM %v) %v) TO '%v';`, dbname, tableName, dbname, path)
+	dumpOptions = append(dumpOptions, fmt.Sprintf(`-c%v`, copyCommand))
 
-	_, err = exec.Command("pg_dump", dumpOptions...).Output()
-	if err != nil {
-		log.Println(err)
-		return false, err
-	}
-
-	file, err := os.Open(path)
+	_, err = exec.Command("psql", dumpOptions...).Output()
 	if err != nil {
 		log.Println(err)
 		return false, err
 	}
 	defer os.Remove(path)
-	defer file.Close()
 
-	err = jd.fileUploader.Upload(file)
-	if err != nil {
-		log.Println(err)
-		return false, err
+	// split the file dump by configured number of lines
+	var splitOptions []string
+	splitOptions = append(splitOptions, fmt.Sprintf(`-l%v`, 10))
+	splitOptions = append(splitOptions, path)
+	splitOptions = append(splitOptions, fmt.Sprintf("%v_part_", tableName))
+	_, err = exec.Command("split", splitOptions...).Output()
+
+	// find all the split files
+	dir, err := os.Getwd()
+	var findOptions []string
+	findOptions = append(findOptions, dir, "-name", fmt.Sprintf("%v_part_*", tableName))
+	filePathsString, err := exec.Command("find", findOptions...).Output()
+	filePaths := strings.Split(strings.TrimSpace(string(filePathsString)), "\n")
+
+	// convert each split file into json array and upload it
+	for _, filePath := range filePaths {
+		var sedOptions []string
+		sedOptions = append(sedOptions, "-i.tmp")
+		sedOptions = append(sedOptions, "1s/^/[/;$!s/$/,/;$s/$/]/")
+		sedOptions = append(sedOptions, filePath)
+		_, err = exec.Command("sed", sedOptions...).Output()
+		if err != nil {
+			log.Println(err)
+			return false, err
+		}
+
+		file, err := os.Open(filePath)
+		if err != nil {
+			log.Println(err)
+			return false, err
+		}
+		defer os.Remove(filePath)
+		defer os.Remove(fmt.Sprintf("%v.tmp", filePath))
+		defer file.Close()
+
+		err = jd.fileUploader.Upload(file)
+		if err != nil {
+			log.Println(err)
+			return false, err
+		}
 	}
 
 	return true, nil
@@ -1288,6 +1331,7 @@ const (
 	addDSOperation         = "ADD_DS"
 	migrateCopyOperation   = "MIGRATE_COPY"
 	postMigrateDSOperation = "POST_MIGRATE_DS_OP"
+	backupDSOperation      = "BACKUP_DS"
 	dropDSOperation        = "DROP_DS"
 )
 
@@ -1314,7 +1358,7 @@ func (jd *HandleT) delJournal() {
 
 func (jd *HandleT) journalMarkStart(opType string, opPayload json.RawMessage) int64 {
 
-	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == dropDSOperation)
+	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == backupDSOperation || opType == dropDSOperation)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
                                        VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
@@ -1407,6 +1451,10 @@ func (jd *HandleT) recoverFromJournal() {
 		fmt.Println("Recovering migrateDel operation", migrateSrc)
 		log.Println("Recovering migrateDel operation", migrateSrc)
 		undoOp = false
+	case backupDSOperation:
+		jd.removeTableJSONDumps()
+		fmt.Println("Removing all stale json dumps of tables")
+		undoOp = true
 	case dropDSOperation:
 		//Some of the source datasets would have been
 		var dataset dataSetT

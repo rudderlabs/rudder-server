@@ -3,6 +3,7 @@ package jobsdb
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/config"
 
@@ -20,17 +21,19 @@ func (uploader *S3FileUploaderT) Upload(file *os.File) error {
 		panic(err)
 	}
 	manager := s3manager.NewUploader(sess)
-	fmt.Printf("Uploading %q to s3:%q\n", file.Name(), uploader.s3Bucket)
+	splitFileName := strings.Split(file.Name(), "/")
+	fileName := splitFileName[len(splitFileName)-1]
+	fmt.Printf("Uploading %q to s3:%q\n", fileName, uploader.s3Bucket)
 	_, err = manager.Upload(&s3manager.UploadInput{
 		Bucket: aws.String(uploader.s3Bucket),
-		Key:    aws.String(file.Name()),
+		Key:    aws.String(fileName),
 		Body:   file,
 	})
 	if err != nil {
 		fmt.Println(err)
 		return err
 	}
-	fmt.Printf("Successfully uploaded %q to s3:%q\n", file.Name(), uploader.s3Bucket)
+	fmt.Printf("Successfully uploaded %q to s3:%q\n", fileName, uploader.s3Bucket)
 	return err
 }
 
