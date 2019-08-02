@@ -25,7 +25,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	var req *http.Request
 	var err error
 	if useTestSink {
-		req, err = http.NewRequest("GET", "http://localhost:8181/", nil)
+		req, err = http.NewRequest("GET", testSinkURL, nil)
 		misc.AssertError(err)
 	} else {
 		req, err = http.NewRequest("GET", postInfo.URL, nil)
@@ -50,22 +50,31 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	log.Println("making sink request")
 	resp, err := client.Do(req)
 
-	if err != nil {
-		log.Println("Errored when sending request to the server", err)
-		return http.StatusGatewayTimeout, "", "" // sending generic status code
+	var respBody []byte
+
+	if resp != nil && resp.Body != nil {
+		respBody, _ = ioutil.ReadAll(resp.Body)
+		defer resp.Body.Close()
 	}
 
-	defer resp.Body.Close()
-	respBody, _ := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Println("Errored when sending request to the server", err)
+		return http.StatusGatewayTimeout, "", string(respBody)
+	}
 
-	log.Println("respBody: ", respBody)
-
-	//return resp.StatusCode, resp.Status, "`{}`"
-	return resp.StatusCode, resp.Status, string(respBody) // need to check if respBody is not a json as job status need it to be one
+	return resp.StatusCode, resp.Status, string(respBody)
 }
 
 //Setup initializes the module
 func (network *NetHandleT) Setup(destID string) {
 	fmt.Println("Network Handler Startup")
-	network.httpClient = &http.Client{}
+	//Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
+	defaultRoundTripper := http.DefaultTransport
+	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
+	misc.Assert(ok)
+	defaultTransport := *defaultTransportPointer
+	defaultTransport.MaxIdleConns = 100
+	defaultTransport.MaxIdleConnsPerHost = 100
+	network.httpClient = &http.Client{Transport: &defaultTransport}
+	//network.httpClient = &http.Client{}
 }

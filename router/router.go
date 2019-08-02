@@ -42,6 +42,7 @@ var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
 	readSleep, maxSleep, maxStatusUpdateWait                                       time.Duration
 	randomWorkerAssign, useTestSink                                                bool
+	testSinkURL                                                                    string
 )
 
 func loadConfig() {
@@ -55,6 +56,7 @@ func loadConfig() {
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
 	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
 	useTestSink = config.GetBool("Router.useTestSink", false)
+	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 }
 
 func (rt *HandleT) workerProcess(worker *Worker) {
@@ -132,6 +134,7 @@ func (rt *HandleT) workerProcess(worker *Worker) {
 func (rt *HandleT) initWorkers() {
 	rt.workers = make([]*Worker, noOfWorkers)
 	for i := 0; i < noOfWorkers; i++ {
+		fmt.Println("Worker Started", i)
 		var worker *Worker
 		workerChannel := make(chan *jobsdb.JobT, noOfJobsPerChannel)
 		worker = &Worker{channel: workerChannel, workerID: i, failedJobs: 0, sleepTime: 1}
@@ -301,9 +304,13 @@ func (rt *HandleT) printStatsLoop() {
 	}
 }
 
+func init() {
+	config.Initialize()
+	loadConfig()
+}
+
 //Setup initializes this module
 func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
-	loadConfig()
 	fmt.Println("Router started")
 	rt.jobsDB = jobsDB
 	rt.destID = destID

@@ -6,16 +6,17 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	uuid "github.com/satori/go.uuid"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 	"io/ioutil"
 	"math"
 	"math/rand"
 	"net/http"
 	"strings"
-	"time"
 	"sync/atomic"
+	"time"
+
+	uuid "github.com/satori/go.uuid"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/misc"
 )
@@ -27,16 +28,19 @@ const (
 	rudderJSONPath   = "events.#.rudder"
 	gaJSONPath       = "events.#.GA"
 	variations       = 5
+	serverIP         = "http://localhost:8080/hello"
+	// serverIP	 = "http://172.31.94.69:8080/hello"
 )
-
 
 var (
 	totalCount uint64
+	failCount  uint64
 )
 
 var done chan bool
+
 func main() {
-	
+
 	done = make(chan bool)
 
 	numberOfUsers := flag.Int("nu", 1, "number of user threads that does the send, default is 1")
@@ -47,6 +51,8 @@ func main() {
 
 	flag.Parse()
 
+	go printStats()
+
 	for i := 1; i <= *numberOfUsers; i++ {
 		id := uuid.NewV4()
 		if *numberOfEventPtr == "one" {
@@ -56,7 +62,7 @@ func main() {
 		}
 	}
 
-	for i := 1; i <= *numberOfUsers; i++ {	
+	for i := 1; i <= *numberOfUsers; i++ {
 		<-done
 	}
 
@@ -99,7 +105,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 			if count > 0 && countLoop >= count {
 				break
 			}
-			
+
 			for k, _ := range mapping {
 				////fmt.Printf("key %v, val %v \n", k, v.Value())
 
@@ -218,7 +224,7 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 		countLoop++
 
 	}
-	done <- true	
+	done <- true
 }
 
 func generateData(payload *[]byte, path string, value interface{}) []byte {
@@ -243,13 +249,20 @@ func generateData(payload *[]byte, path string, value interface{}) []byte {
 	return *payload
 }
 
+func printStats() {
+	for {
+		time.Sleep(5 * time.Second)
+		fmt.Println("Success/Fail", totalCount, failCount)
+	}
+}
 func sendToRudder(jsonPayload string) {
-	req, err := http.NewRequest("POST", "http://localhost:8080/hello", bytes.NewBuffer([]byte(jsonPayload)))
+	req, err := http.NewRequest("POST", serverIP, bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		atomic.AddUint64(&failCount, 1)
 		return
 	}
 	defer resp.Body.Close()
@@ -259,7 +272,5 @@ func sendToRudder(jsonPayload string) {
 	ioutil.ReadAll(resp.Body)
 	//body , _ := ioutil.ReadAll(resp.Body)
 	//fmt.Println("response Body:", string(body))
-	atomic.AddUint64(&totalCount, 1)	
+	atomic.AddUint64(&totalCount, 1)
 }
-
-

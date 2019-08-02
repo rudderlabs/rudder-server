@@ -1,9 +1,11 @@
 # Contains the configuration for the whole server
 # Dont set secrets, passwords, api_keys etc. in this file. Use '.env' file for that
 
-maxProcess = 12 # Max number of cpu process to be used by go runtime 
+maxProcess = 12 # Max number of cpu process to be used by go runtime
 gwDBRetention = 1
 routerDBRetention = 0
+enableProcessor = true
+enableRouter = true
 
 [Gateway]
 webPort = 8080
@@ -21,28 +23,32 @@ jobStatusMigrateThres = 5
 maxDSSize = 100000
 maxMigrateOnce = 10
 mainCheckSleepDurationInS = 2
+backupCheckSleepDurationIns = 5
 
 [Router]
 jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
 readSleepInMS = 10
-noOfWorkers = 16
+noOfWorkers = 8
 noOfJobsPerChannel = 1000
 ser = 3
 maxSleepInS = 3600
 maxStatusUpdateWaitInS = 5
 randomWorkerAssign = false
-useTestSink = false
+useTestSink = true
 
 [Processor]
 loopSleepInMS = 10
-batchSize = 1000
+dbReadBatchSize = 10000
+transformBatchSize = 10
 sessionThresholdEvents = 20
-sessionThresholdInS = 3
+sessionThresholdInS = 10
 processSessions = true
 maxChanSize = 2048
 numTransformWorker = 8
 maxRetry = 3
 retrySleepInMS = 100
 
-
+[Aws]
+region = "us-east-2"
+backupDSBucket = "dump-gateway-ds-test"
