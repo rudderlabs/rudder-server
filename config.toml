@@ -24,6 +24,7 @@ maxDSSize = 100000
 maxMigrateOnce = 10
 mainCheckSleepDurationInS = 2
 backupCheckSleepDurationIns = 5
+eventsInJSONFileDump = 100
 
 [Router]
 jobQueryBatchSize = 10000

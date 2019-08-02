@@ -160,10 +160,10 @@ var (
 )
 
 var (
-	maxDSSize, maxMigrateOnce                  int
-	jobDoneMigrateThres, jobStatusMigrateThres float64
-	mainCheckSleepDuration                     time.Duration
-	backupCheckSleepDuration                   time.Duration
+	maxDSSize, maxMigrateOnce, eventsInJSONFileDump int
+	jobDoneMigrateThres, jobStatusMigrateThres      float64
+	mainCheckSleepDuration                          time.Duration
+	backupCheckSleepDuration                        time.Duration
 )
 
 // Loads db config and migration related config from config file
@@ -188,6 +188,7 @@ func loadConfig() {
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
+	eventsInJSONFileDump = config.GetInt("JobsDB.eventsInJSONFileDump", 100)
 }
 
 func init() {
@@ -1186,7 +1187,7 @@ func (jd *HandleT) mainCheckLoop() {
 func (jd *HandleT) backupDSLoop() {
 	for {
 		time.Sleep(backupCheckSleepDuration)
-		fmt.Println(("BackupDS check:Start"))
+		fmt.Println("BackupDS check:Start")
 		backupDS := jd.getBackupDS()
 		// check if non empty dataset is present to backup
 		// else continue
@@ -1234,7 +1235,8 @@ func (jd *HandleT) removeTableJSONDumps() {
 }
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
-	path := fmt.Sprintf(`%v%v.json`, os.Getenv("TMPDIR"), strings.TrimPrefix(tableName, "pre_drop_"))
+	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
+	path := fmt.Sprintf(`%v%v.json`, os.Getenv("TMPDIR"), pathPrefix)
 
 	// dump table into a file (gives file with json of each row in single line)
 	var dumpOptions []string
@@ -1254,15 +1256,15 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 
 	// split the file dump by configured number of lines
 	var splitOptions []string
-	splitOptions = append(splitOptions, fmt.Sprintf(`-l%v`, 10))
+	splitOptions = append(splitOptions, fmt.Sprintf(`-l%v`, eventsInJSONFileDump))
 	splitOptions = append(splitOptions, path)
-	splitOptions = append(splitOptions, fmt.Sprintf("%v_part_", strings.TrimPrefix(tableName, "pre_drop_")))
+	splitOptions = append(splitOptions, fmt.Sprintf("%v_part_", pathPrefix))
 	_, err = exec.Command("split", splitOptions...).Output()
 
 	// find all the split files
 	dir, err := os.Getwd()
 	var findOptions []string
-	findOptions = append(findOptions, dir, "-name", fmt.Sprintf("%v_part_*", strings.TrimPrefix(tableName, "pre_drop_")))
+	findOptions = append(findOptions, dir, "-name", fmt.Sprintf("%v_part_*", pathPrefix))
 	filePathsString, err := exec.Command("find", findOptions...).Output()
 	filePaths := strings.Split(strings.TrimSpace(string(filePathsString)), "\n")
 
