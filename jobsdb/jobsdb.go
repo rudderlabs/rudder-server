@@ -1217,7 +1217,7 @@ func (jd *HandleT) backupDSLoop() {
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opPayload, err = json.Marshal(&backupDS)
 		jd.assertError(err)
-		opID = jd.journalMarkStart(dropDSOperation, opPayload)
+		opID = jd.journalMarkStart(backupDropDSOperation, opPayload)
 		jd.dropDS(backupDS, false)
 		jd.journalMarkDone(opID)
 	}
@@ -1335,6 +1335,7 @@ const (
 	migrateCopyOperation   = "MIGRATE_COPY"
 	postMigrateDSOperation = "POST_MIGRATE_DS_OP"
 	backupDSOperation      = "BACKUP_DS"
+	backupDropDSOperation  = "BACKUP_DROP_DS"
 	dropDSOperation        = "DROP_DS"
 )
 
@@ -1398,7 +1399,7 @@ func (jd *HandleT) recoverFromJournal() {
 	jd.assertError(err)
 	defer rows.Close()
 
-	count := 0
+	count := make(map[string]int)
 	var opID int64
 	var opType string
 	var opDone bool
@@ -1410,11 +1411,17 @@ func (jd *HandleT) recoverFromJournal() {
 		err = rows.Scan(&opID, &opType, &opDone, &opPayload)
 		jd.assertError(err)
 		jd.assert(opDone == false)
-		count++
+		// backupDSOperation and backupDropDSOperation ops are executed in separate go routine backupDSLoop
+		if opType == backupDSOperation || opType == backupDropDSOperation {
+			count["backupOps"]++
+		} else {
+			count["nonBackupOps"]++
+		}
 	}
-	jd.assert(count <= 1)
+	jd.assert(count["nonBackupOps"] <= 1)
+	jd.assert(count["backupOps"] <= 1)
 
-	if count == 0 {
+	if count["nonBackupOps"]+count["backupOps"] == 0 {
 		//Nothing to recoer
 		return
 	}
