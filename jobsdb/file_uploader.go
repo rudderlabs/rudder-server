@@ -3,10 +3,7 @@ package jobsdb
 import (
 	"fmt"
 	"os"
-<<<<<<< HEAD
 	"strings"
-=======
->>>>>>> origin/master
 
 	"github.com/rudderlabs/rudder-server/config"
 
