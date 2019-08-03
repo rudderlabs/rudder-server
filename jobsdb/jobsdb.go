@@ -25,6 +25,8 @@ import (
 	"math/rand"
 	"runtime/debug"
 	"sort"
+	"unicode/utf8"
+
 	"strconv"
 	"strings"
 	"sync"
@@ -185,6 +187,7 @@ func loadConfig() {
 }
 
 func init() {
+	config.Initialize()
 	loadConfig()
 }
 
@@ -997,6 +1000,10 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 
 	defer stmt.Close()
 	for _, status := range statusList {
+		//  Handle the case when google analytics returns gif in response
+		if !utf8.ValidString(string(status.ErrorResponse)) {
+			status.ErrorResponse, _ = json.Marshal("{}")
+		}
 		_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
 			status.RetryTime, status.ErrorCode, string(status.ErrorResponse))
 		jd.assertError(err)
