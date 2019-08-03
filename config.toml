@@ -23,6 +23,7 @@ jobStatusMigrateThres = 5
 maxDSSize = 100000
 maxMigrateOnce = 10
 mainCheckSleepDurationInS = 2
+backupCheckSleepDurationIns = 5
 
 [Router]
 jobQueryBatchSize = 10000
@@ -50,3 +51,6 @@ numTransformWorker = 8
 maxRetry = 3
 retrySleepInMS = 100
 
+[Aws]
+region = "us-east-2"
+backupDSBucket = "dump-gateway-ds-test"
