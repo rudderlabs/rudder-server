@@ -11,8 +11,8 @@ enableRouter = true
 webPort = 8080
 maxDBWriterProcess = 4
 CustomVal = "GW"
-maxBatchSize = 2
-batchTimeoutInMS = 2
+maxBatchSize = 32
+batchTimeoutInMS = 20
 respMessage = "OK"
 
 
