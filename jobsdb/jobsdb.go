@@ -998,8 +998,8 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
                                                %[1]s.expire_at
-                                             FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
-                                             WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable)
+                                             FROM %[1]s WHERE %[1]s.job_id NOT IN (SELECT DISTINCT(%[2]s.job_id)
+                                             FROM %[2]s)`, ds.JobTable, ds.JobStatusTable)
 
 	//log.Println(sqlStatement)
 
@@ -1549,7 +1549,6 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int) []*JobT 
 		return outJobs
 	}
 	for _, ds := range dsList {
-		//count==0 means return all which we don't want
 		jd.assert(count > 0)
 		jobs, err := jd.getUnprocessedJobsDS(ds, customValFilters, true, count)
 		jd.assertError(err)
@@ -1610,7 +1609,7 @@ GetToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
 func (jd *HandleT) GetToRetry(customValFilters []string, count int) []*JobT {
-	return jd.GetProcessed([]string{"failed"}, customValFilters, count)
+	return jd.GetProcessed([]string{FailedState}, customValFilters, count)
 }
 
 /*

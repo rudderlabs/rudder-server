@@ -20,18 +20,18 @@ import (
 
 //HandleT is the handle to this module.
 type HandleT struct {
-	requestQ               chan *jobsdb.JobT
-	responseQ              chan jobResponseT
-	jobsDB                 *jobsdb.HandleT
-	netHandle              *NetHandleT
-	destID                 string
-	workers                []*workerT
-	perfStats              *misc.PerfStats
-	successCount           uint64
-	failCount              uint64
-	isEnabled              bool
-	lastFailedToClearMutex sync.Mutex
-	lastFailedToClear      map[*workerT][]string
+	requestQ              chan *jobsdb.JobT
+	responseQ             chan jobResponseT
+	jobsDB                *jobsdb.HandleT
+	netHandle             *NetHandleT
+	destID                string
+	workers               []*workerT
+	perfStats             *misc.PerfStats
+	successCount          uint64
+	failCount             uint64
+	isEnabled             bool
+	toClearFailJobIDMutex sync.Mutex
+	toClearFailJobIDMap   map[*workerT][]string
 }
 
 type jobResponseT struct {
@@ -42,19 +42,19 @@ type jobResponseT struct {
 
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	channel              chan *jobsdb.JobT // the worker job channel
-	workerID             int               // identifies the worker
-	failedJobs           int               // counts the failed jobs of a worker till it gets reset by external channel
-	sleepTime            time.Duration     //the sleep duration for every job of the worker
-	lastFailedJobID      map[string]int64  //user to failed jobId
-	lastFailedJobIDMutex sync.RWMutex      //lock to protect structure above
+	channel          chan *jobsdb.JobT // the worker job channel
+	workerID         int               // identifies the worker
+	failedJobs       int               // counts the failed jobs of a worker till it gets reset by external channel
+	sleepTime        time.Duration     //the sleep duration for every job of the worker
+	failedJobIDMap   map[string]int64  //user to failed jobId
+	failedJobIDMutex sync.RWMutex      //lock to protect structure above
 }
 
 var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
 	maxFailedCountForJob                                                           int
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait                             time.Duration
-	randomWorkerAssign, useTestSink                                                bool
+	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
 )
 
@@ -69,6 +69,7 @@ func loadConfig() {
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
 	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
+	keepOrderOnFailure = config.GetBool("Router.keepOrderOnFailure", true)
 	useTestSink = config.GetBool("Router.useTestSink", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
@@ -103,9 +104,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		}
 
 		//If there is a failed jobID from this user, we cannot pass future jobs
-		worker.lastFailedJobIDMutex.RLock()
-		previousFailedJobID, isPrevFailedUser := worker.lastFailedJobID[userID]
-		worker.lastFailedJobIDMutex.RUnlock()
+		worker.failedJobIDMutex.RLock()
+		previousFailedJobID, isPrevFailedUser := worker.failedJobIDMap[userID]
+		worker.failedJobIDMutex.RUnlock()
 
 		if isPrevFailedUser && previousFailedJobID < job.JobID {
 			log.Printf("Router :: prev id %v, current id %v", previousFailedJobID, job.JobID)
@@ -126,7 +127,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		if isPrevFailedUser {
 			misc.Assert(previousFailedJobID == job.JobID)
 		}
-		
+
 		//We can execute thoe job
 		for attempts = 0; attempts < ser; attempts++ {
 			log.Printf("Router :: trying to send payload %v of %v", attempts, ser)
@@ -172,19 +173,6 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 
 		if respStatusCode == http.StatusOK {
 			//#JobOrder (see other #JobOrder comment)
-			//The job succeded for this user. If it was marked
-			//failed earlier, we ned to remove it but we cannot do
-			//it here. There may be other jobs ahead of this job
-			//which have been put to WaitingState but are still
-			//in the responseQ and haven't made to DBk. If we
-			//remove this blocking JobID from lastFailedJob now
-			//then the blocking wall in generateLoop() will get
-			//removed and jobs with higher jobID than the ones
-			//pending in responseQ will get passed.
-			//To prevent this, we remove blocking JobID from
-			//lastFailedJob only when we are sure the blocking JobID
-			//status has made to DB. That ensures all ahead of it
-			//have made to DB too.
 			status.AttemptNum = job.LastJobStatus.AttemptNum
 			status.JobState = jobsdb.SucceededState
 			log.Println("Router :: sending success status to response")
@@ -195,16 +183,16 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			worker.failedJobs++
 			atomic.AddUint64(&rt.failCount, 1)
 
-			//Add it to fail map
-			if !isPrevFailedUser {
+			//#JobOrder (see other #JobOrder comment)
+			if !isPrevFailedUser && keepOrderOnFailure {
 				log.Printf("Router :: userId %v failed for the first time adding to map", userID)
-				worker.lastFailedJobIDMutex.Lock()
-				worker.lastFailedJobID[userID] = job.JobID
-				worker.lastFailedJobIDMutex.Unlock()
+				worker.failedJobIDMutex.Lock()
+				worker.failedJobIDMap[userID] = job.JobID
+				worker.failedJobIDMutex.Unlock()
 			}
 
 			switch {
-			case len(worker.lastFailedJobID) > 5:
+			case len(worker.failedJobIDMap) > 5:
 				//Lot of jobs are failing in this worker. Likely the sink is down
 				//We still mark the job failed but don't increment the AttemptNum
 				//This is a heuristic. Will fix it with Sayan's idea
@@ -240,11 +228,11 @@ func (rt *HandleT) initWorkers() {
 		fmt.Println("Worker Started", i)
 		var worker *workerT
 		worker = &workerT{
-			channel:         make(chan *jobsdb.JobT, noOfJobsPerChannel),
-			lastFailedJobID: make(map[string]int64),
-			workerID:        i,
-			failedJobs:      0,
-			sleepTime:       minSleep}
+			channel:        make(chan *jobsdb.JobT, noOfJobsPerChannel),
+			failedJobIDMap: make(map[string]int64),
+			workerID:       i,
+			failedJobs:     0,
+			sleepTime:      minSleep}
 		rt.workers[i] = worker
 		go rt.workerProcess(worker)
 	}
@@ -278,33 +266,23 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	misc.Assert(w != nil)
 
 	//#JobOrder (see other #JobOrder comment)
-	//We need to check if this worker has blocked this userID. This is
-	//improtant to keep the order of jobs. If a worker has blocked a
-	//particularly userID/jobID, there may still unprocessed jobs in the worker
-	//channel from that userID while generateLoop() may have found
-	//the blocking jobID and other (higher jobIDs) from the DB. Jobs in
-	//channel will eventually get rejected (to WaitingState) but the other jobs
-	//that get added later in channel behind the blocking jobID will pass through
-	//if blocking JobID succeeds next. To prevent that, we don't let any other job
-	//from the userID go into the channel
-	w.lastFailedJobIDMutex.RLock()
-	defer w.lastFailedJobIDMutex.RUnlock()
-	blockJobID, found := w.lastFailedJobID[postInfo.UserID]
+	w.failedJobIDMutex.RLock()
+	defer w.failedJobIDMutex.RUnlock()
+	blockJobID, found := w.failedJobIDMap[postInfo.UserID]
 	if !found {
 		return w
-	} else {
-		//This job can only be higher than blocking
-		//We only let the blocking job pass
-		misc.Assert(job.JobID >= blockJobID)
-		if job.JobID == blockJobID {
-			return w
-		} else {
-			return nil
-		}
 	}
+	//This job can only be higher than blocking
+	//We only let the blocking job pass
+	misc.Assert(job.JobID >= blockJobID)
+	if job.JobID == blockJobID {
+		return w
+	}
+	return nil
+	//#EndJobOrder
 }
 
-// MakeSleepToZero this makes the workers reset their sleep
+// ResetSleep  this makes the workers reset their sleep
 func (rt *HandleT) ResetSleep() {
 	for _, w := range rt.workers {
 		w.sleepTime = minSleep
@@ -357,40 +335,61 @@ func (rt *HandleT) statusInsertLoop() {
 				rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
 			}
 
+			//#JobOrder (see other #JobOrder comment)
 			for _, resp := range responseList {
 				status := resp.status.JobState
 				userID := resp.userID
 				worker := resp.worker
 				if status == jobsdb.SucceededState || status == jobsdb.AbortedState {
-					worker.lastFailedJobIDMutex.RLock()
-					lastJobID, ok := worker.lastFailedJobID[userID]
+					worker.failedJobIDMutex.RLock()
+					lastJobID, ok := worker.failedJobIDMap[userID]
 					if ok && lastJobID == resp.status.JobID {
-						//#JobOrder (see other #JobOrder comment)
-						//The blocking jobID which had last failed
-						//has succeeded and made it to status update.
-						//At this point we are sure there are no pending
-						//jobs in requestQ or responseQ from that userID
-						//We can't still remove the gate. There may be
-						//pending jobs in mainLoops buffer. The last step
-						//is to keep it in lastFailedToClear buffer from
-						//which it is deleted
-						rt.lastFailedToClearMutex.Lock()
-						_, ok := rt.lastFailedToClear[worker]
+						rt.toClearFailJobIDMutex.Lock()
+						_, ok := rt.toClearFailJobIDMap[worker]
 						if !ok {
-							rt.lastFailedToClear[worker] = make([]string, 0)
+							rt.toClearFailJobIDMap[worker] = make([]string, 0)
 						}
-						rt.lastFailedToClear[worker] = append(rt.lastFailedToClear[worker], userID)
-						rt.lastFailedToClearMutex.Unlock()
+						rt.toClearFailJobIDMap[worker] = append(rt.toClearFailJobIDMap[worker], userID)
+						rt.toClearFailJobIDMutex.Unlock()
 					}
-					worker.lastFailedJobIDMutex.RUnlock()
+					worker.failedJobIDMutex.RUnlock()
 				}
 			}
+			//End #JobOrder
 			responseList = nil
 			lastUpdate = time.Now()
 		}
 	}
 
 }
+
+//#JobOrder (see other #JobOrder comment)
+//If a job fails (say with given failed_job_id), we need to fail other jobs from that user till
+//the failed_job_id succeeds. We achieve this by keeping the failed_job_id in a failedJobIDMap
+//structure (mapping userID to failed_job_id). All subsequent jobs (guaranteed to be job_id >= failed_job_id)
+//are put in WaitingState in worker loop till the failed_job_id succeeds.
+//However, the step of removing failed_job_id from the failedJobIDMap structure is QUITE TRICKY.
+//To understand that, need to understand the complete lifecycle of a job.
+//The job goes through the following data-structures in order
+//   i>   generatorLoop Buffer (read from DB)
+//   ii>  requestQ
+//   iii> Worker Process
+//   iv>  responseQ
+//   v>   insertStatusLoop Buffer (enough jobs are buffered before updating status)
+// Now, when the failed_job_id eventually suceeds in the Worker Process (iii above),
+// there may be pending jobs in all the other data-structures. For example, there
+//may be jobs in responseQ(iv) and insertStatusLoop(v) buffer - all those jobs will
+//be in Waiting state. Similarly, there may be other jobs in requestQ and generatorLoop
+//buffer.
+//If the failed_job_id succeeds and we remove the filter gate, then all the jobs in requestQ
+//will pass through before the jobs in responseQ/insertStatus buffer. That will violate the
+//ordering of job.
+//We fix this by removing an entry from the failedJobIDMap structure only when we are guaranteed
+//that all the other structures are empty. We do the following to ahieve this
+// A. In generatorLoop, we do not let any job pass through except failed_job_id. That ensures requestQ is empty
+// B. We wait for the failed_job_id status (when succeeded) to be sync'd to disk. This along with A ensures
+//    that responseQ and insertStatusLoop Buffer are empty for that userID.
+// C. Finally, we want for generatorLoop buffer to be fully processed.
 
 func (rt *HandleT) generatorLoop() {
 
@@ -401,27 +400,25 @@ func (rt *HandleT) generatorLoop() {
 			continue
 		}
 
-		//#JobOrder
-		rt.lastFailedToClearMutex.Lock()
-		for wrk := range rt.lastFailedToClear {
-			wrk.lastFailedJobIDMutex.Lock()
-			for _, userID := range rt.lastFailedToClear[wrk] {
-				delete(wrk.lastFailedJobID, userID)
+		//#JobOrder (See comment marked #JobOrder
+		rt.toClearFailJobIDMutex.Lock()
+		for wrk := range rt.toClearFailJobIDMap {
+			wrk.failedJobIDMutex.Lock()
+			for _, userID := range rt.toClearFailJobIDMap[wrk] {
+				delete(wrk.failedJobIDMap, userID)
 			}
-			wrk.lastFailedJobIDMutex.Unlock()
+			wrk.failedJobIDMutex.Unlock()
 		}
-		//Reset the structure
-		rt.lastFailedToClear = make(map[*workerT][]string)
-		rt.lastFailedToClearMutex.Unlock()
+		rt.toClearFailJobIDMap = make(map[*workerT][]string)
+		rt.toClearFailJobIDMutex.Unlock()
+		//End of #JobOrder
 
 		toQuery := jobQueryBatchSize
 		retryList := rt.jobsDB.GetToRetry([]string{rt.destID}, toQuery)
 		toQuery -= len(retryList)
 		waitList := rt.jobsDB.GetWaiting([]string{rt.destID}, toQuery) //Jobs send to waiting state
 		toQuery -= len(waitList)
-
 		unprocessedList := rt.jobsDB.GetUnprocessed([]string{rt.destID}, toQuery)
-
 		if len(waitList)+len(unprocessedList)+len(retryList) == 0 {
 			time.Sleep(readSleep)
 			continue
@@ -443,7 +440,7 @@ func (rt *HandleT) generatorLoop() {
 			worker *workerT
 			job    *jobsdb.JobT
 		}
-		
+
 		var statusList []*jobsdb.JobStatusT
 		var toProcess []workerJobT
 
@@ -461,7 +458,7 @@ func (rt *HandleT) generatorLoop() {
 					ErrorResponse: []byte(`{}`), // check
 				}
 				statusList = append(statusList, &status)
-				toProcess = append(toProcess, workerJobT{worker :w, job: job})
+				toProcess = append(toProcess, workerJobT{worker: w, job: job})
 			}
 		}
 
@@ -506,8 +503,16 @@ func (rt *HandleT) crashRecover() {
 
 func (rt *HandleT) printStatsLoop() {
 	for {
-		time.Sleep(5 * time.Second)
-		//fmt.Println("Network Success/Fail", rt.successCount, rt.failCount)
+		time.Sleep(60 * time.Second)
+		log.Println("Network Success/Fail", rt.successCount, rt.failCount)
+		log.Println("++++++++++++++++++++++++++++++")
+		log.Println(rt.toClearFailJobIDMap)
+		log.Println("++++++++++++++++++++++++++++++")
+		for _, w := range rt.workers {
+			log.Println("--------------------------------", w.workerID)
+			log.Println(w.failedJobIDMap)
+			log.Println("--------------------------------", w.workerID)
+		}
 	}
 }
 
@@ -524,7 +529,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.crashRecover()
 	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
-	rt.lastFailedToClear = make(map[*workerT][]string)
+	rt.toClearFailJobIDMap = make(map[*workerT][]string)
 	rt.isEnabled = true
 	rt.netHandle = &NetHandleT{}
 	rt.netHandle.Setup(destID)

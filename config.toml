@@ -38,6 +38,7 @@ maxStatusUpdateWaitInS = 5
 randomWorkerAssign = false
 useTestSink = true
 maxFailedCountForJob = 8
+keepOrderOnFailure = true
 
 [Processor]
 loopSleepInMS = 10
