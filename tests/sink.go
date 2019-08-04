@@ -7,6 +7,7 @@ import (
 	"net/http/httputil"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,13 +27,16 @@ var testName = config.GetEnv("TEST_NAME", "TEST-default")
 var count uint64
 var showPayload = false
 var enableTestStats = true
-var enableError =  true
+var enableError = true
 var redisChan chan string
 
-var authorizationError = false
-var authorizationErrorCount uint64
+var burstError = false
+var randomError = false
+var randomErrorCodes = []int{200, 200, 200, 200, 200, 200, 200, 200, 400, 500}
+var errorCounts map[string]uint64 = make(map[string]uint64)
+var errorMutex sync.Mutex
+
 var timeOfStart = time.Now()
-var errorCodes = []int{200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 400, 500}
 var limitRate = 100
 var limitBurst = 1000
 var limiter = rate.NewLimiter(rate.Limit(limitRate), limitBurst)
@@ -40,7 +44,7 @@ var limiter = rate.NewLimiter(rate.Limit(limitRate), limitBurst)
 func limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if limiter.Allow() == false {
-			fmt.Println("====sending 429 =====")
+			//fmt.Println("====sending 429 =====")
 			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
 			return
 		}
@@ -63,6 +67,17 @@ func handleActiveReq(rw http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func countError(errType string) {
+	errorMutex.Lock()
+	defer errorMutex.Unlock()
+
+	_, ok := errorCounts[errType]
+	if !ok {
+		errorCounts[errType] = 0
+	}
+	errorCounts[errType]++
+}
+
 func handleReq(rw http.ResponseWriter, req *http.Request) {
 	if showPayload {
 		requestDump, _ := httputil.DumpRequest(req, true)
@@ -71,29 +86,35 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 
 	atomic.AddUint64(&count, 1)
 	var respMessage string
-	if enableError {
-		if authorizationError {
-			fmt.Println("====sending 401 ======")
-			http.Error(rw, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
-			atomic.AddUint64(&authorizationErrorCount, 1)
-			return
-		}
-		statusCode := rand.Intn(len(errorCodes))
-		switch errorCodes[statusCode] {
+	if burstError {
+		//fmt.Println("====sending 401 ======")
+		http.Error(rw, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		countError("401")
+		return
+	}
+	if randomError {
+		statusCode := rand.Intn(len(randomErrorCodes))
+		switch randomErrorCodes[statusCode] {
 		case 200:
-			fmt.Println("====sending 200 OK=======")
+			//fmt.Println("====sending 200 OK=======")
 			respMessage = "OK"
+			countError("200")
 		case 400:
-			fmt.Println("====sending 400 =======")
+			//fmt.Println("====sending 400 =======")
 			http.Error(rw, http.StatusText(http.StatusBadRequest),
 				http.StatusBadRequest)
+			countError("400")
 			return
 		case 500:
-			fmt.Println("====sending 500 =======")
+			//fmt.Println("====sending 500 =======")
 			http.Error(rw, http.StatusText(http.StatusInternalServerError),
 				http.StatusInternalServerError)
+			countError("500")
 			return
 		}
+	}
+	if !randomError && !burstError {
+		countError("200-Reg")
 	}
 
 	//Reached here means no synthetic error OR error-code = 200
@@ -104,32 +125,39 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 	}
 }
 
-
-func disableError() {
-		<-time.After(120 * time.Second)
-		enableError = false
-
-}
-func flipAuthorizationError() {
+func flipErrorType() {
 	for {
-		<-time.After(100 * time.Millisecond)
-		if authorizationError {
-			if authorizationErrorCount > 10 {
-				authorizationError = false
-				atomic.StoreUint64(&authorizationErrorCount, 0)
-			}
-		        continue
-		}
-		<-time.After(120 * time.Second)
-		authorizationError = true
-		atomic.StoreUint64(&authorizationErrorCount, 0)
+		//20 seconds of good run
+		fmt.Println("Disabling error")
+		randomError = false
+		burstError = false
+		<-time.After(20 * time.Second)
+
+		//60 seconds of random error
+		fmt.Println("Enabling random error")
+		randomError = true
+		burstError = false
+		<-time.After(60 * time.Second)
+
+		//20 sec of good run
+		fmt.Println("Disabling error")
+		randomError = false
+		burstError = false
+		<-time.After(20 * time.Second)
+
+		//60 seconds of burst error
+		fmt.Println("Enabling burst")
+		burstError = true
+		randomError = false
+		<-time.After(60 * time.Second)
+
 	}
 }
 func printCounter() {
 	startTime := time.Now()
 	for {
-		time.Sleep(5 * time.Second)
-		fmt.Println("Count", count, time.Since(startTime))
+		time.Sleep(2 * time.Second)
+		fmt.Println("Count", count, time.Since(startTime), errorCounts)
 	}
 }
 
@@ -192,8 +220,7 @@ func main() {
 	redisChan = make(chan string)
 
 	if enableError {
-		go flipAuthorizationError()
-		go disableError()
+		go flipErrorType()
 	}
 
 	go printCounter()
