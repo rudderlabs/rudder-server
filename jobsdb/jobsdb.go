@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 
 	"github.com/lib/pq"
 	uuid "github.com/satori/go.uuid"
@@ -87,17 +88,18 @@ HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
-	dbHandle           *sql.DB
-	tablePrefix        string
-	datasetList        []dataSetT
-	datasetRangeList   []dataSetRangeT
-	dsListLock         sync.RWMutex
-	dsMigrationLock    sync.RWMutex
-	dsRetentionPeriod  time.Duration
-	dsEmptyResultCache map[dataSetT]map[string]map[string]bool
-	dsCacheLock        sync.Mutex
-	toBackup           bool
-	fileUploader       FileUploaderT
+	dbHandle              *sql.DB
+	tablePrefix           string
+	datasetList           []dataSetT
+	datasetRangeList      []dataSetRangeT
+	dsListLock            sync.RWMutex
+	dsMigrationLock       sync.RWMutex
+	dsRetentionPeriod     time.Duration
+	dsEmptyResultCache    map[dataSetT]map[string]map[string]bool
+	dsCacheLock           sync.Mutex
+	toBackup              bool
+	jobsFileUploader      fileuploader.FileUploader
+	jobStatusFileUploader fileuploader.FileUploader
 }
 
 //The struct which is written to the journal
@@ -247,8 +249,16 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	}
 
 	if jd.toBackup {
-		jd.fileUploader = FileUploaderT{provider: "s3"}
-		jd.fileUploader.Setup()
+		jd.jobsFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
+			Provider:       "s3",
+			AmazonS3Bucket: config.GetString("Aws.jobsBackupDSBucket", "dump-gateway-jobs-test"),
+			AWSRegion:      config.GetString("Aws.region", "us-east-2"),
+		})
+		jd.jobStatusFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
+			Provider:       "s3",
+			AmazonS3Bucket: config.GetString("Aws.jobStatusBackupDSBucket", "dump-gateway-job-status-test"),
+			AWSRegion:      config.GetString("Aws.region", "us-east-2"),
+		})
 		go jd.backupDSLoop()
 	}
 	go jd.mainCheckLoop()
@@ -1289,7 +1299,11 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 		defer os.Remove(fmt.Sprintf("%v.tmp", filePath))
 		defer file.Close()
 
-		err = jd.fileUploader.Upload(file)
+		if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
+			err = jd.jobStatusFileUploader.Upload(file)
+		} else {
+			err = jd.jobsFileUploader.Upload(file)
+		}
 		if err != nil {
 			log.Println(err)
 			return false, err
@@ -1362,7 +1376,7 @@ func (jd *HandleT) delJournal() {
 
 func (jd *HandleT) journalMarkStart(opType string, opPayload json.RawMessage) int64 {
 
-	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == backupDSOperation || opType == dropDSOperation)
+	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == backupDSOperation || opType == backupDropDSOperation || opType == dropDSOperation)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
                                        VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
