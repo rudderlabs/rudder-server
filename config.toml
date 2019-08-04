@@ -2,7 +2,7 @@
 # Dont set secrets, passwords, api_keys etc. in this file. Use '.env' file for that
 
 maxProcess = 12 # Max number of cpu process to be used by go runtime
-gwDBRetention = 1
+gwDBRetention = 0
 routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
@@ -53,5 +53,5 @@ maxRetry = 3
 retrySleepInMS = 100
 
 [Aws]
-region = "us-east-2"
+region = "us-east-1"
 backupDSBucket = "dump-gateway-ds-test"

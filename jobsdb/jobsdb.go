@@ -1209,17 +1209,11 @@ func (jd *HandleT) backupDSLoop() {
 
 		// write jobs table to s3
 		_, err := jd.backupTable(backupDS.JobTable)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
+		jd.assertError(err)
+
 		// write job_status table to s3
 		_, err = jd.backupTable(backupDS.JobStatusTable)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		// jd.journalMarkDone(opID)
+		jd.assertError(err)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opPayload, err := json.Marshal(&backupDS)
