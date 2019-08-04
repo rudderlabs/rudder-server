@@ -164,7 +164,6 @@ func generateRandomData(payload *[]byte, path string, value interface{}) ([]byte
 }
 
 func generateEvents(userID string, eventDelay int) {
-	var batchEvents []RudderEvent
 	var rudderEvent RudderEvent
 
 	var fileData, err = ioutil.ReadFile("mapping.json")
@@ -175,6 +174,8 @@ func generateEvents(userID string, eventDelay int) {
 		if testTimeUp {
 			break
 		}
+
+		var batchEvents []RudderEvent
 
 		for _, event := range events {
 			eventMap := event.Map()
@@ -292,7 +293,7 @@ func main() {
 
 	numUsers := *flag.Int("n", 10, "number of user threads that does the send, default is 1")
 	eventDelayInMs := *flag.Int("d", 1000, "Delay between two events for a given user in Millisec")
-	testDurationInSec := *flag.Int("t", 60, "Duration of the test in seconds. Default is 60 sec")
+	testDurationInSec := *flag.Int("t", 600, "Duration of the test in seconds. Default is 60 sec")
 	pollTimeInSec := *flag.Int("p", 2, "Polling interval in sec to find if sink is inactive")
 	waitTimeInSec := *flag.Int("w", 600, "Max wait-time in sec waiting for sink. Default 600s")
 
