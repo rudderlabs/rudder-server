@@ -343,6 +343,7 @@ func (rt *HandleT) statusInsertLoop() {
 				if status == jobsdb.SucceededState || status == jobsdb.AbortedState {
 					worker.failedJobIDMutex.RLock()
 					lastJobID, ok := worker.failedJobIDMap[userID]
+					worker.failedJobIDMutex.RUnlock()
 					if ok && lastJobID == resp.status.JobID {
 						rt.toClearFailJobIDMutex.Lock()
 						_, ok := rt.toClearFailJobIDMap[worker]
@@ -352,7 +353,6 @@ func (rt *HandleT) statusInsertLoop() {
 						rt.toClearFailJobIDMap[worker] = append(rt.toClearFailJobIDMap[worker], userID)
 						rt.toClearFailJobIDMutex.Unlock()
 					}
-					worker.failedJobIDMutex.RUnlock()
 				}
 			}
 			//End #JobOrder
@@ -375,10 +375,10 @@ func (rt *HandleT) statusInsertLoop() {
 //   ii>  requestQ
 //   iii> Worker Process
 //   iv>  responseQ
-//   v>   insertStatusLoop Buffer (enough jobs are buffered before updating status)
+//   v>   statusInsertLoop Buffer (enough jobs are buffered before updating status)
 // Now, when the failed_job_id eventually suceeds in the Worker Process (iii above),
 // there may be pending jobs in all the other data-structures. For example, there
-//may be jobs in responseQ(iv) and insertStatusLoop(v) buffer - all those jobs will
+//may be jobs in responseQ(iv) and statusInsertLoop(v) buffer - all those jobs will
 //be in Waiting state. Similarly, there may be other jobs in requestQ and generatorLoop
 //buffer.
 //If the failed_job_id succeeds and we remove the filter gate, then all the jobs in requestQ
@@ -388,7 +388,7 @@ func (rt *HandleT) statusInsertLoop() {
 //that all the other structures are empty. We do the following to ahieve this
 // A. In generatorLoop, we do not let any job pass through except failed_job_id. That ensures requestQ is empty
 // B. We wait for the failed_job_id status (when succeeded) to be sync'd to disk. This along with A ensures
-//    that responseQ and insertStatusLoop Buffer are empty for that userID.
+//    that responseQ and statusInsertLoop Buffer are empty for that userID.
 // C. Finally, we want for generatorLoop buffer to be fully processed.
 
 func (rt *HandleT) generatorLoop() {
