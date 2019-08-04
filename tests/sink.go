@@ -139,17 +139,17 @@ func flipErrorType() {
 		randomError = false
 		<-time.After(60 * time.Second)
 
-		//10 sec of good run
+		//20 sec of good run
 		fmt.Println("Disabling error")
 		randomError = false
 		burstError = false
 		<-time.After(20 * time.Second)
 
-		//60 seconds of random error
+		//20 seconds of random error
 		fmt.Println("Enabling random error")
 		randomError = true
 		burstError = false
-		<-time.After(60 * time.Second)
+		<-time.After(20 * time.Second)
 
 	}
 }

@@ -31,7 +31,7 @@ type HandleT struct {
 	failCount             uint64
 	isEnabled             bool
 	toClearFailJobIDMutex sync.Mutex
-	toClearFailJobIDMap   map[*workerT][]string
+	toClearFailJobIDMap   map[int][]string
 }
 
 type jobResponseT struct {
@@ -246,8 +246,6 @@ func getHash(s string) int {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	var w *workerT
-
 	postInfo := integrations.GetPostInfo(job.EventPayload)
 
 	var index int
@@ -256,27 +254,22 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	} else {
 		index = int(math.Abs(float64(getHash(postInfo.UserID) % noOfWorkers)))
 	}
-	// log.Printf("userId: %s index: %d", userID, index)
-	for _, worker := range rt.workers {
-		if worker.workerID == index {
-			w = worker
-			break
-		}
-	}
-	misc.Assert(w != nil)
+
+	worker := rt.workers[index]
+	misc.Assert(worker != nil)
 
 	//#JobOrder (see other #JobOrder comment)
-	w.failedJobIDMutex.RLock()
-	defer w.failedJobIDMutex.RUnlock()
-	blockJobID, found := w.failedJobIDMap[postInfo.UserID]
+	worker.failedJobIDMutex.RLock()
+	defer worker.failedJobIDMutex.RUnlock()
+	blockJobID, found := worker.failedJobIDMap[postInfo.UserID]
 	if !found {
-		return w
+		return worker
 	}
 	//This job can only be higher than blocking
 	//We only let the blocking job pass
 	misc.Assert(job.JobID >= blockJobID)
 	if job.JobID == blockJobID {
-		return w
+		return worker
 	}
 	return nil
 	//#EndJobOrder
@@ -346,11 +339,11 @@ func (rt *HandleT) statusInsertLoop() {
 					worker.failedJobIDMutex.RUnlock()
 					if ok && lastJobID == resp.status.JobID {
 						rt.toClearFailJobIDMutex.Lock()
-						_, ok := rt.toClearFailJobIDMap[worker]
+						_, ok := rt.toClearFailJobIDMap[worker.workerID]
 						if !ok {
-							rt.toClearFailJobIDMap[worker] = make([]string, 0)
+							rt.toClearFailJobIDMap[worker.workerID] = make([]string, 0)
 						}
-						rt.toClearFailJobIDMap[worker] = append(rt.toClearFailJobIDMap[worker], userID)
+						rt.toClearFailJobIDMap[worker.workerID] = append(rt.toClearFailJobIDMap[worker.workerID], userID)
 						rt.toClearFailJobIDMutex.Unlock()
 					}
 				}
@@ -402,14 +395,15 @@ func (rt *HandleT) generatorLoop() {
 
 		//#JobOrder (See comment marked #JobOrder
 		rt.toClearFailJobIDMutex.Lock()
-		for wrk := range rt.toClearFailJobIDMap {
+		for idx := range rt.toClearFailJobIDMap {
+			wrk := rt.workers[idx]
 			wrk.failedJobIDMutex.Lock()
-			for _, userID := range rt.toClearFailJobIDMap[wrk] {
+			for _, userID := range rt.toClearFailJobIDMap[idx] {
 				delete(wrk.failedJobIDMap, userID)
 			}
 			wrk.failedJobIDMutex.Unlock()
 		}
-		rt.toClearFailJobIDMap = make(map[*workerT][]string)
+		rt.toClearFailJobIDMap = make(map[int][]string)
 		rt.toClearFailJobIDMutex.Unlock()
 		//End of #JobOrder
 
@@ -529,7 +523,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.crashRecover()
 	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
-	rt.toClearFailJobIDMap = make(map[*workerT][]string)
+	rt.toClearFailJobIDMap = make(map[int][]string)
 	rt.isEnabled = true
 	rt.netHandle = &NetHandleT{}
 	rt.netHandle.Setup(destID)
