@@ -224,6 +224,9 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	log.Println("Sent Ping")
 
+	//Kill any pending queries
+	jd.terminateQueries()
+
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
@@ -673,6 +676,15 @@ func (jd *HandleT) renameDS(ds dataSetT, allowMissing bool) {
 		sqlStatement = fmt.Sprintf(`ALTER TABLE %s RENAME TO %s`, ds.JobTable, renamedJobTable)
 	}
 	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+}
+
+func (jd *HandleT) terminateQueries() {
+	sqlStatement := `SELECT pg_terminate_backend(pg_stat_activity.pid)
+                           FROM pg_stat_activity
+                         WHERE datname = current_database()
+                            AND pid <> pg_backend_pid()`
+	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 }
 

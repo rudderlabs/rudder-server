@@ -133,22 +133,22 @@ func flipErrorType() {
 		burstError = false
 		<-time.After(20 * time.Second)
 
-		//60 seconds of random error
-		fmt.Println("Enabling random error")
-		randomError = true
-		burstError = false
+		//60 seconds of burst error
+		fmt.Println("Enabling burst")
+		burstError = true
+		randomError = false
 		<-time.After(60 * time.Second)
 
-		//20 sec of good run
+		//10 sec of good run
 		fmt.Println("Disabling error")
 		randomError = false
 		burstError = false
 		<-time.After(20 * time.Second)
 
-		//60 seconds of burst error
-		fmt.Println("Enabling burst")
-		burstError = true
-		randomError = false
+		//60 seconds of random error
+		fmt.Println("Enabling random error")
+		randomError = true
+		burstError = false
 		<-time.After(60 * time.Second)
 
 	}
@@ -202,9 +202,11 @@ func redisLoop() {
 				atomic.StoreInt32(&isInactive, 0)
 				inactiveBatchCount = 0
 			} else {
-				inactiveBatchCount++
-				if inactiveBatchCount > inactivityBatchesThreshold {
-					atomic.StoreInt32(&isInactive, 1)
+				if !burstError {
+					inactiveBatchCount++
+					if inactiveBatchCount > inactivityBatchesThreshold {
+						atomic.StoreInt32(&isInactive, 1)
+					}
 				}
 			}
 			eventAdded = false
