@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
-	"github.com/joho/godotenv"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/integrations"
@@ -86,9 +85,6 @@ func enableMonitorDestRouters(routeDb *jobsdb.HandleT) {
 }
 
 func init() {
-	if err := godotenv.Load(); err != nil {
-		fmt.Println("No .env file found")
-	}
 	config.Initialize()
 	loadConfig()
 }
