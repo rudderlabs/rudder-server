@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/integrations"
@@ -90,6 +91,14 @@ func init() {
 
 func main() {
 	fmt.Println("Main starting")
+	bugsnag.Configure(bugsnag.Configuration{
+		APIKey:       config.GetString("apiKey", "a82c3193aa5914abe2cfb66557f1cc2b"),
+		ReleaseStage: config.GetString("releaseStage", "development"),
+		// The import paths for the Go packages containing your source files
+		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
+		// more configuration options
+		AppType: "rudder-server",
+	})
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")

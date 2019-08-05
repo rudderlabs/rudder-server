@@ -32,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 
@@ -115,6 +116,7 @@ func (jd *HandleT) assertError(err error) {
 		debug.PrintStack()
 		jd.printLists(true)
 		fmt.Println(jd.dsEmptyResultCache)
+		defer bugsnag.AutoNotify(err)
 		panic(err)
 	}
 }
@@ -125,6 +127,7 @@ func (jd *HandleT) assert(cond bool) {
 		debug.PrintStack()
 		jd.printLists(true)
 		fmt.Println(jd.dsEmptyResultCache)
+		defer bugsnag.AutoNotify("Assertion failed")
 		panic("Assertion failed")
 	}
 }
