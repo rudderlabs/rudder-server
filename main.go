@@ -43,7 +43,44 @@ func readIOforResume(router router.HandleT) {
 		if err != nil {
 			panic(err)
 		}
-		router.MakeSleepToZero()
+		router.ResetSleep()
+	}
+}
+
+func enableMonitorDestRouters(routeDb *jobsdb.HandleT) {
+	dstToRouter := make(map[string]*router.HandleT)
+	for {
+		//Get all the destinations and start the rotuer if
+		//not already enabled
+		for _, dest := range integrations.GetAllDestinations() {
+			rt, ok := dstToRouter[dest]
+			if !ok {
+				fmt.Println("Enabling Destination", dest)
+				var router router.HandleT
+				router.Setup(routeDb, dest)
+				dstToRouter[dest] = &router
+			} else {
+				rt.Enable()
+			}
+		}
+
+		//Iterate through the existing routers and disable
+		//which have been removed from config
+		for d, rtHandle := range dstToRouter {
+			found := false
+			for _, dstID := range integrations.GetAllDestinations() {
+				if d == dstID {
+					found = true
+					break
+				}
+			}
+			//Router is not in enabled list. Disable it
+			if !found {
+				rtHandle.Disable()
+			}
+		}
+		//Sleep before the next round
+		<-time.After(5 * time.Second)
 	}
 }
 
@@ -106,13 +143,7 @@ func main() {
 	//Setup the three modules, the gateway, the router and the processor
 
 	if enableRouter {
-		//The router module should be setup for
-		//all the enabled destinations
-		for _, dest := range integrations.GetAllDestinations() {
-			var router router.HandleT
-			fmt.Println("Enabling Destination", dest)
-			router.Setup(&routerDB, dest)
-		}
+		go enableMonitorDestRouters(&routerDB)
 	}
 
 	if enableProcessor {

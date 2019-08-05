@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,29 +20,41 @@ import (
 
 //HandleT is the handle to this module.
 type HandleT struct {
-	requestQ     chan *jobsdb.JobT
-	responseQ    chan *jobsdb.JobStatusT
-	jobsDB       *jobsdb.HandleT
-	netHandle    *NetHandleT
-	destID       string
-	workers      []*Worker
-	perfStats    *misc.PerfStats
-	successCount uint64
-	failCount    uint64
+	requestQ              chan *jobsdb.JobT
+	responseQ             chan jobResponseT
+	jobsDB                *jobsdb.HandleT
+	netHandle             *NetHandleT
+	destID                string
+	workers               []*workerT
+	perfStats             *misc.PerfStats
+	successCount          uint64
+	failCount             uint64
+	isEnabled             bool
+	toClearFailJobIDMutex sync.Mutex
+	toClearFailJobIDMap   map[int][]string
 }
 
-// Worker a structure to define a worker for sending events to sinks
-type Worker struct {
-	channel    chan *jobsdb.JobT // the worker job channel
-	workerID   int               // identifies the worker
-	failedJobs int               // counts the failed jobs of a worker till it gets reset by external channel
-	sleepTime  time.Duration     //the sleep duration for every job of the worker
+type jobResponseT struct {
+	status *jobsdb.JobStatusT
+	worker *workerT
+	userID string
+}
+
+// workerT a structure to define a worker for sending events to sinks
+type workerT struct {
+	channel          chan *jobsdb.JobT // the worker job channel
+	workerID         int               // identifies the worker
+	failedJobs       int               // counts the failed jobs of a worker till it gets reset by external channel
+	sleepTime        time.Duration     //the sleep duration for every job of the worker
+	failedJobIDMap   map[string]int64  //user to failed jobId
+	failedJobIDMutex sync.RWMutex      //lock to protect structure above
 }
 
 var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
-	readSleep, maxSleep, maxStatusUpdateWait                                       time.Duration
-	randomWorkerAssign, useTestSink                                                bool
+	maxFailedCountForJob                                                           int
+	readSleep, minSleep, maxSleep, maxStatusUpdateWait                             time.Duration
+	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
 )
 
@@ -52,95 +65,176 @@ func loadConfig() {
 	noOfWorkers = config.GetInt("Router.noOfWorkers", 8)
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	ser = config.GetInt("Router.ser", 3)
-	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(5)) * time.Second
+	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(60)) * time.Second
+	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
 	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
+	keepOrderOnFailure = config.GetBool("Router.keepOrderOnFailure", true)
 	useTestSink = config.GetBool("Router.useTestSink", false)
+	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 }
 
-func (rt *HandleT) workerProcess(worker *Worker) {
+func (rt *HandleT) workerProcess(worker *workerT) {
 	for {
 		job := <-worker.channel
 		var respStatusCode, attempts int
-		var respStatus, body string
+		var respStatus, respBody string
 
-		log.Println("trying to send payload to GA")
+		log.Println("Router :: trying to send payload to GA", respBody)
 
-		// tryout send for ser times
+		postInfo := integrations.GetPostInfo(job.EventPayload)
+		userID := postInfo.UserID
+		misc.Assert(userID != "")
+
+		//If sink is not enabled mark all jobs as waiting
+		if !rt.isEnabled {
+			log.Println("Router is disabled")
+			status := jobsdb.JobStatusT{
+				JobID:         job.JobID,
+				AttemptNum:    job.LastJobStatus.AttemptNum,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "",
+				JobState:      jobsdb.WaitingState,
+				ErrorResponse: []byte(`{"reason":"Router Disabled"}`), // check
+			}
+			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
+			continue
+		}
+
+		//If there is a failed jobID from this user, we cannot pass future jobs
+		worker.failedJobIDMutex.RLock()
+		previousFailedJobID, isPrevFailedUser := worker.failedJobIDMap[userID]
+		worker.failedJobIDMutex.RUnlock()
+
+		if isPrevFailedUser && previousFailedJobID < job.JobID {
+			log.Printf("Router :: prev id %v, current id %v", previousFailedJobID, job.JobID)
+			resp := fmt.Sprintf(`{"blocking_id":"%v", "user_id":"%s"}`, previousFailedJobID, userID)
+			status := jobsdb.JobStatusT{
+				JobID:         job.JobID,
+				AttemptNum:    job.LastJobStatus.AttemptNum,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     respStatus,
+				JobState:      jobsdb.WaitingState,
+				ErrorResponse: []byte(resp), // check
+			}
+			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
+			continue
+		}
+
+		if isPrevFailedUser {
+			misc.Assert(previousFailedJobID == job.JobID)
+		}
+
+		//We can execute thoe job
 		for attempts = 0; attempts < ser; attempts++ {
-			log.Printf("trying to send payload %v of %v", attempts, ser)
-
-			// ToDo: handle error in network send gracefully!!
-
-			if respStatusCode, respStatus, body = rt.netHandle.sendPost(job.EventPayload); respStatusCode != http.StatusOK {
-
-				atomic.AddUint64(&rt.failCount, 1)
-
-				// the sleep may have gone to zero, to start things off again, assign it to 1
-				if worker.sleepTime < 1 {
-					worker.sleepTime = 1
-				}
-
+			log.Printf("Router :: trying to send payload %v of %v", attempts, ser)
+			respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
+			if useTestSink {
+				//Internal test. No reason to sleep
+				break
+			}
+			if respStatusCode != http.StatusOK {
+				//400 series error are client errors. Can't continue
 				if respStatusCode >= http.StatusBadRequest && respStatusCode <= http.StatusUnavailableForLegalReasons {
-					// won't continue in case of these error codes (client error)
 					break
 				}
-				// increasing sleep after every failure
-				log.Printf("worker %v sleeping for  %v ", worker.workerID, worker.sleepTime)
-				time.Sleep(worker.sleepTime * time.Second)
-
-				if worker.sleepTime < maxSleep {
-					worker.sleepTime = 2 * worker.sleepTime
-					log.Printf("sleep for worker %v increased to %v", worker.workerID, worker.sleepTime)
+				//Wait before the next retry
+				worker.sleepTime = 2*worker.sleepTime + 1 //+1 handles 0 sleepTime
+				if worker.sleepTime > maxSleep {
+					worker.sleepTime = maxSleep
 				}
+				log.Printf("Router :: worker %v sleeping for  %v ",
+					worker.workerID, worker.sleepTime)
+				time.Sleep(worker.sleepTime * time.Second)
 				continue
-
 			} else {
 				atomic.AddUint64(&rt.successCount, 1)
-				// success
+				//Divide the sleep
 				worker.sleepTime = worker.sleepTime / 2
-				log.Printf("sleep for worker %v decreased to %v", worker.workerID, worker.sleepTime)
+				if worker.sleepTime < minSleep {
+					worker.sleepTime = minSleep
+				}
+				log.Printf("Router :: sleep for worker %v decreased to %v",
+					worker.workerID, worker.sleepTime)
 				break
 			}
 		}
 
-		log.Printf("code: %v, status: %v, body: %v", respStatusCode, respStatus, body)
-
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
-			AttemptNum:    job.LastJobStatus.AttemptNum + attempts + 1,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
 			ErrorCode:     respStatus,
-			ErrorResponse: []byte(`{}`), // check
+			ErrorResponse: []byte(`{}`),
 		}
 
 		if respStatusCode == http.StatusOK {
+			//#JobOrder (see other #JobOrder comment)
+			status.AttemptNum = job.LastJobStatus.AttemptNum
 			status.JobState = jobsdb.SucceededState
-			log.Println("sending success status to response")
+			log.Println("Router :: sending success status to response")
+			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		} else {
 			// the job failed
+			log.Println("Router :: Job failed to send, analyzing...")
 			worker.failedJobs++
-			status.JobState = jobsdb.FailedState
-			log.Println("sending failed status to response with done")
+			atomic.AddUint64(&rt.failCount, 1)
+
+			//#JobOrder (see other #JobOrder comment)
+			if !isPrevFailedUser && keepOrderOnFailure {
+				log.Printf("Router :: userId %v failed for the first time adding to map", userID)
+				worker.failedJobIDMutex.Lock()
+				worker.failedJobIDMap[userID] = job.JobID
+				worker.failedJobIDMutex.Unlock()
+			}
+
+			switch {
+			case len(worker.failedJobIDMap) > 5:
+				//Lot of jobs are failing in this worker. Likely the sink is down
+				//We still mark the job failed but don't increment the AttemptNum
+				//This is a heuristic. Will fix it with Sayan's idea
+				status.JobState = jobsdb.FailedState
+				status.AttemptNum = job.LastJobStatus.AttemptNum
+				break
+			case status.AttemptNum >= maxFailedCountForJob:
+				//The job has failed enough number of times so mark it aborted
+				//The reason for doing this is to filter out jobs with bad payload
+				//which can never succeed.
+				//However, there is a risk that if sink is down, a set of jobs can
+				//reach maxCountFailure. In practice though, when sink goes down
+				//lot of jobs will fail and all will get retried in batch with
+				//doubling sleep in between. That case will be handled in case above
+				log.Println("Router :: Aborting the job and deleting from user map")
+				status.JobState = jobsdb.AbortedState
+				status.AttemptNum = job.LastJobStatus.AttemptNum
+				break
+			default:
+				status.JobState = jobsdb.FailedState
+				status.AttemptNum = job.LastJobStatus.AttemptNum
+				break
+			}
+			log.Println("Router :: sending waiting state as response")
+			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		}
-
-		rt.responseQ <- &status
-
 	}
 }
 
 func (rt *HandleT) initWorkers() {
-	rt.workers = make([]*Worker, noOfWorkers)
+	rt.workers = make([]*workerT, noOfWorkers)
 	for i := 0; i < noOfWorkers; i++ {
 		fmt.Println("Worker Started", i)
-		var worker *Worker
-		workerChannel := make(chan *jobsdb.JobT, noOfJobsPerChannel)
-		worker = &Worker{channel: workerChannel, workerID: i, failedJobs: 0, sleepTime: 1}
+		var worker *workerT
+		worker = &workerT{
+			channel:        make(chan *jobsdb.JobT, noOfJobsPerChannel),
+			failedJobIDMap: make(map[string]int64),
+			workerID:       i,
+			failedJobs:     0,
+			sleepTime:      minSleep}
 		rt.workers[i] = worker
 		go rt.workerProcess(worker)
-
 	}
 }
 
@@ -150,10 +244,7 @@ func getHash(s string) int {
 	return int(h.Sum32())
 }
 
-func (rt *HandleT) findWorker(job *jobsdb.JobT) *Worker {
-	var w *Worker
-
-	// also insert a find a free worker logic
+func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
 	postInfo := integrations.GetPostInfo(job.EventPayload)
 
@@ -163,45 +254,56 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *Worker {
 	} else {
 		index = int(math.Abs(float64(getHash(postInfo.UserID) % noOfWorkers)))
 	}
-	// log.Printf("userId: %s index: %d", userID, index)
-	for _, worker := range rt.workers {
-		if worker.workerID == index {
-			w = worker
-			break
-		}
+
+	worker := rt.workers[index]
+	misc.Assert(worker != nil)
+
+	//#JobOrder (see other #JobOrder comment)
+	worker.failedJobIDMutex.RLock()
+	defer worker.failedJobIDMutex.RUnlock()
+	blockJobID, found := worker.failedJobIDMap[postInfo.UserID]
+	if !found {
+		return worker
 	}
-	return w
+	//This job can only be higher than blocking
+	//We only let the blocking job pass
+	misc.Assert(job.JobID >= blockJobID)
+	if job.JobID == blockJobID {
+		return worker
+	}
+	return nil
+	//#EndJobOrder
 }
 
-func (rt *HandleT) assignJobToWorkers(job *jobsdb.JobT) {
-	w := rt.findWorker(job)
-	w.channel <- job
-	log.Println("job pushed to channel of ", w.workerID)
-}
-
-// MakeSleepToZero this makes the workers reset their sleep
-func (rt *HandleT) MakeSleepToZero() {
+// ResetSleep  this makes the workers reset their sleep
+func (rt *HandleT) ResetSleep() {
 	for _, w := range rt.workers {
-		if w.sleepTime > maxSleep {
-			w.sleepTime = 0
-			w.failedJobs = 0
-		}
+		w.sleepTime = minSleep
 	}
+}
 
+//Enable enables a router :)
+func (rt *HandleT) Enable() {
+	rt.isEnabled = true
+}
+
+//Disable disables a router:)
+func (rt *HandleT) Disable() {
+	rt.isEnabled = false
 }
 
 func (rt *HandleT) statusInsertLoop() {
 
-	var statusList []*jobsdb.JobStatusT
-	respCount := 0
+	var responseList []jobResponseT
 	//Wait for the responses from statusQ
 	lastUpdate := time.Now()
 	for {
 		rt.perfStats.Start()
 		select {
-		case status := <-rt.responseQ:
-			statusList = append(statusList, status)
-			respCount++
+		case jobStatus := <-rt.responseQ:
+			log.Printf("Router :: Got back status error %v and state %v for job %v", jobStatus.status.ErrorCode,
+				jobStatus.status.JobState, jobStatus.status.JobID)
+			responseList = append(responseList, jobStatus)
 			rt.perfStats.End(1)
 		case <-time.After(maxStatusUpdateWait):
 			rt.perfStats.End(0)
@@ -209,62 +311,158 @@ func (rt *HandleT) statusInsertLoop() {
 			//but approx is good enough at the cost of reduced computation.
 		}
 
-		if respCount >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
+		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
 			rt.perfStats.Print()
-			log.Printf("flushing batch of %v status", updateStatusBatchSize)
-			//Update the status
-			rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
-			respCount = 0
-			statusList = nil
+			var statusList []*jobsdb.JobStatusT
+			for _, resp := range responseList {
+				statusList = append(statusList, resp.status)
+			}
+
+			if len(statusList) > 0 {
+				log.Printf("Router :: flushing batch of %v status", updateStatusBatchSize)
+
+				sort.Slice(statusList, func(i, j int) bool {
+					return statusList[i].JobID < statusList[j].JobID
+				})
+				//Update the status
+				rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
+			}
+
+			//#JobOrder (see other #JobOrder comment)
+			for _, resp := range responseList {
+				status := resp.status.JobState
+				userID := resp.userID
+				worker := resp.worker
+				if status == jobsdb.SucceededState || status == jobsdb.AbortedState {
+					worker.failedJobIDMutex.RLock()
+					lastJobID, ok := worker.failedJobIDMap[userID]
+					worker.failedJobIDMutex.RUnlock()
+					if ok && lastJobID == resp.status.JobID {
+						rt.toClearFailJobIDMutex.Lock()
+						_, ok := rt.toClearFailJobIDMap[worker.workerID]
+						if !ok {
+							rt.toClearFailJobIDMap[worker.workerID] = make([]string, 0)
+						}
+						rt.toClearFailJobIDMap[worker.workerID] = append(rt.toClearFailJobIDMap[worker.workerID], userID)
+						rt.toClearFailJobIDMutex.Unlock()
+					}
+				}
+			}
+			//End #JobOrder
+			responseList = nil
 			lastUpdate = time.Now()
 		}
 	}
 
 }
 
+//#JobOrder (see other #JobOrder comment)
+//If a job fails (say with given failed_job_id), we need to fail other jobs from that user till
+//the failed_job_id succeeds. We achieve this by keeping the failed_job_id in a failedJobIDMap
+//structure (mapping userID to failed_job_id). All subsequent jobs (guaranteed to be job_id >= failed_job_id)
+//are put in WaitingState in worker loop till the failed_job_id succeeds.
+//However, the step of removing failed_job_id from the failedJobIDMap structure is QUITE TRICKY.
+//To understand that, need to understand the complete lifecycle of a job.
+//The job goes through the following data-structures in order
+//   i>   generatorLoop Buffer (read from DB)
+//   ii>  requestQ
+//   iii> Worker Process
+//   iv>  responseQ
+//   v>   statusInsertLoop Buffer (enough jobs are buffered before updating status)
+// Now, when the failed_job_id eventually suceeds in the Worker Process (iii above),
+// there may be pending jobs in all the other data-structures. For example, there
+//may be jobs in responseQ(iv) and statusInsertLoop(v) buffer - all those jobs will
+//be in Waiting state. Similarly, there may be other jobs in requestQ and generatorLoop
+//buffer.
+//If the failed_job_id succeeds and we remove the filter gate, then all the jobs in requestQ
+//will pass through before the jobs in responseQ/insertStatus buffer. That will violate the
+//ordering of job.
+//We fix this by removing an entry from the failedJobIDMap structure only when we are guaranteed
+//that all the other structures are empty. We do the following to ahieve this
+// A. In generatorLoop, we do not let any job pass through except failed_job_id. That ensures requestQ is empty
+// B. We wait for the failed_job_id status (when succeeded) to be sync'd to disk. This along with A ensures
+//    that responseQ and statusInsertLoop Buffer are empty for that userID.
+// C. Finally, we want for generatorLoop buffer to be fully processed.
+
 func (rt *HandleT) generatorLoop() {
 
 	fmt.Println("Generator started")
 
 	for {
+		if !rt.isEnabled {
+			continue
+		}
+
+		//#JobOrder (See comment marked #JobOrder
+		rt.toClearFailJobIDMutex.Lock()
+		for idx := range rt.toClearFailJobIDMap {
+			wrk := rt.workers[idx]
+			wrk.failedJobIDMutex.Lock()
+			for _, userID := range rt.toClearFailJobIDMap[idx] {
+				delete(wrk.failedJobIDMap, userID)
+			}
+			wrk.failedJobIDMutex.Unlock()
+		}
+		rt.toClearFailJobIDMap = make(map[int][]string)
+		rt.toClearFailJobIDMutex.Unlock()
+		//End of #JobOrder
+
 		toQuery := jobQueryBatchSize
 		retryList := rt.jobsDB.GetToRetry([]string{rt.destID}, toQuery)
 		toQuery -= len(retryList)
+		waitList := rt.jobsDB.GetWaiting([]string{rt.destID}, toQuery) //Jobs send to waiting state
+		toQuery -= len(waitList)
 		unprocessedList := rt.jobsDB.GetUnprocessed([]string{rt.destID}, toQuery)
-
-		if len(unprocessedList)+len(retryList) == 0 {
+		if len(waitList)+len(unprocessedList)+len(retryList) == 0 {
 			time.Sleep(readSleep)
 			continue
 		}
 
-		combinedList := append(unprocessedList, retryList...)
+		combinedList := append(waitList, append(unprocessedList, retryList...)...)
 
 		sort.Slice(combinedList, func(i, j int) bool {
 			return combinedList[i].JobID < combinedList[j].JobID
 		})
 
-		var statusList []*jobsdb.JobStatusT
-
-		//Mark all the jobs as executing so that next loop doesn't pick them up
-		for _, job := range combinedList {
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-				JobState:      jobsdb.ExecutingState,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				ErrorCode:     "",
-				ErrorResponse: []byte(`{}`), // check
-			}
-			statusList = append(statusList, &status)
+		if len(combinedList) > 0 {
+			log.Println("Router :: router is enabled")
+			log.Println("Router ===== len to be processed==== :", len(combinedList))
 		}
+
+		//List of jobs wich can be processed mapped per channel
+		type workerJobT struct {
+			worker *workerT
+			job    *jobsdb.JobT
+		}
+
+		var statusList []*jobsdb.JobStatusT
+		var toProcess []workerJobT
+
+		//Identify jobs which can be processed
+		for _, job := range combinedList {
+			w := rt.findWorker(job)
+			if w != nil {
+				status := jobsdb.JobStatusT{
+					JobID:         job.JobID,
+					AttemptNum:    job.LastJobStatus.AttemptNum,
+					JobState:      jobsdb.ExecutingState,
+					ExecTime:      time.Now(),
+					RetryTime:     time.Now(),
+					ErrorCode:     "",
+					ErrorResponse: []byte(`{}`), // check
+				}
+				statusList = append(statusList, &status)
+				toProcess = append(toProcess, workerJobT{worker: w, job: job})
+			}
+		}
+
+		//Mark the jobs as executing
 		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
 
 		//Send the jobs to the jobQ
-		for _, job := range combinedList {
-			rt.assignJobToWorkers(job)
+		for _, wrkJob := range toProcess {
+			wrkJob.worker.channel <- wrkJob.job
 		}
-
 	}
 }
 
@@ -284,7 +482,7 @@ func (rt *HandleT) crashRecover() {
 		for _, job := range execList {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+				AttemptNum:    job.LastJobStatus.AttemptNum,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				JobState:      jobsdb.FailedState,
@@ -299,8 +497,16 @@ func (rt *HandleT) crashRecover() {
 
 func (rt *HandleT) printStatsLoop() {
 	for {
-		time.Sleep(5 * time.Second)
-		fmt.Println("Network Success/Fail", rt.successCount, rt.failCount)
+		time.Sleep(60 * time.Second)
+		log.Println("Network Success/Fail", rt.successCount, rt.failCount)
+		log.Println("++++++++++++++++++++++++++++++")
+		log.Println(rt.toClearFailJobIDMap)
+		log.Println("++++++++++++++++++++++++++++++")
+		for _, w := range rt.workers {
+			log.Println("--------------------------------", w.workerID)
+			log.Println(w.failedJobIDMap)
+			log.Println("--------------------------------", w.workerID)
+		}
 	}
 }
 
@@ -316,10 +522,11 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.destID = destID
 	rt.crashRecover()
 	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
-	rt.responseQ = make(chan *jobsdb.JobStatusT, jobQueryBatchSize)
+	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
+	rt.toClearFailJobIDMap = make(map[int][]string)
+	rt.isEnabled = true
 	rt.netHandle = &NetHandleT{}
 	rt.netHandle.Setup(destID)
-
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destID)
 

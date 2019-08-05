@@ -373,7 +373,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		if !ok {
 			continue
 		}
+		log.Println("Transform input size", len(destEventList))
 		destTransformEventList, ok := proc.transformer.Transform(destEventList, url, transformBatchSize, true)
+		log.Println("Transform output size", len(destTransformEventList))
 		if !ok {
 			continue
 		}
