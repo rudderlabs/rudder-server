@@ -26,7 +26,7 @@ exports.handler = async (event, context) => {
     });
     let putParams = {
       Body: JSON.stringify(unBatchedEvents),
-      Bucket: `unbatched_${bucket}`,
+      Bucket: `unbatched-${bucket}`,
       Key: key
     };
     // write unbatched jobs dump to s3
