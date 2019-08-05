@@ -164,6 +164,7 @@ var (
 	jobDoneMigrateThres, jobStatusMigrateThres float64
 	mainCheckSleepDuration                     time.Duration
 	backupCheckSleepDuration                   time.Duration
+	useJoinForUnprocessed                      bool
 )
 
 // Loads db config and migration related config from config file
@@ -188,6 +189,7 @@ func loadConfig() {
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
+	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 }
 
 func init() {
@@ -223,6 +225,9 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.assertError(err)
 
 	log.Println("Sent Ping")
+
+	//Kill any pending queries
+	jd.terminateQueries()
 
 	if clearAll {
 		jd.dropAllDS()
@@ -676,6 +681,15 @@ func (jd *HandleT) renameDS(ds dataSetT, allowMissing bool) {
 	jd.assertError(err)
 }
 
+func (jd *HandleT) terminateQueries() {
+	sqlStatement := `SELECT pg_terminate_backend(pg_stat_activity.pid)
+                           FROM pg_stat_activity
+                         WHERE datname = current_database()
+                            AND pid <> pg_backend_pid()`
+	_, err := jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+}
+
 func (jd *HandleT) dropAllDS() error {
 
 	jd.dsListLock.Lock()
@@ -995,11 +1009,21 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 		return []*JobT{}, nil
 	}
 
-	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
+	var sqlStatement string
+
+	if useJoinForUnprocessed {
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
                                                %[1]s.expire_at
                                              FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
                                              WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable)
+	} else {
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
+                                               %[1]s.event_payload, %[1]s.created_at,
+                                               %[1]s.expire_at
+                                             FROM %[1]s WHERE %[1]s.job_id NOT IN (SELECT DISTINCT(%[2]s.job_id)
+                                             FROM %[2]s)`, ds.JobTable, ds.JobStatusTable)
+	}
 
 	//log.Println(sqlStatement)
 
@@ -1197,17 +1221,11 @@ func (jd *HandleT) backupDSLoop() {
 
 		// write jobs table to s3
 		_, err := jd.backupTable(backupDS.JobTable)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
+		jd.assertError(err)
+
 		// write job_status table to s3
 		_, err = jd.backupTable(backupDS.JobStatusTable)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		// jd.journalMarkDone(opID)
+		jd.assertError(err)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opPayload, err := json.Marshal(&backupDS)
@@ -1259,6 +1277,7 @@ func (jd *HandleT) getBackupDS() dataSetT {
 	//Read the table names from PG
 	tableNames := jd.getAllTableNames()
 
+	//We check for job_status because that is renamed after job
 	dnumList := []string{}
 	for _, t := range tableNames {
 		if strings.HasPrefix(t, "pre_drop_"+jd.tablePrefix+"_jobs_") {
@@ -1549,7 +1568,6 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int) []*JobT 
 		return outJobs
 	}
 	for _, ds := range dsList {
-		//count==0 means return all which we don't want
 		jd.assert(count > 0)
 		jobs, err := jd.getUnprocessedJobsDS(ds, customValFilters, true, count)
 		jd.assertError(err)
@@ -1610,7 +1628,7 @@ GetToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
 func (jd *HandleT) GetToRetry(customValFilters []string, count int) []*JobT {
-	return jd.GetProcessed([]string{"failed"}, customValFilters, count)
+	return jd.GetProcessed([]string{FailedState}, customValFilters, count)
 }
 
 /*

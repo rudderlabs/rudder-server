@@ -35,8 +35,9 @@ const (
 type RudderEvent map[string]interface{}
 
 var (
-	totalCount uint64
-	failCount  uint64
+	totalCount   uint64
+	successCount uint64
+	failCount    uint64
 )
 
 var testTimeUp bool
@@ -68,7 +69,7 @@ func isArraySorted(arr []string) bool {
 func computeTestResults(testDuration int) {
 
 	fmt.Println("Processing Test Results ... ")
-	fmt.Println(totalCount)
+	fmt.Println(totalCount, successCount, failCount)
 	ingestionRate := totalCount / uint64(testDuration)
 	fmt.Printf("Ingestion Rate: %d req/sec\n", ingestionRate)
 
@@ -163,7 +164,6 @@ func generateRandomData(payload *[]byte, path string, value interface{}) ([]byte
 }
 
 func generateEvents(userID string, eventDelay int) {
-	var batchEvents []RudderEvent
 	var rudderEvent RudderEvent
 
 	var fileData, err = ioutil.ReadFile("mapping.json")
@@ -174,6 +174,8 @@ func generateEvents(userID string, eventDelay int) {
 		if testTimeUp {
 			break
 		}
+
+		var batchEvents []RudderEvent
 
 		for _, event := range events {
 			eventMap := event.Map()
@@ -209,9 +211,9 @@ func generateEvents(userID string, eventDelay int) {
 		value, _ := sjson.Set("", "batch", batchEvents)
 		value, _ = sjson.Set(value, "sent_at", time.Now())
 
-		sendToRudder(value)
-
-		redisChan <- batchEvents
+		if sendToRudder(value) {
+			redisChan <- batchEvents
+		}
 
 		if eventDelay > 0 {
 			time.Sleep(time.Duration(eventDelay) * time.Millisecond)
@@ -220,20 +222,27 @@ func generateEvents(userID string, eventDelay int) {
 	done <- true
 }
 
-func sendToRudder(jsonPayload string) {
+func sendToRudder(jsonPayload string) bool {
 	req, err := http.NewRequest("POST", rudderServer, bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
+	atomic.AddUint64(&totalCount, 1)
 	if err != nil {
 		atomic.AddUint64(&failCount, 1)
-		return
+		return false
 	}
 	defer resp.Body.Close()
 
 	ioutil.ReadAll(resp.Body)
-	atomic.AddUint64(&totalCount, 1)
+	if resp.StatusCode == 200 {
+		atomic.AddUint64(&successCount, 1)
+		return true
+	} else {
+		atomic.AddUint64(&failCount, 1)
+		return false
+	}
 }
 
 func redisLoop() {
@@ -245,6 +254,7 @@ func redisLoop() {
 	})
 
 	_, err := redisClient.Ping().Result()
+	fmt.Println(err)
 	if err != nil {
 		panic("Failed to connect to redis server")
 	}
