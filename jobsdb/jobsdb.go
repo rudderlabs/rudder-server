@@ -1247,6 +1247,7 @@ func (jd *HandleT) backupDSLoop() {
 		// write job_status table to s3
 		_, err = jd.backupTable(backupDS.JobStatusTable)
 		jd.assertError(err)
+		jd.journalMarkDone(opID)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opPayload, err = json.Marshal(&backupDS)
