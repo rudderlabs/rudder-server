@@ -1271,7 +1271,7 @@ func (jd *HandleT) removeTableJSONDumps() {
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
-	path := fmt.Sprintf(`%v%v.json`, os.Getenv("TMPDIR"), pathPrefix)
+	path := fmt.Sprintf(`%v%v.json`, config.GetEnv("TMPDIR", "/tmp/"), pathPrefix)
 
 	// dump table into a file (gives file with json of each row in single line)
 	var dumpOptions []string
