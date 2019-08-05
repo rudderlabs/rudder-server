@@ -7,6 +7,7 @@ import (
 	"net/http/httputil"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,9 +18,11 @@ import (
 )
 
 const (
-	redisServer = "redis:6379"
-	testName    = "Test9"
+	redisServerDefault = "localhost:6379"
 )
+
+var redisServer = config.GetEnv("REDIS_SERVER", redisServerDefault)
+var testName = config.GetEnv("TEST_NAME", "TEST-default")
 
 var count uint64
 var showPayload = false
@@ -27,9 +30,13 @@ var enableTestStats = true
 var enableError = true
 var redisChan chan string
 
+var burstError = false
+var randomError = false
+var randomErrorCodes = []int{200, 200, 200, 200, 200, 200, 200, 200, 400, 500}
+var errorCounts map[string]uint64 = make(map[string]uint64)
+var errorMutex sync.Mutex
+
 var timeOfStart = time.Now()
-var errorCodes = []int{200, 200, 200, 200, 200, 400, 400, 500}
-var authorizationError = false
 var limitRate = 100
 var limitBurst = 1000
 var limiter = rate.NewLimiter(rate.Limit(limitRate), limitBurst)
@@ -37,12 +44,38 @@ var limiter = rate.NewLimiter(rate.Limit(limitRate), limitBurst)
 func limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if limiter.Allow() == false {
-			fmt.Println("====sending 429 =====")
+			//fmt.Println("====sending 429 =====")
 			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// Correctness Test parameters
+var batchTimeout = 1000 * time.Millisecond
+
+// After these many empty batch timeouts, we mark the test inactive
+var inactivityBatchesThreshold = 30
+var isInactive int32
+
+func handleActiveReq(rw http.ResponseWriter, req *http.Request) {
+	if atomic.LoadInt32(&isInactive) == 1 {
+		rw.Write([]byte("no"))
+	} else {
+		rw.Write([]byte("yes"))
+	}
+}
+
+func countError(errType string) {
+	errorMutex.Lock()
+	defer errorMutex.Unlock()
+
+	_, ok := errorCounts[errType]
+	if !ok {
+		errorCounts[errType] = 0
+	}
+	errorCounts[errType]++
 }
 
 func handleReq(rw http.ResponseWriter, req *http.Request) {
@@ -53,28 +86,35 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 
 	atomic.AddUint64(&count, 1)
 	var respMessage string
-	if enableError {
-		if authorizationError {
-			fmt.Println("====sending 401 ======")
-			http.Error(rw, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
-			return
-		}
-		statusCode := rand.Intn(len(errorCodes))
-		switch errorCodes[statusCode] {
+	if burstError {
+		//fmt.Println("====sending 401 ======")
+		http.Error(rw, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		countError("401")
+		return
+	}
+	if randomError {
+		statusCode := rand.Intn(len(randomErrorCodes))
+		switch randomErrorCodes[statusCode] {
 		case 200:
-			fmt.Println("====sending 200 OK=======")
+			//fmt.Println("====sending 200 OK=======")
 			respMessage = "OK"
+			countError("200")
 		case 400:
-			fmt.Println("====sending 400 =======")
+			//fmt.Println("====sending 400 =======")
 			http.Error(rw, http.StatusText(http.StatusBadRequest),
 				http.StatusBadRequest)
+			countError("400")
 			return
 		case 500:
-			fmt.Println("====sending 500 =======")
+			//fmt.Println("====sending 500 =======")
 			http.Error(rw, http.StatusText(http.StatusInternalServerError),
 				http.StatusInternalServerError)
+			countError("500")
 			return
 		}
+	}
+	if !randomError && !burstError {
+		countError("200-Reg")
 	}
 
 	//Reached here means no synthetic error OR error-code = 200
@@ -85,23 +125,43 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func flipAuthorizationError() {
+func flipErrorType() {
 	for {
-		<-time.After(5 * time.Second)
-		authorizationError = !authorizationError
+		//20 seconds of good run
+		fmt.Println("Disabling error")
+		randomError = false
+		burstError = false
+		<-time.After(20 * time.Second)
+
+		//60 seconds of burst error
+		fmt.Println("Enabling burst")
+		burstError = true
+		randomError = false
+		<-time.After(60 * time.Second)
+
+		//20 sec of good run
+		fmt.Println("Disabling error")
+		randomError = false
+		burstError = false
+		<-time.After(20 * time.Second)
+
+		//20 seconds of random error
+		fmt.Println("Enabling random error")
+		randomError = true
+		burstError = false
+		<-time.After(20 * time.Second)
+
 	}
 }
 func printCounter() {
 	startTime := time.Now()
 	for {
-		time.Sleep(5 * time.Second)
-		fmt.Println("Count", count, time.Since(startTime))
+		time.Sleep(2 * time.Second)
+		fmt.Println("Count", count, time.Since(startTime), errorCounts)
 	}
 }
 
 func redisLoop() {
-	var batchTimeout = 1000 * time.Millisecond
-
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: redisServer,
 	})
@@ -112,11 +172,17 @@ func redisLoop() {
 
 	pipe := redisClient.Pipeline()
 	var eventAdded bool
+	var inactiveBatchCount int
 
 	for {
 		select {
 		case eventData := <-redisChan:
 			data := strings.Split(eventData, "-")
+			if len(data) < 3 {
+				fmt.Println("Invalid Event data")
+				break
+			}
+
 			userID := data[0]
 			messageID := data[1]
 			eventTime, err := strconv.Atoi(data[2])
@@ -133,6 +199,15 @@ func redisLoop() {
 			if eventAdded {
 				_, err := pipe.Exec()
 				misc.AssertError(err)
+				atomic.StoreInt32(&isInactive, 0)
+				inactiveBatchCount = 0
+			} else {
+				if !burstError {
+					inactiveBatchCount++
+					if inactiveBatchCount > inactivityBatchesThreshold {
+						atomic.StoreInt32(&isInactive, 1)
+					}
+				}
 			}
 			eventAdded = false
 		}
@@ -147,13 +222,18 @@ func main() {
 	redisChan = make(chan string)
 
 	if enableError {
-		go flipAuthorizationError()
+		go flipErrorType()
 	}
 
 	go printCounter()
 
 	if enableTestStats {
+		if len(redisServer) == 0 || len(testName) == 0 {
+			panic("REDIS_URL or TEST_NAME variables can't be empty")
+		}
+
 		go redisLoop()
+		http.HandleFunc("/isActive", handleActiveReq)
 	}
 
 	http.HandleFunc("/", handleReq)

@@ -2,7 +2,7 @@
 # Dont set secrets, passwords, api_keys etc. in this file. Use '.env' file for that
 
 maxProcess = 12 # Max number of cpu process to be used by go runtime
-gwDBRetention = 1
+gwDBRetention = 0
 routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
@@ -11,8 +11,8 @@ enableRouter = true
 webPort = 8080
 maxDBWriterProcess = 4
 CustomVal = "GW"
-maxBatchSize = 2
-batchTimeoutInMS = 2
+maxBatchSize = 32
+batchTimeoutInMS = 20
 respMessage = "OK"
 
 
@@ -23,6 +23,7 @@ jobStatusMigrateThres = 5
 maxDSSize = 100000
 maxMigrateOnce = 10
 mainCheckSleepDurationInS = 2
+backupCheckSleepDurationIns = 5
 
 [Router]
 jobQueryBatchSize = 10000
@@ -37,6 +38,7 @@ maxStatusUpdateWaitInS = 5
 randomWorkerAssign = false
 useTestSink = true
 maxFailedCountForJob = 8
+keepOrderOnFailure = true
 
 [Processor]
 loopSleepInMS = 10
@@ -52,3 +54,7 @@ retrySleepInMS = 100
 
 [BackendConfig]
 pollIntervalInS = 5
+
+[Aws]
+region = "us-east-1"
+backupDSBucket = "dump-gateway-ds-test"

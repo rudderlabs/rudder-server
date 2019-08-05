@@ -48,57 +48,7 @@ func readIOforResume(router router.HandleT) {
 		if err != nil {
 			panic(err)
 		}
-		router.MakeSleepToZero()
-	}
-}
-
-// Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(routeDb *jobsdb.HandleT) {
-	ch := make(chan utils.DataEvent)
-	backendconfig.Eb.Subscribe("backendconfig", ch)
-	dstToRouter := make(map[string]*router.HandleT)
-	for {
-		config := <-ch
-		sources := config.Data.(backendconfig.SourcesT)
-		enabledDestinations = enabledDestinations[:0]
-		for _, source := range sources.Sources {
-			if source.Enabled {
-				for _, destination := range source.Destinations {
-					if destination.Enabled {
-						// TODO: Make enabledDestinations a set?
-						enabledDestinations = append(enabledDestinations, destination)
-						rt, ok := dstToRouter[destination.DestinationDefinition.Name]
-						if !ok {
-							fmt.Println("Enabling a new Destination", destination.DestinationDefinition.Name)
-							var router router.HandleT
-							router.Setup(routeDb, destination.DestinationDefinition.Name)
-							dstToRouter[destination.DestinationDefinition.Name] = &router
-						} else {
-							fmt.Println("Enabling existing destination", destination.DestinationDefinition.Name)
-							rt.Enable()
-						}
-					}
-				}
-			}
-			// fmt.Println(enabledDestinations)
-		}
-		for destID, rtHandle := range dstToRouter {
-			found := false
-			for _, dst := range enabledDestinations {
-				if destID == dst.DestinationDefinition.Name {
-					found = true
-					break
-				}
-			}
-			fmt.Println("FOUND ", found, len(enabledDestinations))
-			//Router is not in enabled list. Disable it
-			if !found {
-				fmt.Println("Disabling a existing destination", destID)
-				rtHandle.Disable()
-			}
-			fmt.Println("Destination disabled")
-		}
-		fmt.Println("Went through all destinations")
+		router.ResetSleep()
 	}
 }
 
@@ -136,6 +86,50 @@ func enableMonitorDestRouters(routeDb *jobsdb.HandleT) {
 		}
 		//Sleep before the next round
 		<-time.After(5 * time.Second)
+	}
+}
+
+// Gets the config from config backend and extracts enabled writekeys
+func monitorDestRouters(routeDb *jobsdb.HandleT) {
+	ch := make(chan utils.DataEvent)
+	backendconfig.Eb.Subscribe("backendconfig", ch)
+	dstToRouter := make(map[string]*router.HandleT)
+	for {
+		config := <-ch
+		sources := config.Data.(backendconfig.SourcesT)
+		enabledDestinations = enabledDestinations[:0]
+		for _, source := range sources.Sources {
+			if source.Enabled {
+				for _, destination := range source.Destinations {
+					if destination.Enabled {
+						enabledDestinations = append(enabledDestinations, destination)
+						rt, ok := dstToRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							fmt.Println("Enabling a new Destination", destination.DestinationDefinition.Name)
+							var router router.HandleT
+							router.Setup(routeDb, destination.DestinationDefinition.Name)
+							dstToRouter[destination.DestinationDefinition.Name] = &router
+						} else {
+							rt.Enable()
+						}
+					}
+				}
+			}
+		}
+		for destID, rtHandle := range dstToRouter {
+			found := false
+			for _, dst := range enabledDestinations {
+				if destID == dst.DestinationDefinition.Name {
+					found = true
+					break
+				}
+			}
+			//Router is not in enabled list. Disable it
+			if !found {
+				fmt.Println("Disabling a existing destination", destID)
+				rtHandle.Disable()
+			}
+		}
 	}
 }
 
@@ -194,13 +188,12 @@ func main() {
 	fmt.Println("Clearing DB", *clearDB)
 
 	backendconfig.Setup()
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention)
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, true)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
 	//Setup the three modules, the gateway, the router and the processor
 
 	if enableRouter {
 		go monitorDestRouters(&routerDB)
-		// go enableMonitorDestRouters(&routerDB)
 	}
 
 	if enableProcessor {
