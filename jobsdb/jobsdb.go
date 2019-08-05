@@ -129,6 +129,7 @@ func (jd *HandleT) assert(cond bool) {
 	}
 }
 
+// constants for JobStatusT JobState
 const (
 	SucceededState    = "succeeded"
 	FailedState       = "failed"
