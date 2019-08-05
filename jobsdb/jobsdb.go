@@ -1265,10 +1265,11 @@ func (jd *HandleT) getBackupDS() dataSetT {
 	//Read the table names from PG
 	tableNames := jd.getAllTableNames()
 
+	//We check for job_status because that is renamed after job
 	dnumList := []string{}
 	for _, t := range tableNames {
-		if strings.HasPrefix(t, "pre_drop_"+jd.tablePrefix+"_jobs_") {
-			dnum := t[len("pre_drop_"+jd.tablePrefix+"_jobs_"):]
+		if strings.HasPrefix(t, "pre_drop_"+jd.tablePrefix+"_job_status_") {
+			dnum := t[len("pre_drop_"+jd.tablePrefix+"_job_status_"):]
 			dnumList = append(dnumList, dnum)
 			continue
 		}
