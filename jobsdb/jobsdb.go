@@ -164,6 +164,7 @@ var (
 	jobDoneMigrateThres, jobStatusMigrateThres float64
 	mainCheckSleepDuration                     time.Duration
 	backupCheckSleepDuration                   time.Duration
+	useJoinForUnprocessed                      bool
 )
 
 // Loads db config and migration related config from config file
@@ -188,6 +189,7 @@ func loadConfig() {
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
+	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 }
 
 func init() {
@@ -1007,11 +1009,21 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 		return []*JobT{}, nil
 	}
 
-	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
+	var sqlStatement string
+
+	if useJoinForUnprocessed {
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
+                                               %[1]s.event_payload, %[1]s.created_at,
+                                               %[1]s.expire_at
+                                             FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
+                                             WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable)
+	} else {
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
                                                %[1]s.expire_at
                                              FROM %[1]s WHERE %[1]s.job_id NOT IN (SELECT DISTINCT(%[2]s.job_id)
                                              FROM %[2]s)`, ds.JobTable, ds.JobStatusTable)
+	}
 
 	//log.Println(sqlStatement)
 
