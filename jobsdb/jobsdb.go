@@ -192,7 +192,7 @@ func loadConfig() {
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
-	eventsInJSONFileDump = config.GetInt("JobsDB.eventsInJSONFileDump", 100)
+	eventsInJSONFileDump = config.GetInt("JobsDB.eventsInJSONFileDump", 1000)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 }
 
@@ -1297,7 +1297,7 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	filePathsString, err := exec.Command("find", findOptions...).Output()
 	jd.assertError(err)
 	filePaths := strings.Split(strings.TrimSpace(string(filePathsString)), "\n")
-
+	sort.Strings(filePaths)
 	// convert each split file into json array and upload it
 	for _, filePath := range filePaths {
 		var sedOptions []string

@@ -1,7 +1,6 @@
 package fileuploader
 
 import (
-	"fmt"
 	"os"
 	"strings"
 
@@ -20,14 +19,12 @@ func (uploader *S3Uploader) Upload(file *os.File) error {
 	manager := s3manager.NewUploader(sess)
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := splitFileName[len(splitFileName)-1]
-	fmt.Printf("Uploading %q to s3:%q\n", fileName, uploader.bucket)
 	_, err = manager.Upload(&s3manager.UploadInput{
 		Bucket: aws.String(uploader.bucket),
 		Key:    aws.String(fileName),
 		Body:   file,
 	})
 	misc.AssertError(err)
-	fmt.Printf("Successfully uploaded %q to s3:%q\n", fileName, uploader.bucket)
 	return err
 }
 
