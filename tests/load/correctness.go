@@ -6,6 +6,7 @@ import (
 
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -256,7 +257,7 @@ func redisLoop() {
 	_, err := redisClient.Ping().Result()
 	fmt.Println(err)
 	if err != nil {
-		panic("Failed to connect to redis server")
+		misc.AssertError(errors.New("Failed to connect to redis server"))
 	}
 
 	pipe := redisClient.Pipeline()
@@ -268,7 +269,7 @@ func redisLoop() {
 				eventID, ok := event["id"].(string)
 				userID, ok := event["userID"].(string)
 				if !ok {
-					panic("Invalid event ID")
+					misc.AssertError(errors.New("Invalid event ID"))
 				}
 
 				pipe.RPush(testName+":"+userID+":src_list", eventID)
