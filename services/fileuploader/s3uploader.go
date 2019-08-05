@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/rudderlabs/rudder-server/misc"
 )
 
 // Upload passed in file to s3
@@ -15,9 +16,7 @@ func (uploader *S3Uploader) Upload(file *os.File) error {
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(uploader.region)},
 	)
-	if err != nil {
-		panic(err)
-	}
+	misc.AssertError(err)
 	manager := s3manager.NewUploader(sess)
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := splitFileName[len(splitFileName)-1]
@@ -27,10 +26,7 @@ func (uploader *S3Uploader) Upload(file *os.File) error {
 		Key:    aws.String(fileName),
 		Body:   file,
 	})
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
+	misc.AssertError(err)
 	fmt.Printf("Successfully uploaded %q to s3:%q\n", fileName, uploader.bucket)
 	return err
 }

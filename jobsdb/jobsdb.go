@@ -166,7 +166,6 @@ var (
 	jobDoneMigrateThres, jobStatusMigrateThres      float64
 	mainCheckSleepDuration                          time.Duration
 	backupCheckSleepDuration                        time.Duration
-	maxDSSize, maxMigrateOnce                       int
 	useJoinForUnprocessed                           bool
 )
 
@@ -260,11 +259,13 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 			AmazonS3Bucket: config.GetString("Aws.jobsBackupDSBucket", "dump-gateway-jobs-test"),
 			AWSRegion:      config.GetString("Aws.region", "us-east-1"),
 		})
+		jd.assertError(err)
 		jd.jobStatusFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
 			Provider:       "s3",
 			AmazonS3Bucket: config.GetString("Aws.jobStatusBackupDSBucket", "dump-gateway-job-status-test"),
 			AWSRegion:      config.GetString("Aws.region", "us-east-1"),
 		})
+		jd.assertError(err)
 		go jd.backupDSLoop()
 	}
 	go jd.mainCheckLoop()
@@ -1277,10 +1278,7 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	dumpOptions = append(dumpOptions, fmt.Sprintf(`-c%v`, copyCommand))
 
 	_, err = exec.Command("psql", dumpOptions...).Output()
-	if err != nil {
-		log.Println(err)
-		return false, err
-	}
+	jd.assertError(err)
 	defer os.Remove(path)
 
 	// split the file dump by configured number of lines
@@ -1289,12 +1287,14 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	splitOptions = append(splitOptions, path)
 	splitOptions = append(splitOptions, fmt.Sprintf("%v_part_", pathPrefix))
 	_, err = exec.Command("split", splitOptions...).Output()
+	jd.assertError(err)
 
 	// find all the split files
 	dir, err := os.Getwd()
 	var findOptions []string
 	findOptions = append(findOptions, dir, "-name", fmt.Sprintf("%v_part_*", pathPrefix))
 	filePathsString, err := exec.Command("find", findOptions...).Output()
+	jd.assertError(err)
 	filePaths := strings.Split(strings.TrimSpace(string(filePathsString)), "\n")
 
 	// convert each split file into json array and upload it
@@ -1304,16 +1304,10 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 		sedOptions = append(sedOptions, "1s/^/[/;$!s/$/,/;$s/$/]/")
 		sedOptions = append(sedOptions, filePath)
 		_, err = exec.Command("sed", sedOptions...).Output()
-		if err != nil {
-			log.Println(err)
-			return false, err
-		}
+		jd.assertError(err)
 
 		file, err := os.Open(filePath)
-		if err != nil {
-			log.Println(err)
-			return false, err
-		}
+		jd.assertError(err)
 		defer os.Remove(filePath)
 		defer os.Remove(fmt.Sprintf("%v.tmp", filePath))
 		defer file.Close()
@@ -1323,10 +1317,7 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 		} else {
 			err = jd.jobsFileUploader.Upload(file)
 		}
-		if err != nil {
-			log.Println(err)
-			return false, err
-		}
+		jd.assertError(err)
 	}
 
 	return true, nil
