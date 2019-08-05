@@ -4,9 +4,14 @@ go 1.12
 
 require (
 	github.com/aws/aws-sdk-go v1.21.7
+	github.com/bitly/go-simplejson v0.5.0 // indirect
+	github.com/bugsnag/bugsnag-go v1.5.3
+	github.com/bugsnag/panicwrap v1.2.0 // indirect
 	github.com/go-redis/redis v6.15.2+incompatible
+	github.com/gofrs/uuid v3.2.0+incompatible // indirect
 	github.com/gomodule/redigo v2.0.0+incompatible // indirect
 	github.com/joho/godotenv v1.3.0
+	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
 	github.com/lib/pq v1.2.0
 	github.com/onsi/ginkgo v1.8.0 // indirect
 	github.com/onsi/gomega v1.5.0 // indirect
