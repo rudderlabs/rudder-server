@@ -7,10 +7,12 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/integrations"
@@ -18,12 +20,15 @@ import (
 	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
+	"github.com/rudderlabs/rudder-server/utils"
 )
 
 var (
 	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
 	enableProcessor, enableRouter    bool
+	enabledDestinations              []backendconfig.DestinationT
+	configSubscriberLock             sync.RWMutex
 )
 
 func loadConfig() {
@@ -84,6 +89,50 @@ func enableMonitorDestRouters(routeDb *jobsdb.HandleT) {
 	}
 }
 
+// Gets the config from config backend and extracts enabled writekeys
+func monitorDestRouters(routeDb *jobsdb.HandleT) {
+	ch := make(chan utils.DataEvent)
+	backendconfig.Eb.Subscribe("backendconfig", ch)
+	dstToRouter := make(map[string]*router.HandleT)
+	for {
+		config := <-ch
+		sources := config.Data.(backendconfig.SourcesT)
+		enabledDestinations = enabledDestinations[:0]
+		for _, source := range sources.Sources {
+			if source.Enabled {
+				for _, destination := range source.Destinations {
+					if destination.Enabled {
+						enabledDestinations = append(enabledDestinations, destination)
+						rt, ok := dstToRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							fmt.Println("Enabling a new Destination", destination.DestinationDefinition.Name)
+							var router router.HandleT
+							router.Setup(routeDb, destination.DestinationDefinition.Name)
+							dstToRouter[destination.DestinationDefinition.Name] = &router
+						} else {
+							rt.Enable()
+						}
+					}
+				}
+			}
+		}
+		for destID, rtHandle := range dstToRouter {
+			found := false
+			for _, dst := range enabledDestinations {
+				if destID == dst.DestinationDefinition.Name {
+					found = true
+					break
+				}
+			}
+			//Router is not in enabled list. Disable it
+			if !found {
+				fmt.Println("Disabling a existing destination", destID)
+				rtHandle.Disable()
+			}
+		}
+	}
+}
+
 func init() {
 	config.Initialize()
 	loadConfig()
@@ -99,7 +148,7 @@ func main() {
 		// more configuration options
 		AppType: "rudder-server",
 	})
-	clearDB := flag.Bool("cleardb", false, "a bool")
+	clearDB := flag.Bool("cleardb", true, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
 
@@ -142,13 +191,14 @@ func main() {
 
 	runtime.GOMAXPROCS(maxProcess)
 	fmt.Println("Clearing DB", *clearDB)
+
+	backendconfig.Setup()
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, true)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
-
 	//Setup the three modules, the gateway, the router and the processor
 
 	if enableRouter {
-		go enableMonitorDestRouters(&routerDB)
+		go monitorDestRouters(&routerDB)
 	}
 
 	if enableProcessor {
