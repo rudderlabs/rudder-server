@@ -52,8 +52,8 @@ type SourcesT struct {
 }
 
 func loadConfig() {
-	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "http://localhost:3000")
-	configBackendToken = config.GetEnv("CONFIG_BACKEND_TOKEN", "1OjNiOZZhLc0EcaQv2IhpA2IwoC")
+	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "http://api.rudderlabs.com:5000")
+	configBackendToken = config.GetEnv("CONFIG_BACKEND_TOKEN", "1P2tfQQKarhlsG6S3JGLdXptyZY")
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
 }
 
