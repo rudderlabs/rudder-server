@@ -1260,7 +1260,7 @@ func (jd *HandleT) backupDSLoop() {
 }
 
 func (jd *HandleT) removeTableJSONDumps() {
-	path := config.GetEnv("TMPDIR", "/tmp/")
+	path := config.GetEnv("TMPDIR", "/home/ubuntu/s3/")
 	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", path, jd.tablePrefix))
 	jd.assertError(err)
 	for _, f := range files {
