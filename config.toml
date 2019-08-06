@@ -53,6 +53,9 @@ numTransformWorker = 8
 maxRetry = 3
 retrySleepInMS = 100
 
+[BackendConfig]
+pollIntervalInS = 5
+
 [Aws]
 region = "us-east-1"
 jobsBackupDSBucket = "dump-gateway-jobs-test"

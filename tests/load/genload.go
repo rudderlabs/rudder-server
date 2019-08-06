@@ -29,7 +29,7 @@ const (
 	gaJSONPath       = "events.#.GA"
 	variations       = 5
 	serverIP         = "http://localhost:8080/hello"
-	// serverIP	 = "http://172.31.94.69:8080/hello"
+	// serverIP = "http://172.31.94.69:8080/hello"
 )
 
 var (
@@ -132,6 +132,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 			if isBatchToBeMade {
 				value, _ := sjson.Set("", "batch", rudderEvents)
 				value, _ = sjson.Set(value, "sent_at", time.Now())
+				value, _ = sjson.Set(value, "writeKey", "1OjOIR9ivvqdXByNQbdQi0sfDW6")
 				////fmt.Println("==================")
 				////fmt.Println(value)
 				////fmt.Println("iter : ", countLoop)
