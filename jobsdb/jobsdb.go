@@ -1275,7 +1275,6 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	copyStmt := fmt.Sprintf(`COPY (SELECT row_to_json(%v) FROM (SELECT * FROM %v) %v) TO '%v';`, dbname, tableName, dbname, path)
 	_, err = jd.dbHandle.Exec(copyStmt)
 	jd.assertError(err)
-	defer os.Remove(path)
 
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
 	err = misc.ZipFiles(zipFilePath, []string{path})
@@ -1283,7 +1282,6 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 
 	file, err := os.Open(zipFilePath)
 	jd.assertError(err)
-	defer os.Remove(zipFilePath)
 	defer file.Close()
 
 	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
@@ -1291,6 +1289,11 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	} else {
 		err = jd.jobsFileUploader.Upload(file)
 	}
+	jd.assertError(err)
+
+	err = os.Remove(zipFilePath)
+	jd.assertError(err)
+	err = os.Remove(path)
 	jd.assertError(err)
 
 	return true, nil
