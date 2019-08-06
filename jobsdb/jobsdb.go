@@ -24,7 +24,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -34,6 +34,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 
 	"github.com/lib/pq"
@@ -1259,71 +1260,38 @@ func (jd *HandleT) backupDSLoop() {
 }
 
 func (jd *HandleT) removeTableJSONDumps() {
-	dir, _ := os.Getwd()
-	var findOptions []string
-	findOptions = append(findOptions, dir, "-name", fmt.Sprintf("%v_job*", jd.tablePrefix))
-	filePathsString, _ := exec.Command("find", findOptions...).Output()
-	filePaths := strings.Split(strings.TrimSpace(string(filePathsString)), "\n")
-	for _, filePath := range filePaths {
-		os.Remove(filePath)
+	path := config.GetEnv("TMPDIR", "/tmp/")
+	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", path, jd.tablePrefix))
+	jd.assertError(err)
+	for _, f := range files {
+		err = os.Remove(f)
+		jd.assertError(err)
 	}
 }
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
 	path := fmt.Sprintf(`%v%v.json`, config.GetEnv("TMPDIR", "/tmp/"), pathPrefix)
-
-	// dump table into a file (gives file with json of each row in single line)
-	var dumpOptions []string
-	dumpOptions = append(dumpOptions, fmt.Sprintf(`-d%v`, dbname))
-	dumpOptions = append(dumpOptions, fmt.Sprintf(`-h%v`, host))
-	dumpOptions = append(dumpOptions, fmt.Sprintf(`-p%v`, port))
-	dumpOptions = append(dumpOptions, fmt.Sprintf(`-U%v`, user))
-	copyCommand := fmt.Sprintf(`COPY (SELECT row_to_json(%v) FROM (SELECT * FROM %v) %v) TO '%v';`, dbname, tableName, dbname, path)
-	dumpOptions = append(dumpOptions, fmt.Sprintf(`-c%v`, copyCommand))
-
-	_, err = exec.Command("psql", dumpOptions...).Output()
+	copyStmt := fmt.Sprintf(`COPY (SELECT row_to_json(%v) FROM (SELECT * FROM %v) %v) TO '%v';`, dbname, tableName, dbname, path)
+	_, err = jd.dbHandle.Exec(copyStmt)
 	jd.assertError(err)
 	defer os.Remove(path)
 
-	// split the file dump by configured number of lines
-	var splitOptions []string
-	splitOptions = append(splitOptions, fmt.Sprintf(`-l%v`, eventsInJSONFileDump))
-	splitOptions = append(splitOptions, path)
-	splitOptions = append(splitOptions, fmt.Sprintf("%v_part_", pathPrefix))
-	_, err = exec.Command("split", splitOptions...).Output()
+	zipFilePath := fmt.Sprintf(`%v.zip`, path)
+	err = misc.ZipFiles(zipFilePath, []string{path})
 	jd.assertError(err)
 
-	// find all the split files
-	dir, err := os.Getwd()
-	var findOptions []string
-	findOptions = append(findOptions, dir, "-name", fmt.Sprintf("%v_part_*", pathPrefix))
-	filePathsString, err := exec.Command("find", findOptions...).Output()
+	file, err := os.Open(zipFilePath)
 	jd.assertError(err)
-	filePaths := strings.Split(strings.TrimSpace(string(filePathsString)), "\n")
-	sort.Strings(filePaths)
-	// convert each split file into json array and upload it
-	for _, filePath := range filePaths {
-		var sedOptions []string
-		sedOptions = append(sedOptions, "-i.tmp")
-		sedOptions = append(sedOptions, "1s/^/[/;$!s/$/,/;$s/$/]/")
-		sedOptions = append(sedOptions, filePath)
-		_, err = exec.Command("sed", sedOptions...).Output()
-		jd.assertError(err)
+	defer os.Remove(zipFilePath)
+	defer file.Close()
 
-		file, err := os.Open(filePath)
-		jd.assertError(err)
-		defer os.Remove(filePath)
-		defer os.Remove(fmt.Sprintf("%v.tmp", filePath))
-		defer file.Close()
-
-		if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
-			err = jd.jobStatusFileUploader.Upload(file)
-		} else {
-			err = jd.jobsFileUploader.Upload(file)
-		}
-		jd.assertError(err)
+	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
+		err = jd.jobStatusFileUploader.Upload(file)
+	} else {
+		err = jd.jobsFileUploader.Upload(file)
 	}
+	jd.assertError(err)
 
 	return true, nil
 }

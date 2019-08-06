@@ -1,10 +1,6 @@
 package fileuploader
 
 import (
-<<<<<<< HEAD
-	"fmt"
-=======
->>>>>>> bfa7f8217453e8b3c11d9f94329d155ba39ed6c4
 	"os"
 	"strings"
 
