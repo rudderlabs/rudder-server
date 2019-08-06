@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/misc"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -43,7 +44,7 @@ var (
 
 func check(e error) {
 	if e != nil {
-		panic(e)
+		misc.AssertError(e)
 	}
 }
 

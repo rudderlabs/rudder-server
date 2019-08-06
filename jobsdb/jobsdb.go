@@ -32,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 
@@ -115,6 +116,7 @@ func (jd *HandleT) assertError(err error) {
 		debug.PrintStack()
 		jd.printLists(true)
 		fmt.Println(jd.dsEmptyResultCache)
+		defer bugsnag.AutoNotify(err)
 		panic(err)
 	}
 }
@@ -125,6 +127,7 @@ func (jd *HandleT) assert(cond bool) {
 		debug.PrintStack()
 		jd.printLists(true)
 		fmt.Println(jd.dsEmptyResultCache)
+		defer bugsnag.AutoNotify("Assertion failed")
 		panic("Assertion failed")
 	}
 }
@@ -192,7 +195,7 @@ func loadConfig() {
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
-	eventsInJSONFileDump = config.GetInt("JobsDB.eventsInJSONFileDump", 100)
+	eventsInJSONFileDump = config.GetInt("JobsDB.eventsInJSONFileDump", 1000)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 }
 
@@ -1244,6 +1247,7 @@ func (jd *HandleT) backupDSLoop() {
 		// write job_status table to s3
 		_, err = jd.backupTable(backupDS.JobStatusTable)
 		jd.assertError(err)
+		jd.journalMarkDone(opID)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opPayload, err = json.Marshal(&backupDS)
@@ -1267,7 +1271,7 @@ func (jd *HandleT) removeTableJSONDumps() {
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
-	path := fmt.Sprintf(`%v%v.json`, os.Getenv("TMPDIR"), pathPrefix)
+	path := fmt.Sprintf(`%v%v.json`, config.GetEnv("TMPDIR", "/tmp/"), pathPrefix)
 
 	// dump table into a file (gives file with json of each row in single line)
 	var dumpOptions []string
@@ -1297,7 +1301,7 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	filePathsString, err := exec.Command("find", findOptions...).Output()
 	jd.assertError(err)
 	filePaths := strings.Split(strings.TrimSpace(string(filePathsString)), "\n")
-
+	sort.Strings(filePaths)
 	// convert each split file into json array and upload it
 	for _, filePath := range filePaths {
 		var sedOptions []string

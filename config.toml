@@ -24,7 +24,7 @@ maxDSSize = 100000
 maxMigrateOnce = 10
 mainCheckSleepDurationInS = 2
 backupCheckSleepDurationIns = 5
-eventsInJSONFileDump = 100
+eventsInJSONFileDump = 1000
 
 [Router]
 jobQueryBatchSize = 10000
@@ -57,3 +57,7 @@ retrySleepInMS = 100
 region = "us-east-1"
 jobsBackupDSBucket = "dump-gateway-jobs-test"
 jobStatusBackupDSBucket = "dump-gateway-job-status-test"
+
+[Bugsnag]
+apiKey = "a82c3193aa5914abe2cfb66557f1cc2b"
+releaseStage = "development"

@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+
 	//"runtime/debug"
 	"time"
+
+	"github.com/bugsnag/bugsnag-go"
 )
 
 //AssertError panics if error
@@ -14,6 +17,7 @@ func AssertError(err error) {
 	if err != nil {
 		//debug.SetTraceback("all")
 		//debug.PrintStack()
+		defer bugsnag.AutoNotify()
 		panic(err)
 	}
 }
@@ -23,6 +27,7 @@ func Assert(cond bool) {
 	if !cond {
 		//debug.SetTraceback("all")
 		//debug.PrintStack()
+		defer bugsnag.AutoNotify()
 		panic("Assertion failed")
 	}
 }

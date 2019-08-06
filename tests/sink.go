@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go"
 	"github.com/go-redis/redis"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/misc"
@@ -229,7 +231,7 @@ func main() {
 
 	if enableTestStats {
 		if len(redisServer) == 0 || len(testName) == 0 {
-			panic("REDIS_URL or TEST_NAME variables can't be empty")
+			misc.AssertError(errors.New("REDIS_URL or TEST_NAME variables can't be empty"))
 		}
 
 		go redisLoop()
@@ -237,5 +239,5 @@ func main() {
 	}
 
 	http.HandleFunc("/", handleReq)
-	http.ListenAndServe(":8181", nil)
+	http.ListenAndServe(":8181", bugsnag.Handler(nil))
 }
