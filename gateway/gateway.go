@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -184,7 +185,7 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
 func (gateway *HandleT) startWebHandler() {
 	fmt.Printf("Starting in %d\n", webPort)
 	http.HandleFunc("/hello", gateway.webHandler)
-	http.ListenAndServe(":"+strconv.Itoa(webPort), nil)
+	http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil))
 }
 
 // Gets the config from config backend and extracts enabled writekeys

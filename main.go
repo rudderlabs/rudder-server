@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joho/godotenv"
+	"github.com/bugsnag/bugsnag-go"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -134,15 +134,20 @@ func monitorDestRouters(routeDb *jobsdb.HandleT) {
 }
 
 func init() {
-	if err := godotenv.Load(); err != nil {
-		fmt.Println("No .env file found")
-	}
 	config.Initialize()
 	loadConfig()
 }
 
 func main() {
 	fmt.Println("Main starting")
+	bugsnag.Configure(bugsnag.Configuration{
+		APIKey:       config.GetString("apiKey", "a82c3193aa5914abe2cfb66557f1cc2b"),
+		ReleaseStage: config.GetString("releaseStage", "development"),
+		// The import paths for the Go packages containing your source files
+		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
+		// more configuration options
+		AppType: "rudder-server",
+	})
 	clearDB := flag.Bool("cleardb", true, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")

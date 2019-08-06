@@ -1,12 +1,17 @@
 package misc
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
+
 	//"runtime/debug"
 	"time"
+
+	"github.com/bugsnag/bugsnag-go"
 )
 
 //AssertError panics if error
@@ -14,6 +19,7 @@ func AssertError(err error) {
 	if err != nil {
 		//debug.SetTraceback("all")
 		//debug.PrintStack()
+		defer bugsnag.AutoNotify()
 		panic(err)
 	}
 }
@@ -23,6 +29,7 @@ func Assert(cond bool) {
 	if !cond {
 		//debug.SetTraceback("all")
 		//debug.PrintStack()
+		defer bugsnag.AutoNotify()
 		panic("Assertion failed")
 	}
 }
@@ -85,6 +92,57 @@ func GetRudderEventUserID(eventList []interface{}) (string, bool) {
 	}
 	userIDStr, ok := userID.(string)
 	return userIDStr, true
+}
+
+// ZipFiles compresses files[] into zip at filename
+func ZipFiles(filename string, files []string) error {
+
+	newZipFile, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer newZipFile.Close()
+
+	zipWriter := zip.NewWriter(newZipFile)
+	defer zipWriter.Close()
+
+	// Add files to zip
+	for _, file := range files {
+		if err = AddFileToZip(zipWriter, file); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// AddFileToZip adds file to zip including size header stats
+func AddFileToZip(zipWriter *zip.Writer, filename string) error {
+
+	fileToZip, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer fileToZip.Close()
+
+	// Get the file information
+	info, err := fileToZip.Stat()
+	AssertError(err)
+
+	header, err := zip.FileInfoHeader(info)
+	AssertError(err)
+
+	// Using FileInfoHeader() above only uses the basename of the file. If we want
+	// to preserve the folder structure we can overwrite this with the full path.
+	header.Name = filename
+
+	// Change to deflate to gain better compression
+	// see http://golang.org/pkg/archive/zip/#pkg-constants
+	header.Method = zip.Deflate
+
+	writer, err := zipWriter.CreateHeader(header)
+	AssertError(err)
+	_, err = io.Copy(writer, fileToZip)
+	return err
 }
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now

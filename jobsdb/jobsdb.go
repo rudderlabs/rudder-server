@@ -24,7 +24,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"runtime/debug"
 	"sort"
 	"unicode/utf8"
@@ -34,7 +34,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 
 	"github.com/lib/pq"
 	uuid "github.com/satori/go.uuid"
@@ -89,17 +92,18 @@ HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
-	dbHandle           *sql.DB
-	tablePrefix        string
-	datasetList        []dataSetT
-	datasetRangeList   []dataSetRangeT
-	dsListLock         sync.RWMutex
-	dsMigrationLock    sync.RWMutex
-	dsRetentionPeriod  time.Duration
-	dsEmptyResultCache map[dataSetT]map[string]map[string]bool
-	dsCacheLock        sync.Mutex
-	toBackup           bool
-	fileUploader       FileUploaderT
+	dbHandle              *sql.DB
+	tablePrefix           string
+	datasetList           []dataSetT
+	datasetRangeList      []dataSetRangeT
+	dsListLock            sync.RWMutex
+	dsMigrationLock       sync.RWMutex
+	dsRetentionPeriod     time.Duration
+	dsEmptyResultCache    map[dataSetT]map[string]map[string]bool
+	dsCacheLock           sync.Mutex
+	toBackup              bool
+	jobsFileUploader      fileuploader.FileUploader
+	jobStatusFileUploader fileuploader.FileUploader
 }
 
 //The struct which is written to the journal
@@ -115,6 +119,7 @@ func (jd *HandleT) assertError(err error) {
 		debug.PrintStack()
 		jd.printLists(true)
 		fmt.Println(jd.dsEmptyResultCache)
+		defer bugsnag.AutoNotify(err)
 		panic(err)
 	}
 }
@@ -125,10 +130,12 @@ func (jd *HandleT) assert(cond bool) {
 		debug.PrintStack()
 		jd.printLists(true)
 		fmt.Println(jd.dsEmptyResultCache)
+		defer bugsnag.AutoNotify("Assertion failed")
 		panic("Assertion failed")
 	}
 }
 
+// constants for JobStatusT JobState
 const (
 	SucceededState    = "succeeded"
 	FailedState       = "failed"
@@ -162,11 +169,11 @@ var (
 )
 
 var (
-	maxDSSize, maxMigrateOnce                  int
-	jobDoneMigrateThres, jobStatusMigrateThres float64
-	mainCheckSleepDuration                     time.Duration
-	backupCheckSleepDuration                   time.Duration
-	useJoinForUnprocessed                      bool
+	maxDSSize, maxMigrateOnce, eventsInJSONFileDump int
+	jobDoneMigrateThres, jobStatusMigrateThres      float64
+	mainCheckSleepDuration                          time.Duration
+	backupCheckSleepDuration                        time.Duration
+	useJoinForUnprocessed                           bool
 )
 
 // Loads db config and migration related config from config file
@@ -191,6 +198,7 @@ func loadConfig() {
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
+	eventsInJSONFileDump = config.GetInt("JobsDB.eventsInJSONFileDump", 1000)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 }
 
@@ -253,8 +261,18 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	}
 
 	if jd.toBackup {
-		jd.fileUploader = FileUploaderT{provider: "s3"}
-		jd.fileUploader.Setup()
+		jd.jobsFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
+			Provider:       "s3",
+			AmazonS3Bucket: config.GetString("Aws.jobsBackupDSBucket", "dump-gateway-jobs-test"),
+			AWSRegion:      config.GetString("Aws.region", "us-east-1"),
+		})
+		jd.assertError(err)
+		jd.jobStatusFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
+			Provider:       "s3",
+			AmazonS3Bucket: config.GetString("Aws.jobStatusBackupDSBucket", "dump-gateway-job-status-test"),
+			AWSRegion:      config.GetString("Aws.region", "us-east-1"),
+		})
+		jd.assertError(err)
 		go jd.backupDSLoop()
 	}
 	go jd.mainCheckLoop()
@@ -1216,7 +1234,7 @@ func (jd *HandleT) mainCheckLoop() {
 func (jd *HandleT) backupDSLoop() {
 	for {
 		time.Sleep(backupCheckSleepDuration)
-		fmt.Println(("BackupDS check:Start"))
+		fmt.Println("BackupDS check:Start")
 		backupDS := jd.getBackupDS()
 		// check if non empty dataset is present to backup
 		// else continue
@@ -1226,54 +1244,63 @@ func (jd *HandleT) backupDSLoop() {
 			continue
 		}
 
+		opPayload, err := json.Marshal(&backupDS)
+		jd.assertError(err)
+		opID := jd.journalMarkStart(backupDSOperation, opPayload)
 		// write jobs table to s3
-		_, err := jd.backupTable(backupDS.JobTable)
+		_, err = jd.backupTable(backupDS.JobTable)
 		jd.assertError(err)
 
 		// write job_status table to s3
 		_, err = jd.backupTable(backupDS.JobStatusTable)
 		jd.assertError(err)
-
-		// drop dataset after successfully uploading both jobs and jobs_status to s3
-		opPayload, err := json.Marshal(&backupDS)
-		jd.assertError(err)
-		opID := jd.journalMarkStart(dropDSOperation, opPayload)
-		jd.dropDS(backupDS, false)
 		jd.journalMarkDone(opID)
 
+		// drop dataset after successfully uploading both jobs and jobs_status to s3
+		opPayload, err = json.Marshal(&backupDS)
+		jd.assertError(err)
+		opID = jd.journalMarkStart(backupDropDSOperation, opPayload)
+		jd.dropDS(backupDS, false)
+		jd.journalMarkDone(opID)
+	}
+}
+
+func (jd *HandleT) removeTableJSONDumps() {
+	path := config.GetEnv("TMPDIR", "/home/ubuntu/s3/")
+	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", path, jd.tablePrefix))
+	jd.assertError(err)
+	for _, f := range files {
+		err = os.Remove(f)
+		jd.assertError(err)
 	}
 }
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
-	path := fmt.Sprintf(`%v.sql.tar.gz`, strings.Split(tableName, "pre_drop_")[1])
+	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
+	path := fmt.Sprintf(`%v%v.json`, config.GetEnv("TMPDIR", "/tmp/"), pathPrefix)
+	copyStmt := fmt.Sprintf(`COPY (SELECT row_to_json(%v) FROM (SELECT * FROM %v) %v) TO '%v';`, dbname, tableName, dbname, path)
+	_, err = jd.dbHandle.Exec(copyStmt)
+	jd.assertError(err)
 
-	var dumpOptions []string
-	dumpOptions = append(dumpOptions, fmt.Sprintf(`-d%v`, dbname))
-	dumpOptions = append(dumpOptions, fmt.Sprintf(`-h%v`, host))
-	dumpOptions = append(dumpOptions, fmt.Sprintf(`-p%v`, port))
-	dumpOptions = append(dumpOptions, fmt.Sprintf(`-U%v`, user))
-	dumpOptions = append(dumpOptions, fmt.Sprintf(`-t%v`, fmt.Sprintf(`public.%v`, tableName)))
-	dumpOptions = append(dumpOptions, "-Fc", fmt.Sprintf(`-f%v`, path))
+	zipFilePath := fmt.Sprintf(`%v.zip`, path)
+	err = misc.ZipFiles(zipFilePath, []string{path})
+	jd.assertError(err)
 
-	_, err = exec.Command("pg_dump", dumpOptions...).Output()
-	if err != nil {
-		log.Println(err)
-		return false, err
-	}
-
-	file, err := os.Open(path)
-	if err != nil {
-		log.Println(err)
-		return false, err
-	}
-	defer os.Remove(path)
+	file, err := os.Open(zipFilePath)
+	jd.assertError(err)
 	defer file.Close()
 
-	err = jd.fileUploader.Upload(file)
-	if err != nil {
-		log.Println(err)
-		return false, err
+	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
+		err = jd.jobStatusFileUploader.Upload(file)
+	} else {
+		err = jd.jobsFileUploader.Upload(file)
 	}
+	jd.assertError(err)
+
+	err = os.Remove(zipFilePath)
+	jd.assertError(err)
+	err = os.Remove(path)
+	jd.assertError(err)
 
 	return true, nil
 }
@@ -1314,6 +1341,8 @@ const (
 	addDSOperation         = "ADD_DS"
 	migrateCopyOperation   = "MIGRATE_COPY"
 	postMigrateDSOperation = "POST_MIGRATE_DS_OP"
+	backupDSOperation      = "BACKUP_DS"
+	backupDropDSOperation  = "BACKUP_DROP_DS"
 	dropDSOperation        = "DROP_DS"
 )
 
@@ -1340,7 +1369,7 @@ func (jd *HandleT) delJournal() {
 
 func (jd *HandleT) journalMarkStart(opType string, opPayload json.RawMessage) int64 {
 
-	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == dropDSOperation)
+	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == backupDSOperation || opType == backupDropDSOperation || opType == dropDSOperation)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
                                        VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
@@ -1377,7 +1406,7 @@ func (jd *HandleT) recoverFromJournal() {
 	jd.assertError(err)
 	defer rows.Close()
 
-	count := 0
+	count := make(map[string]int)
 	var opID int64
 	var opType string
 	var opDone bool
@@ -1389,11 +1418,17 @@ func (jd *HandleT) recoverFromJournal() {
 		err = rows.Scan(&opID, &opType, &opDone, &opPayload)
 		jd.assertError(err)
 		jd.assert(opDone == false)
-		count++
+		// backupDSOperation and backupDropDSOperation ops are executed in separate go routine backupDSLoop
+		if opType == backupDSOperation || opType == backupDropDSOperation {
+			count["backupOps"]++
+		} else {
+			count["nonBackupOps"]++
+		}
 	}
-	jd.assert(count <= 1)
+	jd.assert(count["nonBackupOps"] <= 1)
+	jd.assert(count["backupOps"] <= 1)
 
-	if count == 0 {
+	if count["nonBackupOps"]+count["backupOps"] == 0 {
 		//Nothing to recoer
 		return
 	}
@@ -1433,6 +1468,10 @@ func (jd *HandleT) recoverFromJournal() {
 		fmt.Println("Recovering migrateDel operation", migrateSrc)
 		log.Println("Recovering migrateDel operation", migrateSrc)
 		undoOp = false
+	case backupDSOperation:
+		jd.removeTableJSONDumps()
+		fmt.Println("Removing all stale json dumps of tables")
+		undoOp = true
 	case dropDSOperation:
 		//Some of the source datasets would have been
 		var dataset dataSetT
