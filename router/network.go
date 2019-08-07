@@ -71,9 +71,13 @@ func (network *NetHandleT) Setup(destID string) {
 	defaultRoundTripper := http.DefaultTransport
 	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
 	misc.Assert(ok)
-	defaultTransport := *defaultTransportPointer
-	defaultTransport.MaxIdleConns = 100
-	defaultTransport.MaxIdleConnsPerHost = 100
-	network.httpClient = &http.Client{Transport: &defaultTransport}
+	var defaultTransportCopy http.Transport
+	//Not safe to copy DefaultTransport 
+	//https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU
+	//Solved in go1.8 https://github.com/golang/go/issues/26013
+	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
+	defaultTransportCopy.MaxIdleConns = 100
+	defaultTransportCopy.MaxIdleConnsPerHost = 100
+	network.httpClient = &http.Client{Transport: &defaultTransportCopy}
 	//network.httpClient = &http.Client{}
 }
