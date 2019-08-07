@@ -148,7 +148,7 @@ func main() {
 		// more configuration options
 		AppType: "rudder-server",
 	})
-	clearDB := flag.Bool("cleardb", true, "a bool")
+	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
 
