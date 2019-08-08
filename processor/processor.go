@@ -334,15 +334,13 @@ func getEnabledDestinations(writeKey string, destinationName string) []backendco
 	return enabledDests
 }
 
-func getEnabledDestinationTypes() map[string]backendconfig.DestinationDefinitionT {
+func getEnabledDestinationTypes(writeKey string) map[string]backendconfig.DestinationDefinitionT {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	var enabledDestinationTypes = make(map[string]backendconfig.DestinationDefinitionT)
-	for _, destinations := range writeKeyDestinationMap {
-		for _, destination := range destinations {
-			if destination.Enabled {
-				enabledDestinationTypes[destination.DestinationDefinition.Name] = destination.DestinationDefinition
-			}
+	for _, destination := range writeKeyDestinationMap[writeKey] {
+		if destination.Enabled {
+			enabledDestinationTypes[destination.DestinationDefinition.Name] = destination.DestinationDefinition
 		}
 	}
 	return enabledDestinationTypes
@@ -386,7 +384,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				totalEvents++
 				//Getting all the destinations which are enabled for this
 				//event
-				destTypesFromConfig := getEnabledDestinationTypes()
+				destTypesFromConfig := getEnabledDestinationTypes(writeKey)
 				destTypes := integrations.GetDestinationIDs(singularEvent, destTypesFromConfig)
 
 				if len(destTypes) == 0 {
