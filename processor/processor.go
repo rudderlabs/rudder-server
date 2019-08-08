@@ -386,7 +386,17 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						singularEventMap, ok := singularEvent.(map[string]interface{})
 						misc.Assert(ok)
 						for k, v := range singularEventMap {
-							shallowEventCopy[k] = v
+							if k == "rl_message" {
+								//Need to overwrite ["rl_message"]["rl_destination"]
+								shallowEventCopy["rl_message"] = make(map[string]interface{})
+								singularEventMsgMap, ok := singularEventMap["rl_message"].(map[string]interface{})
+								misc.Assert(ok)
+								for km, vm := range singularEventMsgMap {
+									shallowEventCopy["rl_message"].(map[string]interface{})[km] = vm
+								}
+							} else {
+								shallowEventCopy[k] = v
+							}
 						}
 						shallowEventCopy["rl_message"].(map[string]interface{})["rl_destination"] = reflect.ValueOf(destination).Interface()
 
