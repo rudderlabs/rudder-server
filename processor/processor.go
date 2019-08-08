@@ -11,7 +11,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/deepcopy"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -383,21 +382,21 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					enabledDestinationsMap[destType] = enabledDestinationsList
 					// Adding a singular event multiple times if there are multiple destinations of same type
 					for _, destination := range enabledDestinationsList {
-						var singularEventMap = make(map[string]interface{})
-
-						singularEventMap["event"] = singularEvent
-						eventCopyMap, err := deepcopy.Map(singularEventMap)
-						misc.AssertError(err)
-						eventCopy := eventCopyMap["event"]
-						eventCopy.(map[string]interface{})["rl_message"].(map[string]interface{})["rl_destination"] = reflect.ValueOf(destination).Interface()
+						shallowEventCopy := make(map[string]interface{})
+						singularEventMap, ok := singularEvent.(map[string]interface{})
+						misc.Assert(ok)
+						for k, v := range singularEventMap {
+							shallowEventCopy[k] = v
+						}
+						shallowEventCopy["rl_message"].(map[string]interface{})["rl_destination"] = reflect.ValueOf(destination).Interface()
 
 						//We have at-least one event so marking it good
-						_, ok := eventsByDest[destType]
+						_, ok = eventsByDest[destType]
 						if !ok {
 							eventsByDest[destType] = make([]interface{}, 0)
 						}
 						eventsByDest[destType] = append(eventsByDest[destType],
-							eventCopy)
+							shallowEventCopy)
 					}
 				}
 			}
