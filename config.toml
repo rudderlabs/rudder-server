@@ -9,10 +9,10 @@ enableRouter = true
 
 [Gateway]
 webPort = 8080
-maxDBWriterProcess = 4
+maxDBWriterProcess = 20
 CustomVal = "GW"
 maxBatchSize = 32
-batchTimeoutInMS = 20
+batchTimeoutInMS = 2
 respMessage = "OK"
 
 
@@ -28,7 +28,7 @@ eventsInJSONFileDump = 1000
 
 [Router]
 jobQueryBatchSize = 10000
-updateStatusBatchSize = 1000
+updateStatusBatchSize = 1
 readSleepInMS = 10
 noOfWorkers = 8
 noOfJobsPerChannel = 1000
@@ -37,7 +37,7 @@ maxSleepInS = 60
 minSleepInS = 0
 maxStatusUpdateWaitInS = 5
 randomWorkerAssign = false
-useTestSink = true
+useTestSink = false
 maxFailedCountForJob = 8
 keepOrderOnFailure = true
 
@@ -48,7 +48,7 @@ transformBatchSize = 10
 sessionThresholdEvents = 20
 sessionThresholdInS = 10
 maxChanSize = 2048
-processSessions = true
+processSessions = false
 numTransformWorker = 8
 maxRetry = 3
 retrySleepInMS = 100

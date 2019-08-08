@@ -34,7 +34,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -119,7 +118,7 @@ func (jd *HandleT) assertError(err error) {
 		debug.PrintStack()
 		jd.printLists(true)
 		fmt.Println(jd.dsEmptyResultCache)
-		defer bugsnag.AutoNotify(err)
+		//defer bugsnag.AutoNotify(err)
 		panic(err)
 	}
 }
@@ -130,7 +129,7 @@ func (jd *HandleT) assert(cond bool) {
 		debug.PrintStack()
 		jd.printLists(true)
 		fmt.Println(jd.dsEmptyResultCache)
-		defer bugsnag.AutoNotify("Assertion failed")
+		//defer bugsnag.AutoNotify("Assertion failed")
 		panic("Assertion failed")
 	}
 }
@@ -180,7 +179,7 @@ var (
 func loadConfig() {
 	host = config.GetEnv("JOBS_DB_HOST", "localhost")
 	user = config.GetEnv("JOBS_DB_USER", "ubuntu")
-	dbname = config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
+	dbname = config.GetEnv("JOBS_DB_DB_NAME", "ubuntu1")
 	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 

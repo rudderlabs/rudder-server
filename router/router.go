@@ -426,8 +426,8 @@ func (rt *HandleT) generatorLoop() {
 		})
 
 		if len(combinedList) > 0 {
-			log.Println("Router :: router is enabled")
-			log.Println("Router ===== len to be processed==== :", len(combinedList))
+			//log.Println("Router :: router is enabled")
+			//log.Println("Router ===== len to be processed==== :", len(combinedList))
 		}
 
 		//List of jobs wich can be processed mapped per channel

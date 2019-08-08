@@ -2,17 +2,11 @@ package fileuploader
 
 import (
 	"os"
-	"strings"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/rudderlabs/rudder-server/misc"
 )
 
 // Upload passed in file to s3
 func (uploader *S3Uploader) Upload(file *os.File) error {
-	sess, err := session.NewSession(&aws.Config{
+	/* sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(uploader.region)},
 	)
 	misc.AssertError(err)
@@ -25,7 +19,8 @@ func (uploader *S3Uploader) Upload(file *os.File) error {
 		Body:   file,
 	})
 	misc.AssertError(err)
-	return err
+	return err */
+	return nil
 }
 
 // S3Uploader contains config for uploading object to s3

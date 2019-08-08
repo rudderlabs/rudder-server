@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/misc"
 )
@@ -58,9 +59,11 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 
 	if err != nil {
 		log.Println("Errored when sending request to the server", err)
+		log.Println("====error==", string(respBody))
 		return http.StatusGatewayTimeout, "", string(respBody)
 	}
 
+	log.Println("======", string(respBody))
 	return resp.StatusCode, resp.Status, string(respBody)
 }
 

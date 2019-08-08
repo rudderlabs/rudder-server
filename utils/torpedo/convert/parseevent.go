@@ -10,6 +10,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"net/http"
@@ -25,15 +27,19 @@ import (
 // curl -u 7e392cdd4557285becb9c15936523752:f44a1d52a9bdda50b6d9bd1123c645ee 'https://amplitude.com/api/2/export?start=20190807T00&end=20190807T23' >> see.zip
 
 var (
-	out             *os.File
-	batchSize       int
-	rudderSend      bool
-	userIDToChannel map[string]chan []byte
-	client          *http.Client
-	noOfUsers       int
-	noOfBatches     int
-	db              *pg.DB
-	compare         bool
+	out                        *os.File
+	batchSize                  int
+	rudderSend                 bool
+	userIDToChannel            map[string]chan []byte
+	client                     *http.Client
+	noOfUsers                  int
+	noOfBatches                int
+	db                         *pg.DB
+	compare                    bool
+	writeKey                   = "1P6q8fcXrkmekovCdk0a3gFq30X"
+	lock                       sync.Mutex
+	matchedInsertInOrderNo     int64
+	matchedOtherPropsInOrderNo int64
 	//userIDToJob
 )
 
@@ -50,16 +56,16 @@ func (userEvent *userEventList) String() {
 func mainFunc(inputJSONFile string, outPutJSONFile string, outPutNoUserFile string) {
 	compare = false
 	batchSize = 4
-	rudderSend = true
+	rudderSend = false
 	noOfUsers = 20000
-	noOfBatches = 1000
+	noOfBatches = 10000
 	userIDToChannel = make(map[string]chan []byte)
 	client = &http.Client{}
 
 	db = pg.Connect(&pg.Options{
 		User:     "ubuntu",
 		Password: "ubuntu",
-		Database: "user", //"testuserevent", //"userevent",
+		Database: "userevent", //"testuserevent", //"userevent",
 		Addr:     "localhost:5432",
 	})
 
@@ -71,14 +77,16 @@ func mainFunc(inputJSONFile string, outPutJSONFile string, outPutNoUserFile stri
 		return
 	}
 
-	opts := &orm.CreateTableOptions{
-		IfNotExists: true,
-	}
+	if !compare {
+		opts := &orm.CreateTableOptions{
+			IfNotExists: true,
+		}
 
-	crErr := db.CreateTable(&userEventList{}, opts)
+		crErr := db.CreateTable(&userEventList{}, opts)
 
-	if crErr != nil {
-		panic(crErr)
+		if crErr != nil {
+			panic(crErr)
+		}
 	}
 
 	/* fileOptions, errorTracking := ioutil.ReadDir(inputJSONDir)
@@ -187,6 +195,11 @@ func mainFunc(inputJSONFile string, outPutJSONFile string, outPutNoUserFile stri
 
 	for _ = range userIDToChannel {
 		<-doneWorker
+	}
+
+	if compare {
+		fmt.Println(" matchedInsertInOrderNo: ", matchedInsertInOrderNo)
+		fmt.Println(" matchedOtherPropsInOrderNo: ", matchedOtherPropsInOrderNo)
 	}
 
 	fmt.Println("====done=====")
@@ -365,6 +378,7 @@ func transform(requestQ chan []byte, userID string, done chan bool, doneWorker c
 			if count%batchSize == 0 {
 				//fmt.Println("========", count)
 				outputRudderJSON, _ = sjson.SetBytes(outputRudderJSON, "sent_at", time.Now())
+				outputRudderJSON, _ = sjson.SetBytes(outputRudderJSON, "writeKey", writeKey)
 
 				if rudderSend {
 					sendToRudder(outputRudderJSON)
@@ -385,8 +399,10 @@ func transform(requestQ chan []byte, userID string, done chan bool, doneWorker c
 		case <-done:
 			if compare {
 				// fmt.Println("==userId==", unmarhsalledData["user_id"], userID)
+				lock.Lock()
 				testUser := userEventList{UserID: userID}
 				selectErr := db.Select(&testUser)
+				lock.Unlock()
 				if selectErr == nil {
 					// testUser.String()
 					// fmt.Println("==current user eventlist from AM==", eventList)
@@ -405,15 +421,21 @@ func transform(requestQ chan []byte, userID string, done chan bool, doneWorker c
 					}
 					if countSuccess == len(testUser.InsertIds) {
 						fmt.Println("insert order is right!!!")
+						atomic.AddInt64(&matchedInsertInOrderNo, 1)
 					}
+					isMatch := true
 					for index := range testUser.Events {
 						if testUser.Events[index] != eventList[index] {
 							fmt.Printf("userId %v event %v don't match \n", userID, index+1)
+							isMatch = false
 						}
+					}
+					if isMatch {
+						atomic.AddInt64(&matchedOtherPropsInOrderNo, 1)
 					}
 				} else {
 					//panic(selectErr)
-					fmt.Printf("error fetching stored eventList for user %v", userID)
+					fmt.Printf("error fetching stored eventList for user %v, err: %v \n", userID, selectErr)
 				}
 
 				fmt.Println("done with comparing")
@@ -425,6 +447,7 @@ func transform(requestQ chan []byte, userID string, done chan bool, doneWorker c
 				//fmt.Println("flushing remaining batch")
 				fmt.Println("==userId==", userID)
 				outputRudderJSON, _ = sjson.SetBytes(outputRudderJSON, "sent_at", time.Now())
+				outputRudderJSON, _ = sjson.SetBytes(outputRudderJSON, "writeKey", writeKey)
 
 				if rudderSend {
 					sendToRudder(outputRudderJSON)
@@ -443,6 +466,7 @@ func transform(requestQ chan []byte, userID string, done chan bool, doneWorker c
 			}
 
 			fmt.Println("===event and user list===", eventList, userID)
+			lock.Lock()
 			userEvent := userEventList{UserID: userID, Events: eventList, InsertIds: insertIDList}
 			if db != nil {
 				fmt.Println("db conn present")
@@ -452,6 +476,7 @@ func transform(requestQ chan []byte, userID string, done chan bool, doneWorker c
 				}
 			}
 
+			// test purpose
 			testUser := userEventList{UserID: userID}
 			selectErr := db.Select(&testUser)
 			if selectErr == nil {
@@ -459,6 +484,8 @@ func transform(requestQ chan []byte, userID string, done chan bool, doneWorker c
 			} else {
 				panic(selectErr)
 			}
+
+			lock.Unlock()
 
 			doneWorker <- true
 			return

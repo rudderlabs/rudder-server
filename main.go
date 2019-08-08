@@ -187,7 +187,7 @@ func main() {
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
 
-	misc.SetupLogger()
+	//misc.SetupLogger()
 
 	runtime.GOMAXPROCS(maxProcess)
 	fmt.Println("Clearing DB", *clearDB)
