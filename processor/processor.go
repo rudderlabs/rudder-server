@@ -436,10 +436,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	for destID, destEventList := range eventsByDest {
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
-		url, ok := integrations.GetDestinationURL(destID)
-		if !ok {
-			continue
-		}
+		url := integrations.GetDestinationURL(destID)
 		log.Println("Transform input size", len(destEventList))
 		destTransformEventList, ok := proc.transformer.Transform(destEventList, url, transformBatchSize, true)
 		log.Println("Transform output size", len(destTransformEventList))

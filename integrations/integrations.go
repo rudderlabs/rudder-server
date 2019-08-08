@@ -3,6 +3,7 @@ package integrations
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
@@ -99,12 +100,8 @@ func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backend
 }
 
 //GetDestinationURL returns node URL
-func GetDestinationURL(destID string) (string, bool) {
-	path, ok := destJSTransformerMap[destID]
-	if !ok {
-		return "", false
-	}
-	return fmt.Sprintf("%s/%s", destTransformURL, path), true
+func GetDestinationURL(destID string) string {
+	return fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destID))
 }
 
 //GetUserTransformURL returns the port of running user transform
