@@ -56,7 +56,7 @@
           },
           "rl_type": "track",
           "rl_message_id": "d6a75a2d-43a2-4d0c-9bcc-5f6e6705299b",
-          "rl_timestamp": "2019-07-29 10:38:03+0000",
+          "rl_timestamp": "2019-08-05 10:38:03+0000",
           "rl_anonymous_id": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6",
           "rl_event": "Product Clicked",
           "rl_properties": {
@@ -73,7 +73,7 @@
             "url": "https://www.example.com/product/path",
             "image_url": "https://www.example.com/product/path.jpg"
           },
-          "rl_integrations": ["rudderlabs"]
+          "rl_integrations": { "GA": true, "AM": true }
         }
       },
       "GA": {
@@ -135,7 +135,7 @@
           },
           "rl_type": "track",
           "rl_message_id": "6def71bd-eae8-4cb1-bfe7-0b5e7eaf89fd",
-          "rl_timestamp": "2019-07-29 10:12:22+0000",
+          "rl_timestamp": "2019-08-05 10:12:22+0000",
           "rl_anonymous_id": "19702fee-6184-482e-aa05-8ab21402e1f3",
           "rl_event": "Test Track",
           "rl_properties": {
@@ -143,7 +143,7 @@
             "label": "Test Label",
             "value": 5
           },
-          "rl_integrations": ["rudderlabs"]
+          "rl_integrations": { "All": false, "AM": false }
         }
       },
       "GA": {
