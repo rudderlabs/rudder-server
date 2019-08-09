@@ -28,14 +28,14 @@ var testName = config.GetEnv("TEST_NAME", "TEST-default")
 
 var count uint64
 var showPayload = false
-var enableTestStats = true
-var enableError = true
+var enableTestStats = false
+var enableError = false
 var redisChan chan string
 
 var burstError = false
 var randomError = false
 var randomErrorCodes = []int{200, 200, 200, 200, 200, 200, 200, 200, 400, 500}
-var errorCounts map[string]uint64 = make(map[string]uint64)
+var errorCounts = make(map[string]uint64)
 var errorMutex sync.Mutex
 
 var timeOfStart = time.Now()
@@ -159,7 +159,9 @@ func printCounter() {
 	startTime := time.Now()
 	for {
 		time.Sleep(2 * time.Second)
+		errorMutex.Lock()
 		fmt.Println("Count", count, time.Since(startTime), errorCounts)
+		errorMutex.Unlock()
 	}
 }
 
