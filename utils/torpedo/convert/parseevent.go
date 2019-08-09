@@ -23,8 +23,9 @@ import (
 	"github.com/go-pg/pg/orm"
 )
 
+//43390
 // export api
-// curl -u 7e392cdd4557285becb9c15936523752:f44a1d52a9bdda50b6d9bd1123c645ee 'https://amplitude.com/api/2/export?start=20190807T00&end=20190807T23' >> see.zip
+// curl -u c44ba00c78400bd1dfac1583995af31a:70f0beb2806c41f36ca347f818d1b37b 'https://amplitude.com/api/2/export?start=20190808T00&end=20190809T23' >> our.zip
 
 var (
 	out                        *os.File
@@ -38,8 +39,10 @@ var (
 	compare                    bool
 	writeKey                   = "1P6q8fcXrkmekovCdk0a3gFq30X"
 	lock                       sync.Mutex
+	netlock                    sync.Mutex
 	matchedInsertInOrderNo     int64
 	matchedOtherPropsInOrderNo int64
+	userSendCompleteCount      int64
 	//userIDToJob
 )
 
@@ -54,18 +57,18 @@ func (userEvent *userEventList) String() {
 }
 
 func mainFunc(inputJSONFile string, outPutJSONFile string, outPutNoUserFile string) {
-	compare = false
-	batchSize = 4
+	compare = true
+	batchSize = 10
 	rudderSend = false
 	noOfUsers = 20000
-	noOfBatches = 10000
+	noOfBatches = 1000
 	userIDToChannel = make(map[string]chan []byte)
 	client = &http.Client{}
 
 	db = pg.Connect(&pg.Options{
 		User:     "ubuntu",
 		Password: "ubuntu",
-		Database: "userevent", //"testuserevent", //"userevent",
+		Database: "user", //"testuserevent", //"userevent",
 		Addr:     "localhost:5432",
 	})
 
@@ -261,6 +264,8 @@ func transform(requestQ chan []byte, userID string, done chan bool, doneWorker c
 				break
 			}
 			json.Unmarshal(jsonByte, &unmarhsalledData)
+			rudderEventMap = make(map[string]interface{})
+			rudderUserMap = make(map[string]interface{})
 
 			if unmarhsalledData["event_type"] != nil {
 				_, ok := eventTypeMap[unmarhsalledData["event_type"].(string)]
@@ -381,6 +386,8 @@ func transform(requestQ chan []byte, userID string, done chan bool, doneWorker c
 				outputRudderJSON, _ = sjson.SetBytes(outputRudderJSON, "writeKey", writeKey)
 
 				if rudderSend {
+					// sleep to check if we still hit EOF
+					time.Sleep(10 * time.Millisecond)
 					sendToRudder(outputRudderJSON)
 				}
 
@@ -445,11 +452,13 @@ func transform(requestQ chan []byte, userID string, done chan bool, doneWorker c
 
 			if count > 0 {
 				//fmt.Println("flushing remaining batch")
-				fmt.Println("==userId==", userID)
+				//fmt.Println("==userId==", userID)
 				outputRudderJSON, _ = sjson.SetBytes(outputRudderJSON, "sent_at", time.Now())
 				outputRudderJSON, _ = sjson.SetBytes(outputRudderJSON, "writeKey", writeKey)
 
 				if rudderSend {
+					// sleep to check if we still hit EOF
+					time.Sleep(10 * time.Millisecond)
 					sendToRudder(outputRudderJSON)
 				}
 
@@ -487,6 +496,9 @@ func transform(requestQ chan []byte, userID string, done chan bool, doneWorker c
 
 			lock.Unlock()
 
+			atomic.AddInt64(&userSendCompleteCount, 1)
+
+			fmt.Println("===done user===", userSendCompleteCount)
 			doneWorker <- true
 			return
 		}
@@ -554,19 +566,29 @@ func addOtherTransformation(outputJSON *[]byte, count int, unmarhsalledSourceDat
 }
 
 func sendToRudder(jsonPayload []byte) {
+	netlock.Lock()
+	defer netlock.Unlock()
 	fmt.Println("sending to rudder...")
+	time.Sleep(10 * time.Millisecond)
 	req, err := http.NewRequest("POST", "http://localhost:8080/hello", bytes.NewBuffer(jsonPayload))
+	req.Close = true
+
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Connection", "close")
 
 	//client := &http.Client{}
 	resp, err := client.Do(req)
+
+	if resp != nil && resp.Body != nil {
+		fmt.Println("response Status:", resp.Status)
+		fmt.Println("response Headers:", resp.Header)
+		body, _ := ioutil.ReadAll(resp.Body)
+		fmt.Println("response Body:", string(body))
+		defer resp.Body.Close()
+	}
+
 	if err != nil {
 		panic(err)
 	}
-	defer resp.Body.Close()
 
-	fmt.Println("response Status:", resp.Status)
-	fmt.Println("response Headers:", resp.Header)
-	body, _ := ioutil.ReadAll(resp.Body)
-	fmt.Println("response Body:", string(body))
 }
