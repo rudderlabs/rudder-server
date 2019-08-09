@@ -15,7 +15,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
-	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/rudderlabs/rudder-server/processor"
@@ -49,43 +48,6 @@ func readIOforResume(router router.HandleT) {
 			panic(err)
 		}
 		router.ResetSleep()
-	}
-}
-
-func enableMonitorDestRouters(routeDb *jobsdb.HandleT) {
-	dstToRouter := make(map[string]*router.HandleT)
-	for {
-		//Get all the destinations and start the rotuer if
-		//not already enabled
-		for _, dest := range integrations.GetAllDestinations() {
-			rt, ok := dstToRouter[dest]
-			if !ok {
-				fmt.Println("Enabling Destination", dest)
-				var router router.HandleT
-				router.Setup(routeDb, dest)
-				dstToRouter[dest] = &router
-			} else {
-				rt.Enable()
-			}
-		}
-
-		//Iterate through the existing routers and disable
-		//which have been removed from config
-		for d, rtHandle := range dstToRouter {
-			found := false
-			for _, dstID := range integrations.GetAllDestinations() {
-				if d == dstID {
-					found = true
-					break
-				}
-			}
-			//Router is not in enabled list. Disable it
-			if !found {
-				rtHandle.Disable()
-			}
-		}
-		//Sleep before the next round
-		<-time.After(5 * time.Second)
 	}
 }
 
