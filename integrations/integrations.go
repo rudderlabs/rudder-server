@@ -5,17 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/misc"
 )
-
-//our internal ID for that destination. We save this ID in the customval field
-//in JobsDB
-var destNameIDMap = map[string]string{
-	"google_analytics": "GA",
-	"rudderlabs":       "GA",
-	"amplitude":        "AM",
-}
 
 var (
 	destTransformURL, userTransformURL string
@@ -80,33 +74,25 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	return postInfo
 }
 
-//GetAllDestinations returns all the destinations that have been
-//enabled
-func GetAllDestinations() []string {
-	allDest := make([]string, 0)
-	for dest := range destJSTransformerMap {
-		allDest = append(allDest, dest)
-	}
-	return allDest
-}
-
 //GetDestinationIDs parses the destination names from the
-//input JSON and returns the IDSs
-func GetDestinationIDs(clientEvent interface{}) (retVal []string) {
+//input JSON, matches them with enabled destinations from controle plane and returns the IDSs
+func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
 	clientIntgs, ok := misc.GetRudderEventVal("rl_integrations", clientEvent)
 	if !ok {
 		return
 	}
 
-	clientIntgsList, ok := clientIntgs.([]interface{})
+	clientIntgsList, ok := clientIntgs.(map[string]interface{})
 	if !ok {
 		return
 	}
 	var outVal []string
-	for _, integ := range clientIntgsList {
-		customVal, ok := destNameIDMap[strings.ToLower(integ.(string))]
-		if ok {
-			outVal = append(outVal, customVal)
+	for dest := range destNameIDMap {
+		if clientIntgsList[dest] == false {
+			continue
+		}
+		if (clientIntgsList["All"] != false) || clientIntgsList[dest] == true {
+			outVal = append(outVal, dest)
 		}
 	}
 	retVal = outVal
@@ -114,12 +100,8 @@ func GetDestinationIDs(clientEvent interface{}) (retVal []string) {
 }
 
 //GetDestinationURL returns node URL
-func GetDestinationURL(destID string) (string, bool) {
-	path, ok := destJSTransformerMap[destID]
-	if !ok {
-		return "", false
-	}
-	return fmt.Sprintf("%s/%s", destTransformURL, path), true
+func GetDestinationURL(destID string) string {
+	return fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destID))
 }
 
 //GetUserTransformURL returns the port of running user transform

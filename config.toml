@@ -18,9 +18,9 @@ respMessage = "OK"
 
 [JobsDB]
 # Migration related parameters
-jobDoneMigrateThres = 0.5
-jobStatusMigrateThres = 1
-maxDSSize = 100
+jobDoneMigrateThres = 0.8
+jobStatusMigrateThres = 5
+maxDSSize = 100000
 maxMigrateOnce = 10
 mainCheckSleepDurationInS = 2
 backupCheckSleepDurationIns = 5

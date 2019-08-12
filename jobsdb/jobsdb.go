@@ -243,6 +243,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
+		jd.dropAllBackupDS()
 	}
 
 	jd.setupEnumTypes()
@@ -709,6 +710,49 @@ func (jd *HandleT) terminateQueries() {
                             AND pid <> pg_backend_pid()`
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
+}
+
+func (jd *HandleT) getBackupDSList() []dataSetT {
+	//Read the table names from PG
+	tableNames := jd.getAllTableNames()
+
+	jobNameMap := map[string]string{}
+	jobStatusNameMap := map[string]string{}
+	dnumList := []string{}
+
+	var dsList []dataSetT
+
+	tablePrefix := "pre_drop_" + jd.tablePrefix
+	for _, t := range tableNames {
+		if strings.HasPrefix(t, tablePrefix+"_jobs_") {
+			dnum := t[len(tablePrefix+"_jobs_"):]
+			jobNameMap[dnum] = t
+			dnumList = append(dnumList, dnum)
+			continue
+		}
+		if strings.HasPrefix(t, tablePrefix+"_job_status_") {
+			dnum := t[len(tablePrefix+"_job_status_"):]
+			jobStatusNameMap[dnum] = t
+			continue
+		}
+	}
+
+	for _, dnum := range dnumList {
+		dsList = append(dsList, dataSetT{
+			JobTable:       jobNameMap[dnum],
+			JobStatusTable: jobStatusNameMap[dnum],
+			Index:          dnum,
+		})
+	}
+	return dsList
+}
+
+func (jd *HandleT) dropAllBackupDS() error {
+	dsList := jd.getBackupDSList()
+	for _, ds := range dsList {
+		jd.dropDS(ds, false)
+	}
+	return nil
 }
 
 func (jd *HandleT) dropAllDS() error {
@@ -1472,7 +1516,7 @@ func (jd *HandleT) recoverFromJournal() {
 		jd.removeTableJSONDumps()
 		fmt.Println("Removing all stale json dumps of tables")
 		undoOp = true
-	case dropDSOperation:
+	case dropDSOperation, backupDropDSOperation:
 		//Some of the source datasets would have been
 		var dataset dataSetT
 		json.Unmarshal(opPayload, &dataset)
