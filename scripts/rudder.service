@@ -6,6 +6,10 @@ After = network.target
 WorkingDirectory = /home/ubuntu/rudder-server
 Restart = always
 ExecStart = /home/ubuntu/rudder-server/rudder-server
+StandardOutput = syslog
+StandardError = syslog
+SyslogIdentifier = rudder
+
 
 [Install]
 WantedBy = multi-user.target
