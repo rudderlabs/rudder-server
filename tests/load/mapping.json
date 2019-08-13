@@ -73,7 +73,7 @@
             "url": "https://www.example.com/product/path",
             "image_url": "https://www.example.com/product/path.jpg"
           },
-          "rl_integrations": { "GA": true, "AM": true }
+          "rl_integrations": { "All": false, "GA": true }
         }
       },
       "GA": {
@@ -143,7 +143,7 @@
             "label": "Test Label",
             "value": 5
           },
-          "rl_integrations": { "All": false, "AM": false }
+          "rl_integrations": { "All": false, "GA": true }
         }
       },
       "GA": {
