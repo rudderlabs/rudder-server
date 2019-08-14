@@ -208,6 +208,23 @@ func init() {
 }
 
 /*
+GetConnectionString : Returns JobsDB connection info
+*/
+func GetConnectionString() string {
+	return fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+
+}
+
+/*
+GetDbName : Returns JobsDB connection info
+*/
+func GetDbName() string {
+	return dbname
+}
+
+/*
 Setup is used to initialize the HandleT structure.
 clearAll = True means it will remove all existing tables
 tablePrefix must be unique and is used to separate
@@ -218,9 +235,7 @@ in the retention time
 func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, toBackup bool) {
 
 	var err error
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+	psqlInfo := GetConnectionString()
 
 	jd.assert(tablePrefix != "")
 	jd.tablePrefix = tablePrefix

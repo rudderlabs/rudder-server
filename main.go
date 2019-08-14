@@ -110,6 +110,13 @@ func main() {
 		// more configuration options
 		AppType: "rudder-server",
 	})
+
+	// Check if there is a probable inconsistent state of Data
+	jobsdb.RecordAppStart()
+	if jobsdb.CheckProbableInconsistentDB() || !jobsdb.IsDBPresent() {
+		jobsdb.ReplaceDB()
+	}
+
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")

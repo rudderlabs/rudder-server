@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/joho/godotenv"
+	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/spf13/viper"
 )
 
@@ -39,6 +39,14 @@ func GetInt(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return viper.GetInt(key)
+}
+
+// GetInt64 is wrapper for viper's GetInt
+func GetInt64(key string, defaultValue int64) int64 {
+	if !viper.IsSet(key) {
+		return defaultValue
+	}
+	return viper.GetInt64(key)
 }
 
 // GetFloat64 is wrapper for viper's GetFloat64

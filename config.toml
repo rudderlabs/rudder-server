@@ -64,3 +64,8 @@ jobStatusBackupDSBucket = "dump-gateway-job-status-test"
 [Bugsnag]
 apiKey = "a82c3193aa5914abe2cfb66557f1cc2b"
 releaseStage = "development"
+
+[recovery]
+enabled = true
+crashThreshold = 5
+durationInS = 300
