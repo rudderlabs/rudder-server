@@ -28,7 +28,7 @@ import (
 type webRequestT struct {
 	request *http.Request
 	writer  *http.ResponseWriter
-	done    chan<- struct{}
+	done    chan<- string
 }
 
 type batchWebRequestT struct {
@@ -107,11 +107,11 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			jobList = append(jobList, &newJob)
 		}
-		gateway.jobsDB.Store(jobList)
+		errorMessages := gateway.jobsDB.Store(jobList)
 
 		// ACK the http requests
-		for _, req := range breq.batchRequest {
-			req.done <- struct{}{}
+		for idx, req := range breq.batchRequest {
+			req.done <- errorMessages[idx]
 		}
 
 	}
@@ -172,13 +172,17 @@ func (gateway *HandleT) printStats() {
 //Main handler function for incoming requets
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
 	atomic.AddUint64(&gateway.recvCount, 1)
-	done := make(chan struct{})
+	done := make(chan string)
 	req := webRequestT{request: r, writer: &w, done: done}
 	gateway.webRequestQ <- &req
 	//Wait for batcher process to be done
-	<-done
+	errorMessage := <-done
 	atomic.AddUint64(&gateway.ackCount, 1)
-	w.Write([]byte(respMessage))
+	if errorMessage != "" {
+		http.Error(w, errorMessage, 400)
+	} else {
+		w.Write([]byte(respMessage))
+	}
 
 }
 
