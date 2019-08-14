@@ -113,6 +113,11 @@ type journalOpPayloadT struct {
 	To   dataSetT   `json:"to"`
 }
 
+type StoreJobRespT struct {
+	JobID        int64
+	ErrorMessage string
+}
+
 var dbErrorMap = map[string]string{
 	"Invalid JSON": "22P02",
 }
@@ -847,7 +852,7 @@ Next set of functions are for reading/writing jobs and job_status for
 a given dataset. The names should be self explainatory
 */
 
-func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessages []string) {
+func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[int64]string) {
 
 	var stmt *sql.Stmt
 	var err error
@@ -855,6 +860,8 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 	//Using transactions for bulk copying
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
+
+	errorMessagesMap = make(map[int64]string)
 
 	if copyID {
 		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "custom_val",
@@ -868,6 +875,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 
 	defer stmt.Close()
 	for _, job := range jobList {
+		errorMessagesMap[job.JobID] = ""
 		if copyID {
 			_, err = stmt.Exec(job.JobID, job.UUID, job.CustomVal,
 				string(job.EventPayload), job.CreatedAt, job.ExpireAt)
@@ -882,9 +890,9 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 		txn.Rollback() // rollback started txn, to prevent dangling db connection
 		for _, job := range jobList {
 			errorMessage := jd.storeJobDS(ds, job)
-			errorMessages = append(errorMessages, errorMessage)
+			errorMessagesMap[job.JobID] = errorMessage
 		}
-		return errorMessages
+		return
 	}
 	jd.assertError(err)
 
@@ -894,7 +902,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 	//Empty customValFilters means we want to clear for all
 	jd.markClearEmptyResult(ds, []string{}, []string{}, false)
 
-	return make([]string, len(jobList))
+	return
 }
 
 func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (errorMessage string) {
@@ -1647,7 +1655,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 /*
 Store call is used to create new Jobs
 */
-func (jd *HandleT) Store(jobList []*JobT) []string {
+func (jd *HandleT) Store(jobList []*JobT) map[int64]string {
 
 	//Only locks the list
 	jd.dsListLock.RLock()

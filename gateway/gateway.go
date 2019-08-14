@@ -83,6 +83,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 	for breq := range gateway.batchRequestQ {
 
 		var jobList []*jobsdb.JobT
+		var jobIDReqMap = make(map[int64]*webRequestT)
 		for _, req := range breq.batchRequest {
 			if req.request.Body == nil {
 				continue
@@ -91,9 +92,11 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			req.request.Body.Close()
 			if err != nil {
 				fmt.Println("Failed to read body from request")
+				req.done <- "Failed to read body from request"
 				continue
 			}
 			if !gateway.verifyRequestBodyConfig(body) {
+				req.done <- "Invalid Write Key"
 				continue
 			}
 			id := uuid.NewV4()
@@ -106,14 +109,13 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				EventPayload: []byte(body),
 			}
 			jobList = append(jobList, &newJob)
+			jobIDReqMap[newJob.JobID] = req
 		}
-		errorMessages := gateway.jobsDB.Store(jobList)
+		errorMessagesMap := gateway.jobsDB.Store(jobList)
 
-		// ACK the http requests
-		for idx, req := range breq.batchRequest {
-			req.done <- errorMessages[idx]
+		for key, val := range errorMessagesMap {
+			jobIDReqMap[key].done <- val
 		}
-
 	}
 }
 
