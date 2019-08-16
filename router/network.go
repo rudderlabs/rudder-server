@@ -26,16 +26,16 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 
 	requestConfig, ok := postInfo.RequestConfig.(map[string]interface{})
 	misc.Assert(ok)
-	requestMethod := requestConfig["request_method"].(string)
+	requestMethod, ok := requestConfig["request_method"].(string)
+	misc.Assert(ok && (requestMethod == "POST" || requestMethod == "GET"))
 	requestFormat := requestConfig["request-format"].(string)
+	misc.Assert(ok)
 
 	switch requestFormat {
 	case "PARAMS":
 		postInfo.Type = integrations.PostDataKV
-		break
 	case "JSON":
 		postInfo.Type = integrations.PostDataJSON
-		break
 	default:
 		misc.Assert(false)
 	}
@@ -60,10 +60,8 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	} else if postInfo.Type == integrations.PostDataJSON {
 		payloadJSON, ok := postInfo.Payload.(map[string]interface{})
 		misc.Assert(ok)
-		log.Println("--------------", payloadJSON)
 		jsonValue, err := json.Marshal(payloadJSON)
 		misc.AssertError(err)
-		log.Println("--------------", jsonValue)
 		req.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
 	} else {
 		//Not implemented yet
@@ -81,24 +79,20 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	req.Header.Add("User-Agent", "RudderLabs")
 
 	log.Println("making sink request")
-	log.Println("url===", req.URL.String())
 	resp, err := client.Do(req)
 
 	var respBody []byte
 
 	if resp != nil && resp.Body != nil {
 		respBody, _ = ioutil.ReadAll(resp.Body)
-		log.Println("===body===", string(respBody))
 		defer resp.Body.Close()
 	}
 
 	if err != nil {
 		log.Println("Errored when sending request to the server", err)
-		log.Println("===body===", string(respBody))
 		return http.StatusGatewayTimeout, "", string(respBody)
 	}
 
-	log.Printf("===status %v=====body=== %v", resp.StatusCode, string(respBody))
 	return resp.StatusCode, resp.Status, string(respBody)
 }
 

@@ -36,7 +36,7 @@ const (
 	//PostDataKV means post data is sent as KV
 	PostDataKV = iota + 1
 	//PostDataJSON means post data is sent as JSON
-	PostDataJSON = iota + 2
+	PostDataJSON
 	//PostDataXML means post data is sent as XML
 	PostDataXML
 )
@@ -59,15 +59,6 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	misc.AssertError(err)
 
 	var postInfo PostParameterT
-	/*requestConfig, ok := transformMap["request_config"].(map[string]interface{})
-	 pType := requestConfig["request_method"]
-	misc.Assert(ok)
-	switch pType {
-	case "PARAMS":
-		postInfo.Type = PostDataKV
-	default:
-		misc.Assert(false)
-	} */
 	var ok bool
 	postInfo.URL, ok = transformMap["endpoint"].(string)
 	misc.Assert(ok)
