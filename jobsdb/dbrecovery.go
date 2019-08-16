@@ -19,13 +19,18 @@ type RecoveryDataT struct {
 	StartTimes []int64
 }
 
-func getRecoveryData() []byte {
+func getRecoveryData() RecoveryDataT {
 	storagePath := config.GetString("recovery.storagePath", "/tmp/recovery_data.json")
 	data, err := ioutil.ReadFile(storagePath)
 	if os.IsNotExist(err) {
 		data = []byte("{}")
 	}
-	return data
+
+	var recoveryData RecoveryDataT
+	err = json.Unmarshal(data, &recoveryData)
+	misc.AssertError(err)
+
+	return recoveryData
 }
 
 /*
@@ -38,12 +43,9 @@ func RecordAppStart() {
 	}
 
 	storagePath := config.GetString("recovery.storagePath", "/tmp/recovery_data.json")
-
-	var recoveryData RecoveryDataT
-	err := json.Unmarshal(getRecoveryData(), &recoveryData)
-	misc.AssertError(err)
-
 	maxCrashes := config.GetInt("recovery.crashThreshold", 5)
+
+	recoveryData := getRecoveryData()
 
 	recoveryData.StartTimes = append(recoveryData.StartTimes, time.Now().Unix())
 	arrayLength := len(recoveryData.StartTimes)
@@ -72,19 +74,17 @@ func CheckProbableInconsistentDB() (shouldResetDB bool) {
 		return
 	}
 
-	var recoveryData RecoveryDataT
-	err := json.Unmarshal(getRecoveryData(), &recoveryData)
-	misc.AssertError(err)
-
 	maxCrashes := config.GetInt("recovery.crashThreshold", 5)
 	duration := config.GetInt("recovery.durationInS", 300)
+
+	recoveryData := getRecoveryData()
 
 	sort.Slice(recoveryData.StartTimes, func(i, j int) bool {
 		return recoveryData.StartTimes[i] < recoveryData.StartTimes[j]
 	})
 
 	recentCrashCount := 0
-	checkPointTime := time.Now().Unix() - int64(duration*1000)
+	checkPointTime := time.Now().Unix() - int64(duration)
 
 	for i := len(recoveryData.StartTimes) - 1; i >= 0; i-- {
 		if recoveryData.StartTimes[i] < checkPointTime {
@@ -102,7 +102,7 @@ func CheckProbableInconsistentDB() (shouldResetDB bool) {
 IsDBPresent - Check if the DB is present
 */
 func IsDBPresent() bool {
-	db, err := sql.Open("postgres", GetConnectionString())
+	db, err := sql.Open("postgres", getConnectionString())
 	if err != nil {
 		return false
 	}
