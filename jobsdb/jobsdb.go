@@ -1433,23 +1433,23 @@ func (jd *HandleT) journalMarkDone(opID int64) {
 	jd.assertError(err)
 }
 
-func (jd *HandleT) recoverFromCrashInRoutine(routineType string) {
+func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 
 	var opTypes []string
-	switch routineType {
-	case "main":
+	switch goRoutineType {
+	case mainGoRoutine:
 		opTypes = []string{addDSOperation, migrateCopyOperation, postMigrateDSOperation, dropDSOperation}
-	case "backup":
+	case backupGoRoutine:
 		opTypes = []string{backupDSOperation, backupDropDSOperation}
 	}
 
 	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
-                                     FROM %s_journal
-                                     WHERE
-									 done=False
-									 AND
-									 operation = ANY($1)
-                                     ORDER BY id`, jd.tablePrefix)
+                                	FROM %s_journal
+                                	WHERE
+									done=False
+									AND
+									operation = ANY($1)
+                                	ORDER BY id`, jd.tablePrefix)
 
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	defer stmt.Close()
@@ -1538,9 +1538,14 @@ func (jd *HandleT) recoverFromCrashInRoutine(routineType string) {
 	jd.assertError(err)
 }
 
+const (
+	mainGoRoutine   = "main"
+	backupGoRoutine = "backup"
+)
+
 func (jd *HandleT) recoverFromJournal() {
-	jd.recoverFromCrashInRoutine("main")
-	jd.recoverFromCrashInRoutine("backup")
+	jd.recoverFromCrash(mainGoRoutine)
+	jd.recoverFromCrash(backupGoRoutine)
 }
 
 /*
