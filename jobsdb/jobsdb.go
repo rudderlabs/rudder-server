@@ -20,7 +20,6 @@ package jobsdb
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -803,12 +802,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
 
 	//Copy the jobs over. Second parameter (true) makes sure job_id is copied over
 	//instead of getting auto-assigned
-	errorMessages := jd.storeJobsDS(destDS, true, false, append(unprocessedList, retryList...))
-	for _, msg := range errorMessages {
-		if msg != "" {
-			jd.assertError(errors.New(msg))
-		}
-	}
+	jd.storeJobsDS(destDS, true, false, append(unprocessedList, retryList...))
 
 	//Now copy over the latest status of the unfinished jobs
 	var statusList []*JobStatusT
@@ -875,7 +869,9 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 
 	defer stmt.Close()
 	for _, job := range jobList {
-		errorMessagesMap[job.UUID] = ""
+		if retryEach {
+			errorMessagesMap[job.UUID] = ""
+		}
 		if copyID {
 			_, err = stmt.Exec(job.JobID, job.UUID, job.CustomVal,
 				string(job.EventPayload), job.CreatedAt, job.ExpireAt)
@@ -892,13 +888,11 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 			errorMessage := jd.storeJobDS(ds, job)
 			errorMessagesMap[job.UUID] = errorMessage
 		}
-		jd.markClearEmptyResult(ds, []string{}, []string{}, false)
-		return
+	} else {
+		jd.assertError(err)
+		err = txn.Commit()
+		jd.assertError(err)
 	}
-	jd.assertError(err)
-
-	err = txn.Commit()
-	jd.assertError(err)
 
 	//Empty customValFilters means we want to clear for all
 	jd.markClearEmptyResult(ds, []string{}, []string{}, false)
