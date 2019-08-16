@@ -13,6 +13,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/rudderlabs/rudder-server/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
@@ -83,7 +84,8 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 	for breq := range gateway.batchRequestQ {
 
 		var jobList []*jobsdb.JobT
-		var jobIDReqMap = make(map[int64]*webRequestT)
+		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
+		var preDbStoreCount int
 		for _, req := range breq.batchRequest {
 			if req.request.Body == nil {
 				continue
@@ -93,10 +95,12 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			if err != nil {
 				fmt.Println("Failed to read body from request")
 				req.done <- "Failed to read body from request"
+				preDbStoreCount++
 				continue
 			}
 			if !gateway.verifyRequestBodyConfig(body) {
 				req.done <- "Invalid Write Key"
+				preDbStoreCount++
 				continue
 			}
 			id := uuid.NewV4()
@@ -109,10 +113,11 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				EventPayload: []byte(body),
 			}
 			jobList = append(jobList, &newJob)
-			jobIDReqMap[newJob.JobID] = req
+			jobIDReqMap[newJob.UUID] = req
 		}
-		errorMessagesMap := gateway.jobsDB.Store(jobList)
 
+		errorMessagesMap := gateway.jobsDB.Store(jobList)
+		misc.Assert(preDbStoreCount+len(errorMessagesMap) == len(breq.batchRequest))
 		for key, val := range errorMessagesMap {
 			jobIDReqMap[key].done <- val
 		}

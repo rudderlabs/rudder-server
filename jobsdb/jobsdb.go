@@ -852,7 +852,7 @@ Next set of functions are for reading/writing jobs and job_status for
 a given dataset. The names should be self explainatory
 */
 
-func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[int64]string) {
+func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
 
 	var stmt *sql.Stmt
 	var err error
@@ -861,7 +861,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
-	errorMessagesMap = make(map[int64]string)
+	errorMessagesMap = make(map[uuid.UUID]string)
 
 	if copyID {
 		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "custom_val",
@@ -875,7 +875,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 
 	defer stmt.Close()
 	for _, job := range jobList {
-		errorMessagesMap[job.JobID] = ""
+		errorMessagesMap[job.UUID] = ""
 		if copyID {
 			_, err = stmt.Exec(job.JobID, job.UUID, job.CustomVal,
 				string(job.EventPayload), job.CreatedAt, job.ExpireAt)
@@ -890,8 +890,9 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 		txn.Rollback() // rollback started txn, to prevent dangling db connection
 		for _, job := range jobList {
 			errorMessage := jd.storeJobDS(ds, job)
-			errorMessagesMap[job.JobID] = errorMessage
+			errorMessagesMap[job.UUID] = errorMessage
 		}
+		jd.markClearEmptyResult(ds, []string{}, []string{}, false)
 		return
 	}
 	jd.assertError(err)
@@ -922,7 +923,8 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (errorMessage string) {
 	if string(pqErr.Code) == dbErrorMap["Invalid JSON"] {
 		return "Invalid JSON"
 	}
-	return "Unknown error"
+	jd.assertError(err)
+	return
 }
 
 func (jd *HandleT) constructQuery(paramKey string, paramList []string, queryType string) string {
@@ -1655,7 +1657,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 /*
 Store call is used to create new Jobs
 */
-func (jd *HandleT) Store(jobList []*JobT) map[int64]string {
+func (jd *HandleT) Store(jobList []*JobT) map[uuid.UUID]string {
 
 	//Only locks the list
 	jd.dsListLock.RLock()
