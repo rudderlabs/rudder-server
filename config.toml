@@ -66,7 +66,9 @@ apiKey = "a82c3193aa5914abe2cfb66557f1cc2b"
 releaseStage = "development"
 
 # If the server crashes 'crashThreshold' times in 'durationInS' seconds, then replace the DB
+# Stores related metadata in storagePath
 [recovery]
 enabled = true
 crashThreshold = 5
 durationInS = 300
+storagePath = "/tmp/recovery_data.json"

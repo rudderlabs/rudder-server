@@ -218,13 +218,6 @@ func GetConnectionString() string {
 }
 
 /*
-GetDbName : Returns JobsDB connection info
-*/
-func GetDbName() string {
-	return dbname
-}
-
-/*
 Setup is used to initialize the HandleT structure.
 clearAll = True means it will remove all existing tables
 tablePrefix must be unique and is used to separate
