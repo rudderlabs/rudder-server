@@ -169,11 +169,11 @@ var (
 )
 
 var (
-	maxDSSize, maxMigrateOnce, eventsInJSONFileDump int
-	jobDoneMigrateThres, jobStatusMigrateThres      float64
-	mainCheckSleepDuration                          time.Duration
-	backupCheckSleepDuration                        time.Duration
-	useJoinForUnprocessed                           bool
+	maxDSSize, maxMigrateOnce                  int
+	jobDoneMigrateThres, jobStatusMigrateThres float64
+	mainCheckSleepDuration                     time.Duration
+	backupCheckSleepDuration                   time.Duration
+	useJoinForUnprocessed                      bool
 )
 
 // Loads db config and migration related config from config file
@@ -198,7 +198,6 @@ func loadConfig() {
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
-	eventsInJSONFileDump = config.GetInt("JobsDB.eventsInJSONFileDump", 1000)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 }
 
@@ -1434,45 +1433,49 @@ func (jd *HandleT) journalMarkDone(opID int64) {
 	jd.assertError(err)
 }
 
-func (jd *HandleT) recoverFromJournal() {
+func (jd *HandleT) recoverFromCrash(goRoutineType string) {
+
+	var opTypes []string
+	switch goRoutineType {
+	case mainGoRoutine:
+		opTypes = []string{addDSOperation, migrateCopyOperation, postMigrateDSOperation, dropDSOperation}
+	case backupGoRoutine:
+		opTypes = []string{backupDSOperation, backupDropDSOperation}
+	}
 
 	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
-                                     FROM %s_journal
-                                     WHERE
-                                     done=False
-                                     ORDER BY id`, jd.tablePrefix)
+                                	FROM %s_journal
+                                	WHERE
+									done=False
+									AND
+									operation = ANY($1)
+                                	ORDER BY id`, jd.tablePrefix)
 
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	defer stmt.Close()
 	jd.assertError(err)
 
-	rows, err := stmt.Query()
+	rows, err := stmt.Query(pq.Array(opTypes))
 	jd.assertError(err)
 	defer rows.Close()
 
-	count := make(map[string]int)
 	var opID int64
 	var opType string
 	var opDone bool
 	var opPayload json.RawMessage
 	var opPayloadJSON journalOpPayloadT
 	var undoOp = false
+	var count int
 
 	for rows.Next() {
 		err = rows.Scan(&opID, &opType, &opDone, &opPayload)
 		jd.assertError(err)
 		jd.assert(opDone == false)
-		// backupDSOperation and backupDropDSOperation ops are executed in separate go routine backupDSLoop
-		if opType == backupDSOperation || opType == backupDropDSOperation {
-			count["backupOps"]++
-		} else {
-			count["nonBackupOps"]++
-		}
+		count++
 	}
-	jd.assert(count["nonBackupOps"] <= 1)
-	jd.assert(count["backupOps"] <= 1)
+	jd.assert(count <= 1)
 
-	if count["nonBackupOps"]+count["backupOps"] == 0 {
+	if count == 0 {
 		//Nothing to recoer
 		return
 	}
@@ -1533,7 +1536,16 @@ func (jd *HandleT) recoverFromJournal() {
 
 	_, err = jd.dbHandle.Exec(sqlStatement, opID)
 	jd.assertError(err)
+}
 
+const (
+	mainGoRoutine   = "main"
+	backupGoRoutine = "backup"
+)
+
+func (jd *HandleT) recoverFromJournal() {
+	jd.recoverFromCrash(mainGoRoutine)
+	jd.recoverFromCrash(backupGoRoutine)
 }
 
 /*
