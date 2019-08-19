@@ -95,14 +95,14 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
-			if len(body) > maxReqSize {
-				req.done <- "Request size exceeds max limit"
-				preDbStoreCount++
-				continue
-			}
 			if err != nil {
 				fmt.Println("Failed to read body from request")
 				req.done <- "Failed to read body from request"
+				preDbStoreCount++
+				continue
+			}
+			if len(body) > maxReqSize {
+				req.done <- "Request size exceeds max limit"
 				preDbStoreCount++
 				continue
 			}
