@@ -112,6 +112,15 @@ type journalOpPayloadT struct {
 	To   dataSetT   `json:"to"`
 }
 
+type StoreJobRespT struct {
+	JobID        int64
+	ErrorMessage string
+}
+
+var dbErrorMap = map[string]string{
+	"Invalid JSON": "22P02",
+}
+
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
@@ -792,8 +801,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
 
 	//Copy the jobs over. Second parameter (true) makes sure job_id is copied over
 	//instead of getting auto-assigned
-	err = jd.storeJobsDS(destDS, true, append(unprocessedList, retryList...))
-	jd.assertError(err)
+	jd.storeJobsDS(destDS, true, false, append(unprocessedList, retryList...))
 
 	//Now copy over the latest status of the unfinished jobs
 	var statusList []*JobStatusT
@@ -837,7 +845,7 @@ Next set of functions are for reading/writing jobs and job_status for
 a given dataset. The names should be self explainatory
 */
 
-func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) (ret error) {
+func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
 
 	var stmt *sql.Stmt
 	var err error
@@ -845,6 +853,8 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) (ret e
 	//Using transactions for bulk copying
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
+
+	errorMessagesMap = make(map[uuid.UUID]string)
 
 	if copyID {
 		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "custom_val",
@@ -858,6 +868,9 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) (ret e
 
 	defer stmt.Close()
 	for _, job := range jobList {
+		if retryEach {
+			errorMessagesMap[job.UUID] = ""
+		}
 		if copyID {
 			_, err = stmt.Exec(job.JobID, job.UUID, job.CustomVal,
 				string(job.EventPayload), job.CreatedAt, job.ExpireAt)
@@ -868,15 +881,43 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) (ret e
 		jd.assertError(err)
 	}
 	_, err = stmt.Exec()
-	jd.assertError(err)
-
-	err = txn.Commit()
-	jd.assertError(err)
+	if err != nil && retryEach {
+		txn.Rollback() // rollback started txn, to prevent dangling db connection
+		for _, job := range jobList {
+			errorMessage := jd.storeJobDS(ds, job)
+			errorMessagesMap[job.UUID] = errorMessage
+		}
+	} else {
+		jd.assertError(err)
+		err = txn.Commit()
+		jd.assertError(err)
+	}
 
 	//Empty customValFilters means we want to clear for all
 	jd.markClearEmptyResult(ds, []string{}, []string{}, false)
 
-	return nil
+	return
+}
+
+func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (errorMessage string) {
+
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (uuid, custom_val, event_payload, created_at, expire_at)
+                                       VALUES ($1, $2, $3, $4, $5) RETURNING job_id`, ds.JobTable)
+	stmt, err := jd.dbHandle.Prepare(sqlStatement)
+	jd.assertError(err)
+	defer stmt.Close()
+
+	_, err = stmt.Exec(job.UUID, job.CustomVal, string(job.EventPayload),
+		job.CreatedAt, job.ExpireAt)
+	if err == nil {
+		return
+	}
+	pqErr := err.(*pq.Error)
+	if string(pqErr.Code) == dbErrorMap["Invalid JSON"] {
+		return "Invalid JSON"
+	}
+	jd.assertError(err)
+	return
 }
 
 func (jd *HandleT) constructQuery(paramKey string, paramList []string, queryType string) string {
@@ -1622,15 +1663,14 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 /*
 Store call is used to create new Jobs
 */
-func (jd *HandleT) Store(jobList []*JobT) {
+func (jd *HandleT) Store(jobList []*JobT) map[uuid.UUID]string {
 
 	//Only locks the list
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList(false)
-	jd.storeJobsDS(dsList[len(dsList)-1], false, jobList)
-
+	return jd.storeJobsDS(dsList[len(dsList)-1], false, true, jobList)
 }
 
 /*
@@ -1845,7 +1885,7 @@ func (jd *HandleT) staticDSTest() {
 	testDS := dataSetT{JobTable: "jobs", JobStatusTable: "job_status"}
 
 	start := time.Now()
-	jd.storeJobsDS(testDS, false, jobList)
+	jd.storeJobsDS(testDS, false, true, jobList)
 	elapsed := time.Since(start)
 	fmt.Println("Save", elapsed)
 

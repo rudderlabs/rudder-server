@@ -2,6 +2,7 @@ package misc
 
 import (
 	"archive/zip"
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -144,6 +145,23 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	AssertError(err)
 	_, err = io.Copy(writer, fileToZip)
 	return err
+}
+
+// ReadLines reads a whole file into memory
+// and returns a slice of its lines.
+func ReadLines(path string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	return lines, scanner.Err()
 }
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
