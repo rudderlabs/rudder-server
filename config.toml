@@ -25,6 +25,7 @@ maxMigrateOnce = 10
 mainCheckSleepDurationInS = 2
 backupCheckSleepDurationIns = 5
 eventsInJSONFileDump = 1000
+enableBackup = true
 
 [Router]
 jobQueryBatchSize = 10000

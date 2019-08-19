@@ -148,6 +148,6 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool)
 	}
 	currTime := time.Now().Unix()
 	recoveryHandler.RecordAppStart(currTime)
-	recoveryHandler.Handle()
 	saveRecoveryData(recoveryData)
+	recoveryHandler.Handle()
 }

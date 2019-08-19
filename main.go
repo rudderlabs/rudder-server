@@ -24,11 +24,11 @@ import (
 )
 
 var (
-	maxProcess                       int
-	gwDBRetention, routerDBRetention time.Duration
-	enableProcessor, enableRouter    bool
-	enabledDestinations              []backendconfig.DestinationT
-	configSubscriberLock             sync.RWMutex
+	maxProcess                                  int
+	gwDBRetention, routerDBRetention            time.Duration
+	enableProcessor, enableRouter, enableBackup bool
+	enabledDestinations                         []backendconfig.DestinationT
+	configSubscriberLock                        sync.RWMutex
 )
 
 func loadConfig() {
@@ -37,6 +37,7 @@ func loadConfig() {
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
+	enableBackup = config.GetBool("JobsDB.enableBackup", true)
 }
 
 // Test Function
@@ -166,7 +167,7 @@ func main() {
 	fmt.Println("Clearing DB", *clearDB)
 
 	backendconfig.Setup()
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, true)
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup && true)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
 	//Setup the three modules, the gateway, the router and the processor
 
