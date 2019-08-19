@@ -60,7 +60,7 @@ func (handler *MaintenanceModeHandler) RecordAppStart(currTime int64) {
 func (handler *MaintenanceModeHandler) HasThresholdReached() bool {
 	maxCrashes := config.GetInt("recovery.maintenance.crashThreshold", 5)
 	duration := config.GetInt("recovery.maintenance.durationInS", 300)
-	return CheckOccurences(handler.recoveryData.DegradedModeStartTimes, maxCrashes, duration)
+	return CheckOccurences(handler.recoveryData.MaintenanceModeStartTimes, maxCrashes, duration)
 }
 
 func (handler *MaintenanceModeHandler) Handle() {
