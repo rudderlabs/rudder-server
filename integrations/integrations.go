@@ -43,10 +43,12 @@ const (
 
 //PostParameterT  has post related parameters, the URL and the data type
 type PostParameterT struct {
-	URL     string
-	Type    int
-	UserID  string
-	Payload interface{} //PostDataKV or PostDataJSON or PostDataXML
+	URL           string
+	Type          int
+	UserID        string
+	Payload       interface{} //PostDataKV or PostDataJSON or PostDataXML
+	Header        interface{}
+	RequestConfig interface{}
 }
 
 //GetPostInfo provides the post parameters for this destination
@@ -57,19 +59,16 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	misc.AssertError(err)
 
 	var postInfo PostParameterT
-	pType, ok := transformMap["request-format"].(string)
-	misc.Assert(ok)
-	switch pType {
-	case "PARAMS":
-		postInfo.Type = PostDataKV
-	default:
-		misc.Assert(false)
-	}
+	var ok bool
 	postInfo.URL, ok = transformMap["endpoint"].(string)
 	misc.Assert(ok)
 	postInfo.Payload, ok = transformMap["payload"]
 	misc.Assert(ok)
 	postInfo.UserID, ok = transformMap["user_id"].(string)
+	misc.Assert(ok)
+	postInfo.Header, ok = transformMap["header"]
+	misc.Assert(ok)
+	postInfo.RequestConfig, ok = transformMap["request_config"]
 	misc.Assert(ok)
 	return postInfo
 }
