@@ -34,8 +34,8 @@ const (
 )
 
 var (
-	totalCount uint64
-	failCount  uint64
+	successCount uint64
+	failCount    uint64
 )
 
 var done chan bool
@@ -74,7 +74,7 @@ func main() {
 		<-done
 	}
 
-	fmt.Println("Total Sent", totalCount)
+	fmt.Println("Total Sent", successCount)
 }
 
 func toSendGoodJSON() bool {
@@ -303,7 +303,7 @@ func generateData(payload *[]byte, path string, value interface{}) []byte {
 func printStats() {
 	for {
 		time.Sleep(5 * time.Second)
-		fmt.Println("Success/Fail", totalCount, failCount)
+		fmt.Println("Success/Fail", successCount, failCount)
 	}
 }
 func sendToRudder(jsonPayload string) {
@@ -326,5 +326,5 @@ func sendToRudder(jsonPayload string) {
 	ioutil.ReadAll(resp.Body)
 	// body, _ := ioutil.ReadAll(resp.Body)
 	// fmt.Println("response Body:", string(body))
-	atomic.AddUint64(&totalCount, 1)
+	atomic.AddUint64(&successCount, 1)
 }
