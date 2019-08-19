@@ -65,10 +65,22 @@ jobStatusBackupDSBucket = "dump-gateway-job-status-test"
 apiKey = "a82c3193aa5914abe2cfb66557f1cc2b"
 releaseStage = "development"
 
-# If the server crashes 'crashThreshold' times in 'durationInS' seconds, then replace the DB
+# If the server crashes 'crashThreshold' times in 'durationInS' seconds,
+#       then we mark it degraded
+# If the server crashes 'degradedCrashThreshold' times in 'degradedDurationInS' seconds in degraded mode,
+#       then we mark it maintenance
+# If the server crashes 'maintenanceCrashThreshold' times in 'maintenanceDurationInS' seconds in maintenance mode, 
+#       then we stop the server
 # Stores related metadata in storagePath
 [recovery]
 enabled = true
-crashThreshold = 5
-durationInS = 300
 storagePath = "/tmp/recovery_data.json"
+    [recovery.normal]
+    crashThreshold = 5
+    durationInS = 300
+    [recovery.degraded]
+    crashThreshold = 5
+    durationInS = 300
+    [recovery.maintenance]
+    crashThreshold = 5
+    durationInS = 300

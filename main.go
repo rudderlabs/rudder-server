@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
+	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/utils"
 )
 
@@ -111,17 +112,20 @@ func main() {
 		AppType: "rudder-server",
 	})
 
-	// Check if there is a probable inconsistent state of Data
-	jobsdb.RecordAppStart()
-	if jobsdb.CheckProbableInconsistentDB() || !jobsdb.IsDBPresent() {
-		jobsdb.ReplaceDB()
-	}
+	normalMode := flag.Bool("normal-mode", false, "a bool")
+	degradedMode := flag.Bool("degraded-mode", false, "a bool")
+	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
 
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
 
 	flag.Parse()
+
+	// Check if there is a probable inconsistent state of Data
+	db.HandleRecovery(*normalMode, *degradedMode, *maintenanceMode)
+	//Reload Config
+	loadConfig()
 
 	var f *os.File
 	if *cpuprofile != "" {

@@ -80,3 +80,10 @@ func GetEnv(key string, defaultVal string) string {
 	}
 	return defaultVal
 }
+
+// Override Config by application or command line
+
+// SetBool override existing config
+func SetBool(key string, value bool) {
+	viper.Set(key, value)
+}
