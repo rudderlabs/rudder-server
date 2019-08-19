@@ -91,6 +91,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		var preDbStoreCount int
 		for _, req := range breq.batchRequest {
 			if req.request.Body == nil {
+				preDbStoreCount++
 				continue
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
