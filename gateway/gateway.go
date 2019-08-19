@@ -42,6 +42,7 @@ var (
 	respMessage                               string
 	enabledWriteKeys                          []string
 	configSubscriberLock                      sync.RWMutex
+	maxReqSize                                int
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -61,6 +62,8 @@ func loadConfig() {
 	CustomVal = config.GetString("Gateway.CustomVal", "GW")
 	//Reponse message sent to client
 	respMessage = config.GetString("Gateway.respMessage", "OK")
+	// Maximum request size to gateway
+	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 100000) * 1000
 }
 
 func init() {
@@ -92,6 +95,11 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
+			if len(body) > maxReqSize {
+				req.done <- "Request size exceeds max limit"
+				preDbStoreCount++
+				continue
+			}
 			if err != nil {
 				fmt.Println("Failed to read body from request")
 				req.done <- "Failed to read body from request"
