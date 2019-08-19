@@ -4,7 +4,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-func disableProcessorAndRouter() {
+func setupDegradedMode() {
 	config.SetBool("enableProcessor", false)
 	config.SetBool("enableRouter", false)
 	config.SetBool("JobsDB.enableBackup", false)
@@ -21,7 +21,7 @@ func (handler *DegradedModeHandler) HasThresholdReached() bool {
 }
 
 func (handler *DegradedModeHandler) Handle() {
-	disableProcessorAndRouter()
+	setupDegradedMode()
 }
 
 type DegradedModeHandler struct {
