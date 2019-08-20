@@ -10,7 +10,7 @@ phases:
       - datetime="$(date +'%Y%m%d%H%M')"
       - version="$(cat .version)"
       - git_hash=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
-      - image=454531037350.dkr.ecr.us-east-1.amazonaws.com/rudder-server
+      - image=454531037350.dkr.ecr.us-east-1.amazonaws.com/$ECR_REPO
   build:
     commands:
       - docker build -t ${image}:latest .
