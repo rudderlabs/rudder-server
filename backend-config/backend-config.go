@@ -57,7 +57,7 @@ func loadConfig() {
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
 }
 
-func getBackendConfig() SourcesT {
+func getBackendConfig() (SourcesT, bool) {
 	client := &http.Client{}
 	url := fmt.Sprintf("%s/workspace-config?workspaceToken=%s", configBackendURL, configBackendToken)
 	resp, err := client.Get(url)
@@ -70,10 +70,15 @@ func getBackendConfig() SourcesT {
 
 	if err != nil {
 		log.Println("Errored when sending request to the server", err)
+		return SourcesT{}, false
 	}
 	var sourcesJSON SourcesT
 	err = json.Unmarshal(respBody, &sourcesJSON)
-	return sourcesJSON
+	if err != nil {
+		log.Println("Errored while parsing request", err)
+		return SourcesT{}, false
+	}
+	return sourcesJSON, true
 }
 
 func init() {
@@ -83,9 +88,11 @@ func init() {
 
 func pollConfigUpdate() {
 	for {
-		sourceJSON := getBackendConfig()
-		Eb.Publish("backendconfig", sourceJSON)
-		time.Sleep(time.Duration(pollInterval))
+		sourceJSON, ok := getBackendConfig()
+		if ok {
+			Eb.Publish("backendconfig", sourceJSON)
+			time.Sleep(time.Duration(pollInterval))
+		}
 	}
 }
 
