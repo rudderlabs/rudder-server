@@ -90,8 +90,8 @@ func monitorDestRouters(routeDb *jobsdb.HandleT) {
 			}
 			//Router is not in enabled list. Disable it
 			if !found {
-				fmt.Println("Disabling a existing destination", destID)
-				rtHandle.Disable()
+				fmt.Println("Disabling a existing destination", destID, rtHandle)
+				//rtHandle.Disable()
 			}
 		}
 	}
