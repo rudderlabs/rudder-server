@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
@@ -26,6 +27,7 @@ type HandleT struct {
 	routerDB       *jobsdb.HandleT
 	transformer    *transformerHandleT
 	statsJobs      *misc.PerfStats
+	statJobs       *stats.RudderStats
 	statsDBR       *misc.PerfStats
 	statsDBW       *misc.PerfStats
 	userJobListMap map[string][]*jobsdb.JobT
@@ -73,6 +75,9 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) 
 	proc.statsJobs.Setup("ProcessorJobs")
 	proc.statsDBR.Setup("ProcessorDBRead")
 	proc.statsDBW.Setup("ProcessorDBWrite")
+
+	proc.statJobs = stats.NewStat("ProcessorJobs", stats.CountType)
+
 	go backendConfigSubscriber()
 	proc.transformer.Setup()
 	proc.crashRecover()
@@ -482,6 +487,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//XX: End of transaction
 	proc.statsDBW.End(len(statusList))
 	proc.statsJobs.End(totalEvents)
+	proc.statJobs.Count(totalEvents)
 	proc.statsJobs.Print()
 	proc.statsDBW.Print()
 }

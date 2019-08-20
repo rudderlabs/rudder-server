@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/services/db"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 )
 
@@ -127,6 +128,8 @@ func main() {
 	db.HandleRecovery(*normalMode, *degradedMode, *maintenanceMode)
 	//Reload Config
 	loadConfig()
+
+	stats.Setup()
 
 	var f *os.File
 	if *cpuprofile != "" {

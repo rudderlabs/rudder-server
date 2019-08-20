@@ -14,10 +14,13 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 )
+
+var gatewayStat, gatewayTimeStat *stats.RudderStats
 
 /*
  * The gateway module handles incoming requests from client devices.
@@ -85,10 +88,10 @@ type HandleT struct {
 func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 	for breq := range gateway.batchRequestQ {
-
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
 		var preDbStoreCount int
+		gatewayTimeStat.Start()
 		for _, req := range breq.batchRequest {
 			if req.request.Body == nil {
 				preDbStoreCount++
@@ -130,6 +133,9 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		for key, val := range errorMessagesMap {
 			jobIDReqMap[key].done <- val
 		}
+		gatewayTimeStat.End()
+		gatewayStat.Count(len(breq.batchRequest))
+
 	}
 }
 
@@ -236,6 +242,8 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT) {
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB
+	gatewayStat = stats.NewStat("gateway.batch_size", stats.CountType)
+	gatewayTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
 	go gateway.webRequestBatcher()
 	go gateway.printStats()
 	go backendConfigSubscriber()
