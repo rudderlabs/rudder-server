@@ -78,7 +78,6 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 
 	req.Header.Add("User-Agent", "RudderLabs")
 
-	log.Println("making sink request")
 	resp, err := client.Do(req)
 
 	var respBody []byte
