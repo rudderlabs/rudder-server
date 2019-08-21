@@ -84,6 +84,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		fmt.Sprintf("router.%s_worker_duration", rt.destID), stats.TimerType)
 	numRetriesStat := stats.NewStat(
 		fmt.Sprintf("router.%s_worker_num_retries", rt.destID), stats.CountType)
+	eventsDeliveredStat := stats.NewStat("router.events_delivered", stats.CountType)
 
 	for {
 		job := <-worker.channel
@@ -187,6 +188,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		if respStatusCode == http.StatusOK {
 			//#JobOrder (see other #JobOrder comment)
 			numRetriesStat.Count(job.LastJobStatus.AttemptNum)
+			eventsDeliveredStat.Increment()
 			status.AttemptNum = job.LastJobStatus.AttemptNum
 			status.JobState = jobsdb.SucceededState
 			log.Println("Router :: sending success status to response")
