@@ -39,7 +39,7 @@ func (rStats *RudderStats) Count(n int) {
 }
 func (rStats *RudderStats) Increment() {
 	misc.Assert(rStats.StatType == CountType)
-	client.Count(rStats.Name, 1)
+	client.Increment(rStats.Name)
 }
 
 func (rStats *RudderStats) Guage(value interface{}) {
@@ -55,6 +55,10 @@ func (rStats *RudderStats) Start() {
 func (rStats *RudderStats) End() {
 	misc.Assert(rStats.StatType == TimerType)
 	rStats.Timing.Send(rStats.Name)
+}
+
+func (rStats *RudderStats) DeferredTimer() {
+	client.NewTiming().Send(rStats.Name)
 }
 
 type RudderStats struct {

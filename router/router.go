@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 //HandleT is the handle to this module.
@@ -76,11 +77,19 @@ func loadConfig() {
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
+
+	networkDelayStat := stats.NewStat(
+		fmt.Sprintf("router.%s_worker_network", rt.destID), stats.TimerType)
+	workerDurationStat := stats.NewStat(
+		fmt.Sprintf("router.%s_worker_duration", rt.destID), stats.TimerType)
+	numRetriesStat := stats.NewStat(
+		fmt.Sprintf("router.%s_worker_num_retries", rt.destID), stats.CountType)
+
 	for {
 		job := <-worker.channel
 		var respStatusCode, attempts int
 		var respStatus, respBody string
-
+		workerDurationStat.Start()
 		log.Println("Router :: trying to send payload to GA", respBody)
 
 		postInfo := integrations.GetPostInfo(job.EventPayload)
@@ -131,7 +140,11 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		//We can execute thoe job
 		for attempts = 0; attempts < ser; attempts++ {
 			log.Printf("Router :: trying to send payload %v of %v", attempts, ser)
+
+			networkDelayStat.Start()
 			respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
+			networkDelayStat.End()
+
 			if useTestSink {
 				//Internal test. No reason to sleep
 				break
@@ -173,6 +186,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 
 		if respStatusCode == http.StatusOK {
 			//#JobOrder (see other #JobOrder comment)
+			numRetriesStat.Count(job.LastJobStatus.AttemptNum)
 			status.AttemptNum = job.LastJobStatus.AttemptNum
 			status.JobState = jobsdb.SucceededState
 			log.Println("Router :: sending success status to response")
@@ -219,6 +233,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			log.Println("Router :: sending waiting state as response")
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		}
+		workerDurationStat.End()
 	}
 }
 
@@ -297,6 +312,10 @@ func (rt *HandleT) statusInsertLoop() {
 	var responseList []jobResponseT
 	//Wait for the responses from statusQ
 	lastUpdate := time.Now()
+
+	statusStat := stats.NewStat("router.status_loop", stats.TimerType)
+	countStat := stats.NewStat("router.status_events", stats.CountType)
+
 	for {
 		rt.perfStats.Start()
 		select {
@@ -313,6 +332,7 @@ func (rt *HandleT) statusInsertLoop() {
 
 		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
 			rt.perfStats.Print()
+			statusStat.Start()
 			var statusList []*jobsdb.JobStatusT
 			for _, resp := range responseList {
 				statusList = append(statusList, resp.status)
@@ -351,6 +371,8 @@ func (rt *HandleT) statusInsertLoop() {
 			//End #JobOrder
 			responseList = nil
 			lastUpdate = time.Now()
+			countStat.Count(len(responseList))
+			statusStat.End()
 		}
 	}
 
@@ -388,11 +410,15 @@ func (rt *HandleT) generatorLoop() {
 
 	fmt.Println("Generator started")
 
+	generatorStat := stats.NewStat("router.generator_loop", stats.TimerType)
+	countStat := stats.NewStat("router.generator_events", stats.CountType)
+
 	for {
 		if !rt.isEnabled {
 			time.Sleep(1000)
 			continue
 		}
+		generatorStat.Start()
 
 		//#JobOrder (See comment marked #JobOrder
 		rt.toClearFailJobIDMutex.Lock()
@@ -464,6 +490,9 @@ func (rt *HandleT) generatorLoop() {
 		for _, wrkJob := range toProcess {
 			wrkJob.worker.channel <- wrkJob.job
 		}
+
+		countStat.Count(len(combinedList))
+		generatorStat.End()
 	}
 }
 

@@ -20,7 +20,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-var gatewayStat, gatewayTimeStat *stats.RudderStats
+var batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
 
 /*
  * The gateway module handles incoming requests from client devices.
@@ -72,6 +72,9 @@ func loadConfig() {
 func init() {
 	config.Initialize()
 	loadConfig()
+	latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
+	batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
+	batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
 }
 
 //HandleT is the struct returned by the Setup call
@@ -91,7 +94,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
 		var preDbStoreCount int
-		gatewayTimeStat.Start()
+		batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
 			if req.request.Body == nil {
 				preDbStoreCount++
@@ -133,8 +136,8 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		for key, val := range errorMessagesMap {
 			jobIDReqMap[key].done <- val
 		}
-		gatewayTimeStat.End()
-		gatewayStat.Count(len(breq.batchRequest))
+		batchTimeStat.End()
+		batchSizeStat.Count(len(breq.batchRequest))
 
 	}
 }
@@ -191,6 +194,13 @@ func (gateway *HandleT) printStats() {
 	}
 }
 
+func stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer latencyStat.DeferredTimer()
+		wrappedFunc(w, r)
+	}
+}
+
 //Main handler function for incoming requets
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
 	atomic.AddUint64(&gateway.recvCount, 1)
@@ -214,7 +224,7 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func (gateway *HandleT) startWebHandler() {
 	fmt.Printf("Starting in %d\n", webPort)
-	http.HandleFunc("/hello", gateway.webHandler)
+	http.HandleFunc("/hello", stat(gateway.webHandler))
 	http.HandleFunc("/health", gateway.healthHandler)
 	http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil))
 }
@@ -242,8 +252,6 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT) {
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB
-	gatewayStat = stats.NewStat("gateway.batch_size", stats.CountType)
-	gatewayTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
 	go gateway.webRequestBatcher()
 	go gateway.printStats()
 	go backendConfigSubscriber()

@@ -16,6 +16,7 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"golang.org/x/time/rate"
 )
 
@@ -80,6 +81,16 @@ func countError(errType string) {
 	errorCounts[errType]++
 }
 
+var countStat = stats.NewStat("sink.request_count", stats.TimerType)
+var successStat = stats.NewStat("sink.success_count", stats.TimerType)
+
+func stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		countStat.Increment()
+		wrappedFunc(w, r)
+	}
+}
+
 func handleReq(rw http.ResponseWriter, req *http.Request) {
 	if showPayload {
 		requestDump, _ := httputil.DumpRequest(req, true)
@@ -121,6 +132,7 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 
 	//Reached here means no synthetic error OR error-code = 200
 	rw.Write([]byte(respMessage))
+	successStat.Increment()
 
 	if enableTestStats {
 		redisChan <- req.URL.Query().Get("ea")
@@ -240,6 +252,6 @@ func main() {
 		http.HandleFunc("/isActive", handleActiveReq)
 	}
 
-	http.HandleFunc("/", handleReq)
+	http.HandleFunc("/", stat(handleReq))
 	http.ListenAndServe(":8181", bugsnag.Handler(nil))
 }
