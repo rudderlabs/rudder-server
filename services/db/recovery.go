@@ -150,4 +150,5 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool)
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
+	fmt.Printf("Starting in %s mode\n", recoveryData.Mode)
 }

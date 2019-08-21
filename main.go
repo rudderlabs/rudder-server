@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -20,7 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/services/db"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 )
 
@@ -107,14 +105,14 @@ func init() {
 
 func main() {
 	fmt.Println("Main starting")
-	bugsnag.Configure(bugsnag.Configuration{
-		APIKey:       config.GetString("apiKey", "a82c3193aa5914abe2cfb66557f1cc2b"),
-		ReleaseStage: config.GetString("releaseStage", "development"),
-		// The import paths for the Go packages containing your source files
-		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
-		// more configuration options
-		AppType: "rudder-server",
-	})
+	// bugsnag.Configure(bugsnag.Configuration{
+	// 	APIKey:       config.GetString("apiKey", "a82c3193aa5914abe2cfb66557f1cc2b"),
+	// 	ReleaseStage: config.GetString("releaseStage", "development"),
+	// 	// The import paths for the Go packages containing your source files
+	// 	ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
+	// 	// more configuration options
+	// 	AppType: "rudder-server",
+	// })
 
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
@@ -130,8 +128,6 @@ func main() {
 	db.HandleRecovery(*normalMode, *degradedMode, *maintenanceMode)
 	//Reload Config
 	loadConfig()
-
-	stats.Setup()
 
 	var f *os.File
 	if *cpuprofile != "" {
