@@ -196,8 +196,9 @@ func (gateway *HandleT) printStats() {
 
 func stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		defer latencyStat.DeferredTimer()
+		latencyStat.Start()
 		wrappedFunc(w, r)
+		latencyStat.End()
 	}
 }
 
