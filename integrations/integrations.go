@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/tidwall/gjson"
 )
 
 var (
@@ -46,29 +47,25 @@ type PostParameterT struct {
 	URL           string
 	Type          int
 	UserID        string
-	Payload       interface{} //PostDataKV or PostDataJSON or PostDataXML
+	Payload       interface{}
 	Header        interface{}
 	RequestConfig interface{}
 }
 
 //GetPostInfo provides the post parameters for this destination
 func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
-
-	var transformMap map[string]interface{}
-	err := json.Unmarshal(transformRaw, &transformMap)
-	misc.AssertError(err)
-
 	var postInfo PostParameterT
 	var ok bool
-	postInfo.URL, ok = transformMap["endpoint"].(string)
+	parsedJSON := gjson.ParseBytes(transformRaw)
+	postInfo.URL, ok = parsedJSON.Get("endpoint").Value().(string)
 	misc.Assert(ok)
-	postInfo.Payload, ok = transformMap["payload"]
+	postInfo.UserID, ok = parsedJSON.Get("user_id").Value().(string)
 	misc.Assert(ok)
-	postInfo.UserID, ok = transformMap["user_id"].(string)
+	postInfo.Payload, ok = parsedJSON.Get("payload").Value().(interface{})
 	misc.Assert(ok)
-	postInfo.Header, ok = transformMap["header"]
+	postInfo.Header, ok = parsedJSON.Get("header").Value().(interface{})
 	misc.Assert(ok)
-	postInfo.RequestConfig, ok = transformMap["request_config"]
+	postInfo.RequestConfig, ok = parsedJSON.Get("request_config").Value().(interface{})
 	misc.Assert(ok)
 	return postInfo
 }
