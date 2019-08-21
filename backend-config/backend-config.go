@@ -91,8 +91,8 @@ func pollConfigUpdate() {
 		sourceJSON, ok := getBackendConfig()
 		if ok {
 			Eb.Publish("backendconfig", sourceJSON)
-			time.Sleep(time.Duration(pollInterval))
 		}
+		time.Sleep(time.Duration(pollInterval))
 	}
 }
 
