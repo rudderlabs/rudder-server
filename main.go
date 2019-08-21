@@ -61,6 +61,7 @@ func monitorDestRouters(routeDb *jobsdb.HandleT) {
 	dstToRouter := make(map[string]*router.HandleT)
 	for {
 		config := <-ch
+		fmt.Println("XXX Got config", config)
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations = enabledDestinations[:0]
 		for _, source := range sources.Sources {
@@ -70,11 +71,12 @@ func monitorDestRouters(routeDb *jobsdb.HandleT) {
 						enabledDestinations = append(enabledDestinations, destination)
 						rt, ok := dstToRouter[destination.DestinationDefinition.Name]
 						if !ok {
-							fmt.Println("Enabling a new Destination", destination.DestinationDefinition.Name)
+							fmt.Println("Starting a new Destination", destination.DestinationDefinition.Name)
 							var router router.HandleT
 							router.Setup(routeDb, destination.DestinationDefinition.Name)
 							dstToRouter[destination.DestinationDefinition.Name] = &router
 						} else {
+							fmt.Println("Enabling existing Destination", destination.DestinationDefinition.Name)
 							rt.Enable()
 						}
 					}
