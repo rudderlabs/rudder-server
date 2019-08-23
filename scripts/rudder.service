@@ -4,7 +4,9 @@ After = network.target
 
 [Service]
 WorkingDirectory = /home/ubuntu/rudder-server
-Restart = always
+Restart = on-failure
+RestartSec = 3s
+StartLimitInterval = 0
 ExecStart = /home/ubuntu/rudder-server/rudder-server
 StandardOutput = syslog
 StandardError = syslog
