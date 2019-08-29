@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
@@ -26,8 +27,11 @@ type HandleT struct {
 	routerDB       *jobsdb.HandleT
 	transformer    *transformerHandleT
 	statsJobs      *misc.PerfStats
+	statJobs       *stats.RudderStats
 	statsDBR       *misc.PerfStats
+	statDBR        *stats.RudderStats
 	statsDBW       *misc.PerfStats
+	statDBW        *stats.RudderStats
 	userJobListMap map[string][]*jobsdb.JobT
 	userEventsMap  map[string][]interface{}
 	userPQItemMap  map[string]*pqItemT
@@ -73,6 +77,11 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) 
 	proc.statsJobs.Setup("ProcessorJobs")
 	proc.statsDBR.Setup("ProcessorDBRead")
 	proc.statsDBW.Setup("ProcessorDBWrite")
+
+	proc.statJobs = stats.NewStat("processor.jobs", stats.CountType)
+	proc.statDBR = stats.NewStat("processor.db_read", stats.CountType)
+	proc.statDBW = stats.NewStat("processor.db_write", stats.CountType)
+
 	go backendConfigSubscriber()
 	proc.transformer.Setup()
 	proc.crashRecover()
@@ -482,6 +491,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//XX: End of transaction
 	proc.statsDBW.End(len(statusList))
 	proc.statsJobs.End(totalEvents)
+
+	proc.statJobs.Count(totalEvents)
+	proc.statDBW.Count(len(statusList))
+
 	proc.statsJobs.Print()
 	proc.statsDBW.Print()
 }
@@ -508,6 +521,8 @@ func (proc *HandleT) mainLoop() {
 
 		combinedList := append(unprocessedList, retryList...)
 		proc.statsDBR.End(len(combinedList))
+		proc.statDBR.Count(len(combinedList))
+
 		proc.statsDBR.Print()
 
 		//Sort by JOBID

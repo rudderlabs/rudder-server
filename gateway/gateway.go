@@ -14,10 +14,13 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 )
+
+var batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
 
 /*
  * The gateway module handles incoming requests from client devices.
@@ -69,6 +72,9 @@ func loadConfig() {
 func init() {
 	config.Initialize()
 	loadConfig()
+	latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
+	batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
+	batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
 }
 
 //HandleT is the struct returned by the Setup call
@@ -85,10 +91,10 @@ type HandleT struct {
 func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 	for breq := range gateway.batchRequestQ {
-
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
 		var preDbStoreCount int
+		batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
 			if req.request.Body == nil {
 				preDbStoreCount++
@@ -130,6 +136,9 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		for key, val := range errorMessagesMap {
 			jobIDReqMap[key].done <- val
 		}
+		batchTimeStat.End()
+		batchSizeStat.Count(len(breq.batchRequest))
+
 	}
 }
 
@@ -185,6 +194,14 @@ func (gateway *HandleT) printStats() {
 	}
 }
 
+func stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		latencyStat.Start()
+		wrappedFunc(w, r)
+		latencyStat.End()
+	}
+}
+
 //Main handler function for incoming requets
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
 	atomic.AddUint64(&gateway.recvCount, 1)
@@ -208,7 +225,7 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func (gateway *HandleT) startWebHandler() {
 	fmt.Printf("Starting in %d\n", webPort)
-	http.HandleFunc("/hello", gateway.webHandler)
+	http.HandleFunc("/hello", stat(gateway.webHandler))
 	http.HandleFunc("/health", gateway.healthHandler)
 	http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil))
 }

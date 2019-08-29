@@ -22,4 +22,5 @@ require (
 	github.com/tidwall/sjson v1.0.4
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
 	golang.org/x/tools v0.0.0-20190723021737-8bb11ff117ca // indirect
+	gopkg.in/alexcesaro/statsd.v2 v2.0.0
 )

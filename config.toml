@@ -6,6 +6,7 @@ gwDBRetention = 0
 routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
+enableStats = true
 
 [Gateway]
 webPort = 8080

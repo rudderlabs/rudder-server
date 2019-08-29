@@ -20,6 +20,7 @@ import (
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 const (
@@ -43,7 +44,13 @@ var numberOfEventPtr *int
 var badJSON *bool
 var badJSONRate *int
 
+var loadStat *stats.RudderStats
+var requestTimeStat *stats.RudderStats
+
 func main() {
+
+	loadStat = stats.NewStat("genload.num_events", stats.CountType)
+	requestTimeStat = stats.NewStat("genload.event_time", stats.TimerType)
 
 	done = make(chan bool)
 
@@ -307,11 +314,15 @@ func printStats() {
 	}
 }
 func sendToRudder(jsonPayload string) {
+	loadStat.Increment()
+
+	requestTimeStat.Start()
 	req, err := http.NewRequest("POST", serverIP, bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
+	requestTimeStat.End()
 	if err != nil {
 		atomic.AddUint64(&failCount, 1)
 		return
