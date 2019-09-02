@@ -226,6 +226,7 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 func (gateway *HandleT) startWebHandler() {
 	fmt.Printf("Starting in %d\n", webPort)
 	http.HandleFunc("/hello", stat(gateway.webHandler))
+	http.HandleFunc("/events", stat(gateway.webHandler))
 	http.HandleFunc("/health", gateway.healthHandler)
 	http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil))
 }
