@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 var batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
@@ -220,7 +221,12 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("success"))
+	var json = []byte(`{"server":"UP","db":"UP"}`)
+	sjson.SetBytes(json, "server", "UP")
+	if !gateway.jobsDB.CheckPGHealth() {
+		sjson.SetBytes(json, "db", "DOWN")
+	}
+	w.Write(json)
 }
 
 func (gateway *HandleT) startWebHandler() {
