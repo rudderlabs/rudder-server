@@ -2,8 +2,9 @@ package processor
 
 import (
 	"container/heap"
-	"log"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/misc/logger"
 )
 
 //We keep a priority queue of user_id to last event
@@ -64,6 +65,6 @@ func (pq *pqT) Add(item *pqItemT) {
 
 func (pq *pqT) Print() {
 	for _, v := range *pq {
-		log.Println(*v)
+		logger.Debug(*v)
 	}
 }

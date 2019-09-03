@@ -7,13 +7,14 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/misc/logger"
 	"github.com/spf13/viper"
 )
 
 // Initialize initializes the config
 func Initialize() {
 	if err := godotenv.Load(); err != nil {
-		fmt.Println("No .env file found")
+		logger.Error("No .env file found")
 	}
 	configPath := GetEnv("CONFIG_PATH", "./config.toml")
 

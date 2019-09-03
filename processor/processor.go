@@ -2,8 +2,6 @@ package processor
 
 import (
 	"encoding/json"
-	"fmt"
-	"log"
 	"reflect"
 	"sort"
 	"sync"
@@ -15,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/misc/logger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	uuid "github.com/satori/go.uuid"
@@ -41,19 +40,19 @@ type HandleT struct {
 
 //Print the internal structure
 func (proc *HandleT) Print() {
-	log.Println("PriorityQueue")
+	logger.Debug("PriorityQueue")
 	proc.userJobPQ.Print()
-	log.Println("JobList")
+	logger.Debug("JobList")
 	for k, v := range proc.userJobListMap {
-		log.Println(k, ":", len(v))
+		logger.Debug(k, ":", len(v))
 	}
-	log.Println("EventLength")
+	logger.Debug("EventLength")
 	for k, v := range proc.userEventsMap {
-		log.Println(k, ":", len(v))
+		logger.Debug(k, ":", len(v))
 	}
-	log.Println("PQItem")
+	logger.Debug("PQItem")
 	for k, v := range proc.userPQItemMap {
-		log.Println(k, ":", *v)
+		logger.Debug(k, ":", *v)
 	}
 }
 
@@ -87,7 +86,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) 
 	proc.crashRecover()
 	go proc.mainLoop()
 	if processSessions {
-		log.Println("Starting session processor")
+		logger.Info("Starting session processor")
 		go proc.createSessions()
 	}
 }
@@ -149,7 +148,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		}
 		userID, ok := misc.GetRudderEventUserID(eventList)
 		if !ok {
-			log.Println("Failed to get userID for job")
+			logger.Error("Failed to get userID for job")
 			continue
 		}
 		_, ok = proc.userJobListMap[userID]
@@ -183,7 +182,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 	if len(processUserIDs) > 0 {
 		userJobsToProcess := make(map[string][]*jobsdb.JobT)
 		userEventsToProcess := make(map[string][]interface{})
-		log.Println("Post Add Processing")
+		logger.Debug("Post Add Processing")
 		proc.Print()
 
 		//We clear the data structure for these users
@@ -195,7 +194,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			proc.userJobPQ.Remove(proc.userPQItemMap[userID])
 			delete(proc.userPQItemMap, userID)
 		}
-		log.Println("Processing")
+		logger.Debug("Processing")
 		proc.Print()
 		//We release the block before actually processing
 		proc.userPQLock.Unlock()
@@ -293,7 +292,7 @@ func (proc *HandleT) createSessions() {
 		if time.Since(oldestItem.lastTS) < time.Duration(sessionThresholdInS) {
 			proc.userPQLock.Unlock()
 			sleepTime := time.Duration(sessionThresholdInS) - time.Since(oldestItem.lastTS)
-			log.Println("Sleeping", sleepTime)
+			logger.Debug("Sleeping", sleepTime)
 			time.Sleep(sleepTime)
 			continue
 		}
@@ -323,7 +322,7 @@ func (proc *HandleT) createSessions() {
 		}
 		proc.userPQLock.Unlock()
 		if len(userJobsToProcess) > 0 {
-			log.Println("Processing Session Check")
+			logger.Debug("Processing Session Check")
 			proc.Print()
 			proc.processUserJobs(userJobsToProcess, userEventsToProcess)
 		}
@@ -453,9 +452,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
 		url := integrations.GetDestinationURL(destID)
-		log.Println("Transform input size", len(destEventList))
+		logger.Debug("Transform input size", len(destEventList))
 		destTransformEventList, ok := proc.transformer.Transform(destEventList, url, transformBatchSize, true)
-		log.Println("Transform output size", len(destTransformEventList))
+		logger.Debug("Transform output size", len(destTransformEventList))
 		if !ok {
 			continue
 		}
@@ -501,7 +500,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 func (proc *HandleT) mainLoop() {
 
-	fmt.Println("Processor loop started")
+	logger.Info("Processor loop started")
 	for {
 
 		proc.statsDBR.Start()
@@ -562,8 +561,7 @@ func (proc *HandleT) crashRecover() {
 		if len(execList) == 0 {
 			break
 		}
-		log.Println("Processor crash recovering", len(execList))
-		fmt.Println("Processor crash recovering", len(execList))
+		logger.Debug("Processor crash recovering", len(execList))
 
 		var statusList []*jobsdb.JobStatusT
 

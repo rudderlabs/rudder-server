@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/misc/logger"
+
 	"github.com/bugsnag/bugsnag-go"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
@@ -60,7 +62,7 @@ func monitorDestRouters(routeDb *jobsdb.HandleT) {
 	dstToRouter := make(map[string]*router.HandleT)
 	for {
 		config := <-ch
-		fmt.Println("XXX Got config", config)
+		logger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations = enabledDestinations[:0]
 		for _, source := range sources.Sources {
@@ -70,12 +72,12 @@ func monitorDestRouters(routeDb *jobsdb.HandleT) {
 						enabledDestinations = append(enabledDestinations, destination)
 						rt, ok := dstToRouter[destination.DestinationDefinition.Name]
 						if !ok {
-							fmt.Println("Starting a new Destination", destination.DestinationDefinition.Name)
+							logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
 							var router router.HandleT
 							router.Setup(routeDb, destination.DestinationDefinition.Name)
 							dstToRouter[destination.DestinationDefinition.Name] = &router
 						} else {
-							fmt.Println("Enabling existing Destination", destination.DestinationDefinition.Name)
+							logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
 							rt.Enable()
 						}
 					}
@@ -92,7 +94,7 @@ func monitorDestRouters(routeDb *jobsdb.HandleT) {
 			}
 			//Router is not in enabled list. Disable it
 			if !found {
-				fmt.Println("Disabling a existing destination", destID)
+				logger.Info("Disabling a existing destination", destID)
 				rtHandle.Disable()
 			}
 		}
@@ -105,7 +107,6 @@ func init() {
 }
 
 func main() {
-	fmt.Println("Main starting")
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetString("apiKey", "a82c3193aa5914abe2cfb66557f1cc2b"),
 		ReleaseStage: config.GetString("releaseStage", "development"),
@@ -114,6 +115,7 @@ func main() {
 		// more configuration options
 		AppType: "rudder-server",
 	})
+	logger.Info("Main starting")
 
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
@@ -145,7 +147,7 @@ func main() {
 	go func() {
 		<-c
 		if *cpuprofile != "" {
-			fmt.Println("Stopping CPU profile")
+			logger.Info("Stopping CPU profile")
 			pprof.StopCPUProfile()
 			f.Close()
 		}
@@ -166,7 +168,7 @@ func main() {
 	misc.SetupLogger()
 
 	runtime.GOMAXPROCS(maxProcess)
-	fmt.Println("Clearing DB", *clearDB)
+	logger.Info("Clearing DB", *clearDB)
 
 	backendconfig.Setup()
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup && true)

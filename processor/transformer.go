@@ -3,16 +3,15 @@ package processor
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/misc/logger"
 )
 
 //Structure which is used to pass message to the transformer workers
@@ -49,8 +48,7 @@ func (trans *transformerHandleT) transformWorker() {
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
 			if err != nil {
-				log.Println("JS HTTP connection error", err)
-				fmt.Println("JS HTTP connection error", err)
+				logger.Error("JS HTTP connection error", err)
 				if retryCount > maxRetry {
 					misc.Assert(false)
 				}
@@ -89,7 +87,7 @@ func (trans *transformerHandleT) Setup() {
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 	for i := 0; i < numTransformWorker; i++ {
-		fmt.Println("Starting transformer worker", i)
+		logger.Info("Starting transformer worker", i)
 		go trans.transformWorker()
 	}
 }
