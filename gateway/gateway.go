@@ -105,7 +105,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
 			if err != nil {
-				logger.Error("Failed to read body from request")
 				req.done <- "Failed to read body from request"
 				preDbStoreCount++
 				continue
@@ -206,6 +205,7 @@ func stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.Respon
 
 //Main handler function for incoming requets
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
+	logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	done := make(chan string)
 	req := webRequestT{request: r, writer: &w, done: done}
@@ -214,8 +214,10 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
 	errorMessage := <-done
 	atomic.AddUint64(&gateway.ackCount, 1)
 	if errorMessage != "" {
+		logger.Debug(errorMessage)
 		http.Error(w, errorMessage, 400)
 	} else {
+		logger.Debug(respMessage)
 		w.Write([]byte(respMessage))
 	}
 

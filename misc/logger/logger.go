@@ -1,16 +1,19 @@
 package logger
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 
 	"github.com/rudderlabs/rudder-server/config"
 )
 
 const (
-	levelDebug = iota + 1
-	levelInfo
-	levelError
-	levelFatal
+	levelDebug = iota + 1 // Most verbose logging level
+	levelInfo             // Logs about state of the application
+	levelError            // Logs about errors which dont immediately halt the application
+	levelFatal            // Logs which crashes the application
 )
 
 var levelMap = map[string]int{
@@ -22,6 +25,7 @@ var levelMap = map[string]int{
 
 var level int
 
+// Setup sets up the logger initially
 func Setup() {
 	level = levelMap[config.GetString("logLevel", "DEBUG")]
 }
@@ -94,6 +98,20 @@ func Fatalf(format string, args ...interface{}) (int, error) {
 	if levelFatal >= level {
 		fmt.Print("FATAL: ")
 		return fmt.Printf(format, args...)
+	}
+	return 0, nil
+}
+
+// LogRequest reads and logs the request body and resets the body to original state
+func LogRequest(req *http.Request) (int, error) {
+	defer req.Body.Close()
+	if levelDebug >= level {
+		fmt.Print("DEBUG: Request Body: ")
+		bodyBytes, _ := ioutil.ReadAll(req.Body)
+		bodyString := string(bodyBytes)
+		req.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
+		//print raw response body for debugging purposes
+		return fmt.Println(bodyString)
 	}
 	return 0, nil
 }
