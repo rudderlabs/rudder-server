@@ -115,6 +115,7 @@ func main() {
 		// more configuration options
 		AppType: "rudder-server",
 	})
+	logger.Setup()
 	logger.Info("Main starting")
 
 	normalMode := flag.Bool("normal-mode", false, "a bool")

@@ -1,6 +1,10 @@
 package logger
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/rudderlabs/rudder-server/config"
+)
 
 const (
 	levelDebug = iota + 1
@@ -9,7 +13,18 @@ const (
 	levelFatal
 )
 
-var level = levelInfo
+var levelMap = map[string]int{
+	"DEBUG": levelDebug,
+	"INFO":  levelInfo,
+	"ERROR": levelError,
+	"FATAL": levelFatal,
+}
+
+var level int
+
+func Setup() {
+	level = levelMap[config.GetString("logLevel", "DEBUG")]
+}
 
 // Debug level logging
 func Debug(args ...interface{}) (int, error) {
