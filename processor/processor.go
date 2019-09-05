@@ -384,6 +384,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			ok = (eventList != nil)
 		}
 		writeKey := gjson.Get(string(batchEvent.EventPayload), "writeKey").Str
+		requestIP := gjson.Get(string(batchEvent.EventPayload), "requestIP").Str
 
 		if ok {
 			//Iterate through all the events in the batch
@@ -421,6 +422,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 							}
 						}
 						shallowEventCopy["rl_message"].(map[string]interface{})["rl_destination"] = reflect.ValueOf(destination).Interface()
+						shallowEventCopy["rl_message"].(map[string]interface{})["rl_request_ip"] = requestIP
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDest[destType]

@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"reflect"
+	"strings"
 
 	//"runtime/debug"
 	"time"
@@ -259,4 +262,14 @@ func Copy(dst, src interface{}) {
 		}
 		dstV.Field(i).Set(srcV.Field(i))
 	}
+}
+
+// GetIPFromReq gets ip address from request
+func GetIPFromReq(req *http.Request) string {
+	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
+	if addresses[0] == "" {
+		return req.RemoteAddr // When there is no load-balancer
+	}
+	net.ParseIP(strings.Replace(addresses[0], " ", "", -1))
+	return addresses[0]
 }
