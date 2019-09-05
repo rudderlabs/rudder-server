@@ -1797,7 +1797,7 @@ func (jd *HandleT) GetExecuting(customValFilters []string, count int) []*JobT {
 CheckPGHealth returns health check for pg database
 */
 func (jd *HandleT) CheckPGHealth() bool {
-	rows, err := jd.dbHandle.Query(fmt.Sprintf(`SELECT 'Hello world'::text as message`))
+	rows, err := jd.dbHandle.Query(fmt.Sprintf(`SELECT 'Rudder DB Health Check'::text as message`))
 	defer rows.Close()
 	if err != nil {
 		fmt.Println(err)
