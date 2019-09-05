@@ -104,8 +104,8 @@ func Fatalf(format string, args ...interface{}) (int, error) {
 
 // LogRequest reads and logs the request body and resets the body to original state
 func LogRequest(req *http.Request) (int, error) {
-	defer req.Body.Close()
 	if levelDebug >= level {
+		defer req.Body.Close()
 		fmt.Print("DEBUG: Request Body: ")
 		bodyBytes, _ := ioutil.ReadAll(req.Body)
 		bodyString := string(bodyBytes)

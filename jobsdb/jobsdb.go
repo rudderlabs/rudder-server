@@ -1284,9 +1284,9 @@ func (jd *HandleT) mainCheckLoop() {
 				migrateTo := jd.addNewDS(false, insertBeforeDS)
 				jd.dsListLock.Unlock()
 
-				logger.Debug("Migrate from:", migrateFrom)
-				logger.Debug("Next:", insertBeforeDS)
-				logger.Debug("To:", migrateTo)
+				logger.Info("Migrate from:", migrateFrom)
+				logger.Info("Next:", insertBeforeDS)
+				logger.Info("To:", migrateTo)
 				//Mark the start of copy operation. If we fail here
 				//we just delete the new DS being copied into. The
 				//sources are still around
@@ -1296,7 +1296,7 @@ func (jd *HandleT) mainCheckLoop() {
 				opID := jd.journalMarkStart(migrateCopyOperation, opPayload)
 
 				for _, ds := range migrateFrom {
-					logger.Debug("Main check:Migrate", ds, migrateTo)
+					logger.Info("Main check:Migrate", ds, migrateTo)
 					jd.migrateJobs(ds, migrateTo)
 				}
 				jd.journalMarkDone(opID)
