@@ -27,7 +27,7 @@ var level int
 
 // Setup sets up the logger initially
 func Setup() {
-	level = levelMap[config.GetString("logLevel", "DEBUG")]
+	level = levelMap[config.GetEnv("LOG_LEVEL", "DEBUG")]
 }
 
 // Debug level logging

@@ -7,7 +7,6 @@ routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
 enableStats = true
-logLevel="DEBUG"
 
 [Gateway]
 webPort = 8080
