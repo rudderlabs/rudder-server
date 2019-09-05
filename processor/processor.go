@@ -108,12 +108,16 @@ func loadConfig() {
 	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 100000)
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	sessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
-	processSessions = config.GetBool("Processor.processSessions", true)
 	sessionThresholdInS = config.GetDuration("Processor.sessionThresholdInS", time.Duration(20)) * time.Second
 	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
 	numTransformWorker = config.GetInt("Processor.numTransformWorker", 32)
 	maxRetry = config.GetInt("Processor.maxRetry", 3)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	if config.GetEnv("PROCESS_USER_SESSIONS", "EMPTY_VALUE") != "EMPTY_VALUE" {
+		processSessions = config.GetEnv("PROCESS_USER_SESSIONS", "ENABLED") == "ENABLED"
+	} else {
+		processSessions = config.GetBool("Processor.processSessions", true)
+	}
 }
 
 func backendConfigSubscriber() {
@@ -453,9 +457,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
 		url := integrations.GetDestinationURL(destID)
-		log.Println("Transform input size", len(destEventList))
+		fmt.Println("Transform input size", len(destEventList))
 		destTransformEventList, ok := proc.transformer.Transform(destEventList, url, transformBatchSize, true)
-		log.Println("Transform output size", len(destTransformEventList))
+		fmt.Println("Transform output size", len(destTransformEventList))
 		if !ok {
 			continue
 		}

@@ -215,7 +215,7 @@ func init() {
 	loadConfig()
 }
 
-func getConnectionString() string {
+func GetConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
@@ -233,7 +233,7 @@ in the retention time
 func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, toBackup bool) {
 
 	var err error
-	psqlInfo := getConnectionString()
+	psqlInfo := GetConnectionString()
 
 	jd.assert(tablePrefix != "")
 	jd.tablePrefix = tablePrefix
