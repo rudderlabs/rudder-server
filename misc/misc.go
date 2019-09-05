@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"reflect"
@@ -270,6 +269,6 @@ func GetIPFromReq(req *http.Request) string {
 	if addresses[0] == "" {
 		return req.RemoteAddr // When there is no load-balancer
 	}
-	net.ParseIP(strings.Replace(addresses[0], " ", "", -1))
+	strings.Replace(addresses[0], " ", "", -1)
 	return addresses[0]
 }
