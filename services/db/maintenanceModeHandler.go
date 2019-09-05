@@ -8,6 +8,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/misc/logger"
 )
 
 var (
@@ -29,7 +30,7 @@ Since we are not journaling, this should be idemponent
 */
 func replaceDB() {
 	loadConfig()
-	fmt.Println("Starting Maintenance Mode. Connecting to default DB 'postgres'")
+	logger.Info("Starting Maintenance Mode. Connecting to default DB 'postgres'")
 	connInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=disable",
 		host, port, user, password)
 	db, err := sql.Open("postgres", connInfo)
@@ -38,13 +39,13 @@ func replaceDB() {
 
 	renameDBStatement := fmt.Sprintf("ALTER DATABASE %s RENAME TO %s",
 		dbname, "original_"+dbname+"_"+strconv.FormatInt(time.Now().Unix(), 10))
-	fmt.Println(renameDBStatement)
+	logger.Debug(renameDBStatement)
 	_, err = db.Exec(renameDBStatement)
 
 	// If we crashed earlier, after ALTER but before CREATE, we can create again
 	// So just logging the error instead of assert
 	if err != nil {
-		fmt.Println(err.Error())
+		logger.Error(err.Error())
 	}
 
 	createDBStatement := fmt.Sprintf("CREATE DATABASE %s", dbname)

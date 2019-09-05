@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/misc/logger"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -69,13 +70,13 @@ func getBackendConfig() (SourcesT, bool) {
 	}
 
 	if err != nil {
-		log.Println("Errored when sending request to the server", err)
+		logger.Error("Errored when sending request to the server", err)
 		return SourcesT{}, false
 	}
 	var sourcesJSON SourcesT
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
-		log.Println("Errored while parsing request", err)
+		logger.Error("Errored while parsing request", err)
 		return SourcesT{}, false
 	}
 	return sourcesJSON, true
