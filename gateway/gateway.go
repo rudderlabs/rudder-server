@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 var batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
@@ -97,6 +98,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		var preDbStoreCount int
 		batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
+			ipAddr := misc.GetIPFromReq(req.request)
 			if req.request.Body == nil {
 				req.done <- "Request body is nil"
 				preDbStoreCount++
@@ -119,6 +121,10 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				preDbStoreCount++
 				continue
 			}
+
+			fmt.Println("IP address is ", ipAddr)
+			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
+
 			id := uuid.NewV4()
 			//Should be function of body
 			newJob := jobsdb.JobT{
