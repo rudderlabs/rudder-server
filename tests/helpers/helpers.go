@@ -14,7 +14,7 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-var sampleEvent string = `
+var sampleEvent = `
 	{
 		"writeKey": "#rudderWriteKey#",
 		"batch": [
@@ -73,14 +73,16 @@ var sampleEvent string = `
 	}
 `
 
-type EventOpts struct {
+// EventOptsT is the type specifying override options over sample event.json
+type EventOptsT struct {
 	Integrations map[string]bool
 	WriteKey     string
 	ID           string
 	GaVal        int
 }
 
-func SendEventRequest(options EventOpts) int {
+// SendEventRequest sends sample event.json with EventOptionsT overrides to gateway server
+func SendEventRequest(options EventOptsT) int {
 	if options.Integrations == nil {
 		options.Integrations = map[string]bool{
 			"All": false,
@@ -115,6 +117,7 @@ func SendEventRequest(options EventOpts) int {
 	return resp.StatusCode
 }
 
+// GetTableNamesWithPrefix returns all table names with specified prefix
 func GetTableNamesWithPrefix(dbHandle *sql.DB, prefix string) []string {
 	//Read the table names from PG
 	stmt, err := dbHandle.Prepare(`SELECT tablename
@@ -141,6 +144,7 @@ func GetTableNamesWithPrefix(dbHandle *sql.DB, prefix string) []string {
 	return tableNames
 }
 
+// GetJobsCount returns count of jobs across all tables with specified prefix
 func GetJobsCount(dbHandle *sql.DB, prefix string) int {
 	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_jobs_")
 	count := 0
@@ -152,11 +156,23 @@ func GetJobsCount(dbHandle *sql.DB, prefix string) int {
 	return count
 }
 
+func GetJobStausCount(dbHandle *sql.DB, jobState string, prefix string) int {
+	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_job_status_")
+	count := 0
+	for _, tableName := range tableNames {
+		var jobsCount int
+		dbHandle.QueryRow(fmt.Sprintf(`select count(*) as count from %s;`, tableName)).Scan(&jobsCount)
+		count += jobsCount
+	}
+	return count
+}
+
+// GetJobs returns jobs (with a limit) across all tables with specified prefix
 func GetJobs(dbHandle *sql.DB, prefix string, limit int) []*jobsdb.JobT {
 	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_jobs_")
 	var jobList []*jobsdb.JobT
 	for _, tableName := range tableNames {
-		rows, _ := dbHandle.Query(fmt.Sprintf(`select %[1]s.event_payload from %[1]s order by %[1]s.created_at desc limit %v;`, tableName, limit))
+		rows, _ := dbHandle.Query(fmt.Sprintf(`select %[1]s.event_payload from %[1]s order by %[1]s.created_at desc limit %v;`, tableName, limit-len(jobList)))
 		defer rows.Close()
 		for rows.Next() {
 			var job jobsdb.JobT
@@ -170,4 +186,25 @@ func GetJobs(dbHandle *sql.DB, prefix string, limit int) []*jobsdb.JobT {
 		}
 	}
 	return jobList
+}
+
+// GetJobStatus returns job statuses (with a limit) across all tables with specified prefix
+func GetJobStatus(dbHandle *sql.DB, prefix string, limit int, jobState string) []*jobsdb.JobStatusT {
+	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_job_status_")
+	var jobStatusList []*jobsdb.JobStatusT
+	for _, tableName := range tableNames {
+		rows, _ := dbHandle.Query(fmt.Sprintf(`select * from %[1]s where job_state=%s order by %[1]s.created_at desc limit %v;`, tableName, jobState, limit-len(jobStatusList)))
+		defer rows.Close()
+		for rows.Next() {
+			var jobStatus jobsdb.JobStatusT
+			rows.Scan(&jobStatus)
+			if len(jobStatusList) < limit {
+				jobStatusList = append(jobStatusList, &jobStatus)
+			}
+		}
+		if len(jobStatusList) >= limit {
+			break
+		}
+	}
+	return jobStatusList
 }
