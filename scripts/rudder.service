@@ -11,7 +11,7 @@ ExecStart = /home/ubuntu/rudder-server/rudder-server
 StandardOutput = syslog
 StandardError = syslog
 SyslogIdentifier = rudder
-
+User = ubuntu
 
 [Install]
 WantedBy = multi-user.target
