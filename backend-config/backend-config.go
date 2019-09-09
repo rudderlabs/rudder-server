@@ -76,7 +76,7 @@ func getBackendConfig() (SourcesT, bool) {
 	var sourcesJSON SourcesT
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
-		logger.Error("Errored while parsing request", err)
+		logger.Error("Errored while parsing request", err, string(respBody), resp.StatusCode)
 		return SourcesT{}, false
 	}
 	return sourcesJSON, true
