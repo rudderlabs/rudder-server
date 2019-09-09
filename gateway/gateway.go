@@ -122,7 +122,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				continue
 			}
 
-			fmt.Println("IP address is ", ipAddr)
+			logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 
 			id := uuid.NewV4()

@@ -322,7 +322,7 @@ func (rt *HandleT) statusInsertLoop() {
 		rt.perfStats.Start()
 		select {
 		case jobStatus := <-rt.responseQ:
-			logger.Errorf("Router :: Got back status error %v and state %v for job %v", jobStatus.status.ErrorCode,
+			logger.Debugf("Router :: Got back status error %v and state %v for job %v", jobStatus.status.ErrorCode,
 				jobStatus.status.JobState, jobStatus.status.JobID)
 			responseList = append(responseList, jobStatus)
 			rt.perfStats.End(1)
