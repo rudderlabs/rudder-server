@@ -272,3 +272,12 @@ func GetIPFromReq(req *http.Request) string {
 	strings.Replace(addresses[0], " ", "", -1)
 	return addresses[0]
 }
+
+func ContainsString(slice []string, str string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+	return false
+}

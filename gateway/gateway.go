@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/rudderlabs/rudder-server/misc/logger"
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	uuid "github.com/satori/go.uuid"
@@ -116,7 +117,11 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				preDbStoreCount++
 				continue
 			}
-			if !gateway.verifyRequestBodyConfig(body) {
+
+			bodyJSON := fmt.Sprintf("%s", body)
+			writeKey := gjson.Get(bodyJSON, "writeKey")
+
+			if !gateway.isWriteKeyEnabled(writeKey.Str) {
 				req.done <- "Invalid Write Key"
 				preDbStoreCount++
 				continue
@@ -136,6 +141,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			jobList = append(jobList, &newJob)
 			jobIDReqMap[newJob.UUID] = req
+			sourcedebugger.RecordEvent(writeKey.Str, bodyJSON)
 		}
 
 		errorMessagesMap := gateway.jobsDB.Store(jobList)
@@ -143,6 +149,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		for key, val := range errorMessagesMap {
 			jobIDReqMap[key].done <- val
 		}
+
 		batchTimeStat.End()
 		batchSizeStat.Count(len(breq.batchRequest))
 
@@ -158,12 +165,10 @@ func contains(slice []string, str string) bool {
 	return false
 }
 
-func (gateway *HandleT) verifyRequestBodyConfig(body []byte) bool {
-	bodyJSON := fmt.Sprintf("%s", body)
-	writeKey := gjson.Get(bodyJSON, "writeKey")
+func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	if !contains(enabledWriteKeys, writeKey.Str) {
+	if !contains(enabledWriteKeys, writeKey) {
 		return false
 	}
 	return true
