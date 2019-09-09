@@ -2,7 +2,6 @@ package e2e_test
 
 import (
 	"database/sql"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -68,16 +67,15 @@ var _ = Describe("E2E", func() {
 			Eventually(func() int {
 				return helpers.GetJobStausCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobStatusCount + 2))
-			time.AfterFunc(time.Duration(gatewayDBCheckBufferInS)*time.Second, func() {
+			allIntegrationVals := []string{"GA", "AM"}
+			Eventually(func() []string {
 				jobs := helpers.GetJobs(dbHandle, routerDBPrefix, 2)
 				customVals := []string{}
 				for _, job := range jobs {
 					customVals = append(customVals, job.CustomVal)
 				}
-				fmt.Println(customVals)
-				allIntegrationVals := []string{"GA", "AM"}
-				Expect(customVals).Should(BeEquivalentTo(allIntegrationVals))
-			})
+				return customVals
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(BeEquivalentTo(allIntegrationVals))
 		})
 
 		It("should not create job with invalid write key", func() {
@@ -91,11 +89,15 @@ var _ = Describe("E2E", func() {
 		})
 
 		It("should maintain order of events", func() {
+			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			for i := 1; i <= 100; i++ {
 				helpers.SendEventRequest(helpers.EventOptsT{
 					GaVal: i,
 				})
 			}
+			Eventually(func() int {
+				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
+			}, 5, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 100))
 			// wait for couple of seconds for events to be processed by gateway
 			time.Sleep(2 * time.Second)
 			jobs := helpers.GetJobs(dbHandle, routerDBPrefix, 100)
@@ -111,4 +113,11 @@ var _ = Describe("E2E", func() {
 
 	})
 
+})
+
+var _ = Describe("Migrations", func() {
+
+	Context("gateway db migrations", func() {
+
+	})
 })

@@ -161,7 +161,7 @@ func GetJobStausCount(dbHandle *sql.DB, jobState string, prefix string) int {
 	count := 0
 	for _, tableName := range tableNames {
 		var jobsCount int
-		dbHandle.QueryRow(fmt.Sprintf(`select count(*) as count from %s;`, tableName)).Scan(&jobsCount)
+		dbHandle.QueryRow(fmt.Sprintf(`select count(*) as count from %s where job_state='%s';`, tableName, jobState)).Scan(&jobsCount)
 		count += jobsCount
 	}
 	return count
@@ -172,11 +172,16 @@ func GetJobs(dbHandle *sql.DB, prefix string, limit int) []*jobsdb.JobT {
 	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_jobs_")
 	var jobList []*jobsdb.JobT
 	for _, tableName := range tableNames {
-		rows, _ := dbHandle.Query(fmt.Sprintf(`select %[1]s.event_payload from %[1]s order by %[1]s.created_at desc limit %v;`, tableName, limit-len(jobList)))
+		rows, err := dbHandle.Query(fmt.Sprintf(`select %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
+                                               %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at from %[1]s order by %[1]s.created_at desc limit %v;`, tableName, limit-len(jobList)))
+		if err != nil {
+			panic(err)
+		}
 		defer rows.Close()
 		for rows.Next() {
 			var job jobsdb.JobT
-			rows.Scan(&job.EventPayload)
+			rows.Scan(&job.JobID, &job.UUID, &job.CustomVal,
+				&job.EventPayload, &job.CreatedAt, &job.ExpireAt)
 			if len(jobList) < limit {
 				jobList = append(jobList, &job)
 			}
@@ -193,7 +198,10 @@ func GetJobStatus(dbHandle *sql.DB, prefix string, limit int, jobState string) [
 	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_job_status_")
 	var jobStatusList []*jobsdb.JobStatusT
 	for _, tableName := range tableNames {
-		rows, _ := dbHandle.Query(fmt.Sprintf(`select * from %[1]s where job_state=%s order by %[1]s.created_at desc limit %v;`, tableName, jobState, limit-len(jobStatusList)))
+		rows, err := dbHandle.Query(fmt.Sprintf(`select * from %[1]s where job_state='%s' order by %[1]s.created_at desc limit %v;`, tableName, jobState, limit-len(jobStatusList)))
+		if err != nil {
+			panic(err)
+		}
 		defer rows.Close()
 		for rows.Next() {
 			var jobStatus jobsdb.JobStatusT
