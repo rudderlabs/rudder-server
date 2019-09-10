@@ -1,0 +1,65 @@
+version: "3.7"
+
+services:
+  db:
+    image: postgres:11-alpine
+    env_file:
+      - docker.env
+    ports:
+      - "6432:5432"
+
+  backend:
+    depends_on:
+      - db
+      - d-transformer
+      - u-transformer
+    build:
+      context: ./
+      dockerfile: Dockerfile-dev
+    volumes:
+      - .:/app
+
+    entrypoint: sh -c './wait-for db:5432 -- go run -mod vendor main.go'
+
+    ports:
+      - "8080:8080"
+    env_file:
+      - docker.env
+    environment:
+      - JOBS_DB_HOST=db
+
+  d-transformer:
+    build:
+      context: "${CODEBUILD_SRC_DIR}_TransformerSource"
+      dockerfile: Dockerfile
+    ports:
+      - "9090:9090"
+    env_file:
+      - docker.env
+
+  u-transformer:
+    build:
+      context: "${CODEBUILD_SRC_DIR}_TransformerSource"
+      dockerfile: Dockerfile-et
+    ports:
+      - "9191:9191"
+    env_file:
+      - docker.env
+
+  test-sink:
+    depends_on:
+      - redis
+    build:
+      context: ./
+      dockerfile: Dockerfile-sink
+    ports:
+      - "8181:8181"
+    env_file:
+      - docker.env
+
+  redis:
+    image: redis:5.0.5-alpine
+    env_file:
+      - docker.env
+    ports:
+      - "6379:6379"
