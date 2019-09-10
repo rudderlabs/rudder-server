@@ -6,6 +6,7 @@ phases:
       golang: 1.12
   build:
     commands:
+      - printenv
       - go run tests/helpers/tomlmerge/toml_merge.go config.toml tests/e2e/config_overrides.toml > tests/e2e/config.toml
       - sed -i 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' docker.env
       - docker-compose -f docker-compose.codebuild.yml up -d
