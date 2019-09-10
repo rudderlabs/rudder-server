@@ -1,0 +1,12 @@
+[JobsDB]
+enableBackup = false
+
+[Processor]
+processSessions = true
+
+[Router]
+maxStatusUpdateWaitInS = 1
+useTestSink = true
+
+[recovery]
+enabled = false
