@@ -3,6 +3,7 @@ module github.com/rudderlabs/rudder-server
 go 1.12
 
 require (
+	github.com/BurntSushi/toml v0.3.1
 	github.com/aws/aws-sdk-go v1.21.7
 	github.com/bitly/go-simplejson v0.5.0 // indirect
 	github.com/bugsnag/bugsnag-go v1.5.3

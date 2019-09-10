@@ -67,7 +67,6 @@ var _ = Describe("E2E", func() {
 			Eventually(func() int {
 				return helpers.GetJobStausCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobStatusCount + 2))
-			allIntegrationVals := []string{"GA", "AM"}
 			Eventually(func() []string {
 				jobs := helpers.GetJobs(dbHandle, routerDBPrefix, 2)
 				customVals := []string{}
@@ -75,7 +74,7 @@ var _ = Describe("E2E", func() {
 					customVals = append(customVals, job.CustomVal)
 				}
 				return customVals
-			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(BeEquivalentTo(allIntegrationVals))
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(SatisfyAny(Or(BeEquivalentTo([]string{"GA", "AM"}), BeEquivalentTo([]string{"AM", "GA"}))))
 		})
 
 		It("should not create job with invalid write key", func() {
@@ -113,11 +112,4 @@ var _ = Describe("E2E", func() {
 
 	})
 
-})
-
-var _ = Describe("Migrations", func() {
-
-	Context("gateway db migrations", func() {
-
-	})
 })

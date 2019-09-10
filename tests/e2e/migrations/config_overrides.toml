@@ -1,0 +1,15 @@
+[JobsDB]
+maxDSSize = 10
+mainCheckSleepDurationInS = 2
+backupCheckSleepDurationIns = 5
+enableBackup = false
+
+[Processor]
+processSessions = false
+
+[Router]
+maxStatusUpdateWaitInS = 1
+useTestSink = true
+
+[recovery]
+enabled = false

@@ -156,6 +156,7 @@ func GetJobsCount(dbHandle *sql.DB, prefix string) int {
 	return count
 }
 
+// GetJobStausCount returns count of job status across all tables with specified prefix
 func GetJobStausCount(dbHandle *sql.DB, jobState string, prefix string) int {
 	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_job_status_")
 	count := 0

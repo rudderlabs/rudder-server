@@ -1,3 +1,5 @@
+# github.com/BurntSushi/toml v0.3.1
+github.com/BurntSushi/toml
 # github.com/aws/aws-sdk-go v1.21.7
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/session
