@@ -4,16 +4,18 @@ import (
 	"archive/zip"
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"reflect"
+	"strings"
 
 	//"runtime/debug"
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
+	"github.com/rudderlabs/rudder-server/misc/logger"
 )
 
 //AssertError panics if error
@@ -202,7 +204,7 @@ func (stats *PerfStats) Print() {
 	if time.Since(stats.lastPrintTime) > time.Duration(stats.printThres)*time.Second {
 		overallRate := float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime)
 		instantRate := float64(stats.eventCount-stats.lastPrintEventCount) * float64(time.Second) / float64(stats.elapsedTime-stats.lastPrintElapsedTime)
-		fmt.Printf("%s: Total: %d Overall:%f, Instant(print):%f, Instant(call):%f\n",
+		logger.Infof("%s: Total: %d Overall:%f, Instant(print):%f, Instant(call):%f\n",
 			stats.compStr, stats.eventCount, overallRate, instantRate, stats.instantRateCall)
 		stats.lastPrintEventCount = stats.eventCount
 		stats.lastPrintElapsedTime = stats.elapsedTime
@@ -215,7 +217,7 @@ func SetupLogger() {
 	//Enable logging
 	log.SetPrefix("LOG: ")
 	log.SetFlags(log.Ldate | log.Lmicroseconds | log.Llongfile)
-	log.Println("Setup Called")
+	logger.Info("Setup Called")
 	f, err := os.OpenFile("runtime.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	AssertError(err)
 	defer f.Close()
@@ -259,4 +261,14 @@ func Copy(dst, src interface{}) {
 		}
 		dstV.Field(i).Set(srcV.Field(i))
 	}
+}
+
+// GetIPFromReq gets ip address from request
+func GetIPFromReq(req *http.Request) string {
+	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
+	if addresses[0] == "" {
+		return req.RemoteAddr // When there is no load-balancer
+	}
+	strings.Replace(addresses[0], " ", "", -1)
+	return addresses[0]
 }

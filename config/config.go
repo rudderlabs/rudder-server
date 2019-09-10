@@ -5,15 +5,15 @@ import (
 	"os"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go"
 	"github.com/joho/godotenv"
-	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/spf13/viper"
 )
 
 // Initialize initializes the config
 func Initialize() {
 	if err := godotenv.Load(); err != nil {
-		fmt.Println("No .env file found")
+		fmt.Println("ERROR: No .env file found")
 	}
 	configPath := GetEnv("CONFIG_PATH", "./config.toml")
 
@@ -21,7 +21,8 @@ func Initialize() {
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig() // Find and read the config file
 	if err != nil {             // Handle errors reading the config file
-		misc.AssertError(fmt.Errorf("Fatal error config file: %s", err))
+		defer bugsnag.AutoNotify()
+		panic(fmt.Errorf("Fatal error config file: %s", err))
 	}
 }
 

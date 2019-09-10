@@ -3,13 +3,12 @@ package router
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/misc/logger"
 )
 
 //NetHandleT is the wrapper holding private variables
@@ -88,7 +87,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	}
 
 	if err != nil {
-		log.Println("Errored when sending request to the server", err)
+		logger.Error("Errored when sending request to the server", err)
 		return http.StatusGatewayTimeout, "", string(respBody)
 	}
 
@@ -97,7 +96,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 
 //Setup initializes the module
 func (network *NetHandleT) Setup(destID string) {
-	fmt.Println("Network Handler Startup")
+	logger.Info("Network Handler Startup")
 	//Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
 	defaultRoundTripper := http.DefaultTransport
 	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)

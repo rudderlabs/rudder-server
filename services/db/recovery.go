@@ -2,7 +2,6 @@ package db
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"sort"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/misc/logger"
 )
 
 const (
@@ -137,7 +137,7 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool)
 	recoveryHandler := NewRecoveryHandler(&recoveryData)
 
 	if !isForced && recoveryHandler.HasThresholdReached() {
-		fmt.Println("DB Recovery: Moving to next State. Threshold reached for " + recoveryData.Mode)
+		logger.Info("DB Recovery: Moving to next State. Threshold reached for " + recoveryData.Mode)
 		nextMode := getNextMode(recoveryData.Mode)
 		if nextMode == "" {
 			// If we can't recover in maintenance mode, just panic
@@ -150,5 +150,5 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool)
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
-	fmt.Printf("Starting in %s mode\n", recoveryData.Mode)
+	logger.Infof("Starting in %s mode\n", recoveryData.Mode)
 }

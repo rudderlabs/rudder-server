@@ -21,13 +21,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime/debug"
 	"sort"
 	"unicode/utf8"
+
+	"github.com/rudderlabs/rudder-server/misc/logger"
 
 	"strconv"
 	"strings"
@@ -127,7 +128,7 @@ func (jd *HandleT) assertError(err error) {
 		debug.SetTraceback("all")
 		debug.PrintStack()
 		jd.printLists(true)
-		fmt.Println(jd.dsEmptyResultCache)
+		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify(err)
 		panic(err)
 	}
@@ -138,7 +139,7 @@ func (jd *HandleT) assert(cond bool) {
 		debug.SetTraceback("all")
 		debug.PrintStack()
 		jd.printLists(true)
-		fmt.Println(jd.dsEmptyResultCache)
+		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify("Assertion failed")
 		panic("Assertion failed")
 	}
@@ -244,11 +245,11 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
 
-	log.Println("Connected to DB")
+	logger.Info("Connected to DB")
 	err = jd.dbHandle.Ping()
 	jd.assertError(err)
 
-	log.Println("Sent Ping")
+	logger.Info("Sent Ping")
 
 	//Kill any pending queries
 	jd.terminateQueries()
@@ -277,14 +278,14 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	if jd.toBackup {
 		jd.jobsFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
 			Provider:       "s3",
-			AmazonS3Bucket: config.GetString("Aws.jobsBackupDSBucket", "dump-gateway-jobs-test"),
-			AWSRegion:      config.GetString("Aws.region", "us-east-1"),
+			AmazonS3Bucket: config.GetEnv("JOBS_BACKUP_BUCKET", "dump-gateway-jobs-test"),
+			AWSRegion:      config.GetEnv("AWS_REGION", "us-east-1"),
 		})
 		jd.assertError(err)
 		jd.jobStatusFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
 			Provider:       "s3",
-			AmazonS3Bucket: config.GetString("Aws.jobStatusBackupDSBucket", "dump-gateway-job-status-test"),
-			AWSRegion:      config.GetString("Aws.region", "us-east-1"),
+			AmazonS3Bucket: config.GetEnv("JOB_STATUS_BACKUP_BUCKET", "dump-gateway-job-status-test"),
+			AWSRegion:      config.GetEnv("AWS_REGION", "us-east-1"),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()
@@ -444,7 +445,7 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 		row := jd.dbHandle.QueryRow(sqlStatement)
 		err := row.Scan(&minID, &maxID)
 		jd.assertError(err)
-		log.Println(sqlStatement, minID, maxID)
+		logger.Debug(sqlStatement, minID, maxID)
 		//We store ranges EXCEPT for the last element
 		//which is being actively written to.
 		if idx < len(dsList)-1 {
@@ -1242,7 +1243,7 @@ func (jd *HandleT) mainCheckLoop() {
 
 	for {
 		time.Sleep(mainCheckSleepDuration)
-		log.Println("Main check:Start")
+		logger.Info("Main check:Start")
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
 		jd.dsListLock.RUnlock()
@@ -1252,7 +1253,7 @@ func (jd *HandleT) mainCheckLoop() {
 			//Doesn't move any data so we only
 			//take the list lock
 			jd.dsListLock.Lock()
-			log.Println("Main check:NewDS")
+			logger.Info("Main check:NewDS")
 			jd.addNewDS(true, dataSetT{})
 			jd.dsListLock.Unlock()
 		}
@@ -1265,7 +1266,7 @@ func (jd *HandleT) mainCheckLoop() {
 		var liveCount int
 		for idx, ds := range dsList {
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
-			log.Println("Migrate check", ifMigrate, ds)
+			logger.Debug("Migrate check", ifMigrate, ds)
 			if idx < len(dsList)-1 && ifMigrate && idx < maxMigrateOnce && liveCount < maxDSSize {
 				migrateFrom = append(migrateFrom, ds)
 				insertBeforeDS = dsList[idx+1]
@@ -1283,9 +1284,9 @@ func (jd *HandleT) mainCheckLoop() {
 				migrateTo := jd.addNewDS(false, insertBeforeDS)
 				jd.dsListLock.Unlock()
 
-				log.Println("Migrate from:", migrateFrom)
-				log.Println("Next:", insertBeforeDS)
-				log.Println("To:", migrateTo)
+				logger.Info("Migrate from:", migrateFrom)
+				logger.Info("Next:", insertBeforeDS)
+				logger.Info("To:", migrateTo)
 				//Mark the start of copy operation. If we fail here
 				//we just delete the new DS being copied into. The
 				//sources are still around
@@ -1295,7 +1296,7 @@ func (jd *HandleT) mainCheckLoop() {
 				opID := jd.journalMarkStart(migrateCopyOperation, opPayload)
 
 				for _, ds := range migrateFrom {
-					log.Println("Main check:Migrate", ds, migrateTo)
+					logger.Info("Main check:Migrate", ds, migrateTo)
 					jd.migrateJobs(ds, migrateTo)
 				}
 				jd.journalMarkDone(opID)
@@ -1323,7 +1324,7 @@ func (jd *HandleT) mainCheckLoop() {
 func (jd *HandleT) backupDSLoop() {
 	for {
 		time.Sleep(backupCheckSleepDuration)
-		fmt.Println("BackupDS check:Start")
+		logger.Info("BackupDS check:Start")
 		backupDS := jd.getBackupDS()
 		// check if non empty dataset is present to backup
 		// else continue
@@ -1536,16 +1537,14 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		newDS := opPayloadJSON.To
 		undoOp = true
 		//Drop the table we were tring to create
-		fmt.Println("Recovering new DS operation", newDS)
-		log.Println("Recovering new DS operation", newDS)
+		logger.Info("Recovering new DS operation", newDS)
 		jd.dropDS(newDS, true)
 	case migrateCopyOperation:
 		migrateDest := opPayloadJSON.To
 		//Delete the destination of the interrupted
 		//migration. After we start, code should
 		//redo the migration
-		fmt.Println("Recovering migrateCopy operation", migrateDest)
-		log.Println("Recovering migrateCopy operation", migrateDest)
+		logger.Info("Recovering migrateCopy operation", migrateDest)
 		jd.dropDS(migrateDest, true)
 		undoOp = true
 	case postMigrateDSOperation:
@@ -1558,19 +1557,18 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 				jd.dropDS(ds, true)
 			}
 		}
-		fmt.Println("Recovering migrateDel operation", migrateSrc)
-		log.Println("Recovering migrateDel operation", migrateSrc)
+		logger.Info("Recovering migrateDel operation", migrateSrc)
 		undoOp = false
 	case backupDSOperation:
 		jd.removeTableJSONDumps()
-		fmt.Println("Removing all stale json dumps of tables")
+		logger.Info("Removing all stale json dumps of tables")
 		undoOp = true
 	case dropDSOperation, backupDropDSOperation:
 		//Some of the source datasets would have been
 		var dataset dataSetT
 		json.Unmarshal(opPayload, &dataset)
 		jd.dropDS(dataset, true)
-		log.Println("Recovering dropDS operation", dataset)
+		logger.Info("Recovering dropDS operation", dataset)
 		undoOp = false
 	}
 
@@ -1633,7 +1631,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 			//The JobID is outside this DS's range
 			if statusList[i].JobID > maxID {
 				if i > lastPos {
-					log.Println("Range:", ds, statusList[lastPos].JobID,
+					logger.Debug("Range:", ds, statusList[lastPos].JobID,
 						statusList[i-1].JobID, lastPos, i-1)
 				}
 				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters)
@@ -1644,7 +1642,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		}
 		//Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
-			log.Println("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
+			logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
 			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters)
 			jd.assertError(err)
 			lastPos = i
@@ -1658,7 +1656,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		dsList := jd.getDSList(false)
 		jd.assert(len(dsRangeList) == len(dsList)-1)
 		//Update status in the last element
-		log.Println("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
+		logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
 		err := jd.updateJobStatusDS(dsList[len(dsList)-1], statusList[lastPos:], customValFilters)
 		jd.assertError(err)
 	}
@@ -1685,8 +1683,8 @@ the current in-memory copy of jobs and job ranges
 func (jd *HandleT) printLists(console bool) {
 
 	//This being an internal function, we don't lock
-	log.Println("List:", jd.getDSList(false))
-	log.Println("Ranges:", jd.getDSRangeList(false))
+	logger.Debug("List:", jd.getDSList(false))
+	logger.Debug("Ranges:", jd.getDSRangeList(false))
 	if console {
 		fmt.Println("List:", jd.getDSList(false))
 		fmt.Println("Ranges:", jd.getDSRangeList(false))

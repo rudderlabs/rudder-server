@@ -14,10 +14,12 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/misc/logger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 var batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
@@ -96,14 +98,15 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		var preDbStoreCount int
 		batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
+			ipAddr := misc.GetIPFromReq(req.request)
 			if req.request.Body == nil {
+				req.done <- "Request body is nil"
 				preDbStoreCount++
 				continue
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
 			if err != nil {
-				fmt.Println("Failed to read body from request")
 				req.done <- "Failed to read body from request"
 				preDbStoreCount++
 				continue
@@ -118,6 +121,10 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				preDbStoreCount++
 				continue
 			}
+
+			logger.Debug("IP address is ", ipAddr)
+			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
+
 			id := uuid.NewV4()
 			//Should be function of body
 			newJob := jobsdb.JobT{
@@ -190,7 +197,7 @@ func (gateway *HandleT) webRequestBatcher() {
 func (gateway *HandleT) printStats() {
 	for {
 		time.Sleep(10 * time.Second)
-		fmt.Println("Gateway Recv/Ack", gateway.recvCount, gateway.ackCount)
+		logger.Info("Gateway Recv/Ack", gateway.recvCount, gateway.ackCount)
 	}
 }
 
@@ -204,6 +211,7 @@ func stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.Respon
 
 //Main handler function for incoming requets
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
+	logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	done := make(chan string)
 	req := webRequestT{request: r, writer: &w, done: done}
@@ -212,8 +220,10 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
 	errorMessage := <-done
 	atomic.AddUint64(&gateway.ackCount, 1)
 	if errorMessage != "" {
+		logger.Debug(errorMessage)
 		http.Error(w, errorMessage, 400)
 	} else {
+		logger.Debug(respMessage)
 		w.Write([]byte(respMessage))
 	}
 
@@ -224,7 +234,7 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gateway *HandleT) startWebHandler() {
-	fmt.Printf("Starting in %d\n", webPort)
+	logger.Infof("Starting in %d\n", webPort)
 	http.HandleFunc("/hello", stat(gateway.webHandler))
 	http.HandleFunc("/events", stat(gateway.webHandler))
 	http.HandleFunc("/health", gateway.healthHandler)

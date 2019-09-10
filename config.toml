@@ -64,9 +64,6 @@ region = "us-east-1"
 jobsBackupDSBucket = "dump-gateway-jobs-test"
 jobStatusBackupDSBucket = "dump-gateway-job-status-test"
 
-[Bugsnag]
-apiKey = "a82c3193aa5914abe2cfb66557f1cc2b"
-releaseStage = "development"
 
 # If the server crashes 'crashThreshold' times in 'durationInS' seconds,
 #       then we mark it degraded
