@@ -62,7 +62,11 @@ func (rStats *RudderStats) Count(n int) {
 		return
 	}
 	misc.Assert(rStats.StatType == CountType)
-	client.Count(rStats.Name, n)
+	if rStats.writeKey != "" {
+		writeKeyClientsMap[rStats.writeKey].Count(rStats.Name, n)
+	} else {
+		client.Count(rStats.Name, n)
+	}
 }
 func (rStats *RudderStats) Increment() {
 	if !statsEnabled {
