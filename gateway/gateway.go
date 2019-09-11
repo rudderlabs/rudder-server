@@ -148,6 +148,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		batchSizeStat.Count(len(breq.batchRequest))
 
 	}
+	updateWriteKeyStats(writeKeyStats)
 }
 
 func (gateway *HandleT) verifyRequestBodyConfig(body []byte) bool {
