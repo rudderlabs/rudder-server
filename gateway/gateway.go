@@ -88,6 +88,13 @@ type HandleT struct {
 	recvCount     uint64
 }
 
+func updateWriteKeyStats(writeKeyStats map[string]int) {
+	for writeKey, count := range writeKeyStats {
+		writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_count", stats.CountType, writeKey)
+		writeKeyStatsD.Count(count)
+	}
+}
+
 //Function to process the batch requests. It saves data in DB and
 //sends and ACK on the done channel which unblocks the HTTP handler
 func (gateway *HandleT) webRequestBatchDBWriter(process int) {

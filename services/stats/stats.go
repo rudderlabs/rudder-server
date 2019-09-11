@@ -14,6 +14,7 @@ const (
 )
 
 var client *statsd.Client
+var writeKeyClientsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
 
 func init() {
@@ -34,6 +35,25 @@ func NewStat(Name string, StatType string) (rStats *RudderStats) {
 	return &RudderStats{
 		Name:     Name,
 		StatType: StatType,
+	}
+}
+
+// NewWriteKeyStat is used to create new writekey specific stat. Writekey is added as one of the tags in this case
+func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *RudderStats) {
+	if _, found := writeKeyClientsMap[writeKey]; !found {
+		var err error
+		writeKeyClientsMap[writeKey], err = statsd.New(statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("writekey", writeKey))
+		if err != nil {
+			// If nothing is listening on the target port, an error is returned and
+			// the returned client does nothing but is still usable. So we can
+			// just log the error and go on.
+			logger.Error(err)
+		}
+	}
+	return &RudderStats{
+		Name:     Name,
+		StatType: StatType,
+		writeKey: writeKey,
 	}
 }
 
@@ -87,4 +107,5 @@ type RudderStats struct {
 	Name     string
 	StatType string
 	Timing   statsd.Timing
+	writeKey string
 }
