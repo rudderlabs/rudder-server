@@ -157,7 +157,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		updateWriteKeyStats(writeKeyStats)
 
 	}
-	updateWriteKeyStats(writeKeyStats)
 }
 
 func (gateway *HandleT) verifyRequestBodyConfig(body []byte) bool {
