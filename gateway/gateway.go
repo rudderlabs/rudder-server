@@ -114,6 +114,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 	for breq := range gateway.batchRequestQ {
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
+		var jobWriteKeyMap = make(map[uuid.UUID]string)
 		var writeKeyStats = make(map[string]int)
 		var writeKeySuccessStats = make(map[string]int)
 		var writeKeyFailStats = make(map[string]int)
@@ -163,13 +164,18 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			jobList = append(jobList, &newJob)
 			jobIDReqMap[newJob.UUID] = req
-			misc.IncrementMapByKey(writeKeySuccessStats, writeKey)
+			jobWriteKeyMap[newJob.UUID] = writeKey
 		}
 
 		errorMessagesMap := gateway.jobsDB.Store(jobList)
 		misc.Assert(preDbStoreCount+len(errorMessagesMap) == len(breq.batchRequest))
-		for key, val := range errorMessagesMap {
-			jobIDReqMap[key].done <- val
+		for uuid, err := range errorMessagesMap {
+			if err != "" {
+				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[uuid])
+			} else {
+				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[uuid])
+			}
+			jobIDReqMap[uuid].done <- err
 		}
 		batchTimeStat.End()
 		batchSizeStat.Count(len(breq.batchRequest))
