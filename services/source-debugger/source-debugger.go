@@ -25,6 +25,7 @@ type MessageT struct {
 	Rl_integrations interface{} `json:"rl_integrations"`
 	Rl_properties   interface{} `json:"rl_properties"`
 	Rl_timestamp    string      `json:"rl_timestamp"`
+	Rl_type         string      `json:"rl_type"`
 }
 
 type MessageBatchT struct {
