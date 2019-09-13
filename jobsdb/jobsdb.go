@@ -28,7 +28,7 @@ import (
 	"sort"
 	"unicode/utf8"
 
-	"github.com/rudderlabs/rudder-server/misc/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc/logger"
 
 	"strconv"
 	"strings"
@@ -37,7 +37,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 
 	"github.com/lib/pq"

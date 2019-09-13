@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/misc"
-	"github.com/rudderlabs/rudder-server/misc/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/misc/logger"
 )
 
 //Structure which is used to pass message to the transformer workers
