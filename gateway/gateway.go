@@ -97,6 +97,9 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
 		var preDbStoreCount int
+		//Saving the event data read from req.request.Body to the splice.
+		//Using this to send event schema to the config backend.
+		var events []*string
 		batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
 			ipAddr := misc.GetIPFromReq(req.request)
@@ -120,6 +123,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 			bodyJSON := fmt.Sprintf("%s", body)
 			writeKey := gjson.Get(bodyJSON, "writeKey")
+			events = append(events, &bodyJSON)
 
 			if !gateway.isWriteKeyEnabled(writeKey.Str) {
 				req.done <- "Invalid Write Key"
@@ -141,13 +145,17 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			jobList = append(jobList, &newJob)
 			jobIDReqMap[newJob.UUID] = req
-			sourcedebugger.RecordEvent(writeKey.Str, bodyJSON)
 		}
 
 		errorMessagesMap := gateway.jobsDB.Store(jobList)
 		misc.Assert(preDbStoreCount+len(errorMessagesMap) == len(breq.batchRequest))
 		for key, val := range errorMessagesMap {
 			jobIDReqMap[key].done <- val
+		}
+
+		//Sending events to config backend
+		for _, event := range events {
+			sourcedebugger.RecordEvent(gjson.Get(*event, "writeKey").Str, *event)
 		}
 
 		batchTimeStat.End()
