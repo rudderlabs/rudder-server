@@ -15,23 +15,27 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 )
 
+//EventSchemaT is a structure to hold batch of events
 type EventSchemaT struct {
 	writeKey   string
 	eventBatch string
 }
 
+//MessageT is a structure to hold actual event data
 type MessageT struct {
-	Rl_event        string      `json:"rl_event"`
-	Rl_integrations interface{} `json:"rl_integrations"`
-	Rl_properties   interface{} `json:"rl_properties"`
-	Rl_timestamp    string      `json:"rl_timestamp"`
-	Rl_type         string      `json:"rl_type"`
+	RlEvent        string      `json:"rl_event"`
+	RlIntegrations interface{} `json:"rl_integrations"`
+	RlProperties   interface{} `json:"rl_properties"`
+	RlTimestamp    string      `json:"rl_timestamp"`
+	RlType         string      `json:"rl_type"`
 }
 
+//MessageBatchT is a structure to hold rl_message
 type MessageBatchT struct {
-	Rl_message MessageT
+	RlMessage MessageT `json:"rl_message"`
 }
 
+//EventT is a structure to hold batch of events
 type EventT struct {
 	WriteKey string
 	Batch    []MessageBatchT
@@ -42,15 +46,12 @@ var configSubscriberLock sync.RWMutex
 var eventSchemaChannel chan *EventSchemaT
 
 var (
-	configBackendURL string
-	maxRetry         int
-	retrySleep       time.Duration
+	configBackendURL         string
+	maxBatchSize, maxRetry   int
+	batchTimeout, retrySleep time.Duration
 )
 
-const (
-	maxBatchSize = 10
-	batchTimeout = 2 * time.Second
-)
+var ()
 
 func init() {
 	config.Initialize()
@@ -59,8 +60,15 @@ func init() {
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	//Number of events that are batched before sending schema to control plane
+	maxBatchSize = config.GetInt("SourceDebugger.maxBatchSize", 32)
+	maxRetry = config.GetInt("SourceDebugger.maxRetry", 3)
+	batchTimeout = (config.GetDuration("SourceDebugger.batchTimeoutInS", time.Duration(2)) * time.Second)
+	retrySleep = config.GetDuration("SourceDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
 }
 
+//RecordEvent is used to put the event in the eventSchemaChannel,
+//which will be processed by handleEvents.
 func RecordEvent(writeKey string, eventBatch string) bool {
 	// Check if writeKey part of enabled sources
 	configSubscriberLock.RLock()
@@ -73,6 +81,7 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 	return true
 }
 
+//Setup initializes this module
 func Setup() {
 	// TODO: Fix the buffer size
 	eventSchemaChannel = make(chan *EventSchemaT)
@@ -97,8 +106,8 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 		}
 
 		for _, ev := range batchedEvent.Batch {
-			filterValues(&ev.Rl_message)
-			arr = append(arr, ev.Rl_message)
+			filterValues(&ev.RlMessage)
+			arr = append(arr, ev.RlMessage)
 		}
 
 		res[batchedEvent.WriteKey] = arr
@@ -135,7 +144,7 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 }
 
 func filterValues(message *MessageT) {
-	message.Rl_properties = getKeys(message.Rl_properties.(map[string]interface{}))
+	message.RlProperties = getKeys(message.RlProperties.(map[string]interface{}))
 }
 
 func getKeys(dataMap map[string]interface{}) []string {
