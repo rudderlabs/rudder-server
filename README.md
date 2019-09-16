@@ -8,12 +8,12 @@ Main Page
 
 ![image](https://user-images.githubusercontent.com/52487451/64673168-0b802180-d48b-11e9-8535-9292eff0aa45.png)
 
-Setup Instructions
-==================
+Setup Instructions (Docker)
+===========================
 
-The docker setup is the easiest & fastest way to try out Rudder. If you like what you see, you can setup the infra on AWS EC2 using our Terraform scripts. Our support for Azure and GCP is coming soon.
+The docker setup is the easiest & fastest way to try out Rudder. 
 
-1. Checkout this repo
+1. Checkout this repo https://github.com/rudderlabs/rudder-oss
 2. Run the command `docker-compose up` to bring up all the services.
 3. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID.
 4. Go to http://localhost:3000 to set up source and destinations. Add a new source from the dropdown for Android/iOS source definitions. Configure your Google Analytics destination with the tracking ID from step above.
@@ -24,6 +24,10 @@ The docker setup is the easiest & fastest way to try out Rudder. If you like wha
 6. You can then login to your Google Analytics account and verify that events are delivered in the correct order.
 
 7. You can use our Android, iOS or Javascript SDKs for sending events from your app.
+
+Setup Instructions (this repo)
+==============================
+
 
 Architecture
 ============
@@ -66,5 +70,3 @@ https://rudderlabs.com/customer-case-study-casino-game/
 
 The client SDKs provide APIs collecting events and sending it to the Rudder Backend.
 
-
-# rudder-server
