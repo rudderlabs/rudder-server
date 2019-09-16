@@ -1,4 +1,4 @@
-version: '3.7'
+version: "3.7"
 
 services:
   db:
@@ -6,16 +6,18 @@ services:
     env_file:
       - docker.env
     ports:
-      - "5432:5432"
+      - "6432:5432"
 
   backend:
     depends_on:
       - db
       - d-transformer
       - u-transformer
-    build: 
+    build:
       context: ./
       dockerfile: Dockerfile-dev
+    volumes:
+      - .:/app
 
     entrypoint: sh -c './wait-for db:5432 -- go run -mod vendor main.go'
 
@@ -27,7 +29,7 @@ services:
       - JOBS_DB_HOST=db
 
   d-transformer:
-    build: 
+    build:
       context: ../rudder-transformer/
       dockerfile: Dockerfile
     ports:
@@ -36,7 +38,7 @@ services:
       - docker.env
 
   u-transformer:
-    build: 
+    build:
       context: ../rudder-transformer/
       dockerfile: Dockerfile-ut
     ports:
@@ -47,7 +49,7 @@ services:
   test-sink:
     depends_on:
       - redis
-    build: 
+    build:
       context: ./
       dockerfile: Dockerfile-sink
     ports:

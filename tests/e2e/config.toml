@@ -1,0 +1,89 @@
+# Contains the configuration for the whole server
+# Dont set secrets, passwords, api_keys etc. in this file. Use '.env' file for that
+
+maxProcess = 12 # Max number of cpu process to be used by go runtime
+gwDBRetention = 0
+routerDBRetention = 0
+enableProcessor = true
+enableRouter = true
+enableStats = true
+
+[Gateway]
+webPort = 8080
+maxDBWriterProcess = 4
+CustomVal = "GW"
+maxBatchSize = 32
+batchTimeoutInMS = 20
+respMessage = "OK"
+maxReqSizeInKB = 100000
+
+
+[JobsDB]
+# Migration related parameters
+jobDoneMigrateThres = 0.8
+jobStatusMigrateThres = 5
+maxDSSize = 100000
+maxMigrateOnce = 10
+mainCheckSleepDurationInS = 2
+backupCheckSleepDurationIns = 5
+eventsInJSONFileDump = 1000
+enableBackup = false
+
+[Router]
+jobQueryBatchSize = 10000
+updateStatusBatchSize = 1000
+readSleepInMS = 10
+noOfWorkers = 8
+noOfJobsPerChannel = 1000
+ser = 3
+maxSleepInS = 60
+minSleepInS = 0
+maxStatusUpdateWaitInS = 1
+randomWorkerAssign = false
+useTestSink = true
+maxFailedCountForJob = 8
+keepOrderOnFailure = true
+
+[Processor]
+loopSleepInMS = 10
+dbReadBatchSize = 10000
+transformBatchSize = 10
+sessionThresholdEvents = 20
+sessionThresholdInS = 10
+maxChanSize = 2048
+processSessions = false
+numTransformWorker = 8
+maxRetry = 3
+retrySleepInMS = 100
+
+[BackendConfig]
+pollIntervalInS = 5
+
+[Aws]
+region = "us-east-1"
+jobsBackupDSBucket = "dump-gateway-jobs-test"
+jobStatusBackupDSBucket = "dump-gateway-job-status-test"
+
+[Bugsnag]
+apiKey = "a82c3193aa5914abe2cfb66557f1cc2b"
+releaseStage = "development"
+
+# If the server crashes 'crashThreshold' times in 'durationInS' seconds,
+#       then we mark it degraded
+# If the server crashes 'degradedCrashThreshold' times in 'degradedDurationInS' seconds in degraded mode,
+#       then we mark it maintenance
+# If the server crashes 'maintenanceCrashThreshold' times in 'maintenanceDurationInS' seconds in maintenance mode,
+#       then we stop the server
+# Stores related metadata in storagePath
+[recovery]
+enabled = true
+storagePath = "/tmp/recovery_data.json"
+    [recovery.normal]
+    crashThreshold = 5
+    durationInS = 300
+    [recovery.degraded]
+    crashThreshold = 5
+    durationInS = 300
+    [recovery.maintenance]
+    crashThreshold = 5
+    durationInS = 300
