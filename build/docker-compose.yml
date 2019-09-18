@@ -11,13 +11,13 @@ services:
   backend:
     depends_on:
       - db
-      # - d-transformer
-      # - u-transformer
+      - d-transformer
+      - u-transformer
     build:
-      context: ./
-      dockerfile: Dockerfile-dev
+      context: ../
+      dockerfile: build/Dockerfile-dev
 
-    entrypoint: sh -c './wait-for db:5432 -- go run main.go'
+    entrypoint: sh -c './build/wait-for db:5432 -- go run -mod=vendor main.go'
 
     ports:
       - "8080:8080"
@@ -25,19 +25,19 @@ services:
       - docker.env
     environment:
       - JOBS_DB_HOST=db
-  # d-transformer:
-  #   build:
-  #     context: ../rudder-transformer/
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "9090:9090"
-  #   env_file:
-  #     - docker.env
-  # u-transformer:
-  #   build:
-  #     context: ../rudder-transformer/
-  #     dockerfile: Dockerfile-ut
-  #   ports:
-  #     - "9191:9191"
-  #   env_file:
-  #     - docker.env
+  d-transformer:
+    build:
+      context: ../rudder-transformer/
+      dockerfile: Dockerfile
+    ports:
+      - "9090:9090"
+    env_file:
+      - docker.env
+  u-transformer:
+    build:
+      context: ../rudder-transformer/
+      dockerfile: Dockerfile-ut
+    ports:
+      - "9191:9191"
+    env_file:
+      - docker.env
