@@ -16,6 +16,8 @@ services:
     build:
       context: ../
       dockerfile: build/Dockerfile-dev
+    volumes:
+      - .:/app
 
     entrypoint: sh -c './build/wait-for db:5432 -- go run -mod=vendor main.go'
 
