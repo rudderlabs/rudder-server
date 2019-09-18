@@ -19,7 +19,7 @@ services:
     volumes:
       - .:/app
 
-    entrypoint: sh -c 'cd .. && ./build/wait-for db:5432 -- go run -mod=vendor main.go'
+    entrypoint: sh -c 'cd /app && ./build/wait-for db:5432 -- go run -mod=vendor main.go'
 
     ports:
       - "8080:8080"
