@@ -4,7 +4,7 @@ import (
 	"container/heap"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc/logger"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 //We keep a priority queue of user_id to last event

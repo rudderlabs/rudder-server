@@ -1,0 +1,3 @@
+[submodule "rudder-transformer"]
+	path = rudder-transformer
+	url = git@github.com:rudderlabs/rudder-transformer.git

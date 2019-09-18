@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc/logger"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/bugsnag/bugsnag-go"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"

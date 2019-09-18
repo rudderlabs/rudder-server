@@ -28,7 +28,7 @@ import (
 	"sort"
 	"unicode/utf8"
 
-	"github.com/rudderlabs/rudder-server/utils/misc/logger"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"strconv"
 	"strings"

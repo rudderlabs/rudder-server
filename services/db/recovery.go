@@ -9,7 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/misc/logger"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 const (
