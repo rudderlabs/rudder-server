@@ -123,9 +123,9 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 	return recoveryHandler
 }
 
-func alertVictorOps(mode string) {
+func alertOps(mode string) {
 	instanceName := config.GetEnv("INSTANCE_NAME", "")
-	url := config.GetEnv("VICTOR_OPS_URL", "")
+	url := config.GetEnv("OPS_ALERT_URL", "")
 	event := map[string]interface{}{
 		"message_type":  "CRITICAL",
 		"entity_id":     fmt.Sprintf("%s-data-plane-%s-mode", instanceName, mode),
@@ -168,7 +168,7 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool)
 	}
 
 	if recoveryData.Mode != normalMode {
-		alertVictorOps(recoveryData.Mode)
+		alertOps(recoveryData.Mode)
 	}
 	currTime := time.Now().Unix()
 	recoveryHandler.RecordAppStart(currTime)
