@@ -46,7 +46,6 @@ type SourceT struct {
 	Enabled          bool
 	Destinations     []DestinationT
 	WriteKey         string
-	UploadEvents     bool
 }
 
 type SourcesT struct {
@@ -93,9 +92,6 @@ func pollConfigUpdate() {
 		sourceJSON, ok := getBackendConfig()
 
 		if ok {
-			for i := 0; i < len(sourceJSON.Sources); i++ {
-				sourceJSON.Sources[i].UploadEvents = true
-			}
 			Eb.Publish("backendconfig", sourceJSON)
 		}
 		time.Sleep(time.Duration(pollInterval))

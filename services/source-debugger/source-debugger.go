@@ -187,8 +187,10 @@ func backendConfigSubscriber() {
 		uploadEnabledWriteKeys = []string{}
 		sources := config.Data.(backendconfig.SourcesT)
 		for _, source := range sources.Sources {
-			if source.Enabled && source.UploadEvents {
-				uploadEnabledWriteKeys = append(uploadEnabledWriteKeys, source.WriteKey)
+			if source.Config != nil {
+				if source.Enabled && source.Config.(map[string]interface{})["eventUpload"] == "true" {
+					uploadEnabledWriteKeys = append(uploadEnabledWriteKeys, source.WriteKey)
+				}
 			}
 		}
 		configSubscriberLock.Unlock()
