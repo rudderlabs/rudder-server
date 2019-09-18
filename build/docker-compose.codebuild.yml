@@ -16,8 +16,6 @@ services:
     build:
       context: ../
       dockerfile: build/Dockerfile-dev
-    volumes:
-      - .:/app
 
     entrypoint: sh -c './build/wait-for db:5432 -- go run -mod=vendor main.go'
 
@@ -43,5 +41,14 @@ services:
       dockerfile: Dockerfile-et
     ports:
       - "9191:9191"
+    env_file:
+      - docker.env
+
+  test-sink:
+    build:
+      context: ../
+      dockerfile: build/Dockerfile-sink
+    ports:
+      - "8181:8181"
     env_file:
       - docker.env
