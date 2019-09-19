@@ -6,6 +6,8 @@
 
 **Long answer:** Rudder is a platform for collecting, storing and routing customer event data to dozens of tools. Rudder is open-source, can run in your own cloud environment (AWS, GCP, Azure or even your own data-center) and provides a powerful transformation framework to process your event data on the fly.
 
+This repo contains the core backend and destination specific transformation modules of Rudder. The client SDKs are in a separate repo. 
+
 # Why Rudder ?
 
 We are building Rudder because we believe open-source and cloud-prem is important for three main reasons
