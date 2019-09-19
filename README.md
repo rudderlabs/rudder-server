@@ -1,6 +1,4 @@
 
-# Rudder
-
 Rudder is an open source Segment alternative written in Go. https://rudderlabs.com.
  
 What is Rudder?
