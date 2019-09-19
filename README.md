@@ -38,7 +38,7 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 The docker setup is the easiest & fastest way to try out Rudder.
 
-1. Checkout this repo https://github.com/rudderlabs/rudder-oss
+1. Checkout this repo https://github.com/rudderlabs/rudder-docker
 2. Run the command `docker-compose up` to bring up all the services.
 3. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID.
 4. Go to http://localhost:3000 to set up source and destinations. Add a new source from the dropdown for Android/iOS source definitions. Configure your Google Analytics destination with the tracking ID from step above.
