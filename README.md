@@ -102,3 +102,10 @@ https://rudderlabs.com/customer-case-study-casino-game/
 ## Client SDKs
 
 The client SDKs provide APIs collecting events and sending it to the Rudder Backend.
+
+# Coming Soon
+
+1. More documentation
+2. More destination support
+3. HA support
+
