@@ -14,15 +14,15 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/bugsnag/bugsnag-go"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var (
@@ -165,8 +165,6 @@ func main() {
 
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
-
-	misc.SetupLogger()
 
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB", *clearDB)

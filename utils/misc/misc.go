@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"reflect"
@@ -210,18 +209,6 @@ func (stats *PerfStats) Print() {
 		stats.lastPrintElapsedTime = stats.elapsedTime
 		stats.lastPrintTime = time.Now()
 	}
-}
-
-// SetupLogger setup the logger with configs
-func SetupLogger() {
-	//Enable logging
-	log.SetPrefix("LOG: ")
-	log.SetFlags(log.Ldate | log.Lmicroseconds | log.Llongfile)
-	logger.Info("Setup Called")
-	f, err := os.OpenFile("runtime.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	AssertError(err)
-	defer f.Close()
-	log.SetOutput(f)
 }
 
 //Copy copies the exported fields from src to dest
