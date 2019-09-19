@@ -25,7 +25,7 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 2. S3 dump. Redshift and other data warehouses coming soon.
 3. User speficied transformation to filter/transform events.
 4. Stand-alone system. Only dependency is on Postgres.
-5. High performance. On a single m4.2xlarge, Rudder can process ~3K events/sec. We will publish detailed performance numbers on other instance types soon.
+5. High performance. On a single m4.2xlarge, Rudder can process ~3K events/sec. Performance numbers on other instance types soon.
 6. Rich UI written in react.
 7. Android, iOS & Unity SDKs. Javascript and others coming soon
 
