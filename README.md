@@ -42,8 +42,8 @@ The docker setup is the easiest & fastest way to try out Rudder.
 
 If you want to run each of the services without docker please follow the following steps
 
-1. Install Golang 1.12 or above
-2. Install NodeJS 10.6 or above
+1. Install Golang 1.12 or above. [Download Here](https://golang.org/dl/)
+2. Install NodeJS 10.6 or above. [Download Here](https://nodejs.org/en/download/)
 3. Install PostgreSQL 10 or above and setup the DB
 
 ```
@@ -53,7 +53,7 @@ psql "jobsdb" -c "alter user rudder with encrypted password 'rudder'";
 psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 ```
 
-4. Login to https://app.rudderlabs.com and setup your account. Copy your workspace token from top of the home page
+4. Go to the [dashboard](https://app.rudderlabs.com) and setup your account. Copy your workspace token from top of the home page
 5. Clone this repository and navigate to the transformer directory `cd rudder-transformer`
 6. Start the user and destination transformers as separate processes `node userTransformer.js` and `node destTransformer.js`
 7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
