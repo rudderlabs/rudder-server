@@ -30,7 +30,7 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 7. Android, iOS & Unity SDKs. Javascript and others coming soon
 
 
-# Main Page
+# Main UI Page
 
 ![image](https://user-images.githubusercontent.com/52487451/64673168-0b802180-d48b-11e9-8535-9292eff0aa45.png)
 
