@@ -11,7 +11,7 @@ What is Rudder?
 Why Rudder ?
 ============
 
-We believe open-source and cloud-prem is important for three main reasons
+We are building Rudder because we believe open-source and cloud-prem is important for three main reasons
 
 1. **Privacy & Security:** You should be able to collect and store your customer data without sending everything to 3rd party vendors or embedding proprietary SDKs. In addition, Rudder gives you fine grained control over what data to forward to what analytical tool.
 
