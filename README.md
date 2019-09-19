@@ -19,6 +19,17 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 3. **Unlimited Event Budget:** Event volume based pricing of most commercial systems is broken. You should be able to collect as much data as possible without worrying about overrunning event budgets. Rudder's core BE is open-source and free to use.
 
+## Features
+
+1. Google Analytics, Amplitude, MixPanel & Facebook destinations. Lot more coming soon.
+2. S3 dump. Redshift and other data warehouses coming soon.
+3. User speficied transformation to filter/transform events.
+4. Stand-alone system. Only dependency is on Postgres.
+5. High performance. On a single m4.2xlarge, Rudder can process ~3K events/sec. We will publish detailed performance numbers on other instance types soon.
+6. Rich UI written in react.
+7. Android, iOS & Unity SDKs. Javascript and others coming soon
+
+
 # Main Page
 
 ![image](https://user-images.githubusercontent.com/52487451/64673168-0b802180-d48b-11e9-8535-9292eff0aa45.png)
@@ -62,7 +73,6 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 9. Run the backend server `go run -mod=vendor main.go`
 10. Setup your sources from the dashboard `https://app.rudderlabs.com` and start sending events using the test script (mentioned in step 5 of Docker setup instructions) or our SDKs.
 
-On a single m4.2xlarge, Rudder can process ~3K events/sec. We will publish detailed performance numbers on other instance types soon.
 
 # Architecture
 
