@@ -27,7 +27,7 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 4. Stand-alone system. Only dependency is on Postgres.
 5. High performance. On a single m4.2xlarge, Rudder can process ~3K events/sec. Performance numbers on other instance types soon.
 6. Rich UI written in react.
-7. Android, iOS & Unity SDKs. Javascript and others coming soon
+7. Android, iOS, Unity & Javascript SDKs. Server side SDKs coming soon.
 
 
 # Main UI Page
