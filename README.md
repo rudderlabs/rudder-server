@@ -2,7 +2,7 @@
 # Rudder ![Build Status](https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master)
 
 
-Rudder is an open source Segment alternative built with a focus on Privacy and Security written in Go and React. " https://rudderlabs.com.
+Rudder is an open source Segment alternative built with a focus on Privacy and Security written in Go and React.  https://rudderlabs.com.
  
 
 
@@ -59,7 +59,7 @@ If you want to run each of the services without docker please follow the followi
 4. Login to https://app.rudderlabs.com and setup your account. Copy your workspace token from top of the home page
 5. Clone this repository and navigate to the transformer directory `cd rudder-transformer`
 6. Start the user and destination transformers as separate processes `node userTransformer.js` and `node destTransformer.js`
-7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp build/sample.env .env`
+7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
 8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4
 9. Run the backend server `go run -mod=vendor main.go`
 10. Setup your sources from the dashboard `https://app.rudderlabs.com` and start sending events using the test script (mentioned in step 5 of Docker setup instructions) or our SDKs.
