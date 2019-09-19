@@ -68,6 +68,7 @@ job  while rest should be set by the user.
 type JobT struct {
 	UUID          uuid.UUID
 	JobID         int64
+	SourceID      string
 	CreatedAt     time.Time
 	ExpireAt      time.Time
 	CustomVal     string
@@ -279,13 +280,11 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		jd.jobsFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
 			Provider:       "s3",
 			AmazonS3Bucket: config.GetEnv("JOBS_BACKUP_BUCKET", "dump-gateway-jobs-test"),
-			AWSRegion:      config.GetEnv("AWS_REGION", "us-east-1"),
 		})
 		jd.assertError(err)
 		jd.jobStatusFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
 			Provider:       "s3",
 			AmazonS3Bucket: config.GetEnv("JOB_STATUS_BACKUP_BUCKET", "dump-gateway-job-status-test"),
-			AWSRegion:      config.GetEnv("AWS_REGION", "us-east-1"),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()
@@ -622,6 +621,7 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
                                       job_id BIGSERIAL PRIMARY KEY,
                                       uuid UUID NOT NULL,
+                                      source_id VARCHAR(64),
                                       custom_val VARCHAR(64) NOT NULL,
                                       event_payload JSONB NOT NULL,
                                       created_at TIMESTAMP NOT NULL,
@@ -867,7 +867,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 			"event_payload", "created_at", "expire_at"))
 		jd.assertError(err)
 	} else {
-		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "custom_val", "event_payload",
+		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "source_id", "custom_val", "event_payload",
 			"created_at", "expire_at"))
 		jd.assertError(err)
 	}
@@ -881,7 +881,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 			_, err = stmt.Exec(job.JobID, job.UUID, job.CustomVal,
 				string(job.EventPayload), job.CreatedAt, job.ExpireAt)
 		} else {
-			_, err = stmt.Exec(job.UUID, job.CustomVal, string(job.EventPayload),
+			_, err = stmt.Exec(job.UUID, job.SourceID, job.CustomVal, string(job.EventPayload),
 				job.CreatedAt, job.ExpireAt)
 		}
 		jd.assertError(err)
@@ -1012,9 +1012,9 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 
 //limitCount == 0 means return all
 func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []string,
-	customValFilters []string, limitCount int) ([]*JobT, error) {
+	customValFilters []string, limitCount int, sourceIDFilters ...string) ([]*JobT, error) {
 
-	var stateQuery, customValQuery, limitQuery string
+	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
 	jd.checkValidJobState(stateFilters)
 
@@ -1036,6 +1036,15 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 		customValQuery = ""
 	}
 
+	if len(sourceIDFilters) > 0 {
+		jd.assert(!getAll)
+		sourceQuery = " AND " +
+			jd.constructQuery(fmt.Sprintf("%s.source_id", ds.JobTable),
+				sourceIDFilters, "OR")
+	} else {
+		sourceQuery = ""
+	}
+
 	if limitCount > 0 {
 		jd.assert(!getAll)
 		limitQuery = fmt.Sprintf(" LIMIT %d ", limitCount)
@@ -1046,7 +1055,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	var rows *sql.Rows
 	if getAll {
 		sqlStatement := fmt.Sprintf(`SELECT
-                                  %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val, %[1]s.event_payload,
+                                  %[1]s.job_id, %[1]s.uuid, %[1]s.source_id,  %[1]s.custom_val, %[1]s.event_payload,
                                   %[1]s.created_at, %[1]s.expire_at,
                                   job_latest_state.job_state, job_latest_state.attempt,
                                   job_latest_state.exec_time, job_latest_state.retry_time,
@@ -1065,7 +1074,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 		jd.assertError(err)
 	} else {
 		sqlStatement := fmt.Sprintf(`SELECT
-                                               %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val, %[1]s.event_payload,
+                                               %[1]s.job_id, %[1]s.uuid,  %[1]s.source_id, %[1]s.custom_val, %[1]s.event_payload,
                                                %[1]s.created_at, %[1]s.expire_at,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
@@ -1077,10 +1086,10 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
                                                    (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
                                                AS job_latest_state
                                             WHERE %[1]s.job_id=job_latest_state.job_id
-                                             %[4]s
-                                             AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[5]s`,
-			ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, limitQuery)
-		//log.Println(sqlStatement)
+                                             %[4]s %[5]s
+                                             AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[6]s`,
+			ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
+
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
 
 		jd.assertError(err)
@@ -1093,7 +1102,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
-		err := rows.Scan(&job.JobID, &job.UUID, &job.CustomVal,
+		err := rows.Scan(&job.JobID, &job.UUID, &job.SourceID, &job.CustomVal,
 			&job.EventPayload, &job.CreatedAt, &job.ExpireAt,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
@@ -1111,7 +1120,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 
 //count == 0 means return all
 func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
-	order bool, count int) ([]*JobT, error) {
+	order bool, count int, sourceIDFilters ...string) ([]*JobT, error) {
 
 	var rows *sql.Rows
 	var err error
@@ -1123,25 +1132,29 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	var sqlStatement string
 
 	if useJoinForUnprocessed {
-		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid,  %[1]s.source_id, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
                                                %[1]s.expire_at
                                              FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
                                              WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable)
 	} else {
-		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid,  %[1]s.source_id, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
                                                %[1]s.expire_at
                                              FROM %[1]s WHERE %[1]s.job_id NOT IN (SELECT DISTINCT(%[2]s.job_id)
                                              FROM %[2]s)`, ds.JobTable, ds.JobStatusTable)
 	}
 
-	//log.Println(sqlStatement)
-
 	if len(customValFilters) > 0 {
 		sqlStatement += " AND " + jd.constructQuery(fmt.Sprintf("%s.custom_val", ds.JobTable),
 			customValFilters, "OR")
 	}
+
+	if len(sourceIDFilters) > 0 {
+		sqlStatement += " AND " + jd.constructQuery(fmt.Sprintf("%s.source_id", ds.JobTable),
+			sourceIDFilters, "OR")
+	}
+
 	if order {
 		sqlStatement += fmt.Sprintf(" ORDER BY %s.job_id", ds.JobTable)
 	}
@@ -1156,7 +1169,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
-		err := rows.Scan(&job.JobID, &job.UUID, &job.CustomVal,
+		err := rows.Scan(&job.JobID, &job.UUID, &job.SourceID, &job.CustomVal,
 			&job.EventPayload, &job.CreatedAt, &job.ExpireAt)
 		jd.assertError(err)
 		jobList = append(jobList, &job)
@@ -1696,7 +1709,7 @@ func (jd *HandleT) printLists(console bool) {
 GetUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *HandleT) GetUnprocessed(customValFilters []string, count int) []*JobT {
+func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, sourceIDFilters ...string) []*JobT {
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -1734,7 +1747,7 @@ relises on the caller to update it. That means that successive calls to GetProce
 can return the same set of events. It is the responsibility of the caller to call it from
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
-func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int) []*JobT {
+func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, sourceIDFilters ...string) []*JobT {
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -1755,7 +1768,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	for _, ds := range dsList {
 		//count==0 means return all which we don't want
 		jd.assert(count > 0)
-		jobs, err := jd.getProcessedJobsDS(ds, false, stateFilter, customValFilters, count)
+		jobs, err := jd.getProcessedJobsDS(ds, false, stateFilter, customValFilters, count, sourceIDFilters...)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
@@ -1772,23 +1785,23 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 GetToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) GetToRetry(customValFilters []string, count int) []*JobT {
-	return jd.GetProcessed([]string{FailedState}, customValFilters, count)
+func (jd *HandleT) GetToRetry(customValFilters []string, count int, sourceIDFilters ...string) []*JobT {
+	return jd.GetProcessed([]string{FailedState}, customValFilters, count, sourceIDFilters...)
 }
 
 /*
 GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) GetWaiting(customValFilters []string, count int) []*JobT {
-	return jd.GetProcessed([]string{WaitingState}, customValFilters, count)
+func (jd *HandleT) GetWaiting(customValFilters []string, count int, sourceIDFilters ...string) []*JobT {
+	return jd.GetProcessed([]string{WaitingState}, customValFilters, count, sourceIDFilters...)
 }
 
 /*
 GetExecuting returns events which  in executing state
 */
-func (jd *HandleT) GetExecuting(customValFilters []string, count int) []*JobT {
-	return jd.GetProcessed([]string{ExecutingState}, customValFilters, count)
+func (jd *HandleT) GetExecuting(customValFilters []string, count int, sourceIDFilters ...string) []*JobT {
+	return jd.GetProcessed([]string{ExecutingState}, customValFilters, count, sourceIDFilters...)
 }
 
 /*
@@ -1839,7 +1852,8 @@ func (jd *HandleT) setupEnumTypes() {
 func (jd *HandleT) createTables() error {
 	sqlStatement := `CREATE TABLE jobs (
                              job_id BIGSERIAL PRIMARY KEY,
-                             uuid UUID NOT NULL,
+							 uuid UUID NOT NULL,
+							 source_id VARCHAR(64),
                              custom_val INT NOT NULL,
                              event_payload JSONB NOT NULL,
                              created_at TIMESTAMP NOT NULL,
@@ -2043,13 +2057,13 @@ func (jd *HandleT) dynamicTest() {
 			combinedList[len(combinedList)-1].JobID)
 
 		for _, job := range append(unprocessedList, retryList...) {
-			stat := SucceededState
+			state := SucceededState
 			if rand.Intn(testFailRatio) == 0 {
-				stat = FailedState
+				state = FailedState
 			}
 			newStatus := JobStatusT{
 				JobID:         job.JobID,
-				JobState:      stat,
+				JobState:      state,
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
