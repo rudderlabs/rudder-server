@@ -13,7 +13,7 @@ Rudder runs as a single go binary with Postgres. It also needs the destination (
 
 We are building Rudder because we believe open-source and cloud-prem is important for three main reasons
 
-1. **Privacy & Security:** You should be able to collect and store your customer data without sending everything to a 3rd party vendor or embedding proprietary SDKs. In addition, Rudder gives you fine grained control over what data to forward to what analytical tool.
+1. **Privacy & Security:** You should be able to collect and store your customer data without sending everything to a 3rd party vendor or embedding proprietary SDKs. With Rudder, the event data is always in your control. In addition, Rudder gives you fine grained control over what data to forward to what analytical tool.
 
 2. **Processing Flexibility:** You should be able to enhance OR transform your event data by combining it with your other _internal_ data, e.g. stored in your transactional systems. Rudder makes that possible because it provides a powerful JS based event transformation framework. Furthermore, since Rudder runs _inside_ your cloud or on-prem environment, you can access your production data to join with the event data.
 
