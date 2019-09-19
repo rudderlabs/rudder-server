@@ -14,12 +14,12 @@ services:
       - d-transformer
       - u-transformer
     build:
-      context: ./
-      dockerfile: Dockerfile-dev
+      context: ../
+      dockerfile: build/Dockerfile-dev
     volumes:
-      - .:/app
+      - ..:/app
 
-    entrypoint: sh -c './wait-for db:5432 -- go run -mod vendor main.go'
+    entrypoint: sh -c './build/wait-for db:5432 -- go run -mod=vendor main.go'
 
     ports:
       - "8080:8080"
@@ -47,19 +47,10 @@ services:
       - docker.env
 
   test-sink:
-    depends_on:
-      - redis
     build:
-      context: ./
-      dockerfile: Dockerfile-sink
+      context: ../
+      dockerfile: build/Dockerfile-sink
     ports:
       - "8181:8181"
     env_file:
       - docker.env
-
-  redis:
-    image: redis:5.0.5-alpine
-    env_file:
-      - docker.env
-    ports:
-      - "6379:6379"

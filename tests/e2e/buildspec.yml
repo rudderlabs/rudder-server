@@ -7,15 +7,15 @@ phases:
   build:
     commands:
       - printenv
-      - go run tests/helpers/tomlmerge/toml_merge.go config.toml tests/e2e/config_overrides.toml > tests/e2e/config.toml
-      - sed -i 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' docker.env
-      - docker-compose -f docker-compose.codebuild.yml up -d
-      - docker-compose -f docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e"
-      - go run tests/helpers/tomlmerge/toml_merge.go config.toml tests/e2e/sessions/config_overrides.toml > tests/e2e/sessions/config.toml
-      - sed -i 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/sessions\/config.toml/' docker.env
-      - docker-compose -f docker-compose.codebuild.yml up -d
-      - docker-compose -f docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e/sessions"
-      - go run tests/helpers/tomlmerge/toml_merge.go config.toml tests/e2e/migrations/config_overrides.toml > tests/e2e/migrations/config.toml
-      - sed -i 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/migrations\/config.toml/' docker.env
-      - docker-compose -f docker-compose.codebuild.yml up -d
-      - docker-compose -f docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e/migrations"
+      - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/config_overrides.toml > tests/e2e/config.toml
+      - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' build/docker.env
+      - docker-compose -f build/docker-compose.codebuild.yml up -d
+      - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e"
+      - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/sessions/config_overrides.toml > tests/e2e/sessions/config.toml
+      - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/sessions\/config.toml/' build/docker.env
+      - docker-compose -f build/docker-compose.codebuild.yml up -d
+      - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e/sessions"
+      - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/migrations/config_overrides.toml > tests/e2e/migrations/config.toml
+      - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/migrations\/config.toml/' build/docker.env
+      - docker-compose -f build/docker-compose.codebuild.yml up -d
+      - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e/migrations"

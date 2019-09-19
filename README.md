@@ -1,8 +1,31 @@
 
-# Rudder
+# Rudder ![Build Status](https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master)
 
-Rudder is an open source Segment alternative built with a focus on Privacy and Security written in Go and React. " https://rudderlabs.com.
+
+Rudder is an open source Segment alternative built with a focus on Privacy and Security written in Go and React.  https://rudderlabs.com.
  
+
+
+What is Rudder?
+===============
+
+**Short answer:** Rudder is an open source Segment alternative written in Go. https://rudderlabs.com.
+
+**Long answer:** Rudder is a platform for collecting, storing and routing customer event data to dozens of tools. Rudder is open-source, can run in your own cloud environment (AWS, GCP, Azure or even your own data-center) and provides a powerful transformation framework to process your event data on the fly.
+
+
+Why Rudder ?
+============
+
+We are building Rudder because we believe open-source and cloud-prem is important for three main reasons
+
+1. **Privacy & Security:** You should be able to collect and store your customer data without sending everything to a 3rd party vendor or embedding proprietary SDKs. In addition, Rudder gives you fine grained control over what data to forward to what analytical tool.
+
+2. **Processing Flexibility:** You should be able to enhance OR transform your event data by combining it with your other *internal* data, e.g. stored in your transactional systems. Rudder makes that possible because it provides a powerful JS based event transformation framework. Furthermore, since Rudder runs *inside* your cloud or on-prem environment, you can access your production data to join with the event data.
+
+3. **Pricing:** Event volume based pricing of most commercial system is broken. You should be able to collect as much data as possible without worrying about overrunning event budgets.
+
+
 Main Page
 =========
 
@@ -27,6 +50,19 @@ The docker setup is the easiest & fastest way to try out Rudder.
 
 Setup Instructions (this repo)
 ==============================
+
+If you want to run each of the services without docker please follow the following steps
+
+1. Install Golang 1.12 or above
+2. Install NodeJS 10.6 or above
+3. Install PostgreSQL 10 or above
+4. Login to https://app.rudderlabs.com and setup your account. Copy your workspace token from top of the home page
+5. Clone this repository and navigate to the transformer directory `cd rudder-transformer`
+6. Start the user and destination transformers as separate processes `node userTransformer.js` and `node destTransformer.js`
+7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
+8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4
+9. Run the backend server `go run -mod=vendor main.go`
+10. Setup your sources from the dashboard `https://app.rudderlabs.com` and start sending events using the test script (mentioned in step 5 of Docker setup instructions) or our SDKs.
 
 
 Architecture
