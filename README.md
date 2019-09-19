@@ -14,7 +14,7 @@ Why Rudder ?
 
 We believe open-source and cloud-prem is important for three main reasons
 
-1. Privacy & Security: You should be able to collect and store your customer data without sending everything to 3rd party vendors or embedding proprietary SDKs. Furthermore, Rudder gives you fine grained control over what data to forward to what analytical tool.
+1. Privacy & Security: You should be able to collect and store your customer data without sending everything to 3rd party vendors or embedding proprietary SDKs. Rudder gives you fine grained control over what data to forward to what analytical tool.
 
 2. Flexibility: You should be able to transform and enhance your event data by combining it with your other *internal* data stored in your transactional systems. Running *inside* your cloud environment makes that possible.
 
