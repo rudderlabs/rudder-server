@@ -14,7 +14,7 @@ We believe open-source and cloud-prem is important for three main reasons
 
 1. **Privacy & Security:** You should be able to collect and store your customer data without sending everything to 3rd party vendors or embedding proprietary SDKs. In addition, Rudder gives you fine grained control over what data to forward to what analytical tool.
 
-2. **Processing Flexibility:** You should be able to enhance OR transform your event data by combining it with your other *internal* data, e.g. stored in your transactional systems. Since Rudder runs *inside* your cloud or on-prem environment, it makes that possible.
+2. **Processing Flexibility:** You should be able to enhance OR transform your event data by combining it with your other *internal* data, e.g. stored in your transactional systems. Rudder makes that possible because it provides a powerful event transformation framework. Also, since Rudder runs *inside* your cloud or on-prem environment, you can access your production data to join with the event data.
 
 3. **Pricing:** Event volume based pricing of most commercial system is broken. You should be able to collect as much data as possible without worrying about overrunning event budgets.
 
