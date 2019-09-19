@@ -62,6 +62,8 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 9. Run the backend server `go run -mod=vendor main.go`
 10. Setup your sources from the dashboard `https://app.rudderlabs.com` and start sending events using the test script (mentioned in step 5 of Docker setup instructions) or our SDKs.
 
+On a single m4.2xlarge, Rudder can process ~3K events/sec. We will publish detailed performance numbers on other instance types soon.
+
 # Architecture
 
 The following is a brief overview of the major components of Rudder Stack.
@@ -105,7 +107,8 @@ The client SDKs provide APIs collecting events and sending it to the Rudder Back
 
 # Coming Soon
 
-1. More documentation
+1. More performance benchmarks. On a single m4.2xlarge, Rudder can process ~3K events/sec. We will evaluate on other instance types and publish numbers soon.
+2. More documentation
 2. More destination support
 3. HA support
 
