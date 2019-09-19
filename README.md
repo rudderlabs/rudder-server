@@ -1,8 +1,26 @@
 
 # Rudder
 
-Rudder is an open source Segment alternative built with a focus on Privacy and Security written in Go and React. " https://rudderlabs.com.
+Rudder is an open source Segment alternative written in Go. https://rudderlabs.com.
  
+What is Rudder?
+===============
+
+Rudder is a platform for collecting, storing and routing customer event data to dozens of tools, just like Segment. In addition, Rudder is open-source, can run in your own cloud environment (AWS, GCP, Azure or even your own data-center) and provides a powerful transformation framework to process your event data.
+
+
+Why Open-Source & Cloud-Prem ?
+=============================
+
+We believe Open-Source and Cloud-Prem is important for three main reasons
+
+1. Privacy & Security: You should be able to collect and store your customer data without sending everything to 3rd party vendors or embedding proprietary SDKs. Rudder gives you fine grained control over what data to forward to what analytical tool.
+
+2. Flexibility: You should be able to transform and enhance your event data by combining it with your other *internal* data stored in your transactional systems.
+
+3. Pricing: Event volume based pricing of most commercial system is broken. You should be able to collect as much data as possible.
+
+
 Main Page
 =========
 
