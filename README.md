@@ -32,14 +32,14 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 # Main UI Page
 
-![image](https://user-images.githubusercontent.com/52487451/64673168-0b802180-d48b-11e9-8535-9292eff0aa45.png)
+![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
 
 # Setup Instructions (Docker)
 
 The docker setup is the easiest & fastest way to try out Rudder.
 
 1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and setup your account. Copy your workspace token from top of the home page.
-2. Clone this repository and replace `<your_workspace_token>` with the above token
+2. Clone this repository and replace `<your_workspace_token>` in `build/docker.env` with the above token
 3. Run the command `docker-compose up` to bring up all the services.
 4. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID.
 5. Create one source (Android or iOS) and configure a Google Analytics destination for the same with the above tracking ID
