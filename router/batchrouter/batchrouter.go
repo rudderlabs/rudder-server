@@ -45,7 +45,7 @@ func backendConfigSubscriber() {
 
 func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	uuid := uuid.NewV4()
-	path := fmt.Sprintf("%v%v", config.GetEnv("TMPDIRs", "/Users/srikanth/s3/"), fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
+	path := fmt.Sprintf("%v%v.json", config.GetEnv("TMPDIRs", "/Users/srikanth/s3/"), fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
 	unzippedFile, err := os.Create(path)
 	misc.AssertError(err)
 	for _, job := range batchJobs.Jobs {

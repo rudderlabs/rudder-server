@@ -27,6 +27,7 @@ func (uploader *S3Uploader) Upload(file *os.File, prefixes ...string) error {
 	}
 	fileName += splitFileName[len(splitFileName)-1]
 	_, err = manager.Upload(&s3manager.UploadInput{
+		ACL:    aws.String("bucket-owner-full-control"),
 		Bucket: aws.String(uploader.bucket),
 		Key:    aws.String(fileName),
 		Body:   file,
