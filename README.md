@@ -32,7 +32,7 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 # Main UI Page
 
-![image](https://user-images.githubusercontent.com/52487451/64673168-0b802180-d48b-11e9-8535-9292eff0aa45.png)
+![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
 
 # Setup Instructions (Docker)
 
