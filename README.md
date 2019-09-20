@@ -8,7 +8,7 @@
 
 Rudder runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation codes which are node scripts. This repo contains the core backend and the transformation modules of Rudder. The client SDKs and UI code are in a separate repo. 
 
-Rudder server is released under SSPL License (https://www.mongodb.com/licensing/server-side-public-license)
+Rudder server is released under [SSPL License](https://www.mongodb.com/licensing/server-side-public-license)
 
 # Why Rudder ?
 
