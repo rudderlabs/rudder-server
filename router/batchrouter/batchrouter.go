@@ -16,6 +16,16 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
+var (
+	jobQueryBatchSize    int
+	noOfWorkers          int
+	mainLoopSleepInS     int
+	batchDestinations    []BatchDestinationT
+	configSubscriberLock sync.RWMutex
+	rawDataDestinations  []string
+	inProgressMap        map[string]bool
+)
+
 type HandleT struct {
 	processQ  chan BatchJobsT
 	jobsDB    *jobsdb.HandleT
@@ -33,7 +43,7 @@ func backendConfigSubscriber() {
 		for _, source := range allSources.Sources {
 			if source.Enabled && len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if destination.DestinationDefinition.Name == "S3" {
+					if misc.Contains(rawDataDestinations, destination.DestinationDefinition.Name) {
 						batchDestinations = append(batchDestinations, BatchDestinationT{Source: source, Destination: destination})
 					}
 				}
@@ -45,7 +55,7 @@ func backendConfigSubscriber() {
 
 func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	uuid := uuid.NewV4()
-	path := fmt.Sprintf("%v%v.json", config.GetEnv("TMPDIRs", "/Users/srikanth/s3/"), fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
+	path := fmt.Sprintf("%v%v.json", config.GetEnv("TMPDIR", "/home/ubuntu/s3/"), fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
 	unzippedFile, err := os.Create(path)
 	misc.AssertError(err)
 	for _, job := range batchJobs.Jobs {
@@ -66,7 +76,7 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 		Provider:       "s3",
 		AmazonS3Bucket: bucketName,
 	})
-	err = uploader.Upload(zipFile, "rudder-logs", batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
+	err = uploader.Upload(zipFile, config.GetEnv("DESTINATION_S3_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 	var jobState string
 	if err != nil {
 		jobState = jobsdb.FailedState
@@ -108,6 +118,7 @@ func (brt *HandleT) initWorkers() {
 					switch batchJobs.BatchDestination.Destination.DestinationDefinition.Name {
 					case "S3":
 						brt.copyJobsToS3(batchJobs)
+						delete(inProgressMap, batchJobs.BatchDestination.Source.ID)
 					}
 				}
 			}
@@ -133,6 +144,9 @@ func (brt *HandleT) mainLoop() {
 		}
 		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
 		for _, batchDestination := range batchDestinations {
+			if inProgressMap[batchDestination.Source.ID] {
+				continue
+			}
 			toQuery := jobQueryBatchSize
 			retryList := brt.jobsDB.GetToRetry([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID)
 			toQuery -= len(retryList)
@@ -163,7 +177,7 @@ func (brt *HandleT) mainLoop() {
 
 			//Mark the jobs as executing
 			brt.jobsDB.UpdateJobStatus(statusList, []string{batchDestination.Destination.DestinationDefinition.Name})
-
+			inProgressMap[batchDestination.Source.ID] = true
 			brt.processQ <- BatchJobsT{Jobs: combinedList, BatchDestination: batchDestination}
 		}
 	}
@@ -207,18 +221,12 @@ func (brt *HandleT) crashRecover() {
 	}
 }
 
-var (
-	jobQueryBatchSize    int
-	noOfWorkers          int
-	mainLoopSleepInS     int
-	batchDestinations    []BatchDestinationT
-	configSubscriberLock sync.RWMutex
-)
-
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
 	mainLoopSleepInS = config.GetInt("BatchRouter.mainLoopSleepInS", 5)
+	rawDataDestinations = []string{"S3"}
+	inProgressMap = map[string]bool{}
 }
 
 func init() {
@@ -232,7 +240,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT) {
 	brt.jobsDB = jobsDB
 	brt.processQ = make(chan BatchJobsT)
 	brt.crashRecover()
-	// brt.isEnabled = true
+	brt.isEnabled = false
 
 	go brt.initWorkers()
 	go backendConfigSubscriber()

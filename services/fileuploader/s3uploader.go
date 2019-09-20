@@ -14,7 +14,7 @@ import (
 // Upload passed in file to s3
 func (uploader *S3Uploader) Upload(file *os.File, prefixes ...string) error {
 	getRegionSession := session.Must(session.NewSession())
-	region, err := s3manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, uploader.bucket, "us-west-2")
+	region, err := s3manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, uploader.bucket, "us-east-1")
 	uploadSession := session.Must(session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(config.GetEnv("IAM_S3_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_S3_COPY_SECRET_ACCESS_KEY", ""), ""),

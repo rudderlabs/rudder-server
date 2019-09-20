@@ -80,6 +80,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 							enableBatchRouter = true
 							brt.Enable()
 							if !isBatchRouterSetup {
+								isBatchRouterSetup = true
 								brt.Setup(batchRouterDB)
 							}
 						} else {
