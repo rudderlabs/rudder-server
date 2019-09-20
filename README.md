@@ -6,8 +6,7 @@
 
 **Long answer:** Rudder is a platform for collecting, storing and routing customer event data to dozens of tools. Rudder is open-source, can run in your own cloud environment (AWS, GCP, Azure or even your own data-center) and provides a powerful transformation framework to process your event data on the fly.
 
-Rudder runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation codes which are node scripts. This repo contains the core backend and the transformation modules of Rudder. The client SDKs and UI code are in a separate repo. 
-
+Rudder runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation codes which are node scripts. This repo contains the core backend and the transformation modules of Rudder. The client SDKs and UI code are in a separate repo.
 
 # Why Rudder ?
 
@@ -29,7 +28,6 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 6. Rich UI written in react.
 7. Android, iOS, Unity & Javascript SDKs. Server side SDKs coming soon.
 
-
 # Main UI Page
 
 ![image](https://user-images.githubusercontent.com/52487451/64673168-0b802180-d48b-11e9-8535-9292eff0aa45.png)
@@ -38,17 +36,15 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 The docker setup is the easiest & fastest way to try out Rudder.
 
-1. Checkout this repo https://github.com/rudderlabs/rudder-oss
-2. Run the command `docker-compose up` to bring up all the services.
-3. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID.
-4. Go to http://localhost:3000 to set up source and destinations. Add a new source from the dropdown for Android/iOS source definitions. Configure your Google Analytics destination with the tracking ID from step above.
-
-5. We have bundled a shell script that can generate test events. Get the “writeKey” from our app dashboard and then run the following command. Run `./generate-event <writeKeyHere>`
-   The script generates a sample event and sends it to the backend container that is running in docker. Based on our destination configuration, the backend will transform the event and forward it to the configured destination.
-
-6. You can then login to your Google Analytics account and verify that events are delivered in the correct order.
-
-7. You can use our Android, iOS or Javascript SDKs for sending events from your app.
+1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and setup your account. Copy your workspace token from top of the home page.
+2. Clone this repository and replace `<your_workspace_token>` with the above token
+3. Run the command `docker-compose up` to bring up all the services.
+4. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID.
+5. Create one source (Android or iOS) and configure a Google Analytics destination for the same with the above tracking ID
+6. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `./scripts/generate-event <writeKeyHere>`
+7. You can then login to your Google Analytics account and verify that events are delivered in the correct order.
+8. You can use our Android, iOS or Javascript SDKs for sending events from your app.
+9. If you want to try a demo version, checkout `https://github.com/rudderlabs/rudder-docker`
 
 # Setup Instructions (this repo)
 
@@ -65,14 +61,13 @@ psql "jobsdb" -c "alter user rudder with encrypted password 'rudder'";
 psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 ```
 
-4. Go to the [dashboard](https://app.rudderlabs.com) and setup your account. Copy your workspace token from top of the home page
+4. Go to the [dashboard](https://app.rudderlabs.com) and setup your account. Copy your workspace token from top of the home page.
 5. Clone this repository and navigate to the transformer directory `cd rudder-transformer`
 6. Start the user and destination transformers as separate processes `node userTransformer.js` and `node destTransformer.js`
 7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
-8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4
+8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4.
 9. Run the backend server `go run -mod=vendor main.go`
 10. Setup your sources from the dashboard `https://app.rudderlabs.com` and start sending events using the test script (mentioned in step 5 of Docker setup instructions) or our SDKs.
-
 
 # Architecture
 
@@ -119,7 +114,6 @@ The client SDKs provide APIs collecting events and sending it to the Rudder Back
 
 1. More performance benchmarks. On a single m4.2xlarge, Rudder can process ~3K events/sec. We will evaluate on other instance types and publish numbers soon.
 2. More documentation
-2. More destination support
-3. HA support
-4. More SDKs
-
+3. More destination support
+4. HA support
+5. More SDKs
