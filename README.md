@@ -2,11 +2,13 @@
 
 # What is Rudder?
 
-**Short answer:** Rudder is an open source Segment alternative written in Go. https://rudderlabs.com.
+**Short answer:** Rudder is an open source Segment alternative written in Go, built for the enterprise. https://rudderlabs.com.
 
 **Long answer:** Rudder is a platform for collecting, storing and routing customer event data to dozens of tools. Rudder is open-source, can run in your own cloud environment (AWS, GCP, Azure or even your own data-center) and provides a powerful transformation framework to process your event data on the fly.
 
 Rudder runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation codes which are node scripts. This repo contains the core backend and the transformation modules of Rudder. The client SDKs and UI code are in a separate repo.
+
+Rudder server is released under [SSPL License](https://www.mongodb.com/licensing/server-side-public-license)
 
 # Why Rudder ?
 
@@ -16,7 +18,7 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 2. **Processing Flexibility:** You should be able to enhance OR transform your event data by combining it with your other _internal_ data, e.g. stored in your transactional systems. Rudder makes that possible because it provides a powerful JS based event transformation framework. Furthermore, since Rudder runs _inside_ your cloud or on-prem environment, you can access your production data to join with the event data.
 
-3. **Unlimited Event Budget:** Event volume based pricing of most commercial systems is broken. You should be able to collect as much data as possible without worrying about overrunning event budgets. Rudder's core BE is open-source and free to use.
+3. **Unlimited Events:** Event volume based pricing of most commercial systems is broken. You should be able to collect as much data as possible without worrying about overrunning event budgets. Rudder's core BE is open-source and free to use.
 
 ## Features
 
@@ -46,7 +48,7 @@ The docker setup is the easiest & fastest way to try out Rudder.
 8. You can use our Android, iOS or Javascript SDKs for sending events from your app.
 9. If you want to try a demo version, checkout `https://github.com/rudderlabs/rudder-docker`
 
-# Setup Instructions (this repo)
+# Setup Instructions (Native Installation)
 
 If you want to run each of the services without docker please follow the following steps
 
@@ -61,11 +63,11 @@ psql "jobsdb" -c "alter user rudder with encrypted password 'rudder'";
 psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 ```
 
-4. Go to the [dashboard](https://app.rudderlabs.com) and setup your account. Copy your workspace token from top of the home page.
+4. Go to the [dashboard](https://app.rudderlabs.com/signup) and setup your account. Copy your workspace token from top of the home page
 5. Clone this repository and navigate to the transformer directory `cd rudder-transformer`
 6. Start the user and destination transformers as separate processes `node userTransformer.js` and `node destTransformer.js`
 7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
-8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4.
+8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4
 9. Run the backend server `go run -mod=vendor main.go`
 10. Setup your sources from the dashboard `https://app.rudderlabs.com` and start sending events using the test script (mentioned in step 5 of Docker setup instructions) or our SDKs.
 
