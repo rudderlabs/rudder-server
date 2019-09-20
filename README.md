@@ -66,7 +66,7 @@ psql "jobsdb" -c "alter user rudder with encrypted password 'rudder'";
 psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 ```
 
-4. Go to the [dashboard](https://app.rudderlabs.com) and setup your account. Copy your workspace token from top of the home page
+4. Go to the [dashboard](https://app.rudderlabs.com/signup) and setup your account. Copy your workspace token from top of the home page
 5. Clone this repository and navigate to the transformer directory `cd rudder-transformer`
 6. Start the user and destination transformers as separate processes `node userTransformer.js` and `node destTransformer.js`
 7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
