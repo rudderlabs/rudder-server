@@ -17,7 +17,7 @@ func (uploader *S3Uploader) Upload(file *os.File, prefixes ...string) error {
 	region, err := s3manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, uploader.bucket, "us-west-2")
 	uploadSession := session.Must(session.NewSession(&aws.Config{
 		Region:      aws.String(region),
-		Credentials: credentials.NewStaticCredentials(config.GetEnv("IAM_S3_COPY_ACCESS_KEY_ID", "AKIAWTVBJHCTFHQMTMOW"), config.GetEnv("IAM_S3_COPY_SECRET_ACCESS_KEY", "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"), ""),
+		Credentials: credentials.NewStaticCredentials(config.GetEnv("IAM_S3_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_S3_COPY_SECRET_ACCESS_KEY", ""), ""),
 	}))
 	manager := s3manager.NewUploader(uploadSession)
 	splitFileName := strings.Split(file.Name(), "/")
