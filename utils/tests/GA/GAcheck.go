@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"

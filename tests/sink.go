@@ -15,7 +15,7 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/go-redis/redis"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"golang.org/x/time/rate"
 )

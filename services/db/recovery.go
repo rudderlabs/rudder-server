@@ -1,15 +1,18 @@
 package db
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"sort"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/misc"
-	"github.com/rudderlabs/rudder-server/misc/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 const (
@@ -120,6 +123,23 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 	return recoveryHandler
 }
 
+func alertOps(mode string) {
+	instanceName := config.GetEnv("INSTANCE_NAME", "")
+	url := config.GetEnv("OPS_ALERT_URL", "")
+	event := map[string]interface{}{
+		"message_type":  "CRITICAL",
+		"entity_id":     fmt.Sprintf("%s-data-plane-%s-mode", instanceName, mode),
+		"state_message": fmt.Sprintf("Dataplane server %s entered %s mode", instanceName, mode),
+	}
+	eventJSON, _ := json.Marshal(event)
+	client := &http.Client{}
+	resp, err := client.Post(url, "application/json", bytes.NewBuffer(eventJSON))
+	// Not handling errors when sending alert to victorops
+	if err == nil {
+		defer resp.Body.Close()
+	}
+}
+
 func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool) {
 
 	enabled := config.GetBool("recovery.enabled", false)
@@ -145,6 +165,10 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool)
 		}
 		recoveryData.Mode = nextMode
 		recoveryHandler = NewRecoveryHandler(&recoveryData)
+	}
+
+	if recoveryData.Mode != normalMode {
+		alertOps(recoveryData.Mode)
 	}
 	currTime := time.Now().Unix()
 	recoveryHandler.RecordAppStart(currTime)

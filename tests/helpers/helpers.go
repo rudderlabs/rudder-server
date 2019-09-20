@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/sjson"
 )

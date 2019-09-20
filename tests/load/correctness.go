@@ -20,7 +20,7 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
