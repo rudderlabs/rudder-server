@@ -7,6 +7,7 @@ phases:
   build:
     commands:
       - printenv
+      - sed -i -e 's/^CONFIG_BACKEND_TOKEN=.*$/CONFIG_BACKEND_TOKEN=1REVB1mLYUy42E97FmwHMQfCPwX' build/docker.env
       - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/config_overrides.toml > tests/e2e/config.toml
       - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' build/docker.env
       - docker-compose -f build/docker-compose.codebuild.yml up -d
