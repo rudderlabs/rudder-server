@@ -11,8 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
-
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -20,8 +18,10 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -31,6 +31,7 @@ var (
 	enableProcessor, enableRouter, enableBackup bool
 	enabledDestinations                         []backendconfig.DestinationT
 	configSubscriberLock                        sync.RWMutex
+	rawDataDestinations                         []string
 )
 
 func loadConfig() {
@@ -40,6 +41,7 @@ func loadConfig() {
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
 	enableBackup = config.GetBool("JobsDB.enableBackup", true)
+	rawDataDestinations = []string{"S3"}
 }
 
 // Test Function
@@ -56,30 +58,45 @@ func readIOforResume(router router.HandleT) {
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(routeDb *jobsdb.HandleT) {
+func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Eb.Subscribe("backendconfig", ch)
 	dstToRouter := make(map[string]*router.HandleT)
+	isBatchRouterSetup := false
+	var brt batchrouter.HandleT
+
 	for {
 		config := <-ch
 		logger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations = enabledDestinations[:0]
+		enableBatchRouter := false
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				for _, destination := range source.Destinations {
 					if destination.Enabled {
 						enabledDestinations = append(enabledDestinations, destination)
-						rt, ok := dstToRouter[destination.DestinationDefinition.Name]
-						if !ok {
-							logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
-							var router router.HandleT
-							router.Setup(routeDb, destination.DestinationDefinition.Name)
-							dstToRouter[destination.DestinationDefinition.Name] = &router
+						if misc.Contains(rawDataDestinations, destination.DestinationDefinition.Name) {
+							enableBatchRouter = true
+							brt.Enable()
+							if !isBatchRouterSetup {
+								isBatchRouterSetup = true
+								brt.Setup(batchRouterDB)
+							}
 						} else {
-							logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
-							rt.Enable()
+							rt, ok := dstToRouter[destination.DestinationDefinition.Name]
+							if !ok {
+								logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
+								var router router.HandleT
+								router.Setup(routerDB, destination.DestinationDefinition.Name)
+								dstToRouter[destination.DestinationDefinition.Name] = &router
+							} else {
+								logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
+								rt.Enable()
+							}
+
 						}
+
 					}
 				}
 			}
@@ -97,6 +114,9 @@ func monitorDestRouters(routeDb *jobsdb.HandleT) {
 				logger.Info("Disabling a existing destination", destID)
 				rtHandle.Disable()
 			}
+		}
+		if !enableBatchRouter {
+			brt.Disable()
 		}
 	}
 }
@@ -165,6 +185,7 @@ func main() {
 
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
+	var batchRouterDB jobsdb.HandleT
 
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB", *clearDB)
@@ -172,15 +193,17 @@ func main() {
 	backendconfig.Setup()
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup && true)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, false)
+
 	//Setup the three modules, the gateway, the router and the processor
 
 	if enableRouter {
-		go monitorDestRouters(&routerDB)
+		go monitorDestRouters(&routerDB, &batchRouterDB)
 	}
 
 	if enableProcessor {
 		var processor processor.HandleT
-		processor.Setup(&gatewayDB, &routerDB)
+		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
 	}
 
 	var gateway gateway.HandleT

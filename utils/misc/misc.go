@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -136,7 +137,8 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 
 	// Using FileInfoHeader() above only uses the basename of the file. If we want
 	// to preserve the folder structure we can overwrite this with the full path.
-	header.Name = filename
+	// uncomment this line to preserve folder structure
+	// header.Name = filename
 
 	// Change to deflate to gain better compression
 	// see http://golang.org/pkg/archive/zip/#pkg-constants
@@ -258,4 +260,42 @@ func GetIPFromReq(req *http.Request) string {
 	}
 	strings.Replace(addresses[0], " ", "", -1)
 	return addresses[0]
+}
+
+func equal(expected, actual interface{}) bool {
+	if expected == nil || actual == nil {
+		return expected == actual
+	}
+
+	return reflect.DeepEqual(expected, actual)
+
+}
+
+// Contains returns true if an element is present in a iteratee.
+// https://github.com/thoas/go-funk
+func Contains(in interface{}, elem interface{}) bool {
+	inValue := reflect.ValueOf(in)
+	elemValue := reflect.ValueOf(elem)
+	inType := inValue.Type()
+
+	switch inType.Kind() {
+	case reflect.String:
+		return strings.Contains(inValue.String(), elemValue.String())
+	case reflect.Map:
+		for _, key := range inValue.MapKeys() {
+			if equal(key.Interface(), elem) {
+				return true
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < inValue.Len(); i++ {
+			if equal(inValue.Index(i).Interface(), elem) {
+				return true
+			}
+		}
+	default:
+		AssertError(fmt.Errorf("Type %s is not supported by Contains, supported types are String, Map, Slice, Array", inType.String()))
+	}
+
+	return false
 }

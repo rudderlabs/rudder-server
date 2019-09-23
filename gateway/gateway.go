@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -45,7 +45,7 @@ var (
 	webPort, maxBatchSize, maxDBWriterProcess int
 	batchTimeout                              time.Duration
 	respMessage                               string
-	enabledWriteKeys                          []string
+	enabledWriteKeysSourceMap                 map[string]string
 	configSubscriberLock                      sync.RWMutex
 	maxReqSize                                int
 )
@@ -129,6 +129,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, enabledWriteKeysSourceMap[gjson.Get(fmt.Sprintf("%s", body), "writeKey").Str])),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    CustomVal,
@@ -149,21 +150,12 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 	}
 }
 
-func contains(slice []string, str string) bool {
-	for _, s := range slice {
-		if s == str {
-			return true
-		}
-	}
-	return false
-}
-
 func (gateway *HandleT) verifyRequestBodyConfig(body []byte) bool {
 	bodyJSON := fmt.Sprintf("%s", body)
 	writeKey := gjson.Get(bodyJSON, "writeKey")
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	if !contains(enabledWriteKeys, writeKey.Str) {
+	if !misc.Contains(enabledWriteKeysSourceMap, writeKey.Str) {
 		return false
 	}
 	return true
@@ -253,11 +245,11 @@ func backendConfigSubscriber() {
 	for {
 		config := <-ch1
 		configSubscriberLock.Lock()
-		enabledWriteKeys = []string{}
+		enabledWriteKeysSourceMap = map[string]string{}
 		sources := config.Data.(backendconfig.SourcesT)
 		for _, source := range sources.Sources {
 			if source.Enabled {
-				enabledWriteKeys = append(enabledWriteKeys, source.WriteKey)
+				enabledWriteKeysSourceMap[source.WriteKey] = source.ID
 			}
 		}
 		configSubscriberLock.Unlock()
