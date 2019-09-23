@@ -230,7 +230,12 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("success"))
+	var json = []byte(`{"server":"UP","db":"UP"}`)
+	sjson.SetBytes(json, "server", "UP")
+	if !gateway.jobsDB.CheckPGHealth() {
+		sjson.SetBytes(json, "db", "DOWN")
+	}
+	w.Write(json)
 }
 
 func (gateway *HandleT) startWebHandler() {
