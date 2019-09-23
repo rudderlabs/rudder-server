@@ -37,8 +37,8 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/lib/pq"
 	uuid "github.com/satori/go.uuid"
@@ -68,12 +68,12 @@ job  while rest should be set by the user.
 type JobT struct {
 	UUID          uuid.UUID
 	JobID         int64
-	SourceID      string
 	CreatedAt     time.Time
 	ExpireAt      time.Time
 	CustomVal     string
 	EventPayload  json.RawMessage
 	LastJobStatus JobStatusT
+	Parameters    json.RawMessage
 }
 
 //The struct fields need to be exposed to JSON package
@@ -621,7 +621,7 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
                                       job_id BIGSERIAL PRIMARY KEY,
                                       uuid UUID NOT NULL,
-                                      source_id VARCHAR(64),
+									  parameters JSONB NOT NULL,
                                       custom_val VARCHAR(64) NOT NULL,
                                       event_payload JSONB NOT NULL,
                                       created_at TIMESTAMP NOT NULL,
@@ -863,11 +863,11 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 	errorMessagesMap = make(map[uuid.UUID]string)
 
 	if copyID {
-		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "custom_val",
+		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "parameters", "custom_val",
 			"event_payload", "created_at", "expire_at"))
 		jd.assertError(err)
 	} else {
-		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "source_id", "custom_val", "event_payload",
+		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "parameters", "custom_val", "event_payload",
 			"created_at", "expire_at"))
 		jd.assertError(err)
 	}
@@ -878,10 +878,10 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 			errorMessagesMap[job.UUID] = ""
 		}
 		if copyID {
-			_, err = stmt.Exec(job.JobID, job.UUID, job.CustomVal,
+			_, err = stmt.Exec(job.JobID, job.UUID, job.Parameters, job.CustomVal,
 				string(job.EventPayload), job.CreatedAt, job.ExpireAt)
 		} else {
-			_, err = stmt.Exec(job.UUID, job.SourceID, job.CustomVal, string(job.EventPayload),
+			_, err = stmt.Exec(job.UUID, job.Parameters, job.CustomVal, string(job.EventPayload),
 				job.CreatedAt, job.ExpireAt)
 		}
 		jd.assertError(err)
@@ -907,13 +907,13 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 
 func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (errorMessage string) {
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (uuid, custom_val, event_payload, created_at, expire_at)
-                                       VALUES ($1, $2, $3, $4, $5) RETURNING job_id`, ds.JobTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (uuid, custom_val, parameters, event_payload, created_at, expire_at)
+                                       VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds.JobTable)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
 
-	_, err = stmt.Exec(job.UUID, job.CustomVal, string(job.EventPayload),
+	_, err = stmt.Exec(job.UUID, job.CustomVal, string(job.Parameters), string(job.EventPayload),
 		job.CreatedAt, job.ExpireAt)
 	if err == nil {
 		return
@@ -931,6 +931,16 @@ func (jd *HandleT) constructQuery(paramKey string, paramList []string, queryType
 	var queryList []string
 	for _, p := range paramList {
 		queryList = append(queryList, "("+paramKey+"='"+p+"')")
+	}
+	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
+}
+
+func (jd *HandleT) constructJSONQuery(paramKey string, jsonKey string, paramList []string, queryType string) string {
+	jd.assert(queryType == "OR" || queryType == "AND")
+	var queryList []string
+	for _, p := range paramList {
+		queryList = append(queryList, "("+paramKey+"@>'{"+fmt.Sprintf(`"%s"`, jsonKey)+":"+fmt.Sprintf(`"%s"`, p)+"}')")
+
 	}
 	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
 }
@@ -1038,9 +1048,8 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 
 	if len(sourceIDFilters) > 0 {
 		jd.assert(!getAll)
-		sourceQuery = " AND " +
-			jd.constructQuery(fmt.Sprintf("%s.source_id", ds.JobTable),
-				sourceIDFilters, "OR")
+		sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
+			sourceIDFilters, "OR")
 	} else {
 		sourceQuery = ""
 	}
@@ -1055,7 +1064,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	var rows *sql.Rows
 	if getAll {
 		sqlStatement := fmt.Sprintf(`SELECT
-                                  %[1]s.job_id, %[1]s.uuid, %[1]s.source_id,  %[1]s.custom_val, %[1]s.event_payload,
+                                  %[1]s.job_id, %[1]s.uuid, %[1]s.parameters,  %[1]s.custom_val, %[1]s.event_payload,
                                   %[1]s.created_at, %[1]s.expire_at,
                                   job_latest_state.job_state, job_latest_state.attempt,
                                   job_latest_state.exec_time, job_latest_state.retry_time,
@@ -1074,7 +1083,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 		jd.assertError(err)
 	} else {
 		sqlStatement := fmt.Sprintf(`SELECT
-                                               %[1]s.job_id, %[1]s.uuid,  %[1]s.source_id, %[1]s.custom_val, %[1]s.event_payload,
+                                               %[1]s.job_id, %[1]s.uuid,  %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload,
                                                %[1]s.created_at, %[1]s.expire_at,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
@@ -1089,6 +1098,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
                                              %[4]s %[5]s
                                              AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[6]s`,
 			ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
+		// fmt.Println(sqlStatement)
 
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
 
@@ -1102,7 +1112,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
-		err := rows.Scan(&job.JobID, &job.UUID, &job.SourceID, &job.CustomVal,
+		err := rows.Scan(&job.JobID, &job.UUID, &job.Parameters, &job.CustomVal,
 			&job.EventPayload, &job.CreatedAt, &job.ExpireAt,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
@@ -1132,13 +1142,13 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	var sqlStatement string
 
 	if useJoinForUnprocessed {
-		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid,  %[1]s.source_id, %[1]s.custom_val,
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
                                                %[1]s.expire_at
                                              FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
                                              WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable)
 	} else {
-		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid,  %[1]s.source_id, %[1]s.custom_val,
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
                                                %[1]s.expire_at
                                              FROM %[1]s WHERE %[1]s.job_id NOT IN (SELECT DISTINCT(%[2]s.job_id)
@@ -1151,7 +1161,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	}
 
 	if len(sourceIDFilters) > 0 {
-		sqlStatement += " AND " + jd.constructQuery(fmt.Sprintf("%s.source_id", ds.JobTable),
+		sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
 			sourceIDFilters, "OR")
 	}
 
@@ -1169,7 +1179,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
-		err := rows.Scan(&job.JobID, &job.UUID, &job.SourceID, &job.CustomVal,
+		err := rows.Scan(&job.JobID, &job.UUID, &job.Parameters, &job.CustomVal,
 			&job.EventPayload, &job.CreatedAt, &job.ExpireAt)
 		jd.assertError(err)
 		jobList = append(jobList, &job)
@@ -1853,7 +1863,7 @@ func (jd *HandleT) createTables() error {
 	sqlStatement := `CREATE TABLE jobs (
                              job_id BIGSERIAL PRIMARY KEY,
 							 uuid UUID NOT NULL,
-							 source_id VARCHAR(64),
+							 parameters JSONB NOT NULL,
                              custom_val INT NOT NULL,
                              event_payload JSONB NOT NULL,
                              created_at TIMESTAMP NOT NULL,

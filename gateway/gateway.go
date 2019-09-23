@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -129,7 +129,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				SourceID:     enabledWriteKeysSourceMap[gjson.Get(fmt.Sprintf("%s", body), "writeKey").Str],
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, enabledWriteKeysSourceMap[gjson.Get(fmt.Sprintf("%s", body), "writeKey").Str])),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    CustomVal,

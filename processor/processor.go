@@ -427,7 +427,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						}
 						shallowEventCopy["rl_message"].(map[string]interface{})["rl_destination"] = reflect.ValueOf(destination).Interface()
 						shallowEventCopy["rl_message"].(map[string]interface{})["rl_request_ip"] = requestIP
-						shallowEventCopy["rl_message"].(map[string]interface{})["rl_source_id"] = batchEvent.SourceID
+						shallowEventCopy["rl_message"].(map[string]interface{})["rl_source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDest[destType]
@@ -481,7 +481,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			sourceID := destEventList[idx].(map[string]interface{})["rl_message"].(map[string]interface{})["rl_source_id"].(string)
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				SourceID:     sourceID,
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destID,
