@@ -13,12 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-<<<<<<< HEAD
-	"github.com/rudderlabs/rudder-server/misc"
-	"github.com/rudderlabs/rudder-server/misc/logger"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
-=======
->>>>>>> master
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -138,7 +133,9 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
-			writeKey := gjson.Get(string(body), "writeKey").Str
+			bodyJSON := fmt.Sprintf("%s", body)
+			events = append(events, &bodyJSON)
+			writeKey := gjson.Get(bodyJSON, "writeKey").Str
 			misc.IncrementMapByKey(writeKeyStats, writeKey)
 			if err != nil {
 				req.done <- "Failed to read body from request"
@@ -152,12 +149,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
 				continue
 			}
-
-			bodyJSON := fmt.Sprintf("%s", body)
-			writeKey := gjson.Get(bodyJSON, "writeKey")
-			events = append(events, &bodyJSON)
-
-			if !gateway.isWriteKeyEnabled(writeKey.Str) {
+			if !gateway.isWriteKeyEnabled(writeKey) {
 				req.done <- "Invalid Write Key"
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
@@ -208,7 +200,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	if !misc.Contains(enabledWriteKeysSourceMap, writeKey.Str) {
+	if !misc.Contains(enabledWriteKeysSourceMap, writeKey) {
 		return false
 	}
 	return true
