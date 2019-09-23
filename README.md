@@ -33,7 +33,7 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 # Get Involved 
 
-Join our (Discord)[https://discordapp.com/invite/xNEdEGw] or (Slack)[https://rudderlabs.herokuapp.com/] channels
+Join our [Discord](https://discordapp.com/invite/xNEdEGw) or [Slack](https://rudderlabs.herokuapp.com/) channels
 
 # Main UI Page
 
