@@ -11,6 +11,8 @@ The client SDKs are in a separate rep [Rudder Client SDKs](https://github.com/ru
 
 Rudder server is released under [SSPL License](https://www.mongodb.com/licensing/server-side-public-license)
 
+Questions? Join our [Discord](https://discordapp.com/invite/xNEdEGw) or [Slack](https://rudderlabs.herokuapp.com/) channels
+
 # Why Rudder ?
 
 We are building Rudder because we believe open-source and cloud-prem is important for three main reasons
