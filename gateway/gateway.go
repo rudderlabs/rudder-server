@@ -88,13 +88,36 @@ type HandleT struct {
 	recvCount     uint64
 }
 
+func updateWriteKeyStats(writeKeyStats map[string]int) {
+	for writeKey, count := range writeKeyStats {
+		writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_count", stats.CountType, writeKey)
+		writeKeyStatsD.Count(count)
+	}
+}
+
+func updateWriteKeyStatusStats(writeKeyStats map[string]int, isSuccess bool) {
+	var metricName string
+	if isSuccess {
+		metricName = fmt.Sprintf("gateway.write_key_success_count")
+	} else {
+		metricName = fmt.Sprintf("gateway.write_key_fail_count")
+	}
+	for writeKey, count := range writeKeyStats {
+		writeKeyStatsD := stats.NewWriteKeyStat(metricName, stats.CountType, writeKey)
+		writeKeyStatsD.Count(count)
+	}
+}
+
 //Function to process the batch requests. It saves data in DB and
 //sends and ACK on the done channel which unblocks the HTTP handler
 func (gateway *HandleT) webRequestBatchDBWriter(process int) {
-
 	for breq := range gateway.batchRequestQ {
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
+		var jobWriteKeyMap = make(map[uuid.UUID]string)
+		var writeKeyStats = make(map[string]int)
+		var writeKeySuccessStats = make(map[string]int)
+		var writeKeyFailStats = make(map[string]int)
 		var preDbStoreCount int
 		batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
@@ -106,22 +129,26 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
+			writeKey := gjson.Get(string(body), "writeKey").Str
+			misc.IncrementMapByKey(writeKeyStats, writeKey)
 			if err != nil {
 				req.done <- "Failed to read body from request"
 				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
 				continue
 			}
 			if len(body) > maxReqSize {
 				req.done <- "Request size exceeds max limit"
 				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
 				continue
 			}
 			if !gateway.verifyRequestBodyConfig(body) {
 				req.done <- "Invalid Write Key"
 				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
 				continue
 			}
-
 			logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 
@@ -137,16 +164,24 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			jobList = append(jobList, &newJob)
 			jobIDReqMap[newJob.UUID] = req
+			jobWriteKeyMap[newJob.UUID] = writeKey
 		}
 
 		errorMessagesMap := gateway.jobsDB.Store(jobList)
 		misc.Assert(preDbStoreCount+len(errorMessagesMap) == len(breq.batchRequest))
-		for key, val := range errorMessagesMap {
-			jobIDReqMap[key].done <- val
+		for uuid, err := range errorMessagesMap {
+			if err != "" {
+				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[uuid])
+			} else {
+				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[uuid])
+			}
+			jobIDReqMap[uuid].done <- err
 		}
 		batchTimeStat.End()
 		batchSizeStat.Count(len(breq.batchRequest))
-
+		updateWriteKeyStats(writeKeyStats)
+		updateWriteKeyStatusStats(writeKeySuccessStats, true)
+		updateWriteKeyStatusStats(writeKeyFailStats, false)
 	}
 }
 
