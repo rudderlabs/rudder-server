@@ -1,0 +1,11 @@
+#!/bin/bash
+
+if [ $# != 1 ]
+then
+  echo "Usage: ./generate-events.sh <write_key>"
+  exit
+fi
+
+
+sed "s/#rudderWriteKey#/$1/g" event.json.tpl > event.json 
+curl -X POST http://localhost:8080/events -d @event.json --header "Content-Type: application/json"
