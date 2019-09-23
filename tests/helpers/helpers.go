@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/sjson"
 )
@@ -90,7 +90,7 @@ func SendEventRequest(options EventOptsT) int {
 		}
 	}
 	if options.WriteKey == "" {
-		options.WriteKey = "1QJnyfo7nebslQS7IotMsoqCW08"
+		options.WriteKey = "1REVKlIoVwDAIwv4WuMxYexaJ5w"
 	}
 	if options.ID == "" {
 		options.ID = ksuid.New().String()

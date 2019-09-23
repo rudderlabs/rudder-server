@@ -10,14 +10,19 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+<<<<<<< HEAD
 	"github.com/rudderlabs/rudder-server/misc"
 	"github.com/rudderlabs/rudder-server/misc/logger"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
+=======
+>>>>>>> master
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -46,7 +51,7 @@ var (
 	webPort, maxBatchSize, maxDBWriterProcess int
 	batchTimeout                              time.Duration
 	respMessage                               string
-	enabledWriteKeys                          []string
+	enabledWriteKeysSourceMap                 map[string]string
 	configSubscriberLock                      sync.RWMutex
 	maxReqSize                                int
 )
@@ -89,13 +94,36 @@ type HandleT struct {
 	recvCount     uint64
 }
 
+func updateWriteKeyStats(writeKeyStats map[string]int) {
+	for writeKey, count := range writeKeyStats {
+		writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_count", stats.CountType, writeKey)
+		writeKeyStatsD.Count(count)
+	}
+}
+
+func updateWriteKeyStatusStats(writeKeyStats map[string]int, isSuccess bool) {
+	var metricName string
+	if isSuccess {
+		metricName = fmt.Sprintf("gateway.write_key_success_count")
+	} else {
+		metricName = fmt.Sprintf("gateway.write_key_fail_count")
+	}
+	for writeKey, count := range writeKeyStats {
+		writeKeyStatsD := stats.NewWriteKeyStat(metricName, stats.CountType, writeKey)
+		writeKeyStatsD.Count(count)
+	}
+}
+
 //Function to process the batch requests. It saves data in DB and
 //sends and ACK on the done channel which unblocks the HTTP handler
 func (gateway *HandleT) webRequestBatchDBWriter(process int) {
-
 	for breq := range gateway.batchRequestQ {
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
+		var jobWriteKeyMap = make(map[uuid.UUID]string)
+		var writeKeyStats = make(map[string]int)
+		var writeKeySuccessStats = make(map[string]int)
+		var writeKeyFailStats = make(map[string]int)
 		var preDbStoreCount int
 		//Saving the event data read from req.request.Body to the splice.
 		//Using this to send event schema to the config backend.
@@ -110,14 +138,18 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
+			writeKey := gjson.Get(string(body), "writeKey").Str
+			misc.IncrementMapByKey(writeKeyStats, writeKey)
 			if err != nil {
 				req.done <- "Failed to read body from request"
 				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
 				continue
 			}
 			if len(body) > maxReqSize {
 				req.done <- "Request size exceeds max limit"
 				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
 				continue
 			}
 
@@ -128,9 +160,9 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			if !gateway.isWriteKeyEnabled(writeKey.Str) {
 				req.done <- "Invalid Write Key"
 				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
 				continue
 			}
-
 			logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 
@@ -138,6 +170,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, enabledWriteKeysSourceMap[gjson.Get(fmt.Sprintf("%s", body), "writeKey").Str])),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    CustomVal,
@@ -145,12 +178,18 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			jobList = append(jobList, &newJob)
 			jobIDReqMap[newJob.UUID] = req
+			jobWriteKeyMap[newJob.UUID] = writeKey
 		}
 
 		errorMessagesMap := gateway.jobsDB.Store(jobList)
 		misc.Assert(preDbStoreCount+len(errorMessagesMap) == len(breq.batchRequest))
-		for key, val := range errorMessagesMap {
-			jobIDReqMap[key].done <- val
+		for uuid, err := range errorMessagesMap {
+			if err != "" {
+				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[uuid])
+			} else {
+				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[uuid])
+			}
+			jobIDReqMap[uuid].done <- err
 		}
 
 		//Sending events to config backend
@@ -160,23 +199,16 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 		batchTimeStat.End()
 		batchSizeStat.Count(len(breq.batchRequest))
-
+		updateWriteKeyStats(writeKeyStats)
+		updateWriteKeyStatusStats(writeKeySuccessStats, true)
+		updateWriteKeyStatusStats(writeKeyFailStats, false)
 	}
-}
-
-func contains(slice []string, str string) bool {
-	for _, s := range slice {
-		if s == str {
-			return true
-		}
-	}
-	return false
 }
 
 func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	if !contains(enabledWriteKeys, writeKey) {
+	if !misc.Contains(enabledWriteKeysSourceMap, writeKey.Str) {
 		return false
 	}
 	return true
@@ -243,7 +275,12 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("success"))
+	var json = []byte(`{"server":"UP","db":"UP"}`)
+	sjson.SetBytes(json, "server", "UP")
+	if !gateway.jobsDB.CheckPGHealth() {
+		sjson.SetBytes(json, "db", "DOWN")
+	}
+	w.Write(json)
 }
 
 func (gateway *HandleT) startWebHandler() {
@@ -261,11 +298,11 @@ func backendConfigSubscriber() {
 	for {
 		config := <-ch1
 		configSubscriberLock.Lock()
-		enabledWriteKeys = []string{}
+		enabledWriteKeysSourceMap = map[string]string{}
 		sources := config.Data.(backendconfig.SourcesT)
 		for _, source := range sources.Sources {
 			if source.Enabled {
-				enabledWriteKeys = append(enabledWriteKeys, source.WriteKey)
+				enabledWriteKeysSourceMap[source.WriteKey] = source.ID
 			}
 		}
 		configSubscriberLock.Unlock()

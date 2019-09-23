@@ -2,20 +2,21 @@ package processor
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sort"
 	"sync"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
-	"github.com/rudderlabs/rudder-server/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/misc"
-	"github.com/rudderlabs/rudder-server/misc/logger"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 )
@@ -24,6 +25,7 @@ import (
 type HandleT struct {
 	gatewayDB      *jobsdb.HandleT
 	routerDB       *jobsdb.HandleT
+	batchRouterDB  *jobsdb.HandleT
 	transformer    *transformerHandleT
 	statsJobs      *misc.PerfStats
 	statJobs       *stats.RudderStats
@@ -62,9 +64,10 @@ func init() {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT) {
+func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, batchRouterDB *jobsdb.HandleT) {
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
+	proc.batchRouterDB = batchRouterDB
 	proc.transformer = &transformerHandleT{}
 	proc.statsJobs = &misc.PerfStats{}
 	proc.statsDBR = &misc.PerfStats{}
@@ -99,6 +102,7 @@ var (
 	sessionThresholdEvents int
 	processSessions        bool
 	writeKeyDestinationMap map[string][]backendconfig.DestinationT
+	rawDataDestinations    []string
 	configSubscriberLock   sync.RWMutex
 )
 
@@ -113,6 +117,7 @@ func loadConfig() {
 	numTransformWorker = config.GetInt("Processor.numTransformWorker", 32)
 	maxRetry = config.GetInt("Processor.maxRetry", 3)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	rawDataDestinations = []string{"S3"}
 }
 
 func backendConfigSubscriber() {
@@ -358,6 +363,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.statsJobs.Start()
 
 	var destJobs []*jobsdb.JobT
+	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var eventsByDest = make(map[string][]interface{})
 
@@ -422,6 +428,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						}
 						shallowEventCopy["rl_message"].(map[string]interface{})["rl_destination"] = reflect.ValueOf(destination).Interface()
 						shallowEventCopy["rl_message"].(map[string]interface{})["rl_request_ip"] = requestIP
+						shallowEventCopy["rl_message"].(map[string]interface{})["rl_source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDest[destType]
@@ -462,7 +469,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 
 		//Save the JSON in DB. This is what the rotuer uses
-		for _, destEvent := range destTransformEventList {
+		for idx, destEvent := range destTransformEventList {
 			destEventJSON, err := json.Marshal(destEvent)
 			//Should be a valid JSON since its our transformation
 			//but we handle anyway
@@ -472,14 +479,20 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 			//Need to replace UUID his with messageID from client
 			id := uuid.NewV4()
+			sourceID := destEventList[idx].(map[string]interface{})["rl_message"].(map[string]interface{})["rl_source_id"].(string)
 			newJob := jobsdb.JobT{
 				UUID:         id,
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destID,
 				EventPayload: destEventJSON,
 			}
-			destJobs = append(destJobs, &newJob)
+			if misc.Contains(rawDataDestinations, newJob.CustomVal) {
+				batchDestJobs = append(batchDestJobs, &newJob)
+			} else {
+				destJobs = append(destJobs, &newJob)
+			}
 		}
 	}
 
@@ -488,6 +501,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.statsDBW.Start()
 	//XX: Need to do this in a transaction
 	proc.routerDB.Store(destJobs)
+	proc.batchRouterDB.Store(batchDestJobs)
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
 	//XX: End of transaction
 	proc.statsDBW.End(len(statusList))

@@ -1,5 +1,5 @@
 .DS_Store
 rudder-server
 .env
-runtime.log
 .vscode
+runtime.log

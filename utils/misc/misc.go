@@ -4,8 +4,8 @@ import (
 	"archive/zip"
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"reflect"
@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
-	"github.com/rudderlabs/rudder-server/misc/logger"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 //AssertError panics if error
@@ -137,7 +137,8 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 
 	// Using FileInfoHeader() above only uses the basename of the file. If we want
 	// to preserve the folder structure we can overwrite this with the full path.
-	header.Name = filename
+	// uncomment this line to preserve folder structure
+	// header.Name = filename
 
 	// Change to deflate to gain better compression
 	// see http://golang.org/pkg/archive/zip/#pkg-constants
@@ -212,18 +213,6 @@ func (stats *PerfStats) Print() {
 	}
 }
 
-// SetupLogger setup the logger with configs
-func SetupLogger() {
-	//Enable logging
-	log.SetPrefix("LOG: ")
-	log.SetFlags(log.Ldate | log.Lmicroseconds | log.Llongfile)
-	logger.Info("Setup Called")
-	f, err := os.OpenFile("runtime.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	AssertError(err)
-	defer f.Close()
-	log.SetOutput(f)
-}
-
 //Copy copies the exported fields from src to dest
 //Used for copying the default transport
 func Copy(dst, src interface{}) {
@@ -280,4 +269,52 @@ func ContainsString(slice []string, str string) bool {
 		}
 	}
 	return false
+}
+
+func equal(expected, actual interface{}) bool {
+	if expected == nil || actual == nil {
+		return expected == actual
+	}
+
+	return reflect.DeepEqual(expected, actual)
+
+}
+
+// Contains returns true if an element is present in a iteratee.
+// https://github.com/thoas/go-funk
+func Contains(in interface{}, elem interface{}) bool {
+	inValue := reflect.ValueOf(in)
+	elemValue := reflect.ValueOf(elem)
+	inType := inValue.Type()
+
+	switch inType.Kind() {
+	case reflect.String:
+		return strings.Contains(inValue.String(), elemValue.String())
+	case reflect.Map:
+		for _, key := range inValue.MapKeys() {
+			if equal(key.Interface(), elem) {
+				return true
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < inValue.Len(); i++ {
+			if equal(inValue.Index(i).Interface(), elem) {
+				return true
+			}
+		}
+	default:
+		AssertError(fmt.Errorf("Type %s is not supported by Contains, supported types are String, Map, Slice, Array", inType.String()))
+	}
+
+	return false
+}
+
+// IncrementMapByKey starts with 1 and increments the counter of a key
+func IncrementMapByKey(m map[string]int, key string) {
+	_, found := m[key]
+	if found {
+		m[key] = m[key] + 1
+	} else {
+		m[key] = 1
+	}
 }

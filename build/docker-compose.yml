@@ -4,7 +4,7 @@ services:
   db:
     image: postgres:11-alpine
     env_file:
-      - build/docker.env
+      - docker.env
     ports:
       - "6432:5432"
 
@@ -14,7 +14,7 @@ services:
       - d-transformer
       - u-transformer
     build:
-      context: ./
+      context: ../
       dockerfile: build/Dockerfile-dev
 
     entrypoint: sh -c './build/wait-for db:5432 -- go run -mod=vendor main.go'
@@ -22,7 +22,7 @@ services:
     ports:
       - "8080:8080"
     env_file:
-      - build/docker.env
+      - docker.env
     environment:
       - JOBS_DB_HOST=db
   d-transformer:
@@ -31,10 +31,13 @@ services:
       dockerfile: Dockerfile
     ports:
       - "9090:9090"
-
+    env_file:
+      - docker.env
   u-transformer:
     build:
       context: ../rudder-transformer/
       dockerfile: Dockerfile-ut
     ports:
       - "9191:9191"
+    env_file:
+      - docker.env

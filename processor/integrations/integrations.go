@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/misc"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
 
