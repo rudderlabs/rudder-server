@@ -31,6 +31,10 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 6. Rich UI written in react.
 7. Android, iOS, Unity & Javascript SDKs. Server-side SDKs coming soon.
 
+# Get Involved 
+
+Join our (Discord)[https://discordapp.com/invite/xNEdEGw] or (Slack)[https://rudderlabs.herokuapp.com/] channels
+
 # Main UI Page
 
 ![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
