@@ -90,7 +90,7 @@ func SendEventRequest(options EventOptsT) int {
 		}
 	}
 	if options.WriteKey == "" {
-		options.WriteKey = "1QJnyfo7nebslQS7IotMsoqCW08"
+		options.WriteKey = "1REVKlIoVwDAIwv4WuMxYexaJ5w"
 	}
 	if options.ID == "" {
 		options.ID = ksuid.New().String()
