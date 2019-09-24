@@ -262,6 +262,15 @@ func GetIPFromReq(req *http.Request) string {
 	return addresses[0]
 }
 
+func ContainsString(slice []string, str string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+	return false
+}
+
 func equal(expected, actual interface{}) bool {
 	if expected == nil || actual == nil {
 		return expected == actual
@@ -298,4 +307,14 @@ func Contains(in interface{}, elem interface{}) bool {
 	}
 
 	return false
+}
+
+// IncrementMapByKey starts with 1 and increments the counter of a key
+func IncrementMapByKey(m map[string]int, key string) {
+	_, found := m[key]
+	if found {
+		m[key] = m[key] + 1
+	} else {
+		m[key] = 1
+	}
 }

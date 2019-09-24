@@ -17,11 +17,6 @@ batchTimeoutInMS = 20
 respMessage = "OK"
 maxReqSizeInKB = 100000
 
-[SourceDebugger]
-maxBatchSize = 32
-maxRetry = 3
-batchTimeoutInS = 2
-retrySleepInMS = 100
 
 [JobsDB]
 # Migration related parameters
@@ -32,7 +27,7 @@ maxMigrateOnce = 10
 mainCheckSleepDurationInS = 2
 backupCheckSleepDurationIns = 5
 eventsInJSONFileDump = 1000
-enableBackup = true
+enableBackup = false
 
 [Router]
 jobQueryBatchSize = 10000
@@ -43,15 +38,11 @@ noOfJobsPerChannel = 1000
 ser = 3
 maxSleepInS = 60
 minSleepInS = 0
-maxStatusUpdateWaitInS = 5
+maxStatusUpdateWaitInS = 1
 randomWorkerAssign = false
-useTestSink = false
+useTestSink = true
 maxFailedCountForJob = 8
 keepOrderOnFailure = true
-
-[BatchRouter]
-mainLoopSleepInS = 30
-noOfWorkers = 8
 
 [Processor]
 loopSleepInMS = 10
@@ -60,7 +51,7 @@ transformBatchSize = 10
 sessionThresholdEvents = 20
 sessionThresholdInS = 10
 maxChanSize = 2048
-processSessions = true
+processSessions = false
 numTransformWorker = 8
 maxRetry = 3
 retrySleepInMS = 100
@@ -73,6 +64,9 @@ region = "us-east-1"
 jobsBackupDSBucket = "dump-gateway-jobs-test"
 jobStatusBackupDSBucket = "dump-gateway-job-status-test"
 
+[Bugsnag]
+apiKey = "a82c3193aa5914abe2cfb66557f1cc2b"
+releaseStage = "development"
 
 # If the server crashes 'crashThreshold' times in 'durationInS' seconds,
 #       then we mark it degraded
