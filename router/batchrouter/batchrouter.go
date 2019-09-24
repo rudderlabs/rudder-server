@@ -1,6 +1,8 @@
 package batchrouter
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -59,8 +61,22 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	unzippedFile, err := os.Create(path)
 	misc.AssertError(err)
 	for _, job := range batchJobs.Jobs {
-		_, err := fmt.Fprintln(unzippedFile, string(job.EventPayload))
-		misc.AssertError(err)
+		trimmedPayload := bytes.TrimLeft(job.EventPayload, " \t\r\n")
+		isArray := len(trimmedPayload) > 0 && trimmedPayload[0] == '['
+		if isArray {
+			var events []interface{}
+			err := json.Unmarshal(trimmedPayload, &events)
+			misc.AssertError(err)
+			for _, event := range events {
+				jsonEvent, err := json.Marshal((event))
+				misc.AssertError(err)
+				_, err = fmt.Fprintln(unzippedFile, string(jsonEvent))
+				misc.AssertError(err)
+			}
+		} else {
+			_, err := fmt.Fprintln(unzippedFile, string(job.EventPayload))
+			misc.AssertError(err)
+		}
 	}
 	unzippedFile.Close()
 
