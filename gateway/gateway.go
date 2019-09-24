@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -119,6 +120,9 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		var writeKeySuccessStats = make(map[string]int)
 		var writeKeyFailStats = make(map[string]int)
 		var preDbStoreCount int
+		//Saving the event data read from req.request.Body to the splice.
+		//Using this to send event schema to the config backend.
+		var events []*string
 		batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
 			ipAddr := misc.GetIPFromReq(req.request)
@@ -129,7 +133,9 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
-			writeKey := gjson.Get(string(body), "writeKey").Str
+			bodyJSON := fmt.Sprintf("%s", body)
+			events = append(events, &bodyJSON)
+			writeKey := gjson.Get(bodyJSON, "writeKey").Str
 			misc.IncrementMapByKey(writeKeyStats, writeKey)
 			if err != nil {
 				req.done <- "Failed to read body from request"
@@ -143,7 +149,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
 				continue
 			}
-			if !gateway.verifyRequestBodyConfig(body) {
+			if !gateway.isWriteKeyEnabled(writeKey) {
 				req.done <- "Invalid Write Key"
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
@@ -177,6 +183,12 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			jobIDReqMap[uuid].done <- err
 		}
+
+		//Sending events to config backend
+		for _, event := range events {
+			sourcedebugger.RecordEvent(gjson.Get(*event, "writeKey").Str, *event)
+		}
+
 		batchTimeStat.End()
 		batchSizeStat.Count(len(breq.batchRequest))
 		updateWriteKeyStats(writeKeyStats)
@@ -185,12 +197,10 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 	}
 }
 
-func (gateway *HandleT) verifyRequestBodyConfig(body []byte) bool {
-	bodyJSON := fmt.Sprintf("%s", body)
-	writeKey := gjson.Get(bodyJSON, "writeKey")
+func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	if !misc.Contains(enabledWriteKeysSourceMap, writeKey.Str) {
+	if !misc.Contains(enabledWriteKeysSourceMap, writeKey) {
 		return false
 	}
 	return true

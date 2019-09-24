@@ -262,6 +262,15 @@ func GetIPFromReq(req *http.Request) string {
 	return addresses[0]
 }
 
+func ContainsString(slice []string, str string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+	return false
+}
+
 func equal(expected, actual interface{}) bool {
 	if expected == nil || actual == nil {
 		return expected == actual

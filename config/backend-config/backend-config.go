@@ -90,6 +90,7 @@ func init() {
 func pollConfigUpdate() {
 	for {
 		sourceJSON, ok := getBackendConfig()
+
 		if ok {
 			Eb.Publish("backendconfig", sourceJSON)
 		}

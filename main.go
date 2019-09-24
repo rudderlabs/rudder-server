@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/db"
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -190,6 +191,7 @@ func main() {
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB", *clearDB)
 
+	sourcedebugger.Setup()
 	backendconfig.Setup()
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup && true)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
