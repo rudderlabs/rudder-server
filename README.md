@@ -37,8 +37,9 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 Join our [Discord](https://discordapp.com/invite/xNEdEGw) or [Slack](https://rudderlabs.herokuapp.com/) channel
 
-# Main UI Page
+# UI Pages
 
+## Connections Page
 ![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
 
 # Setup Instructions (Docker)
