@@ -81,6 +81,8 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 ## Connections Page
 ![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
 
+## Stats Page
+![image](https://user-images.githubusercontent.com/52487451/65647158-a2cc9500-dfb2-11e9-8397-d2642f0b8801.png)
 
 # Architecture
 
