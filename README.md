@@ -37,11 +37,6 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 Join our [Discord](https://discordapp.com/invite/xNEdEGw) or [Slack](https://rudderlabs.herokuapp.com/) channel
 
-# UI Pages
-
-## Connections Page
-![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
-
 # Setup Instructions (Docker)
 
 The docker setup is the easiest & fastest way to try out Rudder.
@@ -80,6 +75,12 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4
 9. Run the backend server `go run -mod=vendor main.go`
 10. Setup your sources from the dashboard `https://app.rudderlabs.com` and start sending events using the test script (mentioned in step 5 of Docker setup instructions) or our SDKs.
+
+# UI Pages
+
+## Connections Page
+![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
+
 
 # Architecture
 
