@@ -88,7 +88,7 @@ func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backend
 			continue
 		}
 		if (clientIntgsList["All"] != false) || clientIntgsList[dest] == true {
-			outVal = append(outVal, dest)
+			outVal = append(outVal, destNameIDMap[dest].Name)
 		}
 	}
 	retVal = outVal

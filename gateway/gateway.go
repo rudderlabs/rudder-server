@@ -36,6 +36,7 @@ type webRequestT struct {
 	request *http.Request
 	writer  *http.ResponseWriter
 	done    chan<- string
+	reqType string
 }
 
 type batchWebRequestT struct {
@@ -53,6 +54,13 @@ var (
 
 // CustomVal is used as a key in the jobsDB customval column
 var CustomVal string
+
+var batchEvent = []byte(`
+	{
+		"batch": [
+		]
+	}
+`)
 
 func loadConfig() {
 	//Port where GW is running
@@ -163,6 +171,12 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
 				continue
 			}
+
+			if req.reqType != "batch" {
+				body, _ = sjson.SetBytes(body, "type", req.reqType)
+				body, _ = sjson.SetRawBytes(batchEvent, "batch.0", body)
+			}
+
 			logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
@@ -256,10 +270,38 @@ func stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.Respon
 }
 
 func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "batch")
+}
+
+func (gateway *HandleT) webIdentifyHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "identify")
+}
+
+func (gateway *HandleT) webTrackHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "track")
+}
+
+func (gateway *HandleT) webPageHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "page")
+}
+
+func (gateway *HandleT) webScreenHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "screen")
+}
+
+func (gateway *HandleT) webAliasHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "alias")
+}
+
+func (gateway *HandleT) webGroupHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "group")
+}
+
+func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	done := make(chan string)
-	req := webRequestT{request: r, writer: &w, done: done}
+	req := webRequestT{request: r, writer: &w, done: done, reqType: reqType}
 	gateway.webRequestQ <- &req
 	//Wait for batcher process to be done
 	errorMessage := <-done
@@ -271,7 +313,6 @@ func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) 
 		logger.Debug(respMessage)
 		w.Write([]byte(respMessage))
 	}
-
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +327,14 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 func (gateway *HandleT) startWebHandler() {
 	logger.Infof("Starting in %d\n", webPort)
 
-	http.HandleFunc("/batch", stat(gateway.webBatchHandler))
+	http.HandleFunc("/v1/batch", stat(gateway.webBatchHandler))
+	http.HandleFunc("/v1/identify", stat(gateway.webIdentifyHandler))
+	http.HandleFunc("/v1/track", stat(gateway.webTrackHandler))
+	http.HandleFunc("/v1/page", stat(gateway.webPageHandler))
+	http.HandleFunc("/v1/screen", stat(gateway.webScreenHandler))
+	http.HandleFunc("/v1/alias", stat(gateway.webAliasHandler))
+	http.HandleFunc("/v1/group", stat(gateway.webGroupHandler))
+
 	http.HandleFunc("/health", gateway.healthHandler)
 	http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil))
 }

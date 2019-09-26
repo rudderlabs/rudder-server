@@ -7,5 +7,6 @@ then
 fi
 
 
-curl -u $1: -X POST http://localhost:8080/batch -d @event.json --header "Content-Type: application/json"
+#curl -u $1: -X POST http://localhost:8080/batch -d @event.json --header "Content-Type: application/json"
+curl -u $1: -X POST http://localhost:8080/track -d @track.json --header "Content-Type: application/json"
 #curl -X POST https://torpedo.rudderlabs.com/events -d @event.json --header "Content-Type: application/json"

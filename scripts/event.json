@@ -38,7 +38,7 @@
       "event": "Demo Track",
       "integrations": {
         "All": false,
-        "Google Analytics": true
+        "Google Analytics": false
       },
       "message_id": "1566904375469-1baf3108-647a-4f20-9867-3072056a07f5",
       "properties": {
