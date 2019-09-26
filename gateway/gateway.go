@@ -135,7 +135,15 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			req.request.Body.Close()
 			bodyJSON := fmt.Sprintf("%s", body)
 			events = append(events, &bodyJSON)
-			writeKey := gjson.Get(bodyJSON, "writeKey").Str
+
+			writeKey, _, ok := req.request.BasicAuth()
+			if !ok {
+				req.done <- "Failed to read writeKey from header"
+				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey")
+				continue
+			}
+
 			misc.IncrementMapByKey(writeKeyStats, writeKey)
 			if err != nil {
 				req.done <- "Failed to read body from request"
@@ -157,12 +165,13 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
+			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 
 			id := uuid.NewV4()
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, enabledWriteKeysSourceMap[gjson.Get(fmt.Sprintf("%s", body), "writeKey").Str])),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, enabledWriteKeysSourceMap[writeKey])),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    CustomVal,
@@ -246,8 +255,7 @@ func stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.Respon
 	}
 }
 
-//Main handler function for incoming requets
-func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
+func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
 	logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	done := make(chan string)
@@ -277,8 +285,8 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func (gateway *HandleT) startWebHandler() {
 	logger.Infof("Starting in %d\n", webPort)
-	http.HandleFunc("/hello", stat(gateway.webHandler))
-	http.HandleFunc("/events", stat(gateway.webHandler))
+
+	http.HandleFunc("/batch", stat(gateway.webBatchHandler))
 	http.HandleFunc("/health", gateway.healthHandler)
 	http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil))
 }

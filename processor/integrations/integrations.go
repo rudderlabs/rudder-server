@@ -73,7 +73,7 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 //GetDestinationIDs parses the destination names from the
 //input JSON, matches them with enabled destinations from controle plane and returns the IDSs
 func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
-	clientIntgs, ok := misc.GetRudderEventVal("rl_integrations", clientEvent)
+	clientIntgs, ok := misc.GetRudderEventVal("integrations", clientEvent)
 	if !ok {
 		return
 	}

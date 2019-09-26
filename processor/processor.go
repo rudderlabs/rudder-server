@@ -413,22 +413,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy := make(map[string]interface{})
 						singularEventMap, ok := singularEvent.(map[string]interface{})
 						misc.Assert(ok)
-						for k, v := range singularEventMap {
-							if k == "rl_message" {
-								//Need to overwrite ["rl_message"]["rl_destination"]
-								shallowEventCopy["rl_message"] = make(map[string]interface{})
-								singularEventMsgMap, ok := singularEventMap["rl_message"].(map[string]interface{})
-								misc.Assert(ok)
-								for km, vm := range singularEventMsgMap {
-									shallowEventCopy["rl_message"].(map[string]interface{})[km] = vm
-								}
-							} else {
-								shallowEventCopy[k] = v
-							}
-						}
-						shallowEventCopy["rl_message"].(map[string]interface{})["rl_destination"] = reflect.ValueOf(destination).Interface()
-						shallowEventCopy["rl_message"].(map[string]interface{})["rl_request_ip"] = requestIP
-						shallowEventCopy["rl_message"].(map[string]interface{})["rl_source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+						shallowEventCopy["message"] = singularEventMap
+						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
+						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
+						shallowEventCopy["message"].(map[string]interface{})["source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDest[destType]
@@ -479,7 +467,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 			//Need to replace UUID his with messageID from client
 			id := uuid.NewV4()
-			sourceID := destEventList[idx].(map[string]interface{})["rl_message"].(map[string]interface{})["rl_source_id"].(string)
+			sourceID := destEventList[idx].(map[string]interface{})["message"].(map[string]interface{})["source_id"].(string)
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID)),
