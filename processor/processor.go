@@ -352,7 +352,7 @@ func getEnabledDestinationTypes(writeKey string) map[string]backendconfig.Destin
 	var enabledDestinationTypes = make(map[string]backendconfig.DestinationDefinitionT)
 	for _, destination := range writeKeyDestinationMap[writeKey] {
 		if destination.Enabled {
-			enabledDestinationTypes[destination.DestinationDefinition.Name] = destination.DestinationDefinition
+			enabledDestinationTypes[destination.DestinationDefinition.DisplayName] = destination.DestinationDefinition
 		}
 	}
 	return enabledDestinationTypes

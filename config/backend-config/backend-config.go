@@ -21,8 +21,9 @@ var (
 var Eb *utils.EventBus
 
 type DestinationDefinitionT struct {
-	ID   string
-	Name string
+	ID          string
+	Name        string
+	DisplayName string
 }
 
 type SourceDefinitionT struct {
