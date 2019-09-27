@@ -231,13 +231,8 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEve
 	}
 	misc.Assert(len(userEventsList) == len(userEvents))
 
-	//Call the transformation function
-	transformUserEventList, ok := proc.transformer.Transform(userEventsList,
-		integrations.GetUserTransformURL(), 0, false)
-	misc.Assert(ok)
-
 	//Create jobs that can be processed further
-	toProcessJobs, toProcessEvents := createUserTransformedJobsFromEvents(transformUserEventList, userIDList, userJobs)
+	toProcessJobs, toProcessEvents := createUserTransformedJobsFromEvents(userEventsList, userIDList, userJobs)
 
 	//Some sanity check to make sure we have all the jobs
 	misc.Assert(len(toProcessJobs) == totalJobs)
