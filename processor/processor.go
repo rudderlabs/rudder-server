@@ -402,6 +402,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				destTypes := integrations.GetDestinationIDs(singularEvent, destTypesFromConfig)
 
 				if len(destTypes) == 0 {
+					logger.Debug("No enabled destinations")
 					continue
 				}
 				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
@@ -409,6 +410,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
 					enabledDestinationsMap[destType] = enabledDestinationsList
 					// Adding a singular event multiple times if there are multiple destinations of same type
+					if len(destTypes) == 0 {
+						logger.Debugf("No enabled destinations for type %v", destType)
+						continue
+					}
 					for _, destination := range enabledDestinationsList {
 						shallowEventCopy := make(map[string]interface{})
 						singularEventMap, ok := singularEvent.(map[string]interface{})

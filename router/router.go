@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //HandleT is the handle to this module.
@@ -529,14 +529,14 @@ func (rt *HandleT) crashRecover() {
 func (rt *HandleT) printStatsLoop() {
 	for {
 		time.Sleep(60 * time.Second)
-		logger.Info("Network Success/Fail", rt.successCount, rt.failCount)
-		logger.Info("++++++++++++++++++++++++++++++")
-		logger.Info(rt.toClearFailJobIDMap)
-		logger.Info("++++++++++++++++++++++++++++++")
+		logger.Debug("Network Success/Fail", rt.successCount, rt.failCount)
+		logger.Debug("++++++++++++++++++++++++++++++")
+		logger.Debug(rt.toClearFailJobIDMap)
+		logger.Debug("++++++++++++++++++++++++++++++")
 		for _, w := range rt.workers {
-			logger.Info("--------------------------------", w.workerID)
-			logger.Info(w.failedJobIDMap)
-			logger.Info("--------------------------------", w.workerID)
+			logger.Debug("--------------------------------", w.workerID)
+			logger.Debug(w.failedJobIDMap)
+			logger.Debug("--------------------------------", w.workerID)
 		}
 	}
 }
