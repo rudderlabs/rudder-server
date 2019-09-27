@@ -36,6 +36,7 @@ type DestinationT struct {
 	DestinationDefinition DestinationDefinitionT
 	Config                interface{}
 	Enabled               bool
+	Transformations       []TransformationT
 }
 
 type SourceT struct {
@@ -50,6 +51,13 @@ type SourceT struct {
 
 type SourcesT struct {
 	Sources []SourceT `json:"sources"`
+}
+
+type TransformationT struct {
+	ID          string
+	Name        string
+	Description string
+	VersionID   string
 }
 
 func loadConfig() {
