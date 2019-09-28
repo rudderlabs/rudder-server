@@ -134,4 +134,6 @@ The client SDKs provide APIs collecting events and sending it to the Rudder Back
 2. More documentation
 3. More destination support
 4. HA support
-5. More SDKs
+5. More SDKs (or Segment compatibility)
+6. Transformations from UO
+
