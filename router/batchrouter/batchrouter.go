@@ -80,7 +80,7 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	}
 	unzippedFile.Close()
 
-	zipFilePath := fmt.Sprintf(`%v.gz`, path)
+	zipFilePath := fmt.Sprintf(`%v.zip`, path)
 	err = misc.ZipFiles(zipFilePath, []string{path})
 	misc.AssertError(err)
 
