@@ -35,8 +35,8 @@
   },
   "event": "Demo Track",
   "integrations": {
-    "All": false,
-    "Google Analytics": false
+    "All": true,
+    "Google Analytics": true
   },
   "message_id": "1566904375469-1baf3108-647a-4f20-9867-3072056a07f5",
   "properties": {

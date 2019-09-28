@@ -1,12 +1,13 @@
 #!/bin/bash
 
-if [ $# != 1 ]
+if [ $# != 2 ]
 then
-  echo "Usage: ./generate-events.sh <write_key>"
+  echo "Usage: ./generate-events.sh <write_key> <server_ip>"
   exit
 fi
 
 
 #curl -u $1: -X POST http://localhost:8080/batch -d @event.json --header "Content-Type: application/json"
-curl -u $1: -X POST http://localhost:8080/track -d @track.json --header "Content-Type: application/json"
+curl -u $1: -X POST http://$2:8080/v1/track -d @track.json --header "Content-Type: application/json"
+#curl -u $1: -X POST http://localhost:8080/v1/track -d @track.json --header "Content-Type: application/json"
 #curl -X POST https://torpedo.rudderlabs.com/events -d @event.json --header "Content-Type: application/json"
