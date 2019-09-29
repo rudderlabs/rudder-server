@@ -129,7 +129,7 @@ func init() {
 
 func main() {
 	bugsnag.Configure(bugsnag.Configuration{
-		APIKey:       config.GetEnv("BUGSNAG_KEY", "a82c3193aa5914abe2cfb66557f1cc2b"),
+		APIKey:       config.GetRequiredEnv("BUGSNAG_KEY"),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),
 		// The import paths for the Go packages containing your source files
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
