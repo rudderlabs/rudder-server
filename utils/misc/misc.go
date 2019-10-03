@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"runtime/debug"
 	"strings"
 
 	//"runtime/debug"
@@ -21,8 +22,8 @@ import (
 //AssertError panics if error
 func AssertError(err error) {
 	if err != nil {
-		//debug.SetTraceback("all")
-		//debug.PrintStack()
+		// debug.SetTraceback("all")
+		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		panic(err)
 	}
@@ -32,7 +33,7 @@ func AssertError(err error) {
 func Assert(cond bool) {
 	if !cond {
 		//debug.SetTraceback("all")
-		//debug.PrintStack()
+		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		panic("Assertion failed")
 	}
