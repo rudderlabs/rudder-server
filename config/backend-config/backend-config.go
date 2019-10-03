@@ -60,8 +60,11 @@ func loadConfig() {
 
 func getBackendConfig() (SourcesT, bool) {
 	client := &http.Client{}
-	url := fmt.Sprintf("%s/workspace-config?workspaceToken=%s", configBackendURL, configBackendToken)
-	resp, err := client.Get(url)
+	url := fmt.Sprintf("%s/workspace-config", configBackendURL)
+	req, err := http.NewRequest("GET", url, nil)
+	password := ""
+	req.SetBasicAuth(configBackendToken, password)
+	resp, err := client.Do(req)
 
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
