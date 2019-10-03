@@ -19,8 +19,8 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -30,13 +30,14 @@ const (
 	rudderJSONPath   = "events.#.rudder"
 	gaJSONPath       = "events.#.GA"
 	variations       = 5
-	serverIP         = "http://localhost:8080/hello"
+	serverIP         = "http://localhost:8080/v1/batch"
 	// serverIP = "http://172.31.94.69:8080/hello"
 )
 
 var (
 	successCount uint64
 	failCount    uint64
+	writeKey     *string
 )
 
 var done chan bool
@@ -63,6 +64,7 @@ func main() {
 	// setting badjson rate 0f 60 sends ~60% (approx since we just compare with rand number) req's with bad json
 	badJSON = flag.Bool("badjson", false, "true/false for sending malformed json as payload to rudder BE")
 	badJSONRate = flag.Int("badjsonRate", 100, "percentage of malformed json sent as events")
+	writeKey = flag.String("writekey", "", "Writekey to be sent along with the event")
 
 	flag.Parse()
 
@@ -95,7 +97,6 @@ func toSendGoodJSON() bool {
 func sendBadJSON(lines []string, rudder bool) {
 	value, _ := sjson.Set("", "batch", "random_string_to_be_replaced")
 	value, _ = sjson.Set(value, "sent_at", time.Now())
-	value, _ = sjson.Set(value, "writeKey", "1P2tiDhWjQbEtLSqnEh9YeDe1tP")
 	if rudder {
 		value = strings.Replace(value, "random_string_to_be_replaced", fmt.Sprintf("[%s]", strings.Join(lines[:], ",")), 1)
 		sendToRudder(value)
@@ -169,7 +170,6 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 				if isBatchToBeMade {
 					value, _ := sjson.Set("", "batch", rudderEvents)
 					value, _ = sjson.Set(value, "sent_at", time.Now())
-					value, _ = sjson.Set(value, "writeKey", "1P2tiDhWjQbEtLSqnEh9YeDe1tP")
 					////fmt.Println("==================")
 					////fmt.Println(value)
 					////fmt.Println("iter : ", countLoop)
@@ -266,7 +266,6 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 			if isBatchToBeMade {
 				value, _ := sjson.Set("", "batch", rudderEvents)
 				value, _ = sjson.Set(value, "sent_at", time.Now())
-				value, _ = sjson.Set(value, "writeKey", "1P2tiDhWjQbEtLSqnEh9YeDe1tP")
 				////fmt.Println("==================")
 				////fmt.Println(value)
 
@@ -318,6 +317,7 @@ func sendToRudder(jsonPayload string) {
 
 	requestTimeStat.Start()
 	req, err := http.NewRequest("POST", serverIP, bytes.NewBuffer([]byte(jsonPayload)))
+	req.SetBasicAuth(*writeKey, "")
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
