@@ -130,7 +130,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		var preDbStoreCount int
 		//Saving the event data read from req.request.Body to the splice.
 		//Using this to send event schema to the config backend.
-		var events []*string
+		var events []string
 		batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
 			ipAddr := misc.GetIPFromReq(req.request)
@@ -141,8 +141,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
-			bodyJSON := fmt.Sprintf("%s", body)
-			events = append(events, &bodyJSON)
 
 			writeKey, _, ok := req.request.BasicAuth()
 			if !ok {
@@ -180,6 +178,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
+			events = append(events, fmt.Sprintf("%s", body))
 
 			id := uuid.NewV4()
 			//Should be function of body
@@ -209,7 +208,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 		//Sending events to config backend
 		for _, event := range events {
-			sourcedebugger.RecordEvent(gjson.Get(*event, "writeKey").Str, *event)
+			sourcedebugger.RecordEvent(gjson.Get(event, "writeKey").Str, event)
 		}
 
 		batchTimeStat.End()
