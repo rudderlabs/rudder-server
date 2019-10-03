@@ -17,64 +17,62 @@
         "message.properties.dimensions.0": "pr1cd0"
       },
       "rudder": {
-        "message": {
-          "channel": "Test Channel",
-          "context": {
-            "app": {
-              "build": "0",
-              "name": "com.rudderlabs.android.library.test",
-              "namespace": "com.rudderlabs.android.library.test",
-              "version": "1.0.0"
-            },
-            "traits": {
-              "anonymous_id": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6"
-            },
-            "library": {
-              "name": "com.rudderlabs.android.library",
-              "version": "1.0"
-            },
-            "os": {
-              "name": "Android",
-              "version": "9"
-            },
-            "screen": {
-              "density": 1,
-              "width": 470,
-              "height": 320
-            },
-            "user_agent": "",
-            "locale": "en-US",
-            "device": {
-              "id": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6",
-              "manufacturer": "unknown",
-              "model": "robolectric",
-              "name": "robolectric"
-            },
-            "network": {
-              "carrier": ""
-            }
+        "channel": "Test Channel",
+        "context": {
+          "app": {
+            "build": "0",
+            "name": "com.rudderlabs.android.library.test",
+            "namespace": "com.rudderlabs.android.library.test",
+            "version": "1.0.0"
           },
-          "type": "track",
-          "message_id": "d6a75a2d-43a2-4d0c-9bcc-5f6e6705299b",
-          "timestamp": "2019-08-05 10:38:03+0000",
-          "anonymous_id": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6",
-          "event": "Product Clicked",
-          "properties": {
-            "product_id": "507f1f77bcf86cd799439011",
-            "sku": "45790-32",
-            "category": "Games",
-            "name": "Monopoly: 3rd Edition",
-            "brand": "Monopoly",
-            "variant": "Single User",
-            "price": 19.0,
-            "quantity": 1,
-            "coupon": "MAY_DEALS_3",
-            "position": 1,
-            "url": "https://www.example.com/product/path",
-            "image_url": "https://www.example.com/product/path.jpg"
+          "traits": {
+            "anonymous_id": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6"
           },
-          "integrations": { "All": false, "GA": true }
-        }
+          "library": {
+            "name": "com.rudderlabs.android.library",
+            "version": "1.0"
+          },
+          "os": {
+            "name": "Android",
+            "version": "9"
+          },
+          "screen": {
+            "density": 1,
+            "width": 470,
+            "height": 320
+          },
+          "user_agent": "",
+          "locale": "en-US",
+          "device": {
+            "id": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6",
+            "manufacturer": "unknown",
+            "model": "robolectric",
+            "name": "robolectric"
+          },
+          "network": {
+            "carrier": ""
+          }
+        },
+        "type": "track",
+        "message_id": "d6a75a2d-43a2-4d0c-9bcc-5f6e6705299b",
+        "timestamp": "2019-08-05 10:38:03+0000",
+        "anonymous_id": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6",
+        "event": "Product Clicked",
+        "properties": {
+          "product_id": "507f1f77bcf86cd799439011",
+          "sku": "45790-32",
+          "category": "Games",
+          "name": "Monopoly: 3rd Edition",
+          "brand": "Monopoly",
+          "variant": "Single User",
+          "price": 19.0,
+          "quantity": 1,
+          "coupon": "MAY_DEALS_3",
+          "position": 1,
+          "url": "https://www.example.com/product/path",
+          "image_url": "https://www.example.com/product/path.jpg"
+        },
+        "integrations": { "All": false, "Google Analytics": true }
       },
       "GA": {
         "t": "event",
@@ -96,55 +94,53 @@
         "message.properties.value": "ev"
       },
       "rudder": {
-        "message": {
-          "channel": "Test Channel",
-          "context": {
-            "app": {
-              "build": "0",
-              "name": "com.rudderlabs.android.library.test",
-              "namespace": "com.rudderlabs.android.library.test",
-              "version": "1.0.0"
-            },
-            "traits": {
-              "anonymous_id": "19702fee-6184-482e-aa05-8ab21402e1f3"
-            },
-            "library": {
-              "name": "com.rudderlabs.android.library",
-              "version": "1.0"
-            },
-            "os": {
-              "name": "Android",
-              "version": "9"
-            },
-            "screen": {
-              "density": 1,
-              "width": 470,
-              "height": 320
-            },
-            "user_agent": "",
-            "locale": "en-US",
-            "device": {
-              "id": "19702fee-6184-482e-aa05-8ab21402e1f3",
-              "manufacturer": "unknown",
-              "model": "robolectric",
-              "name": "robolectric"
-            },
-            "network": {
-              "carrier": ""
-            }
+        "channel": "Test Channel",
+        "context": {
+          "app": {
+            "build": "0",
+            "name": "com.rudderlabs.android.library.test",
+            "namespace": "com.rudderlabs.android.library.test",
+            "version": "1.0.0"
           },
-          "type": "track",
-          "message_id": "6def71bd-eae8-4cb1-bfe7-0b5e7eaf89fd",
-          "timestamp": "2019-08-05 10:12:22+0000",
-          "anonymous_id": "19702fee-6184-482e-aa05-8ab21402e1f3",
-          "event": "Test Track",
-          "properties": {
-            "category": "Test Category",
-            "label": "Test Label",
-            "value": 5
+          "traits": {
+            "anonymous_id": "19702fee-6184-482e-aa05-8ab21402e1f3"
           },
-          "integrations": { "All": false, "GA": true }
-        }
+          "library": {
+            "name": "com.rudderlabs.android.library",
+            "version": "1.0"
+          },
+          "os": {
+            "name": "Android",
+            "version": "9"
+          },
+          "screen": {
+            "density": 1,
+            "width": 470,
+            "height": 320
+          },
+          "user_agent": "",
+          "locale": "en-US",
+          "device": {
+            "id": "19702fee-6184-482e-aa05-8ab21402e1f3",
+            "manufacturer": "unknown",
+            "model": "robolectric",
+            "name": "robolectric"
+          },
+          "network": {
+            "carrier": ""
+          }
+        },
+        "type": "track",
+        "message_id": "6def71bd-eae8-4cb1-bfe7-0b5e7eaf89fd",
+        "timestamp": "2019-08-05 10:12:22+0000",
+        "anonymous_id": "19702fee-6184-482e-aa05-8ab21402e1f3",
+        "event": "Test Track",
+        "properties": {
+          "category": "Test Category",
+          "label": "Test Label",
+          "value": 5
+        },
+        "integrations": { "All": false, "Google Analytics": true }
       },
       "GA": {
         "t": "event",
