@@ -30,15 +30,10 @@ type MessageT struct {
 	Type         string      `json:"type"`
 }
 
-//MessageBatchT is a structure to hold message
-type MessageBatchT struct {
-	Message MessageT `json:"message"`
-}
-
 //EventT is a structure to hold batch of events
 type EventT struct {
 	WriteKey string
-	Batch    []MessageBatchT
+	Batch    []MessageT
 }
 
 var uploadEnabledWriteKeys []string
@@ -106,8 +101,8 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 		}
 
 		for _, ev := range batchedEvent.Batch {
-			filterValues(&ev.Message)
-			arr = append(arr, ev.Message)
+			filterValues(&ev)
+			arr = append(arr, ev)
 		}
 
 		res[batchedEvent.WriteKey] = arr
