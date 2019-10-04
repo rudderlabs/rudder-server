@@ -156,6 +156,11 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 					//misc.AssertError(err)
 					rudderData = generateData(&rudderData, k, gjson.Get(rudderJSON.Raw, k).Value())
 				}
+				eventTypes := []string{"track", "page", "screen"}
+				rudderData = generateRandomDataFromSlice(eventTypes, &rudderData, "type", "track")
+				eventNames := []string{"Homepage visited", "User signed up", "Product added to cart", "Product added to wishlist"}
+				rudderData = generateRandomDataFromSlice(eventNames, &rudderData, "event", "track")
+				rudderData, _ = sjson.SetBytes(rudderData, "timestamp", time.Now())
 
 				rudderData, err = sjson.SetBytes(rudderData, userIDpath, uid)
 				misc.AssertError(err)
@@ -284,9 +289,9 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 	done <- true
 }
 
-func generateData(payload *[]byte, path string, value interface{}) []byte {
+// Uses the randomSlice only when type of value is string
+func generateRandomDataFromSlice(randomSlice []string, payload *[]byte, path string, value interface{}) []byte {
 	var err error
-	randStr := []string{"abc", "efg", "ijk", "lmn", "opq"}
 	switch value.(type) {
 	case int:
 		*payload, err = sjson.SetBytes(*payload, path, rand.Intn(100))
@@ -297,13 +302,18 @@ func generateData(payload *[]byte, path string, value interface{}) []byte {
 		misc.AssertError(err)
 
 	default:
-		i := rand.Intn(len(randStr))
-		*payload, err = sjson.SetBytes(*payload, path, randStr[i])
+		i := rand.Intn(len(randomSlice))
+		*payload, err = sjson.SetBytes(*payload, path, randomSlice[i])
 		misc.AssertError(err)
 
 	}
 
 	return *payload
+}
+
+func generateData(payload *[]byte, path string, value interface{}) []byte {
+	randStr := []string{"abc", "efg", "ijk", "lmn", "opq"}
+	return generateRandomDataFromSlice(randStr, payload, path, value)
 }
 
 func printStats() {
