@@ -324,6 +324,11 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gateway *HandleT) startWebHandler() {
+	//Wait until we get config from control plane backend atleast once
+	ch1 := make(chan utils.DataEvent)
+	backendconfig.Eb.Subscribe("backendconfig", ch1)
+	<-ch1
+
 	logger.Infof("Starting in %d\n", webPort)
 
 	http.HandleFunc("/v1/batch", stat(gateway.webBatchHandler))
