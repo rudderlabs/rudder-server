@@ -27,14 +27,14 @@ services:
       - JOBS_DB_HOST=db
   d-transformer:
     build:
-      context: ../rudder-transformer/
+      context: ./rudder-transformer/
       dockerfile: Dockerfile
     ports:
       - "9090:9090"
 
   u-transformer:
     build:
-      context: ../rudder-transformer/
+      context: ./rudder-transformer/
       dockerfile: Dockerfile-ut
     ports:
       - "9191:9191"
