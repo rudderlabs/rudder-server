@@ -3,6 +3,7 @@ package gateway
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -280,7 +281,7 @@ func (gateway *HandleT) startWebHandler() {
 	http.HandleFunc("/hello", stat(gateway.webHandler))
 	http.HandleFunc("/events", stat(gateway.webHandler))
 	http.HandleFunc("/health", gateway.healthHandler)
-	http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
 // Gets the config from config backend and extracts enabled writekeys
