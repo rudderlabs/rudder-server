@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -16,6 +17,7 @@ import (
 var (
 	configBackendURL, configBackendToken string
 	pollInterval                         time.Duration
+	curSourceJSON                        SourcesT
 )
 
 var Eb *utils.EventBus
@@ -91,11 +93,16 @@ func pollConfigUpdate() {
 	for {
 		sourceJSON, ok := getBackendConfig()
 
-		if ok {
+		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
+			curSourceJSON = sourceJSON
 			Eb.Publish("backendconfig", sourceJSON)
 		}
 		time.Sleep(time.Duration(pollInterval))
 	}
+}
+
+func GetConfig() SourcesT {
+	return curSourceJSON
 }
 
 // Setup backend config
