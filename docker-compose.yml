@@ -7,6 +7,8 @@ services:
       - build/docker.env
     ports:
       - "6432:5432"
+    volumes:
+      - ./data:/var/tmp/backup
 
   backend:
     depends_on:
@@ -21,10 +23,14 @@ services:
 
     ports:
       - "8080:8080"
+    volumes:
+      - ./data:/var/tmp/backup
     env_file:
       - build/docker.env
+      - .env
     environment:
       - JOBS_DB_HOST=db
+      - TMPDIR=/var/tmp/backup/
   d-transformer:
     build:
       context: ./rudder-transformer/
@@ -37,4 +43,13 @@ services:
       context: ./rudder-transformer/
       dockerfile: Dockerfile-ut
     ports:
-      - "9191:9191"
+      - "9292:9292"
+
+  minio:
+    image: minio/minio
+    ports:
+      - 9000:9000
+    environment:
+      - MINIO_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE
+      - MINIO_SECRET_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+    command: 'server /data'

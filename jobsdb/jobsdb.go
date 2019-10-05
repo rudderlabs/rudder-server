@@ -278,13 +278,13 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	if jd.toBackup {
 		jd.jobsFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
-			Provider:       "s3",
-			AmazonS3Bucket: config.GetEnv("JOBS_BACKUP_BUCKET", "dump-gateway-jobs-test"),
+			Provider: config.GetEnv("JOBS_BACKUP_PROVIDER", "s3"),
+			Bucket:   config.GetEnv("JOBS_BACKUP_BUCKET", "dump-gateway-jobs-test"),
 		})
 		jd.assertError(err)
 		jd.jobStatusFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
-			Provider:       "s3",
-			AmazonS3Bucket: config.GetEnv("JOB_STATUS_BACKUP_BUCKET", "dump-gateway-job-status-test"),
+			Provider: config.GetEnv("JOBS_BACKUP_PROVIDER", "s3"),
+			Bucket:   config.GetEnv("JOB_STATUS_BACKUP_BUCKET", "dump-gateway-job-status-test"),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()
@@ -1351,6 +1351,8 @@ func (jd *HandleT) backupDSLoop() {
 		backupDS := jd.getBackupDS()
 		// check if non empty dataset is present to backup
 		// else continue
+		logger.Info("BackupDS status", backupDS)
+
 		if (dataSetT{} == backupDS) {
 			// sleep for more duration if no dataset is found
 			time.Sleep(5 * backupCheckSleepDuration)
@@ -1360,6 +1362,8 @@ func (jd *HandleT) backupDSLoop() {
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
 		opID := jd.journalMarkStart(backupDSOperation, opPayload)
+		logger.Info("BackupDS backup:Start")
+
 		// write jobs table to s3
 		_, err = jd.backupTable(backupDS.JobTable)
 		jd.assertError(err)

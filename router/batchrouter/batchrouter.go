@@ -89,8 +89,8 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 
 	bucketName := batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
 	uploader, err := fileuploader.NewFileUploader(&fileuploader.SettingsT{
-		Provider:       "s3",
-		AmazonS3Bucket: bucketName,
+		Provider: "s3",
+		Bucket:   bucketName,
 	})
 	err = uploader.Upload(zipFile, config.GetEnv("DESTINATION_S3_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 	var jobState string

@@ -12,9 +12,8 @@ type FileUploader interface {
 
 // SettingsT sets configuration for FileUploader
 type SettingsT struct {
-	Provider       string
-	AmazonS3Bucket string
-	MinIOBucket    string
+	Provider string
+	Bucket   string
 }
 
 // NewFileUploader returns FileFileUploader backed by configured privider
@@ -22,12 +21,12 @@ func NewFileUploader(settings *SettingsT) (FileUploader, error) {
 	switch settings.Provider {
 	case "s3":
 		return &S3Uploader{
-			bucket: settings.AmazonS3Bucket,
+			bucket: settings.Bucket,
 		}, nil
 	case "minio":
 		return &MinIOUploader{
-			bucket: settings.MinIOBucket,
+			bucket: settings.Bucket,
 		}, nil
 	}
-	return nil, errors.New("No provider configured for FileUploader")
+	return nil, errors.New("No provider configured for FileUploader: " + settings.Provider)
 }

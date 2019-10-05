@@ -3,3 +3,4 @@ rudder-server
 .env
 .vscode
 runtime.log
+/data
