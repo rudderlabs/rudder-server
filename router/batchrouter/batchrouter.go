@@ -55,7 +55,7 @@ func backendConfigSubscriber() {
 	}
 }
 
-func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
+func (brt *HandleT) copyJobsToObjectStorage(batchJobs BatchJobsT) {
 	uuid := uuid.NewV4()
 	path := fmt.Sprintf("%v%v.json", config.GetEnv("TMPDIR", "/home/ubuntu/s3/"), fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
 	unzippedFile, err := os.Create(path)
@@ -87,12 +87,17 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	zipFile, err := os.Open(zipFilePath)
 	defer zipFile.Close()
 
-	bucketName := batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
-	uploader, err := fileuploader.NewFileUploader(&fileuploader.SettingsT{
-		Provider: "s3",
-		Bucket:   bucketName,
-	})
-	err = uploader.Upload(zipFile, config.GetEnv("DESTINATION_S3_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
+	uploader, err := fileuploader.CreateUploaderForDestination(batchJobs.BatchDestination.Destination)
+	misc.AssertError(err)
+
+	err = uploader.Upload(
+		zipFile,
+		config.GetEnv("DESTINATION_S3_BUCKET_FOLDER_NAME", "rudder-logs"),
+		batchJobs.BatchDestination.Source.ID,
+		time.Now().Format("01-02-2006"),
+	)
+	misc.AssertError(err)
+
 	var jobState string
 	if err != nil {
 		logger.Debug(err)
@@ -134,7 +139,9 @@ func (brt *HandleT) initWorkers() {
 				case batchJobs := <-brt.processQ:
 					switch batchJobs.BatchDestination.Destination.DestinationDefinition.Name {
 					case "S3":
-						brt.copyJobsToS3(batchJobs)
+						fallthrough
+					case "minio":
+						brt.copyJobsToObjectStorage(batchJobs)
 						delete(inProgressMap, batchJobs.BatchDestination.Source.ID)
 					}
 				}

@@ -10,14 +10,9 @@ import (
 
 // Upload passed in file to Object Storage
 func (uploader *MinIOUploader) Upload(file *os.File, prefixes ...string) error {
-	endpoint := config.GetEnv("MINIO_ENDPOINT", "")
-	location := config.GetEnv("MINIO_LOCATION", "")
-	accessKeyID := config.GetEnv("MINIO_ACCESS_KEY_ID", "")
-	secretAccessKey := config.GetEnv("MINIO_SECRET_ACCESS_KEY", "")
-	useSSL := config.GetBool("MINIO_USE_SSL", false)
 
 	// Initialize minio client object.
-	minioClient, err := minio.New(endpoint, accessKeyID, secretAccessKey, useSSL)
+	minioClient, err := minio.New(uploader.endpoint, uploader.accessKeyID, uploader.secretAccessKey, uploader.useSSL)
 	if err != nil {
 		return err
 	}
@@ -26,8 +21,9 @@ func (uploader *MinIOUploader) Upload(file *os.File, prefixes ...string) error {
 	if nil != errBucketExists {
 		return errBucketExists
 	}
+
 	if !exists {
-		err = minioClient.MakeBucket(uploader.bucket, location)
+		err = minioClient.MakeBucket(uploader.bucket, config.GetEnv("MINIO_LOCATION", ""))
 		if err != nil {
 			return err
 		}
@@ -56,5 +52,9 @@ func (uploader *MinIOUploader) Upload(file *os.File, prefixes ...string) error {
 
 // MinIOUploader contains config for uploading object min.io Object Storage
 type MinIOUploader struct {
-	bucket string
+	bucket          string
+	endpoint        string
+	accessKeyID     string
+	secretAccessKey string
+	useSSL          bool
 }
