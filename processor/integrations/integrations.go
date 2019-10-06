@@ -59,7 +59,7 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	parsedJSON := gjson.ParseBytes(transformRaw)
 	postInfo.URL, ok = parsedJSON.Get("endpoint").Value().(string)
 	misc.Assert(ok)
-	postInfo.UserID, ok = parsedJSON.Get("user_id").Value().(string)
+	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
 	misc.Assert(ok)
 	postInfo.Payload, ok = parsedJSON.Get("payload").Value().(interface{})
 	misc.Assert(ok)

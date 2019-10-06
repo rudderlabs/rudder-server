@@ -83,7 +83,7 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
 
 //GetRudderEventUserID return the UserID from the object
 func GetRudderEventUserID(eventList []interface{}) (string, bool) {
-	userID, ok := GetRudderEventVal("anonymous_id", eventList[0])
+	userID, ok := GetRudderEventVal("anonymousId", eventList[0])
 	if !ok {
 		return "", false
 	}
