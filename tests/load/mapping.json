@@ -4,17 +4,17 @@
     {
       "name": "Product Clicked",
       "mapping": {
-        "message.context.traits.anonymous_id": "cid",
-        "message.properties.url": "dl",
-        "message.properties.product_id": "pr1id",
-        "message.properties.name": "pr1nm",
-        "message.properties.sku": "pr1id",
-        "message.properties.category": "pr1ca",
-        "message.properties.brand": "pr1br",
-        "message.properties.variant": "pr1va",
-        "message.properties.coupon": "pr1cc",
-        "message.properties.price": "pr1pr",
-        "message.properties.dimensions.0": "pr1cd0"
+        "context.traits.anonymousId": "cid",
+        "properties.url": "dl",
+        "properties.product_id": "pr1id",
+        "properties.name": "pr1nm",
+        "properties.sku": "pr1id",
+        "properties.category": "pr1ca",
+        "properties.brand": "pr1br",
+        "properties.variant": "pr1va",
+        "properties.coupon": "pr1cc",
+        "properties.price": "pr1pr",
+        "properties.dimensions.0": "pr1cd0"
       },
       "rudder": {
         "channel": "Test Channel",
@@ -26,7 +26,7 @@
             "version": "1.0.0"
           },
           "traits": {
-            "anonymous_id": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6"
+            "anonymousId": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6"
           },
           "library": {
             "name": "com.rudderlabs.android.library",
@@ -56,7 +56,7 @@
         "type": "track",
         "message_id": "d6a75a2d-43a2-4d0c-9bcc-5f6e6705299b",
         "timestamp": "2019-08-05 10:38:03+0000",
-        "anonymous_id": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6",
+        "anonymousId": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6",
         "event": "Product Clicked",
         "properties": {
           "product_id": "507f1f77bcf86cd799439011",
@@ -88,10 +88,10 @@
     {
       "name": "Track",
       "mapping": {
-        "message.context.traits.anonymous_id": "cid",
-        "message.properties.category": "ec",
-        "message.properties.label": "el",
-        "message.properties.value": "ev"
+        "context.traits.anonymousId": "cid",
+        "properties.category": "ec",
+        "properties.label": "el",
+        "properties.value": "ev"
       },
       "rudder": {
         "channel": "Test Channel",
@@ -103,7 +103,7 @@
             "version": "1.0.0"
           },
           "traits": {
-            "anonymous_id": "19702fee-6184-482e-aa05-8ab21402e1f3"
+            "anonymousId": "19702fee-6184-482e-aa05-8ab21402e1f3"
           },
           "library": {
             "name": "com.rudderlabs.android.library",
@@ -133,7 +133,7 @@
         "type": "track",
         "message_id": "6def71bd-eae8-4cb1-bfe7-0b5e7eaf89fd",
         "timestamp": "2019-08-05 10:12:22+0000",
-        "anonymous_id": "19702fee-6184-482e-aa05-8ab21402e1f3",
+        "anonymousId": "19702fee-6184-482e-aa05-8ab21402e1f3",
         "event": "Test Track",
         "properties": {
           "category": "Test Category",
