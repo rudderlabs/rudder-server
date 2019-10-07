@@ -3,6 +3,7 @@ package router
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 
@@ -54,7 +55,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 		payloadKV, ok := postInfo.Payload.(map[string]interface{})
 		misc.Assert(ok)
 		for key, val := range payloadKV {
-			queryParams.Add(key, val.(string))
+			queryParams.Add(key, fmt.Sprint(val))
 		}
 	} else if postInfo.Type == integrations.PostDataJSON {
 		payloadJSON, ok := postInfo.Payload.(map[string]interface{})
