@@ -65,7 +65,7 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	misc.Assert(ok)
 	postInfo.Header, ok = parsedJSON.Get("header").Value().(interface{})
 	misc.Assert(ok)
-	postInfo.RequestConfig, ok = parsedJSON.Get("request_config").Value().(interface{})
+	postInfo.RequestConfig, ok = parsedJSON.Get("requestConfig").Value().(interface{})
 	misc.Assert(ok)
 	return postInfo
 }

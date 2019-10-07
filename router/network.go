@@ -25,9 +25,9 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 
 	requestConfig, ok := postInfo.RequestConfig.(map[string]interface{})
 	misc.Assert(ok)
-	requestMethod, ok := requestConfig["request_method"].(string)
+	requestMethod, ok := requestConfig["requestMethod"].(string)
 	misc.Assert(ok && (requestMethod == "POST" || requestMethod == "GET"))
-	requestFormat := requestConfig["request-format"].(string)
+	requestFormat := requestConfig["requestFormat"].(string)
 	misc.Assert(ok)
 
 	switch requestFormat {
