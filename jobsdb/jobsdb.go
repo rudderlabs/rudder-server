@@ -224,6 +224,10 @@ func GetConnectionString() string {
 
 }
 
+func (jd *HandleT) GetDBHandle() *sql.DB {
+	return jd.dbHandle
+}
+
 /*
 Setup is used to initialize the HandleT structure.
 clearAll = True means it will remove all existing tables
@@ -1404,9 +1408,9 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	defer file.Close()
 
 	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
-		err = jd.jobStatusFileUploader.Upload(file)
+		_, err = jd.jobStatusFileUploader.Upload(file)
 	} else {
-		err = jd.jobsFileUploader.Upload(file)
+		_, err = jd.jobsFileUploader.Upload(file)
 	}
 	jd.assertError(err)
 

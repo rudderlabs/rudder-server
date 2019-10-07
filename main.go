@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
+	"github.com/rudderlabs/rudder-server/router/warehouse"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -207,6 +208,9 @@ func main() {
 		var processor processor.HandleT
 		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
 	}
+
+	var warehouse warehouse.HandleT
+	warehouse.Setup()
 
 	var gateway gateway.HandleT
 	gateway.Setup(&gatewayDB)

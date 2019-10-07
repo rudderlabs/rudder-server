@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 
@@ -148,6 +149,29 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	AssertError(err)
 	_, err = io.Copy(writer, fileToZip)
 	return err
+}
+
+// UnZipSingleFile unzips zip containing single file into ouputfile path passed
+func UnZipSingleFile(outputfile string, filename string) {
+	r, err := zip.OpenReader(filename)
+	AssertError(err)
+	defer r.Close()
+	inputfile := r.File[0]
+	// Make File
+	err = os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
+	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
+	AssertError(err)
+	rc, err := inputfile.Open()
+	_, err = io.Copy(outFile, rc)
+	outFile.Close()
+	rc.Close()
+}
+
+func RemoveFilePaths(filepaths ...string) {
+	for _, filepath := range filepaths {
+		err := os.Remove(filepath)
+		AssertError(err)
+	}
 }
 
 // ReadLines reads a whole file into memory
