@@ -231,13 +231,8 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEve
 	}
 	misc.Assert(len(userEventsList) == len(userEvents))
 
-	//Call the transformation function
-	transformUserEventList, ok := proc.transformer.Transform(userEventsList,
-		integrations.GetUserTransformURL(), 0, false)
-	misc.Assert(ok)
-
 	//Create jobs that can be processed further
-	toProcessJobs, toProcessEvents := createUserTransformedJobsFromEvents(transformUserEventList, userIDList, userJobs)
+	toProcessJobs, toProcessEvents := createUserTransformedJobsFromEvents(userEventsList, userIDList, userJobs)
 
 	//Some sanity check to make sure we have all the jobs
 	misc.Assert(len(toProcessJobs) == totalJobs)
@@ -352,7 +347,7 @@ func getEnabledDestinationTypes(writeKey string) map[string]backendconfig.Destin
 	var enabledDestinationTypes = make(map[string]backendconfig.DestinationDefinitionT)
 	for _, destination := range writeKeyDestinationMap[writeKey] {
 		if destination.Enabled {
-			enabledDestinationTypes[destination.DestinationDefinition.Name] = destination.DestinationDefinition
+			enabledDestinationTypes[destination.DestinationDefinition.DisplayName] = destination.DestinationDefinition
 		}
 	}
 	return enabledDestinationTypes
@@ -402,6 +397,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				destTypes := integrations.GetDestinationIDs(singularEvent, destTypesFromConfig)
 
 				if len(destTypes) == 0 {
+					logger.Debug("No enabled destinations")
 					continue
 				}
 				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
@@ -409,26 +405,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
 					enabledDestinationsMap[destType] = enabledDestinationsList
 					// Adding a singular event multiple times if there are multiple destinations of same type
+					if len(destTypes) == 0 {
+						logger.Debugf("No enabled destinations for type %v", destType)
+						continue
+					}
 					for _, destination := range enabledDestinationsList {
 						shallowEventCopy := make(map[string]interface{})
 						singularEventMap, ok := singularEvent.(map[string]interface{})
 						misc.Assert(ok)
-						for k, v := range singularEventMap {
-							if k == "rl_message" {
-								//Need to overwrite ["rl_message"]["rl_destination"]
-								shallowEventCopy["rl_message"] = make(map[string]interface{})
-								singularEventMsgMap, ok := singularEventMap["rl_message"].(map[string]interface{})
-								misc.Assert(ok)
-								for km, vm := range singularEventMsgMap {
-									shallowEventCopy["rl_message"].(map[string]interface{})[km] = vm
-								}
-							} else {
-								shallowEventCopy[k] = v
-							}
-						}
-						shallowEventCopy["rl_message"].(map[string]interface{})["rl_destination"] = reflect.ValueOf(destination).Interface()
-						shallowEventCopy["rl_message"].(map[string]interface{})["rl_request_ip"] = requestIP
-						shallowEventCopy["rl_message"].(map[string]interface{})["rl_source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+						shallowEventCopy["message"] = singularEventMap
+						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
+						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
+						shallowEventCopy["message"].(map[string]interface{})["source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDest[destType]
@@ -479,7 +467,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 			//Need to replace UUID his with messageID from client
 			id := uuid.NewV4()
-			sourceID := destEventList[idx].(map[string]interface{})["rl_message"].(map[string]interface{})["rl_source_id"].(string)
+			sourceID := destEventList[idx].(map[string]interface{})["message"].(map[string]interface{})["source_id"].(string)
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID)),

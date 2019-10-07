@@ -164,6 +164,7 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, err error) {
 	var jobState string
 	if err != nil {
+		logger.Error(err)
 		jobState = jobsdb.FailedState
 	} else {
 		jobState = jobsdb.SucceededState

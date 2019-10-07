@@ -36,6 +36,7 @@ type webRequestT struct {
 	request *http.Request
 	writer  *http.ResponseWriter
 	done    chan<- string
+	reqType string
 }
 
 type batchWebRequestT struct {
@@ -53,6 +54,13 @@ var (
 
 // CustomVal is used as a key in the jobsDB customval column
 var CustomVal string
+
+var batchEvent = []byte(`
+	{
+		"batch": [
+		]
+	}
+`)
 
 func loadConfig() {
 	//Port where GW is running
@@ -122,7 +130,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		var preDbStoreCount int
 		//Saving the event data read from req.request.Body to the splice.
 		//Using this to send event schema to the config backend.
-		var events []*string
+		var events []string
 		batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
 			ipAddr := misc.GetIPFromReq(req.request)
@@ -133,9 +141,15 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
-			bodyJSON := fmt.Sprintf("%s", body)
-			events = append(events, &bodyJSON)
-			writeKey := gjson.Get(bodyJSON, "writeKey").Str
+
+			writeKey, _, ok := req.request.BasicAuth()
+			if !ok {
+				req.done <- "Failed to read writeKey from header"
+				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey")
+				continue
+			}
+
 			misc.IncrementMapByKey(writeKeyStats, writeKey)
 			if err != nil {
 				req.done <- "Failed to read body from request"
@@ -155,14 +169,22 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
 				continue
 			}
+
+			if req.reqType != "batch" {
+				body, _ = sjson.SetBytes(body, "type", req.reqType)
+				body, _ = sjson.SetRawBytes(batchEvent, "batch.0", body)
+			}
+
 			logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
+			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
+			events = append(events, fmt.Sprintf("%s", body))
 
 			id := uuid.NewV4()
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, enabledWriteKeysSourceMap[gjson.Get(fmt.Sprintf("%s", body), "writeKey").Str])),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, enabledWriteKeysSourceMap[writeKey])),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    CustomVal,
@@ -186,7 +208,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 		//Sending events to config backend
 		for _, event := range events {
-			sourcedebugger.RecordEvent(gjson.Get(*event, "writeKey").Str, *event)
+			sourcedebugger.RecordEvent(gjson.Get(event, "writeKey").Str, event)
 		}
 
 		batchTimeStat.End()
@@ -246,12 +268,39 @@ func stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.Respon
 	}
 }
 
-//Main handler function for incoming requets
-func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
+func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "batch")
+}
+
+func (gateway *HandleT) webIdentifyHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "identify")
+}
+
+func (gateway *HandleT) webTrackHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "track")
+}
+
+func (gateway *HandleT) webPageHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "page")
+}
+
+func (gateway *HandleT) webScreenHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "screen")
+}
+
+func (gateway *HandleT) webAliasHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "alias")
+}
+
+func (gateway *HandleT) webGroupHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "group")
+}
+
+func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	done := make(chan string)
-	req := webRequestT{request: r, writer: &w, done: done}
+	req := webRequestT{request: r, writer: &w, done: done, reqType: reqType}
 	gateway.webRequestQ <- &req
 	//Wait for batcher process to be done
 	errorMessage := <-done
@@ -263,7 +312,6 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request) {
 		logger.Debug(respMessage)
 		w.Write([]byte(respMessage))
 	}
-
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -276,9 +324,21 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gateway *HandleT) startWebHandler() {
+	//Wait until we get config from control plane backend atleast once
+	ch1 := make(chan utils.DataEvent)
+	backendconfig.Eb.Subscribe("backendconfig", ch1)
+	<-ch1
+
 	logger.Infof("Starting in %d\n", webPort)
-	http.HandleFunc("/hello", stat(gateway.webHandler))
-	http.HandleFunc("/events", stat(gateway.webHandler))
+
+	http.HandleFunc("/v1/batch", stat(gateway.webBatchHandler))
+	http.HandleFunc("/v1/identify", stat(gateway.webIdentifyHandler))
+	http.HandleFunc("/v1/track", stat(gateway.webTrackHandler))
+	http.HandleFunc("/v1/page", stat(gateway.webPageHandler))
+	http.HandleFunc("/v1/screen", stat(gateway.webScreenHandler))
+	http.HandleFunc("/v1/alias", stat(gateway.webAliasHandler))
+	http.HandleFunc("/v1/group", stat(gateway.webGroupHandler))
+
 	http.HandleFunc("/health", gateway.healthHandler)
 	http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil))
 }

@@ -23,22 +23,17 @@ type EventSchemaT struct {
 
 //MessageT is a structure to hold actual event data
 type MessageT struct {
-	RlEvent        string      `json:"rl_event"`
-	RlIntegrations interface{} `json:"rl_integrations"`
-	RlProperties   interface{} `json:"rl_properties"`
-	RlTimestamp    string      `json:"rl_timestamp"`
-	RlType         string      `json:"rl_type"`
-}
-
-//MessageBatchT is a structure to hold rl_message
-type MessageBatchT struct {
-	RlMessage MessageT `json:"rl_message"`
+	Event        string      `json:"event"`
+	Integrations interface{} `json:"integrations"`
+	Properties   interface{} `json:"properties"`
+	Timestamp    string      `json:"timestamp"`
+	Type         string      `json:"type"`
 }
 
 //EventT is a structure to hold batch of events
 type EventT struct {
 	WriteKey string
-	Batch    []MessageBatchT
+	Batch    []MessageT
 }
 
 var uploadEnabledWriteKeys []string
@@ -106,8 +101,8 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 		}
 
 		for _, ev := range batchedEvent.Batch {
-			filterValues(&ev.RlMessage)
-			arr = append(arr, ev.RlMessage)
+			filterValues(&ev)
+			arr = append(arr, ev)
 		}
 
 		res[batchedEvent.WriteKey] = arr
@@ -144,7 +139,7 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 }
 
 func filterValues(message *MessageT) {
-	message.RlProperties = getKeys(message.RlProperties.(map[string]interface{}))
+	message.Properties = getKeys(message.Properties.(map[string]interface{}))
 }
 
 func getKeys(dataMap map[string]interface{}) []string {

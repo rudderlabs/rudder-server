@@ -1270,7 +1270,7 @@ func (jd *HandleT) mainCheckLoop() {
 
 	for {
 		time.Sleep(mainCheckSleepDuration)
-		logger.Info("Main check:Start")
+		logger.Debug("Main check:Start")
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
 		jd.dsListLock.RUnlock()

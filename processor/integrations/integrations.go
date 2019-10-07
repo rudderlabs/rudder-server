@@ -59,13 +59,13 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	parsedJSON := gjson.ParseBytes(transformRaw)
 	postInfo.URL, ok = parsedJSON.Get("endpoint").Value().(string)
 	misc.Assert(ok)
-	postInfo.UserID, ok = parsedJSON.Get("user_id").Value().(string)
+	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
 	misc.Assert(ok)
 	postInfo.Payload, ok = parsedJSON.Get("payload").Value().(interface{})
 	misc.Assert(ok)
 	postInfo.Header, ok = parsedJSON.Get("header").Value().(interface{})
 	misc.Assert(ok)
-	postInfo.RequestConfig, ok = parsedJSON.Get("request_config").Value().(interface{})
+	postInfo.RequestConfig, ok = parsedJSON.Get("requestConfig").Value().(interface{})
 	misc.Assert(ok)
 	return postInfo
 }
@@ -73,7 +73,7 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 //GetDestinationIDs parses the destination names from the
 //input JSON, matches them with enabled destinations from controle plane and returns the IDSs
 func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
-	clientIntgs, ok := misc.GetRudderEventVal("rl_integrations", clientEvent)
+	clientIntgs, ok := misc.GetRudderEventVal("integrations", clientEvent)
 	if !ok {
 		return
 	}
@@ -88,7 +88,7 @@ func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backend
 			continue
 		}
 		if (clientIntgsList["All"] != false) || clientIntgsList[dest] == true {
-			outVal = append(outVal, dest)
+			outVal = append(outVal, destNameIDMap[dest].Name)
 		}
 	}
 	retVal = outVal
