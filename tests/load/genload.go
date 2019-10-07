@@ -147,7 +147,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 				for k, _ := range mapping {
 					////fmt.Printf("key %v, val %v \n", k, v.Value())
 
-					if strings.Contains(k, "anonymous_id") {
+					if strings.Contains(k, "anonymousId") {
 						userIDpath = k
 					}
 
@@ -246,7 +246,7 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 					for k, _ := range mapping {
 						////fmt.Printf("key %v, val %v \n", k, v.Value())
 
-						if strings.Contains(k, "anonymous_id") {
+						if strings.Contains(k, "anonymousId") {
 							userIDpath = k
 						}
 
