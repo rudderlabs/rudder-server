@@ -163,7 +163,7 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 		}
 
 		// BEGIN TRANSACTION
-		_, err = rs.Db.Exec("BEGIN TRANSACTION")
+		tx, err := rs.Db.Begin()
 		if err != nil {
 			rs.setUploadError(err)
 			return err
@@ -171,15 +171,17 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 
 		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION 'us-east-1'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.SchemaName, stagingTableName), sortedColumnNames, manifestLocation, config.GetEnv("IAM_REDSHIFT_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_REDSHIFT_COPY_SECRET_ACCESS_KEY", ""))
 
-		_, err = rs.Db.Exec(sqlStatement)
+		_, err = tx.Exec(sqlStatement)
 		if err != nil {
+			tx.Rollback()
 			rs.setUploadError(err)
 			return err
 		}
 
 		sqlStatement = fmt.Sprintf(`delete from %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.id = %[1]s.%[2]s.id`, rs.SchemaName, tableName, stagingTableName)
-		_, err = rs.Db.Exec(sqlStatement)
+		_, err = tx.Exec(sqlStatement)
 		if err != nil {
+			tx.Rollback()
 			rs.setUploadError(err)
 			return err
 		}
@@ -193,14 +195,14 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 		}
 
 		sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY id ORDER BY received_at ASC) AS _rudder_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.SchemaName, tableName, quotedColumnNames, stagingTableName)
-		_, err = rs.Db.Exec(sqlStatement)
+		_, err = tx.Exec(sqlStatement)
 		if err != nil {
+			tx.Rollback()
 			rs.setUploadError(err)
 			return err
 		}
 
-		// END TRANSACTION
-		_, err = rs.Db.Exec("END TRANSACTION")
+		err = tx.Commit()
 		if err != nil {
 			rs.setUploadError(err)
 			return err

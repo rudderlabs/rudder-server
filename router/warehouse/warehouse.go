@@ -98,7 +98,7 @@ func backendConfigSubscriber() {
 		for _, source := range allSources.Sources {
 			if source.Enabled && len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if misc.Contains(availableWarehouses, destination.DestinationDefinition.Name) {
+					if misc.Contains(availableWarehouses, destination.DestinationDefinition.Name) && destination.Enabled {
 						warehouses = append(warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
 						break
 					}
