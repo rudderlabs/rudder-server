@@ -30,8 +30,8 @@ func NewFileUploader(settings *SettingsT) (FileUploader, error) {
 		return &MinIOUploader{
 			bucket:          settings.Bucket,
 			endpoint:        config.GetEnv("MINIO_ENDPOINT", ""),
-			accessKeyID:     config.GetEnv("MINIO_ACCESS_KEY_ID", ""),
-			secretAccessKey: config.GetEnv("MINIO_SECRET_ACCESS_KEY", ""),
+			accessKeyID:     config.GetEnv("MINIO_ACCESS_KEY", ""),
+			secretAccessKey: config.GetEnv("MINIO_SECRET_KEY", ""),
 			useSSL:          config.GetBool("MINIO_USE_SSL", false),
 		}, nil
 	}
