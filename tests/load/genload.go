@@ -161,6 +161,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 				eventNames := []string{"Homepage visited", "User signed up", "Product added to cart", "Product added to wishlist"}
 				rudderData = generateRandomDataFromSlice(eventNames, &rudderData, "event", "track")
 				rudderData, _ = sjson.SetBytes(rudderData, "timestamp", time.Now())
+				rudderData, _ = sjson.SetBytes(rudderData, "message_id", uuid.NewV4().String())
 
 				rudderData, err = sjson.SetBytes(rudderData, userIDpath, uid)
 				misc.AssertError(err)

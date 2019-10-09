@@ -50,7 +50,15 @@ maxFailedCountForJob = 8
 keepOrderOnFailure = true
 
 [BatchRouter]
-mainLoopSleepInS = 30
+mainLoopSleepInS = 2
+noOfWorkers = 8
+
+[Warehouse]
+jsonUploadsTable = "wh_json_uploads"
+csvUploadsTable = "wh_csv_uploads"
+uploadsTable = "wh_uploads"
+schemasTable = "wh_schemas"
+uploadSleepInMin = 15
 noOfWorkers = 8
 
 [Processor]

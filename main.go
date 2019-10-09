@@ -43,7 +43,7 @@ func loadConfig() {
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
 	enableBackup = config.GetBool("JobsDB.enableBackup", true)
-	rawDataDestinations = []string{"S3"}
+	rawDataDestinations = []string{"S3", "RS"}
 }
 
 // Test Function

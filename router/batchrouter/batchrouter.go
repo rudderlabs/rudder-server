@@ -51,7 +51,7 @@ func backendConfigSubscriber() {
 		for _, source := range allSources.Sources {
 			if source.Enabled && len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if misc.Contains(rawDataDestinations, destination.DestinationDefinition.Name) {
+					if misc.Contains(rawDataDestinations, destination.DestinationDefinition.Name) && destination.Enabled {
 						batchDestinations = append(batchDestinations, DestinationT{Source: source, Destination: destination})
 					}
 				}
@@ -61,7 +61,6 @@ func backendConfigSubscriber() {
 	}
 }
 
-// S3UploadOutput ...
 type S3UploadOutput struct {
 	Bucket         string
 	Key            string
@@ -73,7 +72,13 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT, bucket string, isWarehous
 
 	uuid := uuid.NewV4()
 	fileName := fmt.Sprintf("%v.%v.%v.json", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid)
-	path := fmt.Sprintf("%v%v", config.GetEnv("TMPDIR2", "/Users/srikanth/"), fileName)
+	var subDir string
+	if isWarehouse {
+		subDir = "warehousejsons/"
+	} else {
+		subDir = "destjsons/"
+	}
+	path := fmt.Sprintf("%v%v%v", config.GetEnv("S3_UPLOADS_DIR", "/home/ubuntu/s3/"), subDir, fileName)
 	var content string
 	for _, job := range batchJobs.Jobs {
 		trimmedPayload := bytes.TrimLeft(job.EventPayload, " \t\r\n")
@@ -197,12 +202,12 @@ func (brt *HandleT) initWorkers() {
 				select {
 				case batchJobs := <-brt.processQ:
 					switch batchJobs.BatchDestination.Destination.DestinationDefinition.Name {
-					case "S31":
+					case "S3":
 						output := brt.copyJobsToS3(batchJobs, batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string), false)
 						brt.setJobStatus(batchJobs, output.Error)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						delete(inProgressMap, batchJobs.BatchDestination.Destination.ID)
-					case "S3":
+					case "RS":
 						output := brt.copyJobsToS3(batchJobs, "rl-redshift-json-dump", true)
 						err := output.Error
 						if err == nil {
@@ -218,13 +223,11 @@ func (brt *HandleT) initWorkers() {
 	}
 }
 
-// DestinationT ...
 type DestinationT struct {
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
 }
 
-// BatchJobsT ...
 type BatchJobsT struct {
 	Jobs             []*jobsdb.JobT
 	BatchDestination DestinationT
@@ -347,8 +350,8 @@ func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
 	mainLoopSleepInS = config.GetInt("BatchRouter.mainLoopSleepInS", 5)
-	warehouseJSONUploadsTable = config.GetString("warehouseJSONUploadsTable", "wh_json_uploads")
-	rawDataDestinations = []string{"S3"}
+	warehouseJSONUploadsTable = config.GetString("Warehouse.jsonUploadsTable", "wh_json_uploads")
+	rawDataDestinations = []string{"S3", "RS"}
 	inProgressMap = map[string]bool{}
 }
 

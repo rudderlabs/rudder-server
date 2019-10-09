@@ -37,9 +37,9 @@ func init() {
 }
 
 func loadConfig() {
-	warehouseUploadsTable = config.GetString("BatchRouter.warehouseUploadsTable", "wh_uploads")
-	warehouseSchemasTable = config.GetString("BatchRouter.warehouseSchemasTable", "wh_schemas")
-	warehouseCSVUploadsTable = config.GetString("BatchRouter.warehouseCSVUploadsTable", "wh_schemas")
+	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
+	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
+	warehouseCSVUploadsTable = config.GetString("Warehouse.csvUploadsTable", "wh_schemas")
 }
 
 // WarehouseT ...
@@ -147,7 +147,6 @@ func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema ma
 // GetCSVLocations ...
 func GetCSVLocations(dbHandle *sql.DB, tableName string, start, end int64) (locations []string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s WHERE (%[1]s.table_name='%[2]s' AND %[1]s.id > %[3]v AND %[1]s.id <= %[4]v)`, warehouseCSVUploadsTable, tableName, start, end)
-	fmt.Println(sqlStatement)
 	rows, err := dbHandle.Query(sqlStatement)
 	defer rows.Close()
 	misc.AssertError(err)
@@ -158,11 +157,6 @@ func GetCSVLocations(dbHandle *sql.DB, tableName string, start, end int64) (loca
 		misc.AssertError(err)
 		locations = append(locations, location)
 	}
-
-	fmt.Println("^^^")
-	fmt.Println(locations)
-	fmt.Println("^^^")
-
 	return
 }
 

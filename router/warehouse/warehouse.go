@@ -39,14 +39,12 @@ var (
 	warehouseSchemasTable     string
 )
 
-// HandleT ...
 type HandleT struct {
 	dbHandle *sql.DB
 	processQ chan ProcessJSONsJobT
 	uploadQ  chan JSONToCSVsJobT
 }
 
-// ProcessJSONsJobT ...
 type ProcessJSONsJobT struct {
 	UploadID   int64
 	List       []*JSONUploadT
@@ -55,7 +53,6 @@ type ProcessJSONsJobT struct {
 	StartCSVID int64
 }
 
-// JSONToCSVsJobT ...
 type JSONToCSVsJobT struct {
 	UploadID  int64
 	JSON      *JSONUploadT
@@ -64,7 +61,6 @@ type JSONToCSVsJobT struct {
 	Wg        *sync.WaitGroup
 }
 
-// JSONUploadT ...
 type JSONUploadT struct {
 	ID        string
 	Location  string
@@ -81,13 +77,13 @@ func init() {
 
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
-	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
+	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	warehouseUploadSleepInMin = config.GetInt("BatchRouter.warehouseUploadSleepInMin", 60)
-	warehouseJSONUploadsTable = config.GetString("BatchRouter.warehouseJSONUploadsTable", "wh_json_uploads")
-	warehouseCSVUploadsTable = config.GetString("BatchRouter.warehouseCSVUploadsTable", "wh_csv_uploads")
-	warehouseUploadsTable = config.GetString("BatchRouter.warehouseUploadsTable", "wh_uploads")
-	warehouseSchemasTable = config.GetString("BatchRouter.warehouseSchemasTable", "wh_schemas")
-	availableWarehouses = []string{"S3"}
+	warehouseJSONUploadsTable = config.GetString("Warehouse.jsonUploadsTable", "wh_json_uploads")
+	warehouseCSVUploadsTable = config.GetString("Warehouse.csvUploadsTable", "wh_csv_uploads")
+	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
+	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
+	availableWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
 }
 
@@ -205,7 +201,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	startJSONID := jsonUploadsList[0].ID
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
 	currentSchema, err := json.Marshal(schema)
-	row := stmt.QueryRow(warehouse.Source.ID, strcase.ToSnake(warehouse.Source.Name), warehouse.Destination.ID, warehouse.Destination.DestinationDefinition.Name, startJSONID, endJSONID, startCSVID, warehouseutils.GeneratingCsvState, currentSchema, time.Now(), time.Now())
+	row := stmt.QueryRow(warehouse.Source.ID, strings.ToLower(strcase.ToSnake(warehouse.Source.Name)), warehouse.Destination.ID, warehouse.Destination.DestinationDefinition.Name, startJSONID, endJSONID, startCSVID, warehouseutils.GeneratingCsvState, currentSchema, time.Now(), time.Now())
 	err = row.Scan(&uploadID)
 	misc.AssertError(err)
 	return
@@ -213,8 +209,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 func (wh *HandleT) mainLoop() {
 	for {
-		time.Sleep(time.Duration(2) * time.Second)
-		// time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
+		time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
 		for _, warehouse := range warehouses {
 			if inProgressMap[warehouse.Destination.ID] {
 				continue
@@ -229,10 +224,6 @@ func (wh *HandleT) mainLoop() {
 			id, startCSVID, err := wh.initUpload(warehouse, jsonUploadsList, consolidatedSchema)
 			inProgressMap[warehouse.Destination.ID] = true
 			wh.processQ <- ProcessJSONsJobT{List: jsonUploadsList, Schema: consolidatedSchema, Warehouse: warehouse, UploadID: id, StartCSVID: startCSVID}
-			// get all wh_json_uploads rows
-			// consolidate schema
-			// create record on wh_uploads table
-			// send to worker channel
 		}
 	}
 }
@@ -250,7 +241,6 @@ func (wh *HandleT) initWorkers() {
 				wg.Wait()
 
 				var endCSVID int64
-				// TODO: add where clause
 				lastCSVIDSql := fmt.Sprintf(`SELECT id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY id DESC LIMIT 1`, warehouseCSVUploadsTable, processJSONsJob.Warehouse.Source.ID, processJSONsJob.Warehouse.Destination.ID)
 				err := wh.dbHandle.QueryRow(lastCSVIDSql).Scan(&endCSVID)
 				misc.AssertError(err)
@@ -258,7 +248,6 @@ func (wh *HandleT) initWorkers() {
 				sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, end_csv_id=$2 WHERE id=$3`, warehouseUploadsTable)
 				_, err = wh.dbHandle.Exec(sqlStatement, warehouseutils.GeneratedCsvState, endCSVID, processJSONsJob.UploadID)
 				misc.AssertError(err)
-				// delete(inProgressMap, processJSONsJob.Warehouse.Destination.ID)
 				var rs redshift.HandleT
 				rs.Setup(warehouseutils.ConfigT{
 					DbHandle:   wh.dbHandle,
@@ -268,14 +257,14 @@ func (wh *HandleT) initWorkers() {
 					StartCSVID: processJSONsJob.StartCSVID,
 					EndCSVID:   endCSVID,
 				})
+				delete(inProgressMap, processJSONsJob.Warehouse.Destination.ID)
 			}
 		}()
 	}
 }
 
 func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
-	// TODO: change this
-	jsonPath := config.GetEnv("TMPDIR2", "/Users/srikanth/warehousedata/")
+	jsonPath := config.GetEnv("S3_UPLOADS_DIR", "/home/ubuntu/s3/warehousedata/")
 	jsonPath += job.Warehouse.Destination.DestinationDefinition.Name + "/" + job.JSON.Location
 	err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 	jsonFile, err := os.Create(jsonPath)
@@ -283,7 +272,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 
 	downloader, err := fileuploader.NewFileUploader(&fileuploader.SettingsT{
 		Provider:       "s3",
-		AmazonS3Bucket: "rl-redshift-json-dump",
+		AmazonS3Bucket: config.GetEnv("WAREHOUSE_JSON_DUMP_BUCKET", "rl-redshift-json-dump"),
 	})
 
 	err = downloader.Download(jsonFile, job.JSON.Location)
@@ -336,7 +325,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	}
 	uploader, err := fileuploader.NewFileUploader(&fileuploader.SettingsT{
 		Provider:       "s3",
-		AmazonS3Bucket: "rl-redshift-csv-dump",
+		AmazonS3Bucket: config.GetEnv("WAREHOUSE_CSV_DUMP_BUCKET", "rl-redshift-csv-dump"),
 	})
 	misc.AssertError(err)
 	for tableName, csvFile := range csvFileMap {
@@ -428,13 +417,13 @@ func (wh *HandleT) setupTables() {
 									  destination_id VARCHAR(64) NOT NULL,
 									  destination_type VARCHAR(64) NOT NULL,
 									  schema JSONB NOT NULL,
+									  error VARCHAR(512),
 									  created_at TIMESTAMP NOT NULL);`, warehouseSchemasTable)
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 }
 
-// Setup ...
 func (wh *HandleT) Setup() {
 	var err error
 	psqlInfo := jobsdb.GetConnectionString()

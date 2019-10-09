@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/config"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -18,7 +20,10 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
-// HandleT ...
+var (
+	warehouseUploadsTable string
+)
+
 type HandleT struct {
 	DbHandle      *sql.DB
 	Db            *sql.DB
@@ -47,11 +52,17 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr[:], ",")
 }
 
+func (rs *HandleT) setUploadError(err error) {
+	warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportingDataFailedState, rs.DbHandle)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2 WHERE id=$3`, warehouseUploadsTable)
+	_, err = rs.DbHandle.Exec(sqlStatement, warehouseutils.ExportingDataFailedState, err.Error(), rs.UploadID)
+	misc.AssertError(err)
+}
+
 func (rs *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sortKeyField := "received_at"
-	sql1 := fmt.Sprintf(`CREATE TABLE %s ( %v ) SORTKEY(%s)`, name, columnsWithDataTypes(columns, ""), sortKeyField)
-	fmt.Println(sql1)
-	_, err = rs.Db.Exec(sql1)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE %s ( %v ) SORTKEY(%s)`, name, columnsWithDataTypes(columns, ""), sortKeyField)
+	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
 
@@ -62,7 +73,7 @@ func (rs *HandleT) addColumns(tableName string, columns map[string]string) (err 
 
 func (rs *HandleT) createSchema() (err error) {
 	// TODO: Change to use source_schema_name in wh_schemas table
-	_, err = rs.Db.Exec(fmt.Sprintf(`CREATE SCHEMA %s`, strings.ToLower(rs.SchemaName)))
+	_, err = rs.Db.Exec(fmt.Sprintf(`CREATE SCHEMA %s`, rs.SchemaName))
 	return
 }
 
@@ -75,7 +86,7 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	}
 	processedTables := make(map[string]bool)
 	for _, tableName := range diff.Tables {
-		err = rs.createTable(fmt.Sprintf(`%s.%s`, strings.ToLower(rs.SchemaName), tableName), diff.ColumnMaps[tableName])
+		err = rs.createTable(fmt.Sprintf(`%s.%s`, rs.SchemaName, tableName), diff.ColumnMaps[tableName])
 		misc.AssertError(err)
 		processedTables[tableName] = true
 	}
@@ -84,7 +95,7 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 			continue
 		}
 		if len(columnMap) > 0 {
-			rs.addColumns(fmt.Sprintf(`%s.%s`, strings.ToLower(rs.SchemaName), tableName), columnMap)
+			rs.addColumns(fmt.Sprintf(`%s.%s`, rs.SchemaName, tableName), columnMap)
 		}
 	}
 	return
@@ -107,16 +118,19 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	for _, location := range csvS3Locations {
 		manifest.Entries = append(manifest.Entries, S3ManifestEntryT{Url: location, Mandatory: true})
 	}
-	x, err := json.Marshal(&manifest)
-	_ = ioutil.WriteFile("test2.json", x, 0644)
+	manifestJSON, err := json.Marshal(&manifest)
+	localManifestPath := fmt.Sprintf("%v%v", config.GetEnv("S3_UPLOADS_DIR", "/home/ubuntu/s3/redshift-manifests/"), uuid.NewV4().String())
+	err = os.MkdirAll(filepath.Dir(localManifestPath), os.ModePerm)
+	misc.AssertError(err)
+	_ = ioutil.WriteFile(localManifestPath, manifestJSON, 0644)
 
-	file, err := os.Open("test2.json")
+	file, err := os.Open(localManifestPath)
 	misc.AssertError(err)
 	defer file.Close()
 
 	uploader, err := fileuploader.NewFileUploader(&fileuploader.SettingsT{
 		Provider:       "s3",
-		AmazonS3Bucket: "rl-redshift-manifests",
+		AmazonS3Bucket: config.GetEnv("REDSHIFT_MANIFESTS_BUCKET", "rl-redshift-manifests"),
 	})
 	uploadLocation, err := uploader.Upload(file, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
 
@@ -127,71 +141,97 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	return uploadLocation, nil
 }
 
-func (rs *HandleT) load(schema map[string]map[string]string) {
+func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 	for tableName, columnMap := range schema {
 		manifestLocation, err := rs.generateManifest(tableName, columnMap)
 		misc.AssertError(err)
 
+		// sort columnnames
 		keys := reflect.ValueOf(columnMap).MapKeys()
 		strkeys := make([]string, len(keys))
 		for i := 0; i < len(keys); i++ {
 			strkeys[i] = keys[i].String()
 		}
 		sort.Strings(strkeys)
-		x := strings.Join(strkeys, ",")
+		sortedColumnNames := strings.Join(strkeys, ",")
 
 		stagingTableName := "staging-" + uuid.NewV4().String()
-
-		rs.createTable(fmt.Sprintf(`%s."%s"`, rs.SchemaName, stagingTableName), schema[tableName])
+		err = rs.createTable(fmt.Sprintf(`%s."%s"`, rs.SchemaName, stagingTableName), schema[tableName])
+		if err != nil {
+			rs.setUploadError(err)
+			return err
+		}
 
 		// BEGIN TRANSACTION
 		_, err = rs.Db.Exec("BEGIN TRANSACTION")
-		misc.AssertError(err)
+		if err != nil {
+			rs.setUploadError(err)
+			return err
+		}
 
-		fmt.Println(config.GetEnv("IAM_REDSHIFT_COPY_ACCESS_KEY_ID", ""))
-		fmt.Println(config.GetEnv("IAM_REDSHIFT_COPY_SECRET_ACCESS_KEY", ""))
+		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION 'us-east-1'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.SchemaName, stagingTableName), sortedColumnNames, manifestLocation, config.GetEnv("IAM_REDSHIFT_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_REDSHIFT_COPY_SECRET_ACCESS_KEY", ""))
 
-		sql1 := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID 'AKIAWTVBJHCTOVBR4PE4' SECRET_ACCESS_KEY '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' REGION 'us-east-1'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, strings.ToLower(rs.SchemaName), stagingTableName), x, manifestLocation)
-		fmt.Println(sql1)
+		_, err = rs.Db.Exec(sqlStatement)
+		if err != nil {
+			rs.setUploadError(err)
+			return err
+		}
 
-		_, err = rs.Db.Exec(sql1)
-		misc.AssertError(err)
+		sqlStatement = fmt.Sprintf(`delete from %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.id = %[1]s.%[2]s.id`, rs.SchemaName, tableName, stagingTableName)
+		_, err = rs.Db.Exec(sqlStatement)
+		if err != nil {
+			rs.setUploadError(err)
+			return err
+		}
 
-		sql2 := fmt.Sprintf(`delete from %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.id = %[1]s.%[2]s.id`, rs.SchemaName, tableName, stagingTableName)
-		fmt.Println(sql2)
-		_, err = rs.Db.Exec(sql2)
-		misc.AssertError(err)
-
-		var cstring string
+		var quotedColumnNames string
 		for idx, str := range strkeys {
-			cstring += "\"" + str + "\""
+			quotedColumnNames += "\"" + str + "\""
 			if idx != len(strkeys)-1 {
-				cstring += ","
+				quotedColumnNames += ","
 			}
 		}
 
-		sql3 := fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY id ORDER BY received_at ASC) AS _segment_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _segment_staging_row_number = 1`, rs.SchemaName, tableName, cstring, stagingTableName)
-		fmt.Println(sql3)
-		_, err = rs.Db.Exec(sql3)
-		misc.AssertError(err)
+		sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY id ORDER BY received_at ASC) AS _rudder_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.SchemaName, tableName, quotedColumnNames, stagingTableName)
+		_, err = rs.Db.Exec(sqlStatement)
+		if err != nil {
+			rs.setUploadError(err)
+			return err
+		}
 
 		// END TRANSACTION
 		_, err = rs.Db.Exec("END TRANSACTION")
-		misc.AssertError(err)
+		if err != nil {
+			rs.setUploadError(err)
+			return err
+		}
 
 		_, err = rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.SchemaName, stagingTableName))
-		misc.AssertError(err)
+		if err != nil {
+			rs.setUploadError(err)
+			return err
+		}
 
 	}
+	return
 }
 
-func connect(username, password, host, port, dbName string) (*sql.DB, error) {
+// RedshiftCredentialsT ...
+type RedshiftCredentialsT struct {
+	host     string
+	port     string
+	dbName   string
+	username string
+	password string
+}
+
+func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v",
-		username,
-		password,
-		host,
-		port,
-		dbName)
+		cred.username,
+		cred.password,
+		cred.host,
+		cred.port,
+		cred.dbName)
 
 	var err error
 	var db *sql.DB
@@ -205,7 +245,15 @@ func connect(username, password, host, port, dbName string) (*sql.DB, error) {
 	return db, nil
 }
 
-// Setup ...
+func loadConfig() {
+	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
+}
+
+func init() {
+	config.Initialize()
+	loadConfig()
+}
+
 func (rs *HandleT) Setup(config warehouseutils.ConfigT) {
 	var err error
 	rs.DbHandle = config.DbHandle
@@ -214,17 +262,40 @@ func (rs *HandleT) Setup(config warehouseutils.ConfigT) {
 	rs.Warehouse = config.Warehouse
 	rs.StartCSVID = config.StartCSVID
 	rs.EndCSVID = config.EndCSVID
-	// rs.Db, err = connect("awsuser", "Password1", "cluster-3.cp1zcnlfhcbf.us-east-1.redshift.amazonaws.com", "5439", "dev")
-	rs.Db, err = connect("awsuser", "Password1", "rl-test-1.cqbi47bgz1hk.us-east-1.redshift.amazonaws.com", "5439", "dev")
-	misc.AssertError(err)
+	rs.Db, err = connect(RedshiftCredentialsT{
+		host:     rs.Warehouse.Destination.Config.(map[string]interface{})["host"].(string),
+		port:     rs.Warehouse.Destination.Config.(map[string]interface{})["port"].(string),
+		dbName:   rs.Warehouse.Destination.Config.(map[string]interface{})["database"].(string),
+		username: rs.Warehouse.Destination.Config.(map[string]interface{})["user"].(string),
+		password: rs.Warehouse.Destination.Config.(map[string]interface{})["password"].(string),
+	})
+	if err != nil {
+		rs.setUploadError(err)
+		return
+	}
 	rs.CurrentSchema, err = warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
 	misc.AssertError(err)
-	rs.SchemaName = strings.ToLower(rs.Warehouse.Source.Name)
+	rs.SchemaName = strings.ToLower(strcase.ToSnake(rs.Warehouse.Source.Name))
 	warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.UpdatingSchemaState, rs.DbHandle)
 	updatedSchema, err := rs.updateSchema()
+	if err != nil {
+		rs.setUploadError(err)
+		return
+	}
+	err = warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.UpdatedSchemaState, rs.DbHandle)
 	misc.AssertError(err)
-	warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.UpdatedSchemaState, rs.DbHandle)
-	warehouseutils.UpdateCurrentSchema(rs.Warehouse, rs.UploadID, rs.CurrentSchema, updatedSchema, rs.DbHandle)
-	warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportingDataState, rs.DbHandle)
-	rs.load(rs.UploadSchema)
+	err = warehouseutils.UpdateCurrentSchema(rs.Warehouse, rs.UploadID, rs.CurrentSchema, updatedSchema, rs.DbHandle)
+	if err != nil {
+		rs.setUploadError(err)
+		return
+	}
+	err = warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportingDataState, rs.DbHandle)
+	misc.AssertError(err)
+	err = rs.load(rs.UploadSchema)
+	if err != nil {
+		rs.setUploadError(err)
+		return
+	}
+	err = warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportedDataState, rs.DbHandle)
+	misc.AssertError(err)
 }
