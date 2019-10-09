@@ -109,28 +109,6 @@ func backendConfigSubscriber() {
 	}
 }
 
-func (wh *HandleT) getPendingJSONss(sourceID string) ([]*JSONUploadT, error) {
-	sqlStatement := fmt.Sprintf(`SELECT id, location, source_id, schema, status, created_at
-                                 FROM
-                                  %[1]s,
-                                   WHERE %[1]s.status='waiting' AND %[1]s.source_id='%[2]s'`,
-		warehouseJSONUploadsTable, sourceID)
-	rows, err := wh.dbHandle.Query(sqlStatement)
-	defer rows.Close()
-	misc.AssertError(err)
-
-	var jsonUploadList []*JSONUploadT
-	for rows.Next() {
-		var jsonUpload JSONUploadT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.SourceID, &jsonUpload.Schema,
-			&jsonUpload.Status, &jsonUpload.CreatedAt)
-		misc.AssertError(err)
-		jsonUploadList = append(jsonUploadList, &jsonUpload)
-	}
-
-	return jsonUploadList, nil
-}
-
 func (wh *HandleT) getPendingJSONs(warehouse warehouseutils.WarehouseT) ([]*JSONUploadT, error) {
 	var lastJSONID int
 	sqlStatement := fmt.Sprintf(`SELECT end_json_id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY %[1]s.id`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID)
@@ -316,9 +294,9 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	csvFileMap := make(map[string]*os.File)
 	for tableName, content := range tableContentMap {
 		csvPath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + ".csv.gz"
-		cfile, err := os.Create(csvPath)
-		csvFileMap[tableName] = cfile
-		gzipWriter := gzip.NewWriter(cfile)
+		csvfile, err := os.Create(csvPath)
+		csvFileMap[tableName] = csvfile
+		gzipWriter := gzip.NewWriter(csvfile)
 		_, err = gzipWriter.Write([]byte(content))
 		misc.AssertError(err)
 		gzipWriter.Close()
