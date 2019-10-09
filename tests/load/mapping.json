@@ -54,8 +54,9 @@
           }
         },
         "type": "track",
-        "message_id": "d6a75a2d-43a2-4d0c-9bcc-5f6e6705299b",
-        "timestamp": "2019-08-05 10:38:03+0000",
+        "messageId": "d6a75a2d-43a2-4d0c-9bcc-5f6e6705299b",
+        "originalTimestamp": "2019-08-05 10:38:03+0000",
+        "sentAt": "2019-08-05 10:38:08+0000",
         "anonymousId": "23d7cbff-15b5-43ee-bfde-65282ed5fdf6",
         "event": "Product Clicked",
         "properties": {
@@ -72,7 +73,7 @@
           "url": "https://www.example.com/product/path",
           "image_url": "https://www.example.com/product/path.jpg"
         },
-        "integrations": { "All": false, "Google Analytics": true }
+        "integrations": { "All": true }
       },
       "GA": {
         "t": "event",
@@ -131,8 +132,9 @@
           }
         },
         "type": "track",
-        "message_id": "6def71bd-eae8-4cb1-bfe7-0b5e7eaf89fd",
-        "timestamp": "2019-08-05 10:12:22+0000",
+        "messageId": "6def71bd-eae8-4cb1-bfe7-0b5e7eaf89fd",
+        "originalTimestamp": "2019-08-05 10:12:22+0000",
+        "sentAt": "2019-08-05 10:12:28+0000",
         "anonymousId": "19702fee-6184-482e-aa05-8ab21402e1f3",
         "event": "Test Track",
         "properties": {
@@ -140,7 +142,7 @@
           "label": "Test Label",
           "value": 5
         },
-        "integrations": { "All": false, "Google Analytics": true }
+        "integrations": { "All": true }
       },
       "GA": {
         "t": "event",
