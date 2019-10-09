@@ -242,7 +242,7 @@ func (wh *HandleT) initWorkers() {
 }
 
 func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
-	jsonPath := config.GetEnv("S3_UPLOADS_DIR", "/home/ubuntu/s3/warehousedata/")
+	jsonPath := config.GetEnv("S3_UPLOADS_DIR", "/home/ubuntu/s3/") + "warehousedata/"
 	jsonPath += job.Warehouse.Destination.DestinationDefinition.Name + "/" + job.JSON.Location
 	err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 	jsonFile, err := os.Create(jsonPath)

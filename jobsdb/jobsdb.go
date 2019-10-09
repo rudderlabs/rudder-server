@@ -1383,8 +1383,8 @@ func (jd *HandleT) backupDSLoop() {
 }
 
 func (jd *HandleT) removeTableJSONDumps() {
-	path := config.GetEnv("TMPDIR", "/home/ubuntu/s3/")
-	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", path, jd.tablePrefix))
+	path := config.GetEnv("S3_UPLOADS_DIR", "/home/ubuntu/s3/")
+	files, err := filepath.Glob(fmt.Sprintf("%v%v%v_job*", path, "backups/", jd.tablePrefix))
 	jd.assertError(err)
 	for _, f := range files {
 		err = os.Remove(f)
@@ -1394,7 +1394,7 @@ func (jd *HandleT) removeTableJSONDumps() {
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
-	path := fmt.Sprintf(`%v%v.json`, config.GetEnv("TMPDIR", "/home/ubuntu/s3/"), pathPrefix)
+	path := fmt.Sprintf(`%v%v%v.json`, config.GetEnv("S3_UPLOADS_DIR", "/home/ubuntu/s3/"), "backups/", pathPrefix)
 	copyStmt := fmt.Sprintf(`COPY (SELECT row_to_json(%v) FROM (SELECT * FROM %v) %v) TO '%v';`, dbname, tableName, dbname, path)
 	_, err = jd.dbHandle.Exec(copyStmt)
 	jd.assertError(err)

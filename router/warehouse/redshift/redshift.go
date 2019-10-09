@@ -119,7 +119,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		manifest.Entries = append(manifest.Entries, S3ManifestEntryT{Url: location, Mandatory: true})
 	}
 	manifestJSON, err := json.Marshal(&manifest)
-	localManifestPath := fmt.Sprintf("%v%v", config.GetEnv("S3_UPLOADS_DIR", "/home/ubuntu/s3/redshift-manifests/"), uuid.NewV4().String())
+	localManifestPath := fmt.Sprintf("%v%v%v", config.GetEnv("S3_UPLOADS_DIR", "/home/ubuntu/s3/"), "redshift-manifests/", uuid.NewV4().String())
 	err = os.MkdirAll(filepath.Dir(localManifestPath), os.ModePerm)
 	misc.AssertError(err)
 	_ = ioutil.WriteFile(localManifestPath, manifestJSON, 0644)
