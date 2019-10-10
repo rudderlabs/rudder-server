@@ -354,15 +354,17 @@ func getEnabledDestinationTypes(writeKey string) map[string]backendconfig.Destin
 }
 
 func getTimestampFromEvent(event map[string]interface{}, field string) time.Time {
-	var originalTimestamp time.Time
+	var timestamp time.Time
 	var err error
 	if _, ok := event[field]; ok {
-		originalTimestamp, err = time.Parse(time.RFC3339, event[field].(string))
-		misc.AssertError(err)
+		timestamp, err = time.Parse(time.RFC3339, event[field].(string))
+		if err != nil {
+			timestamp = time.Now()
+		}
 	} else {
-		originalTimestamp = time.Now()
+		timestamp = time.Now()
 	}
-	return originalTimestamp
+	return timestamp
 }
 
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]interface{}) {
