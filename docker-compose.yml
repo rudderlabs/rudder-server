@@ -30,4 +30,3 @@ services:
       dockerfile: Dockerfile
     ports:
       - "9090:9090"
-

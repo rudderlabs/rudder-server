@@ -2,16 +2,19 @@
 
 # What is Rudder?
 
-**Short answer:** Rudder is an open-source Segment alternative written in Go, built for the enterprise. https://rudderlabs.com.
+**Short answer:** Rudder is an open-source Segment alternative written in Go, built for the enterprise. .
 
 **Long answer:** Rudder is a platform for collecting, storing and routing customer event data to dozens of tools. Rudder is open-source, can run in your cloud environment (AWS, GCP, Azure or even your data-centre) and provides a powerful transformation framework to process your event data on the fly.
 
-Rudder runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation codes which are node scripts. This repo contains the core backend and the transformation modules of Rudder. 
+Rudder runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation code which are node scripts. This repo contains the core backend and the transformation modules of Rudder. 
 The client SDKs are in a separate rep [Rudder Client SDKs](https://github.com/rudderlabs/rudder-client).  We will open source the UI code soon.
+
 
 Rudder server is released under [SSPL License](https://www.mongodb.com/licensing/server-side-public-license)
 
-Questions? Join our [Discord](https://discordapp.com/invite/xNEdEGw) or [Slack](https://rudderlabs.herokuapp.com/) channel
+Please register here https://app.rudderlabs.com and follow the instructions below to setup Rudder.
+
+Questions? Join our [Discord](https://discordapp.com/invite/xNEdEGw) or [Slack](https://rudderlabs.herokuapp.com/) channel. Or please email soumyadeb at rudderlabs.com. 
 
 # Why Rudder ?
 
@@ -33,13 +36,10 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 6. Rich UI written in react.
 7. Android, iOS, Unity & Javascript SDKs. Server-side SDKs coming soon.
 
-# Get Involved 
+# Contribute or Stay Connected
 
-Join our [Discord](https://discordapp.com/invite/xNEdEGw) or [Slack](https://rudderlabs.herokuapp.com/) channel
-
-# Main UI Page
-
-![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
+1. Join our [Discord](https://discordapp.com/invite/xNEdEGw) 
+2. Follow us on [Twitter](https://twitter.com/rudderlabs)
 
 # Setup Instructions (Docker)
 
@@ -79,6 +79,17 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4
 9. Run the backend server `go run -mod=vendor main.go`
 10. Setup your sources from the dashboard `https://app.rudderlabs.com` and start sending events using the test script (mentioned in step 5 of Docker setup instructions) or our SDKs.
+
+# UI Pages
+
+## Connections Page
+![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
+
+## Events Page
+![image](https://user-images.githubusercontent.com/52487451/65647230-e2937c80-dfb2-11e9-88bd-3b015c4b576f.png)
+
+## Stats Page
+![image](https://user-images.githubusercontent.com/52487451/65647158-a2cc9500-dfb2-11e9-8397-d2642f0b8801.png)
 
 # Architecture
 
@@ -127,4 +138,6 @@ The client SDKs provide APIs collecting events and sending it to the Rudder Back
 2. More documentation
 3. More destination support
 4. HA support
-5. More SDKs
+5. More SDKs (or Segment compatibility)
+6. Transformations from UI
+

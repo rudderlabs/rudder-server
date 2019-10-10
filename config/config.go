@@ -82,6 +82,14 @@ func GetEnv(key string, defaultVal string) string {
 	return defaultVal
 }
 
+// GetRequiredEnv returns the environment value stored in key variable, no default
+func GetRequiredEnv(key string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	panic(fmt.Errorf("Fatal error, no required environment variable: %s", key))
+}
+
 // Override Config by application or command line
 
 // SetBool override existing config
