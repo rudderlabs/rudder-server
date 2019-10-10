@@ -37,17 +37,17 @@
       },
       "event": "Demo Track",
       "integrations": {
-        "All": false,
-        "Google Analytics": false
+        "All": true
       },
-      "message_id": "1566904375469-1baf3108-647a-4f20-9867-3072056a07f5",
+      "messageId": "1566904375469-1baf3108-647a-4f20-9867-3072056a07f5",
       "properties": {
         "label": "Demo Label",
         "category": "Demo Category",
         "value": 5
       },
-      "timestamp": "2019-08-27 11:12:55+0000",
-      "type": "track"
+      "type": "track",
+      "originalTimestamp": "2019-08-05 10:38:03+0000",
+      "sentAt": "2019-08-05 10:38:08+0000"
     }
   ]
 }

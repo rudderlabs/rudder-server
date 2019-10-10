@@ -2,12 +2,12 @@
 
 if [ $# != 2 ]
 then
-  echo "Usage: ./generate-events.sh <write_key> <server_ip>"
+  echo "Usage: ./generate-events.sh <write_key> <end_point>"
+  echo "Example: ./generate-events.sh 1S0ibSaDlSSGkaQuHLi9feJqIUBNAE https://<data_plane_url>/v1/batch"
   exit
 fi
 
 
-#curl -u $1: -X POST http://localhost:8080/batch -d @event.json --header "Content-Type: application/json"
-curl -u $1: -X POST http://$2:8080/v1/track -d @track.json --header "Content-Type: application/json"
-#curl -u $1: -X POST http://localhost:8080/v1/track -d @track.json --header "Content-Type: application/json"
-#curl -X POST https://torpedo.rudderlabs.com/events -d @event.json --header "Content-Type: application/json"
+#curl -u $1: -X POST http://$2:8080/v1/track -d @track.json --header "Content-Type: application/json"
+#curl -u $1: -X POST $2 -d @track.json --header "Content-Type: application/json"
+curl -u $1: -X POST $2 -d @batch.json --header "Content-Type: application/json"
