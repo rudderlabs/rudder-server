@@ -256,7 +256,36 @@ func init() {
 	loadConfig()
 }
 
-func (rs *HandleT) Setup(config warehouseutils.ConfigT) {
+func (rs *HandleT) MigrateSchema() (err error) {
+	warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.UpdatingSchemaState, rs.DbHandle)
+	updatedSchema, err := rs.updateSchema()
+	if err != nil {
+		rs.setUploadError(err)
+		return
+	}
+	err = warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.UpdatedSchemaState, rs.DbHandle)
+	misc.AssertError(err)
+	err = warehouseutils.UpdateCurrentSchema(rs.Warehouse, rs.UploadID, rs.CurrentSchema, updatedSchema, rs.DbHandle)
+	if err != nil {
+		rs.setUploadError(err)
+		return
+	}
+	return
+}
+
+func (rs *HandleT) Export() {
+	err := warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportingDataState, rs.DbHandle)
+	misc.AssertError(err)
+	err = rs.load(rs.UploadSchema)
+	if err != nil {
+		rs.setUploadError(err)
+		return
+	}
+	err = warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportedDataState, rs.DbHandle)
+	misc.AssertError(err)
+}
+
+func (rs *HandleT) Process(config warehouseutils.ConfigT) {
 	var err error
 	rs.DbHandle = config.DbHandle
 	rs.UploadID = config.UploadID
@@ -278,26 +307,13 @@ func (rs *HandleT) Setup(config warehouseutils.ConfigT) {
 	rs.CurrentSchema, err = warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
 	misc.AssertError(err)
 	rs.SchemaName = strings.ToLower(strcase.ToSnake(rs.Warehouse.Source.Name))
-	warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.UpdatingSchemaState, rs.DbHandle)
-	updatedSchema, err := rs.updateSchema()
-	if err != nil {
-		rs.setUploadError(err)
-		return
+
+	if config.Stage == "ExportData" {
+		rs.Export()
+	} else {
+		err := rs.MigrateSchema()
+		if err == nil {
+			rs.Export()
+		}
 	}
-	err = warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.UpdatedSchemaState, rs.DbHandle)
-	misc.AssertError(err)
-	err = warehouseutils.UpdateCurrentSchema(rs.Warehouse, rs.UploadID, rs.CurrentSchema, updatedSchema, rs.DbHandle)
-	if err != nil {
-		rs.setUploadError(err)
-		return
-	}
-	err = warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportingDataState, rs.DbHandle)
-	misc.AssertError(err)
-	err = rs.load(rs.UploadSchema)
-	if err != nil {
-		rs.setUploadError(err)
-		return
-	}
-	err = warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportedDataState, rs.DbHandle)
-	misc.AssertError(err)
 }

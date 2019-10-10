@@ -51,7 +51,7 @@ func backendConfigSubscriber() {
 		for _, source := range allSources.Sources {
 			if source.Enabled && len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if misc.Contains(rawDataDestinations, destination.DestinationDefinition.Name) && destination.Enabled {
+					if destination.Enabled && misc.Contains(rawDataDestinations, destination.DestinationDefinition.Name) {
 						batchDestinations = append(batchDestinations, DestinationT{Source: source, Destination: destination})
 					}
 				}
@@ -368,7 +368,6 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT) {
 	brt.setupWarehouseJSONUploadsTable()
 	brt.processQ = make(chan BatchJobsT)
 	brt.crashRecover()
-	brt.isEnabled = false
 
 	go brt.initWorkers()
 	go backendConfigSubscriber()

@@ -12,7 +12,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-// constants for wh_upload_state_type
 const (
 	GeneratingCsvState        = "generating_csv"
 	GeneratingCsvFailedState  = "generating_csv_failed"
@@ -42,7 +41,6 @@ func loadConfig() {
 	warehouseCSVUploadsTable = config.GetString("Warehouse.csvUploadsTable", "wh_schemas")
 }
 
-// WarehouseT ...
 type WarehouseT struct {
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
@@ -55,9 +53,20 @@ type ConfigT struct {
 	EndCSVID   int64
 	Schema     map[string]map[string]string
 	Warehouse  WarehouseT
+	Stage      string
 }
 
-// GetCurrentSchema ...
+type WarehouseUploadT struct {
+	ID              int64
+	SourceID        int64
+	DestinationID   int64
+	DestinationType string
+	Status          string
+	Schema          json.RawMessage
+	StartCSVID      int64
+	EndCSVID        int64
+}
+
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
 	var rawSchema json.RawMessage
 	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID)
@@ -83,14 +92,12 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[st
 	return schema, nil
 }
 
-// SchemaDiffT ...
 type SchemaDiffT struct {
 	Tables        []string
 	ColumnMaps    map[string]map[string]string
 	UpdatedSchema map[string]map[string]string
 }
 
-// GetSchemaDiff ...
 func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (diff SchemaDiffT) {
 	diff = SchemaDiffT{
 		Tables:        []string{},
@@ -117,7 +124,6 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 	return
 }
 
-// SetUploadStatus ...
 func SetUploadStatus(id int64, status string, dbHandle *sql.DB) (err error) {
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE id=$2`, warehouseUploadsTable)
 	_, err = dbHandle.Exec(sqlStatement, status, id)
@@ -125,7 +131,6 @@ func SetUploadStatus(id int64, status string, dbHandle *sql.DB) (err error) {
 	return
 }
 
-// UpdateCurrentSchema ...
 func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
 	marshalledSchema, err := json.Marshal(schema)
 	if len(currentSchema) == 0 {
@@ -144,7 +149,6 @@ func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema ma
 	return
 }
 
-// GetCSVLocations ...
 func GetCSVLocations(dbHandle *sql.DB, tableName string, start, end int64) (locations []string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s WHERE (%[1]s.table_name='%[2]s' AND %[1]s.id > %[3]v AND %[1]s.id <= %[4]v)`, warehouseCSVUploadsTable, tableName, start, end)
 	rows, err := dbHandle.Query(sqlStatement)
@@ -166,10 +170,16 @@ func GetS3Location(location string) string {
 	return str2
 }
 
-// GetS3Locations ...
 func GetS3Locations(locations []string) (s3Locations []string, err error) {
 	for _, location := range locations {
 		s3Locations = append(s3Locations, GetS3Location((location)))
 	}
 	return
+}
+
+func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
+	var schema map[string]map[string]string
+	err := json.Unmarshal(rawMsg, &schema)
+	misc.AssertError(err)
+	return schema
 }

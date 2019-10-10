@@ -89,7 +89,7 @@ func loadConfig() {
 
 func backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Eb.Subscribe("backendconfig", ch)
+	backendconfig.Subscribe(ch)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -98,7 +98,7 @@ func backendConfigSubscriber() {
 		for _, source := range allSources.Sources {
 			if source.Enabled && len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if misc.Contains(availableWarehouses, destination.DestinationDefinition.Name) && destination.Enabled {
+					if destination.Enabled && misc.Contains(availableWarehouses, destination.DestinationDefinition.Name) {
 						warehouses = append(warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
 						break
 					}
@@ -111,7 +111,7 @@ func backendConfigSubscriber() {
 
 func (wh *HandleT) getPendingJSONs(warehouse warehouseutils.WarehouseT) ([]*JSONUploadT, error) {
 	var lastJSONID int
-	sqlStatement := fmt.Sprintf(`SELECT end_json_id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY %[1]s.id`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID)
+	sqlStatement := fmt.Sprintf(`SELECT end_json_id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s AND %[1]s.status != %[4]s') ORDER BY %[1]s.id`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState)
 
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&lastJSONID)
 	if err != nil && err != sql.ErrNoRows {
@@ -126,7 +126,6 @@ func (wh *HandleT) getPendingJSONs(warehouse warehouseutils.WarehouseT) ([]*JSON
 		warehouseJSONUploadsTable, lastJSONID, warehouse.Source.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		// log the error
 		misc.AssertError(err)
 	}
 	defer rows.Close()
@@ -164,7 +163,7 @@ func consolidateSchema(jsonUploadsList []*JSONUploadT) map[string]map[string]str
 
 func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*JSONUploadT, schema map[string]map[string]string) (uploadID, startCSVID int64, err error) {
 
-	startCSVIDSql := fmt.Sprintf(`SELECT end_csv_id FROM %[1]s WHERE (%[1]s.source_id = '%[2]s' AND %[1]s.destination_id = '%[3]s' AND %[1]s.end_csv_id IS NOT NULL) ORDER BY id DESC LIMIT 1`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID)
+	startCSVIDSql := fmt.Sprintf(`SELECT end_csv_id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status='%[4]s') ORDER BY id DESC LIMIT 1`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState)
 	err = wh.dbHandle.QueryRow(startCSVIDSql).Scan(&startCSVID)
 	if err != nil && err != sql.ErrNoRows {
 		misc.AssertError(err)
@@ -185,12 +184,61 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	return
 }
 
+func (wh *HandleT) getPendingUpload(warehouse warehouseutils.WarehouseT) (warehouseutils.WarehouseUploadT, bool) {
+	var upload warehouseutils.WarehouseUploadT
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, start_csv_id, end_csv_id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s')`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState)
+	fmt.Println(sqlStatement)
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&upload.ID, &upload.Status, &upload.Schema, &upload.StartCSVID, &upload.EndCSVID)
+	if err != nil && err != sql.ErrNoRows {
+		misc.AssertError(err)
+	}
+	if err == sql.ErrNoRows {
+		return warehouseutils.WarehouseUploadT{}, false
+	}
+	return upload, true
+}
+
 func (wh *HandleT) mainLoop() {
 	for {
 		time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
 		for _, warehouse := range warehouses {
 			if inProgressMap[warehouse.Destination.ID] {
 				continue
+			}
+			inProgressMap[warehouse.Destination.ID] = true
+			pendingUpload, ok := wh.getPendingUpload(warehouse)
+			if ok {
+				var rs redshift.HandleT
+				switch pendingUpload.Status {
+				case warehouseutils.GeneratedCsvState, warehouseutils.UpdatingSchemaState, warehouseutils.UpdatingSchemaFailedState:
+					go func() {
+						rs.Process(warehouseutils.ConfigT{
+							DbHandle:   wh.dbHandle,
+							UploadID:   pendingUpload.ID,
+							Schema:     warehouseutils.JSONSchemaToMap(pendingUpload.Schema),
+							Warehouse:  warehouse,
+							StartCSVID: pendingUpload.StartCSVID,
+							EndCSVID:   pendingUpload.EndCSVID,
+							Stage:      "UpdateSchema",
+						})
+						delete(inProgressMap, warehouse.Destination.ID)
+					}()
+					continue
+				case warehouseutils.UpdatedSchemaState, warehouseutils.ExportingDataState, warehouseutils.ExportingDataFailedState:
+					go func() {
+						rs.Process(warehouseutils.ConfigT{
+							DbHandle:   wh.dbHandle,
+							UploadID:   pendingUpload.ID,
+							Schema:     warehouseutils.JSONSchemaToMap(pendingUpload.Schema),
+							Warehouse:  warehouse,
+							StartCSVID: pendingUpload.StartCSVID,
+							EndCSVID:   pendingUpload.EndCSVID,
+							Stage:      "ExportData",
+						})
+						delete(inProgressMap, warehouse.Destination.ID)
+					}()
+					continue
+				}
 			}
 			jsonUploadsList, err := wh.getPendingJSONs(warehouse)
 			if len(jsonUploadsList) == 0 {
@@ -200,7 +248,6 @@ func (wh *HandleT) mainLoop() {
 			misc.AssertError(err)
 			consolidatedSchema := consolidateSchema(jsonUploadsList)
 			id, startCSVID, err := wh.initUpload(warehouse, jsonUploadsList, consolidatedSchema)
-			inProgressMap[warehouse.Destination.ID] = true
 			wh.processQ <- ProcessJSONsJobT{List: jsonUploadsList, Schema: consolidatedSchema, Warehouse: warehouse, UploadID: id, StartCSVID: startCSVID}
 		}
 	}
@@ -227,7 +274,7 @@ func (wh *HandleT) initWorkers() {
 				_, err = wh.dbHandle.Exec(sqlStatement, warehouseutils.GeneratedCsvState, endCSVID, processJSONsJob.UploadID)
 				misc.AssertError(err)
 				var rs redshift.HandleT
-				rs.Setup(warehouseutils.ConfigT{
+				rs.Process(warehouseutils.ConfigT{
 					DbHandle:   wh.dbHandle,
 					UploadID:   processJSONsJob.UploadID,
 					Schema:     processJSONsJob.Schema,
