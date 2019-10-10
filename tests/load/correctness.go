@@ -191,7 +191,7 @@ func generateEvents(userID string, eventDelay int) {
 			for path := range mapping {
 				if strings.Contains(path, "anonymous_id") {
 					rudderData, err = sjson.SetBytes(rudderData, path, userID)
-				} else if strings.Contains(path, "rl_event") {
+				} else if strings.Contains(path, "event") {
 					rudderData, err = sjson.SetBytes(rudderData, path, userID+"-"+messageID+"-"+eventTimeStr)
 				} else {
 					rudderData, err = generateRandomData(&rudderData, path, gjson.Get(rudderJSON.Raw, path).Value())

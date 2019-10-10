@@ -19,8 +19,8 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -30,13 +30,14 @@ const (
 	rudderJSONPath   = "events.#.rudder"
 	gaJSONPath       = "events.#.GA"
 	variations       = 5
-	serverIP         = "http://localhost:8080/hello"
+	serverIP         = "http://localhost:8080/v1/batch"
 	// serverIP = "http://172.31.94.69:8080/hello"
 )
 
 var (
 	successCount uint64
 	failCount    uint64
+	writeKey     *string
 )
 
 var done chan bool
@@ -63,6 +64,7 @@ func main() {
 	// setting badjson rate 0f 60 sends ~60% (approx since we just compare with rand number) req's with bad json
 	badJSON = flag.Bool("badjson", false, "true/false for sending malformed json as payload to rudder BE")
 	badJSONRate = flag.Int("badjsonRate", 100, "percentage of malformed json sent as events")
+	writeKey = flag.String("writekey", "", "Writekey to be sent along with the event")
 
 	flag.Parse()
 
@@ -95,7 +97,6 @@ func toSendGoodJSON() bool {
 func sendBadJSON(lines []string, rudder bool) {
 	value, _ := sjson.Set("", "batch", "random_string_to_be_replaced")
 	value, _ = sjson.Set(value, "sent_at", time.Now())
-	value, _ = sjson.Set(value, "writeKey", "1P2tiDhWjQbEtLSqnEh9YeDe1tP")
 	if rudder {
 		value = strings.Replace(value, "random_string_to_be_replaced", fmt.Sprintf("[%s]", strings.Join(lines[:], ",")), 1)
 		sendToRudder(value)
@@ -146,7 +147,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 				for k, _ := range mapping {
 					////fmt.Printf("key %v, val %v \n", k, v.Value())
 
-					if strings.Contains(k, "anonymous_id") {
+					if strings.Contains(k, "anonymousId") {
 						userIDpath = k
 					}
 
@@ -155,6 +156,12 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 					//misc.AssertError(err)
 					rudderData = generateData(&rudderData, k, gjson.Get(rudderJSON.Raw, k).Value())
 				}
+				eventTypes := []string{"track", "page", "screen"}
+				rudderData = generateRandomDataFromSlice(eventTypes, &rudderData, "type", "track")
+				eventNames := []string{"Homepage visited", "User signed up", "Product added to cart", "Product added to wishlist"}
+				rudderData = generateRandomDataFromSlice(eventNames, &rudderData, "event", "track")
+				rudderData, _ = sjson.SetBytes(rudderData, "originalTimestamp", time.Now().Add(-5*time.Second).Format(time.RFC3339))
+				rudderData, _ = sjson.SetBytes(rudderData, "sentAt", time.Now().Format(time.RFC3339))
 
 				rudderData, err = sjson.SetBytes(rudderData, userIDpath, uid)
 				misc.AssertError(err)
@@ -169,7 +176,6 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 				if isBatchToBeMade {
 					value, _ := sjson.Set("", "batch", rudderEvents)
 					value, _ = sjson.Set(value, "sent_at", time.Now())
-					value, _ = sjson.Set(value, "writeKey", "1P2tiDhWjQbEtLSqnEh9YeDe1tP")
 					////fmt.Println("==================")
 					////fmt.Println(value)
 					////fmt.Println("iter : ", countLoop)
@@ -241,7 +247,7 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 					for k, _ := range mapping {
 						////fmt.Printf("key %v, val %v \n", k, v.Value())
 
-						if strings.Contains(k, "anonymous_id") {
+						if strings.Contains(k, "anonymousId") {
 							userIDpath = k
 						}
 
@@ -266,7 +272,6 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 			if isBatchToBeMade {
 				value, _ := sjson.Set("", "batch", rudderEvents)
 				value, _ = sjson.Set(value, "sent_at", time.Now())
-				value, _ = sjson.Set(value, "writeKey", "1P2tiDhWjQbEtLSqnEh9YeDe1tP")
 				////fmt.Println("==================")
 				////fmt.Println(value)
 
@@ -285,9 +290,9 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 	done <- true
 }
 
-func generateData(payload *[]byte, path string, value interface{}) []byte {
+// Uses the randomSlice only when type of value is string
+func generateRandomDataFromSlice(randomSlice []string, payload *[]byte, path string, value interface{}) []byte {
 	var err error
-	randStr := []string{"abc", "efg", "ijk", "lmn", "opq"}
 	switch value.(type) {
 	case int:
 		*payload, err = sjson.SetBytes(*payload, path, rand.Intn(100))
@@ -298,13 +303,18 @@ func generateData(payload *[]byte, path string, value interface{}) []byte {
 		misc.AssertError(err)
 
 	default:
-		i := rand.Intn(len(randStr))
-		*payload, err = sjson.SetBytes(*payload, path, randStr[i])
+		i := rand.Intn(len(randomSlice))
+		*payload, err = sjson.SetBytes(*payload, path, randomSlice[i])
 		misc.AssertError(err)
 
 	}
 
 	return *payload
+}
+
+func generateData(payload *[]byte, path string, value interface{}) []byte {
+	randStr := []string{"abc", "efg", "ijk", "lmn", "opq"}
+	return generateRandomDataFromSlice(randStr, payload, path, value)
 }
 
 func printStats() {
@@ -318,6 +328,7 @@ func sendToRudder(jsonPayload string) {
 
 	requestTimeStat.Start()
 	req, err := http.NewRequest("POST", serverIP, bytes.NewBuffer([]byte(jsonPayload)))
+	req.SetBasicAuth(*writeKey, "")
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}

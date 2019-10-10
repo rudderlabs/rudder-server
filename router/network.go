@@ -3,12 +3,13 @@ package router
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //NetHandleT is the wrapper holding private variables
@@ -25,9 +26,9 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 
 	requestConfig, ok := postInfo.RequestConfig.(map[string]interface{})
 	misc.Assert(ok)
-	requestMethod, ok := requestConfig["request_method"].(string)
+	requestMethod, ok := requestConfig["requestMethod"].(string)
 	misc.Assert(ok && (requestMethod == "POST" || requestMethod == "GET"))
-	requestFormat := requestConfig["request-format"].(string)
+	requestFormat := requestConfig["requestFormat"].(string)
 	misc.Assert(ok)
 
 	switch requestFormat {
@@ -54,7 +55,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 		payloadKV, ok := postInfo.Payload.(map[string]interface{})
 		misc.Assert(ok)
 		for key, val := range payloadKV {
-			queryParams.Add(key, val.(string))
+			queryParams.Add(key, fmt.Sprint(val))
 		}
 	} else if postInfo.Type == integrations.PostDataJSON {
 		payloadJSON, ok := postInfo.Payload.(map[string]interface{})

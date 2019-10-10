@@ -18,13 +18,15 @@ var (
 	configBackendURL, configBackendToken string
 	pollInterval                         time.Duration
 	curSourceJSON                        SourcesT
+	initialized                          bool
 )
 
 var Eb *utils.EventBus
 
 type DestinationDefinitionT struct {
-	ID   string
-	Name string
+	ID          string
+	Name        string
+	DisplayName string
 }
 
 type SourceDefinitionT struct {
@@ -38,6 +40,7 @@ type DestinationT struct {
 	DestinationDefinition DestinationDefinitionT
 	Config                interface{}
 	Enabled               bool
+	Transformations       []TransformationT
 }
 
 type SourceT struct {
@@ -52,6 +55,13 @@ type SourceT struct {
 
 type SourcesT struct {
 	Sources []SourceT `json:"sources"`
+}
+
+type TransformationT struct {
+	ID          string
+	Name        string
+	Description string
+	VersionID   string
 }
 
 func loadConfig() {
@@ -95,6 +105,7 @@ func pollConfigUpdate() {
 
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
 			curSourceJSON = sourceJSON
+			initialized = true
 			Eb.Publish("backendconfig", sourceJSON)
 		}
 		time.Sleep(time.Duration(pollInterval))
@@ -103,6 +114,22 @@ func pollConfigUpdate() {
 
 func GetConfig() SourcesT {
 	return curSourceJSON
+}
+
+func Subscribe(channel chan utils.DataEvent) {
+	Eb.Subscribe("backendconfig", channel)
+	Eb.PublishToChannel(channel, "backendconfig", curSourceJSON)
+}
+
+func WaitForConfig() {
+	for {
+		if initialized {
+			break
+		}
+		logger.Info("Waiting for initializing backend config")
+		time.Sleep(time.Duration(pollInterval))
+
+	}
 }
 
 // Setup backend config

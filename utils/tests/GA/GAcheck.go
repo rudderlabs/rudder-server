@@ -28,7 +28,7 @@ const (
 	eventMappingPath      = "events.#.mapping"
 	rudderJSONPath        = "events.#.rudder"
 	gaJSONPath            = "events.#.GA"
-	rudderIntegrationPath = "rl_message.rl_integrations"
+	rudderIntegrationPath = "message.integrations"
 	variations            = 5
 )
 

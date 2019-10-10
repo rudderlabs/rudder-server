@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"runtime/debug"
 	"strings"
 
 	//"runtime/debug"
@@ -21,8 +22,8 @@ import (
 //AssertError panics if error
 func AssertError(err error) {
 	if err != nil {
-		//debug.SetTraceback("all")
-		//debug.PrintStack()
+		// debug.SetTraceback("all")
+		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		panic(err)
 	}
@@ -32,7 +33,7 @@ func AssertError(err error) {
 func Assert(cond bool) {
 	if !cond {
 		//debug.SetTraceback("all")
-		//debug.PrintStack()
+		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		panic("Assertion failed")
 	}
@@ -45,25 +46,17 @@ func GetRudderEventMap(rudderEvent interface{}) (map[string]interface{}, bool) {
 	if !ok {
 		return nil, false
 	}
-	rudderMsg, ok := rudderEventMap["rl_message"]
-	if !ok {
-		return nil, false
-	}
-	rudderMsgMap, ok := rudderMsg.(map[string]interface{})
-	if !ok {
-		return nil, false
-	}
-	return rudderMsgMap, true
+	return rudderEventMap, true
 }
 
 //GetRudderEventVal returns the value corresponding to the key in the message structure
 func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) {
 
-	rudderMsgMap, ok := GetRudderEventMap(rudderEvent)
+	rudderEventMap, ok := GetRudderEventMap(rudderEvent)
 	if !ok {
 		return nil, false
 	}
-	rudderVal, ok := rudderMsgMap[key]
+	rudderVal, ok := rudderEventMap[key]
 	if !ok {
 		return nil, false
 	}
@@ -90,7 +83,7 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
 
 //GetRudderEventUserID return the UserID from the object
 func GetRudderEventUserID(eventList []interface{}) (string, bool) {
-	userID, ok := GetRudderEventVal("rl_anonymous_id", eventList[0])
+	userID, ok := GetRudderEventVal("anonymousId", eventList[0])
 	if !ok {
 		return "", false
 	}

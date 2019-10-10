@@ -36,7 +36,7 @@ type HandleT struct {
 
 func backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Eb.Subscribe("backendconfig", ch)
+	backendconfig.Subscribe(ch)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -80,7 +80,7 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	}
 	unzippedFile.Close()
 
-	zipFilePath := fmt.Sprintf(`%v.gz`, path)
+	zipFilePath := fmt.Sprintf(`%v.zip`, path)
 	err = misc.ZipFiles(zipFilePath, []string{path})
 	misc.AssertError(err)
 
@@ -95,7 +95,7 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	err = uploader.Upload(zipFile, config.GetEnv("DESTINATION_S3_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 	var jobState string
 	if err != nil {
-		logger.Debug(err)
+		logger.Error(err)
 		jobState = jobsdb.FailedState
 	} else {
 		jobState = jobsdb.SucceededState
