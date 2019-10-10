@@ -42,7 +42,7 @@ type HandleT struct {
 
 func backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Eb.Subscribe("backendconfig", ch)
+	backendconfig.Subscribe(ch)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()

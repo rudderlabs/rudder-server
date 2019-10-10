@@ -173,21 +173,24 @@ func handleEvents() {
 	}
 }
 
-func backendConfigSubscriber() {
-	configChannel := make(chan utils.DataEvent)
-	backendconfig.Eb.Subscribe("backendconfig", configChannel)
-	for {
-		config := <-configChannel
-		configSubscriberLock.Lock()
-		uploadEnabledWriteKeys = []string{}
-		sources := config.Data.(backendconfig.SourcesT)
-		for _, source := range sources.Sources {
-			if source.Config != nil {
-				if source.Enabled && source.Config.(map[string]interface{})["eventUpload"] == true {
-					uploadEnabledWriteKeys = append(uploadEnabledWriteKeys, source.WriteKey)
-				}
+func updateConfig(sources backendconfig.SourcesT) {
+	configSubscriberLock.Lock()
+	uploadEnabledWriteKeys = []string{}
+	for _, source := range sources.Sources {
+		if source.Config != nil {
+			if source.Enabled && source.Config.(map[string]interface{})["eventUpload"] == true {
+				uploadEnabledWriteKeys = append(uploadEnabledWriteKeys, source.WriteKey)
 			}
 		}
-		configSubscriberLock.Unlock()
+	}
+	configSubscriberLock.Unlock()
+}
+
+func backendConfigSubscriber() {
+	configChannel := make(chan utils.DataEvent)
+	backendconfig.Subscribe(configChannel)
+	for {
+		config := <-configChannel
+		updateConfig(config.Data.(backendconfig.SourcesT))
 	}
 }

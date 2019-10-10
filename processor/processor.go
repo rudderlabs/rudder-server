@@ -122,7 +122,7 @@ func loadConfig() {
 
 func backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Eb.Subscribe("backendconfig", ch)
+	backendconfig.Subscribe(ch)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -353,6 +353,18 @@ func getEnabledDestinationTypes(writeKey string) map[string]backendconfig.Destin
 	return enabledDestinationTypes
 }
 
+func getTimestampFromEvent(event map[string]interface{}, field string) time.Time {
+	var originalTimestamp time.Time
+	var err error
+	if _, ok := event[field]; ok {
+		originalTimestamp, err = time.Parse(time.RFC3339, event[field].(string))
+		misc.AssertError(err)
+	} else {
+		originalTimestamp = time.Now()
+	}
+	return originalTimestamp
+}
+
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]interface{}) {
 
 	proc.statsJobs.Start()
@@ -420,14 +432,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy["message"].(map[string]interface{})["source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 
 						// set timestamp skew
-						originalTimestamp, err := time.Parse(time.RFC3339, singularEventMap["originalTimestamp"].(string))
-						if err != nil {
-							originalTimestamp = time.Now()
-						}
-						sentAt, err := time.Parse(time.RFC3339, singularEventMap["sentAt"].(string))
-						if err != nil {
-							originalTimestamp = time.Now()
-						}
+						originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
+						sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
+
 						shallowEventCopy["message"].(map[string]interface{})["receivedAt"] = receivedAt
 						shallowEventCopy["message"].(map[string]interface{})["timestamp"] = receivedAt.Add(-sentAt.Sub(originalTimestamp)).Format(time.RFC3339)
 

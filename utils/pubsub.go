@@ -37,6 +37,14 @@ func (eb *EventBus) Publish(topic string, data interface{}) {
 	eb.rm.RUnlock()
 }
 
+func (eb *EventBus) PublishToChannel(channel DataChannel, topic string, data interface{}) {
+	eb.rm.RLock()
+	go func() {
+		channel <- DataEvent{Data: data, Topic: topic}
+	}()
+	eb.rm.RUnlock()
+}
+
 func (eb *EventBus) Subscribe(topic string, ch DataChannel) {
 	eb.rm.Lock()
 	if prev, found := eb.subscribers[topic]; found {
