@@ -23,11 +23,11 @@ type EventSchemaT struct {
 
 //MessageT is a structure to hold actual event data
 type MessageT struct {
-	Event        string      `json:"event"`
-	Integrations interface{} `json:"integrations"`
-	Properties   interface{} `json:"properties"`
-	Timestamp    string      `json:"timestamp"`
-	Type         string      `json:"type"`
+	Event             string      `json:"event"`
+	Integrations      interface{} `json:"integrations"`
+	Properties        interface{} `json:"properties"`
+	OriginalTimestamp string      `json:"originalTimestamp"`
+	Type              string      `json:"type"`
 }
 
 //EventT is a structure to hold batch of events
