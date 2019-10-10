@@ -18,6 +18,7 @@ var (
 	configBackendURL, configBackendToken string
 	pollInterval                         time.Duration
 	curSourceJSON                        SourcesT
+	initialized                          bool
 )
 
 var Eb *utils.EventBus
@@ -104,6 +105,7 @@ func pollConfigUpdate() {
 
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
 			curSourceJSON = sourceJSON
+			initialized = true
 			Eb.Publish("backendconfig", sourceJSON)
 		}
 		time.Sleep(time.Duration(pollInterval))
@@ -112,6 +114,22 @@ func pollConfigUpdate() {
 
 func GetConfig() SourcesT {
 	return curSourceJSON
+}
+
+func Subscribe(channel chan utils.DataEvent) {
+	Eb.Subscribe("backendconfig", channel)
+	Eb.PublishToChannel(channel, "backendconfig", curSourceJSON)
+}
+
+func WaitForConfig() {
+	for {
+		if initialized {
+			break
+		}
+		logger.Info("Waiting for initializing backend config")
+		time.Sleep(time.Duration(pollInterval))
+
+	}
 }
 
 // Setup backend config

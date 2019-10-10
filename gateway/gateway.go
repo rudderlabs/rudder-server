@@ -326,10 +326,6 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gateway *HandleT) startWebHandler() {
-	//Wait until we get config from control plane backend atleast once
-	ch1 := make(chan utils.DataEvent)
-	backendconfig.Eb.Subscribe("backendconfig", ch1)
-	<-ch1
 
 	logger.Infof("Starting in %d\n", webPort)
 
@@ -340,17 +336,23 @@ func (gateway *HandleT) startWebHandler() {
 	http.HandleFunc("/v1/screen", stat(gateway.webScreenHandler))
 	http.HandleFunc("/v1/alias", stat(gateway.webAliasHandler))
 	http.HandleFunc("/v1/group", stat(gateway.webGroupHandler))
-
 	http.HandleFunc("/health", gateway.healthHandler)
+
+	backendconfig.WaitForConfig()
+
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
+}
+
+func updateConfig(config utils.DataEvent) {
+
 }
 
 // Gets the config from config backend and extracts enabled writekeys
 func backendConfigSubscriber() {
-	ch1 := make(chan utils.DataEvent)
-	backendconfig.Eb.Subscribe("backendconfig", ch1)
+	ch := make(chan utils.DataEvent)
+	backendconfig.Subscribe(ch)
 	for {
-		config := <-ch1
+		config := <-ch
 		configSubscriberLock.Lock()
 		enabledWriteKeysSourceMap = map[string]string{}
 		sources := config.Data.(backendconfig.SourcesT)
