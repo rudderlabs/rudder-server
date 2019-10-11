@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
+	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -340,7 +341,7 @@ func (gateway *HandleT) startWebHandler() {
 
 	backendconfig.WaitForConfig()
 
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), cors.Default().Handler(bugsnag.Handler(nil))))
 }
 
 func updateConfig(config utils.DataEvent) {
