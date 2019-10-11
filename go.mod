@@ -16,6 +16,7 @@ require (
 	github.com/lib/pq v1.2.0
 	github.com/onsi/ginkgo v1.10.1
 	github.com/onsi/gomega v1.7.0
+	github.com/rs/cors v1.7.0
 	github.com/satori/go.uuid v1.2.0
 	github.com/segmentio/ksuid v1.0.2
 	github.com/spf13/viper v1.4.0
