@@ -326,6 +326,11 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(json)
 }
 
+func reflectOrigin(origin string) bool {
+	fmt.Println(origin)
+	return true
+}
+
 func (gateway *HandleT) startWebHandler() {
 
 	logger.Infof("Starting in %d\n", webPort)
@@ -341,7 +346,13 @@ func (gateway *HandleT) startWebHandler() {
 
 	backendconfig.WaitForConfig()
 
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), cors.Default().Handler(bugsnag.Handler(nil))))
+	c := cors.New(cors.Options{
+		AllowOriginFunc:  reflectOrigin,
+		AllowCredentials: true,
+		AllowedHeaders:   []string{"*"},
+	})
+
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), c.Handler(bugsnag.Handler(nil))))
 }
 
 func updateConfig(config utils.DataEvent) {
