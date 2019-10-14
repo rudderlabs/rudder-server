@@ -327,7 +327,6 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func reflectOrigin(origin string) bool {
-	fmt.Println(origin)
 	return true
 }
 
