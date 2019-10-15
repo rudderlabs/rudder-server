@@ -50,7 +50,7 @@ The docker setup is the easiest & fastest way to try out Rudder.
 5. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID.
 6. Create one source (Android or iOS) and configure a Google Analytics destination for the same with the above tracking ID
 7. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `./scripts/generate-event <writeKeyHere> http://localhost:8080/v1/batch`
-8. You can then login to your Google Analytics account and verify that events are delivered. Go to MainPage->RealTime->Events. RealTime view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
+8. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
 9. You can use our Android, iOS or Javascript SDKs for sending events from your app.
 10. If you want to try a demo version, check out `https://github.com/rudderlabs/rudder-docker`
 
