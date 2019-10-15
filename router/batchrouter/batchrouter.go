@@ -56,7 +56,10 @@ func backendConfigSubscriber() {
 }
 
 func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
+	bucketName := batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
 	uuid := uuid.NewV4()
+	logger.Debugf("BRT: Logging to S3 bucket: %v", bucketName)
+
 	path := fmt.Sprintf("%v%v.json", config.GetEnv("TMPDIR", "/home/ubuntu/s3/"), fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
 	unzippedFile, err := os.Create(path)
 	misc.AssertError(err)
@@ -87,7 +90,6 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	zipFile, err := os.Open(zipFilePath)
 	defer zipFile.Close()
 
-	bucketName := batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
 	uploader, err := fileuploader.NewFileUploader(&fileuploader.SettingsT{
 		Provider:       "s3",
 		AmazonS3Bucket: bucketName,
@@ -95,9 +97,10 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	err = uploader.Upload(zipFile, config.GetEnv("DESTINATION_S3_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 	var jobState string
 	if err != nil {
-		logger.Error(err)
+		logger.Errorf("BRT: %v", err)
 		jobState = jobsdb.FailedState
 	} else {
+		logger.Debugf("BRT: Uploaded to S3 bucket: %v %v %v", bucketName, batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		jobState = jobsdb.SucceededState
 	}
 
@@ -218,7 +221,7 @@ func (brt *HandleT) crashRecover() {
 		if len(execList) == 0 {
 			break
 		}
-		logger.Debug("Batch Router crash recovering", len(execList))
+		logger.Debug("BRT: Batch Router crash recovering", len(execList))
 
 		var statusList []*jobsdb.JobStatusT
 
@@ -253,11 +256,10 @@ func init() {
 
 //Setup initializes this module
 func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT) {
-	logger.Info("Batch Router started")
+	logger.Info("BRT: Batch Router started")
 	brt.jobsDB = jobsDB
 	brt.processQ = make(chan BatchJobsT)
 	brt.crashRecover()
-	brt.isEnabled = false
 
 	go brt.initWorkers()
 	go backendConfigSubscriber()
