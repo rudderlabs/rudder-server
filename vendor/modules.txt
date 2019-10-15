@@ -124,6 +124,8 @@ github.com/onsi/gomega/matchers/support/goraph/node
 github.com/onsi/gomega/matchers/support/goraph/util
 # github.com/pelletier/go-toml v1.2.0
 github.com/pelletier/go-toml
+# github.com/rs/cors v1.7.0
+github.com/rs/cors
 # github.com/satori/go.uuid v1.2.0
 github.com/satori/go.uuid
 # github.com/segmentio/ksuid v1.0.2
