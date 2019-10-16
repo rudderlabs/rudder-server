@@ -44,7 +44,7 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 The docker setup is the easiest & fastest way to try out Rudder.
 
 1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
-2. Clone this repository and replace `<your_workspace_token>` in `build/docker.env` with the above token.
+2. Clone this repository with [SSH](https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls) and replace `<your_workspace_token>` in `build/docker.env` with the above token.
 3. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
 4. Run the command `docker-compose up` to bring up all the services.
 5. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID.
