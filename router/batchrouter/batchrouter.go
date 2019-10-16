@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,9 +66,15 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	bucketName := batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
 	uuid := uuid.NewV4()
 	logger.Debugf("BRT: Starting logging to S3 bucket: %v", bucketName)
-	homeDir, err := os.UserHomeDir()
-	fallbackLocalS3FilesPath := homeDir + "/rudder-s3-destination-logs/"
-	path := fmt.Sprintf("%v%v.json", config.GetEnv("RUDDER_TMPDIR", fallbackLocalS3FilesPath), fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
+
+	dirName := "/rudder-s3-destination-logs/"
+	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	var err error
+	if tmpdirPath == "" {
+		tmpdirPath, err = os.UserHomeDir()
+		misc.AssertError(err)
+	}
+	path := fmt.Sprintf("%v%v.json", tmpdirPath+dirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
 	var content string
 	for _, job := range batchJobs.Jobs {
 		trimmedPayload := bytes.TrimLeft(job.EventPayload, " \t\r\n")

@@ -362,7 +362,7 @@ func getTimestampFromEvent(event map[string]interface{}, field string) time.Time
 		if typecasted {
 			timestamp, err = dateparse.ParseAny(timestampStr)
 		}
-		if err != nil {
+		if !typecasted || err != nil {
 			timestamp = time.Now()
 		}
 	} else {
