@@ -172,6 +172,17 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				continue
 			}
 
+			// set anonymousId if not set in payload
+			var index int
+			result := gjson.GetBytes(body, "batch")
+			result.ForEach(func(key, value gjson.Result) bool {
+				if !gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).Exists() {
+					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index), uuid.NewV4().String())
+				}
+				index++
+				return true // keep iterating
+			})
+
 			if req.reqType != "batch" {
 				body, _ = sjson.SetBytes(body, "type", req.reqType)
 				body, _ = sjson.SetRawBytes(batchEvent, "batch.0", body)

@@ -31,7 +31,6 @@ maxDSSize = 100000
 maxMigrateOnce = 10
 mainCheckSleepDurationInS = 2
 backupCheckSleepDurationIns = 5
-eventsInJSONFileDump = 1000
 enableBackup = true
 
 [Router]
@@ -52,6 +51,7 @@ keepOrderOnFailure = true
 [BatchRouter]
 mainLoopSleepInS = 30
 noOfWorkers = 8
+jobQueryBatchSize = 100000
 
 [Processor]
 loopSleepInMS = 10
@@ -62,7 +62,7 @@ sessionThresholdInS = 10
 maxChanSize = 2048
 processSessions = true
 numTransformWorker = 8
-maxRetry = 3
+maxRetry = 30
 retrySleepInMS = 100
 
 [BackendConfig]

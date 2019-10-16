@@ -357,8 +357,10 @@ func getTimestampFromEvent(event map[string]interface{}, field string) time.Time
 	var timestamp time.Time
 	var err error
 	if _, ok := event[field]; ok {
+		// use https://github.com/araddon/dateparse ?
 		timestamp, err = time.Parse(time.RFC3339, event[field].(string))
 		if err != nil {
+			// time.Now in RFC3339 format ?
 			timestamp = time.Now()
 		}
 	} else {

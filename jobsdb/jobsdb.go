@@ -18,6 +18,7 @@ mostly serviced from memory cache.
 package jobsdb
 
 import (
+	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -1390,16 +1391,34 @@ func (jd *HandleT) removeTableJSONDumps() {
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
-	path := fmt.Sprintf(`%v%v.json`, config.GetEnv("TMPDIR", "/home/ubuntu/s3/"), pathPrefix)
-	copyStmt := fmt.Sprintf(`COPY (SELECT row_to_json(%v) FROM (SELECT * FROM %v) %v) TO '%v';`, dbname, tableName, dbname, path)
-	_, err = jd.dbHandle.Exec(copyStmt)
-	jd.assertError(err)
+	homeDir, err := os.UserHomeDir()
+	fallbackLocalS3DumpsPath := homeDir + "/rudder-s3-dumps/"
+	path := fmt.Sprintf(`%v%v.gz`, config.GetEnv("TMPDIR", fallbackLocalS3DumpsPath), pathPrefix)
+	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
+	misc.AssertError(err)
 
-	zipFilePath := fmt.Sprintf(`%v.zip`, path)
-	err = misc.ZipFiles(zipFilePath, []string{path})
-	jd.assertError(err)
+	stmt := fmt.Sprintf(`SELECT json_agg(%[1]s) FROM %[1]s`, tableName)
+	var unMarshaledJSONArr json.RawMessage
+	err = jd.dbHandle.QueryRow(stmt).Scan(&unMarshaledJSONArr)
+	misc.AssertError(err)
 
-	file, err := os.Open(zipFilePath)
+	var content string
+	var jsonArr []interface{}
+	err = json.Unmarshal(unMarshaledJSONArr, &jsonArr)
+	misc.AssertError(err)
+	for _, jsonRow := range jsonArr {
+		rowBytes, err := json.Marshal(jsonRow)
+		misc.AssertError(err)
+		content += string(rowBytes) + "\n"
+	}
+
+	gzipFile, err := os.Create(path)
+	gzipWriter := gzip.NewWriter(gzipFile)
+	_, err = gzipWriter.Write([]byte(content))
+	misc.AssertError(err)
+	gzipWriter.Close()
+
+	file, err := os.Open(path)
 	jd.assertError(err)
 	defer file.Close()
 
@@ -1410,8 +1429,6 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	}
 	jd.assertError(err)
 
-	err = os.Remove(zipFilePath)
-	jd.assertError(err)
 	err = os.Remove(path)
 	jd.assertError(err)
 
