@@ -181,6 +181,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			JobID:         job.JobID,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
+			AttemptNum:    job.LastJobStatus.AttemptNum,
 			ErrorCode:     respStatus,
 			ErrorResponse: []byte(`{}`),
 		}
@@ -230,7 +231,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				break
 			default:
 				status.JobState = jobsdb.FailedState
-				status.AttemptNum = job.LastJobStatus.AttemptNum
+				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
 				logger.Debugf("%v Router :: Marking job as failed and incrementing the AttemptNum", rt.destID)
 				break
 			}
