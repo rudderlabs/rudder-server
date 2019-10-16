@@ -479,9 +479,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//the JSON we can send to the destination
 		url := integrations.GetDestinationURL(destID)
 		logger.Debug("Transform input size", len(destEventList))
-		destTransformEventList, ok := proc.transformer.Transform(destEventList, url, transformBatchSize, true)
+		response := proc.transformer.Transform(destEventList, url, transformBatchSize, true)
+		destTransformEventList := response.Events
 		logger.Debug("Transform output size", len(destTransformEventList))
-		if !ok {
+		if !response.Success {
 			continue
 		}
 
@@ -496,7 +497,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 			//Need to replace UUID his with messageID from client
 			id := uuid.NewV4()
-			sourceID := destEventList[idx].(map[string]interface{})["message"].(map[string]interface{})["source_id"].(string)
+			sourceID := response.SourceIDList[idx]
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID)),
