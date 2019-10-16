@@ -124,7 +124,8 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 		if err != nil {
 			logger.Error("Config Backend connection error", err)
 			if retryCount > maxRetry {
-				misc.Assert(false)
+				logger.Errorf("Max retries exceeded trying to connect to config backend")
+				return
 			}
 			retryCount++
 			time.Sleep(retrySleep)
@@ -134,8 +135,10 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 		break
 	}
 
-	misc.Assert(resp.StatusCode == http.StatusOK ||
-		resp.StatusCode == http.StatusBadRequest)
+	if !(resp.StatusCode == http.StatusOK ||
+		resp.StatusCode == http.StatusBadRequest) {
+		logger.Errorf("Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
+	}
 }
 
 func filterValues(message *MessageT) {

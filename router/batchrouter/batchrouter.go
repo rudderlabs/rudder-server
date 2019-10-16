@@ -2,9 +2,12 @@ package batchrouter
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -55,14 +58,24 @@ func backendConfigSubscriber() {
 	}
 }
 
+type ErrorResponseT struct {
+	Error string
+}
+
 func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	bucketName := batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
 	uuid := uuid.NewV4()
-	logger.Debugf("BRT: Logging to S3 bucket: %v", bucketName)
+	logger.Debugf("BRT: Starting logging to S3 bucket: %v", bucketName)
 
-	path := fmt.Sprintf("%v%v.json", config.GetEnv("TMPDIR", "/home/ubuntu/s3/"), fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
-	unzippedFile, err := os.Create(path)
-	misc.AssertError(err)
+	dirName := "/rudder-s3-destination-logs/"
+	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	var err error
+	if tmpdirPath == "" {
+		tmpdirPath, err = os.UserHomeDir()
+		misc.AssertError(err)
+	}
+	path := fmt.Sprintf("%v%v.json", tmpdirPath+dirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
+	var content string
 	for _, job := range batchJobs.Jobs {
 		trimmedPayload := bytes.TrimLeft(job.EventPayload, " \t\r\n")
 		isArray := len(trimmedPayload) > 0 && trimmedPayload[0] == '['
@@ -73,35 +86,45 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 			for _, event := range events {
 				jsonEvent, err := json.Marshal((event))
 				misc.AssertError(err)
-				_, err = fmt.Fprintln(unzippedFile, string(jsonEvent))
-				misc.AssertError(err)
+				content += string(jsonEvent) + "\n"
 			}
 		} else {
-			_, err := fmt.Fprintln(unzippedFile, string(job.EventPayload))
-			misc.AssertError(err)
+			content += string(job.EventPayload) + "\n"
 		}
 	}
-	unzippedFile.Close()
 
-	zipFilePath := fmt.Sprintf(`%v.zip`, path)
-	err = misc.ZipFiles(zipFilePath, []string{path})
+	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
+	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	misc.AssertError(err)
+	gzipFile, err := os.Create(gzipFilePath)
 
-	zipFile, err := os.Open(zipFilePath)
-	defer zipFile.Close()
+	gzipWriter := gzip.NewWriter(gzipFile)
+	_, err = gzipWriter.Write([]byte(content))
+	misc.AssertError(err)
+	gzipWriter.Close()
+
+	logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
 
 	uploader, err := fileuploader.NewFileUploader(&fileuploader.SettingsT{
 		Provider:       "s3",
 		AmazonS3Bucket: bucketName,
 	})
-	err = uploader.Upload(zipFile, config.GetEnv("DESTINATION_S3_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
-	var jobState string
+	gzipFile, err = os.Open(gzipFilePath)
+	misc.AssertError(err)
+	logger.Debugf("BRT: Starting upload to S3 bucket: %v", bucketName)
+	err = uploader.Upload(gzipFile, config.GetEnv("DESTINATION_S3_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
+	var (
+		jobState  string
+		errorResp []byte
+	)
 	if err != nil {
 		logger.Errorf("BRT: %v", err)
 		jobState = jobsdb.FailedState
+		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 	} else {
 		logger.Debugf("BRT: Uploaded to S3 bucket: %v %v %v", bucketName, batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		jobState = jobsdb.SucceededState
+		errorResp = []byte(`{"success":"OK"}`)
 	}
 
 	var statusList []*jobsdb.JobStatusT
@@ -115,7 +138,7 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
 			ErrorCode:     "",
-			ErrorResponse: []byte(`{}`), // check
+			ErrorResponse: errorResp,
 		}
 		statusList = append(statusList, &status)
 	}
@@ -123,9 +146,7 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	//Mark the jobs as executing
 	brt.jobsDB.UpdateJobStatus(statusList, []string{batchJobs.BatchDestination.Destination.DestinationDefinition.Name})
 
-	err = os.Remove(zipFilePath)
-	misc.AssertError(err)
-	err = os.Remove(path)
+	err = os.Remove(gzipFilePath)
 	misc.AssertError(err)
 }
 
@@ -167,6 +188,7 @@ func (brt *HandleT) mainLoop() {
 			if inProgressMap[batchDestination.Source.ID] {
 				continue
 			}
+			inProgressMap[batchDestination.Source.ID] = true
 			toQuery := jobQueryBatchSize
 			retryList := brt.jobsDB.GetToRetry([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID)
 			toQuery -= len(retryList)
@@ -174,6 +196,7 @@ func (brt *HandleT) mainLoop() {
 			toQuery -= len(waitList)
 			unprocessedList := brt.jobsDB.GetUnprocessed([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID)
 			if len(waitList)+len(unprocessedList)+len(retryList) == 0 {
+				delete(inProgressMap, batchDestination.Source.ID)
 				continue
 			}
 
@@ -185,7 +208,7 @@ func (brt *HandleT) mainLoop() {
 			for _, job := range combinedList {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
-					AttemptNum:    job.LastJobStatus.AttemptNum,
+					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 					JobState:      jobsdb.ExecutingState,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
@@ -197,7 +220,6 @@ func (brt *HandleT) mainLoop() {
 
 			//Mark the jobs as executing
 			brt.jobsDB.UpdateJobStatus(statusList, []string{batchDestination.Destination.DestinationDefinition.Name})
-			inProgressMap[batchDestination.Source.ID] = true
 			brt.processQ <- BatchJobsT{Jobs: combinedList, BatchDestination: batchDestination}
 		}
 	}
@@ -242,7 +264,7 @@ func (brt *HandleT) crashRecover() {
 }
 
 func loadConfig() {
-	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
+	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
 	mainLoopSleepInS = config.GetInt("BatchRouter.mainLoopSleepInS", 5)
 	rawDataDestinations = []string{"S3"}
