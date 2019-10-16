@@ -124,7 +124,7 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 		if err != nil {
 			logger.Error("Config Backend connection error", err)
 			if retryCount > maxRetry {
-				logger.Errorf("Max retries trying to connect to config backend")
+				logger.Errorf("Max retries exceeded trying to connect to config backend")
 				return
 			}
 			retryCount++

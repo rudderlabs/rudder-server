@@ -1380,7 +1380,9 @@ func (jd *HandleT) backupDSLoop() {
 }
 
 func (jd *HandleT) removeTableJSONDumps() {
-	path := config.GetEnv("TMPDIR", "/home/ubuntu/s3/")
+	homeDir, err := os.UserHomeDir()
+	fallbackLocalS3DumpsPath := homeDir + "/rudder-s3-dumps/"
+	path := config.GetEnv("RUDDER_TMPDIR", fallbackLocalS3DumpsPath)
 	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", path, jd.tablePrefix))
 	jd.assertError(err)
 	for _, f := range files {
@@ -1393,21 +1395,21 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
 	homeDir, err := os.UserHomeDir()
 	fallbackLocalS3DumpsPath := homeDir + "/rudder-s3-dumps/"
-	path := fmt.Sprintf(`%v%v.gz`, config.GetEnv("TMPDIR", fallbackLocalS3DumpsPath), pathPrefix)
+	path := fmt.Sprintf(`%v%v.gz`, config.GetEnv("RUDDER_TMPDIR", fallbackLocalS3DumpsPath), pathPrefix)
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	misc.AssertError(err)
 
 	stmt := fmt.Sprintf(`SELECT json_agg(%[1]s) FROM %[1]s`, tableName)
-	var unMarshaledJSONArr json.RawMessage
-	err = jd.dbHandle.QueryRow(stmt).Scan(&unMarshaledJSONArr)
+	var rawJSONRows json.RawMessage
+	err = jd.dbHandle.QueryRow(stmt).Scan(&rawJSONRows)
 	misc.AssertError(err)
 
 	var content string
-	var jsonArr []interface{}
-	err = json.Unmarshal(unMarshaledJSONArr, &jsonArr)
+	var rows []interface{}
+	err = json.Unmarshal(rawJSONRows, &rows)
 	misc.AssertError(err)
-	for _, jsonRow := range jsonArr {
-		rowBytes, err := json.Marshal(jsonRow)
+	for _, row := range rows {
+		rowBytes, err := json.Marshal(row)
 		misc.AssertError(err)
 		content += string(rowBytes) + "\n"
 	}

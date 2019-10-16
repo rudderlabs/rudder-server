@@ -67,7 +67,7 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	logger.Debugf("BRT: Starting logging to S3 bucket: %v", bucketName)
 	homeDir, err := os.UserHomeDir()
 	fallbackLocalS3FilesPath := homeDir + "/rudder-s3-destination-logs/"
-	path := fmt.Sprintf("%v%v.json", config.GetEnv("S3_UPLOADS_DIR", fallbackLocalS3FilesPath), fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
+	path := fmt.Sprintf("%v%v.json", config.GetEnv("RUDDER_TMPDIR", fallbackLocalS3FilesPath), fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
 	var content string
 	for _, job := range batchJobs.Jobs {
 		trimmedPayload := bytes.TrimLeft(job.EventPayload, " \t\r\n")
