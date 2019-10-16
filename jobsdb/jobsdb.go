@@ -18,6 +18,7 @@ mostly serviced from memory cache.
 package jobsdb
 
 import (
+	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -1379,8 +1380,14 @@ func (jd *HandleT) backupDSLoop() {
 }
 
 func (jd *HandleT) removeTableJSONDumps() {
-	path := config.GetEnv("TMPDIR", "/home/ubuntu/s3/")
-	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", path, jd.tablePrefix))
+	backupPathDirName := "/rudder-s3-dumps/"
+	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	var err error
+	if tmpdirPath == "" {
+		tmpdirPath, err = os.UserHomeDir()
+		misc.AssertError(err)
+	}
+	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", tmpdirPath+backupPathDirName, jd.tablePrefix))
 	jd.assertError(err)
 	for _, f := range files {
 		err = os.Remove(f)
@@ -1390,16 +1397,38 @@ func (jd *HandleT) removeTableJSONDumps() {
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
-	path := fmt.Sprintf(`%v%v.json`, config.GetEnv("TMPDIR", "/home/ubuntu/s3/"), pathPrefix)
-	copyStmt := fmt.Sprintf(`COPY (SELECT row_to_json(%v) FROM (SELECT * FROM %v) %v) TO '%v';`, dbname, tableName, dbname, path)
-	_, err = jd.dbHandle.Exec(copyStmt)
-	jd.assertError(err)
+	backupPathDirName := "/rudder-s3-dumps/"
+	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	if tmpdirPath == "" {
+		tmpdirPath, err = os.UserHomeDir()
+		misc.AssertError(err)
+	}
+	path := fmt.Sprintf(`%v%v.gz`, tmpdirPath+backupPathDirName, pathPrefix)
+	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
+	misc.AssertError(err)
 
-	zipFilePath := fmt.Sprintf(`%v.zip`, path)
-	err = misc.ZipFiles(zipFilePath, []string{path})
-	jd.assertError(err)
+	stmt := fmt.Sprintf(`SELECT json_agg(%[1]s) FROM %[1]s`, tableName)
+	var rawJSONRows json.RawMessage
+	err = jd.dbHandle.QueryRow(stmt).Scan(&rawJSONRows)
+	misc.AssertError(err)
 
-	file, err := os.Open(zipFilePath)
+	var content string
+	var rows []interface{}
+	err = json.Unmarshal(rawJSONRows, &rows)
+	misc.AssertError(err)
+	for _, row := range rows {
+		rowBytes, err := json.Marshal(row)
+		misc.AssertError(err)
+		content += string(rowBytes) + "\n"
+	}
+
+	gzipFile, err := os.Create(path)
+	gzipWriter := gzip.NewWriter(gzipFile)
+	_, err = gzipWriter.Write([]byte(content))
+	misc.AssertError(err)
+	gzipWriter.Close()
+
+	file, err := os.Open(path)
 	jd.assertError(err)
 	defer file.Close()
 
@@ -1410,8 +1439,6 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	}
 	jd.assertError(err)
 
-	err = os.Remove(zipFilePath)
-	jd.assertError(err)
 	err = os.Remove(path)
 	jd.assertError(err)
 

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //Structure which is used to pass message to the transformer workers
@@ -60,6 +60,7 @@ func (trans *transformerHandleT) transformWorker() {
 			break
 		}
 
+		// Remove Assertion?
 		misc.Assert(resp.StatusCode == http.StatusOK ||
 			resp.StatusCode == http.StatusBadRequest)
 

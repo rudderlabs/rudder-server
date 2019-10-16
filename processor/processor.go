@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/araddon/dateparse"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -357,8 +358,11 @@ func getTimestampFromEvent(event map[string]interface{}, field string) time.Time
 	var timestamp time.Time
 	var err error
 	if _, ok := event[field]; ok {
-		timestamp, err = time.Parse(time.RFC3339, event[field].(string))
-		if err != nil {
+		timestampStr, typecasted := event[field].(string)
+		if typecasted {
+			timestamp, err = dateparse.ParseAny(timestampStr)
+		}
+		if !typecasted || err != nil {
 			timestamp = time.Now()
 		}
 	} else {
@@ -433,11 +437,14 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
 						shallowEventCopy["message"].(map[string]interface{})["source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 
-						// set timestamp skew
+						// set timestamp skew based on timestamp fields from SDKs
 						originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
 						sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
 
-						shallowEventCopy["message"].(map[string]interface{})["receivedAt"] = receivedAt
+						// set all timestamps in RFC3339 format
+						shallowEventCopy["message"].(map[string]interface{})["receivedAt"] = receivedAt.Format(time.RFC3339)
+						shallowEventCopy["message"].(map[string]interface{})["originalTimestamp"] = originalTimestamp.Format(time.RFC3339)
+						shallowEventCopy["message"].(map[string]interface{})["sentAt"] = sentAt.Format(time.RFC3339)
 						shallowEventCopy["message"].(map[string]interface{})["timestamp"] = receivedAt.Add(-sentAt.Sub(originalTimestamp)).Format(time.RFC3339)
 
 						//We have at-least one event so marking it good
