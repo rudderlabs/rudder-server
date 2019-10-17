@@ -281,12 +281,12 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	if jd.toBackup {
 		jd.jobsFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
 			Provider:       "s3",
-			AmazonS3Bucket: config.GetEnv("JOBS_BACKUP_BUCKET", "dump-gateway-jobs-test"),
+			AmazonS3Bucket: config.GetEnv("JOBS_BACKUP_BUCKET", ""),
 		})
 		jd.assertError(err)
 		jd.jobStatusFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
 			Provider:       "s3",
-			AmazonS3Bucket: config.GetEnv("JOB_STATUS_BACKUP_BUCKET", "dump-gateway-job-status-test"),
+			AmazonS3Bucket: config.GetEnv("JOB_STATUS_BACKUP_BUCKET", ""),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()
