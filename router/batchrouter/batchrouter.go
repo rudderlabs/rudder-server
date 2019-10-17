@@ -75,7 +75,7 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 		misc.AssertError(err)
 	}
 	path := fmt.Sprintf("%v%v.json", tmpdirPath+dirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
-	var content string
+	var contentSlice [][]byte
 	for _, job := range batchJobs.Jobs {
 		trimmedPayload := bytes.TrimLeft(job.EventPayload, " \t\r\n")
 		isArray := len(trimmedPayload) > 0 && trimmedPayload[0] == '['
@@ -86,12 +86,13 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 			for _, event := range events {
 				jsonEvent, err := json.Marshal((event))
 				misc.AssertError(err)
-				content += string(jsonEvent) + "\n"
+				contentSlice = append(contentSlice, jsonEvent)
 			}
 		} else {
-			content += string(job.EventPayload) + "\n"
+			contentSlice = append(contentSlice, job.EventPayload)
 		}
 	}
+	content := bytes.Join(contentSlice[:], []byte("\n"))
 
 	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
 	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
@@ -99,7 +100,7 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	gzipFile, err := os.Create(gzipFilePath)
 
 	gzipWriter := gzip.NewWriter(gzipFile)
-	_, err = gzipWriter.Write([]byte(content))
+	_, err = gzipWriter.Write(content)
 	misc.AssertError(err)
 	gzipWriter.Close()
 

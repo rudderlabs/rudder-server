@@ -18,6 +18,7 @@ mostly serviced from memory cache.
 package jobsdb
 
 import (
+	"bytes"
 	"compress/gzip"
 	"database/sql"
 	"encoding/json"
@@ -1412,19 +1413,20 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	err = jd.dbHandle.QueryRow(stmt).Scan(&rawJSONRows)
 	misc.AssertError(err)
 
-	var content string
 	var rows []interface{}
 	err = json.Unmarshal(rawJSONRows, &rows)
 	misc.AssertError(err)
-	for _, row := range rows {
+	contentSlice := make([][]byte, len(rows))
+	for idx, row := range rows {
 		rowBytes, err := json.Marshal(row)
 		misc.AssertError(err)
-		content += string(rowBytes) + "\n"
+		contentSlice[idx] = rowBytes
 	}
+	content := bytes.Join(contentSlice[:], []byte("\n"))
 
 	gzipFile, err := os.Create(path)
 	gzipWriter := gzip.NewWriter(gzipFile)
-	_, err = gzipWriter.Write([]byte(content))
+	_, err = gzipWriter.Write(content)
 	misc.AssertError(err)
 	gzipWriter.Close()
 
