@@ -39,6 +39,15 @@ type HandleT struct {
 	userJobListMap     map[string][]*jobsdb.JobT
 	userEventsMap      map[string][]interface{}
 	userPQItemMap      map[string]*pqItemT
+	statJobs           *stats.RudderStats
+	statsDBR           *misc.PerfStats
+	statDBR            *stats.RudderStats
+	statsDBW           *misc.PerfStats
+	statDBW            *stats.RudderStats
+	userJobListMap     map[string][]*jobsdb.JobT
+	userEventsMap      map[string][]interface{}
+	userPQItemMap      map[string]*pqItemT
+	userToSessionIDMap map[string]int64
 	userJobPQ          pqT
 	userPQLock         sync.Mutex
 }
@@ -62,6 +71,10 @@ func (proc *HandleT) Print() {
 	for k, v := range proc.userPQItemMap {
 		logger.Debug(k, ":", *v)
 	}
+	logger.Debug("Session")
+	for k, v := range proc.userToSessionIDMap {
+		logger.Debug(k, " : ", v)
+	}
 }
 
 func init() {
@@ -81,6 +94,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.userJobListMap = make(map[string][]*jobsdb.JobT)
 	proc.userEventsMap = make(map[string][]interface{})
 	proc.userPQItemMap = make(map[string]*pqItemT)
+	proc.userToSessionIDMap = make(map[string]int64)
 	proc.userJobPQ = make(pqT, 0)
 	proc.statsJobs.Setup("ProcessorJobs")
 	proc.statsDBR.Setup("ProcessorDBRead")
@@ -192,6 +206,9 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			}
 			proc.userPQItemMap[userID] = pqItem
 			proc.userJobPQ.Add(pqItem)
+			logger.Debug("Adding a new session to userID ", userID)
+			// Adding a new session id for the user
+			proc.userToSessionIDMap[userID] = pqItem.lastTS.Unix()
 		} else {
 			misc.Assert(pqItem.index != -1)
 			proc.userJobPQ.Update(pqItem, timestamp)
@@ -202,6 +219,8 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 	if len(processUserIDs) > 0 {
 		userJobsToProcess := make(map[string][]*jobsdb.JobT)
 		userEventsToProcess := make(map[string][]interface{})
+		userToSessionMap := make(map[string]int64)
+
 		logger.Debug("Post Add Processing")
 		proc.Print()
 
@@ -209,22 +228,21 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		for userID := range processUserIDs {
 			userJobsToProcess[userID] = proc.userJobListMap[userID]
 			userEventsToProcess[userID] = proc.userEventsMap[userID]
+			userToSessionMap[userID] = proc.userToSessionIDMap[userID]
 			delete(proc.userJobListMap, userID)
 			delete(proc.userEventsMap, userID)
-			proc.userJobPQ.Remove(proc.userPQItemMap[userID])
-			delete(proc.userPQItemMap, userID)
 		}
 		logger.Debug("Processing")
 		proc.Print()
 		//We release the block before actually processing
 		proc.userPQLock.Unlock()
-		proc.processUserJobs(userJobsToProcess, userEventsToProcess)
+		proc.processUserJobs(userJobsToProcess, userEventsToProcess, userToSessionMap)
 		return
 	}
 	proc.userPQLock.Unlock()
 }
 
-func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEvents map[string][]interface{}) {
+func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEvents map[string][]interface{}, userToSessionMap map[string]int64) {
 
 	misc.Assert(len(userEvents) == len(userJobs))
 
@@ -240,11 +258,22 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEve
 	//Create a list of list of user events which is passed to transformer
 	userEventsList := make([]interface{}, 0)
 	userIDList := make([]string, 0) //Order of users which are added to list
+	eventListMap := make(map[string][]interface{})
 	for userID := range userEvents {
-		userEventsList = append(userEventsList, userEvents[userID])
+		// add the session_id field to each event before sending it downstream
+		for _, event := range userEvents[userID] {
+			eventMap, ok := event.(map[string]interface{})
+			misc.Assert(ok)
+			if ok {
+				eventMap["session_id"] = userToSessionMap[userID]
+				eventListMap[userID] = append(eventListMap[userID], eventMap)
+			}
+
+		}
+		userEventsList = append(userEventsList, eventListMap[userID])
 		userIDList = append(userIDList, userID)
 	}
-	misc.Assert(len(userEventsList) == len(userEvents))
+	misc.Assert(len(userEventsList) == len(eventListMap))
 
 	//Create jobs that can be processed further
 	toProcessJobs, toProcessEvents := createUserTransformedJobsFromEvents(userEventsList, userIDList, userJobs)
@@ -315,6 +344,7 @@ func (proc *HandleT) createSessions() {
 
 		userJobsToProcess := make(map[string][]*jobsdb.JobT)
 		userEventsToProcess := make(map[string][]interface{})
+		userToSessionMap := make(map[string]int64)
 		//Find all jobs that need to be processed
 		for {
 			if proc.userJobPQ.Len() == 0 {
@@ -327,18 +357,25 @@ func (proc *HandleT) createSessions() {
 				misc.Assert(ok && pqItem == oldestItem)
 				userJobsToProcess[userID] = proc.userJobListMap[userID]
 				userEventsToProcess[userID] = proc.userEventsMap[userID]
+				userToSessionMap[userID] = proc.userToSessionIDMap[userID]
 				//Clear from the map
 				delete(proc.userJobListMap, userID)
 				delete(proc.userEventsMap, userID)
 				proc.userJobPQ.Remove(proc.userPQItemMap[userID])
 				delete(proc.userPQItemMap, userID)
+				// A new session begins when a user is inactive for a period of sessionThresholdInS
+				// lastTS is the latest time when the user data was delivered to the server
+				// Refer addJobsToSession
+				delete(proc.userToSessionIDMap, userID)
 				continue
 			}
 			break
 		}
 		proc.userPQLock.Unlock()
 		if len(userJobsToProcess) > 0 {
-			proc.processUserJobs(userJobsToProcess, userEventsToProcess)
+			logger.Debug("Processing Session Check")
+			proc.Print()
+			proc.processUserJobs(userJobsToProcess, userEventsToProcess, userToSessionMap)
 		}
 	}
 }
