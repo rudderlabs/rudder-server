@@ -1364,11 +1364,18 @@ func (jd *HandleT) backupDSLoop() {
 		opID := jd.journalMarkStart(backupDSOperation, opPayload)
 		// write jobs table to s3
 		_, err = jd.backupTable(backupDS.JobTable)
-		jd.assertError(err)
+		if err != nil {
+			logger.Errorf("Failed to backup table %v", backupDS.JobTable)
+			continue
+		}
 
 		// write job_status table to s3
 		_, err = jd.backupTable(backupDS.JobStatusTable)
 		jd.assertError(err)
+		if err != nil {
+			logger.Errorf("Failed to backup table %v", backupDS.JobStatusTable)
+			continue
+		}
 		jd.journalMarkDone(opID)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
@@ -1439,12 +1446,14 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	} else {
 		err = jd.jobsFileUploader.Upload(file)
 	}
-	jd.assertError(err)
+	if err != nil {
+		logger.Errorf("Failed to upload table %v dump to S3", tableName)
+	}
 
 	err = os.Remove(path)
 	jd.assertError(err)
 
-	return true, nil
+	return true, err
 }
 
 func (jd *HandleT) getBackupDS() dataSetT {

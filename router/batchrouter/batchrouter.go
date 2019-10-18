@@ -15,6 +15,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -62,7 +63,25 @@ type ErrorResponseT struct {
 	Error string
 }
 
+func updateDestStats(id string, count int) {
+	destStatsD := stats.NewBatchDestStat("batch_router.dest_id_count", stats.CountType, id)
+	destStatsD.Count(count)
+}
+
+func updateDestStatusStats(id string, count int, isSuccess bool) {
+	var destStatsD *stats.RudderStats
+	if isSuccess {
+		destStatsD = stats.NewBatchDestStat("batch_router.dest_id_success_count", stats.CountType, id)
+	} else {
+		destStatsD = stats.NewBatchDestStat("batch_router.dest_id_fail_count", stats.CountType, id)
+
+	}
+	destStatsD.Count(count)
+}
+
 func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
+	updateDestStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs))
+
 	bucketName := batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
 	uuid := uuid.NewV4()
 	logger.Debugf("BRT: Starting logging to S3 bucket: %v", bucketName)
@@ -122,10 +141,12 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 		logger.Errorf("BRT: %v", err)
 		jobState = jobsdb.FailedState
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
+		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), false)
 	} else {
 		logger.Debugf("BRT: Uploaded to S3 bucket: %v %v %v", bucketName, batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		jobState = jobsdb.SucceededState
 		errorResp = []byte(`{"success":"OK"}`)
+		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
 	}
 
 	var statusList []*jobsdb.JobStatusT
