@@ -54,6 +54,10 @@ The docker setup is the easiest & fastest way to try out Rudder.
 9. You can use our [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or iOS (coming soon) SDKs for sending events from your app.
 10. If you want to try a demo version, check out `https://github.com/rudderlabs/rudder-docker`
 
+# Setup Instructions (Terraform)
+
+Our terraform scripts are in a separate repo - [Download Here](https://github.com/rudderlabs/rudder-terraform)
+
 # Setup Instructions (Native Installation)
 
 If you want to run each of the services without docker please follow the following steps
