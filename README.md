@@ -47,7 +47,7 @@ The docker setup is the easiest & fastest way to try out Rudder.
 2. Clone this repository with [SSH](https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls) and replace `<your_workspace_token>` in `build/docker.env` with the above token.
 3. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
 4. Run the command `docker-compose up --build` to bring up all the services.
-5. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID.
+5. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID. The Google Analytics account needs to have a **Web** Property (**Web+App** does't seem to work)
 6. Create one source (Android or iOS) and configure a Google Analytics destination for the same with the above tracking ID
 7. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `./scripts/generate-event <writeKeyHere> http://localhost:8080/v1/batch`. NOTE: `writeKey` is different from the `your_workspace_token` in step 2. Former is associated with the source while the latter is for your account.
 8. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
