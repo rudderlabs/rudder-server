@@ -40,6 +40,8 @@ const (
 	PostDataJSON
 	//PostDataXML means post data is sent as XML
 	PostDataXML
+	//PostDataFORM means post data is sent as form
+	PostDataFORM
 )
 
 //PostParameterT  has post related parameters, the URL and the data type

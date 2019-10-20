@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -36,6 +38,8 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 		postInfo.Type = integrations.PostDataKV
 	case "JSON":
 		postInfo.Type = integrations.PostDataJSON
+	case "FORM":
+		postInfo.Type = integrations.PostDataFORM
 	default:
 		misc.Assert(false)
 	}
@@ -63,6 +67,14 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 		jsonValue, err := json.Marshal(payloadJSON)
 		misc.AssertError(err)
 		req.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
+	} else if postInfo.Type == integrations.PostDataFORM {
+		payloadFormKV, ok := postInfo.Payload.(map[string]interface{})
+		misc.Assert(ok)
+		formValues := url.Values{}
+		for key, val := range payloadFormKV {
+			formValues.Set(key, val.(string)) // transformer ensures top level string values
+		}
+		req.Body = ioutil.NopCloser(strings.NewReader(formValues.Encode()))
 	} else {
 		//Not implemented yet
 		misc.Assert(false)
