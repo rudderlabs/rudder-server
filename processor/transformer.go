@@ -3,6 +3,7 @@ package processor
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -197,9 +198,15 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 			//Transform is one to many mapping so returned
 			//response for each is an array. We flatten it out
 			for _, respElem := range respArray {
+				respElemMap, castOk := respElem.(map[string]interface{})
+				if castOk {
+					if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
+						// TODO: Log errored resposnes to file
+						continue
+					}
+				}
 				outClientEvents = append(outClientEvents, respElem)
 				outClientEventsSourceIDs = append(outClientEventsSourceIDs, sourceIDList[idx])
-
 			}
 		} else {
 			//One to one mapping so no flattening is
