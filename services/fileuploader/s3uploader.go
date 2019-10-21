@@ -1,6 +1,7 @@
 package fileuploader
 
 import (
+	"errors"
 	"os"
 	"strings"
 
@@ -11,6 +12,9 @@ import (
 
 // Upload passed in file to s3
 func (uploader *S3Uploader) Upload(file *os.File, prefixes ...string) error {
+	if uploader.bucket == "" {
+		return errors.New("no S3 bucket configured to uploader")
+	}
 	getRegionSession := session.Must(session.NewSession())
 	region, err := s3manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, uploader.bucket, "us-east-1")
 	uploadSession := session.Must(session.NewSession(&aws.Config{

@@ -18,6 +18,8 @@ mostly serviced from memory cache.
 package jobsdb
 
 import (
+	"bytes"
+	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -279,12 +281,12 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	if jd.toBackup {
 		jd.jobsFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
 			Provider:       "s3",
-			AmazonS3Bucket: config.GetEnv("JOBS_BACKUP_BUCKET", "dump-gateway-jobs-test"),
+			AmazonS3Bucket: config.GetEnv("JOBS_BACKUP_BUCKET", ""),
 		})
 		jd.assertError(err)
 		jd.jobStatusFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
 			Provider:       "s3",
-			AmazonS3Bucket: config.GetEnv("JOB_STATUS_BACKUP_BUCKET", "dump-gateway-job-status-test"),
+			AmazonS3Bucket: config.GetEnv("JOB_STATUS_BACKUP_BUCKET", ""),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()
@@ -1362,11 +1364,18 @@ func (jd *HandleT) backupDSLoop() {
 		opID := jd.journalMarkStart(backupDSOperation, opPayload)
 		// write jobs table to s3
 		_, err = jd.backupTable(backupDS.JobTable)
-		jd.assertError(err)
+		if err != nil {
+			logger.Errorf("Failed to backup table %v", backupDS.JobTable)
+			continue
+		}
 
 		// write job_status table to s3
 		_, err = jd.backupTable(backupDS.JobStatusTable)
 		jd.assertError(err)
+		if err != nil {
+			logger.Errorf("Failed to backup table %v", backupDS.JobStatusTable)
+			continue
+		}
 		jd.journalMarkDone(opID)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
@@ -1379,8 +1388,14 @@ func (jd *HandleT) backupDSLoop() {
 }
 
 func (jd *HandleT) removeTableJSONDumps() {
-	path := config.GetEnv("TMPDIR", "/home/ubuntu/s3/")
-	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", path, jd.tablePrefix))
+	backupPathDirName := "/rudder-s3-dumps/"
+	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	var err error
+	if tmpdirPath == "" {
+		tmpdirPath, err = os.UserHomeDir()
+		misc.AssertError(err)
+	}
+	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", tmpdirPath+backupPathDirName, jd.tablePrefix))
 	jd.assertError(err)
 	for _, f := range files {
 		err = os.Remove(f)
@@ -1390,16 +1405,39 @@ func (jd *HandleT) removeTableJSONDumps() {
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
-	path := fmt.Sprintf(`%v%v.json`, config.GetEnv("TMPDIR", "/home/ubuntu/s3/"), pathPrefix)
-	copyStmt := fmt.Sprintf(`COPY (SELECT row_to_json(%v) FROM (SELECT * FROM %v) %v) TO '%v';`, dbname, tableName, dbname, path)
-	_, err = jd.dbHandle.Exec(copyStmt)
-	jd.assertError(err)
+	backupPathDirName := "/rudder-s3-dumps/"
+	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	if tmpdirPath == "" {
+		tmpdirPath, err = os.UserHomeDir()
+		misc.AssertError(err)
+	}
+	path := fmt.Sprintf(`%v%v.gz`, tmpdirPath+backupPathDirName, pathPrefix)
+	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
+	misc.AssertError(err)
 
-	zipFilePath := fmt.Sprintf(`%v.zip`, path)
-	err = misc.ZipFiles(zipFilePath, []string{path})
-	jd.assertError(err)
+	stmt := fmt.Sprintf(`SELECT json_agg(%[1]s) FROM %[1]s`, tableName)
+	var rawJSONRows json.RawMessage
+	err = jd.dbHandle.QueryRow(stmt).Scan(&rawJSONRows)
+	misc.AssertError(err)
 
-	file, err := os.Open(zipFilePath)
+	var rows []interface{}
+	err = json.Unmarshal(rawJSONRows, &rows)
+	misc.AssertError(err)
+	contentSlice := make([][]byte, len(rows))
+	for idx, row := range rows {
+		rowBytes, err := json.Marshal(row)
+		misc.AssertError(err)
+		contentSlice[idx] = rowBytes
+	}
+	content := bytes.Join(contentSlice[:], []byte("\n"))
+
+	gzipFile, err := os.Create(path)
+	gzipWriter := gzip.NewWriter(gzipFile)
+	_, err = gzipWriter.Write(content)
+	misc.AssertError(err)
+	gzipWriter.Close()
+
+	file, err := os.Open(path)
 	jd.assertError(err)
 	defer file.Close()
 
@@ -1408,14 +1446,14 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	} else {
 		err = jd.jobsFileUploader.Upload(file)
 	}
-	jd.assertError(err)
+	if err != nil {
+		logger.Errorf("Failed to upload table %v dump to S3", tableName)
+	}
 
-	err = os.Remove(zipFilePath)
-	jd.assertError(err)
 	err = os.Remove(path)
 	jd.assertError(err)
 
-	return true, nil
+	return true, err
 }
 
 func (jd *HandleT) getBackupDS() dataSetT {

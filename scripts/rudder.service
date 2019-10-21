@@ -12,6 +12,7 @@ StandardOutput = syslog
 StandardError = syslog
 SyslogIdentifier = rudder
 User = ubuntu
+LimitNOFILE=11000000
 
 [Install]
 WantedBy = multi-user.target

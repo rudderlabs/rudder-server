@@ -44,15 +44,19 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 The docker setup is the easiest & fastest way to try out Rudder.
 
 1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
-2. Clone this repository and replace `<your_workspace_token>` in `build/docker.env` with the above token.
+2. Clone this repository with [SSH](https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls) and replace `<your_workspace_token>` in `build/docker.env` with the above token.
 3. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
-4. Run the command `docker-compose up` to bring up all the services.
-5. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID.
+4. Run the command `docker-compose up --build` to bring up all the services.
+5. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID. The Google Analytics account needs to have a **Web** Property (**Web+App** does't seem to work)
 6. Create one source (Android or iOS) and configure a Google Analytics destination for the same with the above tracking ID
-7. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `./scripts/generate-event <writeKeyHere>`
-8. You can then login to your Google Analytics account and verify that events are delivered in the correct order.
-9. You can use our Android, iOS or Javascript SDKs for sending events from your app.
+7. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `./scripts/generate-event <writeKeyHere> http://localhost:8080/v1/batch`. NOTE: `writeKey` is different from the `your_workspace_token` in step 2. Former is associated with the source while the latter is for your account.
+8. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
+9. You can use our [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or iOS (coming soon) SDKs for sending events from your app.
 10. If you want to try a demo version, check out `https://github.com/rudderlabs/rudder-docker`
+
+# Setup Instructions (Terraform)
+
+Our terraform scripts are in a separate repo - [Download Here](https://github.com/rudderlabs/rudder-terraform)
 
 # Setup Instructions (Native Installation)
 
