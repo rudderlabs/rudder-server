@@ -72,7 +72,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 		misc.Assert(ok)
 		formValues := url.Values{}
 		for key, val := range payloadFormKV {
-			formValues.Set(key, val.(string)) // transformer ensures top level string values
+			formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
 		}
 		req.Body = ioutil.NopCloser(strings.NewReader(formValues.Encode()))
 	} else {
