@@ -180,7 +180,10 @@ func (brt *HandleT) initWorkers() {
 				case batchJobs := <-brt.processQ:
 					switch batchJobs.BatchDestination.Destination.DestinationDefinition.Name {
 					case "S3":
+						s3DestUploadStat := stats.NewStat("batch_router.s3_dest_upload", stats.TimerType)
+						s3DestUploadStat.Start()
 						brt.copyJobsToS3(batchJobs)
+						s3DestUploadStat.End()
 						delete(inProgressMap, batchJobs.BatchDestination.Source.ID)
 					}
 				}
