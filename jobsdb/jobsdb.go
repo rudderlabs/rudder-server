@@ -30,6 +30,8 @@ import (
 	"sort"
 	"unicode/utf8"
 
+	"github.com/rudderlabs/rudder-server/services/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"strconv"
@@ -108,6 +110,7 @@ type HandleT struct {
 	toBackup              bool
 	jobsFileUploader      fileuploader.FileUploader
 	jobStatusFileUploader fileuploader.FileUploader
+	statTableCount        *stats.RudderStats
 }
 
 //The struct which is written to the journal
@@ -257,6 +260,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	//Kill any pending queries
 	jd.terminateQueries()
 
+	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
@@ -423,6 +427,7 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 			dataSetT{JobTable: jobName,
 				JobStatusTable: jobStatusName, Index: dnum})
 	}
+	jd.statTableCount.Gauge(len(jd.datasetList))
 	return jd.datasetList
 }
 

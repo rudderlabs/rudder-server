@@ -10,9 +10,11 @@ import (
 	"sort"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/stats"
+
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -167,8 +169,12 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool)
 		recoveryHandler = NewRecoveryHandler(&recoveryData)
 	}
 
+	recoveryModeStat := stats.NewStat("recovery_mode_normal", stats.GaugeType)
 	if recoveryData.Mode != normalMode {
+		recoveryModeStat.Gauge(0)
 		alertOps(recoveryData.Mode)
+	} else {
+		recoveryModeStat.Gauge(1)
 	}
 	currTime := time.Now().Unix()
 	recoveryHandler.RecordAppStart(currTime)

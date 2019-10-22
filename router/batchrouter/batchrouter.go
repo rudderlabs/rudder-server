@@ -30,6 +30,7 @@ var (
 	configSubscriberLock sync.RWMutex
 	rawDataDestinations  []string
 	inProgressMap        map[string]bool
+	errorsCountStat      *stats.RudderStats
 )
 
 type HandleT struct {
@@ -74,7 +75,7 @@ func updateDestStatusStats(id string, count int, isSuccess bool) {
 		destStatsD = stats.NewBatchDestStat("batch_router.dest_id_success_count", stats.CountType, id)
 	} else {
 		destStatsD = stats.NewBatchDestStat("batch_router.dest_id_fail_count", stats.CountType, id)
-
+		errorsCountStat.Count(count)
 	}
 	destStatsD.Count(count)
 }
@@ -296,6 +297,7 @@ func loadConfig() {
 func init() {
 	config.Initialize()
 	loadConfig()
+	errorsCountStat = stats.NewStat("batch_router.error_count", stats.CountType)
 }
 
 //Setup initializes this module

@@ -92,7 +92,7 @@ func (rStats *RudderStats) Increment() {
 	rStats.Client.Increment(rStats.Name)
 }
 
-func (rStats *RudderStats) Guage(value interface{}) {
+func (rStats *RudderStats) Gauge(value interface{}) {
 	if !statsEnabled {
 		return
 	}

@@ -24,25 +24,27 @@ import (
 
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
-	gatewayDB      *jobsdb.HandleT
-	routerDB       *jobsdb.HandleT
-	batchRouterDB  *jobsdb.HandleT
-	transformer    *transformerHandleT
-	statsJobs      *misc.PerfStats
-	statJobs       *stats.RudderStats
-	statsDBR       *misc.PerfStats
-	statDBR        *stats.RudderStats
-	statsDBW       *misc.PerfStats
-	statDBW        *stats.RudderStats
-	userJobListMap map[string][]*jobsdb.JobT
-	userEventsMap  map[string][]interface{}
-	userPQItemMap  map[string]*pqItemT
-	userJobPQ      pqT
-	userPQLock     sync.Mutex
+	gatewayDB       *jobsdb.HandleT
+	routerDB        *jobsdb.HandleT
+	batchRouterDB   *jobsdb.HandleT
+	transformer     *transformerHandleT
+	statsJobs       *misc.PerfStats
+	statJobs        *stats.RudderStats
+	statsDBR        *misc.PerfStats
+	statDBR         *stats.RudderStats
+	statsDBW        *misc.PerfStats
+	statDBW         *stats.RudderStats
+	statActiveUsers *stats.RudderStats
+	userJobListMap  map[string][]*jobsdb.JobT
+	userEventsMap   map[string][]interface{}
+	userPQItemMap   map[string]*pqItemT
+	userJobPQ       pqT
+	userPQLock      sync.Mutex
 }
 
 //Print the internal structure
 func (proc *HandleT) Print() {
+	proc.statActiveUsers.Gauge(len(proc.userJobListMap))
 	logger.Debug("PriorityQueue")
 	proc.userJobPQ.Print()
 	logger.Debug("JobList")
@@ -84,6 +86,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.statJobs = stats.NewStat("processor.jobs", stats.CountType)
 	proc.statDBR = stats.NewStat("processor.db_read", stats.CountType)
 	proc.statDBW = stats.NewStat("processor.db_write", stats.CountType)
+	proc.statActiveUsers = stats.NewStat("processor.active_users", stats.GaugeType)
 
 	go backendConfigSubscriber()
 	proc.transformer.Setup()
