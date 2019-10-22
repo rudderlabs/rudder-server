@@ -7,7 +7,7 @@
 **Long answer:** Rudder is a platform for collecting, storing and routing customer event data to dozens of tools. Rudder is open-source, can run in your cloud environment (AWS, GCP, Azure or even your data-centre) and provides a powerful transformation framework to process your event data on the fly.
 
 Rudder runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation code which are node scripts. This repo contains the core backend and the transformation modules of Rudder. 
-The client SDKs are in a separate rep [Rudder Client SDKs](https://github.com/rudderlabs/rudder-client).  We will open source the UI code soon.
+The client SDKs are in a separate repo [Rudder Client SDKs](https://github.com/rudderlabs/rudder-client).  We will open source the UI code soon.
 
 
 Rudder server is released under [SSPL License](https://www.mongodb.com/licensing/server-side-public-license)
@@ -76,7 +76,7 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 4. Go to the [dashboard](https://app.rudderlabs.com/signup) and set up your account. Copy your workspace token from top of the home page
 5. Clone this repository. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
  and navigate to the transformer directory `cd rudder-transformer`
-6. Start the user and destination transformers as separate processes `node userTransformer.js` and `node destTransformer.js`
+6. Start the destination transformer `node destTransformer.js`
 7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
 8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4
 9. Run the backend server `go run -mod=vendor main.go`
