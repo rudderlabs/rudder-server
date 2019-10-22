@@ -119,7 +119,6 @@ func loadConfig() {
 	maxRetry = config.GetInt("Processor.maxRetry", 3)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	rawDataDestinations = []string{"S3"}
-	fmt.Println("XXXXXXXXXXXXXXXXX", sessionThresholdInS)
 }
 
 func backendConfigSubscriber() {
