@@ -42,6 +42,7 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/lib/pq"
@@ -192,6 +193,8 @@ var (
 	useJoinForUnprocessed                      bool
 )
 
+var processTableDumpStat, s3GatewayDumpUploadStat, totalTableDumpStat *stats.RudderStats
+
 // Loads db config and migration related config from config file
 func loadConfig() {
 	host = config.GetEnv("JOBS_DB_HOST", "localhost")
@@ -220,6 +223,9 @@ func loadConfig() {
 func init() {
 	config.Initialize()
 	loadConfig()
+	processTableDumpStat = stats.NewStat("jobsdb.process_table_dump", stats.TimerType)
+	s3GatewayDumpUploadStat = stats.NewStat("jobsdb.s3_gateway_dump_upload", stats.TimerType)
+	totalTableDumpStat = stats.NewStat("jobsdb.total_table_dump", stats.TimerType)
 }
 
 func GetConnectionString() string {
@@ -1409,6 +1415,8 @@ func (jd *HandleT) removeTableJSONDumps() {
 }
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
+	processTableDumpStat.Start()
+	totalTableDumpStat.Start()
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
 	backupPathDirName := "/rudder-s3-dumps/"
 	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
@@ -1441,7 +1449,9 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	_, err = gzipWriter.Write(content)
 	misc.AssertError(err)
 	gzipWriter.Close()
+	processTableDumpStat.End()
 
+	s3GatewayDumpUploadStat.Start()
 	file, err := os.Open(path)
 	jd.assertError(err)
 	defer file.Close()
@@ -1458,6 +1468,10 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	}
 	if err != nil {
 		logger.Errorf("Failed to upload table %v dump to S3", tableName)
+	} else {
+		// Do not record stat in error case as error case time might be low and skew stats
+		s3GatewayDumpUploadStat.End()
+		totalTableDumpStat.End()
 	}
 
 	err = os.Remove(path)
