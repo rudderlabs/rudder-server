@@ -40,6 +40,7 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/lib/pq"
@@ -108,6 +109,7 @@ type HandleT struct {
 	toBackup              bool
 	jobsFileUploader      fileuploader.FileUploader
 	jobStatusFileUploader fileuploader.FileUploader
+	statTableCount        *stats.RudderStats
 }
 
 //The struct which is written to the journal
@@ -189,6 +191,8 @@ var (
 	useJoinForUnprocessed                      bool
 )
 
+var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat *stats.RudderStats
+
 // Loads db config and migration related config from config file
 func loadConfig() {
 	host = config.GetEnv("JOBS_DB_HOST", "localhost")
@@ -217,6 +221,9 @@ func loadConfig() {
 func init() {
 	config.Initialize()
 	loadConfig()
+	tableFileDumpTimeStat = stats.NewStat("jobsdb.table_file_dump_time", stats.TimerType)
+	fileUploadTimeStat = stats.NewStat("jobsdb.file_upload_time", stats.TimerType)
+	totalTableDumpTimeStat = stats.NewStat("jobsdb.total_table_dump_time", stats.TimerType)
 }
 
 func GetConnectionString() string {
@@ -257,6 +264,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	//Kill any pending queries
 	jd.terminateQueries()
 
+	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
@@ -423,6 +431,7 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 			dataSetT{JobTable: jobName,
 				JobStatusTable: jobStatusName, Index: dnum})
 	}
+	jd.statTableCount.Gauge(len(jd.datasetList))
 	return jd.datasetList
 }
 
@@ -1404,6 +1413,8 @@ func (jd *HandleT) removeTableJSONDumps() {
 }
 
 func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
+	tableFileDumpTimeStat.Start()
+	totalTableDumpTimeStat.Start()
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
 	backupPathDirName := "/rudder-s3-dumps/"
 	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
@@ -1436,7 +1447,9 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	_, err = gzipWriter.Write(content)
 	misc.AssertError(err)
 	gzipWriter.Close()
+	tableFileDumpTimeStat.End()
 
+	fileUploadTimeStat.Start()
 	file, err := os.Open(path)
 	jd.assertError(err)
 	defer file.Close()
@@ -1453,6 +1466,10 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	}
 	if err != nil {
 		logger.Errorf("Failed to upload table %v dump to S3", tableName)
+	} else {
+		// Do not record stat in error case as error case time might be low and skew stats
+		fileUploadTimeStat.End()
+		totalTableDumpTimeStat.End()
 	}
 
 	err = os.Remove(path)

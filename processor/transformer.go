@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -24,10 +25,13 @@ type transformMessageT struct {
 
 //HandleT is the handle for this class
 type transformerHandleT struct {
-	requestQ   chan *transformMessageT
-	responseQ  chan *transformMessageT
-	accessLock sync.Mutex
-	perfStats  *misc.PerfStats
+	requestQ     chan *transformMessageT
+	responseQ    chan *transformMessageT
+	accessLock   sync.Mutex
+	perfStats    *misc.PerfStats
+	sentStat     *stats.RudderStats
+	receivedStat *stats.RudderStats
+	failedStat   *stats.RudderStats
 }
 
 var (
@@ -86,6 +90,9 @@ func (trans *transformerHandleT) transformWorker() {
 func (trans *transformerHandleT) Setup() {
 	trans.requestQ = make(chan *transformMessageT, maxChanSize)
 	trans.responseQ = make(chan *transformMessageT, maxChanSize)
+	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
+	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
+	trans.failedStat = stats.NewStat("processor.transformer_failed", stats.CountType)
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 	for i := 0; i < numTransformWorker; i++ {
@@ -145,11 +152,14 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 					inputIdx++
 				}
 				toSendData = clientBatch
+				trans.sentStat.Count(len(clientBatch))
 			} else {
 				toSendData = clientEvents[inputIdx]
+				trans.sentStat.Increment()
 				inputIdx++
 			}
 		}
+
 		select {
 		//In case of batch event, index is the next Index
 		case reqQ <- &transformMessageT{index: inputIdx, data: toSendData, url: url}:
@@ -197,6 +207,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 			if castOk {
 				if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
 					// TODO: Log errored resposnes to file
+          trans.failedStat.Increment()
 					continue
 				}
 			}
@@ -205,6 +216,8 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		}
 
 	}
+
+	trans.receivedStat.Count(len(outClientEvents))
 	trans.perfStats.End(len(clientEvents))
 	trans.perfStats.Print()
 
