@@ -294,7 +294,7 @@ func loadConfig() {
 func init() {
 	config.Initialize()
 	loadConfig()
-	errorsCountStat = stats.NewStat("batch_router.error_count", stats.CountType)
+	errorsCountStat = stats.NewStat("batch_router.errors", stats.CountType)
 }
 
 //Setup initializes this module
