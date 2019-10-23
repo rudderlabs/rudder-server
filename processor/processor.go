@@ -45,7 +45,9 @@ type HandleT struct {
 
 //Print the internal structure
 func (proc *HandleT) Print() {
-	proc.statActiveUsers.Gauge(len(proc.userJobListMap))
+	if !logger.IsDebugLevel() {
+		return
+	}
 	logger.Debug("PriorityQueue")
 	proc.userJobPQ.Print()
 	logger.Debug("JobList")
@@ -293,6 +295,7 @@ func (proc *HandleT) createSessions() {
 			continue
 		}
 
+		proc.statActiveUsers.Gauge(len(proc.userJobListMap))
 		//Enough time hasn't transpired since last
 		oldestItem := proc.userJobPQ.Top()
 		if time.Since(oldestItem.lastTS) < time.Duration(sessionThresholdInS) {
@@ -328,8 +331,6 @@ func (proc *HandleT) createSessions() {
 		}
 		proc.userPQLock.Unlock()
 		if len(userJobsToProcess) > 0 {
-			logger.Debug("Processing Session Check")
-			proc.Print()
 			proc.processUserJobs(userJobsToProcess, userEventsToProcess)
 		}
 	}
