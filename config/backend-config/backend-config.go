@@ -101,7 +101,7 @@ func init() {
 }
 
 func pollConfigUpdate() {
-	statConfigBackendError := stats.NewStat("config_backend_errors", stats.CountType)
+	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		sourceJSON, ok := getBackendConfig()
 		if !ok {

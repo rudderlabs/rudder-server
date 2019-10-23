@@ -78,19 +78,19 @@ func loadConfig() {
 
 func (rt *HandleT) workerProcess(worker *workerT) {
 
-	networkDelayStat := stats.NewStat(
-		fmt.Sprintf("router.%s_worker_network", rt.destID), stats.TimerType)
-	workerDurationStat := stats.NewStat(
-		fmt.Sprintf("router.%s_worker_duration", rt.destID), stats.TimerType)
-	numRetriesStat := stats.NewStat(
-		fmt.Sprintf("router.%s_worker_num_retries", rt.destID), stats.CountType)
+	deliveryTimeStat := stats.NewStat(
+		fmt.Sprintf("router.%s_delivery_time", rt.destID), stats.TimerType)
+	batchTimeStat := stats.NewStat(
+		fmt.Sprintf("router.%s_batch_time", rt.destID), stats.TimerType)
+	failedAttemptsStat := stats.NewStat(
+		fmt.Sprintf("router.%s_failed_attempts", rt.destID), stats.CountType)
 	eventsDeliveredStat := stats.NewStat("router.events_delivered", stats.CountType)
 
 	for {
 		job := <-worker.channel
 		var respStatusCode, attempts int
 		var respStatus, respBody string
-		workerDurationStat.Start()
+		batchTimeStat.Start()
 		logger.Debug("Router :: trying to send payload to GA", respBody)
 
 		postInfo := integrations.GetPostInfo(job.EventPayload)
@@ -142,9 +142,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		for attempts = 0; attempts < ser; attempts++ {
 			logger.Debugf("%v Router :: trying to send payload %v of %v", rt.destID, attempts, ser)
 
-			networkDelayStat.Start()
+			deliveryTimeStat.Start()
 			respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
-			networkDelayStat.End()
+			deliveryTimeStat.End()
 
 			if useTestSink {
 				//Internal test. No reason to sleep
@@ -188,7 +188,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 
 		if respStatusCode == http.StatusOK {
 			//#JobOrder (see other #JobOrder comment)
-			numRetriesStat.Count(job.LastJobStatus.AttemptNum)
+			failedAttemptsStat.Count(job.LastJobStatus.AttemptNum)
 			eventsDeliveredStat.Increment()
 			status.AttemptNum = job.LastJobStatus.AttemptNum
 			status.JobState = jobsdb.SucceededState
@@ -238,7 +238,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debugf("%v Router :: sending failed/aborted state as response", rt.destID)
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		}
-		workerDurationStat.End()
+		batchTimeStat.End()
 	}
 }
 
