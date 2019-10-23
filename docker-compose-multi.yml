@@ -47,10 +47,37 @@ services:
       - JOBS_DB_HOST=db2
       - INSTANCE_ID=2
 
-  d-transformer:
+  d-transformer1:
     build:
       context: ./rudder-transformer/
       dockerfile: Dockerfile
+    ports:
+      - "9091:9090"
+
+  d-transformer2:
+    build:
+      context: ./rudder-transformer/
+      dockerfile: Dockerfile
+    ports:
+      - "9092:9090"
+
+  d-transformer3:
+    build:
+      context: ./rudder-transformer/
+      dockerfile: Dockerfile
+    ports:
+      - "9093:9090"
+
+  d-transformer:
+    image: nginx
+    depends_on:
+      - d-transformer1
+      - d-transformer2
+      - d-transformer3
+    environment:
+      - NGINX_PORT=9090
+    volumes:
+      - ./build/nginx.transformer.conf:/etc/nginx/nginx.conf:ro
     ports:
       - "9090:9090"
 
@@ -59,10 +86,12 @@ services:
     depends_on:
       - backend1
       - backend2
+    environment:
+      - NGINX_PORT=8080
     volumes:
-      - ./build/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./build/nginx.backend.conf:/etc/nginx/nginx.conf:ro
     ports:
-      - "8080:80"
+      - "8080:8080"
 
   dependencies:
     image: dadarek/wait-for-dependencies
@@ -71,4 +100,7 @@ services:
       - backend2
       - db1
       - db2
-    command: db1:5432 db2:5432 backend1:8080 backend2:8080
+      - d-transformer1
+      - d-transformer2
+      - d-transformer3
+    command: db1:5432 db2:5432 backend1:8080 backend2:8080 d-transformer1:9090 d-transformer2:9090 d-transformer3:9090
