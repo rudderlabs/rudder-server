@@ -1454,10 +1454,15 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	jd.assertError(err)
 	defer file.Close()
 
+	pathPrefixes := make([]string, 0)
+	instanceID := config.GetEnv("INSTANCE_ID", "")
+	if instanceID != "" {
+		pathPrefixes = append(pathPrefixes, instanceID)
+	}
 	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
-		err = jd.jobStatusFileUploader.Upload(file)
+		err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
 	} else {
-		err = jd.jobsFileUploader.Upload(file)
+		err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
 	}
 	if err != nil {
 		logger.Errorf("Failed to upload table %v dump to S3", tableName)

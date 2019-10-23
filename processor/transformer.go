@@ -116,7 +116,7 @@ type ResponseT struct {
 //instance is shared between both user specific transformation
 //code and destination transformation code.
 func (trans *transformerHandleT) Transform(clientEvents []interface{},
-	url string, batchSize int, oneToMany bool) ResponseT {
+	url string, batchSize int) ResponseT {
 
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
@@ -196,37 +196,27 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 
 	for idx, resp := range transformResponse {
 		if resp.data == nil {
-			if !oneToMany {
-				outClientEvents = append(outClientEvents, nil)
-				outClientEventsSourceIDs = append(outClientEventsSourceIDs, "")
-			}
 			continue
 		}
-		if oneToMany {
-			respArray, ok := resp.data.([]interface{})
-			misc.Assert(ok)
-			//Transform is one to many mapping so returned
-			//response for each is an array. We flatten it out
-			for _, respElem := range respArray {
-				respElemMap, castOk := respElem.(map[string]interface{})
-				if castOk {
-					if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
-						trans.failedStat.Increment()
-						// TODO: Log errored resposnes to file
-						continue
-					}
+		respArray, ok := resp.data.([]interface{})
+		misc.Assert(ok)
+		//Transform is one to many mapping so returned
+		//response for each is an array. We flatten it out
+		for _, respElem := range respArray {
+			respElemMap, castOk := respElem.(map[string]interface{})
+			if castOk {
+				if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
+					// TODO: Log errored resposnes to file
+          trans.failedStat.Increment()
+					continue
 				}
-				outClientEvents = append(outClientEvents, respElem)
-				outClientEventsSourceIDs = append(outClientEventsSourceIDs, sourceIDList[idx])
 			}
-		} else {
-			//One to one mapping so no flattening is
-			//required
-			outClientEvents = append(outClientEvents, resp.data)
+			outClientEvents = append(outClientEvents, respElem)
 			outClientEventsSourceIDs = append(outClientEventsSourceIDs, sourceIDList[idx])
 		}
+
 	}
-	misc.Assert(oneToMany || len(outClientEvents) == len(clientEvents))
+
 	trans.receivedStat.Count(len(outClientEvents))
 	trans.perfStats.End(len(clientEvents))
 	trans.perfStats.Print()
