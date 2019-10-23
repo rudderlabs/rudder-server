@@ -1455,10 +1455,8 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 	defer file.Close()
 
 	pathPrefixes := make([]string, 0)
-	instanceID := config.GetEnv("INSTANCE_ID", "")
-	if instanceID != "" {
-		pathPrefixes = append(pathPrefixes, instanceID)
-	}
+	pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
+
 	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
 		err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
 	} else {
