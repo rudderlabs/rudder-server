@@ -101,7 +101,7 @@ type HandleT struct {
 
 func updateWriteKeyStats(writeKeyStats map[string]int) {
 	for writeKey, count := range writeKeyStats {
-		writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_count", stats.CountType, writeKey)
+		writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_requests", stats.CountType, writeKey)
 		writeKeyStatsD.Count(count)
 	}
 }
@@ -109,9 +109,9 @@ func updateWriteKeyStats(writeKeyStats map[string]int) {
 func updateWriteKeyStatusStats(writeKeyStats map[string]int, isSuccess bool) {
 	var metricName string
 	if isSuccess {
-		metricName = fmt.Sprintf("gateway.write_key_success_count")
+		metricName = fmt.Sprintf("gateway.write_key_successful_requests")
 	} else {
-		metricName = fmt.Sprintf("gateway.write_key_fail_count")
+		metricName = fmt.Sprintf("gateway.write_key_failed_requests")
 	}
 	for writeKey, count := range writeKeyStats {
 		writeKeyStatsD := stats.NewWriteKeyStat(metricName, stats.CountType, writeKey)
