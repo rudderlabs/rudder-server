@@ -21,7 +21,7 @@ func NewFileUploader(settings *SettingsT) (FileUploader, error) {
 	switch settings.Provider {
 	case "s3":
 		return &S3Uploader{
-			bucket: settings.AmazonS3Bucket,
+			Bucket: settings.AmazonS3Bucket,
 		}, nil
 	}
 	return nil, errors.New("No provider configured for FileUploader")
