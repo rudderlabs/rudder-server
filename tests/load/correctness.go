@@ -4,7 +4,9 @@ import (
 
 	//"encoding/json"
 
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -13,22 +15,24 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
-	"strconv"
-	"strings"
+	"os"
+	"path/filepath"
+	"sort"
 	"sync/atomic"
 	"time"
 
 	"github.com/go-redis/redis"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	uuid "github.com/satori/go.uuid"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
 const (
-	eventsPath          = "events"
-	rudderServerDefault = "http://localhost:8080/hello"
+	rudderServerDefault = "http://localhost:8080/v1/batch"
 	redisServerDefault  = "localhost:6379"
 	sinkServerDefault   = "http://localhost:8181/isActive"
 )
@@ -41,9 +45,15 @@ var (
 	failCount    uint64
 )
 
+var writeKey *string
+var sourceID *string
+var isS3Test *bool
+var s3Manager fileuploader.S3Uploader
+var startTime time.Time
+
 var testTimeUp bool
 var done chan bool
-var redisChan chan []RudderEvent
+var redisChan chan []byte
 
 var testName = config.GetEnv("TEST_NAME", "TEST-default")
 var redisServer = config.GetEnv("REDIS_SERVER", redisServerDefault)
@@ -148,6 +158,58 @@ func computeTestResults(testDuration int) {
 	}
 }
 
+func getS3DestData() {
+	// TODO: Handle Pagination for ListFilesWithPrefix
+	s3Objects, err := s3Manager.ListFilesWithPrefix(fmt.Sprintf("rudder-logs/%s", *sourceID))
+	misc.AssertError(err)
+
+	sort.Slice(s3Objects, func(i, j int) bool {
+		return s3Objects[i].LastModifiedTime.After(s3Objects[j].LastModifiedTime)
+	})
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: redisServer,
+	})
+	pipe := redisClient.Pipeline()
+
+	for _, s3Object := range s3Objects {
+		if s3Object.LastModifiedTime.Before(startTime) {
+			continue
+		}
+		jsonPath := "/Users/srikanth/" + "s3-correctness/" + uuid.NewV4().String()
+		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
+		jsonFile, err := os.Create(jsonPath)
+		misc.AssertError(err)
+
+		err = s3Manager.Download(jsonFile, s3Object.Key)
+		misc.AssertError(err)
+		jsonFile.Close()
+		defer os.Remove(jsonPath)
+
+		rawf, err := os.Open(jsonPath)
+		reader, _ := gzip.NewReader(rawf)
+
+		sc := bufio.NewScanner(reader)
+
+		count := 0
+		for sc.Scan() {
+			lineBytes := sc.Bytes()
+			eventID := gjson.GetBytes(lineBytes, "messageId").String()
+			userID := gjson.GetBytes(lineBytes, "anonymousId").String()
+			timeStamp := gjson.GetBytes(lineBytes, "timeStamp").String()
+			pipe.RPush(testName+":"+userID+":dst_list", eventID)
+			pipe.SAdd(redisDestUserSet, userID)
+			pipe.SAdd(redisDestEventSet, eventID)
+			pipe.HSet(redisDestEventTimeHash, eventID, timeStamp)
+			if count%100 == 0 {
+				pipe.Exec()
+			}
+			count++
+		}
+		pipe.Exec()
+	}
+}
+
 func generateRandomData(payload *[]byte, path string, value interface{}) ([]byte, error) {
 	var err error
 	randStr := []string{"abc", "efg", "ijk", "lmn", "opq"}
@@ -165,55 +227,27 @@ func generateRandomData(payload *[]byte, path string, value interface{}) ([]byte
 }
 
 func generateEvents(userID string, eventDelay int) {
-	var rudderEvent RudderEvent
-
-	var fileData, err = ioutil.ReadFile("mapping.json")
+	var fileData, err = ioutil.ReadFile("batch.json")
 	misc.AssertError(err)
-	events := gjson.GetBytes(fileData, eventsPath).Array()
+	events := gjson.GetBytes(fileData, "batch")
 
 	for {
 		if testTimeUp {
 			break
 		}
 
-		var batchEvents []RudderEvent
-
-		for _, event := range events {
-			eventMap := event.Map()
-			mapping := eventMap["mapping"].Map()
-			rudderJSON := eventMap["rudder"]
-
-			rudderData := []byte(rudderJSON.Raw)
-			eventTime := time.Now().Unix()
-			eventTimeStr := strconv.FormatInt(eventTime, 10)
+		var index int
+		events.ForEach(func(_, _ gjson.Result) bool {
 			messageID := ksuid.New().String()
+			fileData, _ = sjson.SetBytes(fileData, fmt.Sprintf(`batch.%v.anonymousId`, index), userID)
+			fileData, _ = sjson.SetBytes(fileData, fmt.Sprintf(`batch.%v.messageId`, index), messageID)
+			fileData, _ = sjson.SetBytes(fileData, fmt.Sprintf(`batch.%v.sentAt`, index), time.Now().Format(time.RFC3339))
+			index++
+			return true // keep iterating
+		})
 
-			for path := range mapping {
-				if strings.Contains(path, "anonymous_id") {
-					rudderData, err = sjson.SetBytes(rudderData, path, userID)
-				} else if strings.Contains(path, "event") {
-					rudderData, err = sjson.SetBytes(rudderData, path, userID+"-"+messageID+"-"+eventTimeStr)
-				} else {
-					rudderData, err = generateRandomData(&rudderData, path, gjson.Get(rudderJSON.Raw, path).Value())
-				}
-				misc.AssertError(err)
-			}
-
-			err = json.Unmarshal(rudderData, &rudderEvent)
-			misc.AssertError(err)
-
-			rudderEvent["id"] = messageID
-			rudderEvent["userID"] = userID
-			rudderEvent["timeStamp"] = eventTime
-
-			batchEvents = append(batchEvents, rudderEvent)
-		}
-
-		value, _ := sjson.Set("", "batch", batchEvents)
-		value, _ = sjson.Set(value, "sent_at", time.Now())
-
-		if sendToRudder(value) {
-			redisChan <- batchEvents
+		if sendToRudderGateway(fileData) {
+			redisChan <- fileData
 		}
 
 		if eventDelay > 0 {
@@ -223,9 +257,10 @@ func generateEvents(userID string, eventDelay int) {
 	done <- true
 }
 
-func sendToRudder(jsonPayload string) bool {
+func sendToRudderGateway(jsonPayload []byte) bool {
 	req, err := http.NewRequest("POST", rudderServer, bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(*writeKey, "")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -246,6 +281,10 @@ func sendToRudder(jsonPayload string) bool {
 	}
 }
 
+type BatchEvent struct {
+	Batch []interface{}
+}
+
 func redisLoop() {
 	var batchTimeout = 1000 * time.Millisecond
 	var newEventsAdded bool
@@ -253,6 +292,8 @@ func redisLoop() {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: redisServer,
 	})
+
+	redisClient.FlushAll()
 
 	_, err := redisClient.Ping().Result()
 	fmt.Println(err)
@@ -265,9 +306,13 @@ func redisLoop() {
 	for {
 		select {
 		case events := <-redisChan:
-			for _, event := range events {
-				eventID, ok := event["id"].(string)
-				userID, ok := event["userID"].(string)
+			var batchEvent BatchEvent
+			err := json.Unmarshal(events, &batchEvent)
+			misc.AssertError(err)
+			for _, event := range batchEvent.Batch {
+				eventID, ok := event.(map[string]interface{})["messageId"].(string)
+				userID, ok := event.(map[string]interface{})["anonymousId"].(string)
+				timeStamp, ok := event.(map[string]interface{})["sentAt"].(string)
 				if !ok {
 					misc.AssertError(errors.New("Invalid event ID"))
 				}
@@ -275,7 +320,7 @@ func redisLoop() {
 				pipe.RPush(testName+":"+userID+":src_list", eventID)
 				pipe.SAdd(redisUserSet, userID)
 				pipe.SAdd(redisEventSet, eventID)
-				pipe.HSet(redisEventTimeHash, eventID, event["timeStamp"])
+				pipe.HSet(redisEventTimeHash, eventID, timeStamp)
 			}
 			newEventsAdded = true
 		case <-time.After(batchTimeout):
@@ -289,56 +334,70 @@ func redisLoop() {
 
 func main() {
 
+	startTime = time.Now()
 	done = make(chan bool)
-	redisChan = make(chan []RudderEvent)
+	redisChan = make(chan []byte)
 
-	numUsers := *flag.Int("n", 10, "number of user threads that does the send, default is 1")
-	eventDelayInMs := *flag.Int("d", 1000, "Delay between two events for a given user in Millisec")
-	testDurationInSec := *flag.Int("t", 60, "Duration of the test in seconds. Default is 60 sec")
-	pollTimeInSec := *flag.Int("p", 2, "Polling interval in sec to find if sink is inactive")
-	waitTimeInSec := *flag.Int("w", 600, "Max wait-time in sec waiting for sink. Default 600s")
+	numUsers := flag.Int("n", 10, "number of user threads that does the send, default is 1")
+	eventDelayInMs := flag.Int("d", 1000, "Delay between two events for a given user in Millisec")
+	testDurationInSec := flag.Int("t", 60, "Duration of the test in seconds. Default is 60 sec")
+	pollTimeInSec := flag.Int("p", 2, "Polling interval in sec to find if sink is inactive")
+	waitTimeInSec := flag.Int("w", 600, "Max wait-time in sec waiting for sink. Default 600s")
+	writeKey = flag.String("writeKey", "1RHJcwtP1PHXwmsJSG1LrBVjRTO", "Write key of source the events should be sent against")
+	sourceID = flag.String("sourceID", "1RHJcypX5HCdEYe6L3PjoCU3j6A", "ID of source the events should be sent against")
+	isS3Test = flag.Bool("s3", false, "Set true to test s3 destination events")
 
 	flag.Parse()
 
 	go redisLoop()
 
-	fmt.Printf("Setting up test with %d users.\n", numUsers)
-	fmt.Printf("Running test for %d seconds. \n", testDurationInSec)
+	fmt.Printf("Setting up test with %d users.\n", *numUsers)
+	fmt.Printf("Running test for %d seconds. \n", *testDurationInSec)
 
-	for i := 0; i < numUsers; i++ {
+	for i := 0; i < *numUsers; i++ {
 		userID := ksuid.New()
-		go generateEvents(userID.String(), eventDelayInMs)
+		go generateEvents(userID.String(), *eventDelayInMs)
 	}
 
-	if testDurationInSec > 0 {
-		time.Sleep(time.Duration(testDurationInSec) * time.Second)
+	if *testDurationInSec > 0 {
+		time.Sleep(time.Duration(*testDurationInSec) * time.Second)
 		testTimeUp = true
 	}
 
-	for i := 0; i < numUsers; i++ {
+	for i := 0; i < *numUsers; i++ {
 		<-done
 	}
 
-	fmt.Printf("Generation complete. Waiting for test sink at %s...\n", sinkServer)
+	fmt.Println("Event Generation complete.")
 
-	var retryCount int
+	if *isS3Test {
+		s3Manager = fileuploader.S3Uploader{
+			Bucket: "rl-s3-correctness-test",
+		}
+		time.Sleep(60 * time.Second)
+		fmt.Println("Fetching S3 files...")
+		getS3DestData()
 
-	for {
-		time.Sleep(time.Duration(pollTimeInSec) * time.Second)
-		resp, err := http.Get(sinkServer)
-		if err != nil {
-			fmt.Println("Invalid Sink URL")
-		}
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-		if string(body) == "no" {
-			break
-		}
-		retryCount++
-		if retryCount > (waitTimeInSec / pollTimeInSec) {
-			fmt.Println("Wait time exceeded. Exiting... ")
+	} else {
+		fmt.Printf("Waiting for test sink at %s...\n", sinkServer)
+		var retryCount int
+		for {
+			time.Sleep(time.Duration(*pollTimeInSec) * time.Second)
+			resp, err := http.Get(sinkServer)
+			if err != nil {
+				fmt.Println("Invalid Sink URL")
+			}
+			defer resp.Body.Close()
+			body, err := ioutil.ReadAll(resp.Body)
+			if string(body) == "no" {
+				break
+			}
+			retryCount++
+			if retryCount > (*waitTimeInSec / *pollTimeInSec) {
+				fmt.Println("Wait time exceeded. Exiting... ")
+			}
 		}
 	}
 
-	computeTestResults(testDurationInSec)
+	computeTestResults(*testDurationInSec)
 }
