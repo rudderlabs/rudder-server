@@ -164,7 +164,7 @@ func getS3DestData() {
 	misc.AssertError(err)
 
 	sort.Slice(s3Objects, func(i, j int) bool {
-		return s3Objects[i].LastModifiedTime.After(s3Objects[j].LastModifiedTime)
+		return s3Objects[i].LastModifiedTime.Before(s3Objects[j].LastModifiedTime)
 	})
 
 	redisClient := redis.NewClient(&redis.Options{
