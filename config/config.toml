@@ -19,6 +19,7 @@ maxReqSizeInKB = 100000
 
 [SourceDebugger]
 maxBatchSize = 32
+maxESQueueSize = 1024
 maxRetry = 3
 batchTimeoutInS = 2
 retrySleepInMS = 100

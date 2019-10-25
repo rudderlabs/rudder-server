@@ -39,11 +39,13 @@ type EventT struct {
 var uploadEnabledWriteKeys []string
 var configSubscriberLock sync.RWMutex
 var eventSchemaChannel chan *EventSchemaT
+var eventBufferLock sync.RWMutex
+var eventBuffer []*EventSchemaT
 
 var (
-	configBackendURL         string
-	maxBatchSize, maxRetry   int
-	batchTimeout, retrySleep time.Duration
+	configBackendURL                       string
+	maxBatchSize, maxRetry, maxESQueueSize int
+	batchTimeout, retrySleep               time.Duration
 )
 
 var ()
@@ -57,6 +59,7 @@ func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	//Number of events that are batched before sending schema to control plane
 	maxBatchSize = config.GetInt("SourceDebugger.maxBatchSize", 32)
+	maxESQueueSize = config.GetInt("SourceDebugger.maxESQueueSize", 1024)
 	maxRetry = config.GetInt("SourceDebugger.maxRetry", 3)
 	batchTimeout = (config.GetDuration("SourceDebugger.batchTimeoutInS", time.Duration(2)) * time.Second)
 	retrySleep = config.GetDuration("SourceDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
@@ -82,6 +85,7 @@ func Setup() {
 	eventSchemaChannel = make(chan *EventSchemaT)
 	go backendConfigSubscriber()
 	go handleEvents()
+	go flushEvents()
 }
 
 func uploadEvents(eventBuffer []*EventSchemaT) {
@@ -155,23 +159,51 @@ func getKeys(dataMap map[string]interface{}) []string {
 }
 
 func handleEvents() {
-	eventBuffer := make([]*EventSchemaT, 0)
+	eventBuffer = make([]*EventSchemaT, 0)
 	for {
 		select {
 		case eventSchema := <-eventSchemaChannel:
+			eventBufferLock.Lock()
+
+			//If eventBuffer size is more than maxESQueueSize, Delete oldest.
+			if len(eventBuffer) > maxESQueueSize {
+				eventBuffer[0] = nil
+				eventBuffer = eventBuffer[1:]
+			}
+
 			//Append to request buffer
 			eventBuffer = append(eventBuffer, eventSchema)
-			if len(eventBuffer) == maxBatchSize {
-				uploadEvents(eventBuffer)
-				eventBuffer = nil
-				eventBuffer = make([]*EventSchemaT, 0)
-			}
+
+			eventBufferLock.Unlock()
+		}
+	}
+}
+
+func flushEvents() {
+	for {
+		select {
 		case <-time.After(batchTimeout):
-			if len(eventBuffer) > 0 {
-				uploadEvents(eventBuffer)
-				eventBuffer = nil
-				eventBuffer = make([]*EventSchemaT, 0)
+			eventBufferLock.Lock()
+
+			flushSize := len(eventBuffer)
+			var flushEvents []*EventSchemaT
+
+			if flushSize > maxBatchSize {
+				flushSize = maxBatchSize
 			}
+
+			if flushSize > 0 {
+				flushEvents = eventBuffer[:flushSize]
+				eventBuffer = eventBuffer[flushSize:]
+			}
+
+			eventBufferLock.Unlock()
+
+			if flushSize > 0 {
+				uploadEvents(flushEvents)
+			}
+
+			flushEvents = nil
 		}
 	}
 }
