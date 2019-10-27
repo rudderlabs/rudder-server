@@ -75,7 +75,7 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
 8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4
 9. Run the backend server `go run -mod=vendor main.go`
-10. Setup your sources from the dashboard `https://app.rudderlabs.com` and start sending events using the test script (mentioned in step 5 of Docker setup instructions) or our SDKs.
+10. Follow (Send Test Events) instructions below to send test event.
 
 # Send Test Events
 
