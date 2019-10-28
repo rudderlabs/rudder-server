@@ -23,6 +23,7 @@ maxESQueueSize = 1024
 maxRetry = 3
 batchTimeoutInS = 2
 retrySleepInMS = 100
+disableEventUploads = false
 
 [JobsDB]
 # Migration related parameters

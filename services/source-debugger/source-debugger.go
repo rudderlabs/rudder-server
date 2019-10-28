@@ -27,13 +27,15 @@ type MessageT struct {
 	Integrations      interface{} `json:"integrations"`
 	Properties        interface{} `json:"properties"`
 	OriginalTimestamp string      `json:"originalTimestamp"`
+	SentAt            string      `json:"sentAt"`
 	Type              string      `json:"type"`
 }
 
 //EventT is a structure to hold batch of events
 type EventT struct {
-	WriteKey string
-	Batch    []MessageT
+	WriteKey   string
+	ReceivedAt string
+	Batch      []MessageT
 }
 
 var uploadEnabledWriteKeys []string
@@ -46,9 +48,8 @@ var (
 	configBackendURL                       string
 	maxBatchSize, maxRetry, maxESQueueSize int
 	batchTimeout, retrySleep               time.Duration
+	disableEventUploads                    bool
 )
-
-var ()
 
 func init() {
 	config.Initialize()
@@ -61,13 +62,19 @@ func loadConfig() {
 	maxBatchSize = config.GetInt("SourceDebugger.maxBatchSize", 32)
 	maxESQueueSize = config.GetInt("SourceDebugger.maxESQueueSize", 1024)
 	maxRetry = config.GetInt("SourceDebugger.maxRetry", 3)
-	batchTimeout = (config.GetDuration("SourceDebugger.batchTimeoutInS", time.Duration(2)) * time.Second)
+	batchTimeout = config.GetDuration("SourceDebugger.batchTimeoutInS", time.Duration(2)) * time.Second
 	retrySleep = config.GetDuration("SourceDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	disableEventUploads = config.GetBool("SourceDebugger.disableEventUploads", false)
 }
 
 //RecordEvent is used to put the event in the eventSchemaChannel,
 //which will be processed by handleEvents.
 func RecordEvent(writeKey string, eventBatch string) bool {
+	//if disableEventUploads is true, return;
+	if disableEventUploads {
+		return false
+	}
+
 	// Check if writeKey part of enabled sources
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
@@ -97,6 +104,11 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 		err := json.Unmarshal([]byte(event.eventBatch), &batchedEvent)
 		misc.AssertError(err)
 
+		receivedAtTS, err := time.Parse(time.RFC3339, batchedEvent.ReceivedAt)
+		if err != nil {
+			receivedAtTS = time.Now()
+		}
+
 		var arr []MessageT
 		if value, ok := res[batchedEvent.WriteKey]; ok {
 			arr = value
@@ -106,6 +118,21 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 
 		for _, ev := range batchedEvent.Batch {
 			filterValues(&ev)
+
+			//updating originalTimestamp in the event using the formula
+			//receivedAt - (sentAt - originalTimeStamp)
+			orgTS, err := time.Parse(time.RFC3339, ev.OriginalTimestamp)
+			if err != nil {
+				orgTS = time.Now()
+			}
+
+			sentAtTS, err := time.Parse(time.RFC3339, ev.SentAt)
+			if err != nil {
+				sentAtTS = time.Now()
+			}
+
+			ev.OriginalTimestamp = receivedAtTS.Add(-sentAtTS.Sub(orgTS)).Format(time.RFC3339)
+
 			arr = append(arr, ev)
 		}
 
