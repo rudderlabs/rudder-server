@@ -246,6 +246,7 @@ func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 //Function to batch incoming web requests
 func (gateway *HandleT) webRequestBatcher() {
 	var reqBuffer = make([]*webRequestT, 0)
+	timeout := time.After(batchTimeout)
 	for {
 		select {
 		case req := <-gateway.webRequestQ:
@@ -257,7 +258,8 @@ func (gateway *HandleT) webRequestBatcher() {
 				reqBuffer = nil
 				reqBuffer = make([]*webRequestT, 0)
 			}
-		case <-time.After(batchTimeout):
+		case <-timeout:
+			timeout = time.After(batchTimeout)
 			if len(reqBuffer) > 0 {
 				breq := batchWebRequestT{batchRequest: reqBuffer}
 				gateway.batchRequestQ <- &breq
