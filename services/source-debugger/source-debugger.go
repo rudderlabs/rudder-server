@@ -27,26 +27,29 @@ type MessageT struct {
 	Integrations      interface{} `json:"integrations"`
 	Properties        interface{} `json:"properties"`
 	OriginalTimestamp string      `json:"originalTimestamp"`
+	SentAt            string      `json:"sentAt"`
 	Type              string      `json:"type"`
 }
 
 //EventT is a structure to hold batch of events
 type EventT struct {
-	WriteKey string
-	Batch    []MessageT
+	WriteKey   string
+	ReceivedAt string
+	Batch      []MessageT
 }
 
 var uploadEnabledWriteKeys []string
 var configSubscriberLock sync.RWMutex
 var eventSchemaChannel chan *EventSchemaT
+var eventBufferLock sync.RWMutex
+var eventBuffer []*EventSchemaT
 
 var (
-	configBackendURL         string
-	maxBatchSize, maxRetry   int
-	batchTimeout, retrySleep time.Duration
+	configBackendURL                       string
+	maxBatchSize, maxRetry, maxESQueueSize int
+	batchTimeout, retrySleep               time.Duration
+	disableEventUploads                    bool
 )
-
-var ()
 
 func init() {
 	config.Initialize()
@@ -57,14 +60,21 @@ func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	//Number of events that are batched before sending schema to control plane
 	maxBatchSize = config.GetInt("SourceDebugger.maxBatchSize", 32)
+	maxESQueueSize = config.GetInt("SourceDebugger.maxESQueueSize", 1024)
 	maxRetry = config.GetInt("SourceDebugger.maxRetry", 3)
-	batchTimeout = (config.GetDuration("SourceDebugger.batchTimeoutInS", time.Duration(2)) * time.Second)
+	batchTimeout = config.GetDuration("SourceDebugger.batchTimeoutInS", time.Duration(2)) * time.Second
 	retrySleep = config.GetDuration("SourceDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	disableEventUploads = config.GetBool("SourceDebugger.disableEventUploads", false)
 }
 
 //RecordEvent is used to put the event in the eventSchemaChannel,
 //which will be processed by handleEvents.
 func RecordEvent(writeKey string, eventBatch string) bool {
+	//if disableEventUploads is true, return;
+	if disableEventUploads {
+		return false
+	}
+
 	// Check if writeKey part of enabled sources
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
@@ -82,6 +92,7 @@ func Setup() {
 	eventSchemaChannel = make(chan *EventSchemaT)
 	go backendConfigSubscriber()
 	go handleEvents()
+	go flushEvents()
 }
 
 func uploadEvents(eventBuffer []*EventSchemaT) {
@@ -93,6 +104,11 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 		err := json.Unmarshal([]byte(event.eventBatch), &batchedEvent)
 		misc.AssertError(err)
 
+		receivedAtTS, err := time.Parse(time.RFC3339, batchedEvent.ReceivedAt)
+		if err != nil {
+			receivedAtTS = time.Now()
+		}
+
 		var arr []MessageT
 		if value, ok := res[batchedEvent.WriteKey]; ok {
 			arr = value
@@ -102,6 +118,21 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 
 		for _, ev := range batchedEvent.Batch {
 			filterValues(&ev)
+
+			//updating originalTimestamp in the event using the formula
+			//receivedAt - (sentAt - originalTimeStamp)
+			orgTS, err := time.Parse(time.RFC3339, ev.OriginalTimestamp)
+			if err != nil {
+				orgTS = time.Now()
+			}
+
+			sentAtTS, err := time.Parse(time.RFC3339, ev.SentAt)
+			if err != nil {
+				sentAtTS = time.Now()
+			}
+
+			ev.OriginalTimestamp = receivedAtTS.Add(-sentAtTS.Sub(orgTS)).Format(time.RFC3339)
+
 			arr = append(arr, ev)
 		}
 
@@ -155,23 +186,51 @@ func getKeys(dataMap map[string]interface{}) []string {
 }
 
 func handleEvents() {
-	eventBuffer := make([]*EventSchemaT, 0)
+	eventBuffer = make([]*EventSchemaT, 0)
 	for {
 		select {
 		case eventSchema := <-eventSchemaChannel:
+			eventBufferLock.Lock()
+
+			//If eventBuffer size is more than maxESQueueSize, Delete oldest.
+			if len(eventBuffer) > maxESQueueSize {
+				eventBuffer[0] = nil
+				eventBuffer = eventBuffer[1:]
+			}
+
 			//Append to request buffer
 			eventBuffer = append(eventBuffer, eventSchema)
-			if len(eventBuffer) == maxBatchSize {
-				uploadEvents(eventBuffer)
-				eventBuffer = nil
-				eventBuffer = make([]*EventSchemaT, 0)
-			}
+
+			eventBufferLock.Unlock()
+		}
+	}
+}
+
+func flushEvents() {
+	for {
+		select {
 		case <-time.After(batchTimeout):
-			if len(eventBuffer) > 0 {
-				uploadEvents(eventBuffer)
-				eventBuffer = nil
-				eventBuffer = make([]*EventSchemaT, 0)
+			eventBufferLock.Lock()
+
+			flushSize := len(eventBuffer)
+			var flushEvents []*EventSchemaT
+
+			if flushSize > maxBatchSize {
+				flushSize = maxBatchSize
 			}
+
+			if flushSize > 0 {
+				flushEvents = eventBuffer[:flushSize]
+				eventBuffer = eventBuffer[flushSize:]
+			}
+
+			eventBufferLock.Unlock()
+
+			if flushSize > 0 {
+				uploadEvents(flushEvents)
+			}
+
+			flushEvents = nil
 		}
 	}
 }
