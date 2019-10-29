@@ -23,7 +23,7 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
 	"github.com/segmentio/ksuid"
@@ -48,7 +48,7 @@ var (
 var writeKey *string
 var sourceID *string
 var isS3Test *bool
-var s3Manager fileuploader.S3Uploader
+var s3Manager filemanager.S3Manager
 var startTime time.Time
 
 var testTimeUp bool
@@ -345,7 +345,7 @@ func main() {
 	waitTimeInSec := flag.Int("w", 600, "Max wait-time in sec waiting for sink. Default 600s")
 	writeKey = flag.String("writeKey", "1RHJcwtP1PHXwmsJSG1LrBVjRTO", "Write key of source the events should be sent against")
 	sourceID = flag.String("sourceID", "1RHJcypX5HCdEYe6L3PjoCU3j6A", "ID of source the events should be sent against")
-	isS3Test = flag.Bool("s3", false, "Set true to test s3 destination events")
+	isS3Test = flag.Bool("S3", false, "Set true to test s3 destination events")
 
 	flag.Parse()
 
@@ -371,7 +371,7 @@ func main() {
 	fmt.Println("Event Generation complete.")
 
 	if *isS3Test {
-		s3Manager = fileuploader.S3Uploader{
+		s3Manager = filemanager.S3Manager{
 			Bucket: "rl-s3-correctness-test",
 		}
 		time.Sleep(60 * time.Second)
