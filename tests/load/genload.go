@@ -164,6 +164,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 				rudderData, _ = sjson.SetBytes(rudderData, "sentAt", time.Now().Format(time.RFC3339))
 
 				rudderData, err = sjson.SetBytes(rudderData, userIDpath, uid)
+				rudderData, err = sjson.SetBytes(rudderData, "anonymousId", uid)
 				misc.AssertError(err)
 
 				// Unmarshal
@@ -254,7 +255,6 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 						rudderData = generateData(&rudderData, k, gjson.Get(rudderJSON.Raw, k).Value())
 
 					}
-
 					rudderData, err = sjson.SetBytes(rudderData, userIDpath, uid)
 					misc.AssertError(err)
 
