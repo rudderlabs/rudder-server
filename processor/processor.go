@@ -176,18 +176,25 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		if len(proc.userEventsMap[userID]) > sessionThresholdEvents {
 			processUserIDs[userID] = true
 		}
+
+		//Setting/updating pqItem lastTS with event received timestamp
+		receivedAtResult := gjson.Get(string(job.EventPayload), "receivedAt")
+		timestamp := time.Now()
+		if receivedAtResult.Type != gjson.Null {
+			timestamp = receivedAtResult.Time()
+		}
 		pqItem, ok := proc.userPQItemMap[userID]
 		if !ok {
 			pqItem := &pqItemT{
 				userID: userID,
-				lastTS: time.Now(),
+				lastTS: timestamp,
 				index:  -1,
 			}
 			proc.userPQItemMap[userID] = pqItem
 			proc.userJobPQ.Add(pqItem)
 		} else {
 			misc.Assert(pqItem.index != -1)
-			proc.userJobPQ.Update(pqItem, time.Now())
+			proc.userJobPQ.Update(pqItem, timestamp)
 		}
 
 	}
@@ -451,7 +458,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy["message"].(map[string]interface{})["receivedAt"] = receivedAt.Format(time.RFC3339)
 						shallowEventCopy["message"].(map[string]interface{})["originalTimestamp"] = originalTimestamp.Format(time.RFC3339)
 						shallowEventCopy["message"].(map[string]interface{})["sentAt"] = sentAt.Format(time.RFC3339)
-						shallowEventCopy["message"].(map[string]interface{})["timestamp"] = receivedAt.Add(-sentAt.Sub(originalTimestamp)).Format(time.RFC3339)
+						shallowEventCopy["message"].(map[string]interface{})["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(time.RFC3339)
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDest[destType]
