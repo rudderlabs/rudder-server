@@ -1,6 +1,7 @@
 package batchrouter
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
@@ -14,29 +15,37 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
+	"github.com/tidwall/gjson"
 )
 
 var (
-	jobQueryBatchSize    int
-	noOfWorkers          int
-	mainLoopSleepInS     int
-	batchDestinations    []BatchDestinationT
-	configSubscriberLock sync.RWMutex
-	rawDataDestinations  []string
-	inProgressMap        map[string]bool
-	errorsCountStat      *stats.RudderStats
+	jobQueryBatchSize        int
+	noOfWorkers              int
+	mainLoopSleepInS         int
+	batchDestinations        []BatchDestinationT
+	configSubscriberLock     sync.RWMutex
+	rawDataDestinations      []string
+	inProgressMap            map[string]bool
+	uploadedRawDataJobsCache map[string]bool
+	errorsCountStat          *stats.RudderStats
 )
 
 type HandleT struct {
 	processQ  chan BatchJobsT
 	jobsDB    *jobsdb.HandleT
 	isEnabled bool
+}
+
+type ObjectStorageT struct {
+	Bucket   string
+	Key      string
+	Provider string
 }
 
 func backendConfigSubscriber() {
@@ -75,12 +84,12 @@ func updateDestStatusStats(id string, count int, isSuccess bool) {
 	destStatsD.Count(count)
 }
 
-func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
+func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT) {
 	bucketName := batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
 	uuid := uuid.NewV4()
-	logger.Debugf("BRT: Starting logging to S3 bucket: %v", bucketName)
+	logger.Debugf("BRT: Starting logging to %s: %s", provider, bucketName)
 
-	dirName := "/rudder-s3-destination-logs/"
+	dirName := "/rudder-raw-data-destination-logs/"
 	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
 	var err error
 	if tmpdirPath == "" {
@@ -90,18 +99,10 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 	path := fmt.Sprintf("%v%v.json", tmpdirPath+dirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
 	var contentSlice [][]byte
 	for _, job := range batchJobs.Jobs {
-		trimmedPayload := bytes.TrimLeft(job.EventPayload, " \t\r\n")
-		isArray := len(trimmedPayload) > 0 && trimmedPayload[0] == '['
-		if isArray {
-			var events []interface{}
-			err := json.Unmarshal(trimmedPayload, &events)
-			misc.AssertError(err)
-			for _, event := range events {
-				jsonEvent, err := json.Marshal((event))
-				misc.AssertError(err)
-				contentSlice = append(contentSlice, jsonEvent)
-			}
-		} else {
+		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
+		misc.AssertError(err)
+		var ok bool
+		if _, ok = uploadedRawDataJobsCache[eventID]; !ok {
 			contentSlice = append(contentSlice, job.EventPayload)
 		}
 	}
@@ -119,20 +120,29 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 
 	logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
 
-	uploader, err := fileuploader.NewFileUploader(&fileuploader.SettingsT{
-		Provider:       "s3",
-		AmazonS3Bucket: bucketName,
+	uploader, err := filemanager.New(&filemanager.SettingsT{
+		Provider: provider,
+		Bucket:   bucketName,
 	})
 	gzipFile, err = os.Open(gzipFilePath)
 	misc.AssertError(err)
-	logger.Debugf("BRT: Starting upload to S3 bucket: %v", bucketName)
-	err = uploader.Upload(gzipFile, config.GetEnv("DESTINATION_S3_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
+
+	logger.Debugf("BRT: Starting upload to %s: %s", provider, bucketName)
+	keyPrefixes := []string{config.GetEnv("DESTINATION_S3_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+	_, fileName := filepath.Split(gzipFilePath)
+	opPayload, err := json.Marshal(&ObjectStorageT{
+		Bucket:   bucketName,
+		Key:      strings.Join(append(keyPrefixes, fileName), "/"),
+		Provider: provider,
+	})
+	opID := brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
+	err = uploader.Upload(gzipFile, keyPrefixes...)
 	var (
 		jobState  string
 		errorResp []byte
 	)
 	if err != nil {
-		logger.Errorf("BRT: %v", err)
+		logger.Errorf("BRT: Error uploading to %s: %v", provider, err)
 		jobState = jobsdb.FailedState
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
@@ -162,6 +172,7 @@ func (brt *HandleT) copyJobsToS3(batchJobs BatchJobsT) {
 
 	//Mark the jobs as executing
 	brt.jobsDB.UpdateJobStatus(statusList, []string{batchJobs.BatchDestination.Destination.DestinationDefinition.Name})
+	brt.jobsDB.JournalDeleteEntry(opID)
 
 	err = os.Remove(gzipFilePath)
 	misc.AssertError(err)
@@ -177,7 +188,7 @@ func (brt *HandleT) initWorkers() {
 					case "S3":
 						s3DestUploadStat := stats.NewStat("batch_router.S3_dest_upload_time", stats.TimerType)
 						s3DestUploadStat.Start()
-						brt.copyJobsToS3(batchJobs)
+						brt.copyJobsToStorage("S3", batchJobs)
 						s3DestUploadStat.End()
 						delete(inProgressMap, batchJobs.BatchDestination.Source.ID)
 					}
@@ -255,6 +266,54 @@ func (brt *HandleT) Disable() {
 	brt.isEnabled = false
 }
 
+func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
+	logger.Debugf("BRT: Checking for incomplete journal entries to recover from...")
+	entries := brt.jobsDB.GetJournalEntries(jobsdb.RawDataDestUploadOperation)
+	for _, entry := range entries {
+		var object ObjectStorageT
+		err := json.Unmarshal(entry.OpPayload, &object)
+		misc.AssertError(err)
+		downloader, err := filemanager.New(&filemanager.SettingsT{
+			Provider: object.Provider,
+			Bucket:   object.Bucket,
+		})
+
+		dirName := "/rudder-raw-data-dest-upload-crash-recovery/"
+		tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+		if tmpdirPath == "" {
+			tmpdirPath, err = os.UserHomeDir()
+			misc.AssertError(err)
+		}
+		jsonPath := fmt.Sprintf("%v%v.json", tmpdirPath+dirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
+
+		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
+		jsonFile, err := os.Create(jsonPath)
+		misc.AssertError(err)
+
+		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s in bucket: %s at key: %s", object.Provider, object.Bucket, object.Key)
+		err = downloader.Download(jsonFile, object.Key)
+		if err != nil {
+			logger.Debugf("BRT: Failed to download data for incomplete journal entry to recover from %s in bucket: %s at key: %s with error: %v", object.Provider, object.Bucket, object.Key, err)
+			continue
+		}
+
+		jsonFile.Close()
+		defer os.Remove(jsonPath)
+
+		rawf, err := os.Open(jsonPath)
+		reader, _ := gzip.NewReader(rawf)
+
+		sc := bufio.NewScanner(reader)
+
+		logger.Debugf("BRT: Setting go map cache for incomplete journal entry to recover from...")
+		for sc.Scan() {
+			lineBytes := sc.Bytes()
+			eventID := gjson.GetBytes(lineBytes, "messageId").String()
+			uploadedRawDataJobsCache[eventID] = true
+		}
+	}
+}
+
 func (brt *HandleT) crashRecover() {
 
 	for {
@@ -281,6 +340,7 @@ func (brt *HandleT) crashRecover() {
 		}
 		brt.jobsDB.UpdateJobStatus(statusList, []string{})
 	}
+	brt.dedupRawDataDestJobsOnCrash()
 }
 
 func loadConfig() {
@@ -294,6 +354,7 @@ func loadConfig() {
 func init() {
 	config.Initialize()
 	loadConfig()
+	uploadedRawDataJobsCache = make(map[string]bool)
 	errorsCountStat = stats.NewStat("batch_router.errors", stats.CountType)
 }
 

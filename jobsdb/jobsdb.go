@@ -39,7 +39,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
@@ -107,8 +107,8 @@ type HandleT struct {
 	dsEmptyResultCache    map[dataSetT]map[string]map[string]bool
 	dsCacheLock           sync.Mutex
 	toBackup              bool
-	jobsFileUploader      fileuploader.FileUploader
-	jobStatusFileUploader fileuploader.FileUploader
+	jobsFileUploader      filemanager.FileManager
+	jobStatusFileUploader filemanager.FileManager
 	statTableCount        *stats.RudderStats
 }
 
@@ -287,14 +287,14 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	}
 
 	if jd.toBackup {
-		jd.jobsFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
-			Provider:       "s3",
-			AmazonS3Bucket: config.GetEnv("JOBS_BACKUP_BUCKET", ""),
+		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
+			Provider: "S3",
+			Bucket:   config.GetEnv("JOBS_BACKUP_BUCKET", ""),
 		})
 		jd.assertError(err)
-		jd.jobStatusFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
-			Provider:       "s3",
-			AmazonS3Bucket: config.GetEnv("JOB_STATUS_BACKUP_BUCKET", ""),
+		jd.jobStatusFileUploader, err = filemanager.New(&filemanager.SettingsT{
+			Provider: "S3",
+			Bucket:   config.GetEnv("JOB_STATUS_BACKUP_BUCKET", ""),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()
@@ -625,8 +625,8 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	//DS being added
 	opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
 	jd.assertError(err)
-	opID := jd.journalMarkStart(addDSOperation, opPayload)
-	defer jd.journalMarkDone(opID)
+	opID := jd.JournalMarkStart(addDSOperation, opPayload)
+	defer jd.JournalMarkDone(opID)
 
 	//Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
@@ -1327,13 +1327,13 @@ func (jd *HandleT) mainCheckLoop() {
 
 				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: migrateTo})
 				jd.assertError(err)
-				opID := jd.journalMarkStart(migrateCopyOperation, opPayload)
+				opID := jd.JournalMarkStart(migrateCopyOperation, opPayload)
 
 				for _, ds := range migrateFrom {
 					logger.Info("Main check:Migrate", ds, migrateTo)
 					jd.migrateJobs(ds, migrateTo)
 				}
-				jd.journalMarkDone(opID)
+				jd.JournalMarkDone(opID)
 			}
 
 			//Mark the start of del operation. If we fail in between
@@ -1341,13 +1341,13 @@ func (jd *HandleT) mainCheckLoop() {
 			//del the destination as some sources may have been deleted
 			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
 			jd.assertError(err)
-			opID := jd.journalMarkStart(postMigrateDSOperation, opPayload)
+			opID := jd.JournalMarkStart(postMigrateDSOperation, opPayload)
 
 			jd.dsListLock.Lock()
 			jd.postMigrateHandleDS(migrateFrom)
 			jd.dsListLock.Unlock()
 
-			jd.journalMarkDone(opID)
+			jd.JournalMarkDone(opID)
 		}
 
 		jd.dsMigrationLock.Unlock()
@@ -1370,7 +1370,7 @@ func (jd *HandleT) backupDSLoop() {
 
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
-		opID := jd.journalMarkStart(backupDSOperation, opPayload)
+		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
 		// write jobs table to s3
 		_, err = jd.backupTable(backupDS.JobTable)
 		if err != nil {
@@ -1385,14 +1385,14 @@ func (jd *HandleT) backupDSLoop() {
 			logger.Errorf("Failed to backup table %v", backupDS.JobStatusTable)
 			continue
 		}
-		jd.journalMarkDone(opID)
+		jd.JournalMarkDone(opID)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opPayload, err = json.Marshal(&backupDS)
 		jd.assertError(err)
-		opID = jd.journalMarkStart(backupDropDSOperation, opPayload)
+		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
 		jd.dropDS(backupDS, false)
-		jd.journalMarkDone(opID)
+		jd.JournalMarkDone(opID)
 	}
 }
 
@@ -1509,13 +1509,21 @@ func (jd *HandleT) getBackupDS() dataSetT {
 We keep a journal of all the operations. The journal helps
 */
 const (
-	addDSOperation         = "ADD_DS"
-	migrateCopyOperation   = "MIGRATE_COPY"
-	postMigrateDSOperation = "POST_MIGRATE_DS_OP"
-	backupDSOperation      = "BACKUP_DS"
-	backupDropDSOperation  = "BACKUP_DROP_DS"
-	dropDSOperation        = "DROP_DS"
+	addDSOperation             = "ADD_DS"
+	migrateCopyOperation       = "MIGRATE_COPY"
+	postMigrateDSOperation     = "POST_MIGRATE_DS_OP"
+	backupDSOperation          = "BACKUP_DS"
+	backupDropDSOperation      = "BACKUP_DROP_DS"
+	dropDSOperation            = "DROP_DS"
+	RawDataDestUploadOperation = "S3_DEST_UPLOAD"
 )
+
+type JournalEntryT struct {
+	OpID      int64
+	OpType    string
+	OpDone    bool
+	OpPayload json.RawMessage
+}
 
 func (jd *HandleT) setupJournal() {
 
@@ -1538,9 +1546,9 @@ func (jd *HandleT) delJournal() {
 	jd.assertError(err)
 }
 
-func (jd *HandleT) journalMarkStart(opType string, opPayload json.RawMessage) int64 {
+func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) int64 {
 
-	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == backupDSOperation || opType == backupDropDSOperation || opType == dropDSOperation)
+	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == backupDSOperation || opType == backupDropDSOperation || opType == dropDSOperation || opType == RawDataDestUploadOperation)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
                                        VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
@@ -1555,10 +1563,42 @@ func (jd *HandleT) journalMarkStart(opType string, opPayload json.RawMessage) in
 
 }
 
-func (jd *HandleT) journalMarkDone(opID int64) {
+func (jd *HandleT) JournalMarkDone(opID int64) {
 	sqlStatement := fmt.Sprintf(`UPDATE %s_journal SET done=$2, end_time=$3 WHERE id=$1`, jd.tablePrefix)
 	_, err := jd.dbHandle.Exec(sqlStatement, opID, true, time.Now())
 	jd.assertError(err)
+}
+
+func (jd *HandleT) JournalDeleteEntry(opID int64) {
+	sqlStatement := fmt.Sprintf(`DELETE FROM %s_journal WHERE id=$1`, jd.tablePrefix)
+	_, err := jd.dbHandle.Exec(sqlStatement, opID)
+	jd.assertError(err)
+}
+
+func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
+	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
+                                	FROM %s_journal
+                                	WHERE
+									done=False
+									AND
+									operation = '%s'
+									ORDER BY id`, jd.tablePrefix, opType)
+	stmt, err := jd.dbHandle.Prepare(sqlStatement)
+	defer stmt.Close()
+	jd.assertError(err)
+
+	rows, err := stmt.Query()
+	jd.assertError(err)
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		entries = append(entries, JournalEntryT{})
+		err = rows.Scan(&entries[count].OpID, &entries[count].OpType, &entries[count].OpDone, &entries[count].OpPayload)
+		jd.assertError(err)
+		count++
+	}
+	return
 }
 
 func (jd *HandleT) recoverFromCrash(goRoutineType string) {
