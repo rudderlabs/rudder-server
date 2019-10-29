@@ -311,3 +311,9 @@ func IncrementMapByKey(m map[string]int, key string) {
 		m[key] = 1
 	}
 }
+
+// Returns chronological timestamp of the event using the formula
+// timestamp = receivedAt - (sentAt - originalTimestamp)
+func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
+	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
+}
