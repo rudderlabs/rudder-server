@@ -1,4 +1,4 @@
-package fileuploader
+package filemanager
 
 import (
 	"errors"
@@ -10,29 +10,30 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	awsS3Manager "github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
 // Upload passed in file to s3
-func (uploader *S3Uploader) Upload(file *os.File, prefixes ...string) error {
-	if uploader.Bucket == "" {
+func (manager *S3Manager) Upload(file *os.File, prefixes ...string) error {
+	if manager.Bucket == "" {
 		return errors.New("no S3 bucket configured to uploader")
 	}
 	getRegionSession := session.Must(session.NewSession())
-	region, err := s3manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, uploader.Bucket, "us-east-1")
+	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Bucket, "us-east-1")
 	uploadSession := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String(region),
 		// Credentials: credentials.NewStaticCredentials(config.GetEnv("IAM_S3_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_S3_COPY_SECRET_ACCESS_KEY", ""), ""),
 	}))
-	manager := s3manager.NewUploader(uploadSession)
+	s3manager := awsS3Manager.NewUploader(uploadSession)
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
 	if len(prefixes) > 0 {
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
-	_, err = manager.Upload(&s3manager.UploadInput{
+	_, err = s3manager.Upload(&awsS3Manager.UploadInput{
 		ACL:    aws.String("bucket-owner-full-control"),
-		Bucket: aws.String(uploader.Bucket),
+		Bucket: aws.String(manager.Bucket),
 		Key:    aws.String(fileName),
 		Body:   file,
 	})
@@ -41,7 +42,7 @@ func (uploader *S3Uploader) Upload(file *os.File, prefixes ...string) error {
 	return err
 }
 
-func (uploader *S3Uploader) Download(output *os.File, key string) error {
+func (uploader *S3Manager) Download(output *os.File, key string) error {
 	sess, _ := session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1")},
 	)
@@ -61,7 +62,7 @@ type S3Object struct {
 	LastModifiedTime time.Time
 }
 
-func (uploader *S3Uploader) ListFilesWithPrefix(prefix string) ([]*S3Object, error) {
+func (uploader *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error) {
 	s3Objects := make([]*S3Object, 0)
 
 	getRegionSession := session.Must(session.NewSession())
@@ -90,6 +91,6 @@ func (uploader *S3Uploader) ListFilesWithPrefix(prefix string) ([]*S3Object, err
 	return s3Objects, nil
 }
 
-type S3Uploader struct {
+type S3Manager struct {
 	Bucket string
 }

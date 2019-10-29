@@ -39,7 +39,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
@@ -107,8 +107,8 @@ type HandleT struct {
 	dsEmptyResultCache    map[dataSetT]map[string]map[string]bool
 	dsCacheLock           sync.Mutex
 	toBackup              bool
-	jobsFileUploader      fileuploader.FileUploader
-	jobStatusFileUploader fileuploader.FileUploader
+	jobsFileUploader      filemanager.FileManager
+	jobStatusFileUploader filemanager.FileManager
 	statTableCount        *stats.RudderStats
 }
 
@@ -287,14 +287,14 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	}
 
 	if jd.toBackup {
-		jd.jobsFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
-			Provider:       "s3",
-			AmazonS3Bucket: config.GetEnv("JOBS_BACKUP_BUCKET", ""),
+		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
+			Provider: "S3",
+			Bucket:   config.GetEnv("JOBS_BACKUP_BUCKET", ""),
 		})
 		jd.assertError(err)
-		jd.jobStatusFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
-			Provider:       "s3",
-			AmazonS3Bucket: config.GetEnv("JOB_STATUS_BACKUP_BUCKET", ""),
+		jd.jobStatusFileUploader, err = filemanager.New(&filemanager.SettingsT{
+			Provider: "S3",
+			Bucket:   config.GetEnv("JOB_STATUS_BACKUP_BUCKET", ""),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()
@@ -1509,13 +1509,13 @@ func (jd *HandleT) getBackupDS() dataSetT {
 We keep a journal of all the operations. The journal helps
 */
 const (
-	addDSOperation         = "ADD_DS"
-	migrateCopyOperation   = "MIGRATE_COPY"
-	postMigrateDSOperation = "POST_MIGRATE_DS_OP"
-	backupDSOperation      = "BACKUP_DS"
-	backupDropDSOperation  = "BACKUP_DROP_DS"
-	dropDSOperation        = "DROP_DS"
-	S3DestUploadOperation  = "S3_DEST_UPLOAD"
+	addDSOperation             = "ADD_DS"
+	migrateCopyOperation       = "MIGRATE_COPY"
+	postMigrateDSOperation     = "POST_MIGRATE_DS_OP"
+	backupDSOperation          = "BACKUP_DS"
+	backupDropDSOperation      = "BACKUP_DROP_DS"
+	dropDSOperation            = "DROP_DS"
+	RawDataDestUploadOperation = "S3_DEST_UPLOAD"
 )
 
 type JournalEntryT struct {
@@ -1548,7 +1548,7 @@ func (jd *HandleT) delJournal() {
 
 func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) int64 {
 
-	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == backupDSOperation || opType == backupDropDSOperation || opType == dropDSOperation || opType == S3DestUploadOperation)
+	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == backupDSOperation || opType == backupDropDSOperation || opType == dropDSOperation || opType == RawDataDestUploadOperation)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
                                        VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
@@ -1569,7 +1569,13 @@ func (jd *HandleT) JournalMarkDone(opID int64) {
 	jd.assertError(err)
 }
 
-func (jd *HandleT) GetJouranlEntries(opType string) (entries []JournalEntryT) {
+func (jd *HandleT) JournalDeleteEntry(opID int64) {
+	sqlStatement := fmt.Sprintf(`DELETE FROM %s_journal WHERE id=$1`, jd.tablePrefix)
+	_, err := jd.dbHandle.Exec(sqlStatement, opID)
+	jd.assertError(err)
+}
+
+func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
                                 	FROM %s_journal
                                 	WHERE
