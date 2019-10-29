@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // Upload passed in file to s3
@@ -52,7 +51,8 @@ func (uploader *S3Uploader) Download(output *os.File, key string) error {
 			Bucket: aws.String(uploader.Bucket),
 			Key:    aws.String(key),
 		})
-	misc.AssertError(err)
+	// do not panic if download has failed for customer s3 bucket
+	// misc.AssertError(err)
 	return err
 }
 

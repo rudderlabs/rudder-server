@@ -7,7 +7,8 @@ import (
 
 // FileUploader inplements all upload methods
 type FileUploader interface {
-	Upload(file *os.File, prefixes ...string) error
+	Upload(*os.File, ...string) error
+	Download(*os.File, string) error
 }
 
 // SettingsT sets configuration for FileUploader
