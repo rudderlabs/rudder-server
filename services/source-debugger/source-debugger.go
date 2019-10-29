@@ -131,7 +131,7 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 				sentAtTS = time.Now()
 			}
 
-			ev.OriginalTimestamp = receivedAtTS.Add(-sentAtTS.Sub(orgTS)).Format(time.RFC3339)
+			ev.OriginalTimestamp = misc.GetChronologicalTimeStamp(receivedAtTS, sentAtTS, orgTS).Format(time.RFC3339)
 
 			arr = append(arr, ev)
 		}
