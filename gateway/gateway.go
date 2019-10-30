@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
+	rocksdb "github.com/tecbot/gorocksdb"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -95,6 +96,7 @@ type HandleT struct {
 	webRequestQ   chan *webRequestT
 	batchRequestQ chan *batchWebRequestT
 	jobsDB        *jobsdb.HandleT
+	rocksDB       *RocksdbStore
 	ackCount      uint64
 	recvCount     uint64
 }
@@ -134,6 +136,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		//Using this to send event schema to the config backend.
 		var events []string
 		batchTimeStat.Start()
+		var allMessageIds [][]byte
 		for _, req := range breq.batchRequest {
 			ipAddr := misc.GetIPFromReq(req.request)
 			if req.request.Body == nil {
@@ -172,21 +175,48 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				continue
 			}
 
+			if req.reqType != "batch" {
+				body, _ = sjson.SetBytes(body, "type", req.reqType)
+				body, _ = sjson.SetRawBytes(batchEvent, "batch.0", body)
+			}
+
 			// set anonymousId if not set in payload
 			var index int
 			result := gjson.GetBytes(body, "batch")
 			newAnonymousID := uuid.NewV4().String()
+			var messageIds [][]byte
 			result.ForEach(func(_, _ gjson.Result) bool {
 				if !gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).Exists() {
 					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index), newAnonymousID)
 				}
+				if !gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).Exists() {
+					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index), uuid.NewV4().String())
+				}
+				messageIds = append(messageIds, []byte(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String()))
 				index++
 				return true // keep iterating
 			})
+			allMessageIds = append(allMessageIds, messageIds...)
 
-			if req.reqType != "batch" {
-				body, _ = sjson.SetBytes(body, "type", req.reqType)
-				body, _ = sjson.SetRawBytes(batchEvent, "batch.0", body)
+			rocksdbSlices, err := gateway.rocksDB.Db.MultiGet(gateway.rocksDB.ReadOptions, messageIds...)
+			var toRemoveMessageIndexes []int
+			for idx, rocksdbSlice := range rocksdbSlices {
+				if rocksdbSlice.Exists() {
+					toRemoveMessageIndexes = append(toRemoveMessageIndexes, idx)
+				}
+			}
+			count := 0
+			for _, idx := range toRemoveMessageIndexes {
+				logger.Infof("Dropping event with duplicate messageId: %s", messageIds[idx])
+				body, err = sjson.DeleteBytes(body, fmt.Sprintf(`batch.%v`, idx-count))
+				misc.AssertError(err)
+				count++
+			}
+
+			if len(gjson.GetBytes(body, "batch").Array()) == 0 {
+				req.done <- ""
+				preDbStoreCount++
+				continue
 			}
 
 			logger.Debug("IP address is ", ipAddr)
@@ -211,6 +241,10 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		}
 
 		errorMessagesMap := gateway.jobsDB.Store(jobList)
+		for _, messageID := range allMessageIds {
+			gateway.rocksDB.Db.Put(gateway.rocksDB.WriteOptions, messageID, []byte("true"))
+		}
+
 		misc.Assert(preDbStoreCount+len(errorMessagesMap) == len(breq.batchRequest))
 		for uuid, err := range errorMessagesMap {
 			if err != "" {
@@ -390,8 +424,51 @@ func backendConfigSubscriber() {
 	}
 }
 
+type RocksdbStore struct {
+	Db           *rocksdb.DB
+	ReadOptions  *rocksdb.ReadOptions
+	WriteOptions *rocksdb.WriteOptions
+	FlushOptions *rocksdb.FlushOptions
+}
+
+func GetDefaultRocksDBOptions() *rocksdb.Options {
+	filter := rocksdb.NewBloomFilter(10)
+	bbto := rocksdb.NewDefaultBlockBasedTableOptions()
+	bbto.SetFilterPolicy(filter)
+	opts := rocksdb.NewDefaultOptions()
+	opts.SetBlockBasedTableFactory(bbto)
+	opts.SetCreateIfMissing(true)
+	return opts
+}
+
+func NewRocksdbStore(path string) (*RocksdbStore, error) {
+	opts := GetDefaultRocksDBOptions()
+	ro := rocksdb.NewDefaultReadOptions()
+	fo := rocksdb.NewDefaultFlushOptions()
+	wo := rocksdb.NewDefaultWriteOptions()
+
+	db, err := rocksdb.OpenDbWithTTL(opts, path, 86400)
+	misc.AssertError(err)
+
+	return &RocksdbStore{
+		Db:           db,
+		ReadOptions:  ro,
+		WriteOptions: wo,
+		FlushOptions: fo,
+	}, nil
+}
+
 //Setup initializes this module
-func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT) {
+func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, clearDB *bool) {
+	var err error
+	if *clearDB {
+		opts := GetDefaultRocksDBOptions()
+		err = rocksdb.DestroyDb(config.GetEnv("GATEWAY_ROCKSDB_PATH", "/tmp/testrocksdb"), opts)
+		misc.AssertError(err)
+	}
+	gateway.rocksDB, err = NewRocksdbStore(config.GetEnv("GATEWAY_ROCKSDB_PATH", "/tmp/testrocksdb"))
+	misc.AssertError(err)
+
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB

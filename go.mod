@@ -21,6 +21,7 @@ require (
 	github.com/satori/go.uuid v1.2.0
 	github.com/segmentio/ksuid v1.0.2
 	github.com/spf13/viper v1.4.0
+	github.com/tecbot/gorocksdb v0.0.0-20191019123150-400c56251341
 	github.com/tidwall/gjson v1.3.2
 	github.com/tidwall/sjson v1.0.4
 	golang.org/x/net v0.0.0-20190620200207-3b0461eec859 // indirect

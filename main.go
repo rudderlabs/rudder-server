@@ -209,6 +209,6 @@ func main() {
 	}
 
 	var gateway gateway.HandleT
-	gateway.Setup(&gatewayDB)
+	gateway.Setup(&gatewayDB, clearDB)
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
