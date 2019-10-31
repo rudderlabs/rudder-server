@@ -40,13 +40,8 @@ type HandleT struct {
 	userEventsMap      map[string][]interface{}
 	userPQItemMap      map[string]*pqItemT
 	statJobs           *stats.RudderStats
-	statsDBR           *misc.PerfStats
 	statDBR            *stats.RudderStats
-	statsDBW           *misc.PerfStats
 	statDBW            *stats.RudderStats
-	userJobListMap     map[string][]*jobsdb.JobT
-	userEventsMap      map[string][]interface{}
-	userPQItemMap      map[string]*pqItemT
 	userToSessionIDMap map[string]int64
 	userJobPQ          pqT
 	userPQLock         sync.Mutex
