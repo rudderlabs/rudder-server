@@ -33,7 +33,7 @@ services:
       - "9090:9090"
   grafana:
     build:
-      context: ../rudder-ops-dashboard
+      context: ../rudder-ops
       dockerfile: Dockerfile
       args:
         - DATA_SOURCE=influxdb
