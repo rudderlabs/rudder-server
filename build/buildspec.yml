@@ -6,8 +6,12 @@ phases:
       golang: 1.12
   build:
     commands:
+      - apt-get install libgflags-dev libsnappy-dev zlib1g-dev libbz2-dev liblz4-dev libzstd-dev
+      - wget https://github.com/facebook/rocksdb/archive/master.zip
+      - unzip master.zip && cd rocksdb-master
+      - make install
       - ls
-      - export GO111MODULE=on
+      - export GO111MODULE=on GO111MODULE=on CGO_CFLAGS="-I/usr/local/include" CGO_LDFLAGS="-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd"
       - go build -mod vendor
 
 artifacts:
