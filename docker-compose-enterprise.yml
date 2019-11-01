@@ -27,13 +27,13 @@ services:
       - JOBS_DB_HOST=db
   d-transformer:
     build:
-      context: ../rudder-transformer/
+      context: ./rudder-transformer/
       dockerfile: Dockerfile
     ports:
       - "9090:9090"
   grafana:
     build:
-      context: ../private_forked/rudder-ops-dashboard
+      context: ../rudder-ops-dashboard
       dockerfile: Dockerfile
       args:
         - DATA_SOURCE=influxdb
