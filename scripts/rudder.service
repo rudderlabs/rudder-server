@@ -13,6 +13,8 @@ StandardError = syslog
 SyslogIdentifier = rudder
 User = ubuntu
 LimitNOFILE=11000000
+Environment=CGO_CFLAGS="-I/usr/local/include"
+Environment=CGO_LDFLAGS="-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd"
 
 [Install]
 WantedBy = multi-user.target
