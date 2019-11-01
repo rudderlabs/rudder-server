@@ -7,9 +7,11 @@ phases:
   build:
     commands:
       - apt-get install libgflags-dev libsnappy-dev zlib1g-dev libbz2-dev liblz4-dev libzstd-dev
+      - cd ~
       - wget https://github.com/facebook/rocksdb/archive/master.zip
       - unzip master.zip && cd rocksdb-master
       - make install
+      - cd rudder-server
       - ls
       - export GO111MODULE=on GO111MODULE=on CGO_CFLAGS="-I/usr/local/include" CGO_LDFLAGS="-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd"
       - go build -mod vendor
