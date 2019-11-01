@@ -108,6 +108,13 @@ func updateWriteKeyStats(writeKeyStats map[string]int) {
 	}
 }
 
+func updateWriteKeyDupStats(writeKeyStats map[string]int) {
+	for writeKey, count := range writeKeyStats {
+		writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_duplicate_messages", stats.CountType, writeKey)
+		writeKeyStatsD.Count(count)
+	}
+}
+
 func updateWriteKeyStatusStats(writeKeyStats map[string]int, isSuccess bool) {
 	var metricName string
 	if isSuccess {
@@ -129,6 +136,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
 		var jobWriteKeyMap = make(map[uuid.UUID]string)
 		var writeKeyStats = make(map[string]int)
+		var writeKeyDupStats = make(map[string]int)
 		var writeKeySuccessStats = make(map[string]int)
 		var writeKeyFailStats = make(map[string]int)
 		var preDbStoreCount int
@@ -207,7 +215,8 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			count := 0
 			for _, idx := range toRemoveMessageIndexes {
-				logger.Infof("Dropping event with duplicate messageId: %s", messageIds[idx])
+				logger.Debugf("Dropping event with duplicate messageId: %s", messageIds[idx])
+				misc.IncrementMapByKey(writeKeyDupStats, writeKey)
 				body, err = sjson.DeleteBytes(body, fmt.Sprintf(`batch.%v`, idx-count))
 				misc.AssertError(err)
 				count++
@@ -263,6 +272,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		batchTimeStat.End()
 		batchSizeStat.Count(len(breq.batchRequest))
 		updateWriteKeyStats(writeKeyStats)
+		updateWriteKeyDupStats(writeKeyDupStats)
 		updateWriteKeyStatusStats(writeKeySuccessStats, true)
 		updateWriteKeyStatusStats(writeKeyFailStats, false)
 	}
