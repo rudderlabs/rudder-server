@@ -65,17 +65,21 @@ func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) 
 
 //ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
+	// logger.Debug("=== ParseRudderEventBatch === ")
 	var eventListJSON map[string]interface{}
 	err := json.Unmarshal(eventPayload, &eventListJSON)
 	if err != nil {
+		logger.Debug("==err== ", err)
 		return nil, false
 	}
 	_, ok := eventListJSON["batch"]
 	if !ok {
+		logger.Error("not ok -- 1")
 		return nil, false
 	}
 	eventListJSONBatchType, ok := eventListJSON["batch"].([]interface{})
 	if !ok {
+		logger.Error("not ok -- 2")
 		return nil, false
 	}
 	return eventListJSONBatchType, true
@@ -83,6 +87,7 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
 
 //GetRudderEventUserID return the UserID from the object
 func GetRudderEventUserID(eventList []interface{}) (string, bool) {
+	//logger.Debug("=== GetRudderEventUserID ===")
 	userID, ok := GetRudderEventVal("anonymousId", eventList[0])
 	if !ok {
 		return "", false
