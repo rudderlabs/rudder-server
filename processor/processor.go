@@ -264,6 +264,7 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEve
 	eventListMap := make(map[string][]interface{})
 	for userID := range userEvents {
 		// add the session_id field to each event before sending it downstream
+		eventListMap[userID] = make([]interface{}, 0)
 		for _, event := range userEvents[userID] {
 			eventMap, ok := event.(map[string]interface{})
 			misc.Assert(ok)
@@ -273,9 +274,11 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEve
 			}
 
 		}
+
 		userEventsList = append(userEventsList, eventListMap[userID])
 		userIDList = append(userIDList, userID)
 	}
+
 	misc.Assert(len(userEventsList) == len(eventListMap))
 
 	//Create jobs that can be processed further
