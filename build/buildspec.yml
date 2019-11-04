@@ -13,7 +13,7 @@ phases:
       - make install
       - cd $CODEBUILD_SRC_DIR
       - ls
-      - export GO111MODULE=on CGO_CFLAGS="-I/usr/local/include" CGO_LDFLAGS="-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd"
+      - export GO111MODULE=on CGO_CFLAGS="-I/usr/local/include" CGO_LDFLAGS="-L/usr/local/lib -lrocksdb"
       - go build -mod vendor
 
 artifacts:
