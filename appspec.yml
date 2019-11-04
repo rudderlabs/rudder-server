@@ -13,8 +13,6 @@ permissions:
     mode: 755
 
 hooks:
-  BeforeInstall:
-    - location: scripts/build_rocksdb.sh
   AfterInstall:
     - location: scripts/build_server.sh
   ApplicationStart:
