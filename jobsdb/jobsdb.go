@@ -1835,7 +1835,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, sourceID
 	}
 	for _, ds := range dsList {
 		jd.assert(count > 0)
-		jobs, err := jd.getUnprocessedJobsDS(ds, customValFilters, true, count)
+		jobs, err := jd.getUnprocessedJobsDS(ds, customValFilters, true, count, sourceIDFilters...)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
