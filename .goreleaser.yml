@@ -27,4 +27,4 @@ changelog:
     - '^docs:'
     - '^test:'
 env_files:
-  github_token: ./gh_token
+  github_token: ~/.gh_token

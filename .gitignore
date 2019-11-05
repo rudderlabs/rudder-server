@@ -4,4 +4,3 @@ rudder-server
 .vscode
 runtime.log
 dist/*
-gh_token
