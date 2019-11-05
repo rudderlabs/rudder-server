@@ -171,7 +171,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT) {
 	}
 
 	//Mark the jobs as executing
-	brt.jobsDB.UpdateJobStatus(statusList, []string{batchJobs.BatchDestination.Destination.DestinationDefinition.Name})
+	brt.jobsDB.UpdateJobStatus(statusList, []string{batchJobs.BatchDestination.Destination.DestinationDefinition.Name}, batchJobs.BatchDestination.Source.ID)
 	brt.jobsDB.JournalDeleteEntry(opID)
 
 	err = os.Remove(gzipFilePath)
@@ -250,7 +250,7 @@ func (brt *HandleT) mainLoop() {
 			}
 
 			//Mark the jobs as executing
-			brt.jobsDB.UpdateJobStatus(statusList, []string{batchDestination.Destination.DestinationDefinition.Name})
+			brt.jobsDB.UpdateJobStatus(statusList, []string{batchDestination.Destination.DestinationDefinition.Name}, batchDestination.Source.ID)
 			brt.processQ <- BatchJobsT{Jobs: combinedList, BatchDestination: batchDestination}
 		}
 	}
