@@ -912,6 +912,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 
 	//Empty customValFilters means we want to clear for all
 	jd.markClearEmptyResult(ds, []string{}, []string{}, []string{}, false)
+	// fmt.Println("Bursting CACHE")
 
 	return
 }
@@ -1214,7 +1215,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	return jobList, nil
 }
 
-func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string) (err error) {
+func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, sourceIDFilters ...string) (err error) {
 
 	if len(statusList) == 0 {
 		return nil
@@ -1253,7 +1254,7 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 		stateFilters = append(stateFilters, k)
 	}
 
-	jd.markClearEmptyResult(ds, stateFilters, customValFilters, []string{}, false)
+	jd.markClearEmptyResult(ds, stateFilters, customValFilters, sourceIDFilters, false)
 
 	return nil
 }
@@ -1730,7 +1731,7 @@ UpdateJobStatus updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string) {
+func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, sourceIDFilters ...string) {
 
 	if len(statusList) == 0 {
 		return
@@ -1767,7 +1768,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 					logger.Debug("Range:", ds, statusList[lastPos].JobID,
 						statusList[i-1].JobID, lastPos, i-1)
 				}
-				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters)
+				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, sourceIDFilters...)
 				jd.assertError(err)
 				lastPos = i
 				break
@@ -1776,7 +1777,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		//Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
 			logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
-			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters)
+			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, sourceIDFilters...)
 			jd.assertError(err)
 			lastPos = i
 			break
