@@ -1368,18 +1368,19 @@ func (jd *HandleT) backupDSLoop() {
 			continue
 		}
 
+		startTime := time.Now().Unix()
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
 		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
 		// write jobs table to s3
-		_, err = jd.backupTable(backupDS.JobTable)
+		_, err = jd.backupTable(backupDS.JobTable, startTime)
 		if err != nil {
 			logger.Errorf("Failed to backup table %v", backupDS.JobTable)
 			continue
 		}
 
 		// write job_status table to s3
-		_, err = jd.backupTable(backupDS.JobStatusTable)
+		_, err = jd.backupTable(backupDS.JobStatusTable, startTime)
 		jd.assertError(err)
 		if err != nil {
 			logger.Errorf("Failed to backup table %v", backupDS.JobStatusTable)
@@ -1412,7 +1413,7 @@ func (jd *HandleT) removeTableJSONDumps() {
 	}
 }
 
-func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
+func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool, err error) {
 	tableFileDumpTimeStat.Start()
 	totalTableDumpTimeStat.Start()
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
@@ -1422,7 +1423,7 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 		tmpdirPath, err = os.UserHomeDir()
 		misc.AssertError(err)
 	}
-	path := fmt.Sprintf(`%v%v.gz`, tmpdirPath+backupPathDirName, pathPrefix)
+	path := fmt.Sprintf(`%v%v.%v.gz`, tmpdirPath+backupPathDirName, pathPrefix, startTime)
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	misc.AssertError(err)
 
