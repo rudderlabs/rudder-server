@@ -396,7 +396,8 @@ func getEnabledDestinations(writeKey string, destinationName string) []backendco
 	defer configSubscriberLock.RUnlock()
 	var enabledDests []backendconfig.DestinationT
 	for _, dest := range writeKeyDestinationMap[writeKey] {
-		if destinationName == dest.DestinationDefinition.Name && dest.Enabled {
+		_, ok := dest.Config.(map[string]interface{})["useNativeSDK"]
+		if destinationName == dest.DestinationDefinition.Name && dest.Enabled && !ok {
 			enabledDests = append(enabledDests, dest)
 		}
 	}
@@ -408,7 +409,8 @@ func getEnabledDestinationTypes(writeKey string) map[string]backendconfig.Destin
 	defer configSubscriberLock.RUnlock()
 	var enabledDestinationTypes = make(map[string]backendconfig.DestinationDefinitionT)
 	for _, destination := range writeKeyDestinationMap[writeKey] {
-		if destination.Enabled {
+		_, ok := destination.Config.(map[string]interface{})["useNativeSDK"]
+		if destination.Enabled && !ok {
 			enabledDestinationTypes[destination.DestinationDefinition.DisplayName] = destination.DestinationDefinition
 		}
 	}

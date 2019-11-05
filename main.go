@@ -68,6 +68,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 
 	for {
 		config := <-ch
+
 		logger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations = enabledDestinations[:0]
@@ -75,7 +76,8 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				for _, destination := range source.Destinations {
-					if destination.Enabled {
+					_, ok := destination.Config.(map[string]interface{})["useNativeSDK"]
+					if destination.Enabled && !ok {
 						enabledDestinations = append(enabledDestinations, destination)
 						if misc.Contains(rawDataDestinations, destination.DestinationDefinition.Name) {
 							enableBatchRouter = true
