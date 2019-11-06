@@ -911,7 +911,8 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 	}
 
 	//Empty customValFilters means we want to clear for all
-	jd.markClearEmptyResult(ds, []string{}, []string{}, false)
+	jd.markClearEmptyResult(ds, []string{}, []string{}, []string{}, false)
+	// fmt.Println("Bursting CACHE")
 
 	return
 }
@@ -963,7 +964,7 @@ func (jd *HandleT) constructJSONQuery(paramKey string, jsonKey string, paramList
 * markClearEmptyResult() when mark=False clears a previous empty mark
  */
 
-func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, mark bool) {
+func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, sourceIDFilters []string, mark bool) {
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
@@ -985,6 +986,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 	}
 
 	for _, cVal := range customValFilters {
+		cVal += joinSourceIDFilters(sourceIDFilters)
 		_, ok := jd.dsEmptyResultCache[ds][cVal]
 		if !ok {
 			jd.dsEmptyResultCache[ds][cVal] = map[string]bool{}
@@ -999,7 +1001,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 	}
 }
 
-func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string) bool {
+func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, sourceIDFilters []string) bool {
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
@@ -1015,6 +1017,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 	}
 
 	for _, cVal := range customValFilters {
+		cVal += joinSourceIDFilters(sourceIDFilters)
 		_, ok := jd.dsEmptyResultCache[ds][cVal]
 		if !ok {
 			return false
@@ -1031,6 +1034,15 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 	return true
 }
 
+func joinSourceIDFilters(sourceIDFilters []string) string {
+	val := ""
+	if len(sourceIDFilters) > 0 {
+		sort.Strings(sourceIDFilters)
+		val = "_" + strings.Join(sourceIDFilters, "_")
+	}
+	return val
+}
+
 //limitCount == 0 means return all
 func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []string,
 	customValFilters []string, limitCount int, sourceIDFilters ...string) ([]*JobT, error) {
@@ -1039,7 +1051,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 
 	jd.checkValidJobState(stateFilters)
 
-	if jd.isEmptyResult(ds, stateFilters, customValFilters) {
+	if jd.isEmptyResult(ds, stateFilters, customValFilters, sourceIDFilters) {
 		return []*JobT{}, nil
 	}
 
@@ -1133,7 +1145,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	}
 
 	if len(jobList) == 0 {
-		jd.markClearEmptyResult(ds, stateFilters, customValFilters, true)
+		jd.markClearEmptyResult(ds, stateFilters, customValFilters, sourceIDFilters, true)
 	}
 
 	return jobList, nil
@@ -1146,7 +1158,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	var rows *sql.Rows
 	var err error
 
-	if jd.isEmptyResult(ds, []string{"NP"}, customValFilters) {
+	if jd.isEmptyResult(ds, []string{"NP"}, customValFilters, sourceIDFilters) {
 		return []*JobT{}, nil
 	}
 
@@ -1197,13 +1209,13 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	}
 
 	if len(jobList) == 0 {
-		jd.markClearEmptyResult(ds, []string{"NP"}, customValFilters, true)
+		jd.markClearEmptyResult(ds, []string{"NP"}, customValFilters, sourceIDFilters, true)
 	}
 
 	return jobList, nil
 }
 
-func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string) (err error) {
+func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, sourceIDFilters ...string) (err error) {
 
 	if len(statusList) == 0 {
 		return nil
@@ -1242,7 +1254,7 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 		stateFilters = append(stateFilters, k)
 	}
 
-	jd.markClearEmptyResult(ds, stateFilters, customValFilters, false)
+	jd.markClearEmptyResult(ds, stateFilters, customValFilters, sourceIDFilters, false)
 
 	return nil
 }
@@ -1368,18 +1380,19 @@ func (jd *HandleT) backupDSLoop() {
 			continue
 		}
 
+		startTime := time.Now().Unix()
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
 		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
 		// write jobs table to s3
-		_, err = jd.backupTable(backupDS.JobTable)
+		_, err = jd.backupTable(backupDS.JobTable, startTime)
 		if err != nil {
 			logger.Errorf("Failed to backup table %v", backupDS.JobTable)
 			continue
 		}
 
 		// write job_status table to s3
-		_, err = jd.backupTable(backupDS.JobStatusTable)
+		_, err = jd.backupTable(backupDS.JobStatusTable, startTime)
 		jd.assertError(err)
 		if err != nil {
 			logger.Errorf("Failed to backup table %v", backupDS.JobStatusTable)
@@ -1412,7 +1425,7 @@ func (jd *HandleT) removeTableJSONDumps() {
 	}
 }
 
-func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
+func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool, err error) {
 	tableFileDumpTimeStat.Start()
 	totalTableDumpTimeStat.Start()
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
@@ -1422,7 +1435,7 @@ func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
 		tmpdirPath, err = os.UserHomeDir()
 		misc.AssertError(err)
 	}
-	path := fmt.Sprintf(`%v%v.gz`, tmpdirPath+backupPathDirName, pathPrefix)
+	path := fmt.Sprintf(`%v%v.%v.gz`, tmpdirPath+backupPathDirName, pathPrefix, startTime)
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	misc.AssertError(err)
 
@@ -1718,7 +1731,7 @@ UpdateJobStatus updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string) {
+func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, sourceIDFilters ...string) {
 
 	if len(statusList) == 0 {
 		return
@@ -1755,7 +1768,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 					logger.Debug("Range:", ds, statusList[lastPos].JobID,
 						statusList[i-1].JobID, lastPos, i-1)
 				}
-				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters)
+				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, sourceIDFilters...)
 				jd.assertError(err)
 				lastPos = i
 				break
@@ -1764,7 +1777,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		//Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
 			logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
-			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters)
+			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, sourceIDFilters...)
 			jd.assertError(err)
 			lastPos = i
 			break
