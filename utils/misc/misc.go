@@ -29,6 +29,21 @@ func AssertError(err error) {
 	}
 }
 
+func AssertErrorIfDev(err error) {
+
+	goEnv := os.Getenv("GO_ENV")
+	if goEnv == "production" {
+		return
+	}
+
+	if err != nil {
+		// debug.SetTraceback("all")
+		debug.PrintStack()
+		defer bugsnag.AutoNotify()
+		panic(err)
+	}
+}
+
 //Assert panics if false
 func Assert(cond bool) {
 	if !cond {
