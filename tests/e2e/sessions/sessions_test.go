@@ -50,7 +50,8 @@ var _ = Describe("E2E", func() {
 		It("verify events are sessioned as per sessionThresholdInS", func() {
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
 
-			for i := 1; i <= 100; i++ {
+			totalEvents := 5 // should be less than transformBatchSize
+			for i := 1; i <= totalEvents; i++ {
 				helpers.SendEventRequest(helpers.EventOptsT{})
 			}
 			time.AfterFunc(time.Duration(config.GetInt("Processor.sessionThresholdInS", 10))*time.Second, func() {
@@ -61,20 +62,20 @@ var _ = Describe("E2E", func() {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, config.GetInt("Processor.sessionThresholdInS", 10)-1, dbPollFreqInS).Should(Equal(initialRouterJobsCount))
 
-			// verify that first 100 events are batched into one session
+			// verify that first totalEvents events are batched into one session
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			}, config.GetInt("Processor.sessionThresholdInS", 10)+2, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 100))
+			}, config.GetInt("Processor.sessionThresholdInS", 10)+2, dbPollFreqInS).Should(Equal(initialRouterJobsCount + totalEvents))
 
 			time.AfterFunc(time.Duration(config.GetInt("Processor.sessionThresholdInS", 10))*time.Second, func() {
 				Consistently(func() int {
 					return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-				}, config.GetInt("Processor.sessionThresholdInS", 10)-1, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 100))
+				}, config.GetInt("Processor.sessionThresholdInS", 10)-1, dbPollFreqInS).Should(Equal(initialRouterJobsCount + totalEvents))
 
 				// and next request after sessionThreshold has passes is in next session
 				Eventually(func() int {
 					return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-				}, config.GetInt("Processor.sessionThresholdInS", 10)+2, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 101))
+				}, config.GetInt("Processor.sessionThresholdInS", 10)+2, dbPollFreqInS).Should(Equal(initialRouterJobsCount + totalEvents + 1))
 			})
 
 		})
