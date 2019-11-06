@@ -32,6 +32,7 @@ var (
 	configSubscriberLock     sync.RWMutex
 	rawDataDestinations      []string
 	inProgressMap            map[string]bool
+	inProgressMapLock        sync.RWMutex
 	uploadedRawDataJobsCache map[string]bool
 	errorsCountStat          *stats.RudderStats
 )
@@ -190,7 +191,7 @@ func (brt *HandleT) initWorkers() {
 						s3DestUploadStat.Start()
 						brt.copyJobsToStorage("S3", batchJobs)
 						s3DestUploadStat.End()
-						delete(inProgressMap, batchJobs.BatchDestination.Source.ID)
+						setSourceInProgress(batchJobs.BatchDestination.Source.ID, false)
 					}
 				}
 			}
@@ -208,6 +209,26 @@ type BatchJobsT struct {
 	BatchDestination BatchDestinationT
 }
 
+func isSourceInProgress(sourceID string) bool {
+	inProgressMapLock.RLock()
+	if inProgressMap[sourceID] {
+		inProgressMapLock.RUnlock()
+		return true
+	}
+	inProgressMapLock.RUnlock()
+	return false
+}
+
+func setSourceInProgress(sourceID string, starting bool) {
+	inProgressMapLock.Lock()
+	if starting {
+		inProgressMap[sourceID] = true
+	} else {
+		delete(inProgressMap, sourceID)
+	}
+	inProgressMapLock.Unlock()
+}
+
 func (brt *HandleT) mainLoop() {
 	for {
 		if !brt.isEnabled {
@@ -216,10 +237,10 @@ func (brt *HandleT) mainLoop() {
 		}
 		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
 		for _, batchDestination := range batchDestinations {
-			if inProgressMap[batchDestination.Source.ID] {
+			if isSourceInProgress(batchDestination.Source.ID) {
 				continue
 			}
-			inProgressMap[batchDestination.Source.ID] = true
+			setSourceInProgress(batchDestination.Source.ID, true)
 			toQuery := jobQueryBatchSize
 			retryList := brt.jobsDB.GetToRetry([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID)
 			toQuery -= len(retryList)
