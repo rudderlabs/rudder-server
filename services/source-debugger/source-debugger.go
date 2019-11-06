@@ -102,7 +102,11 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 	for _, event := range eventBuffer {
 		batchedEvent := EventT{}
 		err := json.Unmarshal([]byte(event.eventBatch), &batchedEvent)
-		misc.AssertError(err)
+		if err != nil {
+			logger.Debugf(string(event.eventBatch))
+			misc.AssertErrorIfDev(err)
+			continue
+		}
 
 		receivedAtTS, err := time.Parse(time.RFC3339, batchedEvent.ReceivedAt)
 		if err != nil {
@@ -140,7 +144,11 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 	}
 
 	rawJSON, err := json.Marshal(res)
-	misc.AssertError(err)
+	if err != nil {
+		logger.Debugf(string(rawJSON))
+		misc.AssertErrorIfDev(err)
+		return
+	}
 
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
