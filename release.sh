@@ -1,4 +1,3 @@
-echo $#
 if [ "$#" -ne 1 ]; then
   echo "Usage: $0 <overrides_existing_version>" >&2
   exit 1
