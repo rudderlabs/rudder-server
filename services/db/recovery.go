@@ -129,9 +129,9 @@ func alertOps(mode string) {
 
 	alertManager, err := alert.New()
 	if err != nil {
-		alertManager.Alert(fmt.Sprintf("Dataplane server %s entered %s mode", instanceName, mode))
+		logger.Errorf("Unable to initialize the alertManager: %s", err.Error())
 	} else {
-		logger.Error("Unable to initialize the alertManager")
+		alertManager.Alert(fmt.Sprintf("Dataplane server %s entered %s mode", instanceName, mode))
 	}
 }
 
