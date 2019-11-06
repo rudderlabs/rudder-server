@@ -104,7 +104,7 @@ type HandleT struct {
 	dsListLock            sync.RWMutex
 	dsMigrationLock       sync.RWMutex
 	dsRetentionPeriod     time.Duration
-	dsEmptyResultCache    map[dataSetT]map[string]map[string]bool
+	dsEmptyResultCache    map[dataSetT]map[string]map[string]map[string]bool
 	dsCacheLock           sync.Mutex
 	toBackup              bool
 	jobsFileUploader      filemanager.FileManager
@@ -250,7 +250,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
 	jd.toBackup = toBackup
-	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]bool{}
+	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]bool{}
 
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
@@ -982,20 +982,36 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 
 	_, ok := jd.dsEmptyResultCache[ds]
 	if !ok {
-		jd.dsEmptyResultCache[ds] = map[string]map[string]bool{}
+		jd.dsEmptyResultCache[ds] = map[string]map[string]map[string]bool{}
 	}
 
 	for _, cVal := range customValFilters {
-		cVal += joinSourceIDFilters(sourceIDFilters)
 		_, ok := jd.dsEmptyResultCache[ds][cVal]
 		if !ok {
-			jd.dsEmptyResultCache[ds][cVal] = map[string]bool{}
+			jd.dsEmptyResultCache[ds][cVal] = map[string]map[string]bool{}
 		}
-		for _, st := range stateFilters {
-			if mark {
-				jd.dsEmptyResultCache[ds][cVal][st] = true
-			} else {
-				jd.dsEmptyResultCache[ds][cVal][st] = false
+		index := 0
+		for {
+			sid := ""
+			if len(sourceIDFilters) > 0 {
+				sid = sourceIDFilters[index]
+			}
+
+			_, ok := jd.dsEmptyResultCache[ds][cVal][sid]
+			if !ok {
+				jd.dsEmptyResultCache[ds][cVal][sid] = map[string]bool{}
+			}
+
+			for _, st := range stateFilters {
+				if mark {
+					jd.dsEmptyResultCache[ds][cVal][sid][st] = true
+				} else {
+					jd.dsEmptyResultCache[ds][cVal][sid][st] = false
+				}
+			}
+			index++
+			if len(sourceIDFilters) == 0 || index >= len(sourceIDFilters) {
+				break
 			}
 		}
 	}
@@ -1017,30 +1033,31 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 	}
 
 	for _, cVal := range customValFilters {
-		cVal += joinSourceIDFilters(sourceIDFilters)
-		_, ok := jd.dsEmptyResultCache[ds][cVal]
-		if !ok {
-			return false
-		}
-		for _, st := range stateFilters {
-			mark, ok := jd.dsEmptyResultCache[ds][cVal][st]
-			if !ok || mark == false {
+		index := 0
+		for {
+			sid := ""
+			if len(sourceIDFilters) > 0 {
+				sid = sourceIDFilters[index]
+			}
+			_, ok := jd.dsEmptyResultCache[ds][cVal][sid]
+			if !ok {
 				return false
+			}
+			for _, st := range stateFilters {
+				mark, ok := jd.dsEmptyResultCache[ds][cVal][sid][st]
+				if !ok || mark == false {
+					return false
+				}
+			}
+			index++
+			if len(sourceIDFilters) == 0 || index >= len(sourceIDFilters) {
+				break
 			}
 		}
 	}
 	//Every state and every customVal in the DS is empty
 	//so can return
 	return true
-}
-
-func joinSourceIDFilters(sourceIDFilters []string) string {
-	val := ""
-	if len(sourceIDFilters) > 0 {
-		sort.Strings(sourceIDFilters)
-		val = "_" + strings.Join(sourceIDFilters, "_")
-	}
-	return val
 }
 
 //limitCount == 0 means return all
