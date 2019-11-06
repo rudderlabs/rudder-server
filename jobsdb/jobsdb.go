@@ -986,7 +986,6 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 	}
 
 	for _, cVal := range customValFilters {
-		cVal += joinSourceIDFilters(sourceIDFilters)
 		_, ok := jd.dsEmptyResultCache[ds][cVal]
 		if !ok {
 			jd.dsEmptyResultCache[ds][cVal] = map[string]map[string]bool{}
@@ -1059,15 +1058,6 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 	//Every state and every customVal in the DS is empty
 	//so can return
 	return true
-}
-
-func joinSourceIDFilters(sourceIDFilters []string) string {
-	val := ""
-	if len(sourceIDFilters) > 0 {
-		sort.Strings(sourceIDFilters)
-		val = "_" + strings.Join(sourceIDFilters, "_")
-	}
-	return val
 }
 
 //limitCount == 0 means return all
