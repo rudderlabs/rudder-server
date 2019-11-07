@@ -266,7 +266,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		if enableDedup {
 			txn := gateway.badgerDB.NewTransaction(true)
 			for _, messageID := range allMessageIds {
-				e := badger.NewEntry([]byte(messageID), []byte("true")).WithTTL(5 * time.Second)
+				e := badger.NewEntry([]byte(messageID), nil).WithTTL(24 * time.Hour)
 				if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
 					_ = txn.Commit()
 					txn = gateway.badgerDB.NewTransaction(true)
