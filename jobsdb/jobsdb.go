@@ -87,9 +87,11 @@ type dataSetT struct {
 }
 
 type dataSetRangeT struct {
-	minJobID int64
-	maxJobID int64
-	ds       dataSetT
+	minJobID  int64
+	maxJobID  int64
+	startTime int64
+	endTime   int64
+	ds        dataSetT
 }
 
 /*
@@ -1388,28 +1390,29 @@ func (jd *HandleT) backupDSLoop() {
 	for {
 		time.Sleep(backupCheckSleepDuration)
 		logger.Info("BackupDS check:Start")
-		backupDS := jd.getBackupDS()
+		backupDSRange := jd.getBackupDSRange()
 		// check if non empty dataset is present to backup
 		// else continue
-		if (dataSetT{} == backupDS) {
+		if (dataSetRangeT{} == backupDSRange) {
 			// sleep for more duration if no dataset is found
 			time.Sleep(5 * backupCheckSleepDuration)
 			continue
 		}
 
-		startTime := time.Now().Unix()
+		backupDS := backupDSRange.ds
+
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
 		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
 		// write jobs table to s3
-		_, err = jd.backupTable(backupDS.JobTable, startTime)
+		_, err = jd.backupTable(backupDSRange, false)
 		if err != nil {
 			logger.Errorf("Failed to backup table %v", backupDS.JobTable)
 			continue
 		}
 
 		// write job_status table to s3
-		_, err = jd.backupTable(backupDS.JobStatusTable, startTime)
+		_, err = jd.backupTable(backupDSRange, true)
 		jd.assertError(err)
 		if err != nil {
 			logger.Errorf("Failed to backup table %v", backupDS.JobStatusTable)
@@ -1442,17 +1445,39 @@ func (jd *HandleT) removeTableJSONDumps() {
 	}
 }
 
-func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool, err error) {
+func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable bool) (success bool, err error) {
 	tableFileDumpTimeStat.Start()
 	totalTableDumpTimeStat.Start()
-	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
+
+	var tableName, fileName, path string
+	var fileManager filemanager.FileManager
+
 	backupPathDirName := "/rudder-s3-dumps/"
 	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
 	if tmpdirPath == "" {
 		tmpdirPath, err = os.UserHomeDir()
 		misc.AssertError(err)
 	}
-	path := fmt.Sprintf(`%v%v.%v.gz`, tmpdirPath+backupPathDirName, pathPrefix, startTime)
+
+	if isJobStatusTable {
+		tableName = backupDSRange.ds.JobStatusTable
+		fileManager = jd.jobStatusFileUploader
+		fileName = strings.TrimPrefix(tableName, "pre_drop_")
+		path = fmt.Sprintf(`%v%v.gz`, tmpdirPath+backupPathDirName, fileName)
+	} else {
+		tableName = backupDSRange.ds.JobStatusTable
+		fileManager = jd.jobsFileUploader
+		fileName = strings.TrimPrefix(tableName, "pre_drop_")
+		path = fmt.Sprintf(`%v%v.%v.%v.%v.%v.gz`,
+			tmpdirPath+backupPathDirName,
+			fileName,
+			backupDSRange.minJobID,
+			backupDSRange.maxJobID,
+			backupDSRange.startTime,
+			backupDSRange.endTime,
+		)
+	}
+
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	misc.AssertError(err)
 
@@ -1487,11 +1512,7 @@ func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool,
 	pathPrefixes := make([]string, 0)
 	pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
 
-	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
-		err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
-	} else {
-		err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
-	}
+	err = fileManager.Upload(file, pathPrefixes...)
 	if err != nil {
 		logger.Errorf("Failed to upload table %v dump to S3", tableName)
 	} else {
@@ -1506,8 +1527,9 @@ func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool,
 	return true, err
 }
 
-func (jd *HandleT) getBackupDS() dataSetT {
+func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 	var backupDS dataSetT
+	var backupDSRange dataSetRangeT
 
 	//Read the table names from PG
 	tableNames := jd.getAllTableNames()
@@ -1522,7 +1544,7 @@ func (jd *HandleT) getBackupDS() dataSetT {
 		}
 	}
 	if len(dnumList) == 0 {
-		return backupDS
+		return backupDSRange
 	}
 
 	jd.sortDnumList(dnumList)
@@ -1532,7 +1554,38 @@ func (jd *HandleT) getBackupDS() dataSetT {
 		JobStatusTable: fmt.Sprintf("pre_drop_%s_job_status_%s", jd.tablePrefix, dnumList[0]),
 		Index:          dnumList[0],
 	}
-	return backupDS
+
+	var minID, maxID sql.NullInt64
+	jobIDSQLStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, backupDS.JobTable)
+	row := jd.dbHandle.QueryRow(jobIDSQLStatement)
+	err := row.Scan(&minID, &maxID)
+	jd.assertError(err)
+
+	jobTimeSQLStatement := fmt.Sprintf(`SELECT created_at FROM %s WHERE job_id IN (%v, %v)`, backupDS.JobTable, minID.Int64, maxID.Int64)
+	fmt.Println(jobTimeSQLStatement)
+
+	rows, err := jd.dbHandle.Query(jobTimeSQLStatement)
+	defer rows.Close()
+	jd.assertError(err)
+
+	var timestamps []time.Time
+	for rows.Next() {
+		var createdAt time.Time
+		err := rows.Scan(&createdAt)
+		jd.assertError(err)
+		timestamps = append(timestamps, createdAt)
+	}
+
+	jd.assert(!timestamps[0].After(timestamps[1]))
+
+	backupDSRange = dataSetRangeT{
+		minJobID:  minID.Int64,
+		maxJobID:  maxID.Int64,
+		startTime: timestamps[0].Unix(),
+		endTime:   timestamps[1].Unix(),
+		ds:        backupDS,
+	}
+	return backupDSRange
 }
 
 /*
