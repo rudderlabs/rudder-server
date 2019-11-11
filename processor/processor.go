@@ -41,6 +41,7 @@ type HandleT struct {
 	userPQItemMap      map[string]*pqItemT
 	userJobPQ          pqT
 	userPQLock         sync.Mutex
+	replayProcessor    *ReplayProcessorT
 }
 
 //Print the internal structure
@@ -92,9 +93,15 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.statBatchRouterDBW = stats.NewStat("processor.batch_router_db_write", stats.CountType)
 	proc.statActiveUsers = stats.NewStat("processor.active_users", stats.GaugeType)
 
-	go backendConfigSubscriber()
+	proc.replayProcessor = NewReplayProcessor()
+	proc.replayProcessor.Setup()
+
+	go proc.backendConfigSubscriber()
 	proc.transformer.Setup()
+
+	proc.replayProcessor.CrashRecover()
 	proc.crashRecover()
+
 	go proc.mainLoop()
 	if processSessions {
 		logger.Info("Starting session processor")
@@ -103,15 +110,17 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 }
 
 var (
-	loopSleep              time.Duration
-	dbReadBatchSize        int
-	transformBatchSize     int
-	sessionThresholdInS    time.Duration
-	sessionThresholdEvents int
-	processSessions        bool
-	writeKeyDestinationMap map[string][]backendconfig.DestinationT
-	rawDataDestinations    []string
-	configSubscriberLock   sync.RWMutex
+	loopSleep                  time.Duration
+	dbReadBatchSize            int
+	transformBatchSize         int
+	sessionThresholdInS        time.Duration
+	sessionThresholdEvents     int
+	processSessions            bool
+	writeKeyDestinationMap     map[string][]backendconfig.DestinationT
+	copyWriteKeyDestinationMap map[string][]backendconfig.DestinationT
+	rawDataDestinations        []string
+	configSubscriberLock       sync.RWMutex
+	processReplays             []replayT
 )
 
 func loadConfig() {
@@ -126,9 +135,16 @@ func loadConfig() {
 	maxRetry = config.GetInt("Processor.maxRetry", 3)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	rawDataDestinations = []string{"S3"}
+	processReplays = []replayT{}
 }
 
-func backendConfigSubscriber() {
+type replayT struct {
+	sourceID      string
+	destinationID string
+	notifyURL     string
+}
+
+func (proc *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch)
 	for {
@@ -139,6 +155,21 @@ func backendConfigSubscriber() {
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				writeKeyDestinationMap[source.WriteKey] = source.Destinations
+			}
+
+			var replays = []replayT{}
+			for _, dest := range source.Destinations {
+				if dest.Config.(map[string]interface{})["Replay"] == true {
+					notifyURL, ok := dest.Config.(map[string]interface{})["ReplayURL"].(string)
+					if !ok {
+						notifyURL = ""
+					}
+					replays = append(replays, replayT{sourceID: source.ID, destinationID: dest.ID, notifyURL: notifyURL})
+				}
+			}
+
+			if len(replays) > 0 {
+				processReplays = proc.replayProcessor.GetReplaysToProcess(replays)
 			}
 		}
 		configSubscriberLock.Unlock()
@@ -344,10 +375,8 @@ func (proc *HandleT) createSessions() {
 }
 
 func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
 	var enabledDests []backendconfig.DestinationT
-	for _, dest := range writeKeyDestinationMap[writeKey] {
+	for _, dest := range copyWriteKeyDestinationMap[writeKey] {
 		if destinationName == dest.DestinationDefinition.Name && dest.Enabled {
 			enabledDests = append(enabledDests, dest)
 		}
@@ -356,10 +385,8 @@ func getEnabledDestinations(writeKey string, destinationName string) []backendco
 }
 
 func getEnabledDestinationTypes(writeKey string) map[string]backendconfig.DestinationDefinitionT {
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
 	var enabledDestinationTypes = make(map[string]backendconfig.DestinationDefinitionT)
-	for _, destination := range writeKeyDestinationMap[writeKey] {
+	for _, destination := range copyWriteKeyDestinationMap[writeKey] {
 		if destination.Enabled {
 			enabledDestinationTypes[destination.DestinationDefinition.DisplayName] = destination.DestinationDefinition
 		}
@@ -546,6 +573,21 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.statsDBW.Print()
 }
 
+/*
+ * If there is a new replay destination, compute the min JobID that the data plane would be routing for that source
+ */
+func (proc *HandleT) handleReplay(combinedList []*jobsdb.JobT) {
+
+	if len(processReplays) > 0 {
+		maxDSIndex := proc.gatewayDB.GetMaxDSIndex()
+		misc.Assert(len(combinedList) > 0)
+		replayMinJobID := combinedList[0].JobID
+
+		proc.replayProcessor.ProcessNewReplays(processReplays, replayMinJobID, maxDSIndex)
+		processReplays = []replayT{}
+	}
+}
+
 func (proc *HandleT) mainLoop() {
 
 	logger.Info("Processor loop started")
@@ -577,6 +619,13 @@ func (proc *HandleT) mainLoop() {
 			return combinedList[i].JobID < combinedList[j].JobID
 		})
 
+		// Make a copy of configuration for the processor loop
+		// Need to process minJobID and new destinations at once
+		configSubscriberLock.RLock()
+		copyWriteKeyDestinationMap = writeKeyDestinationMap
+		proc.handleReplay(combinedList)
+		configSubscriberLock.RUnlock()
+
 		if processSessions {
 			//Mark all as executing so next query doesn't pick it up
 			var statusList []*jobsdb.JobStatusT
@@ -598,6 +647,7 @@ func (proc *HandleT) mainLoop() {
 			proc.processJobsForDest(combinedList, nil)
 		}
 
+		copyWriteKeyDestinationMap = nil
 	}
 }
 

@@ -682,6 +682,23 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	return newDS
 }
 
+/*
+ * Function to return max dataset index in the DB
+ */
+func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
+
+	jd.dsListLock.RLock()
+	defer jd.dsListLock.RUnlock()
+
+	//dList is already sorted.
+	dList := jd.getDSList(false)
+	ds := dList[len(dList)-1]
+	maxDSIndex, err := strconv.ParseInt(ds.Index, 10, 64)
+	misc.AssertError(err)
+
+	return maxDSIndex
+}
+
 //Drop a dataset
 func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 
@@ -1576,13 +1593,13 @@ func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 		timestamps = append(timestamps, createdAt)
 	}
 
-	jd.assert(!timestamps[0].After(timestamps[1]))
+	jd.assert(!timestamps[0].After(timestamps[len(timestamps)-1]))
 
 	backupDSRange = dataSetRangeT{
 		minJobID:  minID.Int64,
 		maxJobID:  maxID.Int64,
 		startTime: timestamps[0].Unix(),
-		endTime:   timestamps[1].Unix(),
+		endTime:   timestamps[len(timestamps)-1].Unix(),
 		ds:        backupDS,
 	}
 	return backupDSRange

@@ -1,6 +1,7 @@
 package backendconfig
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -72,10 +73,51 @@ func loadConfig() {
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
 }
 
+func GetConfigBackenUrl() string {
+	return configBackendURL
+}
+
+func GetConfigBackendToken() string {
+	return configBackendToken
+}
+
+func MakePostRequest(url string, endpoint string, data interface{}) (response []byte, ok bool) {
+	client := &http.Client{}
+	backendURL := fmt.Sprintf("%s%s", url, endpoint)
+	dataJSON, _ := json.Marshal(data)
+	request, err := http.NewRequest("POST", backendURL, bytes.NewBuffer(dataJSON))
+	request.SetBasicAuth(configBackendToken, "")
+	request.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(request)
+	// Not handling errors when sending alert to victorops
+	if err != nil {
+		logger.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
+		return []byte{}, false
+	}
+
+	if resp.StatusCode != 200 && resp.StatusCode != 202 {
+		logger.Errorf("ConfigBackend: Got error response %d", resp.StatusCode)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+
+	logger.Info("ConfigBackend: Successful %s", string(body))
+	return body, true
+}
+
+func MakeBackendPostRequest(endpoint string, data interface{}) (response []byte, ok bool) {
+	return MakePostRequest(configBackendURL, endpoint, data)
+}
+
 func getBackendConfig() (SourcesT, bool) {
 	client := &http.Client{}
-	url := fmt.Sprintf("%s/workspace-config?workspaceToken=%s", configBackendURL, configBackendToken)
-	resp, err := client.Get(url)
+	url := fmt.Sprintf("%s/workspaceConfig", configBackendURL)
+	request, err := http.NewRequest("GET", url, nil)
+
+	request.SetBasicAuth(configBackendToken, "")
+	resp, err := client.Do(request)
 
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
