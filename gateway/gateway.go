@@ -212,16 +212,16 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 			if enableDedup {
 				allMessageIds = append(allMessageIds, messageIDs...)
-				txn := gateway.badgerDB.NewTransaction(false)
-				defer txn.Discard()
 				var toRemoveMessageIndexes []int
-				for idx, messageID := range messageIDs {
-					_, err := txn.Get([]byte(messageID))
-					if err != badger.ErrKeyNotFound {
-						toRemoveMessageIndexes = append(toRemoveMessageIndexes, idx)
+				err := gateway.badgerDB.View(func(txn *badger.Txn) error {
+					for idx, messageID := range messageIDs {
+						_, err := txn.Get([]byte(messageID))
+						if err != badger.ErrKeyNotFound {
+							toRemoveMessageIndexes = append(toRemoveMessageIndexes, idx)
+						}
 					}
-				}
-				err = txn.Commit()
+					return nil
+				})
 				misc.AssertError(err)
 
 				count := 0
@@ -264,16 +264,18 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		errorMessagesMap := gateway.jobsDB.Store(jobList)
 
 		if enableDedup {
-			txn := gateway.badgerDB.NewTransaction(true)
-			for _, messageID := range allMessageIds {
-				e := badger.NewEntry([]byte(messageID), nil).WithTTL(24 * time.Hour)
-				if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
-					_ = txn.Commit()
-					txn = gateway.badgerDB.NewTransaction(true)
-					_ = txn.SetEntry(e)
+			err := gateway.badgerDB.Update(func(txn *badger.Txn) error {
+				// Your code here…
+				for _, messageID := range allMessageIds {
+					e := badger.NewEntry([]byte(messageID), nil).WithTTL(24 * time.Hour)
+					if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
+						_ = txn.Commit()
+						txn = gateway.badgerDB.NewTransaction(true)
+						_ = txn.SetEntry(e)
+					}
 				}
-			}
-			err := txn.Commit()
+				return nil
+			})
 			misc.AssertError(err)
 		}
 
