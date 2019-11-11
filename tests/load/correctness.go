@@ -1,7 +1,7 @@
 package main
 
 // To run the S3 Test:
-// go run correctness.go -t 300 -S3 true  -writeKey <writekey> -sourceID <sourceid> --bucketName <bucketName>
+// go run correctness.go -t 300 -S3 true  -writeKey <writekey> -sourceID <sourceid> -bucketName <bucketName>
 
 
 import (
