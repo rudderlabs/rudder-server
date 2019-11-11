@@ -1,5 +1,9 @@
 package main
 
+// To run the S3 Test:
+// go run correctness.go -t 300 -S3 true  -writeKey <writekey> -sourceID <sourceid> --bucketName <bucketName>
+
+
 import (
 
 	//"encoding/json"
@@ -345,6 +349,7 @@ func main() {
 	waitTimeInSec := flag.Int("w", 600, "Max wait-time in sec waiting for sink. Default 600s")
 	writeKey = flag.String("writeKey", "1RHJcwtP1PHXwmsJSG1LrBVjRTO", "Write key of source the events should be sent against")
 	sourceID = flag.String("sourceID", "1RHJcypX5HCdEYe6L3PjoCU3j6A", "ID of source the events should be sent against")
+	bucketName = flag.String("bucketName", "rl-s3-correctness-test", "S3 Bucket name")
 	isS3Test = flag.Bool("S3", false, "Set true to test s3 destination events")
 
 	flag.Parse()
@@ -372,7 +377,7 @@ func main() {
 
 	if *isS3Test {
 		s3Manager = filemanager.S3Manager{
-			Bucket: "rl-s3-correctness-test",
+			Bucket: *bucketName,
 		}
 		time.Sleep(60 * time.Second)
 		fmt.Println("Fetching S3 files...")
