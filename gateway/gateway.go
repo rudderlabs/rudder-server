@@ -5,7 +5,9 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -112,9 +114,11 @@ func updateWriteKeyStats(writeKeyStats map[string]int) {
 }
 
 func updateWriteKeyDupStats(writeKeyStats map[string]int) {
-	for writeKey, count := range writeKeyStats {
-		writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_duplicate_messages", stats.CountType, writeKey)
-		writeKeyStatsD.Count(count)
+	if enableDedup {
+		for writeKey, count := range writeKeyStats {
+			writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_duplicate_messages", stats.CountType, writeKey)
+			writeKeyStatsD.Count(count)
+		}
 	}
 }
 
@@ -212,27 +216,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 			if enableDedup {
 				allMessageIds = append(allMessageIds, messageIDs...)
-				var toRemoveMessageIndexes []int
-				err := gateway.badgerDB.View(func(txn *badger.Txn) error {
-					for idx, messageID := range messageIDs {
-						_, err := txn.Get([]byte(messageID))
-						if err != badger.ErrKeyNotFound {
-							toRemoveMessageIndexes = append(toRemoveMessageIndexes, idx)
-						}
-					}
-					return nil
-				})
-				misc.AssertError(err)
-
-				count := 0
-				for _, idx := range toRemoveMessageIndexes {
-					logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
-					misc.IncrementMapByKey(writeKeyDupStats, writeKey)
-					body, err = sjson.DeleteBytes(body, fmt.Sprintf(`batch.%v`, idx-count))
-					misc.AssertError(err)
-					count++
-				}
-
+				gateway.dedupWithBadger(&body, allMessageIds, writeKey, writeKeyDupStats)
 				if len(gjson.GetBytes(body, "batch").Array()) == 0 {
 					req.done <- ""
 					preDbStoreCount++
@@ -263,21 +247,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 		errorMessagesMap := gateway.jobsDB.Store(jobList)
 
-		if enableDedup {
-			err := gateway.badgerDB.Update(func(txn *badger.Txn) error {
-				// Your code here…
-				for _, messageID := range allMessageIds {
-					e := badger.NewEntry([]byte(messageID), nil).WithTTL(24 * time.Hour)
-					if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
-						_ = txn.Commit()
-						txn = gateway.badgerDB.NewTransaction(true)
-						_ = txn.SetEntry(e)
-					}
-				}
-				return nil
-			})
-			misc.AssertError(err)
-		}
+		gateway.writeToBadger(allMessageIds)
 
 		misc.Assert(preDbStoreCount+len(errorMessagesMap) == len(breq.batchRequest))
 		for uuid, err := range errorMessagesMap {
@@ -297,11 +267,50 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		batchTimeStat.End()
 		batchSizeStat.Count(len(breq.batchRequest))
 		updateWriteKeyStats(writeKeyStats)
+		updateWriteKeyDupStats(writeKeyDupStats)
 		updateWriteKeyStatusStats(writeKeySuccessStats, true)
 		updateWriteKeyStatusStats(writeKeyFailStats, false)
-		if enableDedup {
-			updateWriteKeyDupStats(writeKeyDupStats)
+	}
+}
+
+func (gateway *HandleT) dedupWithBadger(body *[]byte, ids [][]byte, writeKey string, writeKeyDupStats map[string]int) {
+	var toRemoveMessageIndexes []int
+	err := gateway.badgerDB.View(func(txn *badger.Txn) error {
+		for idx, messageID := range ids {
+			_, err := txn.Get([]byte(messageID))
+			if err != badger.ErrKeyNotFound {
+				toRemoveMessageIndexes = append(toRemoveMessageIndexes, idx)
+			}
 		}
+		return nil
+	})
+	misc.AssertError(err)
+
+	count := 0
+	for _, idx := range toRemoveMessageIndexes {
+		logger.Debugf("Dropping event with duplicate messageId: %s", ids[idx])
+		misc.IncrementMapByKey(writeKeyDupStats, writeKey)
+		*body, err = sjson.DeleteBytes(*body, fmt.Sprintf(`batch.%v`, idx-count))
+		misc.AssertError(err)
+		count++
+	}
+}
+
+func (gateway *HandleT) writeToBadger(ids [][]byte) {
+	if enableDedup {
+		err := gateway.badgerDB.Update(func(txn *badger.Txn) error {
+			// Your code here…
+			for _, messageID := range ids {
+				e := badger.NewEntry([]byte(messageID), nil).WithTTL(24 * time.Hour)
+				if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
+					_ = txn.Commit()
+					txn = gateway.badgerDB.NewTransaction(true)
+					_ = txn.SetEntry(e)
+				}
+			}
+			return nil
+		})
+		misc.AssertError(err)
 	}
 }
 
@@ -439,18 +448,6 @@ func (gateway *HandleT) startWebHandler() {
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), c.Handler(bugsnag.Handler(nil))))
 }
 
-func (gateway *HandleT) gcBadgerDB() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
-	again:
-		err := gateway.badgerDB.RunValueLogGC(0.7)
-		if err == nil {
-			goto again
-		}
-	}
-}
-
 // Gets the config from config backend and extracts enabled writekeys
 func backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
@@ -469,22 +466,42 @@ func backendConfigSubscriber() {
 	}
 }
 
+func (gateway *HandleT) gcBadgerDB() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+	again:
+		err := gateway.badgerDB.RunValueLogGC(0.5)
+		if err == nil {
+			goto again
+		}
+	}
+}
+
+func (gateway *HandleT) openBadger(clearDB *bool) {
+	var err error
+	badgerPathName := "/badger"
+	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	if tmpdirPath == "" {
+		tmpdirPath, err = os.UserHomeDir()
+		misc.AssertError(err)
+	}
+	path := fmt.Sprintf(`%v%v`, tmpdirPath, badgerPathName)
+	gateway.badgerDB, err = badger.Open(badger.DefaultOptions(path))
+	misc.AssertError(err)
+	if *clearDB {
+		err = gateway.badgerDB.DropAll()
+		misc.AssertError(err)
+	}
+	go gateway.gcBadgerDB()
+}
+
 //Setup initializes this module
 func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, clearDB *bool) {
 	if enableDedup {
-		var err error
-		gateway.badgerDB, err = badger.Open(badger.DefaultOptions("/tmp/badger"))
-		if err != nil {
-			misc.AssertError(err)
-		}
+		gateway.openBadger(clearDB)
 		defer gateway.badgerDB.Close()
-		if *clearDB {
-			err = gateway.badgerDB.DropAll()
-			misc.AssertError(err)
-		}
-		go gateway.gcBadgerDB()
 	}
-
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB
@@ -495,5 +512,4 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, clearDB *bool) {
 		go gateway.webRequestBatchDBWriter(i)
 	}
 	gateway.startWebHandler()
-
 }
