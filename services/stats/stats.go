@@ -18,16 +18,18 @@ var writeKeyClientsMap = make(map[string]*statsd.Client)
 var destClientsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
 var statsdServerURL string
+var instanceName string
 var conn statsd.Option
 
 func init() {
 	config.Initialize()
 	statsEnabled = config.GetBool("enableStats", false)
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
+	instanceName = config.GetEnv("INSTANCE_NAME", "")
 
 	var err error
 	conn = statsd.Address(statsdServerURL)
-	client, err = statsd.New(conn)
+	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName))
 	if err != nil {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
@@ -48,7 +50,7 @@ func NewStat(Name string, StatType string) (rStats *RudderStats) {
 func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *RudderStats) {
 	if _, found := writeKeyClientsMap[writeKey]; !found {
 		var err error
-		writeKeyClientsMap[writeKey], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("writekey", writeKey))
+		writeKeyClientsMap[writeKey], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName, "writekey", writeKey))
 		if err != nil {
 			// If nothing is listening on the target port, an error is returned and
 			// the returned client does nothing but is still usable. So we can
@@ -67,7 +69,7 @@ func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *Rud
 func NewBatchDestStat(Name string, StatType string, destID string) *RudderStats {
 	if _, found := destClientsMap[destID]; !found {
 		var err error
-		destClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("destID", destID))
+		destClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName, "destID", destID))
 		if err != nil {
 			logger.Error(err)
 		}
