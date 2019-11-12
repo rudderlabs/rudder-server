@@ -1482,7 +1482,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 		fileName = strings.TrimPrefix(tableName, "pre_drop_")
 		path = fmt.Sprintf(`%v%v.gz`, tmpdirPath+backupPathDirName, fileName)
 	} else {
-		tableName = backupDSRange.ds.JobStatusTable
+		tableName = backupDSRange.ds.JobTable
 		fileManager = jd.jobsFileUploader
 		fileName = strings.TrimPrefix(tableName, "pre_drop_")
 		path = fmt.Sprintf(`%v%v.%v.%v.%v.%v.gz`,
@@ -1598,8 +1598,8 @@ func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 	backupDSRange = dataSetRangeT{
 		minJobID:  minID.Int64,
 		maxJobID:  maxID.Int64,
-		startTime: timestamps[0].Unix(),
-		endTime:   timestamps[len(timestamps)-1].Unix(),
+		startTime: timestamps[0].UnixNano() / int64(time.Millisecond),
+		endTime:   timestamps[len(timestamps)-1].UnixNano() / int64(time.Millisecond),
 		ds:        backupDS,
 	}
 	return backupDSRange
