@@ -113,11 +113,11 @@ func updateWriteKeyStats(writeKeyStats map[string]int) {
 	}
 }
 
-func updateWriteKeyDupStats(writeKeyStats map[string]int) {
+func updateWriteKeyDupStats(writeKeyDupStats map[string]int) {
 	if enableDedup {
-		for writeKey, count := range writeKeyStats {
-			writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_duplicate_events", stats.CountType, writeKey)
-			writeKeyStatsD.Count(count)
+		for writeKey, count := range writeKeyDupStats {
+			writeKeyDupStatsD := stats.NewWriteKeyStat("gateway.write_key_duplicate_events", stats.CountType, writeKey)
+			writeKeyDupStatsD.Count(count)
 		}
 	}
 }
@@ -199,7 +199,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			var index int
 			result := gjson.GetBytes(body, "batch")
 			newAnonymousID := uuid.NewV4().String()
-			var messageIDs [][]byte
+			var reqMessageIDs [][]byte
 			result.ForEach(func(_, _ gjson.Result) bool {
 				if !gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).Exists() {
 					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index), newAnonymousID)
@@ -208,15 +208,15 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index), uuid.NewV4().String())
 				}
 				if enableDedup {
-					messageIDs = append(messageIDs, []byte(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String()))
+					reqMessageIDs = append(reqMessageIDs, []byte(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String()))
 				}
 				index++
 				return true // keep iterating
 			})
 
 			if enableDedup {
-				allMessageIds = append(allMessageIds, messageIDs...)
-				gateway.dedupWithBadger(&body, allMessageIds, writeKey, writeKeyDupStats)
+				allMessageIds = append(allMessageIds, reqMessageIDs...)
+				gateway.dedupWithBadger(&body, reqMessageIDs, writeKey, writeKeyDupStats)
 				if len(gjson.GetBytes(body, "batch").Array()) == 0 {
 					req.done <- ""
 					preDbStoreCount++
