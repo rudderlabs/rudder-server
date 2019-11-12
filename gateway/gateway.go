@@ -116,7 +116,7 @@ func updateWriteKeyStats(writeKeyStats map[string]int) {
 func updateWriteKeyDupStats(writeKeyStats map[string]int) {
 	if enableDedup {
 		for writeKey, count := range writeKeyStats {
-			writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_duplicate_messages", stats.CountType, writeKey)
+			writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_duplicate_events", stats.CountType, writeKey)
 			writeKeyStatsD.Count(count)
 		}
 	}
@@ -220,6 +220,8 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				if len(gjson.GetBytes(body, "batch").Array()) == 0 {
 					req.done <- ""
 					preDbStoreCount++
+					writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_duplicate_requests", stats.CountType, writeKey)
+					writeKeyStatsD.Count(1)
 					continue
 				}
 			}
@@ -480,7 +482,7 @@ func (gateway *HandleT) gcBadgerDB() {
 
 func (gateway *HandleT) openBadger(clearDB *bool) {
 	var err error
-	badgerPathName := "/badger"
+	badgerPathName := "/badgerdb"
 	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
 	if tmpdirPath == "" {
 		tmpdirPath, err = os.UserHomeDir()
