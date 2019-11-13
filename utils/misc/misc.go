@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -173,6 +174,17 @@ func ReadLines(path string) ([]string, error) {
 		lines = append(lines, scanner.Text())
 	}
 	return lines, scanner.Err()
+}
+
+// CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
+func CreateTMPDIR() string {
+	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	if tmpdirPath == "" {
+		var err error
+		tmpdirPath, err = os.UserHomeDir()
+		AssertError(err)
+	}
+	return tmpdirPath
 }
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now

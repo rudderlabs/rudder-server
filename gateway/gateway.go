@@ -5,9 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -273,10 +271,10 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 	}
 }
 
-func (gateway *HandleT) dedupWithBadger(body *[]byte, ids [][]byte, writeKey string, writeKeyDupStats map[string]int) {
+func (gateway *HandleT) dedupWithBadger(body *[]byte, messageIDs [][]byte, writeKey string, writeKeyDupStats map[string]int) {
 	var toRemoveMessageIndexes []int
 	err := gateway.badgerDB.View(func(txn *badger.Txn) error {
-		for idx, messageID := range ids {
+		for idx, messageID := range messageIDs {
 			_, err := txn.Get([]byte(messageID))
 			if err != badger.ErrKeyNotFound {
 				toRemoveMessageIndexes = append(toRemoveMessageIndexes, idx)
@@ -288,7 +286,7 @@ func (gateway *HandleT) dedupWithBadger(body *[]byte, ids [][]byte, writeKey str
 
 	count := 0
 	for _, idx := range toRemoveMessageIndexes {
-		logger.Debugf("Dropping event with duplicate messageId: %s", ids[idx])
+		logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
 		misc.IncrementMapByKey(writeKeyDupStats, writeKey, 1)
 		*body, err = sjson.DeleteBytes(*body, fmt.Sprintf(`batch.%v`, idx-count))
 		misc.AssertError(err)
@@ -296,11 +294,11 @@ func (gateway *HandleT) dedupWithBadger(body *[]byte, ids [][]byte, writeKey str
 	}
 }
 
-func (gateway *HandleT) writeToBadger(ids [][]byte) {
+func (gateway *HandleT) writeToBadger(messageIDs [][]byte) {
 	if enableDedup {
 		err := gateway.badgerDB.Update(func(txn *badger.Txn) error {
 			// Your code here…
-			for _, messageID := range ids {
+			for _, messageID := range messageIDs {
 				e := badger.NewEntry([]byte(messageID), nil).WithTTL(dedupWindow * time.Second)
 				if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
 					_ = txn.Commit()
@@ -481,12 +479,8 @@ func (gateway *HandleT) gcBadgerDB() {
 func (gateway *HandleT) openBadger(clearDB *bool) {
 	var err error
 	badgerPathName := "/badgerdb"
-	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
-	if tmpdirPath == "" {
-		tmpdirPath, err = os.UserHomeDir()
-		misc.AssertError(err)
-	}
-	path := fmt.Sprintf(`%v%v`, tmpdirPath, badgerPathName)
+	tmpDirPath := misc.CreateTMPDIR()
+	path := fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 	gateway.badgerDB, err = badger.Open(badger.DefaultOptions(path))
 	misc.AssertError(err)
 	if *clearDB {
