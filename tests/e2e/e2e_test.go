@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/tests/helpers"
+	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 )
 
@@ -108,6 +109,57 @@ var _ = Describe("E2E", func() {
 				result2, _ := strconv.Atoi(gjson.Get(string(jobs[index-1].EventPayload), "payload.ev").String())
 				Expect(result1).Should(BeNumerically("<", result2))
 			}
+		})
+
+		It("should dedup duplicate events", func() {
+			sampleID := uuid.NewV4().String()
+
+			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			helpers.SendEventRequest(helpers.EventOptsT{
+				MessageID: sampleID,
+			})
+			Eventually(func() int {
+				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
+
+			// send 2 events and verify event with prev messageID is dropped
+			currentGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			helpers.SendEventRequest(helpers.EventOptsT{
+				MessageID: sampleID,
+			})
+			helpers.SendEventRequest(helpers.EventOptsT{
+				MessageID: uuid.NewV4().String(),
+			})
+			Consistently(func() int {
+				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
+		})
+
+		It("should dedup duplicate events only till specified TTL", func() {
+			sampleID := uuid.NewV4().String()
+
+			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			helpers.SendEventRequest(helpers.EventOptsT{
+				MessageID: sampleID,
+			})
+			helpers.SendEventRequest(helpers.EventOptsT{
+				MessageID: sampleID,
+			})
+			Eventually(func() int {
+				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
+
+			// send 2 events and verify event with prev messageID is dropped
+			currentGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			// wait for 5 seconds for messageID to exceed its TTL
+			time.Sleep(5 * time.Second)
+			helpers.SendEventRequest(helpers.EventOptsT{
+				MessageID: sampleID,
+			})
+			Eventually(func() int {
+				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
+
 		})
 
 	})

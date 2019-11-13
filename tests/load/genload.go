@@ -44,6 +44,7 @@ var done chan bool
 var numberOfEventPtr *int
 var badJSON *bool
 var badJSONRate *int
+var dupEventsRate *int
 
 var loadStat *stats.RudderStats
 var requestTimeStat *stats.RudderStats
@@ -64,6 +65,7 @@ func main() {
 	// setting badjson rate 0f 60 sends ~60% (approx since we just compare with rand number) req's with bad json
 	badJSON = flag.Bool("badjson", false, "true/false for sending malformed json as payload to rudder BE")
 	badJSONRate = flag.Int("badjsonRate", 100, "percentage of malformed json sent as events")
+	dupEventsRate = flag.Int("dupEventsRate", 0, "percentage of events sent with same message")
 	writeKey = flag.String("writekey", "", "Writekey to be sent along with the event")
 
 	flag.Parse()
@@ -94,6 +96,14 @@ func toSendGoodJSON() bool {
 	return toSendGoodJSON
 }
 
+func toSendDuplicateMessageID() bool {
+	toSendDuplicateMessageID := false
+	if *dupEventsRate > 0 && (*dupEventsRate == 100 || (*dupEventsRate > rand.Intn(100))) {
+		toSendDuplicateMessageID = true
+	}
+	return toSendDuplicateMessageID
+}
+
 func sendBadJSON(lines []string, rudder bool) {
 	value, _ := sjson.Set("", "batch", "random_string_to_be_replaced")
 	value, _ = sjson.Set(value, "sent_at", time.Now())
@@ -121,6 +131,10 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 
 	lines, err := misc.ReadLines("badJsonStrings.txt")
 	misc.AssertError(err)
+	var duplicateIds []string
+	for index := 0; index < 10; index++ {
+		duplicateIds = append(duplicateIds, uuid.NewV4().String())
+	}
 	countLoop := 0
 
 	for _, event := range events {
@@ -165,6 +179,15 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 
 				rudderData, err = sjson.SetBytes(rudderData, userIDpath, uid)
 				rudderData, err = sjson.SetBytes(rudderData, "anonymousId", uid)
+				var messageID string
+				if countLoop < 10 {
+					messageID = duplicateIds[countLoop]
+				} else if toSendDuplicateMessageID() {
+					messageID = duplicateIds[rand.Intn(10)]
+				} else {
+					messageID = uuid.NewV4().String()
+				}
+				rudderData, err = sjson.SetBytes(rudderData, "messageId", messageID)
 				misc.AssertError(err)
 
 				// Unmarshal

@@ -1428,13 +1428,8 @@ func (jd *HandleT) backupDSLoop() {
 
 func (jd *HandleT) removeTableJSONDumps() {
 	backupPathDirName := "/rudder-s3-dumps/"
-	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
-	var err error
-	if tmpdirPath == "" {
-		tmpdirPath, err = os.UserHomeDir()
-		misc.AssertError(err)
-	}
-	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", tmpdirPath+backupPathDirName, jd.tablePrefix))
+	tmpDirPath := misc.CreateTMPDIR()
+	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", tmpDirPath+backupPathDirName, jd.tablePrefix))
 	jd.assertError(err)
 	for _, f := range files {
 		err = os.Remove(f)
@@ -1447,12 +1442,8 @@ func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool,
 	totalTableDumpTimeStat.Start()
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
 	backupPathDirName := "/rudder-s3-dumps/"
-	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
-	if tmpdirPath == "" {
-		tmpdirPath, err = os.UserHomeDir()
-		misc.AssertError(err)
-	}
-	path := fmt.Sprintf(`%v%v.%v.gz`, tmpdirPath+backupPathDirName, pathPrefix, startTime)
+	tmpDirPath := misc.CreateTMPDIR()
+	path := fmt.Sprintf(`%v%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, startTime)
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	misc.AssertError(err)
 
