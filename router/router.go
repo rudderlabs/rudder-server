@@ -59,6 +59,10 @@ var (
 	testSinkURL                                                                    string
 )
 
+func isSuccessStatus(status int) bool {
+	return status == http.StatusOK || status == http.StatusNoContent
+}
+
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
@@ -150,7 +154,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				//Internal test. No reason to sleep
 				break
 			}
-			if respStatusCode != http.StatusOK {
+			if !isSuccessStatus(respStatusCode) {
 				//400 series error are client errors. Can't continue
 				if respStatusCode >= http.StatusBadRequest && respStatusCode <= http.StatusUnavailableForLegalReasons {
 					break
@@ -186,7 +190,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			ErrorResponse: []byte(`{}`),
 		}
 
-		if respStatusCode == http.StatusOK {
+		if isSuccessStatus(respStatusCode) {
 			//#JobOrder (see other #JobOrder comment)
 			failedAttemptsStat.Count(job.LastJobStatus.AttemptNum)
 			eventsDeliveredStat.Increment()
