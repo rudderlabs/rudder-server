@@ -16,6 +16,9 @@ maxBatchSize = 32
 batchTimeoutInMS = 20
 respMessage = "OK"
 maxReqSizeInKB = 100000
+enableDedup = true
+dedupWindowInS = 86400
+
 
 [SourceDebugger]
 maxBatchSize = 32

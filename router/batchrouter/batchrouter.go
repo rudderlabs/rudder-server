@@ -91,17 +91,11 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT) {
 	logger.Debugf("BRT: Starting logging to %s: %s", provider, bucketName)
 
 	dirName := "/rudder-raw-data-destination-logs/"
-	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
-	var err error
-	if tmpdirPath == "" {
-		tmpdirPath, err = os.UserHomeDir()
-		misc.AssertError(err)
-	}
-	path := fmt.Sprintf("%v%v.json", tmpdirPath+dirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
+	tmpDirPath := misc.CreateTMPDIR()
+	path := fmt.Sprintf("%v%v.json", tmpDirPath+dirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
 	var contentSlice [][]byte
 	for _, job := range batchJobs.Jobs {
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
-		misc.AssertError(err)
 		var ok bool
 		if _, ok = uploadedRawDataJobsCache[eventID]; !ok {
 			contentSlice = append(contentSlice, job.EventPayload)
@@ -110,7 +104,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT) {
 	content := bytes.Join(contentSlice[:], []byte("\n"))
 
 	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
-	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
+	err := os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	misc.AssertError(err)
 	gzipFile, err := os.Create(gzipFilePath)
 
@@ -300,12 +294,8 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		})
 
 		dirName := "/rudder-raw-data-dest-upload-crash-recovery/"
-		tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
-		if tmpdirPath == "" {
-			tmpdirPath, err = os.UserHomeDir()
-			misc.AssertError(err)
-		}
-		jsonPath := fmt.Sprintf("%v%v.json", tmpdirPath+dirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
+		tmpDirPath := misc.CreateTMPDIR()
+		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+dirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
 
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		jsonFile, err := os.Create(jsonPath)

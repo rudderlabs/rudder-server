@@ -10,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	uuid "github.com/satori/go.uuid"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/sjson"
 )
@@ -81,6 +82,7 @@ type EventOptsT struct {
 	Integrations map[string]bool
 	WriteKey     string
 	ID           string
+	MessageID    string
 	GaVal        int
 }
 
@@ -98,12 +100,16 @@ func SendEventRequest(options EventOptsT) int {
 	if options.ID == "" {
 		options.ID = ksuid.New().String()
 	}
+	if options.MessageID == "" {
+		options.MessageID = uuid.NewV4().String()
+	}
 
 	serverIP := "http://localhost:8080/v1/batch"
 
 	jsonPayload, _ := sjson.Set(sampleEvent, "batch.0.sentAt", time.Now())
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.integrations", options.Integrations)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.anonymousId", options.ID)
+	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.messageId", options.MessageID)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.properties.value", options.GaVal)
 
 	req, err := http.NewRequest("POST", serverIP, bytes.NewBuffer([]byte(jsonPayload)))

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -175,6 +176,17 @@ func ReadLines(path string) ([]string, error) {
 	return lines, scanner.Err()
 }
 
+// CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
+func CreateTMPDIR() string {
+	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	if tmpdirPath == "" {
+		var err error
+		tmpdirPath, err = os.UserHomeDir()
+		AssertError(err)
+	}
+	return tmpdirPath
+}
+
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
 type PerfStats struct {
 	eventCount           int64
@@ -318,12 +330,12 @@ func Contains(in interface{}, elem interface{}) bool {
 }
 
 // IncrementMapByKey starts with 1 and increments the counter of a key
-func IncrementMapByKey(m map[string]int, key string) {
+func IncrementMapByKey(m map[string]int, key string, increment int) {
 	_, found := m[key]
 	if found {
-		m[key] = m[key] + 1
+		m[key] = m[key] + increment
 	} else {
-		m[key] = 1
+		m[key] = increment
 	}
 }
 
