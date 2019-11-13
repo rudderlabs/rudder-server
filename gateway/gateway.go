@@ -184,7 +184,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			// set anonymousId if not set in payload
 			var index int
 			result := gjson.GetBytes(body, "batch")
-			result.Array()
 			newAnonymousID := uuid.NewV4().String()
 			var reqMessageIDs [][]byte
 			result.ForEach(func(_, _ gjson.Result) bool {
