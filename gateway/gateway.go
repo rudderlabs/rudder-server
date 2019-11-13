@@ -56,6 +56,7 @@ var (
 	configSubscriberLock                      sync.RWMutex
 	maxReqSize                                int
 	enableDedup                               bool
+	dedupWindow                               time.Duration
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -86,6 +87,8 @@ func loadConfig() {
 	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 100000) * 1000
 	// Enable dedup of incoming events by default
 	enableDedup = config.GetBool("Gateway.enableDedup", true)
+	// Dedup time window in hours
+	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 }
 
 func init() {
@@ -106,31 +109,9 @@ type HandleT struct {
 	recvCount     uint64
 }
 
-func updateWriteKeyStats(writeKeyStats map[string]int) {
+func updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
 	for writeKey, count := range writeKeyStats {
 		writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_requests", stats.CountType, writeKey)
-		writeKeyStatsD.Count(count)
-	}
-}
-
-func updateWriteKeyDupStats(writeKeyDupStats map[string]int) {
-	if enableDedup {
-		for writeKey, count := range writeKeyDupStats {
-			writeKeyDupStatsD := stats.NewWriteKeyStat("gateway.write_key_duplicate_events", stats.CountType, writeKey)
-			writeKeyDupStatsD.Count(count)
-		}
-	}
-}
-
-func updateWriteKeyStatusStats(writeKeyStats map[string]int, isSuccess bool) {
-	var metricName string
-	if isSuccess {
-		metricName = fmt.Sprintf("gateway.write_key_successful_requests")
-	} else {
-		metricName = fmt.Sprintf("gateway.write_key_failed_requests")
-	}
-	for writeKey, count := range writeKeyStats {
-		writeKeyStatsD := stats.NewWriteKeyStat(metricName, stats.CountType, writeKey)
 		writeKeyStatsD.Count(count)
 	}
 }
@@ -142,10 +123,14 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
 		var jobWriteKeyMap = make(map[uuid.UUID]string)
+		var jobEventCountMap = make(map[uuid.UUID]int)
 		var writeKeyStats = make(map[string]int)
+		var writeKeyEventStats = make(map[string]int)
 		var writeKeyDupStats = make(map[string]int)
 		var writeKeySuccessStats = make(map[string]int)
+		var writeKeySuccessEventStats = make(map[string]int)
 		var writeKeyFailStats = make(map[string]int)
+		var writeKeyFailEventStats = make(map[string]int)
 		var preDbStoreCount int
 		//Saving the event data read from req.request.Body to the splice.
 		//Using this to send event schema to the config backend.
@@ -166,27 +151,30 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			if !ok {
 				req.done <- "Failed to read writeKey from header"
 				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey")
+				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
 				continue
 			}
-
-			misc.IncrementMapByKey(writeKeyStats, writeKey)
+			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if err != nil {
 				req.done <- "Failed to read body from request"
 				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
 			}
+			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
+			misc.IncrementMapByKey(writeKeyEventStats, writeKey, totalEventsInReq)
 			if len(body) > maxReqSize {
 				req.done <- "Request size exceeds max limit"
 				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
 				continue
 			}
 			if !gateway.isWriteKeyEnabled(writeKey) {
 				req.done <- "Invalid Write Key"
 				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, writeKey)
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
 				continue
 			}
 
@@ -198,6 +186,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			// set anonymousId if not set in payload
 			var index int
 			result := gjson.GetBytes(body, "batch")
+			result.Array()
 			newAnonymousID := uuid.NewV4().String()
 			var reqMessageIDs [][]byte
 			result.ForEach(func(_, _ gjson.Result) bool {
@@ -220,8 +209,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				if len(gjson.GetBytes(body, "batch").Array()) == 0 {
 					req.done <- ""
 					preDbStoreCount++
-					writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_duplicate_requests", stats.CountType, writeKey)
-					writeKeyStatsD.Count(1)
+					misc.IncrementMapByKey(writeKeySuccessEventStats, writeKey, totalEventsInReq)
 					continue
 				}
 			}
@@ -245,6 +233,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			jobList = append(jobList, &newJob)
 			jobIDReqMap[newJob.UUID] = req
 			jobWriteKeyMap[newJob.UUID] = writeKey
+			jobEventCountMap[newJob.UUID] = totalEventsInReq
 		}
 
 		errorMessagesMap := gateway.jobsDB.Store(jobList)
@@ -254,9 +243,11 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		misc.Assert(preDbStoreCount+len(errorMessagesMap) == len(breq.batchRequest))
 		for uuid, err := range errorMessagesMap {
 			if err != "" {
-				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[uuid])
+				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[uuid], 1)
+				misc.IncrementMapByKey(writeKeyFailEventStats, jobWriteKeyMap[uuid], jobEventCountMap[uuid])
 			} else {
-				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[uuid])
+				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[uuid], 1)
+				misc.IncrementMapByKey(writeKeySuccessEventStats, jobWriteKeyMap[uuid], jobEventCountMap[uuid])
 			}
 			jobIDReqMap[uuid].done <- err
 		}
@@ -268,10 +259,17 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 		batchTimeStat.End()
 		batchSizeStat.Count(len(breq.batchRequest))
-		updateWriteKeyStats(writeKeyStats)
-		updateWriteKeyDupStats(writeKeyDupStats)
-		updateWriteKeyStatusStats(writeKeySuccessStats, true)
-		updateWriteKeyStatusStats(writeKeyFailStats, false)
+		// update stats request wise
+		updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")
+		updateWriteKeyStats(writeKeySuccessStats, "gateway.write_key_successful_requests")
+		updateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
+		// update stats event wise
+		updateWriteKeyStats(writeKeyEventStats, "gateway.write_key_events")
+		updateWriteKeyStats(writeKeySuccessEventStats, "gateway.write_key_successful_events")
+		updateWriteKeyStats(writeKeyFailEventStats, "gateway.write_key_failed_events")
+		if enableDedup {
+			updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
+		}
 	}
 }
 
@@ -291,7 +289,7 @@ func (gateway *HandleT) dedupWithBadger(body *[]byte, ids [][]byte, writeKey str
 	count := 0
 	for _, idx := range toRemoveMessageIndexes {
 		logger.Debugf("Dropping event with duplicate messageId: %s", ids[idx])
-		misc.IncrementMapByKey(writeKeyDupStats, writeKey)
+		misc.IncrementMapByKey(writeKeyDupStats, writeKey, 1)
 		*body, err = sjson.DeleteBytes(*body, fmt.Sprintf(`batch.%v`, idx-count))
 		misc.AssertError(err)
 		count++
@@ -303,7 +301,7 @@ func (gateway *HandleT) writeToBadger(ids [][]byte) {
 		err := gateway.badgerDB.Update(func(txn *badger.Txn) error {
 			// Your code here…
 			for _, messageID := range ids {
-				e := badger.NewEntry([]byte(messageID), nil).WithTTL(24 * time.Hour)
+				e := badger.NewEntry([]byte(messageID), nil).WithTTL(dedupWindow * time.Second)
 				if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
 					_ = txn.Commit()
 					txn = gateway.badgerDB.NewTransaction(true)

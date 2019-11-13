@@ -318,12 +318,12 @@ func Contains(in interface{}, elem interface{}) bool {
 }
 
 // IncrementMapByKey starts with 1 and increments the counter of a key
-func IncrementMapByKey(m map[string]int, key string) {
+func IncrementMapByKey(m map[string]int, key string, increment int) {
 	_, found := m[key]
 	if found {
-		m[key] = m[key] + 1
+		m[key] = m[key] + increment
 	} else {
-		m[key] = 1
+		m[key] = increment
 	}
 }
 
