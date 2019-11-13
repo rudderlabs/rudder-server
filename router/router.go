@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -60,7 +61,7 @@ var (
 )
 
 func isSuccessStatus(status int) bool {
-	return status == http.StatusOK || status == http.StatusNoContent
+	return status >= 200 && status < 300
 }
 
 func loadConfig() {
@@ -186,7 +187,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
 			AttemptNum:    job.LastJobStatus.AttemptNum,
-			ErrorCode:     respStatus,
+			ErrorCode:     strconv.Itoa(respStatusCode),
 			ErrorResponse: []byte(`{}`),
 		}
 
@@ -203,6 +204,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debugf("%v Router :: Job failed to send, analyzing...", rt.destID)
 			worker.failedJobs++
 			atomic.AddUint64(&rt.failCount, 1)
+			status.ErrorResponse = []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody)))
 
 			//#JobOrder (see other #JobOrder comment)
 			if !isPrevFailedUser && keepOrderOnFailure {
