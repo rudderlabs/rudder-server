@@ -1447,7 +1447,7 @@ func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool,
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	misc.AssertError(err)
 
-	stmt := fmt.Sprintf(`SELECT json_agg(%[1]s) FROM %[1]s`, tableName)
+	stmt := fmt.Sprintf(`SELECT json_agg(%[1]s order by job_id asc) FROM %[1]s`, tableName)
 	var rawJSONRows json.RawMessage
 	err = jd.dbHandle.QueryRow(stmt).Scan(&rawJSONRows)
 	misc.AssertError(err)
