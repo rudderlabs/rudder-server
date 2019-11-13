@@ -45,10 +45,11 @@ See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion a
 The docker setup is the easiest & fastest way to try out Rudder.
 
 1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
-2. Clone this repository with [SSH](https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls) and replace `<your_workspace_token>` in `build/docker.env` with the above token.
-3. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
-4. Run the command `docker-compose up --build` to bring up all the services.
-5. Follow (Send Test Events) instructions below to send test event.
+2. Clone this repository with [SSH](https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls) and 
+3. Replace `<your_workspace_token>` in `build/docker.env` with the above token.
+5. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
+6. Run the command `docker-compose up --build` to bring up all the services.
+6. Follow (Send Test Events) instructions below to send test event.
 
 # Setup Instructions (Terraform)
 
