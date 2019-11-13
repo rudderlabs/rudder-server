@@ -111,7 +111,7 @@ type HandleT struct {
 
 func updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
 	for writeKey, count := range writeKeyStats {
-		writeKeyStatsD := stats.NewWriteKeyStat("gateway.write_key_requests", stats.CountType, writeKey)
+		writeKeyStatsD := stats.NewWriteKeyStat(bucket, stats.CountType, writeKey)
 		writeKeyStatsD.Count(count)
 	}
 }
