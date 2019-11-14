@@ -36,4 +36,4 @@ services:
 
 networks:
   rudder:
-    driver: bridge
+    external: true

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -79,6 +80,16 @@ func GetEnv(key string, defaultVal string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
 	}
+	return defaultVal
+}
+
+// GetEnvAsBool returns the boolean environment value stored in key variable
+func GetEnvAsBool(name string, defaultVal bool) bool {
+	valueStr := GetEnv(name, "")
+	if value, err := strconv.ParseBool(valueStr); err == nil {
+		return value
+	}
+
 	return defaultVal
 }
 

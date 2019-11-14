@@ -86,7 +86,7 @@ func (r *ReplayProcessorT) notifyReplayConfigs(replayConfigs []replayConfigT) {
 		}
 
 		requestBody := map[string]interface{}{
-			"instanceName":         config.GetEnv("INSTANCE_NAME", "1"),
+			"instanceName":         config.GetEnv("INSTANCE_ID", "1"),
 			"replayConfigDataList": replayConfigDataList,
 		}
 
