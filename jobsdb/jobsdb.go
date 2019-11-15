@@ -1578,28 +1578,29 @@ func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 	err := row.Scan(&minID, &maxID)
 	jd.assertError(err)
 
-	jobTimeSQLStatement := fmt.Sprintf(`SELECT created_at FROM %s WHERE job_id IN (%v, %v)`, backupDS.JobTable, minID.Int64, maxID.Int64)
-	fmt.Println(jobTimeSQLStatement)
+	jobTimeSQLStatement := fmt.Sprintf(`SELECT job_id, created_at FROM %s WHERE job_id IN (%v, %v)`, backupDS.JobTable, minID.Int64, maxID.Int64)
+	logger.Debug(jobTimeSQLStatement)
 
 	rows, err := jd.dbHandle.Query(jobTimeSQLStatement)
 	defer rows.Close()
 	jd.assertError(err)
 
-	var timestamps []time.Time
+	timestamps := map[int64]time.Time{}
 	for rows.Next() {
 		var createdAt time.Time
-		err := rows.Scan(&createdAt)
+		var jobID sql.NullInt64
+		err := rows.Scan(&jobID, &createdAt)
 		jd.assertError(err)
-		timestamps = append(timestamps, createdAt)
+		timestamps[jobID.Int64] = createdAt
 	}
 
-	jd.assert(!timestamps[0].After(timestamps[len(timestamps)-1]))
+	jd.assert(!timestamps[minID.Int64].After(timestamps[maxID.Int64]))
 
 	backupDSRange = dataSetRangeT{
 		minJobID:  minID.Int64,
 		maxJobID:  maxID.Int64,
-		startTime: timestamps[0].UnixNano() / int64(time.Millisecond),
-		endTime:   timestamps[len(timestamps)-1].UnixNano() / int64(time.Millisecond),
+		startTime: timestamps[minID.Int64].UnixNano() / int64(time.Millisecond),
+		endTime:   timestamps[maxID.Int64].UnixNano() / int64(time.Millisecond),
 		ds:        backupDS,
 	}
 	return backupDSRange
