@@ -110,6 +110,7 @@ type HandleT struct {
 	jobsFileUploader      filemanager.FileManager
 	jobStatusFileUploader filemanager.FileManager
 	statTableCount        *stats.RudderStats
+	ignoreMigrateThres    bool
 }
 
 //The struct which is written to the journal
@@ -218,6 +219,10 @@ func loadConfig() {
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 }
 
+func (jd *HandleT) loadCustomConfig() {
+	jd.ignoreMigrateThres = config.GetBool(fmt.Sprintf(`JobsDB.%s.ignoreMigrateThres`, jd.tablePrefix), false)
+}
+
 func init() {
 	config.Initialize()
 	loadConfig()
@@ -243,11 +248,12 @@ in the retention time
 */
 func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, toBackup bool) {
 
+	jd.tablePrefix = tablePrefix
+	jd.loadCustomConfig()
 	var err error
 	psqlInfo := GetConnectionString()
 
 	jd.assert(tablePrefix != "")
-	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
 	jd.toBackup = toBackup
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]bool{}
@@ -521,7 +527,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	}
 
 	if (float64(delCount)/float64(totalCount) > jobDoneMigrateThres) ||
-		(float64(statusCount)/float64(totalCount) > jobStatusMigrateThres) {
+		(float64(statusCount)/float64(totalCount) > jobStatusMigrateThres) || jd.ignoreMigrateThres {
 		return true, totalCount - delCount
 	}
 	return false, totalCount - delCount

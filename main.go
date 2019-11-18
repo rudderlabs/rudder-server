@@ -184,9 +184,13 @@ func main() {
 		os.Exit(1)
 	}()
 
-	var gatewayDB jobsdb.HandleT
-	var routerDB jobsdb.HandleT
-	var batchRouterDB jobsdb.HandleT
+	var (
+		gatewayDB        jobsdb.HandleT
+		failedGatewayDB  jobsdb.HandleT
+		abortedGatewayDB jobsdb.HandleT
+		routerDB         jobsdb.HandleT
+		batchRouterDB    jobsdb.HandleT
+	)
 
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB", *clearDB)
@@ -194,6 +198,8 @@ func main() {
 	sourcedebugger.Setup()
 	backendconfig.Setup()
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup && true)
+	failedGatewayDB.Setup(*clearDB, "failed_gw", gwDBRetention, false)
+	abortedGatewayDB.Setup(*clearDB, "aborted_gw", gwDBRetention, true)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, false)
 
@@ -205,7 +211,7 @@ func main() {
 
 	if enableProcessor {
 		var processor processor.HandleT
-		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+		processor.Setup(&gatewayDB, &failedGatewayDB, &abortedGatewayDB, &routerDB, &batchRouterDB)
 	}
 
 	var gateway gateway.HandleT

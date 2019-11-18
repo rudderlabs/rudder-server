@@ -37,6 +37,8 @@ maxMigrateOnce = 10
 mainCheckSleepDurationInS = 2
 backupCheckSleepDurationIns = 5
 enableBackup = true
+    [JobsDB.aborted_gw]
+    ignoreMigrateThres = true
 
 [Router]
 jobQueryBatchSize = 10000
@@ -69,6 +71,10 @@ processSessions = true
 numTransformWorker = 8
 maxRetry = 30
 retrySleepInMS = 100
+maxFailedCountForJob = 8
+backoffIncrementInS = 20
+maxbackoffInS = 300
+backoffFactor = 2
 
 [BackendConfig]
 pollIntervalInS = 5

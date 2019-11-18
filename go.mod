@@ -12,8 +12,9 @@ require (
 	github.com/bugsnag/panicwrap v1.2.0 // indirect
 	github.com/dgraph-io/badger v1.6.0
 	github.com/go-redis/redis v6.15.2+incompatible
-	github.com/gofrs/uuid v3.2.0+incompatible
+	github.com/gofrs/uuid v3.2.0+incompatible // indirect
 	github.com/joho/godotenv v1.3.0
+	github.com/jpillora/backoff v1.0.0
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
 	github.com/lib/pq v1.2.0
 	github.com/onsi/ginkgo v1.10.1
@@ -22,6 +23,7 @@ require (
 	github.com/satori/go.uuid v1.2.0
 	github.com/segmentio/ksuid v1.0.2
 	github.com/spf13/viper v1.4.0
+	github.com/thoas/go-funk v0.4.0
 	github.com/tidwall/gjson v1.3.2
 	github.com/tidwall/sjson v1.0.4
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4

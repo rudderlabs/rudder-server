@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/araddon/dateparse"
+	"github.com/jpillora/backoff"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -19,28 +20,39 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
+	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
-	gatewayDB          *jobsdb.HandleT
-	routerDB           *jobsdb.HandleT
-	batchRouterDB      *jobsdb.HandleT
-	transformer        *transformerHandleT
-	statsJobs          *misc.PerfStats
-	statsDBR           *misc.PerfStats
-	statGatewayDBR     *stats.RudderStats
-	statsDBW           *misc.PerfStats
-	statGatewayDBW     *stats.RudderStats
-	statRouterDBW      *stats.RudderStats
-	statBatchRouterDBW *stats.RudderStats
-	statActiveUsers    *stats.RudderStats
-	userJobListMap     map[string][]*jobsdb.JobT
-	userEventsMap      map[string][]interface{}
-	userPQItemMap      map[string]*pqItemT
-	userJobPQ          pqT
-	userPQLock         sync.Mutex
+	gatewayDB            *jobsdb.HandleT
+	failedGatewayDB      *jobsdb.HandleT
+	abortedGatewayDB     *jobsdb.HandleT
+	routerDB             *jobsdb.HandleT
+	batchRouterDB        *jobsdb.HandleT
+	transformer          *transformerHandleT
+	statsJobs            *misc.PerfStats
+	statsDBR             *misc.PerfStats
+	statGatewayDBR       *stats.RudderStats
+	statsDBW             *misc.PerfStats
+	statGatewayDBW       *stats.RudderStats
+	statRouterDBW        *stats.RudderStats
+	statBatchRouterDBW   *stats.RudderStats
+	statActiveUsers      *stats.RudderStats
+	userJobListMap       map[string][]*jobsdb.JobT
+	userEventsMap        map[string][]interface{}
+	userPQItemMap        map[string]*pqItemT
+	userJobPQ            pqT
+	userPQLock           sync.Mutex
+	failedUserDestJobMap map[string]int64
+	destRetryBackoffMap  map[string]DestRetryT
+}
+
+type DestRetryT struct {
+	NextProcessTime time.Time
+	Backoff         *backoff.Backoff
 }
 
 //Print the internal structure
@@ -70,8 +82,10 @@ func init() {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, batchRouterDB *jobsdb.HandleT) {
+func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, failedGatewayDB *jobsdb.HandleT, abortedGatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, batchRouterDB *jobsdb.HandleT) {
 	proc.gatewayDB = gatewayDB
+	proc.failedGatewayDB = failedGatewayDB
+	proc.abortedGatewayDB = abortedGatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
 	proc.transformer = &transformerHandleT{}
@@ -82,6 +96,8 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.userEventsMap = make(map[string][]interface{})
 	proc.userPQItemMap = make(map[string]*pqItemT)
 	proc.userJobPQ = make(pqT, 0)
+	proc.failedUserDestJobMap = make(map[string]int64)
+	proc.destRetryBackoffMap = make(map[string]DestRetryT)
 	proc.statsJobs.Setup("ProcessorJobs")
 	proc.statsDBR.Setup("ProcessorDBRead")
 	proc.statsDBW.Setup("ProcessorDBWrite")
@@ -112,6 +128,10 @@ var (
 	writeKeyDestinationMap map[string][]backendconfig.DestinationT
 	rawDataDestinations    []string
 	configSubscriberLock   sync.RWMutex
+	maxFailedCountForJob   int
+	backoffIncrementInS    int
+	maxBackoffInS          int
+	backoffFactor          int
 )
 
 func loadConfig() {
@@ -126,6 +146,10 @@ func loadConfig() {
 	maxRetry = config.GetInt("Processor.maxRetry", 3)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	rawDataDestinations = []string{"S3"}
+	maxFailedCountForJob = config.GetInt("Processor.maxFailedCountForJob", 8)
+	backoffIncrementInS = config.GetInt("Processor.backoffIncrementInS", 20)
+	maxBackoffInS = config.GetInt("Processor.backoffIncrementInS", 300)
+	backoffFactor = config.GetInt("Processor.backoffFactor", 2)
 }
 
 func backendConfigSubscriber() {
@@ -390,6 +414,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	var destJobs []*jobsdb.JobT
 	var batchDestJobs []*jobsdb.JobT
+	var failedGWJobs []*jobsdb.JobT
+	var abortedGWJobs []*jobsdb.JobT
+	var failedGWJobStatusList []*jobsdb.JobStatusT
+	var failedGWStatusCustomVals []string
 	var statusList []*jobsdb.JobStatusT
 	var eventsByDest = make(map[string][]interface{})
 
@@ -405,6 +433,14 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	totalEvents := 0
 
 	for idx, batchEvent := range jobList {
+
+		prevFailedJob := false
+		var failedDestType, failedDestID string
+		if gjson.GetBytes(batchEvent.Parameters, "prev_failed").Exists() {
+			prevFailedJob = true
+			failedDestType = gjson.GetBytes(batchEvent.Parameters, "failed_destination_type").String()
+			failedDestID = gjson.GetBytes(batchEvent.Parameters, "failed_destination_id").String()
+		}
 
 		var eventList []interface{}
 		var ok bool
@@ -423,19 +459,37 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			for _, singularEvent := range eventList {
 				//We count this as one, not destination specific ones
 				totalEvents++
-				//Getting all the destinations which are enabled for this
-				//event
-				destTypesFromConfig := getEnabledDestinationTypes(writeKey)
-				destTypes := integrations.GetDestinationIDs(singularEvent, destTypesFromConfig)
+
+				// Getting all the destinations which are enabled for this
+				// event
+				// If job is from failed_gw ds, select destination only for which the job has failed
+				var destTypes []string
+				if prevFailedJob {
+					destTypes = []string{failedDestType}
+				} else {
+					destTypesFromConfig := getEnabledDestinationTypes(writeKey)
+					destTypes = integrations.GetDestinationCodes(singularEvent, destTypesFromConfig)
+				}
 
 				if len(destTypes) == 0 {
 					logger.Debug("No enabled destinations")
 					continue
 				}
-				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
+				// enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 				for _, destType := range destTypes {
 					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
-					enabledDestinationsMap[destType] = enabledDestinationsList
+					// If job is from failed_gw ds, select destination only for which the job has failed
+					// Source can have multiple GA destiantions but might have failed for one of them due to
+					// user transformation attached to it
+					if prevFailedJob {
+						failedDestI := funk.Find(enabledDestinationsList, func(dest backendconfig.DestinationT) bool {
+							return dest.ID == failedDestID
+						})
+						if failedDestI != nil {
+							enabledDestinationsList = []backendconfig.DestinationT{failedDestI.(backendconfig.DestinationT)}
+						}
+					}
+
 					// Adding a singular event multiple times if there are multiple destinations of same type
 					if len(destTypes) == 0 {
 						logger.Debugf("No enabled destinations for type %v", destType)
@@ -448,7 +502,15 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy["message"] = singularEventMap
 						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
-						shallowEventCopy["message"].(map[string]interface{})["source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+
+						// add metadata to each singularEvent which will be returned by transformer in response
+						shallowEventCopy["metadata"] = make(map[string]interface{})
+						shallowEventCopy["metadata"].(map[string]interface{})["source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+						shallowEventCopy["metadata"].(map[string]interface{})["job_id"] = batchEvent.JobID
+						shallowEventCopy["metadata"].(map[string]interface{})["destination_id"] = destination.ID
+						shallowEventCopy["metadata"].(map[string]interface{})["destination_type"] = destination.DestinationDefinition.Name
+						shallowEventCopy["metadata"].(map[string]interface{})["message_id"] = shallowEventCopy["message"].(map[string]interface{})["messageId"].(string)
+						shallowEventCopy["metadata"].(map[string]interface{})["anonymous_id"] = shallowEventCopy["message"].(map[string]interface{})["anonymousId"].(string)
 
 						// set timestamp skew based on timestamp fields from SDKs
 						originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
@@ -472,36 +534,241 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			}
 		}
 
-		//Mark the batch event as processed
-		newStatus := jobsdb.JobStatusT{
-			JobID:         batchEvent.JobID,
-			JobState:      jobsdb.SucceededState,
-			AttemptNum:    1,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
-			ErrorCode:     "200",
-			ErrorResponse: []byte(`{"success":"OK"}`),
+		// do not mark again in gateway status if job is from failed_gw ds
+		if !prevFailedJob {
+			//Mark the batch event as processed
+			newStatus := jobsdb.JobStatusT{
+				JobID:         batchEvent.JobID,
+				JobState:      jobsdb.SucceededState,
+				AttemptNum:    1,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "200",
+				ErrorResponse: []byte(`{"success":"OK"}`),
+			}
+			statusList = append(statusList, &newStatus)
 		}
-		statusList = append(statusList, &newStatus)
 	}
 
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
-	for destID, destEventList := range eventsByDest {
+	for destType, destEventList := range eventsByDest {
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
-		url := integrations.GetDestinationURL(destID)
+		url := integrations.GetDestinationURL(destType)
 		logger.Debug("Transform input size", len(destEventList))
 		response := proc.transformer.Transform(destEventList, url, transformBatchSize)
 		destTransformEventList := response.Events
+		failedJobIDs := response.FailedJobIDs
 		logger.Debug("Transform output size", len(destTransformEventList))
 		if !response.Success {
 			continue
 		}
 
+		// map to save setting status of job/abort in failed_gw
+		// do not process multiple failed events from same job
+		currentRespJobStateMap := make(map[int64]string)
+		// map to save setting backoff times for a destination
+		// do not increment backoff counter for same destination
+		// if multiple events failed in single response from transformer
+		failedDestIDMap := make(map[string]bool)
 		//Save the JSON in DB. This is what the rotuer uses
 		for idx, destEvent := range destTransformEventList {
-			destEventJSON, err := json.Marshal(destEvent)
+			// actual transformed event json
+			destEventJSON, err := json.Marshal(destEvent.(map[string]interface{})["output"])
+			sourceID := response.SourceIDList[idx]
+
+			// variables from metdata of the event returned by transformer
+			destEventJobID := int64(destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["job_id"].(float64))
+			destID := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destination_id"].(string)
+			destType := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destination_type"].(string)
+			userID := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["anonymous_id"].(string)
+			messageID := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["message_id"].(string)
+
+			userDestEventKey := userID + "_" + destID
+			// check if we have failed event present for user+dest combination
+			previousFailedJobID, isPrevFailedUserDest := proc.failedUserDestJobMap[userDestEventKey]
+
+			// get the corresponding job from jobList for an event
+			destEventJobI := funk.Find(jobList, func(job *jobsdb.JobT) bool {
+				return job.JobID == destEventJobID
+			})
+			var destEventJob *jobsdb.JobT
+			if destEventJobI != nil {
+				destEventJob = destEventJobI.(*jobsdb.JobT)
+			}
+
+			hasJobFailed := misc.Contains(failedJobIDs, destEventJobID)
+			isJobFromFailedGW := gjson.GetBytes(destEventJob.Parameters, "prev_failed").Exists()
+
+			// job_id for the event
+			// retrieve job_id of original event for a failed_gw job under job_id in parameters
+			originalJobID := destEventJob.JobID
+			if isJobFromFailedGW {
+				originalJobID = gjson.GetBytes(destEventJob.Parameters, "job_id").Int()
+			}
+
+			// create job status as waiting in failed_gw ds if its behind a failed event for same user+dest combination
+			// and continue without creating rt job
+			if isPrevFailedUserDest && (previousFailedJobID != originalJobID) {
+				// do not create again if event from same job is encountered again in this transformer response
+				if state, ok := currentRespJobStateMap[originalJobID]; ok && state == "marked_waiting" {
+					continue
+				}
+				currentRespJobStateMap[originalJobID] = "marked_waiting"
+
+				// create new job record in failed_gw if not exists
+				// else create job_status record in failed_gw ds
+				if isJobFromFailedGW {
+					waitingStatus := jobsdb.JobStatusT{
+						JobID:         destEventJob.JobID,
+						JobState:      jobsdb.WaitingState,
+						AttemptNum:    1,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     "200",
+						ErrorResponse: []byte(`{"success":"OK"}`),
+					}
+					failedGWJobStatusList = append(failedGWJobStatusList, &waitingStatus)
+					failedGWStatusCustomVals = append(failedGWStatusCustomVals, destID)
+				} else {
+					newWaitingJob := jobsdb.JobT{
+						UUID:         destEventJob.UUID,
+						Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "failed_destination_id": "%v", "failed_destination_type": "%v", "anonymous_id": "%v", "prev_failed": true, "job_id": %v}`, sourceID, destID, destType, userID, destEventJob.JobID)),
+						CreatedAt:    time.Now(),
+						ExpireAt:     time.Now(),
+						CustomVal:    destID,
+						EventPayload: destEventJob.EventPayload,
+					}
+					failedGWJobs = append(failedGWJobs, &newWaitingJob)
+				}
+				continue
+			}
+
+			if hasJobFailed {
+				// set in map, so that same user's event to same destID are processed in order
+				proc.failedUserDestJobMap[userDestEventKey] = originalJobID
+
+				// increment/create backoff only if new set of jobs are failing for a given destID
+				if _, ok := failedDestIDMap[destID]; !ok {
+					if retryConfig, ok := proc.destRetryBackoffMap[destID]; ok {
+						retryConfig.NextProcessTime = time.Now().Add(time.Duration(retryConfig.Backoff.Duration().Seconds()) * time.Second)
+						proc.destRetryBackoffMap[destID] = retryConfig
+					} else {
+						b := &backoff.Backoff{
+							Min:    time.Duration(backoffIncrementInS) * time.Second,
+							Max:    time.Duration(maxBackoffInS) * time.Second,
+							Factor: float64(backoffFactor),
+							Jitter: false,
+						}
+						proc.destRetryBackoffMap[destID] = DestRetryT{
+							Backoff:         b,
+							NextProcessTime: time.Now().Add(time.Duration(b.Duration().Seconds()) * time.Second),
+						}
+					}
+				}
+				failedDestIDMap[destID] = true
+
+				retries := 0
+				if isJobFromFailedGW {
+					retries = destEventJob.LastJobStatus.AttemptNum
+				}
+
+				// increment AttemptNum if retry attemp is below configured limit
+				// create record or update status (increment attempt) in failed_gw ds
+				if retries < maxFailedCountForJob { // less than abort retries
+					// if already marked fail for current set of destTransformEventList, do not do anything
+					if state, ok := currentRespJobStateMap[originalJobID]; ok && state == "marked_fail" {
+						continue
+					}
+					currentRespJobStateMap[originalJobID] = "marked_fail"
+					if !isJobFromFailedGW {
+						newFailedJob := jobsdb.JobT{
+							UUID:         destEventJob.UUID,
+							Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "failed_destination_id": "%v", "failed_destination_type": "%v", "anonymous_id": "%v", "prev_failed": true, "job_id": %v}`, sourceID, destID, destType, userID, destEventJob.JobID)),
+							CreatedAt:    time.Now(),
+							ExpireAt:     time.Now(),
+							CustomVal:    destID,
+							EventPayload: destEventJob.EventPayload,
+						}
+						failedGWJobs = append(failedGWJobs, &newFailedJob)
+					} else {
+						failedStatus := jobsdb.JobStatusT{
+							JobID:         destEventJob.JobID,
+							JobState:      jobsdb.FailedState,
+							AttemptNum:    retries + 1,
+							ExecTime:      time.Now(),
+							RetryTime:     time.Now(),
+							ErrorCode:     "200",
+							ErrorResponse: []byte(`{"success":"OK"}`),
+						}
+						failedGWJobStatusList = append(failedGWJobStatusList, &failedStatus)
+						failedGWStatusCustomVals = append(failedGWStatusCustomVals, destID)
+					}
+					continue
+				} else {
+					// if the job is not set to abort status yet, do it
+					if state, ok := currentRespJobStateMap[destEventJob.JobID]; !ok || state != "marked_abort" {
+						currentRespJobStateMap[destEventJob.JobID] = "marked_abort"
+						failedStatus := jobsdb.JobStatusT{
+							JobID:         destEventJob.JobID,
+							JobState:      jobsdb.AbortedState,
+							AttemptNum:    retries + 1,
+							ExecTime:      time.Now(),
+							RetryTime:     time.Now(),
+							ErrorCode:     "200",
+							ErrorResponse: []byte(`{"success":"OK"}`),
+						}
+						failedGWJobStatusList = append(failedGWJobStatusList, &failedStatus)
+						failedGWStatusCustomVals = append(failedGWStatusCustomVals, destID)
+					}
+					// unblock other jobs for user+dest combination
+					delete(proc.failedUserDestJobMap, userDestEventKey)
+
+					// store failed event in abort_gw table
+					respElemMap, castOk := destEvent.(map[string]interface{})
+					if castOk {
+						if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
+							// write to aborted db
+							batch := gjson.GetBytes(destEventJob.EventPayload, "batch")
+							var index int
+							var found bool
+							batch.ForEach(func(_, _ gjson.Result) bool {
+								if gjson.GetBytes(destEventJob.EventPayload, fmt.Sprintf(`batch.%v.messageId`, index)).Str == messageID {
+									found = true
+									return false
+								}
+								index++
+								return true // keep iterating
+							})
+							if found {
+								singleEvent := gjson.GetBytes(destEventJob.EventPayload, fmt.Sprintf(`batch.%v`, index))
+								destEventJob.EventPayload, _ = sjson.SetRawBytes(destEventJob.EventPayload, `batch`, []byte(fmt.Sprintf(`[%v]`, singleEvent)))
+								newAbortedJob := jobsdb.JobT{
+									UUID:         uuid.NewV4(),
+									Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "failed_destination_id": "%v", "failed_destination_type": "%v", "anonymous_id": "%v", "prev_failed": true, "job_id": %v}`, sourceID, destID, destType, userID, destEventJob.JobID)),
+									CreatedAt:    time.Now(),
+									ExpireAt:     time.Now(),
+									CustomVal:    destID,
+									EventPayload: destEventJob.EventPayload,
+								}
+								abortedGWJobs = append(abortedGWJobs, &newAbortedJob)
+							}
+							continue
+						}
+					}
+				}
+			} else if isPrevFailedUserDest {
+				delete(proc.failedUserDestJobMap, userDestEventKey)
+			}
+
+			// job transformation is successful
+			// unblock other jobs for user+dest combination
+			delete(proc.failedUserDestJobMap, userDestEventKey)
+			// reset backoff counter for the destination
+			delete(proc.destRetryBackoffMap, destID)
+			delete(failedDestIDMap, destID)
+
 			//Should be a valid JSON since its our transformation
 			//but we handle anyway
 			if err != nil {
@@ -510,13 +777,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 			//Need to replace UUID his with messageID from client
 			id := uuid.NewV4()
-			sourceID := response.SourceIDList[idx]
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
-				CustomVal:    destID,
+				CustomVal:    destType,
 				EventPayload: destEventJSON,
 			}
 			if misc.Contains(rawDataDestinations, newJob.CustomVal) {
@@ -531,6 +797,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.statsDBW.Start()
 	//XX: Need to do this in a transaction
+	proc.failedGatewayDB.Store(failedGWJobs)
+	proc.failedGatewayDB.UpdateJobStatus(failedGWJobStatusList, funk.UniqString(failedGWStatusCustomVals))
+	proc.abortedGatewayDB.Store(abortedGWJobs)
 	proc.routerDB.Store(destJobs)
 	proc.batchRouterDB.Store(batchDestJobs)
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
@@ -554,19 +823,42 @@ func (proc *HandleT) mainLoop() {
 		proc.statsDBR.Start()
 
 		toQuery := dbReadBatchSize
+
+		// pick up jobs failed_gw table only if it exceeds backoff time
+		var toFetchDestIDs []string
+		for destID, retryConfig := range proc.destRetryBackoffMap {
+			if time.Now().After(retryConfig.NextProcessTime) {
+				toFetchDestIDs = append(toFetchDestIDs, destID)
+			}
+		}
+
+		var failedGWList []*jobsdb.JobT
+		if len(toFetchDestIDs) > 0 {
+			failedList := proc.failedGatewayDB.GetToRetry(toFetchDestIDs, toQuery)
+			toQuery -= len(failedList)
+			unprocList := proc.failedGatewayDB.GetUnprocessed(toFetchDestIDs, toQuery)
+			toQuery -= len(unprocList)
+			waitList := proc.failedGatewayDB.GetWaiting(toFetchDestIDs, toQuery)
+			toQuery -= len(waitList)
+
+			failedGWList = append(failedGWList, append(waitList, append(unprocList, failedList...)...)...)
+		}
+
 		//Should not have any failure while processing (in v0) so
 		//retryList should be empty. Remove the assert
 		retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery)
+		toQuery -= len(retryList)
 
 		unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery)
 
-		if len(unprocessedList)+len(retryList) == 0 {
+		if len(unprocessedList)+len(retryList)+len(failedGWList) == 0 {
 			proc.statsDBR.End(0)
 			time.Sleep(loopSleep)
 			continue
 		}
 
-		combinedList := append(unprocessedList, retryList...)
+		// combinedList := append(unprocessedList, append(retryList, append(unprocList, append(waitList, failedList...)...)...)...)
+		combinedList := append(unprocessedList, append(retryList, failedGWList...)...)
 		proc.statsDBR.End(len(combinedList))
 		proc.statGatewayDBR.Count(len(combinedList))
 
