@@ -15,14 +15,14 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-//EventSchemaT is a structure to hold batch of events
-type EventSchemaT struct {
+//GatewayEventBatchT is a structure to hold batch of events
+type GatewayEventBatchT struct {
 	writeKey   string
 	eventBatch string
 }
 
-//MessageT is a structure to hold actual event data
-type MessageT struct {
+//EventUploadT is a structure to hold actual event data
+type EventUploadT struct {
 	Event             string      `json:"event"`
 	Integrations      interface{} `json:"integrations"`
 	Properties        interface{} `json:"properties"`
@@ -31,18 +31,18 @@ type MessageT struct {
 	Type              string      `json:"type"`
 }
 
-//EventT is a structure to hold batch of events
-type EventT struct {
+//EventUploadBatchT is a structure to hold batch of events
+type EventUploadBatchT struct {
 	WriteKey   string
 	ReceivedAt string
-	Batch      []MessageT
+	Batch      []EventUploadT
 }
 
 var uploadEnabledWriteKeys []string
 var configSubscriberLock sync.RWMutex
-var eventSchemaChannel chan *EventSchemaT
+var eventSchemaChannel chan *GatewayEventBatchT
 var eventBufferLock sync.RWMutex
-var eventBuffer []*EventSchemaT
+var eventBuffer []*GatewayEventBatchT
 
 var (
 	configBackendURL                       string
@@ -82,28 +82,28 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 		return false
 	}
 
-	eventSchemaChannel <- &EventSchemaT{writeKey, eventBatch}
+	eventSchemaChannel <- &GatewayEventBatchT{writeKey, eventBatch}
 	return true
 }
 
 //Setup initializes this module
 func Setup() {
 	// TODO: Fix the buffer size
-	eventSchemaChannel = make(chan *EventSchemaT)
+	eventSchemaChannel = make(chan *GatewayEventBatchT)
 	go backendConfigSubscriber()
 	go handleEvents()
 	go flushEvents()
 }
 
-func uploadEvents(eventBuffer []*EventSchemaT) {
+func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 	// Upload to a Config Backend
-	var res map[string][]MessageT
-	res = make(map[string][]MessageT)
+	var res map[string][]EventUploadT
+	res = make(map[string][]EventUploadT)
 	for _, event := range eventBuffer {
-		batchedEvent := EventT{}
+		batchedEvent := EventUploadBatchT{}
 		err := json.Unmarshal([]byte(event.eventBatch), &batchedEvent)
 		if err != nil {
-			logger.Debugf(string(event.eventBatch))
+			logger.Errorf(string(event.eventBatch))
 			misc.AssertErrorIfDev(err)
 			continue
 		}
@@ -113,11 +113,11 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 			receivedAtTS = time.Now()
 		}
 
-		var arr []MessageT
+		var arr []EventUploadT
 		if value, ok := res[batchedEvent.WriteKey]; ok {
 			arr = value
 		} else {
-			arr = make([]MessageT, 0)
+			arr = make([]EventUploadT, 0)
 		}
 
 		for _, ev := range batchedEvent.Batch {
@@ -150,16 +150,23 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 		return
 	}
 
-	tr := &http.Transport{}
-	client := &http.Client{Transport: tr}
-	url := fmt.Sprintf("%s/eventUploads", configBackendURL)
+	client := &http.Client{}
+	url := fmt.Sprintf("%s/dataplane/eventUploads", configBackendURL)
 
 	retryCount := 0
 	var resp *http.Response
 	//Sending event schema to Config Backend
 	for {
-		resp, err = client.Post(url, "application/json; charset=utf-8",
-			bytes.NewBuffer(rawJSON))
+
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(rawJSON)))
+		if err != nil {
+			misc.AssertErrorIfDev(err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
+		req.SetBasicAuth(backendconfig.GetBackendConfig(), "")
+
+		resp, err = client.Do(req)
 		if err != nil {
 			logger.Error("Config Backend connection error", err)
 			if retryCount > maxRetry {
@@ -180,7 +187,7 @@ func uploadEvents(eventBuffer []*EventSchemaT) {
 	}
 }
 
-func filterValues(message *MessageT) {
+func filterValues(message *EventUploadT) {
 	message.Properties = getKeys(message.Properties.(map[string]interface{}))
 }
 
@@ -194,7 +201,7 @@ func getKeys(dataMap map[string]interface{}) []string {
 }
 
 func handleEvents() {
-	eventBuffer = make([]*EventSchemaT, 0)
+	eventBuffer = make([]*GatewayEventBatchT, 0)
 	for {
 		select {
 		case eventSchema := <-eventSchemaChannel:
@@ -221,7 +228,7 @@ func flushEvents() {
 			eventBufferLock.Lock()
 
 			flushSize := len(eventBuffer)
-			var flushEvents []*EventSchemaT
+			var flushEvents []*GatewayEventBatchT
 
 			if flushSize > maxBatchSize {
 				flushSize = maxBatchSize
