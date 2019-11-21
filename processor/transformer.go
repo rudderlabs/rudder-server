@@ -155,8 +155,8 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 				toSendData = clientBatch
 				trans.sentStat.Count(len(clientBatch))
 			} else {
-				toSendData = clientEvents
-				trans.sentStat.Increment() //TODO: Update count by length of clientEvents
+				toSendData = clientEvents[inputIdx]
+				trans.sentStat.Increment()
 				inputIdx++
 			}
 		}
