@@ -191,7 +191,7 @@ func (brt *HandleT) initWorkers() {
 						s3DestUploadStat.Start()
 						brt.copyJobsToStorage("S3", batchJobs)
 						s3DestUploadStat.End()
-						setSourceInProgress(batchJobs.BatchDestination.Source.ID, false)
+						setSourceInProgress(batchJobs.BatchDestination.Source.ID, batchJobs.BatchDestination.Destination.ID, false)
 					}
 				}
 			}
@@ -209,9 +209,9 @@ type BatchJobsT struct {
 	BatchDestination BatchDestinationT
 }
 
-func isSourceInProgress(sourceID string) bool {
+func isSourceInProgress(sourceID, destinationID string) bool {
 	inProgressMapLock.RLock()
-	if inProgressMap[sourceID] {
+	if inProgressMap[sourceID+"-"+destinationID] {
 		inProgressMapLock.RUnlock()
 		return true
 	}
@@ -219,10 +219,10 @@ func isSourceInProgress(sourceID string) bool {
 	return false
 }
 
-func setSourceInProgress(sourceID string, starting bool) {
+func setSourceInProgress(sourceID, destinationID string, starting bool) {
 	inProgressMapLock.Lock()
 	if starting {
-		inProgressMap[sourceID] = true
+		inProgressMap[sourceID+"-"+destinationID] = true
 	} else {
 		delete(inProgressMap, sourceID)
 	}
@@ -237,16 +237,18 @@ func (brt *HandleT) mainLoop() {
 		}
 		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
 		for _, batchDestination := range batchDestinations {
-			if isSourceInProgress(batchDestination.Source.ID) {
+			if isSourceInProgress(batchDestination.Source.ID, batchDestination.Destination.ID) {
 				continue
 			}
-			setSourceInProgress(batchDestination.Source.ID, true)
+			setSourceInProgress(batchDestination.Source.ID, batchDestination.Destination.ID, true)
 			toQuery := jobQueryBatchSize
-			retryList := brt.jobsDB.GetToRetry([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID)
+
+			retryList := brt.jobsDB.GetToRetry([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID+"-"+batchDestination.Destination.ID)
 			toQuery -= len(retryList)
-			waitList := brt.jobsDB.GetWaiting([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID) //Jobs send to waiting state
+			waitList := brt.jobsDB.GetWaiting([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID+"-"+batchDestination.Destination.ID) //Jobs send to waiting state
 			toQuery -= len(waitList)
-			unprocessedList := brt.jobsDB.GetUnprocessed([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID)
+			unprocessedList := brt.jobsDB.GetUnprocessed([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID+"-"+batchDestination.Destination.ID)
+
 			if len(waitList)+len(unprocessedList)+len(retryList) == 0 {
 				delete(inProgressMap, batchDestination.Source.ID)
 				continue

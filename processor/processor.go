@@ -121,6 +121,7 @@ var (
 	rawDataDestinations        []string
 	configSubscriberLock       sync.RWMutex
 	processReplays             []replayT
+	isReplayServer             bool
 )
 
 func loadConfig() {
@@ -136,6 +137,8 @@ func loadConfig() {
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	rawDataDestinations = []string{"S3"}
 	processReplays = []replayT{}
+
+	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }
 
 type replayT struct {
@@ -374,6 +377,16 @@ func (proc *HandleT) createSessions() {
 	}
 }
 
+func getReplayEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
+	var enabledDests []backendconfig.DestinationT
+	for _, dest := range copyWriteKeyDestinationMap[writeKey] {
+		if destinationName == dest.DestinationDefinition.Name && dest.Enabled && dest.Config.(map[string]interface{})["Replay"].(bool) {
+			enabledDests = append(enabledDests, dest)
+		}
+	}
+	return enabledDests
+}
+
 func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
 	var enabledDests []backendconfig.DestinationT
 	for _, dest := range copyWriteKeyDestinationMap[writeKey] {
@@ -461,7 +474,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				}
 				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 				for _, destType := range destTypes {
-					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
+					var enabledDestinationsList []backendconfig.DestinationT
+					if isReplayServer {
+						enabledDestinationsList = getReplayEnabledDestinations(writeKey, destType)
+					} else {
+						enabledDestinationsList = getEnabledDestinations(writeKey, destType)
+					}
 					enabledDestinationsMap[destType] = enabledDestinationsList
 					// Adding a singular event multiple times if there are multiple destinations of same type
 					if len(destTypes) == 0 {
@@ -538,9 +556,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			//Need to replace UUID his with messageID from client
 			id := uuid.NewV4()
 			sourceID := response.SourceIDList[idx]
+			destinationID := response.DestinationIDList[idx]
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID+"-"+destinationID)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destID,

@@ -14,7 +14,6 @@ import (
 
 var (
 	destTransformURL, userTransformURL string
-	isReplayServer                     bool
 )
 
 func init() {
@@ -24,8 +23,6 @@ func init() {
 func loadConfig() {
 	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
 	userTransformURL = config.GetEnv("USER_TRANSFORM_URL", "http://localhost:9191")
-
-	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }
 
 //destJSTransformerMap keeps a mapping between the destinationID and
@@ -87,17 +84,11 @@ func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backend
 	}
 	var outVal []string
 	for dest := range destNameIDMap {
-		if isReplayServer {
-			if clientIntgsList[dest] == true {
-				outVal = append(outVal, destNameIDMap[dest].Name)
-			}
-		} else {
-			if clientIntgsList[dest] == false {
-				continue
-			}
-			if (clientIntgsList["All"] != false) || clientIntgsList[dest] == true {
-				outVal = append(outVal, destNameIDMap[dest].Name)
-			}
+		if clientIntgsList[dest] == false {
+			continue
+		}
+		if (clientIntgsList["All"] != false) || clientIntgsList[dest] == true {
+			outVal = append(outVal, destNameIDMap[dest].Name)
 		}
 	}
 	retVal = outVal

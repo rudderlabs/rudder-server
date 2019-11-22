@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -102,9 +103,10 @@ func (trans *transformerHandleT) Setup() {
 }
 
 type ResponseT struct {
-	Events       []interface{}
-	Success      bool
-	SourceIDList []string
+	Events            []interface{}
+	Success           bool
+	SourceIDList      []string
+	DestinationIDList []string
 }
 
 //Transform function is used to invoke transformer API
@@ -132,8 +134,10 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	trans.perfStats.Start()
 	var toSendData interface{}
 	sourceIDList := []string{}
+	destinationIDList := []string{}
 	for _, clientEvent := range clientEvents {
 		sourceIDList = append(sourceIDList, clientEvent.(map[string]interface{})["message"].(map[string]interface{})["source_id"].(string))
+		destinationIDList = append(destinationIDList, clientEvent.(map[string]interface{})["destination"].(backendconfig.DestinationT).ID)
 	}
 
 	for {
@@ -193,6 +197,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 
 	outClientEvents := make([]interface{}, 0)
 	outClientEventsSourceIDs := []string{}
+	outClientEventsDestinationIDs := []string{}
 
 	for idx, resp := range transformResponse {
 		if resp.data == nil {
@@ -207,12 +212,13 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 			if castOk {
 				if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
 					// TODO: Log errored resposnes to file
-          trans.failedStat.Increment()
+					trans.failedStat.Increment()
 					continue
 				}
 			}
 			outClientEvents = append(outClientEvents, respElem)
 			outClientEventsSourceIDs = append(outClientEventsSourceIDs, sourceIDList[idx])
+			outClientEventsDestinationIDs = append(outClientEventsDestinationIDs, destinationIDList[idx])
 		}
 
 	}
@@ -222,8 +228,9 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	trans.perfStats.Print()
 
 	return ResponseT{
-		Events:       outClientEvents,
-		Success:      true,
-		SourceIDList: outClientEventsSourceIDs,
+		Events:            outClientEvents,
+		Success:           true,
+		SourceIDList:      outClientEventsSourceIDs,
+		DestinationIDList: outClientEventsDestinationIDs,
 	}
 }
