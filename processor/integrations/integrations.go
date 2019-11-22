@@ -22,7 +22,6 @@ func init() {
 
 func loadConfig() {
 	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	userTransformURL = config.GetEnv("USER_TRANSFORM_URL", "http://localhost:9191")
 }
 
 //destJSTransformerMap keeps a mapping between the destinationID and
@@ -102,5 +101,5 @@ func GetDestinationURL(destID string) string {
 
 //GetUserTransformURL returns the port of running user transform
 func GetUserTransformURL() string {
-	return userTransformURL
+	return destTransformURL + "/customTransform"
 }

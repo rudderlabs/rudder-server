@@ -119,6 +119,7 @@ type ResponseT struct {
 func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	url string, batchSize int) ResponseT {
 
+	// logger.Info("Ictus ", url, batchSize)
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
 
@@ -156,8 +157,8 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 				toSendData = clientBatch
 				trans.sentStat.Count(len(clientBatch))
 			} else {
-				toSendData = clientEvents[inputIdx]
-				trans.sentStat.Increment()
+				toSendData = clientEvents
+				trans.sentStat.Increment() //TODO: Update count by length of clientEvents
 				inputIdx++
 			}
 		}
