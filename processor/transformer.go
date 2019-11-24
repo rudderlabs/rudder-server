@@ -199,7 +199,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	outClientEventsSourceIDs := []string{}
 	outClientEventsDestinationIDs := []string{}
 
-	for idx, resp := range transformResponse {
+	for _, resp := range transformResponse {
 		if resp.data == nil {
 			continue
 		}
@@ -207,7 +207,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		misc.Assert(ok)
 		//Transform is one to many mapping so returned
 		//response for each is an array. We flatten it out
-		for _, respElem := range respArray {
+		for idx, respElem := range respArray {
 			respElemMap, castOk := respElem.(map[string]interface{})
 			if castOk {
 				if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {

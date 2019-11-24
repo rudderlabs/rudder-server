@@ -380,7 +380,8 @@ func (proc *HandleT) createSessions() {
 func getReplayEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
 	var enabledDests []backendconfig.DestinationT
 	for _, dest := range copyWriteKeyDestinationMap[writeKey] {
-		if destinationName == dest.DestinationDefinition.Name && dest.Enabled && dest.Config.(map[string]interface{})["Replay"].(bool) {
+		replay := dest.Config.(map[string]interface{})["Replay"]
+		if destinationName == dest.DestinationDefinition.Name && dest.Enabled && replay != nil && replay.(bool) {
 			enabledDests = append(enabledDests, dest)
 		}
 	}
@@ -638,6 +639,7 @@ func (proc *HandleT) mainLoop() {
 			return combinedList[i].JobID < combinedList[j].JobID
 		})
 
+		//TODO move this code above???
 		// Make a copy of configuration for the processor loop
 		// Need to process minJobID and new destinations at once
 		configSubscriberLock.RLock()
@@ -666,7 +668,8 @@ func (proc *HandleT) mainLoop() {
 			proc.processJobsForDest(combinedList, nil)
 		}
 
-		copyWriteKeyDestinationMap = nil
+		//TODO why is this introduced??? This is becoming null before being used.
+		//copyWriteKeyDestinationMap = nil
 	}
 }
 

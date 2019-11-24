@@ -224,7 +224,7 @@ func setSourceInProgress(sourceID, destinationID string, starting bool) {
 	if starting {
 		inProgressMap[sourceID+"-"+destinationID] = true
 	} else {
-		delete(inProgressMap, sourceID)
+		delete(inProgressMap, sourceID+"-"+destinationID)
 	}
 	inProgressMapLock.Unlock()
 }
@@ -250,7 +250,7 @@ func (brt *HandleT) mainLoop() {
 			unprocessedList := brt.jobsDB.GetUnprocessed([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID+"-"+batchDestination.Destination.ID)
 
 			if len(waitList)+len(unprocessedList)+len(retryList) == 0 {
-				delete(inProgressMap, batchDestination.Source.ID)
+				delete(inProgressMap, batchDestination.Source.ID+"-"+batchDestination.Destination.ID)
 				continue
 			}
 
@@ -273,7 +273,7 @@ func (brt *HandleT) mainLoop() {
 			}
 
 			//Mark the jobs as executing
-			brt.jobsDB.UpdateJobStatus(statusList, []string{batchDestination.Destination.DestinationDefinition.Name}, batchDestination.Source.ID)
+			brt.jobsDB.UpdateJobStatus(statusList, []string{batchDestination.Destination.DestinationDefinition.Name}, batchDestination.Source.ID+"-"+batchDestination.Destination.ID)
 			brt.processQ <- BatchJobsT{Jobs: combinedList, BatchDestination: batchDestination}
 		}
 	}
