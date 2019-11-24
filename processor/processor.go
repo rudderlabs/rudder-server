@@ -93,13 +93,18 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.statBatchRouterDBW = stats.NewStat("processor.batch_router_db_write", stats.CountType)
 	proc.statActiveUsers = stats.NewStat("processor.active_users", stats.GaugeType)
 
-	proc.replayProcessor = NewReplayProcessor()
-	proc.replayProcessor.Setup()
+	if !isReplayServer {
+		proc.replayProcessor = NewReplayProcessor()
+		proc.replayProcessor.Setup()
+	}
 
 	go proc.backendConfigSubscriber()
 	proc.transformer.Setup()
 
-	proc.replayProcessor.CrashRecover()
+	if !isReplayServer {
+		proc.replayProcessor.CrashRecover()
+	}
+
 	proc.crashRecover()
 
 	go proc.mainLoop()
@@ -158,6 +163,10 @@ func (proc *HandleT) backendConfigSubscriber() {
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				writeKeyDestinationMap[source.WriteKey] = source.Destinations
+			}
+
+			if isReplayServer {
+				continue
 			}
 
 			var replays = []replayT{}
@@ -597,6 +606,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
  * If there is a new replay destination, compute the min JobID that the data plane would be routing for that source
  */
 func (proc *HandleT) handleReplay(combinedList []*jobsdb.JobT) {
+	if isReplayServer {
+		return
+	}
 
 	if len(processReplays) > 0 {
 		maxDSIndex := proc.gatewayDB.GetMaxDSIndex()
