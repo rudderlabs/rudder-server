@@ -42,7 +42,7 @@ type HandleT struct {
 	statJobs           *stats.RudderStats
 	statDBR            *stats.RudderStats
 	statDBW            *stats.RudderStats
-	userToSessionIDMap map[string]int64
+	userToSessionIDMap map[string]string
 	userJobPQ          pqT
 	userPQLock         sync.Mutex
 }
@@ -89,7 +89,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.userJobListMap = make(map[string][]*jobsdb.JobT)
 	proc.userEventsMap = make(map[string][]interface{})
 	proc.userPQItemMap = make(map[string]*pqItemT)
-	proc.userToSessionIDMap = make(map[string]int64)
+	proc.userToSessionIDMap = make(map[string]string)
 	proc.userJobPQ = make(pqT, 0)
 	proc.statsJobs.Setup("ProcessorJobs")
 	proc.statsDBR.Setup("ProcessorDBRead")
@@ -184,7 +184,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		//logger.Debug("=== Adding a new session id for the user ===")
 		_, ok = proc.userToSessionIDMap[userID]
 		if !ok {
-			proc.userToSessionIDMap[userID] = time.Now().Unix()
+			proc.userToSessionIDMap[userID] = uuid.NewV4().String()
 		}
 		//Add the job to the userID specific lists
 		proc.userJobListMap[userID] = append(proc.userJobListMap[userID], job)
@@ -220,7 +220,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 	if len(processUserIDs) > 0 {
 		userJobsToProcess := make(map[string][]*jobsdb.JobT)
 		userEventsToProcess := make(map[string][]interface{})
-		userToSessionMap := make(map[string]int64)
+		userToSessionMap := make(map[string]string)
 
 		logger.Debug("Post Add Processing")
 		proc.Print()
@@ -244,7 +244,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 	proc.userPQLock.Unlock()
 }
 
-func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEvents map[string][]interface{}, userToSessionMap map[string]int64) {
+func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEvents map[string][]interface{}, userToSessionMap map[string]string) {
 
 	logger.Debug("=== in processUserJobs ===")
 	misc.Assert(len(userEvents) == len(userJobs))
@@ -351,7 +351,7 @@ func (proc *HandleT) createSessions() {
 
 		userJobsToProcess := make(map[string][]*jobsdb.JobT)
 		userEventsToProcess := make(map[string][]interface{})
-		userToSessionMap := make(map[string]int64)
+		userToSessionMap := make(map[string]string)
 		//Find all jobs that need to be processed
 		for {
 			if proc.userJobPQ.Len() == 0 {
