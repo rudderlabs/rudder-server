@@ -74,22 +74,20 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 //input JSON, matches them with enabled destinations from controle plane and returns the IDSs
 func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
 	clientIntgs, ok := misc.GetRudderEventVal("integrations", clientEvent)
-
 	if !ok {
 		return
 	}
 
 	clientIntgsList, ok := clientIntgs.(map[string]interface{})
-	// logger.Debug("=== clientIntgs=== ", clientIntgsList)
 	if !ok {
 		return
 	}
 	var outVal []string
 	for dest := range destNameIDMap {
-		if clientIntgsList[destNameIDMap[dest].Name] == false {
+		if clientIntgsList[dest] == false {
 			continue
 		}
-		if (clientIntgsList["All"] != false) || clientIntgsList[destNameIDMap[dest].Name] == true {
+		if (clientIntgsList["All"] != false) || clientIntgsList[dest] == true {
 			outVal = append(outVal, destNameIDMap[dest].Name)
 		}
 	}
