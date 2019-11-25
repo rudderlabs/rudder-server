@@ -115,18 +115,17 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 }
 
 var (
-	loopSleep                  time.Duration
-	dbReadBatchSize            int
-	transformBatchSize         int
-	sessionThresholdInS        time.Duration
-	sessionThresholdEvents     int
-	processSessions            bool
-	writeKeyDestinationMap     map[string][]backendconfig.DestinationT
-	copyWriteKeyDestinationMap map[string][]backendconfig.DestinationT
-	rawDataDestinations        []string
-	configSubscriberLock       sync.RWMutex
-	processReplays             []replayT
-	isReplayServer             bool
+	loopSleep              time.Duration
+	dbReadBatchSize        int
+	transformBatchSize     int
+	sessionThresholdInS    time.Duration
+	sessionThresholdEvents int
+	processSessions        bool
+	writeKeyDestinationMap map[string][]backendconfig.DestinationT
+	rawDataDestinations    []string
+	configSubscriberLock   sync.RWMutex
+	processReplays         []replayT
+	isReplayServer         bool
 )
 
 func loadConfig() {
@@ -388,7 +387,7 @@ func (proc *HandleT) createSessions() {
 
 func getReplayEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
 	var enabledDests []backendconfig.DestinationT
-	for _, dest := range copyWriteKeyDestinationMap[writeKey] {
+	for _, dest := range writeKeyDestinationMap[writeKey] {
 		replay := dest.Config.(map[string]interface{})["Replay"]
 		if destinationName == dest.DestinationDefinition.Name && dest.Enabled && replay != nil && replay.(bool) {
 			enabledDests = append(enabledDests, dest)
@@ -399,7 +398,7 @@ func getReplayEnabledDestinations(writeKey string, destinationName string) []bac
 
 func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
 	var enabledDests []backendconfig.DestinationT
-	for _, dest := range copyWriteKeyDestinationMap[writeKey] {
+	for _, dest := range writeKeyDestinationMap[writeKey] {
 		if destinationName == dest.DestinationDefinition.Name && dest.Enabled {
 			enabledDests = append(enabledDests, dest)
 		}
@@ -409,7 +408,7 @@ func getEnabledDestinations(writeKey string, destinationName string) []backendco
 
 func getEnabledDestinationTypes(writeKey string) map[string]backendconfig.DestinationDefinitionT {
 	var enabledDestinationTypes = make(map[string]backendconfig.DestinationDefinitionT)
-	for _, destination := range copyWriteKeyDestinationMap[writeKey] {
+	for _, destination := range writeKeyDestinationMap[writeKey] {
 		if destination.Enabled {
 			enabledDestinationTypes[destination.DestinationDefinition.DisplayName] = destination.DestinationDefinition
 		}
@@ -609,6 +608,8 @@ func (proc *HandleT) handleReplay(combinedList []*jobsdb.JobT) {
 	if isReplayServer {
 		return
 	}
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
 
 	if len(processReplays) > 0 {
 		maxDSIndex := proc.gatewayDB.GetMaxDSIndex()
@@ -651,13 +652,8 @@ func (proc *HandleT) mainLoop() {
 			return combinedList[i].JobID < combinedList[j].JobID
 		})
 
-		//TODO move this code above???
-		// Make a copy of configuration for the processor loop
 		// Need to process minJobID and new destinations at once
-		configSubscriberLock.RLock()
-		copyWriteKeyDestinationMap = writeKeyDestinationMap
 		proc.handleReplay(combinedList)
-		configSubscriberLock.RUnlock()
 
 		if processSessions {
 			//Mark all as executing so next query doesn't pick it up
@@ -680,8 +676,6 @@ func (proc *HandleT) mainLoop() {
 			proc.processJobsForDest(combinedList, nil)
 		}
 
-		//TODO why is this introduced??? This is becoming null before being used.
-		//copyWriteKeyDestinationMap = nil
 	}
 }
 
