@@ -77,9 +77,8 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
 	clientIntgs, ok := misc.GetRudderEventVal("integrations", clientEvent)
 	if !ok {
-		return
+		clientIntgs = make(map[string]interface{})
 	}
-
 	clientIntgsList, ok := clientIntgs.(map[string]interface{})
 	if !ok {
 		return
