@@ -550,7 +550,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		destTransformEventList := response.Events
 		logger.Debug("Transform output size", len(destTransformEventList))
 		if !response.Success {
-			logger.Error("=== response not ok ===")
+			logger.Debug("Request to transformer not a success ", response.Events, response.SourceIDList)
 			continue
 		}
 
