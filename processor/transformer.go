@@ -207,7 +207,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 			if castOk {
 				if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
 					// TODO: Log errored resposnes to file
-          trans.failedStat.Increment()
+					trans.failedStat.Increment()
 					continue
 				}
 			}
