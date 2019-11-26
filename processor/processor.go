@@ -172,7 +172,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		}
 		userID, ok := misc.GetRudderEventUserID(eventList)
 		if !ok {
-			logger.Error("Failed to get userID for job")
+			logger.Error("[Processor: addJobsToSessions] Failed to get userID for job")
 			continue
 		}
 		_, ok = proc.userJobListMap[userID]
@@ -181,7 +181,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			proc.userEventsMap[userID] = make([]interface{}, 0)
 		}
 		// Adding a new session id for the user, if not present
-		//logger.Debug("=== Adding a new session id for the user ===")
+		logger.Debug("[Processor: addJobsToSessions] Adding a new session id for the user")
 		_, ok = proc.userToSessionIDMap[userID]
 		if !ok {
 			proc.userToSessionIDMap[userID] = uuid.NewV4().String()
@@ -209,7 +209,6 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			}
 			proc.userPQItemMap[userID] = pqItem
 			proc.userJobPQ.Add(pqItem)
-			logger.Debug("Adding a new session to userID ", userID)
 		} else {
 			misc.Assert(pqItem.index != -1)
 			proc.userJobPQ.Update(pqItem, timestamp)
@@ -246,8 +245,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 
 func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEvents map[string][]interface{}, userToSessionMap map[string]string) {
 
-	logger.Debug("=== in processUserJobs ===")
-	misc.Assert(len(userEvents) == len(userJobs))
+	logger.Debug("[Processor: processUserJobs] in processUserJobs")
 
 	totalJobs := 0
 	allJobIDs := make(map[int64]bool)
@@ -327,12 +325,11 @@ func createUserTransformedJobsFromEvents(transformUserEventList []interface{},
 }
 
 func (proc *HandleT) createSessions() {
-	logger.Debug("=== starting sessions===")
+	logger.Debug("[Processor: createSessions] starting sessions")
 	for {
 		proc.userPQLock.Lock()
 		//Now jobs
 		if proc.userJobPQ.Len() == 0 {
-			//logger.Debug("=== always here with no jobs ===")
 			proc.userPQLock.Unlock()
 			time.Sleep(loopSleep)
 			continue
@@ -380,7 +377,6 @@ func (proc *HandleT) createSessions() {
 			}
 			break
 		}
-		//logger.Debug("===session done!===")
 		proc.Print()
 		proc.userPQLock.Unlock()
 		if len(userJobsToProcess) > 0 {
