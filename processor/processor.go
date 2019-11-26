@@ -156,7 +156,7 @@ func backendConfigSubscriber() {
 
 func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 
-	logger.Debug("=== adding jobs to session ===")
+	logger.Debug("[Processor: addJobsToSessions] adding jobs to session")
 	proc.userPQLock.Lock()
 
 	//List of users whose jobs need to be processed
@@ -167,7 +167,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
 		if !ok {
 			//bad event
-			logger.Error("===bad event===")
+			logger.Debug("[Processor: addJobsToSessions] bad event")
 			continue
 		}
 		userID, ok := misc.GetRudderEventUserID(eventList)
@@ -521,9 +521,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			}
 		}
 
-		// events, _ := json.Marshal(eventsByDest)
-		// logger.Debug("=== eventsByDest === ", string(events))
-
 		//Mark the batch event as processed
 		newStatus := jobsdb.JobStatusT{
 			JobID:         batchEvent.JobID,
@@ -539,18 +536,17 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
-	//logger.Debug("=== calling transformations ===")
+	logger.Debug("[Processor: processJobsForDest] calling transformations")
 	for destID, destEventList := range eventsByDest {
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
 		url := integrations.GetDestinationURL(destID)
-		//logger.Debug("=== url ===", url)
 		logger.Debug("Transform input size", len(destEventList))
 		response := proc.transformer.Transform(destEventList, url, transformBatchSize)
 		destTransformEventList := response.Events
 		logger.Debug("Transform output size", len(destTransformEventList))
 		if !response.Success {
-			logger.Debug("Request to transformer not a success ", response.Events, response.SourceIDList)
+			logger.Debug("[Processor: processJobsForDest] Request to transformer not a success ", response.Events, response.SourceIDList)
 			continue
 		}
 

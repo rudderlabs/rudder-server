@@ -81,7 +81,7 @@ func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) 
 
 //ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
-	// logger.Debug("=== ParseRudderEventBatch === ")
+	logger.Debug("[Misc: ParseRudderEventBatch] in ParseRudderEventBatch ")
 	var eventListJSON map[string]interface{}
 	err := json.Unmarshal(eventPayload, &eventListJSON)
 	if err != nil {
