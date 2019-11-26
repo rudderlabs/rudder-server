@@ -16,6 +16,9 @@ maxBatchSize = 32
 batchTimeoutInMS = 20
 respMessage = "OK"
 maxReqSizeInKB = 100000
+enableDedup = true
+dedupWindowInS = 86400
+
 
 [SourceDebugger]
 maxBatchSize = 32
@@ -69,11 +72,6 @@ retrySleepInMS = 100
 
 [BackendConfig]
 pollIntervalInS = 5
-
-[Aws]
-region = "us-east-1"
-jobsBackupDSBucket = "dump-gateway-jobs-test"
-jobStatusBackupDSBucket = "dump-gateway-job-status-test"
 
 
 # If the server crashes 'crashThreshold' times in 'durationInS' seconds,

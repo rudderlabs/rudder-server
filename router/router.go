@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -58,6 +59,10 @@ var (
 	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
 )
+
+func isSuccessStatus(status int) bool {
+	return status >= 200 && status < 300
+}
 
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
@@ -150,7 +155,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				//Internal test. No reason to sleep
 				break
 			}
-			if respStatusCode != http.StatusOK {
+			if !isSuccessStatus(respStatusCode) {
 				//400 series error are client errors. Can't continue
 				if respStatusCode >= http.StatusBadRequest && respStatusCode <= http.StatusUnavailableForLegalReasons {
 					break
@@ -182,11 +187,11 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
 			AttemptNum:    job.LastJobStatus.AttemptNum,
-			ErrorCode:     respStatus,
+			ErrorCode:     strconv.Itoa(respStatusCode),
 			ErrorResponse: []byte(`{}`),
 		}
 
-		if respStatusCode == http.StatusOK {
+		if isSuccessStatus(respStatusCode) {
 			//#JobOrder (see other #JobOrder comment)
 			failedAttemptsStat.Count(job.LastJobStatus.AttemptNum)
 			eventsDeliveredStat.Increment()
@@ -199,6 +204,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debugf("%v Router :: Job failed to send, analyzing...", rt.destID)
 			worker.failedJobs++
 			atomic.AddUint64(&rt.failCount, 1)
+			status.ErrorResponse = []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody)))
 
 			//#JobOrder (see other #JobOrder comment)
 			if !isPrevFailedUser && keepOrderOnFailure {
