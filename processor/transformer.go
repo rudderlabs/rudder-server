@@ -102,10 +102,12 @@ func (trans *transformerHandleT) Setup() {
 }
 
 type ResponseT struct {
-	Events           []interface{}
-	Success          bool
-	FailedJobIDs     []int64
-	FailedSessionIDs []string
+	Events            []interface{}
+	Success           bool
+	FailedJobIDs      []int64
+	FailedSessionIDs  []string
+	SessionToErrorMap map[string]string
+	JobToErrorMap     map[int64]string
 }
 
 //Transform function is used to invoke transformer API
@@ -136,6 +138,8 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	sourceIDList := []string{}
 	failedJobIDs := []int64{}
 	failedSessionIDs := []string{}
+	jobToErrorMap := make(map[int64]string)
+	sessionToErrorMap := make(map[string]string)
 	for _, clientEvent := range clientEvents {
 		sourceIDList = append(sourceIDList, clientEvent.(map[string]interface{})["metadata"].(map[string]interface{})["source_id"].(string))
 	}
@@ -212,8 +216,16 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 				if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
 					// TODO: Log errored resposnes to file
 					if metadata, ok := respElemMap["metadata"]; ok {
-						failedJobIDs = append(failedJobIDs, int64(metadata.(map[string]interface{})["job_id"].(float64)))
-						failedSessionIDs = append(failedSessionIDs, metadata.(map[string]interface{})["session_id"].(string))
+						jobID := int64(metadata.(map[string]interface{})["job_id"].(float64))
+						sessionID := metadata.(map[string]interface{})["session_id"].(string)
+						failedJobIDs = append(failedJobIDs, jobID)
+						failedSessionIDs = append(failedSessionIDs, sessionID)
+						var errorMessage string
+						if msg, ok := respElemMap["error"].(string); ok {
+							errorMessage = msg
+						}
+						jobToErrorMap[jobID] = errorMessage
+						sessionToErrorMap[sessionID] = errorMessage
 					} else {
 						logger.Errorf("Transfomer failed to return event metadata")
 						continue
@@ -232,9 +244,11 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	trans.perfStats.Print()
 
 	return ResponseT{
-		Events:           outClientEvents,
-		Success:          true,
-		FailedJobIDs:     failedJobIDs,
-		FailedSessionIDs: failedSessionIDs,
+		Events:            outClientEvents,
+		Success:           true,
+		FailedJobIDs:      failedJobIDs,
+		FailedSessionIDs:  failedSessionIDs,
+		JobToErrorMap:     jobToErrorMap,
+		SessionToErrorMap: sessionToErrorMap,
 	}
 }
