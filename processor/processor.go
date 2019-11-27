@@ -858,7 +858,7 @@ func (proc *HandleT) handleDestTransformedEvents(response ResponseT, opts Transf
 							})
 							if found {
 								singleEvent := gjson.GetBytes(destEventJob.EventPayload, fmt.Sprintf(`batch.%v`, index))
-								destEventJob.EventPayload, _ = sjson.SetRawBytes(destEventJob.EventPayload, `batch`, []byte(fmt.Sprintf(`[%v]`, singleEvent)))
+								payload, _ := sjson.SetRawBytes(destEventJob.EventPayload, `batch`, []byte(fmt.Sprintf(`[%v]`, singleEvent)))
 								createFailedJob(opts.abortedGWJobs, &FailedJobParametersT{
 									uuid:          uuid.NewV4(),
 									sourceID:      sourceID,
@@ -866,7 +866,7 @@ func (proc *HandleT) handleDestTransformedEvents(response ResponseT, opts Transf
 									destType:      destType,
 									userID:        userID,
 									jobID:         destEventJob.JobID,
-									eventPayload:  destEventJob.EventPayload,
+									eventPayload:  payload,
 									errorResponse: response.JobToErrorMap[jobID],
 								})
 							}
