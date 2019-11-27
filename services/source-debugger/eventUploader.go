@@ -40,7 +40,7 @@ type EventUploadBatchT struct {
 
 var uploadEnabledWriteKeys []string
 var configSubscriberLock sync.RWMutex
-var eventSchemaChannel chan *GatewayEventBatchT
+var eventBatchChannel chan *GatewayEventBatchT
 var eventBufferLock sync.RWMutex
 var eventBuffer []*GatewayEventBatchT
 
@@ -67,7 +67,7 @@ func loadConfig() {
 	disableEventUploads = config.GetBool("SourceDebugger.disableEventUploads", false)
 }
 
-//RecordEvent is used to put the event in the eventSchemaChannel,
+//RecordEvent is used to put the event batch in the eventBatchChannel,
 //which will be processed by handleEvents.
 func RecordEvent(writeKey string, eventBatch string) bool {
 	//if disableEventUploads is true, return;
@@ -82,14 +82,14 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 		return false
 	}
 
-	eventSchemaChannel <- &GatewayEventBatchT{writeKey, eventBatch}
+	eventBatchChannel <- &GatewayEventBatchT{writeKey, eventBatch}
 	return true
 }
 
 //Setup initializes this module
 func Setup() {
 	// TODO: Fix the buffer size
-	eventSchemaChannel = make(chan *GatewayEventBatchT)
+	eventBatchChannel = make(chan *GatewayEventBatchT)
 	go backendConfigSubscriber()
 	go handleEvents()
 	go flushEvents()
@@ -204,7 +204,7 @@ func handleEvents() {
 	eventBuffer = make([]*GatewayEventBatchT, 0)
 	for {
 		select {
-		case eventSchema := <-eventSchemaChannel:
+		case eventSchema := <-eventBatchChannel:
 			eventBufferLock.Lock()
 
 			//If eventBuffer size is more than maxESQueueSize, Delete oldest.
