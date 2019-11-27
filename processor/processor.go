@@ -443,11 +443,11 @@ func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, 
 	event["metadata"].(map[string]interface{})["destination_id"] = destination.ID
 	event["metadata"].(map[string]interface{})["destination_type"] = destination.DestinationDefinition.Name
 	event["metadata"].(map[string]interface{})["message_id"] = event["message"].(map[string]interface{})["messageId"].(string)
+	event["metadata"].(map[string]interface{})["anonymous_id"] = event["message"].(map[string]interface{})["anonymousId"].(string)
 }
 
 func maintainSessionMappings(event map[string]interface{}, batchEvent *jobsdb.JobT, userToSessionMap map[string]string, jobToSessionMap map[int64]string, sessionToJobsMap map[string][]*jobsdb.JobT) {
 	userID := event["message"].(map[string]interface{})["anonymousId"].(string)
-	event["metadata"].(map[string]interface{})["anonymous_id"] = userID
 	var (
 		sessionID string
 		ok        bool
@@ -547,7 +547,15 @@ func createFailedJobStatus(statusList *[]*jobsdb.JobStatusT, customValsList *[]s
 
 func (proc *HandleT) handleUserTransformedEvents(response ResponseT, opts TransformEventsOptsT) []interface{} {
 	var eventsToDestTransfomer []interface{}
+
+	if !response.Success {
+		return eventsToDestTransfomer
+	}
+
+	// map to save setting status of job/abort in failed_gw
+	// do not process multiple failed events from same job
 	encounteredJobsMap := make(map[int64]string)
+	// store failed session ids
 	*opts.failedSessionIDs = append(*opts.failedSessionIDs, response.FailedSessionIDs...)
 
 	// map to save setting backoff times for a destination
@@ -556,7 +564,6 @@ func (proc *HandleT) handleUserTransformedEvents(response ResponseT, opts Transf
 	failedDestIDMap := make(map[string]bool)
 
 	for _, transformedEvent := range response.Events {
-
 		// variables from metadata of the event returned by transformer
 		destID := transformedEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destination_id"].(string)
 		destType := transformedEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destination_type"].(string)
@@ -577,7 +584,6 @@ func (proc *HandleT) handleUserTransformedEvents(response ResponseT, opts Transf
 		previousFailedMinJobID, isPrevFailedUserDest := proc.failedUserDestSessMap[userDestEventKey]
 
 		if isPrevFailedUserDest && misc.MinInt64Slice(jobIDs) > previousFailedMinJobID {
-
 			for _, job := range jobs {
 				jobID := getOriginalJobID(job)
 				// do not create again if event from same job is encountered again in this transformer response
@@ -587,7 +593,7 @@ func (proc *HandleT) handleUserTransformedEvents(response ResponseT, opts Transf
 				encounteredJobsMap[jobID] = "marked_waiting"
 
 				// create new job record in failed_gw if not exists
-				// else create job_status record in failed_gw ds
+				// else create waiting job_status record in failed_gw ds
 				if isJobFromFailedGW(job) {
 					createFailedJobStatus(opts.failedGWJobStatusList, opts.failedGWStatusCustomVals, &FailedJobParametersT{
 						jobID:      job.JobID,
@@ -686,9 +692,9 @@ func (proc *HandleT) handleUserTransformedEvents(response ResponseT, opts Transf
 			delete(failedDestIDMap, destID)
 		}
 
+		// add to events that will be forwarded to destination transformer
 		eventsToDestTransfomer = append(eventsToDestTransfomer, transformedEvent)
 	}
-
 	return eventsToDestTransfomer
 }
 
@@ -696,9 +702,10 @@ func (proc *HandleT) handleDestTransformedEvents(response ResponseT, opts Transf
 	destTransformEventList := response.Events
 	failedJobIDs := response.FailedJobIDs
 	logger.Debug("Transform output size", len(destTransformEventList))
-	// if !response.Success {
-	// 	continue
-	// }
+
+	if !response.Success {
+		return
+	}
 
 	// map to save setting status of job/abort in failed_gw
 	// do not process multiple failed events from same job
@@ -1057,6 +1064,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		response = proc.transformer.Transform(eventsToDestTransfomer, url, transformBatchSize)
 
+		// start: handle failures in destination transformation
+
 		proc.handleDestTransformedEvents(response, TransformEventsOptsT{
 			jobList:                  jobList,
 			jobToSessionMap:          jobToSessionMap,
@@ -1069,6 +1078,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			batchDestinationJobs:     &batchDestJobs,
 			failedSessionIDs:         &failedSessionIDs,
 		})
+
+		// end: handle failures in destination transformation
 	}
 
 	// misc.Assert(len(statusList) == len(jobList))
