@@ -344,3 +344,12 @@ func IncrementMapByKey(m map[string]int, key string, increment int) {
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
 	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
 }
+
+func MinInt64Slice(in []int64) (min int64) {
+	for idx, num := range in {
+		if idx == 0 || num < min {
+			min = num
+		}
+	}
+	return
+}

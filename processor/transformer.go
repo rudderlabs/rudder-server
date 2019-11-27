@@ -102,10 +102,11 @@ func (trans *transformerHandleT) Setup() {
 }
 
 type ResponseT struct {
-	Events       []interface{}
-	Success      bool
-	SourceIDList []string
-	FailedJobIDs []int64
+	Events           []interface{}
+	Success          bool
+	SourceIDList     []string
+	FailedJobIDs     []int64
+	FailedSessionIDs []string
 }
 
 //Transform function is used to invoke transformer API
@@ -135,6 +136,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	var toSendData interface{}
 	sourceIDList := []string{}
 	failedJobIDs := []int64{}
+	failedSessionIDs := []string{}
 	for _, clientEvent := range clientEvents {
 		sourceIDList = append(sourceIDList, clientEvent.(map[string]interface{})["metadata"].(map[string]interface{})["source_id"].(string))
 	}
@@ -212,6 +214,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 					// TODO: Log errored resposnes to file
 					if metadata, ok := respElemMap["metadata"]; ok {
 						failedJobIDs = append(failedJobIDs, int64(metadata.(map[string]interface{})["job_id"].(float64)))
+						failedSessionIDs = append(failedSessionIDs, metadata.(map[string]interface{})["session_id"].(string))
 					} else {
 						logger.Errorf("Transfomer failed to return event metadata")
 						continue
@@ -230,9 +233,10 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	trans.perfStats.Print()
 
 	return ResponseT{
-		Events:       outClientEvents,
-		Success:      true,
-		SourceIDList: outClientEventsSourceIDs,
-		FailedJobIDs: failedJobIDs,
+		Events:           outClientEvents,
+		Success:          true,
+		SourceIDList:     outClientEventsSourceIDs,
+		FailedJobIDs:     failedJobIDs,
+		FailedSessionIDs: failedSessionIDs,
 	}
 }
