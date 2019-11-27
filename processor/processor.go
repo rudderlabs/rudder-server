@@ -486,14 +486,6 @@ func (proc *HandleT) incrementBackoff(destID string, failedDestIDMap map[string]
 	failedDestIDMap[destID] = true
 }
 
-type MetaDataT struct {
-	DestinationID   string
-	DestinationType string
-	UserID          string
-	SourceID        string
-	SessionID       string
-}
-
 type TransformEventsOptsT struct {
 	jobList                  []*jobsdb.JobT
 	jobToSessionMap          map[int64]string
@@ -715,10 +707,9 @@ func (proc *HandleT) handleDestTransformedEvents(response ResponseT, opts Transf
 	// // if multiple events failed in single response from transformer
 	failedDestIDMap := make(map[string]bool)
 	//Save the JSON in DB. This is what the rotuer uses
-	for idx, destEvent := range destTransformEventList {
+	for _, destEvent := range destTransformEventList {
 		// actual transformed event json
 		destEventJSON, err := json.Marshal(destEvent.(map[string]interface{})["output"])
-		sourceID := response.SourceIDList[idx]
 
 		// variables from metadata of the event returned by transformer
 		destEventJobID := int64(destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["job_id"].(float64))
@@ -726,6 +717,7 @@ func (proc *HandleT) handleDestTransformedEvents(response ResponseT, opts Transf
 		destType := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destination_type"].(string)
 		userID := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["anonymous_id"].(string)
 		messageID := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["message_id"].(string)
+		sourceID := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["source_id"].(string)
 		_, isNotCustomTransformed := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["untouched"]
 
 		userDestEventKey := userID + "_" + destID

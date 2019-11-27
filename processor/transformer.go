@@ -104,7 +104,6 @@ func (trans *transformerHandleT) Setup() {
 type ResponseT struct {
 	Events           []interface{}
 	Success          bool
-	SourceIDList     []string
 	FailedJobIDs     []int64
 	FailedSessionIDs []string
 }
@@ -235,7 +234,6 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	return ResponseT{
 		Events:           outClientEvents,
 		Success:          true,
-		SourceIDList:     outClientEventsSourceIDs,
 		FailedJobIDs:     failedJobIDs,
 		FailedSessionIDs: failedSessionIDs,
 	}
