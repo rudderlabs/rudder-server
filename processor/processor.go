@@ -1047,7 +1047,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		url := integrations.GetDestinationURL(destType)
 		logger.Debug("Transform input size", len(destEventList))
 		failedSessionIDs := []string{}
-		response := proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), 0)
+		response := proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), len(destEventList))
 
 		// start: handle failures in custom transformation
 
