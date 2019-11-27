@@ -32,6 +32,7 @@ var (
 	configSubscriberLock     sync.RWMutex
 	rawDataDestinations      []string
 	inProgressMap            map[string]bool
+	inProgressMapLock        sync.RWMutex
 	uploadedRawDataJobsCache map[string]bool
 	errorsCountStat          *stats.RudderStats
 )
@@ -90,17 +91,11 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT) {
 	logger.Debugf("BRT: Starting logging to %s: %s", provider, bucketName)
 
 	dirName := "/rudder-raw-data-destination-logs/"
-	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
-	var err error
-	if tmpdirPath == "" {
-		tmpdirPath, err = os.UserHomeDir()
-		misc.AssertError(err)
-	}
-	path := fmt.Sprintf("%v%v.json", tmpdirPath+dirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
+	tmpDirPath := misc.CreateTMPDIR()
+	path := fmt.Sprintf("%v%v.json", tmpDirPath+dirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
 	var contentSlice [][]byte
 	for _, job := range batchJobs.Jobs {
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
-		misc.AssertError(err)
 		var ok bool
 		if _, ok = uploadedRawDataJobsCache[eventID]; !ok {
 			contentSlice = append(contentSlice, job.EventPayload)
@@ -109,7 +104,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT) {
 	content := bytes.Join(contentSlice[:], []byte("\n"))
 
 	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
-	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
+	err := os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	misc.AssertError(err)
 	gzipFile, err := os.Create(gzipFilePath)
 
@@ -171,7 +166,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT) {
 	}
 
 	//Mark the jobs as executing
-	brt.jobsDB.UpdateJobStatus(statusList, []string{batchJobs.BatchDestination.Destination.DestinationDefinition.Name})
+	brt.jobsDB.UpdateJobStatus(statusList, []string{batchJobs.BatchDestination.Destination.DestinationDefinition.Name}, batchJobs.BatchDestination.Source.ID)
 	brt.jobsDB.JournalDeleteEntry(opID)
 
 	err = os.Remove(gzipFilePath)
@@ -190,7 +185,7 @@ func (brt *HandleT) initWorkers() {
 						s3DestUploadStat.Start()
 						brt.copyJobsToStorage("S3", batchJobs)
 						s3DestUploadStat.End()
-						delete(inProgressMap, batchJobs.BatchDestination.Source.ID)
+						setSourceInProgress(batchJobs.BatchDestination.Source.ID, false)
 					}
 				}
 			}
@@ -208,6 +203,26 @@ type BatchJobsT struct {
 	BatchDestination BatchDestinationT
 }
 
+func isSourceInProgress(sourceID string) bool {
+	inProgressMapLock.RLock()
+	if inProgressMap[sourceID] {
+		inProgressMapLock.RUnlock()
+		return true
+	}
+	inProgressMapLock.RUnlock()
+	return false
+}
+
+func setSourceInProgress(sourceID string, starting bool) {
+	inProgressMapLock.Lock()
+	if starting {
+		inProgressMap[sourceID] = true
+	} else {
+		delete(inProgressMap, sourceID)
+	}
+	inProgressMapLock.Unlock()
+}
+
 func (brt *HandleT) mainLoop() {
 	for {
 		if !brt.isEnabled {
@@ -216,10 +231,10 @@ func (brt *HandleT) mainLoop() {
 		}
 		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
 		for _, batchDestination := range batchDestinations {
-			if inProgressMap[batchDestination.Source.ID] {
+			if isSourceInProgress(batchDestination.Source.ID) {
 				continue
 			}
-			inProgressMap[batchDestination.Source.ID] = true
+			setSourceInProgress(batchDestination.Source.ID, true)
 			toQuery := jobQueryBatchSize
 			retryList := brt.jobsDB.GetToRetry([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID)
 			toQuery -= len(retryList)
@@ -250,7 +265,7 @@ func (brt *HandleT) mainLoop() {
 			}
 
 			//Mark the jobs as executing
-			brt.jobsDB.UpdateJobStatus(statusList, []string{batchDestination.Destination.DestinationDefinition.Name})
+			brt.jobsDB.UpdateJobStatus(statusList, []string{batchDestination.Destination.DestinationDefinition.Name}, batchDestination.Source.ID)
 			brt.processQ <- BatchJobsT{Jobs: combinedList, BatchDestination: batchDestination}
 		}
 	}
@@ -279,12 +294,8 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		})
 
 		dirName := "/rudder-raw-data-dest-upload-crash-recovery/"
-		tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
-		if tmpdirPath == "" {
-			tmpdirPath, err = os.UserHomeDir()
-			misc.AssertError(err)
-		}
-		jsonPath := fmt.Sprintf("%v%v.json", tmpdirPath+dirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
+		tmpDirPath := misc.CreateTMPDIR()
+		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+dirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
 
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		jsonFile, err := os.Create(jsonPath)

@@ -22,7 +22,6 @@ func init() {
 
 func loadConfig() {
 	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	userTransformURL = config.GetEnv("USER_TRANSFORM_URL", "http://localhost:9191")
 }
 
 //destJSTransformerMap keeps a mapping between the destinationID and
@@ -75,9 +74,8 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
 	clientIntgs, ok := misc.GetRudderEventVal("integrations", clientEvent)
 	if !ok {
-		return
+		clientIntgs = make(map[string]interface{})
 	}
-
 	clientIntgsList, ok := clientIntgs.(map[string]interface{})
 	if !ok {
 		return
@@ -102,5 +100,5 @@ func GetDestinationURL(destID string) string {
 
 //GetUserTransformURL returns the port of running user transform
 func GetUserTransformURL() string {
-	return userTransformURL
+	return destTransformURL + "/customTransform"
 }

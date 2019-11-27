@@ -59,11 +59,6 @@ retrySleepInMS = 100
 [BackendConfig]
 pollIntervalInS = 5
 
-[Aws]
-region = "us-east-1"
-jobsBackupDSBucket = "dump-gateway-jobs-test"
-jobStatusBackupDSBucket = "dump-gateway-job-status-test"
-
 [Bugsnag]
 apiKey = "a82c3193aa5914abe2cfb66557f1cc2b"
 releaseStage = "development"

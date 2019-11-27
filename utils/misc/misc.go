@@ -16,11 +16,27 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 //AssertError panics if error
 func AssertError(err error) {
+	if err != nil {
+		// debug.SetTraceback("all")
+		debug.PrintStack()
+		defer bugsnag.AutoNotify()
+		panic(err)
+	}
+}
+
+func AssertErrorIfDev(err error) {
+
+	goEnv := os.Getenv("GO_ENV")
+	if goEnv == "production" {
+		return
+	}
+
 	if err != nil {
 		// debug.SetTraceback("all")
 		debug.PrintStack()
@@ -65,17 +81,21 @@ func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) 
 
 //ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
+	logger.Debug("[Misc: ParseRudderEventBatch] in ParseRudderEventBatch ")
 	var eventListJSON map[string]interface{}
 	err := json.Unmarshal(eventPayload, &eventListJSON)
 	if err != nil {
+		logger.Debug("json parsing of event payload failed ", string(eventPayload))
 		return nil, false
 	}
 	_, ok := eventListJSON["batch"]
 	if !ok {
+		logger.Debug("error retrieving value for batch key ", string(eventPayload))
 		return nil, false
 	}
 	eventListJSONBatchType, ok := eventListJSON["batch"].([]interface{})
 	if !ok {
+		logger.Error("error casting batch value to list of maps ", string(eventPayload))
 		return nil, false
 	}
 	return eventListJSONBatchType, true
@@ -158,6 +178,17 @@ func ReadLines(path string) ([]string, error) {
 		lines = append(lines, scanner.Text())
 	}
 	return lines, scanner.Err()
+}
+
+// CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
+func CreateTMPDIR() string {
+	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	if tmpdirPath == "" {
+		var err error
+		tmpdirPath, err = os.UserHomeDir()
+		AssertError(err)
+	}
+	return tmpdirPath
 }
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
@@ -303,12 +334,12 @@ func Contains(in interface{}, elem interface{}) bool {
 }
 
 // IncrementMapByKey starts with 1 and increments the counter of a key
-func IncrementMapByKey(m map[string]int, key string) {
+func IncrementMapByKey(m map[string]int, key string, increment int) {
 	_, found := m[key]
 	if found {
-		m[key] = m[key] + 1
+		m[key] = m[key] + increment
 	} else {
-		m[key] = 1
+		m[key] = increment
 	}
 }
 
