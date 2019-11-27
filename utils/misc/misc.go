@@ -20,6 +20,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
+// RFC3339 with milli sec precision
+var RFC3339Milli = "2006-01-02T15:04:05.999Z07:00"
+
 //AssertError panics if error
 func AssertError(err error) {
 	if err != nil {
