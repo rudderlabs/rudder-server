@@ -353,3 +353,11 @@ func MinInt64Slice(in []int64) (min int64) {
 	}
 	return
 }
+
+func LenSliceArray(x [][]interface{}) int {
+	length := 0
+	for _, slice := range x {
+		length += len(slice)
+	}
+	return length
+}
