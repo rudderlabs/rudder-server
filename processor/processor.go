@@ -1260,10 +1260,9 @@ func (proc *HandleT) mainLoop() {
 	}
 }
 
-func (proc *HandleT) crashRecover() {
-
+func (proc *HandleT) markFailedForExecuting(db *jobsdb.HandleT, customVals []string) {
 	for {
-		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize)
+		execList := db.GetExecuting(customVals, dbReadBatchSize)
 
 		if len(execList) == 0 {
 			break
@@ -1284,6 +1283,26 @@ func (proc *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
+		db.UpdateJobStatus(statusList, customVals)
+	}
+}
+
+func (proc *HandleT) crashRecover() {
+
+	proc.markFailedForExecuting(proc.gatewayDB, []string{gateway.CustomVal})
+	proc.markFailedForExecuting(proc.failedGatewayDB, []string{})
+
+	// populate proc.destRetryBackoffMap
+	destIDs := proc.failedGatewayDB.GetUniqueCustomVals()
+	for _, customVal := range destIDs {
+		proc.destRetryBackoffMap[customVal] = DestRetryT{
+			NextProcessTime: time.Now(),
+			Backoff: &backoff.Backoff{
+				Min:    time.Duration(backoffIncrementInS) * time.Second,
+				Max:    time.Duration(maxBackoffInS) * time.Second,
+				Factor: float64(backoffFactor),
+				Jitter: false,
+			},
+		}
 	}
 }

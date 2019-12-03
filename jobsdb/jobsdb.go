@@ -31,6 +31,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/thoas/go-funk"
 
 	"strconv"
 	"strings"
@@ -1937,6 +1938,77 @@ GetExecuting returns events which  in executing state
 */
 func (jd *HandleT) GetExecuting(customValFilters []string, count int, sourceIDFilters ...string) []*JobT {
 	return jd.GetProcessed([]string{ExecutingState}, customValFilters, count, sourceIDFilters...)
+}
+
+func (jd *HandleT) getUniqueCustomValsDS(ds dataSetT, stateFilters []string) ([]string, error) {
+
+	var stateQuery string
+
+	if len(stateFilters) > 0 {
+		stateQuery = " AND " + jd.constructQuery("job_state", stateFilters, "OR")
+	} else {
+		stateQuery = ""
+	}
+
+	var (
+		err  error
+		rows *sql.Rows
+	)
+	// get custom_val from jobs with entry in job_status
+	sqlStatement := fmt.Sprintf(`SELECT distinct(custom_val)
+							 FROM
+							  %[1]s,
+							  (SELECT job_id FROM %[2]s WHERE id IN
+								(SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
+							  AS job_latest_state
+							   WHERE %[1]s.job_id=job_latest_state.job_id`,
+		ds.JobTable, ds.JobStatusTable, stateQuery)
+	rows, err = jd.dbHandle.Query(sqlStatement)
+	defer rows.Close()
+	jd.assertError(err)
+
+	var customVals []string
+	for rows.Next() {
+		var x string
+		err := rows.Scan(&x)
+		jd.assertError(err)
+		customVals = append(customVals, x)
+	}
+
+	// get custom_val from jobs without entry in job_status
+	sqlStatement = fmt.Sprintf(`SELECT distinct(custom_val)
+                                             FROM %[1]s WHERE %[1]s.job_id NOT IN (SELECT DISTINCT(%[2]s.job_id)
+                                             FROM %[2]s)`, ds.JobTable, ds.JobStatusTable)
+	rows, err = jd.dbHandle.Query(sqlStatement)
+	defer rows.Close()
+	jd.assertError(err)
+
+	for rows.Next() {
+		var val string
+		err := rows.Scan(&val)
+		jd.assertError(err)
+		customVals = append(customVals, val)
+	}
+
+	return customVals, nil
+}
+
+/*
+GetUniqueCustomVals returns unique custom_val for jobs that are either in failed or waiting or unprocessed state
+*/
+func (jd *HandleT) GetUniqueCustomVals() (customVals []string) {
+	jd.dsMigrationLock.RLock()
+	jd.dsListLock.RLock()
+	defer jd.dsMigrationLock.RUnlock()
+	defer jd.dsListLock.RUnlock()
+
+	dsList := jd.getDSList(true)
+	for _, ds := range dsList {
+		vals, err := jd.getUniqueCustomValsDS(ds, []string{FailedState, WaitingState})
+		jd.assertError(err)
+		customVals = append(customVals, vals...)
+	}
+	return funk.UniqString(customVals)
 }
 
 /*
