@@ -1,18 +1,19 @@
 package db
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"net/http"
 	"os"
 	"sort"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/alert"
+	"github.com/rudderlabs/rudder-server/services/stats"
+
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -125,18 +126,12 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 
 func alertOps(mode string) {
 	instanceName := config.GetEnv("INSTANCE_NAME", "")
-	url := config.GetEnv("OPS_ALERT_URL", "")
-	event := map[string]interface{}{
-		"message_type":  "CRITICAL",
-		"entity_id":     fmt.Sprintf("%s-data-plane-%s-mode", instanceName, mode),
-		"state_message": fmt.Sprintf("Dataplane server %s entered %s mode", instanceName, mode),
-	}
-	eventJSON, _ := json.Marshal(event)
-	client := &http.Client{}
-	resp, err := client.Post(url, "application/json", bytes.NewBuffer(eventJSON))
-	// Not handling errors when sending alert to victorops
-	if err == nil {
-		defer resp.Body.Close()
+
+	alertManager, err := alert.New()
+	if err != nil {
+		logger.Errorf("Unable to initialize the alertManager: %s", err.Error())
+	} else {
+		alertManager.Alert(fmt.Sprintf("Dataplane server %s entered %s mode", instanceName, mode))
 	}
 }
 
@@ -167,8 +162,16 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool)
 		recoveryHandler = NewRecoveryHandler(&recoveryData)
 	}
 
+	recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
 	if recoveryData.Mode != normalMode {
+		if recoveryData.Mode == degradedMode {
+			recoveryModeStat.Gauge(2)
+		} else if recoveryData.Mode == maintenanceMode {
+			recoveryModeStat.Gauge(3)
+		}
 		alertOps(recoveryData.Mode)
+	} else {
+		recoveryModeStat.Gauge(1)
 	}
 	currTime := time.Now().Unix()
 	recoveryHandler.RecordAppStart(currTime)

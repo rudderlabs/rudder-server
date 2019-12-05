@@ -1,0 +1,53 @@
+version: "3.7"
+
+services:
+  db:
+    image: postgres:11-alpine
+    env_file:
+      - build/docker.env
+    ports:
+      - "6432:5432"
+    logging:
+      driver: none
+
+  backend:
+    depends_on:
+      - db
+      - d-transformer
+      # - grafana
+    build:
+      context: ./
+      dockerfile: build/Dockerfile-dev
+    entrypoint: sh -c './build/wait-for db:5432 -- go run -mod=vendor main.go'
+    ports:
+      - "8080:8080"
+    env_file:
+      - build/docker.env
+    environment:
+      - JOBS_DB_HOST=db
+  d-transformer:
+    build:
+      context: ./rudder-transformer/
+      dockerfile: Dockerfile
+    ports:
+      - "9090:9090"
+  grafana:
+    build:
+      context: ../rudder-ops
+      dockerfile: Dockerfile
+      args:
+        - DATA_SOURCE=influxdb
+    ports:
+      - "3003:3003"
+      - "3004:8888"
+      - "8086:8086"
+      - "8125:8125/udp"
+    env_file:
+      - build/docker.env
+  dependencies:
+    image: dadarek/wait-for-dependencies
+    depends_on:
+      - grafana
+      - db
+      - d-transformer
+    command: db:5432 grafana:3003 grafana:8086 grafana:8888 d-transformer:9090

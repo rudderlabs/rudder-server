@@ -46,7 +46,7 @@ func (pq *pqT) Pop() interface{} {
 }
 
 func (pq *pqT) Top() *pqItemT {
-	item := (*pq)[len(*pq)-1]
+	item := (*pq)[0]
 	return item
 }
 

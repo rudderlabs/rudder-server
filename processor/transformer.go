@@ -3,6 +3,7 @@ package processor
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -10,8 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //Structure which is used to pass message to the transformer workers
@@ -23,10 +25,13 @@ type transformMessageT struct {
 
 //HandleT is the handle for this class
 type transformerHandleT struct {
-	requestQ   chan *transformMessageT
-	responseQ  chan *transformMessageT
-	accessLock sync.Mutex
-	perfStats  *misc.PerfStats
+	requestQ     chan *transformMessageT
+	responseQ    chan *transformMessageT
+	accessLock   sync.Mutex
+	perfStats    *misc.PerfStats
+	sentStat     *stats.RudderStats
+	receivedStat *stats.RudderStats
+	failedStat   *stats.RudderStats
 }
 
 var (
@@ -60,6 +65,7 @@ func (trans *transformerHandleT) transformWorker() {
 			break
 		}
 
+		// Remove Assertion?
 		misc.Assert(resp.StatusCode == http.StatusOK ||
 			resp.StatusCode == http.StatusBadRequest)
 
@@ -84,12 +90,21 @@ func (trans *transformerHandleT) transformWorker() {
 func (trans *transformerHandleT) Setup() {
 	trans.requestQ = make(chan *transformMessageT, maxChanSize)
 	trans.responseQ = make(chan *transformMessageT, maxChanSize)
+	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
+	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
+	trans.failedStat = stats.NewStat("processor.transformer_failed", stats.CountType)
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 	for i := 0; i < numTransformWorker; i++ {
 		logger.Info("Starting transformer worker", i)
 		go trans.transformWorker()
 	}
+}
+
+type ResponseT struct {
+	Events       []interface{}
+	Success      bool
+	SourceIDList []string
 }
 
 //Transform function is used to invoke transformer API
@@ -101,8 +116,9 @@ func (trans *transformerHandleT) Setup() {
 //instance is shared between both user specific transformation
 //code and destination transformation code.
 func (trans *transformerHandleT) Transform(clientEvents []interface{},
-	url string, batchSize int, oneToMany bool) ([]interface{}, bool) {
+	url string, batchSize int) ResponseT {
 
+	// logger.Info("Ictus ", url, batchSize)
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
 
@@ -116,6 +132,10 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 
 	trans.perfStats.Start()
 	var toSendData interface{}
+	sourceIDList := []string{}
+	for _, clientEvent := range clientEvents {
+		sourceIDList = append(sourceIDList, clientEvent.(map[string]interface{})["message"].(map[string]interface{})["source_id"].(string))
+	}
 
 	for {
 		//The channel is still live and the last batch has been sent
@@ -133,11 +153,14 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 					inputIdx++
 				}
 				toSendData = clientBatch
+				trans.sentStat.Count(len(clientBatch))
 			} else {
 				toSendData = clientEvents[inputIdx]
+				trans.sentStat.Increment()
 				inputIdx++
 			}
 		}
+
 		select {
 		//In case of batch event, index is the next Index
 		case reqQ <- &transformMessageT{index: inputIdx, data: toSendData, url: url}:
@@ -170,31 +193,38 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	misc.Assert(transformResponse[len(transformResponse)-1].index == len(clientEvents))
 
 	outClientEvents := make([]interface{}, 0)
+	outClientEventsSourceIDs := []string{}
 
-	for _, resp := range transformResponse {
+	for idx, resp := range transformResponse {
 		if resp.data == nil {
-			if !oneToMany {
-				outClientEvents = append(outClientEvents, nil)
-			}
 			continue
 		}
-		if oneToMany {
-			respArray, ok := resp.data.([]interface{})
-			misc.Assert(ok)
-			//Transform is one to many mapping so returned
-			//response for each is an array. We flatten it out
-			for _, respElem := range respArray {
-				outClientEvents = append(outClientEvents, respElem)
+		respArray, ok := resp.data.([]interface{})
+		misc.Assert(ok)
+		//Transform is one to many mapping so returned
+		//response for each is an array. We flatten it out
+		for _, respElem := range respArray {
+			respElemMap, castOk := respElem.(map[string]interface{})
+			if castOk {
+				if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
+					// TODO: Log errored resposnes to file
+					trans.failedStat.Increment()
+					continue
+				}
 			}
-		} else {
-			//One to one mapping so no flattening is
-			//required
-			outClientEvents = append(outClientEvents, resp.data)
+			outClientEvents = append(outClientEvents, respElem)
+			outClientEventsSourceIDs = append(outClientEventsSourceIDs, sourceIDList[idx])
 		}
+
 	}
-	misc.Assert(oneToMany || len(outClientEvents) == len(clientEvents))
+
+	trans.receivedStat.Count(len(outClientEvents))
 	trans.perfStats.End(len(clientEvents))
 	trans.perfStats.Print()
 
-	return outClientEvents, true
+	return ResponseT{
+		Events:       outClientEvents,
+		Success:      true,
+		SourceIDList: outClientEventsSourceIDs,
+	}
 }

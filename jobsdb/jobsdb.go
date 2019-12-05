@@ -18,13 +18,14 @@ mostly serviced from memory cache.
 package jobsdb
 
 import (
+	"bytes"
+	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"sort"
 	"unicode/utf8"
 
@@ -37,7 +38,8 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/lib/pq"
@@ -101,11 +103,12 @@ type HandleT struct {
 	dsListLock            sync.RWMutex
 	dsMigrationLock       sync.RWMutex
 	dsRetentionPeriod     time.Duration
-	dsEmptyResultCache    map[dataSetT]map[string]map[string]bool
+	dsEmptyResultCache    map[dataSetT]map[string]map[string]map[string]bool
 	dsCacheLock           sync.Mutex
 	toBackup              bool
-	jobsFileUploader      fileuploader.FileUploader
-	jobStatusFileUploader fileuploader.FileUploader
+	jobsFileUploader      filemanager.FileManager
+	jobStatusFileUploader filemanager.FileManager
+	statTableCount        *stats.RudderStats
 }
 
 //The struct which is written to the journal
@@ -126,9 +129,9 @@ var dbErrorMap = map[string]string{
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
-		debug.SetTraceback("all")
-		debug.PrintStack()
-		jd.printLists(true)
+		// debug.SetTraceback("all")
+		// debug.PrintStack()
+		// jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify(err)
 		panic(err)
@@ -137,9 +140,9 @@ func (jd *HandleT) assertError(err error) {
 
 func (jd *HandleT) assert(cond bool) {
 	if !cond {
-		debug.SetTraceback("all")
-		debug.PrintStack()
-		jd.printLists(true)
+		// debug.SetTraceback("all")
+		// debug.PrintStack()
+		// jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify("Assertion failed")
 		panic("Assertion failed")
@@ -187,6 +190,8 @@ var (
 	useJoinForUnprocessed                      bool
 )
 
+var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat *stats.RudderStats
+
 // Loads db config and migration related config from config file
 func loadConfig() {
 	host = config.GetEnv("JOBS_DB_HOST", "localhost")
@@ -215,6 +220,9 @@ func loadConfig() {
 func init() {
 	config.Initialize()
 	loadConfig()
+	tableFileDumpTimeStat = stats.NewStat("jobsdb.table_file_dump_time", stats.TimerType)
+	fileUploadTimeStat = stats.NewStat("jobsdb.file_upload_time", stats.TimerType)
+	totalTableDumpTimeStat = stats.NewStat("jobsdb.total_table_dump_time", stats.TimerType)
 }
 
 func GetConnectionString() string {
@@ -245,7 +253,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
 	jd.toBackup = toBackup
-	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]bool{}
+	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]bool{}
 
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
@@ -259,6 +267,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	//Kill any pending queries
 	jd.terminateQueries()
 
+	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
@@ -281,14 +290,14 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	}
 
 	if jd.toBackup {
-		jd.jobsFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
-			Provider:       "s3",
-			AmazonS3Bucket: config.GetEnv("JOBS_BACKUP_BUCKET", "dump-gateway-jobs-test"),
+		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
+			Provider: "S3",
+			Bucket:   config.GetEnv("JOBS_BACKUP_BUCKET", ""),
 		})
 		jd.assertError(err)
-		jd.jobStatusFileUploader, err = fileuploader.NewFileUploader(&fileuploader.SettingsT{
-			Provider:       "s3",
-			AmazonS3Bucket: config.GetEnv("JOB_STATUS_BACKUP_BUCKET", "dump-gateway-job-status-test"),
+		jd.jobStatusFileUploader, err = filemanager.New(&filemanager.SettingsT{
+			Provider: "S3",
+			Bucket:   config.GetEnv("JOB_STATUS_BACKUP_BUCKET", ""),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()
@@ -425,6 +434,7 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 			dataSetT{JobTable: jobName,
 				JobStatusTable: jobStatusName, Index: dnum})
 	}
+	jd.statTableCount.Gauge(len(jd.datasetList))
 	return jd.datasetList
 }
 
@@ -618,8 +628,8 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	//DS being added
 	opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
 	jd.assertError(err)
-	opID := jd.journalMarkStart(addDSOperation, opPayload)
-	defer jd.journalMarkDone(opID)
+	opID := jd.JournalMarkStart(addDSOperation, opPayload)
+	defer jd.JournalMarkDone(opID)
 
 	//Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
@@ -904,7 +914,8 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 	}
 
 	//Empty customValFilters means we want to clear for all
-	jd.markClearEmptyResult(ds, []string{}, []string{}, false)
+	jd.markClearEmptyResult(ds, []string{}, []string{}, []string{}, false)
+	// fmt.Println("Bursting CACHE")
 
 	return
 }
@@ -956,7 +967,7 @@ func (jd *HandleT) constructJSONQuery(paramKey string, jsonKey string, paramList
 * markClearEmptyResult() when mark=False clears a previous empty mark
  */
 
-func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, mark bool) {
+func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, sourceIDFilters []string, mark bool) {
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
@@ -974,25 +985,42 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 
 	_, ok := jd.dsEmptyResultCache[ds]
 	if !ok {
-		jd.dsEmptyResultCache[ds] = map[string]map[string]bool{}
+		jd.dsEmptyResultCache[ds] = map[string]map[string]map[string]bool{}
 	}
 
 	for _, cVal := range customValFilters {
 		_, ok := jd.dsEmptyResultCache[ds][cVal]
 		if !ok {
-			jd.dsEmptyResultCache[ds][cVal] = map[string]bool{}
+			jd.dsEmptyResultCache[ds][cVal] = map[string]map[string]bool{}
 		}
-		for _, st := range stateFilters {
-			if mark {
-				jd.dsEmptyResultCache[ds][cVal][st] = true
-			} else {
-				jd.dsEmptyResultCache[ds][cVal][st] = false
+		index := 0
+		for {
+			sid := ""
+			if len(sourceIDFilters) > 0 {
+				sid = sourceIDFilters[index]
+			}
+
+			_, ok := jd.dsEmptyResultCache[ds][cVal][sid]
+			if !ok {
+				jd.dsEmptyResultCache[ds][cVal][sid] = map[string]bool{}
+			}
+
+			for _, st := range stateFilters {
+				if mark {
+					jd.dsEmptyResultCache[ds][cVal][sid][st] = true
+				} else {
+					jd.dsEmptyResultCache[ds][cVal][sid][st] = false
+				}
+			}
+			index++
+			if len(sourceIDFilters) == 0 || index >= len(sourceIDFilters) {
+				break
 			}
 		}
 	}
 }
 
-func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string) bool {
+func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, sourceIDFilters []string) bool {
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
@@ -1008,14 +1036,25 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 	}
 
 	for _, cVal := range customValFilters {
-		_, ok := jd.dsEmptyResultCache[ds][cVal]
-		if !ok {
-			return false
-		}
-		for _, st := range stateFilters {
-			mark, ok := jd.dsEmptyResultCache[ds][cVal][st]
-			if !ok || mark == false {
+		index := 0
+		for {
+			sid := ""
+			if len(sourceIDFilters) > 0 {
+				sid = sourceIDFilters[index]
+			}
+			_, ok := jd.dsEmptyResultCache[ds][cVal][sid]
+			if !ok {
 				return false
+			}
+			for _, st := range stateFilters {
+				mark, ok := jd.dsEmptyResultCache[ds][cVal][sid][st]
+				if !ok || mark == false {
+					return false
+				}
+			}
+			index++
+			if len(sourceIDFilters) == 0 || index >= len(sourceIDFilters) {
+				break
 			}
 		}
 	}
@@ -1032,7 +1071,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 
 	jd.checkValidJobState(stateFilters)
 
-	if jd.isEmptyResult(ds, stateFilters, customValFilters) {
+	if jd.isEmptyResult(ds, stateFilters, customValFilters, sourceIDFilters) {
 		return []*JobT{}, nil
 	}
 
@@ -1126,7 +1165,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	}
 
 	if len(jobList) == 0 {
-		jd.markClearEmptyResult(ds, stateFilters, customValFilters, true)
+		jd.markClearEmptyResult(ds, stateFilters, customValFilters, sourceIDFilters, true)
 	}
 
 	return jobList, nil
@@ -1139,7 +1178,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	var rows *sql.Rows
 	var err error
 
-	if jd.isEmptyResult(ds, []string{"NP"}, customValFilters) {
+	if jd.isEmptyResult(ds, []string{"NP"}, customValFilters, sourceIDFilters) {
 		return []*JobT{}, nil
 	}
 
@@ -1190,13 +1229,13 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	}
 
 	if len(jobList) == 0 {
-		jd.markClearEmptyResult(ds, []string{"NP"}, customValFilters, true)
+		jd.markClearEmptyResult(ds, []string{"NP"}, customValFilters, sourceIDFilters, true)
 	}
 
 	return jobList, nil
 }
 
-func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string) (err error) {
+func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, sourceIDFilters ...string) (err error) {
 
 	if len(statusList) == 0 {
 		return nil
@@ -1235,7 +1274,7 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 		stateFilters = append(stateFilters, k)
 	}
 
-	jd.markClearEmptyResult(ds, stateFilters, customValFilters, false)
+	jd.markClearEmptyResult(ds, stateFilters, customValFilters, sourceIDFilters, false)
 
 	return nil
 }
@@ -1320,13 +1359,13 @@ func (jd *HandleT) mainCheckLoop() {
 
 				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: migrateTo})
 				jd.assertError(err)
-				opID := jd.journalMarkStart(migrateCopyOperation, opPayload)
+				opID := jd.JournalMarkStart(migrateCopyOperation, opPayload)
 
 				for _, ds := range migrateFrom {
 					logger.Info("Main check:Migrate", ds, migrateTo)
 					jd.migrateJobs(ds, migrateTo)
 				}
-				jd.journalMarkDone(opID)
+				jd.JournalMarkDone(opID)
 			}
 
 			//Mark the start of del operation. If we fail in between
@@ -1334,13 +1373,13 @@ func (jd *HandleT) mainCheckLoop() {
 			//del the destination as some sources may have been deleted
 			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
 			jd.assertError(err)
-			opID := jd.journalMarkStart(postMigrateDSOperation, opPayload)
+			opID := jd.JournalMarkStart(postMigrateDSOperation, opPayload)
 
 			jd.dsListLock.Lock()
 			jd.postMigrateHandleDS(migrateFrom)
 			jd.dsListLock.Unlock()
 
-			jd.journalMarkDone(opID)
+			jd.JournalMarkDone(opID)
 		}
 
 		jd.dsMigrationLock.Unlock()
@@ -1361,30 +1400,39 @@ func (jd *HandleT) backupDSLoop() {
 			continue
 		}
 
+		startTime := time.Now().Unix()
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
-		opID := jd.journalMarkStart(backupDSOperation, opPayload)
+		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
 		// write jobs table to s3
-		_, err = jd.backupTable(backupDS.JobTable)
-		jd.assertError(err)
+		_, err = jd.backupTable(backupDS.JobTable, startTime)
+		if err != nil {
+			logger.Errorf("Failed to backup table %v", backupDS.JobTable)
+			continue
+		}
 
 		// write job_status table to s3
-		_, err = jd.backupTable(backupDS.JobStatusTable)
+		_, err = jd.backupTable(backupDS.JobStatusTable, startTime)
 		jd.assertError(err)
-		jd.journalMarkDone(opID)
+		if err != nil {
+			logger.Errorf("Failed to backup table %v", backupDS.JobStatusTable)
+			continue
+		}
+		jd.JournalMarkDone(opID)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opPayload, err = json.Marshal(&backupDS)
 		jd.assertError(err)
-		opID = jd.journalMarkStart(backupDropDSOperation, opPayload)
+		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
 		jd.dropDS(backupDS, false)
-		jd.journalMarkDone(opID)
+		jd.JournalMarkDone(opID)
 	}
 }
 
 func (jd *HandleT) removeTableJSONDumps() {
-	path := config.GetEnv("S3_UPLOADS_DIR", "/home/ubuntu/s3/")
-	files, err := filepath.Glob(fmt.Sprintf("%v%v%v_job*", path, "backups/", jd.tablePrefix))
+	backupPathDirName := "/rudder-s3-dumps/"
+	tmpDirPath := misc.CreateTMPDIR()
+	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", tmpDirPath+backupPathDirName, jd.tablePrefix))
 	jd.assertError(err)
 	for _, f := range files {
 		err = os.Remove(f)
@@ -1392,34 +1440,64 @@ func (jd *HandleT) removeTableJSONDumps() {
 	}
 }
 
-func (jd *HandleT) backupTable(tableName string) (success bool, err error) {
+func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool, err error) {
+	tableFileDumpTimeStat.Start()
+	totalTableDumpTimeStat.Start()
 	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
-	path := fmt.Sprintf(`%v%v%v.json`, config.GetEnv("S3_UPLOADS_DIR", "/home/ubuntu/s3/"), "backups/", pathPrefix)
-	copyStmt := fmt.Sprintf(`COPY (SELECT row_to_json(%v) FROM (SELECT * FROM %v) %v) TO '%v';`, dbname, tableName, dbname, path)
-	_, err = jd.dbHandle.Exec(copyStmt)
-	jd.assertError(err)
+	backupPathDirName := "/rudder-s3-dumps/"
+	tmpDirPath := misc.CreateTMPDIR()
+	path := fmt.Sprintf(`%v%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, startTime)
+	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
+	misc.AssertError(err)
 
-	zipFilePath := fmt.Sprintf(`%v.zip`, path)
-	err = misc.ZipFiles(zipFilePath, []string{path})
-	jd.assertError(err)
+	stmt := fmt.Sprintf(`SELECT json_agg(%[1]s order by job_id asc) FROM %[1]s`, tableName)
+	var rawJSONRows json.RawMessage
+	err = jd.dbHandle.QueryRow(stmt).Scan(&rawJSONRows)
+	misc.AssertError(err)
 
-	file, err := os.Open(zipFilePath)
+	var rows []interface{}
+	err = json.Unmarshal(rawJSONRows, &rows)
+	misc.AssertError(err)
+	contentSlice := make([][]byte, len(rows))
+	for idx, row := range rows {
+		rowBytes, err := json.Marshal(row)
+		misc.AssertError(err)
+		contentSlice[idx] = rowBytes
+	}
+	content := bytes.Join(contentSlice[:], []byte("\n"))
+
+	gzipFile, err := os.Create(path)
+	gzipWriter := gzip.NewWriter(gzipFile)
+	_, err = gzipWriter.Write(content)
+	misc.AssertError(err)
+	gzipWriter.Close()
+	tableFileDumpTimeStat.End()
+
+	fileUploadTimeStat.Start()
+	file, err := os.Open(path)
 	jd.assertError(err)
 	defer file.Close()
 
-	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
-		_, err = jd.jobStatusFileUploader.Upload(file)
-	} else {
-		_, err = jd.jobsFileUploader.Upload(file)
-	}
-	jd.assertError(err)
+	pathPrefixes := make([]string, 0)
+	pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
 
-	err = os.Remove(zipFilePath)
-	jd.assertError(err)
+	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
+		_, err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
+	} else {
+		_, err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
+	}
+	if err != nil {
+		logger.Errorf("Failed to upload table %v dump to S3", tableName)
+	} else {
+		// Do not record stat in error case as error case time might be low and skew stats
+		fileUploadTimeStat.End()
+		totalTableDumpTimeStat.End()
+	}
+
 	err = os.Remove(path)
 	jd.assertError(err)
 
-	return true, nil
+	return true, err
 }
 
 func (jd *HandleT) getBackupDS() dataSetT {
@@ -1455,13 +1533,21 @@ func (jd *HandleT) getBackupDS() dataSetT {
 We keep a journal of all the operations. The journal helps
 */
 const (
-	addDSOperation         = "ADD_DS"
-	migrateCopyOperation   = "MIGRATE_COPY"
-	postMigrateDSOperation = "POST_MIGRATE_DS_OP"
-	backupDSOperation      = "BACKUP_DS"
-	backupDropDSOperation  = "BACKUP_DROP_DS"
-	dropDSOperation        = "DROP_DS"
+	addDSOperation             = "ADD_DS"
+	migrateCopyOperation       = "MIGRATE_COPY"
+	postMigrateDSOperation     = "POST_MIGRATE_DS_OP"
+	backupDSOperation          = "BACKUP_DS"
+	backupDropDSOperation      = "BACKUP_DROP_DS"
+	dropDSOperation            = "DROP_DS"
+	RawDataDestUploadOperation = "S3_DEST_UPLOAD"
 )
+
+type JournalEntryT struct {
+	OpID      int64
+	OpType    string
+	OpDone    bool
+	OpPayload json.RawMessage
+}
 
 func (jd *HandleT) setupJournal() {
 
@@ -1484,9 +1570,9 @@ func (jd *HandleT) delJournal() {
 	jd.assertError(err)
 }
 
-func (jd *HandleT) journalMarkStart(opType string, opPayload json.RawMessage) int64 {
+func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) int64 {
 
-	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == backupDSOperation || opType == backupDropDSOperation || opType == dropDSOperation)
+	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == backupDSOperation || opType == backupDropDSOperation || opType == dropDSOperation || opType == RawDataDestUploadOperation)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
                                        VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
@@ -1501,10 +1587,42 @@ func (jd *HandleT) journalMarkStart(opType string, opPayload json.RawMessage) in
 
 }
 
-func (jd *HandleT) journalMarkDone(opID int64) {
+func (jd *HandleT) JournalMarkDone(opID int64) {
 	sqlStatement := fmt.Sprintf(`UPDATE %s_journal SET done=$2, end_time=$3 WHERE id=$1`, jd.tablePrefix)
 	_, err := jd.dbHandle.Exec(sqlStatement, opID, true, time.Now())
 	jd.assertError(err)
+}
+
+func (jd *HandleT) JournalDeleteEntry(opID int64) {
+	sqlStatement := fmt.Sprintf(`DELETE FROM %s_journal WHERE id=$1`, jd.tablePrefix)
+	_, err := jd.dbHandle.Exec(sqlStatement, opID)
+	jd.assertError(err)
+}
+
+func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
+	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
+                                	FROM %s_journal
+                                	WHERE
+									done=False
+									AND
+									operation = '%s'
+									ORDER BY id`, jd.tablePrefix, opType)
+	stmt, err := jd.dbHandle.Prepare(sqlStatement)
+	defer stmt.Close()
+	jd.assertError(err)
+
+	rows, err := stmt.Query()
+	jd.assertError(err)
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		entries = append(entries, JournalEntryT{})
+		err = rows.Scan(&entries[count].OpID, &entries[count].OpType, &entries[count].OpDone, &entries[count].OpPayload)
+		jd.assertError(err)
+		count++
+	}
+	return
 }
 
 func (jd *HandleT) recoverFromCrash(goRoutineType string) {
@@ -1624,7 +1742,7 @@ UpdateJobStatus updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string) {
+func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, sourceIDFilters ...string) {
 
 	if len(statusList) == 0 {
 		return
@@ -1661,7 +1779,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 					logger.Debug("Range:", ds, statusList[lastPos].JobID,
 						statusList[i-1].JobID, lastPos, i-1)
 				}
-				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters)
+				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, sourceIDFilters...)
 				jd.assertError(err)
 				lastPos = i
 				break
@@ -1670,7 +1788,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		//Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
 			logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
-			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters)
+			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, sourceIDFilters...)
 			jd.assertError(err)
 			lastPos = i
 			break
@@ -1741,7 +1859,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, sourceID
 	}
 	for _, ds := range dsList {
 		jd.assert(count > 0)
-		jobs, err := jd.getUnprocessedJobsDS(ds, customValFilters, true, count)
+		jobs, err := jd.getUnprocessedJobsDS(ds, customValFilters, true, count, sourceIDFilters...)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)

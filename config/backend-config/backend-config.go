@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -80,7 +82,6 @@ func getBackendConfig() (SourcesT, bool) {
 		respBody, _ = ioutil.ReadAll(resp.Body)
 		defer resp.Body.Close()
 	}
-
 	if err != nil {
 		logger.Error("Errored when sending request to the server", err)
 		return SourcesT{}, false
@@ -100,9 +101,12 @@ func init() {
 }
 
 func pollConfigUpdate() {
+	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		sourceJSON, ok := getBackendConfig()
-
+		if !ok {
+			statConfigBackendError.Increment()
+		}
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
 			curSourceJSON = sourceJSON
 			initialized = true

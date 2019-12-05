@@ -17,11 +17,27 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 //AssertError panics if error
 func AssertError(err error) {
+	if err != nil {
+		// debug.SetTraceback("all")
+		debug.PrintStack()
+		defer bugsnag.AutoNotify()
+		panic(err)
+	}
+}
+
+func AssertErrorIfDev(err error) {
+
+	goEnv := os.Getenv("GO_ENV")
+	if goEnv == "production" {
+		return
+	}
+
 	if err != nil {
 		// debug.SetTraceback("all")
 		debug.PrintStack()
@@ -163,7 +179,8 @@ func UnZipSingleFile(outputfile string, filename string) {
 func RemoveFilePaths(filepaths ...string) {
 	for _, filepath := range filepaths {
 		err := os.Remove(filepath)
-		AssertError(err)
+		logger.Error(err)
+		// AssertError(err)
 	}
 }
 
@@ -182,6 +199,17 @@ func ReadLines(path string) ([]string, error) {
 		lines = append(lines, scanner.Text())
 	}
 	return lines, scanner.Err()
+}
+
+// CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
+func CreateTMPDIR() string {
+	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	if tmpdirPath == "" {
+		var err error
+		tmpdirPath, err = os.UserHomeDir()
+		AssertError(err)
+	}
+	return tmpdirPath
 }
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
@@ -327,11 +355,17 @@ func Contains(in interface{}, elem interface{}) bool {
 }
 
 // IncrementMapByKey starts with 1 and increments the counter of a key
-func IncrementMapByKey(m map[string]int, key string) {
+func IncrementMapByKey(m map[string]int, key string, increment int) {
 	_, found := m[key]
 	if found {
-		m[key] = m[key] + 1
+		m[key] = m[key] + increment
 	} else {
-		m[key] = 1
+		m[key] = increment
 	}
+}
+
+// Returns chronological timestamp of the event using the formula
+// timestamp = receivedAt - (sentAt - originalTimestamp)
+func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
+	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
 }

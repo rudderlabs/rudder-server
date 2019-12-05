@@ -39,6 +39,10 @@ func Setup() {
 	level = levelMap[config.GetEnv("LOG_LEVEL", "INFO")]
 }
 
+func IsDebugLevel() bool {
+	return levelDebug >= level
+}
+
 // Debug level logging.
 // Most verbose logging level.
 func Debug(args ...interface{}) (int, error) {

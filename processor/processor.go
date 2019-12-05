@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/araddon/dateparse"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -23,25 +24,30 @@ import (
 
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
-	gatewayDB      *jobsdb.HandleT
-	routerDB       *jobsdb.HandleT
-	batchRouterDB  *jobsdb.HandleT
-	transformer    *transformerHandleT
-	statsJobs      *misc.PerfStats
-	statJobs       *stats.RudderStats
-	statsDBR       *misc.PerfStats
-	statDBR        *stats.RudderStats
-	statsDBW       *misc.PerfStats
-	statDBW        *stats.RudderStats
-	userJobListMap map[string][]*jobsdb.JobT
-	userEventsMap  map[string][]interface{}
-	userPQItemMap  map[string]*pqItemT
-	userJobPQ      pqT
-	userPQLock     sync.Mutex
+	gatewayDB          *jobsdb.HandleT
+	routerDB           *jobsdb.HandleT
+	batchRouterDB      *jobsdb.HandleT
+	transformer        *transformerHandleT
+	statsJobs          *misc.PerfStats
+	statsDBR           *misc.PerfStats
+	statGatewayDBR     *stats.RudderStats
+	statsDBW           *misc.PerfStats
+	statGatewayDBW     *stats.RudderStats
+	statRouterDBW      *stats.RudderStats
+	statBatchRouterDBW *stats.RudderStats
+	statActiveUsers    *stats.RudderStats
+	userJobListMap     map[string][]*jobsdb.JobT
+	userEventsMap      map[string][]interface{}
+	userPQItemMap      map[string]*pqItemT
+	userJobPQ          pqT
+	userPQLock         sync.Mutex
 }
 
 //Print the internal structure
 func (proc *HandleT) Print() {
+	if !logger.IsDebugLevel() {
+		return
+	}
 	logger.Debug("PriorityQueue")
 	proc.userJobPQ.Print()
 	logger.Debug("JobList")
@@ -80,9 +86,11 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.statsDBR.Setup("ProcessorDBRead")
 	proc.statsDBW.Setup("ProcessorDBWrite")
 
-	proc.statJobs = stats.NewStat("processor.jobs", stats.CountType)
-	proc.statDBR = stats.NewStat("processor.db_read", stats.CountType)
-	proc.statDBW = stats.NewStat("processor.db_write", stats.CountType)
+	proc.statGatewayDBR = stats.NewStat("processor.gateway_db_read", stats.CountType)
+	proc.statGatewayDBW = stats.NewStat("processor.gateway_db_write", stats.CountType)
+	proc.statRouterDBW = stats.NewStat("processor.router_db_write", stats.CountType)
+	proc.statBatchRouterDBW = stats.NewStat("processor.batch_router_db_write", stats.CountType)
+	proc.statActiveUsers = stats.NewStat("processor.active_users", stats.GaugeType)
 
 	go backendConfigSubscriber()
 	proc.transformer.Setup()
@@ -168,18 +176,25 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		if len(proc.userEventsMap[userID]) > sessionThresholdEvents {
 			processUserIDs[userID] = true
 		}
+
+		//Setting/updating pqItem lastTS with event received timestamp
+		receivedAtResult := gjson.Get(string(job.EventPayload), "receivedAt")
+		timestamp := time.Now()
+		if receivedAtResult.Type != gjson.Null {
+			timestamp = receivedAtResult.Time()
+		}
 		pqItem, ok := proc.userPQItemMap[userID]
 		if !ok {
 			pqItem := &pqItemT{
 				userID: userID,
-				lastTS: time.Now(),
+				lastTS: timestamp,
 				index:  -1,
 			}
 			proc.userPQItemMap[userID] = pqItem
 			proc.userJobPQ.Add(pqItem)
 		} else {
 			misc.Assert(pqItem.index != -1)
-			proc.userJobPQ.Update(pqItem, time.Now())
+			proc.userJobPQ.Update(pqItem, timestamp)
 		}
 
 	}
@@ -287,6 +302,7 @@ func (proc *HandleT) createSessions() {
 			continue
 		}
 
+		proc.statActiveUsers.Gauge(len(proc.userJobListMap))
 		//Enough time hasn't transpired since last
 		oldestItem := proc.userJobPQ.Top()
 		if time.Since(oldestItem.lastTS) < time.Duration(sessionThresholdInS) {
@@ -322,8 +338,6 @@ func (proc *HandleT) createSessions() {
 		}
 		proc.userPQLock.Unlock()
 		if len(userJobsToProcess) > 0 {
-			logger.Debug("Processing Session Check")
-			proc.Print()
 			proc.processUserJobs(userJobsToProcess, userEventsToProcess)
 		}
 	}
@@ -354,15 +368,20 @@ func getEnabledDestinationTypes(writeKey string) map[string]backendconfig.Destin
 }
 
 func getTimestampFromEvent(event map[string]interface{}, field string) time.Time {
-	var originalTimestamp time.Time
+	var timestamp time.Time
 	var err error
 	if _, ok := event[field]; ok {
-		originalTimestamp, err = time.Parse(time.RFC3339, event[field].(string))
-		misc.AssertError(err)
+		timestampStr, typecasted := event[field].(string)
+		if typecasted {
+			timestamp, err = dateparse.ParseAny(timestampStr)
+		}
+		if !typecasted || err != nil {
+			timestamp = time.Now()
+		}
 	} else {
-		originalTimestamp = time.Now()
+		timestamp = time.Now()
 	}
-	return originalTimestamp
+	return timestamp
 }
 
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]interface{}) {
@@ -431,12 +450,15 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
 						shallowEventCopy["message"].(map[string]interface{})["source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 
-						// set timestamp skew
+						// set timestamp skew based on timestamp fields from SDKs
 						originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
 						sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
 
-						shallowEventCopy["message"].(map[string]interface{})["receivedAt"] = receivedAt
-						shallowEventCopy["message"].(map[string]interface{})["timestamp"] = receivedAt.Add(-sentAt.Sub(originalTimestamp)).Format(time.RFC3339)
+						// set all timestamps in RFC3339 format
+						shallowEventCopy["message"].(map[string]interface{})["receivedAt"] = receivedAt.Format(time.RFC3339)
+						shallowEventCopy["message"].(map[string]interface{})["originalTimestamp"] = originalTimestamp.Format(time.RFC3339)
+						shallowEventCopy["message"].(map[string]interface{})["sentAt"] = sentAt.Format(time.RFC3339)
+						shallowEventCopy["message"].(map[string]interface{})["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(time.RFC3339)
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDest[destType]
@@ -469,10 +491,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
 		url := integrations.GetDestinationURL(destID)
-		logger.Debug("Transform input size", len(destEventList))
-		destTransformEventList, ok := proc.transformer.Transform(destEventList, url, transformBatchSize, true)
+		response := proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), len(destEventList))
+		response = proc.transformer.Transform(response.Events, url, transformBatchSize)
+		destTransformEventList := response.Events
 		logger.Debug("Transform output size", len(destTransformEventList))
-		if !ok {
+		if !response.Success {
 			continue
 		}
 
@@ -487,7 +510,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 			//Need to replace UUID his with messageID from client
 			id := uuid.NewV4()
-			sourceID := destEventList[idx].(map[string]interface{})["message"].(map[string]interface{})["source_id"].(string)
+			sourceID := response.SourceIDList[idx]
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID)),
@@ -515,8 +538,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.statsDBW.End(len(statusList))
 	proc.statsJobs.End(totalEvents)
 
-	proc.statJobs.Count(totalEvents)
-	proc.statDBW.Count(len(statusList))
+	proc.statGatewayDBW.Count(len(statusList))
+	proc.statRouterDBW.Count(len(destJobs))
+	proc.statBatchRouterDBW.Count(len(batchDestJobs))
 
 	proc.statsJobs.Print()
 	proc.statsDBW.Print()
@@ -544,7 +568,7 @@ func (proc *HandleT) mainLoop() {
 
 		combinedList := append(unprocessedList, retryList...)
 		proc.statsDBR.End(len(combinedList))
-		proc.statDBR.Count(len(combinedList))
+		proc.statGatewayDBR.Count(len(combinedList))
 
 		proc.statsDBR.Print()
 

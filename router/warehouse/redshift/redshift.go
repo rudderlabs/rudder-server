@@ -15,7 +15,8 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/config"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
 )
@@ -61,7 +62,7 @@ func (rs *HandleT) setUploadError(err error) {
 
 func (rs *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sortKeyField := "received_at"
-	sqlStatement := fmt.Sprintf(`CREATE TABLE %s ( %v ) SORTKEY(%s)`, name, columnsWithDataTypes(columns, ""), sortKeyField)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) SORTKEY(%s)`, name, columnsWithDataTypes(columns, ""), sortKeyField)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -73,7 +74,7 @@ func (rs *HandleT) addColumns(tableName string, columns map[string]string) (err 
 
 func (rs *HandleT) createSchema() (err error) {
 	// TODO: Change to use source_schema_name in wh_schemas table
-	_, err = rs.Db.Exec(fmt.Sprintf(`CREATE SCHEMA %s`, rs.SchemaName))
+	_, err = rs.Db.Exec(fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, rs.SchemaName))
 	return
 }
 
@@ -82,7 +83,9 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	updatedSchema = diff.UpdatedSchema
 	if len(rs.CurrentSchema) == 0 {
 		err = rs.createSchema()
-		misc.AssertError(err)
+		if err != nil {
+			return nil, err
+		}
 	}
 	processedTables := make(map[string]bool)
 	for _, tableName := range diff.Tables {
@@ -95,7 +98,10 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 			continue
 		}
 		if len(columnMap) > 0 {
-			rs.addColumns(fmt.Sprintf(`%s.%s`, rs.SchemaName, tableName), columnMap)
+			err := rs.addColumns(fmt.Sprintf(`%s.%s`, rs.SchemaName, tableName), columnMap)
+			if err != nil {
+				logger.Error(err)
+			}
 		}
 	}
 	return
@@ -119,7 +125,10 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		manifest.Entries = append(manifest.Entries, S3ManifestEntryT{Url: location, Mandatory: true})
 	}
 	manifestJSON, err := json.Marshal(&manifest)
-	localManifestPath := fmt.Sprintf("%v%v%v", config.GetEnv("S3_UPLOADS_DIR", "/home/ubuntu/s3/"), "redshift-manifests/", uuid.NewV4().String())
+
+	dirName := "/rudder-redshift-manifests/"
+	tmpDirPath := misc.CreateTMPDIR()
+	localManifestPath := fmt.Sprintf("%v%v", tmpDirPath+dirName, uuid.NewV4().String())
 	err = os.MkdirAll(filepath.Dir(localManifestPath), os.ModePerm)
 	misc.AssertError(err)
 	_ = ioutil.WriteFile(localManifestPath, manifestJSON, 0644)
@@ -128,15 +137,16 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	misc.AssertError(err)
 	defer file.Close()
 
-	uploader, err := fileuploader.NewFileUploader(&fileuploader.SettingsT{
-		Provider:       "s3",
-		AmazonS3Bucket: config.GetEnv("REDSHIFT_MANIFESTS_BUCKET", "rl-redshift-manifests"),
+	uploader, err := filemanager.New(&filemanager.SettingsT{
+		Provider: "S3",
+		Bucket:   config.GetEnv("REDSHIFT_MANIFESTS_BUCKET", "rl-redshift-manifests"),
 	})
-	uploadLocation, err := uploader.Upload(file, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
+
+	uploadOutput, err := uploader.Upload(file, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
 
 	misc.AssertError(err)
 
-	uploadLocation = warehouseutils.GetS3Location(uploadLocation)
+	uploadLocation := warehouseutils.GetS3Location(uploadOutput.Location)
 
 	return uploadLocation, nil
 }
@@ -169,7 +179,7 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 			return err
 		}
 
-		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION 'us-east-1'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.SchemaName, stagingTableName), sortedColumnNames, manifestLocation, config.GetEnv("IAM_REDSHIFT_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_REDSHIFT_COPY_SECRET_ACCESS_KEY", ""))
+		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION 'us-east-1'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.SchemaName, stagingTableName), sortedColumnNames, manifestLocation, config.GetEnv("IAM_REDSHIFT_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_REDSHIFT_COPY_SECRET_ACCESS_KEY", ""))
 
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
@@ -213,7 +223,6 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 			rs.setUploadError(err)
 			return err
 		}
-
 	}
 	return
 }
@@ -274,6 +283,7 @@ func (rs *HandleT) MigrateSchema() (err error) {
 }
 
 func (rs *HandleT) Export() {
+	logger.Debugf("Starting export to redshift: ")
 	err := warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportingDataState, rs.DbHandle)
 	misc.AssertError(err)
 	err = rs.load(rs.UploadSchema)

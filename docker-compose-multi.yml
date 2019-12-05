@@ -1,0 +1,106 @@
+version: "3.7"
+
+services:
+  db1:
+    image: postgres:11-alpine
+    env_file:
+      - build/docker.env
+    ports:
+      - "6432:5432"
+
+  backend1:
+    depends_on:
+      - db1
+      - d-transformer
+    build:
+      context: ./
+      dockerfile: build/Dockerfile-dev
+
+    ports:
+      - "8081:8080"
+    env_file:
+      - build/docker.env
+    environment:
+      - JOBS_DB_HOST=db1
+      - INSTANCE_ID=1
+
+  db2:
+    image: postgres:11-alpine
+    env_file:
+      - build/docker.env
+    ports:
+      - "7432:5432"
+
+  backend2:
+    depends_on:
+      - db2
+      - d-transformer
+    build:
+      context: ./
+      dockerfile: build/Dockerfile-dev
+
+    ports:
+      - "8082:8080"
+    env_file:
+      - build/docker.env
+    environment:
+      - JOBS_DB_HOST=db2
+      - INSTANCE_ID=2
+
+  d-transformer1:
+    build:
+      context: ./rudder-transformer/
+      dockerfile: Dockerfile
+    ports:
+      - "9091:9090"
+
+  d-transformer2:
+    build:
+      context: ./rudder-transformer/
+      dockerfile: Dockerfile
+    ports:
+      - "9092:9090"
+
+  d-transformer3:
+    build:
+      context: ./rudder-transformer/
+      dockerfile: Dockerfile
+    ports:
+      - "9093:9090"
+
+  d-transformer:
+    image: nginx
+    depends_on:
+      - d-transformer1
+      - d-transformer2
+      - d-transformer3
+    environment:
+      - NGINX_PORT=9090
+    volumes:
+      - ./build/nginx.transformer.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "9090:9090"
+
+  lb:
+    image: nginx
+    depends_on:
+      - backend1
+      - backend2
+    environment:
+      - NGINX_PORT=8080
+    volumes:
+      - ./build/nginx.backend.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:8080"
+
+  dependencies:
+    image: dadarek/wait-for-dependencies
+    depends_on:
+      - backend1
+      - backend2
+      - db1
+      - db2
+      - d-transformer1
+      - d-transformer2
+      - d-transformer3
+    command: db1:5432 db2:5432 backend1:8080 backend2:8080 d-transformer1:9090 d-transformer2:9090 d-transformer3:9090

@@ -2,8 +2,8 @@ package stats
 
 import (
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"gopkg.in/alexcesaro/statsd.v2"
 )
 
@@ -15,14 +15,21 @@ const (
 
 var client *statsd.Client
 var writeKeyClientsMap = make(map[string]*statsd.Client)
+var destClientsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
+var statsdServerURL string
+var instanceName string
+var conn statsd.Option
 
 func init() {
 	config.Initialize()
 	statsEnabled = config.GetBool("enableStats", false)
+	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
+	instanceName = config.GetEnv("INSTANCE_NAME", "")
 
 	var err error
-	client, err = statsd.New()
+	conn = statsd.Address(statsdServerURL)
+	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName))
 	if err != nil {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
@@ -35,6 +42,7 @@ func NewStat(Name string, StatType string) (rStats *RudderStats) {
 	return &RudderStats{
 		Name:     Name,
 		StatType: StatType,
+		Client:   client,
 	}
 }
 
@@ -42,7 +50,7 @@ func NewStat(Name string, StatType string) (rStats *RudderStats) {
 func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *RudderStats) {
 	if _, found := writeKeyClientsMap[writeKey]; !found {
 		var err error
-		writeKeyClientsMap[writeKey], err = statsd.New(statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("writekey", writeKey))
+		writeKeyClientsMap[writeKey], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName, "writekey", writeKey))
 		if err != nil {
 			// If nothing is listening on the target port, an error is returned and
 			// the returned client does nothing but is still usable. So we can
@@ -54,6 +62,23 @@ func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *Rud
 		Name:     Name,
 		StatType: StatType,
 		writeKey: writeKey,
+		Client:   writeKeyClientsMap[writeKey],
+	}
+}
+
+func NewBatchDestStat(Name string, StatType string, destID string) *RudderStats {
+	if _, found := destClientsMap[destID]; !found {
+		var err error
+		destClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName, "destID", destID))
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+	return &RudderStats{
+		Name:     Name,
+		StatType: StatType,
+		DestID:   destID,
+		Client:   destClientsMap[destID],
 	}
 }
 
@@ -62,26 +87,23 @@ func (rStats *RudderStats) Count(n int) {
 		return
 	}
 	misc.Assert(rStats.StatType == CountType)
-	if rStats.writeKey != "" {
-		writeKeyClientsMap[rStats.writeKey].Count(rStats.Name, n)
-	} else {
-		client.Count(rStats.Name, n)
-	}
+	rStats.Client.Count(rStats.Name, n)
 }
+
 func (rStats *RudderStats) Increment() {
 	if !statsEnabled {
 		return
 	}
 	misc.Assert(rStats.StatType == CountType)
-	client.Increment(rStats.Name)
+	rStats.Client.Increment(rStats.Name)
 }
 
-func (rStats *RudderStats) Guage(value interface{}) {
+func (rStats *RudderStats) Gauge(value interface{}) {
 	if !statsEnabled {
 		return
 	}
 	misc.Assert(rStats.StatType == GaugeType)
-	client.Gauge(rStats.Name, value)
+	rStats.Client.Gauge(rStats.Name, value)
 }
 
 func (rStats *RudderStats) Start() {
@@ -89,7 +111,7 @@ func (rStats *RudderStats) Start() {
 		return
 	}
 	misc.Assert(rStats.StatType == TimerType)
-	rStats.Timing = client.NewTiming()
+	rStats.Timing = rStats.Client.NewTiming()
 }
 
 func (rStats *RudderStats) End() {
@@ -104,7 +126,7 @@ func (rStats *RudderStats) DeferredTimer() {
 	if !statsEnabled {
 		return
 	}
-	client.NewTiming().Send(rStats.Name)
+	rStats.Client.NewTiming().Send(rStats.Name)
 }
 
 type RudderStats struct {
@@ -112,4 +134,6 @@ type RudderStats struct {
 	StatType string
 	Timing   statsd.Timing
 	writeKey string
+	DestID   string
+	Client   *statsd.Client
 }
