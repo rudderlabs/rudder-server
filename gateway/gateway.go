@@ -214,7 +214,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
-			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(time.RFC3339))
+			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
 			eventBatchesToRecord = append(eventBatchesToRecord, fmt.Sprintf("%s", body))
 
 			id := uuid.NewV4()

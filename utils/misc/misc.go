@@ -20,6 +20,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
+// RFC3339 with milli sec precision
+var RFC3339Milli = "2006-01-02T15:04:05.999Z07:00"
+
 //AssertError panics if error
 func AssertError(err error) {
 	if err != nil {
@@ -81,17 +84,21 @@ func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) 
 
 //ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
+	logger.Debug("[Misc: ParseRudderEventBatch] in ParseRudderEventBatch ")
 	var eventListJSON map[string]interface{}
 	err := json.Unmarshal(eventPayload, &eventListJSON)
 	if err != nil {
+		logger.Debug("json parsing of event payload failed ", string(eventPayload))
 		return nil, false
 	}
 	_, ok := eventListJSON["batch"]
 	if !ok {
+		logger.Debug("error retrieving value for batch key ", string(eventPayload))
 		return nil, false
 	}
 	eventListJSONBatchType, ok := eventListJSON["batch"].([]interface{})
 	if !ok {
+		logger.Error("error casting batch value to list of maps ", string(eventPayload))
 		return nil, false
 	}
 	return eventListJSONBatchType, true
