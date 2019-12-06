@@ -78,6 +78,7 @@ type S3UploadOutput struct {
 	Key            string
 	LocalFilePaths []string
 	Error          error
+	JournalOpID    int64
 }
 
 type ErrorResponseT struct {
@@ -95,7 +96,7 @@ func updateDestStatusStats(id string, count int, isSuccess bool) {
 	destStatsD.Count(count)
 }
 
-func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, isWarehouse bool) S3UploadOutput {
+func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) S3UploadOutput {
 	var bucketName, dirName string
 	if isWarehouse {
 		bucketName = config.GetString("WAREHOUSE_JSON_UPLOADS_BUCKET", "rl-redshift-json-dump")
@@ -106,7 +107,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, isW
 	}
 
 	uuid := uuid.NewV4()
-	logger.Infof("BRT: Starting logging to %s: %s\n", provider, bucketName)
+	logger.Debugf("BRT: Starting logging to %s: %s\n", provider, bucketName)
 
 	tmpDirPath := misc.CreateTMPDIR()
 	path := fmt.Sprintf("%v%v.json", tmpDirPath+dirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
@@ -131,7 +132,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, isW
 	misc.AssertError(err)
 	gzipWriter.Close()
 
-	logger.Infof("BRT: Logged to local file: %v\n", gzipFilePath)
+	logger.Debugf("BRT: Logged to local file: %v\n", gzipFilePath)
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
@@ -140,7 +141,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, isW
 	gzipFile, err = os.Open(gzipFilePath)
 	misc.AssertError(err)
 
-	logger.Infof("BRT: Starting upload to %s: %s\n", provider, bucketName)
+	logger.Debugf("BRT: Starting upload to %s: %s\n", provider, bucketName)
 
 	var keyPrefixes []string
 	if isWarehouse {
@@ -157,48 +158,21 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, isW
 	})
 	opID := brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
 	_, err = uploader.Upload(gzipFile, keyPrefixes...)
-	var (
-		jobState  string
-		errorResp []byte
-	)
+
 	if err != nil {
-		logger.Errorf("BRT: Error uploading to %s: %v", provider, err)
-		jobState = jobsdb.FailedState
-		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
-		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
-		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
-	} else {
-		logger.Infof("BRT: Uploaded to S3 bucket: %v %v %v\n", bucketName, batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
-		jobState = jobsdb.SucceededState
-		errorResp = []byte(`{"success":"OK"}`)
-		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
-	}
-
-	var statusList []*jobsdb.JobStatusT
-
-	//Identify jobs which can be processed
-	for _, job := range batchJobs.Jobs {
-		status := jobsdb.JobStatusT{
-			JobID:         job.JobID,
-			AttemptNum:    job.LastJobStatus.AttemptNum,
-			JobState:      jobState,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
-			ErrorCode:     "",
-			ErrorResponse: errorResp,
+		logger.Debug(err)
+		return S3UploadOutput{
+			Error:       err,
+			JournalOpID: opID,
 		}
-		statusList = append(statusList, &status)
 	}
 
-	//Mark the jobs as executing
-	brt.jobsDB.UpdateJobStatus(statusList, []string{batchJobs.BatchDestination.Destination.DestinationDefinition.Name}, batchJobs.BatchDestination.Source.ID)
-	brt.jobsDB.JournalDeleteEntry(opID)
-
-	err = os.Remove(gzipFilePath)
-	misc.AssertError(err)
-
-	// return S3UploadOutput{Bucket: bucketName, Key: strings.Join(uploadLocation, "/") + "/" + fileName + ".gz", LocalFilePaths: []string{gzipFilePath}}
-	return S3UploadOutput{Bucket: bucketName, Key: strings.Join(keyPrefixes, "/") + "/" + fileName, LocalFilePaths: []string{gzipFilePath}}
+	return S3UploadOutput{
+		Bucket:         bucketName,
+		Key:            strings.Join(keyPrefixes, "/") + "/" + fileName,
+		LocalFilePaths: []string{gzipFilePath},
+		JournalOpID:    opID,
+	}
 }
 
 func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location string) (err error) {
@@ -240,13 +214,28 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 	return err
 }
 
-func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, err error) {
-	var jobState string
-	if err != nil {
-		logger.Error(err)
-		jobState = jobsdb.FailedState
+func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err error) {
+	var (
+		jobState   string
+		errorResp  []byte
+		bucketName string
+	)
+	if isWarehouse {
+		bucketName = config.GetString("WAREHOUSE_JSON_UPLOADS_BUCKET", "rl-redshift-json-dump")
 	} else {
+		bucketName = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
+	}
+	if err != nil {
+		logger.Errorf("BRT: Error uploading to object storage: %v", err)
+		jobState = jobsdb.FailedState
+		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
+		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
+		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
+	} else {
+		logger.Debugf("BRT: Uploaded to object storage bucket: %v %v %v\n", bucketName, batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		jobState = jobsdb.SucceededState
+		errorResp = []byte(`{"success":"OK"}`)
+		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
 	}
 
 	var statusList []*jobsdb.JobStatusT
@@ -260,13 +249,13 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, err error) {
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
 			ErrorCode:     "",
-			ErrorResponse: []byte(`{}`), // check
+			ErrorResponse: errorResp,
 		}
 		statusList = append(statusList, &status)
 	}
 
 	//Mark the jobs as executing
-	brt.jobsDB.UpdateJobStatus(statusList, []string{batchJobs.BatchDestination.Destination.DestinationDefinition.Name})
+	brt.jobsDB.UpdateJobStatus(statusList, []string{batchJobs.BatchDestination.Destination.DestinationDefinition.Name}, batchJobs.BatchDestination.Source.ID)
 }
 
 func (brt *HandleT) initWorkers() {
@@ -279,17 +268,19 @@ func (brt *HandleT) initWorkers() {
 					case "S3":
 						s3DestUploadStat := stats.NewStat("batch_router.S3_dest_upload_time", stats.TimerType)
 						s3DestUploadStat.Start()
-						brt.copyJobsToStorage("S3", batchJobs, false)
+						output := brt.copyJobsToStorage("S3", batchJobs, true, false)
+						brt.setJobStatus(batchJobs, false, output.Error)
+						brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
+						misc.RemoveFilePaths(output.LocalFilePaths...)
 						s3DestUploadStat.End()
 						setSourceInProgress(batchJobs.BatchDestination, false)
 					case "RS":
-						// output := brt.copyJobsToS3(batchJobs, "rl-redshift-json-dump", true)
-						output := brt.copyJobsToStorage("S3", batchJobs, true)
-						// if err == nil {
-						// 	err = brt.updateWarehouseMetadata(batchJobs, output.Key)
-						// }
-						brt.updateWarehouseMetadata(batchJobs, output.Key)
-						brt.setJobStatus(batchJobs, nil)
+						output := brt.copyJobsToStorage("S3", batchJobs, true, true)
+						if output.Error == nil {
+							brt.updateWarehouseMetadata(batchJobs, output.Key)
+						}
+						brt.setJobStatus(batchJobs, true, output.Error)
+						brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						setSourceInProgress(batchJobs.BatchDestination, false)
 					}
