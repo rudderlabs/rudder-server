@@ -188,7 +188,11 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 }
 
 func filterValues(message *EventUploadT) {
-	message.Properties = getKeys(message.Properties.(map[string]interface{}))
+	if message.Properties == nil {
+		message.Properties = make([]string, 0)
+	} else {
+		message.Properties = getKeys(message.Properties.(map[string]interface{}))
+	}
 }
 
 func getKeys(dataMap map[string]interface{}) []string {
