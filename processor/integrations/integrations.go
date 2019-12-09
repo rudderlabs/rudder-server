@@ -58,6 +58,7 @@ type PostParameterNewT struct {
 	Type          string
 	URL           string
 	RequestMethod string
+	UserID        string
 	Headers       interface{}
 	QueryParams   interface{}
 	Body          interface{}
@@ -73,6 +74,26 @@ func GetResponseVersion(response json.RawMessage) int {
 	version := parsedResponse.Get("version").Value().(int)
 
 	return version
+}
+
+// GetPostInfoNew parses the transformer response
+func GetPostInfoNew(transformRaw json.RawMessage) PostParameterNewT {
+	var postInfo PostParameterNewT
+	var ok bool
+	parsedJSON := gjson.ParseBytes(transformRaw)
+	postInfo.URL, ok = parsedJSON.Get("endpoint").Value().(string)
+	misc.Assert(ok)
+	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
+	misc.Assert(ok)
+	postInfo.Body, ok = parsedJSON.Get("body").Value().(interface{})
+	misc.Assert(ok)
+	postInfo.Headers, ok = parsedJSON.Get("headers").Value().(interface{})
+	misc.Assert(ok)
+	postInfo.QueryParams, ok = parsedJSON.Get("params").Value().(interface{})
+	misc.Assert(ok)
+	postInfo.Files, ok = parsedJSON.Get("files").Value().(interface{})
+	misc.Assert(ok)
+	return postInfo
 }
 
 //GetPostInfo provides the post parameters for this destination
