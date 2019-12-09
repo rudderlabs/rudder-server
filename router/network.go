@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -17,10 +19,8 @@ type NetHandleT struct {
 	httpClient *http.Client
 }
 
-func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
-
+func (network *NetHandleT) processOldResponseType(jsonData []byte) (int, string, string) {
 	client := network.httpClient
-
 	//Parse the response to get parameters
 	postInfo := integrations.GetPostInfo(jsonData)
 
@@ -63,6 +63,15 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 		jsonValue, err := json.Marshal(payloadJSON)
 		misc.AssertError(err)
 		req.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
+	} else if postInfo.Type == integrations.PostDataFORM {
+		payloadFormKV, ok := postInfo.Payload.(map[string]interface{})
+		misc.Assert(ok)
+		formValues := url.Values{}
+		for key, val := range payloadFormKV {
+			fmt.Println(" === key , ==val=== ", key, " ", val)
+			formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
+		}
+		req.Body = ioutil.NopCloser(strings.NewReader(formValues.Encode()))
 	} else {
 		//Not implemented yet
 		misc.Assert(false)
@@ -84,15 +93,33 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 
 	if resp != nil && resp.Body != nil {
 		respBody, _ = ioutil.ReadAll(resp.Body)
+		fmt.Println("== resp body=== ", string(respBody))
 		defer resp.Body.Close()
 	}
 
 	if err != nil {
 		logger.Error("Errored when sending request to the server", err)
+		fmt.Println("== resp body=== ", string(respBody))
 		return http.StatusGatewayTimeout, "", string(respBody)
 	}
 
 	return resp.StatusCode, resp.Status, string(respBody)
+}
+
+func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string, string) {
+	return 0, "", ""
+}
+
+func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
+	versionToFunc := map[int]func([]byte) (int, string, string){
+		0: network.processOldResponseType,
+		1: network.processNewResponseType,
+	}
+	// Get response version
+	version := integrations.GetResponseVersion(jsonData)
+
+	return versionToFunc[version](jsonData)
+
 }
 
 //Setup initializes the module
