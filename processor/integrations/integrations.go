@@ -53,6 +53,17 @@ type PostParameterT struct {
 	RequestConfig interface{}
 }
 
+// GetResponseVersion Get version of the transformer response
+func GetResponseVersion(response json.RawMessage) int {
+	parsedResponse := gjson.ParseBytes(response)
+	if !parsedResponse.Get("version").Exists() {
+		return 0
+	}
+	version := parsedResponse.Get("version").Value().(int)
+
+	return version
+}
+
 //GetPostInfo provides the post parameters for this destination
 func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	var postInfo PostParameterT

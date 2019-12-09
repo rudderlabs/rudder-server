@@ -487,6 +487,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
+
 	for destID, destEventList := range eventsByDest {
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
