@@ -118,7 +118,6 @@ type ResponseT struct {
 func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	url string, batchSize int) ResponseT {
 
-	// logger.Info("Ictus ", url, batchSize)
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
 
@@ -199,19 +198,17 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		if resp.data == nil {
 			continue
 		}
-		if oneToMany {
-			respArray, ok := resp.data.([]interface{})
-			misc.Assert(ok)
-			//Transform is one to many mapping so returned
-			//response for each is an array. We flatten it out
-			for _, respElem := range respArray {
-				respElemMap, castOk := respElem.(map[string]interface{})
-				if castOk {
-					if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
-						trans.failedStat.Increment()
-						// TODO: Log errored resposnes to file
-						continue
-					}
+		respArray, ok := resp.data.([]interface{})
+		misc.Assert(ok)
+		//Transform is one to many mapping so returned
+		//response for each is an array. We flatten it out
+		for _, respElem := range respArray {
+			respElemMap, castOk := respElem.(map[string]interface{})
+			if castOk {
+				if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
+					// TODO: Log errored resposnes to file
+					trans.failedStat.Increment()
+					continue
 				}
 			}
 			outClientEvents = append(outClientEvents, respElem)
@@ -219,7 +216,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		}
 
 	}
-	misc.Assert(oneToMany || len(outClientEvents) == len(clientEvents))
+
 	trans.receivedStat.Count(len(outClientEvents))
 	trans.perfStats.End(len(clientEvents))
 	trans.perfStats.Print()
