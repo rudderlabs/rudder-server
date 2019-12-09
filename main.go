@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor"
+	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/db"
@@ -209,6 +210,8 @@ func main() {
 	}
 
 	var gateway gateway.HandleT
-	gateway.Setup(&gatewayDB, clearDB)
+	var rateLimiter ratelimiter.HandleT
+	rateLimiter.SetUp()
+	gateway.Setup(&gatewayDB, &rateLimiter, clearDB)
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }

@@ -1,10 +1,6 @@
 package backendconfig
 
 import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"net/http"
 	"reflect"
 	"time"
 
@@ -17,6 +13,9 @@ import (
 )
 
 var (
+	hosting                              Hosting
+	hostedService                        bool
+	hostedServiceSecret                  string
 	configBackendURL, configBackendToken string
 	pollInterval                         time.Duration
 	curSourceJSON                        SourcesT
@@ -66,33 +65,21 @@ type TransformationT struct {
 	VersionID   string
 }
 
+type Hosting interface {
+	SetUp()
+	GetBackendConfig() (SourcesT, bool)
+	GetWorkspaceIDForWriteKey(string) string
+}
+
 func loadConfig() {
+	// Rudder as Hosted service. false by default
+	hostedService = config.GetEnvAsBool("HOSTED_SERVICE", false)
+	// Secret to be sent in basic auth for Hosted service. password by default
+	hostedServiceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	configBackendToken = config.GetEnv("CONFIG_BACKEND_TOKEN", "1P2tfQQKarhlsG6S3JGLdXptyZY")
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
-}
-
-func getBackendConfig() (SourcesT, bool) {
-	client := &http.Client{}
-	url := fmt.Sprintf("%s/workspace-config?workspaceToken=%s", configBackendURL, configBackendToken)
-	resp, err := client.Get(url)
-
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = ioutil.ReadAll(resp.Body)
-		defer resp.Body.Close()
-	}
-	if err != nil {
-		logger.Error("Errored when sending request to the server", err)
-		return SourcesT{}, false
-	}
-	var sourcesJSON SourcesT
-	err = json.Unmarshal(respBody, &sourcesJSON)
-	if err != nil {
-		logger.Error("Errored while parsing request", err, string(respBody), resp.StatusCode)
-		return SourcesT{}, false
-	}
-	return sourcesJSON, true
 }
 
 func init() {
@@ -103,7 +90,7 @@ func init() {
 func pollConfigUpdate() {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
-		sourceJSON, ok := getBackendConfig()
+		sourceJSON, ok := hosting.GetBackendConfig()
 		if !ok {
 			statConfigBackendError.Increment()
 		}
@@ -118,6 +105,10 @@ func pollConfigUpdate() {
 
 func GetConfig() SourcesT {
 	return curSourceJSON
+}
+
+func GetWorkspaceIDForWriteKey(writeKey string) string {
+	return hosting.GetWorkspaceIDForWriteKey(writeKey)
 }
 
 func Subscribe(channel chan utils.DataEvent) {
@@ -138,6 +129,13 @@ func WaitForConfig() {
 
 // Setup backend config
 func Setup() {
+	if hostedService {
+		hosting = new(ManagedHosting)
+	} else {
+		hosting = new(SelfHosting)
+	}
+
+	hosting.SetUp()
 	Eb = new(utils.EventBus)
 	go pollConfigUpdate()
 }

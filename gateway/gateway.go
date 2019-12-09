@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -47,6 +48,7 @@ type batchWebRequestT struct {
 }
 
 var (
+	hostedService                             bool
 	webPort, maxBatchSize, maxDBWriterProcess int
 	batchTimeout                              time.Duration
 	respMessage                               string
@@ -68,6 +70,8 @@ var batchEvent = []byte(`
 `)
 
 func loadConfig() {
+	// Rudder as Hosted service. false by default
+	hostedService = config.GetEnvAsBool("HOSTED_SERVICE", false)
 	//Port where GW is running
 	webPort = config.GetInt("Gateway.webPort", 8080)
 	//Number of incoming requests that are batched before initiating write
@@ -105,6 +109,7 @@ type HandleT struct {
 	badgerDB      *badger.DB
 	ackCount      uint64
 	recvCount     uint64
+	rateLimiter   *ratelimiter.HandleT
 }
 
 func updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -129,6 +134,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		var writeKeySuccessEventStats = make(map[string]int)
 		var writeKeyFailStats = make(map[string]int)
 		var writeKeyFailEventStats = make(map[string]int)
+		var workSpaceDropStats = make(map[string]int)
 		var preDbStoreCount int
 		//Saving the event data read from req.request.Body to the splice.
 		//Using this to send event schema to the config backend.
@@ -146,6 +152,18 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			req.request.Body.Close()
 
 			writeKey, _, ok := req.request.BasicAuth()
+
+			if hostedService {
+				//If ratelimiter returns false for AllowEventBatch, Just drop the event batch and continue.
+				restrictorKey := backendconfig.GetWorkspaceIDForWriteKey(writeKey)
+				if gateway.rateLimiter.LimitReached(restrictorKey) {
+					req.done <- "Max Events Limit reached. Dropping Events."
+					preDbStoreCount++
+					misc.IncrementMapByKey(workSpaceDropStats, restrictorKey, 1)
+					continue
+				}
+			}
+
 			if !ok {
 				req.done <- "Failed to read writeKey from header"
 				preDbStoreCount++
@@ -260,6 +278,9 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")
 		updateWriteKeyStats(writeKeySuccessStats, "gateway.write_key_successful_requests")
 		updateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
+		if hostedService {
+			updateWriteKeyStats(workSpaceDropStats, "gateway.work_space_dropped_requests")
+		}
 		// update stats event wise
 		updateWriteKeyStats(writeKeyEventStats, "gateway.write_key_events")
 		updateWriteKeyStats(writeKeySuccessEventStats, "gateway.write_key_successful_events")
@@ -490,11 +511,12 @@ func (gateway *HandleT) openBadger(clearDB *bool) {
 }
 
 //Setup initializes this module
-func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, clearDB *bool) {
+func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.HandleT, clearDB *bool) {
 	if enableDedup {
 		gateway.openBadger(clearDB)
 		defer gateway.badgerDB.Close()
 	}
+	gateway.rateLimiter = rateLimiter
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB

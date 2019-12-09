@@ -8,6 +8,11 @@ enableProcessor = true
 enableRouter = true
 enableStats = true
 
+[HostedService]
+eventLimit=1000
+rateLimitWindowInMins=60
+noOfBucketsInWindow=12
+
 [Gateway]
 webPort = 8080
 maxDBWriterProcess = 4
