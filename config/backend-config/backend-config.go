@@ -82,6 +82,10 @@ func loadConfig() {
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
 }
 
+func GetConfigBackendToken() string {
+	return configBackendToken
+}
+
 func init() {
 	config.Initialize()
 	loadConfig()
