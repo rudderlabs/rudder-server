@@ -51,6 +51,17 @@ type PostParameterT struct {
 	RequestConfig interface{}
 }
 
+// PostParameterNewT emulates parameters needed tp make a request
+type PostParameterNewT struct {
+	Type          string
+	URL           string
+	RequestMethod string
+	Headers       interface{}
+	QueryParams   interface{}
+	Body          interface{}
+	Files         interface{}
+}
+
 // GetResponseVersion Get version of the transformer response
 func GetResponseVersion(response json.RawMessage) int {
 	parsedResponse := gjson.ParseBytes(response)
