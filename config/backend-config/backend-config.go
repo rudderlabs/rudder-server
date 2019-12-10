@@ -72,6 +72,10 @@ func loadConfig() {
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
 }
 
+func GetConfigBackendToken() string {
+	return configBackendToken
+}
+
 func getBackendConfig() (SourcesT, bool) {
 	client := &http.Client{}
 	url := fmt.Sprintf("%s/workspace-config?workspaceToken=%s", configBackendURL, configBackendToken)

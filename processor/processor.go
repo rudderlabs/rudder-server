@@ -500,10 +500,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
 
 						// set all timestamps in RFC3339 format
-						shallowEventCopy["message"].(map[string]interface{})["receivedAt"] = receivedAt.Format(time.RFC3339)
-						shallowEventCopy["message"].(map[string]interface{})["originalTimestamp"] = originalTimestamp.Format(time.RFC3339)
-						shallowEventCopy["message"].(map[string]interface{})["sentAt"] = sentAt.Format(time.RFC3339)
-						shallowEventCopy["message"].(map[string]interface{})["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(time.RFC3339)
+						shallowEventCopy["message"].(map[string]interface{})["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
+						shallowEventCopy["message"].(map[string]interface{})["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339Milli)
+						shallowEventCopy["message"].(map[string]interface{})["sentAt"] = sentAt.Format(misc.RFC3339Milli)
+						shallowEventCopy["message"].(map[string]interface{})["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339Milli)
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDest[destType]
