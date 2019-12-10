@@ -64,13 +64,13 @@ type PostParameterNewT struct {
 }
 
 // GetResponseVersion Get version of the transformer response
-func GetResponseVersion(response json.RawMessage) int {
+func GetResponseVersion(response json.RawMessage) string {
 	parsedResponse := gjson.ParseBytes(response)
 	if !parsedResponse.Get("version").Exists() {
-		return 0
+		return "0"
 	}
-	version := parsedResponse.Get("version").Value().(int)
-
+	version, ok := parsedResponse.Get("version").Value().(string)
+	misc.Assert(ok)
 	return version
 }
 
@@ -79,7 +79,11 @@ func GetPostInfoNew(transformRaw json.RawMessage) PostParameterNewT {
 	var postInfo PostParameterNewT
 	var ok bool
 	parsedJSON := gjson.ParseBytes(transformRaw)
+	postInfo.Type, ok = parsedJSON.Get("type").Value().(string)
+	misc.Assert(ok)
 	postInfo.URL, ok = parsedJSON.Get("endpoint").Value().(string)
+	misc.Assert(ok)
+	postInfo.RequestMethod, ok = parsedJSON.Get("method").Value().(string)
 	misc.Assert(ok)
 	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
 	misc.Assert(ok)
@@ -110,6 +114,24 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	postInfo.RequestConfig, ok = parsedJSON.Get("requestConfig").Value().(interface{})
 	misc.Assert(ok)
 	return postInfo
+}
+
+// GetUserIDFromTransformerResponse parses the payload to get userId
+func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) string {
+	// Get response version
+	version := GetResponseVersion(transformRaw)
+	var userID string
+	switch version {
+	case "0":
+		response := GetPostInfo(transformRaw)
+		userID = response.UserID
+	case "1":
+		response := GetPostInfoNew(transformRaw)
+		userID = response.UserID
+	default:
+		misc.Assert(false)
+	}
+	return userID
 }
 
 //GetDestinationIDs parses the destination names from the
