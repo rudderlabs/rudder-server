@@ -84,13 +84,11 @@ func (network *NetHandleT) processOldResponseType(jsonData []byte) (int, string,
 
 	if resp != nil && resp.Body != nil {
 		respBody, _ = ioutil.ReadAll(resp.Body)
-		fmt.Println("== resp body=== ", string(respBody))
 		defer resp.Body.Close()
 	}
 
 	if err != nil {
 		logger.Error("Errored when sending request to the server", err)
-		fmt.Println("== resp body=== ", string(respBody))
 		return http.StatusGatewayTimeout, "", string(respBody)
 	}
 
