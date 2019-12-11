@@ -63,15 +63,6 @@ func (network *NetHandleT) processOldResponseType(jsonData []byte) (int, string,
 		jsonValue, err := json.Marshal(payloadJSON)
 		misc.AssertError(err)
 		req.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
-	} else if postInfo.Type == integrations.PostDataFORM {
-		payloadFormKV, ok := postInfo.Payload.(map[string]interface{})
-		misc.Assert(ok)
-		formValues := url.Values{}
-		for key, val := range payloadFormKV {
-			fmt.Println(" === key , ==val=== ", key, " ", val)
-			formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
-		}
-		req.Body = ioutil.NopCloser(strings.NewReader(formValues.Encode()))
 	} else {
 		//Not implemented yet
 		misc.Assert(false)
@@ -115,6 +106,11 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 
 	isMultipart := len(postInfo.Files.(map[string]interface{})) > 0
 
+	// going forward we may want to support GraphQL and multipart requests
+	// the files key in the response is specifically to handle the multipart usecase
+	// for type GraphQL may need to support more keys like expected response format etc
+	// in future it's expected that we will build on top of this response type
+	// so, code addition should be done here instead of version bumping of response.
 	if isRest && !isMultipart {
 		requestMethod := postInfo.RequestMethod
 		requestBody := postInfo.Body.(map[string]interface{})
@@ -140,6 +136,9 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 			misc.AssertError(err)
 		}
 
+		// add queryparams to the url
+		// support of array type in params is handled if the
+		// response from transformers are "," seperated
 		queryParams := req.URL.Query()
 		for key, val := range requestQueryParams {
 			valString := fmt.Sprint(val)
@@ -151,6 +150,7 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 
 		req.URL.RawQuery = queryParams.Encode()
 
+		// support for JSON and FORM body type
 		if len(bodyValue) > 0 {
 			switch bodyFormat {
 			case "JSON":
@@ -197,11 +197,15 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 
 	}
 
+	// returning 200 with a message in case of unsupported processing
+	// so that we don't process again. can change this code to anything
+	// to be not picked up by router again
 	return 200, "method not implemented", ""
 
 }
 
 func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
+	// map of version to prarsing logic
 	versionToFunc := map[string]func([]byte) (int, string, string){
 		"0": network.processOldResponseType,
 		"1": network.processNewResponseType,
