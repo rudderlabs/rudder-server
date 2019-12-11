@@ -70,7 +70,8 @@ func (hosting *ManagedHosting) GetBackendConfig() (SourcesT, bool) {
 	}
 
 	hostedWorkspaceIDToWriteKeysMap := make(map[string][]string)
-	var sourcesJSON SourcesT
+	sourcesJSON := SourcesT{}
+	sourcesJSON.Sources = make([]SourceT, 0)
 	for workspaceID, sourceArr := range hostedWorspaces.HostedWorkspaces {
 		for _, source := range sourceArr {
 			hostedWorkspaceIDToWriteKeysMap[workspaceID] = append(hostedWorkspaceIDToWriteKeysMap[workspaceID], source.WriteKey)
