@@ -43,7 +43,7 @@ func loadConfig() {
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
 	enableBackup = config.GetBool("JobsDB.enableBackup", true)
-	rawDataDestinations = []string{"S3", "RS"}
+	rawDataDestinations = []string{"S3", "GCS", "RS", "BQ"}
 }
 
 // Test Function
@@ -213,6 +213,6 @@ func main() {
 	warehouse.Setup()
 
 	var gateway gateway.HandleT
-	gateway.Setup(&gatewayDB)
+	gateway.Setup(&gatewayDB, clearDB)
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }

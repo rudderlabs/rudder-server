@@ -24,6 +24,14 @@ const (
 	ExportedDataState         = "exported_data"
 )
 
+const (
+	JSONProcessSucceededState = "succeeded"
+	JSONProcessFailedState    = "failed"
+	JSONProcessExecutingState = "executing"
+	JSONProcessAbortedState   = "aborted"
+	JSONProcessWaitingState   = "waiting"
+)
+
 var (
 	warehouseUploadsTable    string
 	warehouseSchemasTable    string
@@ -170,9 +178,22 @@ func GetS3Location(location string) string {
 	return str2
 }
 
+func GetGCSLocation(location string) string {
+	str1 := strings.Replace(location, "https", "gs", 1)
+	str2 := strings.Replace(str1, "storage.googleapis.com/", "", 1)
+	return str2
+}
+
 func GetS3Locations(locations []string) (s3Locations []string, err error) {
 	for _, location := range locations {
 		s3Locations = append(s3Locations, GetS3Location((location)))
+	}
+	return
+}
+
+func GetGCSLocations(locations []string) (gcsLocations []string, err error) {
+	for _, location := range locations {
+		gcsLocations = append(gcsLocations, GetGCSLocation((location)))
 	}
 	return
 }

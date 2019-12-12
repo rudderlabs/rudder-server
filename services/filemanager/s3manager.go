@@ -45,14 +45,14 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	return UploadOutput{Location: output.Location}, err
 }
 
-func (uploader *S3Manager) Download(output *os.File, key string) error {
+func (manager *S3Manager) Download(output *os.File, key string) error {
 	sess, _ := session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1")},
 	)
 	downloader := s3manager.NewDownloader(sess)
 	_, err := downloader.Download(output,
 		&s3.GetObjectInput{
-			Bucket: aws.String(uploader.Bucket),
+			Bucket: aws.String(manager.Bucket),
 			Key:    aws.String(key),
 		})
 	// do not panic if download has failed for customer s3 bucket

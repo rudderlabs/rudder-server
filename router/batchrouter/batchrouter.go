@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -31,7 +32,8 @@ var (
 	mainLoopSleepInS          int
 	batchDestinations         []DestinationT
 	configSubscriberLock      sync.RWMutex
-	rawDataDestinations       []string
+	objectStorageDestinations []string
+	warehouseDestinations     []string
 	inProgressMap             map[string]bool
 	inProgressMapLock         sync.RWMutex
 	uploadedRawDataJobsCache  map[string]bool
@@ -63,7 +65,7 @@ func backendConfigSubscriber() {
 		for _, source := range allSources.Sources {
 			if source.Enabled && len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if destination.Enabled && misc.Contains(rawDataDestinations, destination.DestinationDefinition.Name) {
+					if destination.Enabled && (misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name)) {
 						batchDestinations = append(batchDestinations, DestinationT{Source: source, Destination: destination})
 					}
 				}
@@ -178,30 +180,22 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location string) (err error) {
 	schemaMap := make(map[string]map[string]interface{})
 	for _, job := range batchJobs.Jobs {
-		trimmedPayload := bytes.TrimLeft(job.EventPayload, " \t\r\n")
-		isArray := len(trimmedPayload) > 0 && trimmedPayload[0] == '['
-		if isArray {
-			var payloads []map[string]interface{}
-			err := json.Unmarshal(trimmedPayload, &payloads)
-			misc.AssertError(err)
-			for _, payload := range payloads {
-				tableName := payload["metadata"].(map[string]interface{})["table"].(string)
-				columns := payload["metadata"].(map[string]interface{})["columns"].(map[string]interface{})
-				if schemaMap[tableName] != nil {
-					for columnName, columnType := range columns {
-						schemaMap[tableName][columnName] = columnType
-					}
-				} else {
-					schemaMap[tableName] = columns
-				}
+		var payload map[string]interface{}
+		err := json.Unmarshal(job.EventPayload, &payload)
+		misc.AssertError(err)
+		tableName := payload["metadata"].(map[string]interface{})["table"].(string)
+		var ok bool
+		if _, ok = schemaMap[tableName]; !ok {
+			schemaMap[tableName] = make(map[string]interface{})
+		}
+		columns := payload["metadata"].(map[string]interface{})["columns"].(map[string]interface{})
+		for columnName, columnVal := range columns {
+			if _, ok := schemaMap[tableName][columnName]; !ok {
+				schemaMap[tableName][columnName] = columnVal
 			}
-		} else {
-			var payload map[string]interface{}
-			err := json.Unmarshal(job.EventPayload, &payload)
-			misc.AssertError(err)
-			schemaMap[payload["metadata"].(map[string]interface{})["table"].(string)] = payload["metadata"].(map[string]interface{})["columns"].(map[string]interface{})
 		}
 	}
+	logger.Debugf("Creating record for uploaded json in %s table with schema: %+v\n", warehouseJSONUploadsTable, schemaMap)
 	schemaPayload, err := json.Marshal(schemaMap)
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, status, created_at)
 									   VALUES ($1, $2, $3, $4, $5)`, warehouseJSONUploadsTable)
@@ -209,7 +203,7 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 	misc.AssertError(err)
 	defer stmt.Close()
 
-	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, "waiting", time.Now())
+	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, warehouseutils.JSONProcessWaitingState, time.Now())
 	misc.AssertError(err)
 	return err
 }
@@ -264,17 +258,18 @@ func (brt *HandleT) initWorkers() {
 			for {
 				select {
 				case batchJobs := <-brt.processQ:
-					switch batchJobs.BatchDestination.Destination.DestinationDefinition.Name {
-					case "S3":
+					destName := batchJobs.BatchDestination.Destination.DestinationDefinition.Name
+					switch {
+					case misc.ContainsString(objectStorageDestinations, destName):
 						s3DestUploadStat := stats.NewStat("batch_router.S3_dest_upload_time", stats.TimerType)
 						s3DestUploadStat.Start()
-						output := brt.copyJobsToStorage("S3", batchJobs, true, false)
+						output := brt.copyJobsToStorage(destName, batchJobs, true, false)
 						brt.setJobStatus(batchJobs, false, output.Error)
 						brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						s3DestUploadStat.End()
 						setSourceInProgress(batchJobs.BatchDestination, false)
-					case "RS":
+					case misc.ContainsString(warehouseDestinations, destName):
 						output := brt.copyJobsToStorage("S3", batchJobs, true, true)
 						if output.Error == nil {
 							brt.updateWarehouseMetadata(batchJobs, output.Key)
@@ -484,7 +479,8 @@ func loadConfig() {
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
 	mainLoopSleepInS = config.GetInt("BatchRouter.mainLoopSleepInS", 5)
 	warehouseJSONUploadsTable = config.GetString("Warehouse.jsonUploadsTable", "wh_json_uploads")
-	rawDataDestinations = []string{"S3", "RS"}
+	objectStorageDestinations = []string{"S3", "GCS"}
+	warehouseDestinations = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
 }
 

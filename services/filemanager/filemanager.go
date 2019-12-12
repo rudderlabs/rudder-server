@@ -28,6 +28,10 @@ func New(settings *SettingsT) (FileManager, error) {
 		return &S3Manager{
 			Bucket: settings.Bucket,
 		}, nil
+	case "GCS":
+		return &GCSManager{
+			Bucket: settings.Bucket,
+		}, nil
 	}
 	return nil, errors.New("No provider configured for FileManager")
 }

@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/router/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/router/warehouse/redshift"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -84,7 +86,7 @@ func loadConfig() {
 	warehouseCSVUploadsTable = config.GetString("Warehouse.csvUploadsTable", "wh_csv_uploads")
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
-	availableWarehouses = []string{"RS"}
+	availableWarehouses = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
 }
 
@@ -116,7 +118,6 @@ func (wh *HandleT) getPendingJSONs(warehouse warehouseutils.WarehouseT) ([]*JSON
 
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&lastJSONID)
 	if err != nil && err != sql.ErrNoRows {
-		// log the error
 		misc.AssertError(err)
 	}
 
@@ -218,10 +219,25 @@ func isDestInProgress(destID string) bool {
 	return false
 }
 
+type WarehouseManager interface {
+	Process(config warehouseutils.ConfigT)
+}
+
+func NewWhManager(destType string) (WarehouseManager, error) {
+	switch destType {
+	case "RS":
+		var rs redshift.HandleT
+		return &rs, nil
+	case "BQ":
+		var bq bigquery.HandleT
+		return &bq, nil
+	}
+	return nil, errors.New("No provider configured for WarehouseManager")
+}
+
 func (wh *HandleT) mainLoop() {
 	for {
-		// time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
-		time.Sleep(3 * time.Second)
+		time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
 		for _, warehouse := range warehouses {
 			if isDestInProgress(warehouse.Destination.ID) {
 				continue
@@ -230,11 +246,12 @@ func (wh *HandleT) mainLoop() {
 
 			pendingUpload, ok := wh.getPendingUpload(warehouse)
 			if ok {
-				var rs redshift.HandleT
+				whManager, err := NewWhManager(warehouse.Destination.DestinationDefinition.Name)
+				misc.AssertError(err)
 				switch pendingUpload.Status {
 				case warehouseutils.GeneratedCsvState, warehouseutils.UpdatingSchemaState, warehouseutils.UpdatingSchemaFailedState:
 					go func() {
-						rs.Process(warehouseutils.ConfigT{
+						whManager.Process(warehouseutils.ConfigT{
 							DbHandle:   wh.dbHandle,
 							UploadID:   pendingUpload.ID,
 							Schema:     warehouseutils.JSONSchemaToMap(pendingUpload.Schema),
@@ -248,7 +265,7 @@ func (wh *HandleT) mainLoop() {
 					continue
 				case warehouseutils.UpdatedSchemaState, warehouseutils.ExportingDataState, warehouseutils.ExportingDataFailedState:
 					go func() {
-						rs.Process(warehouseutils.ConfigT{
+						whManager.Process(warehouseutils.ConfigT{
 							DbHandle:   wh.dbHandle,
 							UploadID:   pendingUpload.ID,
 							Schema:     warehouseutils.JSONSchemaToMap(pendingUpload.Schema),
@@ -280,12 +297,14 @@ func (wh *HandleT) initWorkers() {
 		go func() {
 			for {
 				processJSONsJob := <-wh.processQ
+				warehouseutils.SetUploadStatus(processJSONsJob.UploadID, warehouseutils.JSONProcessExecutingState, wh.dbHandle)
 				var wg sync.WaitGroup
 				wg.Add(len(processJSONsJob.List))
 				for _, toProcessJSON := range processJSONsJob.List {
 					wh.uploadQ <- JSONToCSVsJobT{UploadID: processJSONsJob.UploadID, JSON: toProcessJSON, Schema: processJSONsJob.Schema, Warehouse: processJSONsJob.Warehouse, Wg: &wg}
 				}
 				wg.Wait()
+				warehouseutils.SetUploadStatus(processJSONsJob.UploadID, warehouseutils.JSONProcessSucceededState, wh.dbHandle)
 
 				var endCSVID int64
 				lastCSVIDSql := fmt.Sprintf(`SELECT id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY id DESC LIMIT 1`, warehouseCSVUploadsTable, processJSONsJob.Warehouse.Source.ID, processJSONsJob.Warehouse.Destination.ID)
@@ -295,8 +314,9 @@ func (wh *HandleT) initWorkers() {
 				sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, end_csv_id=$2 WHERE id=$3`, warehouseUploadsTable)
 				_, err = wh.dbHandle.Exec(sqlStatement, warehouseutils.GeneratedCsvState, endCSVID, processJSONsJob.UploadID)
 				misc.AssertError(err)
-				var rs redshift.HandleT
-				rs.Process(warehouseutils.ConfigT{
+				whManager, err := NewWhManager(processJSONsJob.Warehouse.Destination.DestinationDefinition.Name)
+				misc.AssertError(err)
+				whManager.Process(warehouseutils.ConfigT{
 					DbHandle:   wh.dbHandle,
 					UploadID:   processJSONsJob.UploadID,
 					Schema:     processJSONsJob.Schema,
@@ -317,6 +337,11 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 	jsonFile, err := os.Create(jsonPath)
 	misc.AssertError(err)
+
+	warehouseObjectStorageMap := map[string]string{
+		"RS": "S3",
+		"BQ": "GCS",
+	}
 
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
@@ -348,24 +373,28 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 		json.Unmarshal(lineBytes, &jsonLine)
 		metadata, _ := jsonLine["metadata"]
 		tableName, _ := metadata.(map[string]interface{})["table"].(string)
-		var csvFile string
-		if _, ok := tableContentMap[tableName]; ok {
-			csvFile = tableContentMap[tableName]
+		if _, ok := tableContentMap[tableName]; !ok {
+			tableContentMap[tableName] = ""
+		}
+		if job.Warehouse.Destination.DestinationDefinition.Name == "BQ" {
+			delete(jsonLine, "metadata")
+			line, err := json.Marshal(jsonLine)
+			misc.AssertError(err)
+			tableContentMap[tableName] += string(line) + "\n"
 		} else {
-			tableContentMap[tableName] = csvFile
-		}
-		csvRow := []string{}
-		for _, columnName := range sortedTableColumnMap[tableName] {
-			columnVal, _ := jsonLine[columnName]
-			if stringVal, ok := columnVal.(string); ok {
-				if strings.Contains(stringVal, ",") {
-					columnVal = strings.ReplaceAll(stringVal, "\"", "\"\"")
-					columnVal = fmt.Sprintf(`"%s"`, columnVal)
+			csvRow := []string{}
+			for _, columnName := range sortedTableColumnMap[tableName] {
+				columnVal, _ := jsonLine[columnName]
+				if stringVal, ok := columnVal.(string); ok {
+					if strings.Contains(stringVal, ",") {
+						columnVal = strings.ReplaceAll(stringVal, "\"", "\"\"")
+						columnVal = fmt.Sprintf(`"%s"`, columnVal)
+					}
 				}
+				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
-			csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
+			tableContentMap[tableName] += strings.Join(csvRow, ",") + "\n"
 		}
-		tableContentMap[tableName] += strings.Join(csvRow, ",") + "\n"
 	}
 	csvFileMap := make(map[string]*os.File)
 	for tableName, content := range tableContentMap {
@@ -379,7 +408,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	}
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: "S3",
+		Provider: warehouseObjectStorageMap[job.Warehouse.Destination.DestinationDefinition.Name],
 		Bucket:   config.GetEnv("WAREHOUSE_CSV_DUMP_BUCKET", "rl-redshift-csv-dump"),
 	})
 
@@ -387,7 +416,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	for tableName, csvFile := range csvFileMap {
 		file, err := os.Open(csvFile.Name())
 		defer os.Remove(csvFile.Name())
-		uploadLocation, err := uploader.Upload(file, job.Warehouse.Source.ID, strconv.FormatInt(job.UploadID, 10), tableName)
+		uploadLocation, err := uploader.Upload(file, tableName, job.Warehouse.Source.ID, strconv.FormatInt(job.UploadID, 10))
 		misc.AssertError(err)
 		sqlStatement := fmt.Sprintf(`INSERT INTO %s (json_id, location, source_id, destination_id, destination_type, table_name, created_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $7)`, warehouseCSVUploadsTable)

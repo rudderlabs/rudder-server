@@ -151,6 +151,10 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	return uploadLocation, nil
 }
 
+func (rs *HandleT) dropStagingTable(stagingTableName string) {
+	rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.SchemaName, stagingTableName))
+}
+
 func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 	for tableName, columnMap := range schema {
 		manifestLocation, err := rs.generateManifest(tableName, columnMap)
@@ -165,12 +169,13 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 		sort.Strings(strkeys)
 		sortedColumnNames := strings.Join(strkeys, ",")
 
-		stagingTableName := "staging-" + uuid.NewV4().String()
+		stagingTableName := "staging-" + tableName + "-" + uuid.NewV4().String()
 		err = rs.createTable(fmt.Sprintf(`%s."%s"`, rs.SchemaName, stagingTableName), schema[tableName])
 		if err != nil {
 			rs.setUploadError(err)
 			return err
 		}
+		defer rs.dropStagingTable(stagingTableName)
 
 		// BEGIN TRANSACTION
 		tx, err := rs.Db.Begin()
@@ -218,11 +223,6 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 			return err
 		}
 
-		_, err = rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.SchemaName, stagingTableName))
-		if err != nil {
-			rs.setUploadError(err)
-			return err
-		}
 	}
 	return
 }

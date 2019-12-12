@@ -180,7 +180,6 @@ func RemoveFilePaths(filepaths ...string) {
 	for _, filepath := range filepaths {
 		err := os.Remove(filepath)
 		logger.Error(err)
-		// AssertError(err)
 	}
 }
 
