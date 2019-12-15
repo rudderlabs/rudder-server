@@ -230,7 +230,7 @@ func generateRandomData(payload *[]byte, path string, value interface{}) ([]byte
 }
 
 func generateEvents(userID string, eventDelay int) {
-	var fileData, err = ioutil.ReadFile("batch.json")
+	var fileData, err = ioutil.ReadFile("batchEvent.json")
 	misc.AssertError(err)
 	events := gjson.GetBytes(fileData, "batch")
 

@@ -63,7 +63,6 @@ var sampleEvent = `
 			"integrations": {
 				"All": true
 			},
-			"messageId": "1566904375469-1baf3108-647a-4f20-9867-3072056a07f5",
 			"properties": {
 				"label": "Demo Label",
 				"category": "Demo Category",
