@@ -75,7 +75,7 @@ func backendConfigSubscriber() {
 	}
 }
 
-type S3UploadOutput struct {
+type StorageUploadOutput struct {
 	Bucket         string
 	Key            string
 	LocalFilePaths []string
@@ -98,7 +98,7 @@ func updateDestStatusStats(id string, count int, isSuccess bool) {
 	destStatsD.Count(count)
 }
 
-func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) S3UploadOutput {
+func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
 	var bucketName, dirName string
 	if isWarehouse {
 		bucketName = config.GetString("WAREHOUSE_JSON_UPLOADS_BUCKET", "rl-redshift-json-dump")
@@ -147,9 +147,9 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 	var keyPrefixes []string
 	if isWarehouse {
-		keyPrefixes = []string{config.GetEnv("WAREHOUSE_S3_BUCKET_FOLDER_NAME", "rudder-warehouse-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+		keyPrefixes = []string{config.GetEnv("WAREHOUSE_BUCKET_FOLDER_NAME", "rudder-warehouse-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
 	} else {
-		keyPrefixes = []string{config.GetEnv("DESTINATION_S3_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+		keyPrefixes = []string{config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
 	}
 
 	_, fileName := filepath.Split(gzipFilePath)
@@ -163,13 +163,13 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 	if err != nil {
 		logger.Debug(err)
-		return S3UploadOutput{
+		return StorageUploadOutput{
 			Error:       err,
 			JournalOpID: opID,
 		}
 	}
 
-	return S3UploadOutput{
+	return StorageUploadOutput{
 		Bucket:         bucketName,
 		Key:            strings.Join(keyPrefixes, "/") + "/" + fileName,
 		LocalFilePaths: []string{gzipFilePath},
@@ -261,16 +261,16 @@ func (brt *HandleT) initWorkers() {
 					destName := batchJobs.BatchDestination.Destination.DestinationDefinition.Name
 					switch {
 					case misc.ContainsString(objectStorageDestinations, destName):
-						s3DestUploadStat := stats.NewStat("batch_router.S3_dest_upload_time", stats.TimerType)
-						s3DestUploadStat.Start()
+						destUploadStat := stats.NewStat("batch_router.S3_dest_upload_time", stats.TimerType)
+						destUploadStat.Start()
 						output := brt.copyJobsToStorage(destName, batchJobs, true, false)
 						brt.setJobStatus(batchJobs, false, output.Error)
 						brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
-						s3DestUploadStat.End()
+						destUploadStat.End()
 						setSourceInProgress(batchJobs.BatchDestination, false)
 					case misc.ContainsString(warehouseDestinations, destName):
-						output := brt.copyJobsToStorage("S3", batchJobs, true, true)
+						output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[destName], batchJobs, true, true)
 						if output.Error == nil {
 							brt.updateWarehouseMetadata(batchJobs, output.Key)
 						}

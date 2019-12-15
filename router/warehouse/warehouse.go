@@ -65,7 +65,7 @@ type JSONToCSVsJobT struct {
 }
 
 type JSONUploadT struct {
-	ID        string
+	ID        int64
 	Location  string
 	SourceID  string
 	Schema    json.RawMessage
@@ -237,7 +237,8 @@ func NewWhManager(destType string) (WarehouseManager, error) {
 
 func (wh *HandleT) mainLoop() {
 	for {
-		time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
+		// time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
+		time.Sleep(time.Duration(2) * time.Second)
 		for _, warehouse := range warehouses {
 			if isDestInProgress(warehouse.Destination.ID) {
 				continue
@@ -297,14 +298,18 @@ func (wh *HandleT) initWorkers() {
 		go func() {
 			for {
 				processJSONsJob := <-wh.processQ
-				warehouseutils.SetUploadStatus(processJSONsJob.UploadID, warehouseutils.JSONProcessExecutingState, wh.dbHandle)
+				var jsonIDs []int64
+				for _, job := range processJSONsJob.List {
+					jsonIDs = append(jsonIDs, job.ID)
+				}
+				warehouseutils.SetJSONUploadStatus(jsonIDs, warehouseutils.JSONProcessExecutingState, wh.dbHandle)
 				var wg sync.WaitGroup
 				wg.Add(len(processJSONsJob.List))
 				for _, toProcessJSON := range processJSONsJob.List {
 					wh.uploadQ <- JSONToCSVsJobT{UploadID: processJSONsJob.UploadID, JSON: toProcessJSON, Schema: processJSONsJob.Schema, Warehouse: processJSONsJob.Warehouse, Wg: &wg}
 				}
 				wg.Wait()
-				warehouseutils.SetUploadStatus(processJSONsJob.UploadID, warehouseutils.JSONProcessSucceededState, wh.dbHandle)
+				warehouseutils.SetJSONUploadStatus(jsonIDs, warehouseutils.JSONProcessSucceededState, wh.dbHandle)
 
 				var endCSVID int64
 				lastCSVIDSql := fmt.Sprintf(`SELECT id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY id DESC LIMIT 1`, warehouseCSVUploadsTable, processJSONsJob.Warehouse.Source.ID, processJSONsJob.Warehouse.Destination.ID)
@@ -338,13 +343,8 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	jsonFile, err := os.Create(jsonPath)
 	misc.AssertError(err)
 
-	warehouseObjectStorageMap := map[string]string{
-		"RS": "S3",
-		"BQ": "GCS",
-	}
-
 	downloader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: "S3",
+		Provider: warehouseutils.ObjectStorageMap[job.Warehouse.Destination.DestinationDefinition.Name],
 		Bucket:   config.GetEnv("WAREHOUSE_JSON_DUMP_BUCKET", "rl-redshift-json-dump"),
 	})
 
@@ -408,7 +408,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	}
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: warehouseObjectStorageMap[job.Warehouse.Destination.DestinationDefinition.Name],
+		Provider: warehouseutils.ObjectStorageMap[job.Warehouse.Destination.DestinationDefinition.Name],
 		Bucket:   config.GetEnv("WAREHOUSE_CSV_DUMP_BUCKET", "rl-redshift-csv-dump"),
 	})
 

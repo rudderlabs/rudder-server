@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"cloud.google.com/go/storage"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 func objectURL(objAttrs *storage.ObjectAttrs) string {
@@ -19,7 +18,7 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 	ctx := context.Background()
 	client, err := storage.NewClient(ctx)
 	if err != nil {
-		misc.AssertError(err)
+		return UploadOutput{}, err
 	}
 
 	splitFileName := strings.Split(file.Name(), "/")
@@ -33,11 +32,9 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 	obj := bh.Object(fileName)
 	w := obj.NewWriter(ctx)
 	if _, err := io.Copy(w, file); err != nil {
-		misc.AssertError(err)
 		return UploadOutput{}, err
 	}
 	if err := w.Close(); err != nil {
-		misc.AssertError(err)
 		return UploadOutput{}, err
 	}
 
@@ -46,7 +43,19 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 }
 
 func (manager *GCSManager) Download(output *os.File, key string) error {
-	return nil
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return err
+	}
+	rc, err := client.Bucket(manager.Bucket).Object(key).NewReader(ctx)
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+
+	_, err = io.Copy(output, rc)
+	return err
 }
 
 type GCSManager struct {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -33,10 +34,16 @@ const (
 )
 
 var (
-	warehouseUploadsTable    string
-	warehouseSchemasTable    string
-	warehouseCSVUploadsTable string
+	warehouseUploadsTable     string
+	warehouseSchemasTable     string
+	warehouseCSVUploadsTable  string
+	warehouseJSONUploadsTable string
 )
+
+var ObjectStorageMap = map[string]string{
+	"RS": "S3",
+	"BQ": "GCS",
+}
 
 func init() {
 	config.Initialize()
@@ -46,7 +53,8 @@ func init() {
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
-	warehouseCSVUploadsTable = config.GetString("Warehouse.csvUploadsTable", "wh_schemas")
+	warehouseCSVUploadsTable = config.GetString("Warehouse.csvUploadsTable", "wh_csv_uploads")
+	warehouseJSONUploadsTable = config.GetString("Warehouse.jsonUploadsTable", "wh_json_uploads")
 }
 
 type WarehouseT struct {
@@ -135,6 +143,13 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 func SetUploadStatus(id int64, status string, dbHandle *sql.DB) (err error) {
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE id=$2`, warehouseUploadsTable)
 	_, err = dbHandle.Exec(sqlStatement, status, id)
+	misc.AssertError(err)
+	return
+}
+
+func SetJSONUploadStatus(ids []int64, status string, dbHandle *sql.DB) (err error) {
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE id=ANY($2)`, warehouseJSONUploadsTable)
+	_, err = dbHandle.Exec(sqlStatement, status, pq.Array(ids))
 	misc.AssertError(err)
 	return
 }

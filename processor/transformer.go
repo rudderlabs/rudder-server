@@ -118,7 +118,6 @@ type ResponseT struct {
 func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	url string, batchSize int) ResponseT {
 
-	// logger.Info("Ictus ", url, batchSize)
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
 
