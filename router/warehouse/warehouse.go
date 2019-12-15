@@ -31,6 +31,7 @@ var (
 	jobQueryBatchSize         int
 	noOfWorkers               int
 	warehouseUploadSleepInMin int
+	mainLoopSleepInS          int
 	warehouses                []warehouseutils.WarehouseT
 	configSubscriberLock      sync.RWMutex
 	availableWarehouses       []string
@@ -43,9 +44,10 @@ var (
 )
 
 type HandleT struct {
-	dbHandle *sql.DB
-	processQ chan ProcessJSONsJobT
-	uploadQ  chan JSONToCSVsJobT
+	dbHandle  *sql.DB
+	processQ  chan ProcessJSONsJobT
+	uploadQ   chan JSONToCSVsJobT
+	isEnabled bool
 }
 
 type ProcessJSONsJobT struct {
@@ -86,6 +88,7 @@ func loadConfig() {
 	warehouseCSVUploadsTable = config.GetString("Warehouse.csvUploadsTable", "wh_csv_uploads")
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
+	mainLoopSleepInS = config.GetInt("BatchRouter.mainLoopSleepInS", 5)
 	availableWarehouses = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
 }
@@ -237,8 +240,11 @@ func NewWhManager(destType string) (WarehouseManager, error) {
 
 func (wh *HandleT) mainLoop() {
 	for {
-		// time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
-		time.Sleep(time.Duration(2) * time.Second)
+		if !wh.isEnabled {
+			time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
+			continue
+		}
+		time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
 		for _, warehouse := range warehouses {
 			if isDestInProgress(warehouse.Destination.ID) {
 				continue
@@ -507,6 +513,16 @@ func (wh *HandleT) setupTables() {
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
 	misc.AssertError(err)
+}
+
+//Enable enables a router :)
+func (wh *HandleT) Enable() {
+	wh.isEnabled = true
+}
+
+//Disable disables a router:)
+func (wh *HandleT) Disable() {
+	wh.isEnabled = false
 }
 
 func (wh *HandleT) Setup() {

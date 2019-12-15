@@ -33,7 +33,8 @@ var (
 	enableProcessor, enableRouter, enableBackup bool
 	enabledDestinations                         []backendconfig.DestinationT
 	configSubscriberLock                        sync.RWMutex
-	rawDataDestinations                         []string
+	objectStorageDestinations                   []string
+	warehouseDestinations                       []string
 )
 
 func loadConfig() {
@@ -43,7 +44,8 @@ func loadConfig() {
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
 	enableBackup = config.GetBool("JobsDB.enableBackup", true)
-	rawDataDestinations = []string{"S3", "GCS", "RS", "BQ"}
+	objectStorageDestinations = []string{"S3", "GCS"}
+	warehouseDestinations = []string{"RS", "BQ"}
 }
 
 // Test Function
@@ -65,7 +67,9 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	backendconfig.Subscribe(ch)
 	dstToRouter := make(map[string]*router.HandleT)
 	isBatchRouterSetup := false
+	isWarehouseSetup := false
 	var brt batchrouter.HandleT
+	var wh warehouse.HandleT
 
 	for {
 		config := <-ch
@@ -73,17 +77,25 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations = enabledDestinations[:0]
 		enableBatchRouter := false
+		enableWarehouses := false
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				for _, destination := range source.Destinations {
 					if destination.Enabled {
 						enabledDestinations = append(enabledDestinations, destination)
-						if misc.Contains(rawDataDestinations, destination.DestinationDefinition.Name) {
+						if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) {
 							enableBatchRouter = true
 							brt.Enable()
 							if !isBatchRouterSetup {
 								isBatchRouterSetup = true
 								brt.Setup(batchRouterDB)
+							}
+						} else if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+							enableWarehouses = true
+							wh.Enable()
+							if !isWarehouseSetup {
+								isWarehouseSetup = true
+								wh.Setup()
 							}
 						} else {
 							rt, ok := dstToRouter[destination.DestinationDefinition.Name]
@@ -119,6 +131,9 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 		}
 		if !enableBatchRouter {
 			brt.Disable()
+		}
+		if !enableWarehouses {
+			wh.Disable()
 		}
 	}
 }
