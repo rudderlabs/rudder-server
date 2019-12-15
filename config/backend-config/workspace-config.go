@@ -9,17 +9,18 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-type SelfHosting struct {
+type WorkspaceConfig struct {
 }
 
-func (hosting *SelfHosting) SetUp() {
+func (workspaceConfig *WorkspaceConfig) SetUp() {
 }
 
-func (hosting *SelfHosting) GetWorkspaceIDForWriteKey(writeKey string) string {
+func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
 	return ""
 }
 
-func (hosting *SelfHosting) GetBackendConfig() (SourcesT, bool) {
+//GetBackendConfig returns sources from the workspace
+func (workspaceConfig *WorkspaceConfig) GetBackendConfig() (SourcesT, bool) {
 	client := &http.Client{}
 	url := fmt.Sprintf("%s/workspace-config?workspaceToken=%s", configBackendURL, configBackendToken)
 	resp, err := client.Get(url)

@@ -48,14 +48,13 @@ type batchWebRequestT struct {
 }
 
 var (
-	hostedService                             bool
 	webPort, maxBatchSize, maxDBWriterProcess int
 	batchTimeout                              time.Duration
-	respMessage                               string
 	enabledWriteKeysSourceMap                 map[string]string
 	configSubscriberLock                      sync.RWMutex
 	maxReqSize                                int
 	enableDedup                               bool
+	enableRateLimit                           bool
 	dedupWindow                               time.Duration
 )
 
@@ -70,8 +69,6 @@ var batchEvent = []byte(`
 `)
 
 func loadConfig() {
-	// Rudder as Hosted service. false by default
-	hostedService = config.GetEnvAsBool("HOSTED_SERVICE", false)
 	//Port where GW is running
 	webPort = config.GetInt("Gateway.webPort", 8080)
 	//Number of incoming requests that are batched before initiating write
@@ -83,19 +80,20 @@ func loadConfig() {
 	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess", 4)
 	// CustomVal is used as a key in the jobsDB customval column
 	CustomVal = config.GetString("Gateway.CustomVal", "GW")
-	//Reponse message sent to client
-	respMessage = config.GetString("Gateway.respMessage", "OK")
 	// Maximum request size to gateway
 	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 100000) * 1000
 	// Enable dedup of incoming events by default
 	enableDedup = config.GetBool("Gateway.enableDedup", true)
 	// Dedup time window in hours
 	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
+	// Enable rate limit on incoming events. false by default
+	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
 }
 
 func init() {
 	config.Initialize()
 	loadConfig()
+	loadStatusMap()
 	latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
 	batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
 	batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
@@ -134,7 +132,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		var writeKeySuccessEventStats = make(map[string]int)
 		var writeKeyFailStats = make(map[string]int)
 		var writeKeyFailEventStats = make(map[string]int)
-		var workSpaceDropStats = make(map[string]int)
+		var workspaceDropRequestStats = make(map[string]int)
 		var preDbStoreCount int
 		//Saving the event data read from req.request.Body to the splice.
 		//Using this to send event schema to the config backend.
@@ -144,7 +142,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		for _, req := range breq.batchRequest {
 			ipAddr := misc.GetIPFromReq(req.request)
 			if req.request.Body == nil {
-				req.done <- "Request body is nil"
+				req.done <- getStatus(RequestBodyNil)
 				preDbStoreCount++
 				continue
 			}
@@ -153,26 +151,26 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 			writeKey, _, ok := req.request.BasicAuth()
 
-			if hostedService {
-				//If ratelimiter returns false for AllowEventBatch, Just drop the event batch and continue.
+			if enableRateLimit {
+				//If ratelimiter returns true for LimitReached, Just drop the event batch and continue.
 				restrictorKey := backendconfig.GetWorkspaceIDForWriteKey(writeKey)
 				if gateway.rateLimiter.LimitReached(restrictorKey) {
-					req.done <- "Max Events Limit reached. Dropping Events."
+					req.done <- getStatus(TooManyRequests)
 					preDbStoreCount++
-					misc.IncrementMapByKey(workSpaceDropStats, restrictorKey, 1)
+					misc.IncrementMapByKey(workspaceDropRequestStats, restrictorKey, 1)
 					continue
 				}
 			}
 
 			if !ok {
-				req.done <- "Failed to read writeKey from header"
+				req.done <- getStatus(NoWriteKeyInBasicAuth)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
 				continue
 			}
 			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if err != nil {
-				req.done <- "Failed to read body from request"
+				req.done <- getStatus(RequestBodyReadFailed)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
@@ -180,14 +178,14 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(writeKeyEventStats, writeKey, totalEventsInReq)
 			if len(body) > maxReqSize {
-				req.done <- "Request size exceeds max limit"
+				req.done <- getStatus(RequestBodyTooLarge)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
 				continue
 			}
 			if !gateway.isWriteKeyEnabled(writeKey) {
-				req.done <- "Invalid Write Key"
+				req.done <- getStatus(InvalidWriteKey)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
@@ -278,8 +276,8 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")
 		updateWriteKeyStats(writeKeySuccessStats, "gateway.write_key_successful_requests")
 		updateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
-		if hostedService {
-			updateWriteKeyStats(workSpaceDropStats, "gateway.work_space_dropped_requests")
+		if enableRateLimit {
+			updateWriteKeyStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests")
 		}
 		// update stats event wise
 		updateWriteKeyStats(writeKeyEventStats, "gateway.write_key_events")
@@ -424,8 +422,8 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 		logger.Debug(errorMessage)
 		http.Error(w, errorMessage, 400)
 	} else {
-		logger.Debug(respMessage)
-		w.Write([]byte(respMessage))
+		logger.Debug(getStatus(Ok))
+		w.Write([]byte(getStatus(Ok)))
 	}
 }
 

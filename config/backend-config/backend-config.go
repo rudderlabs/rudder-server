@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	hosting                              Hosting
+	backendConfig                        BackendConfig
 	hostedService                        bool
 	hostedServiceSecret                  string
 	configBackendURL, configBackendToken string
@@ -65,7 +65,7 @@ type TransformationT struct {
 	VersionID   string
 }
 
-type Hosting interface {
+type BackendConfig interface {
 	SetUp()
 	GetBackendConfig() (SourcesT, bool)
 	GetWorkspaceIDForWriteKey(string) string
@@ -94,7 +94,7 @@ func init() {
 func pollConfigUpdate() {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
-		sourceJSON, ok := hosting.GetBackendConfig()
+		sourceJSON, ok := backendConfig.GetBackendConfig()
 		if !ok {
 			statConfigBackendError.Increment()
 		}
@@ -112,7 +112,7 @@ func GetConfig() SourcesT {
 }
 
 func GetWorkspaceIDForWriteKey(writeKey string) string {
-	return hosting.GetWorkspaceIDForWriteKey(writeKey)
+	return backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 }
 
 func Subscribe(channel chan utils.DataEvent) {
@@ -134,12 +134,12 @@ func WaitForConfig() {
 // Setup backend config
 func Setup() {
 	if hostedService {
-		hosting = new(ManagedHosting)
+		backendConfig = new(MultiWorkspaceConfig)
 	} else {
-		hosting = new(SelfHosting)
+		backendConfig = new(WorkspaceConfig)
 	}
 
-	hosting.SetUp()
+	backendConfig.SetUp()
 	Eb = new(utils.EventBus)
 	go pollConfigUpdate()
 }

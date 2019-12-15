@@ -177,7 +177,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		}
 
 		//Prefixing write key to userID. This is done to create session per user per source
-		userID = gjson.GetBytes(job.EventPayload, "writeKey").Str + "-" + userID
+		userID = gjson.GetBytes(job.EventPayload, "writeKey").Str + ":" + userID
 
 		_, ok = proc.userJobListMap[userID]
 		if !ok {

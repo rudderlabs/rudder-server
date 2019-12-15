@@ -9,9 +9,9 @@ import (
 )
 
 var (
-	eventLimitInHostedService int
-	rateLimitWindowInMins     time.Duration
-	noOfBucketsInWindow       int
+	eventLimit            int
+	rateLimitWindowInMins time.Duration
+	noOfBucketsInWindow   int
 )
 
 //HandleT is a Handle for event limiter
@@ -25,25 +25,25 @@ func init() {
 }
 
 func loadConfig() {
-	// Event limit in hosted service. 1000 by default
-	eventLimitInHostedService = config.GetInt("HostedService.eventLimit", 1000)
-	// Rolling time window for event limit in hosted service. 60 mins by default
-	rateLimitWindowInMins = config.GetDuration("HostedService.rateLimitWindowInMins", time.Duration(60)) * time.Minute
+	// Event limit when rate limit is enabled. 1000 by default
+	eventLimit = config.GetInt("RateLimit.eventLimit", 1000)
+	// Rolling time window for event limit. 60 mins by default
+	rateLimitWindowInMins = config.GetDuration("RateLimit.rateLimitWindowInMins", time.Duration(60)) * time.Minute
 	// Number of buckets in time window. 12 by default
-	noOfBucketsInWindow = config.GetInt("HostedService.noOfBucketsInWindow", 12)
+	noOfBucketsInWindow = config.GetInt("RateLimit.noOfBucketsInWindow", 12)
 }
 
 //SetUp eventLimiter
-func (eventLimiterHandle *HandleT) SetUp() {
+func (rateLimiter *HandleT) SetUp() {
 	store, err := restrictor.NewMemoryStore()
 	if err != nil {
 		logger.Error("memory store failed")
 	}
 
-	eventLimiterHandle.restrictor = restrictor.NewRestrictor(rateLimitWindowInMins, uint32(eventLimitInHostedService), uint32(noOfBucketsInWindow), store)
+	rateLimiter.restrictor = restrictor.NewRestrictor(rateLimitWindowInMins, uint32(eventLimit), uint32(noOfBucketsInWindow), store)
 }
 
-//AllowEventBatch returns true if number of events in the rolling window is less than the max events allowed, else false
-func (eventLimiterHandle *HandleT) LimitReached(key string) bool {
-	return eventLimiterHandle.restrictor.LimitReached(key)
+//LimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
+func (rateLimiter *HandleT) LimitReached(key string) bool {
+	return rateLimiter.restrictor.LimitReached(key)
 }
