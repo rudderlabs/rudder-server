@@ -14,7 +14,6 @@ maxDBWriterProcess = 4
 CustomVal = "GW"
 maxBatchSize = 32
 batchTimeoutInMS = 20
-respMessage = "OK"
 maxReqSizeInKB = 100000
 
 

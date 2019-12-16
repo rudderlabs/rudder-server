@@ -8,14 +8,21 @@ enableProcessor = true
 enableRouter = true
 enableStats = true
 
+[RateLimit]
+eventLimit=1000
+rateLimitWindowInMins=60
+noOfBucketsInWindow=12
+
 [Gateway]
 webPort = 8080
 maxDBWriterProcess = 4
 CustomVal = "GW"
 maxBatchSize = 32
 batchTimeoutInMS = 20
-respMessage = "OK"
 maxReqSizeInKB = 100000
+enableDedup = true
+enableRateLimit = false
+dedupWindowInS = 86400
 
 [SourceDebugger]
 maxBatchSize = 32
@@ -38,7 +45,7 @@ enableBackup = true
 jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
 readSleepInMS = 10
-noOfWorkers = 8
+noOfWorkers = 64
 noOfJobsPerChannel = 1000
 ser = 3
 maxSleepInS = 60

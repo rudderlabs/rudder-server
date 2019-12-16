@@ -3,7 +3,6 @@ package main
 // To run the S3 Test:
 // go run correctness.go -t 300 -S3 true  -writeKey <writekey> -sourceID <sourceid> -bucketName <bucketName>
 
-
 import (
 
 	//"encoding/json"
@@ -231,7 +230,7 @@ func generateRandomData(payload *[]byte, path string, value interface{}) ([]byte
 }
 
 func generateEvents(userID string, eventDelay int) {
-	var fileData, err = ioutil.ReadFile("batch.json")
+	var fileData, err = ioutil.ReadFile("batchEvent.json")
 	misc.AssertError(err)
 	events := gjson.GetBytes(fileData, "batch")
 
@@ -245,7 +244,7 @@ func generateEvents(userID string, eventDelay int) {
 			messageID := ksuid.New().String()
 			fileData, _ = sjson.SetBytes(fileData, fmt.Sprintf(`batch.%v.anonymousId`, index), userID)
 			fileData, _ = sjson.SetBytes(fileData, fmt.Sprintf(`batch.%v.messageId`, index), messageID)
-			fileData, _ = sjson.SetBytes(fileData, fmt.Sprintf(`batch.%v.sentAt`, index), time.Now().Format(time.RFC3339))
+			fileData, _ = sjson.SetBytes(fileData, fmt.Sprintf(`batch.%v.sentAt`, index), time.Now().Format(misc.RFC3339Milli))
 			index++
 			return true // keep iterating
 		})

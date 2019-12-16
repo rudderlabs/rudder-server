@@ -39,6 +39,10 @@ type HandleT struct {
 	userJobListMap     map[string][]*jobsdb.JobT
 	userEventsMap      map[string][]interface{}
 	userPQItemMap      map[string]*pqItemT
+	statJobs           *stats.RudderStats
+	statDBR            *stats.RudderStats
+	statDBW            *stats.RudderStats
+	userToSessionIDMap map[string]string
 	userJobPQ          pqT
 	userPQLock         sync.Mutex
 }
@@ -62,6 +66,10 @@ func (proc *HandleT) Print() {
 	for k, v := range proc.userPQItemMap {
 		logger.Debug(k, ":", *v)
 	}
+	logger.Debug("Session")
+	for k, v := range proc.userToSessionIDMap {
+		logger.Debug(k, " : ", v)
+	}
 }
 
 func init() {
@@ -81,6 +89,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.userJobListMap = make(map[string][]*jobsdb.JobT)
 	proc.userEventsMap = make(map[string][]interface{})
 	proc.userPQItemMap = make(map[string]*pqItemT)
+	proc.userToSessionIDMap = make(map[string]string)
 	proc.userJobPQ = make(pqT, 0)
 	proc.statsJobs.Setup("ProcessorJobs")
 	proc.statsDBR.Setup("ProcessorDBRead")
@@ -147,6 +156,7 @@ func backendConfigSubscriber() {
 
 func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 
+	logger.Debug("[Processor: addJobsToSessions] adding jobs to session")
 	proc.userPQLock.Lock()
 
 	//List of users whose jobs need to be processed
@@ -157,17 +167,28 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
 		if !ok {
 			//bad event
+			logger.Debug("[Processor: addJobsToSessions] bad event")
 			continue
 		}
 		userID, ok := misc.GetRudderEventUserID(eventList)
 		if !ok {
-			logger.Error("Failed to get userID for job")
+			logger.Error("[Processor: addJobsToSessions] Failed to get userID for job")
 			continue
 		}
+
+		//Prefixing write key to userID. This is done to create session per user per source
+		userID = gjson.GetBytes(job.EventPayload, "writeKey").Str + ":" + userID
+
 		_, ok = proc.userJobListMap[userID]
 		if !ok {
 			proc.userJobListMap[userID] = make([]*jobsdb.JobT, 0)
 			proc.userEventsMap[userID] = make([]interface{}, 0)
+		}
+		// Adding a new session id for the user, if not present
+		logger.Debug("[Processor: addJobsToSessions] Adding a new session id for the user")
+		_, ok = proc.userToSessionIDMap[userID]
+		if !ok {
+			proc.userToSessionIDMap[userID] = uuid.NewV4().String()
 		}
 		//Add the job to the userID specific lists
 		proc.userJobListMap[userID] = append(proc.userJobListMap[userID], job)
@@ -202,6 +223,8 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 	if len(processUserIDs) > 0 {
 		userJobsToProcess := make(map[string][]*jobsdb.JobT)
 		userEventsToProcess := make(map[string][]interface{})
+		userToSessionMap := make(map[string]string)
+
 		logger.Debug("Post Add Processing")
 		proc.Print()
 
@@ -209,24 +232,24 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		for userID := range processUserIDs {
 			userJobsToProcess[userID] = proc.userJobListMap[userID]
 			userEventsToProcess[userID] = proc.userEventsMap[userID]
+			userToSessionMap[userID] = proc.userToSessionIDMap[userID]
 			delete(proc.userJobListMap, userID)
 			delete(proc.userEventsMap, userID)
-			proc.userJobPQ.Remove(proc.userPQItemMap[userID])
-			delete(proc.userPQItemMap, userID)
+			delete(proc.userToSessionIDMap, userID)
 		}
 		logger.Debug("Processing")
 		proc.Print()
 		//We release the block before actually processing
 		proc.userPQLock.Unlock()
-		proc.processUserJobs(userJobsToProcess, userEventsToProcess)
+		proc.processUserJobs(userJobsToProcess, userEventsToProcess, userToSessionMap)
 		return
 	}
 	proc.userPQLock.Unlock()
 }
 
-func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEvents map[string][]interface{}) {
+func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEvents map[string][]interface{}, userToSessionMap map[string]string) {
 
-	misc.Assert(len(userEvents) == len(userJobs))
+	logger.Debug("[Processor: processUserJobs] in processUserJobs")
 
 	totalJobs := 0
 	allJobIDs := make(map[int64]bool)
@@ -240,11 +263,25 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEve
 	//Create a list of list of user events which is passed to transformer
 	userEventsList := make([]interface{}, 0)
 	userIDList := make([]string, 0) //Order of users which are added to list
+	eventListMap := make(map[string][]interface{})
 	for userID := range userEvents {
-		userEventsList = append(userEventsList, userEvents[userID])
+		// add the session_id field to each event before sending it downstream
+		eventListMap[userID] = make([]interface{}, 0)
+		for _, event := range userEvents[userID] {
+			eventMap, ok := event.(map[string]interface{})
+			misc.Assert(ok)
+			if ok {
+				eventMap["session_id"] = userToSessionMap[userID]
+				eventListMap[userID] = append(eventListMap[userID], eventMap)
+			}
+
+		}
+
+		userEventsList = append(userEventsList, eventListMap[userID])
 		userIDList = append(userIDList, userID)
 	}
-	misc.Assert(len(userEventsList) == len(userEvents))
+
+	misc.Assert(len(userEventsList) == len(eventListMap))
 
 	//Create jobs that can be processed further
 	toProcessJobs, toProcessEvents := createUserTransformedJobsFromEvents(userEventsList, userIDList, userJobs)
@@ -292,7 +329,7 @@ func createUserTransformedJobsFromEvents(transformUserEventList []interface{},
 }
 
 func (proc *HandleT) createSessions() {
-
+	logger.Debug("[Processor: createSessions] starting sessions")
 	for {
 		proc.userPQLock.Lock()
 		//Now jobs
@@ -315,6 +352,7 @@ func (proc *HandleT) createSessions() {
 
 		userJobsToProcess := make(map[string][]*jobsdb.JobT)
 		userEventsToProcess := make(map[string][]interface{})
+		userToSessionMap := make(map[string]string)
 		//Find all jobs that need to be processed
 		for {
 			if proc.userJobPQ.Len() == 0 {
@@ -327,18 +365,28 @@ func (proc *HandleT) createSessions() {
 				misc.Assert(ok && pqItem == oldestItem)
 				userJobsToProcess[userID] = proc.userJobListMap[userID]
 				userEventsToProcess[userID] = proc.userEventsMap[userID]
+				// it is guaranteed that user will have a session even if one job is present
+				// Refer addJobsToSession
+				userToSessionMap[userID] = proc.userToSessionIDMap[userID]
 				//Clear from the map
 				delete(proc.userJobListMap, userID)
 				delete(proc.userEventsMap, userID)
 				proc.userJobPQ.Remove(proc.userPQItemMap[userID])
 				delete(proc.userPQItemMap, userID)
+				// A session ends when a user is inactive for a period of sessionThresholdInS
+				// or session limit on number of jobs has been achievd
+				// Refer addJobsToSession
+				delete(proc.userToSessionIDMap, userID)
 				continue
 			}
 			break
 		}
+		proc.Print()
 		proc.userPQLock.Unlock()
 		if len(userJobsToProcess) > 0 {
-			proc.processUserJobs(userJobsToProcess, userEventsToProcess)
+			logger.Debug("Processing Session Check")
+			proc.Print()
+			proc.processUserJobs(userJobsToProcess, userEventsToProcess, userToSessionMap)
 		}
 	}
 }
@@ -428,6 +476,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				destTypesFromConfig := getEnabledDestinationTypes(writeKey)
 				destTypes := integrations.GetDestinationIDs(singularEvent, destTypesFromConfig)
 
+				// logger.Debug("=== destTypes ===", destTypes)
 				if len(destTypes) == 0 {
 					logger.Debug("No enabled destinations")
 					continue
@@ -455,10 +504,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
 
 						// set all timestamps in RFC3339 format
-						shallowEventCopy["message"].(map[string]interface{})["receivedAt"] = receivedAt.Format(time.RFC3339)
-						shallowEventCopy["message"].(map[string]interface{})["originalTimestamp"] = originalTimestamp.Format(time.RFC3339)
-						shallowEventCopy["message"].(map[string]interface{})["sentAt"] = sentAt.Format(time.RFC3339)
-						shallowEventCopy["message"].(map[string]interface{})["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(time.RFC3339)
+						shallowEventCopy["message"].(map[string]interface{})["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
+						shallowEventCopy["message"].(map[string]interface{})["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339Milli)
+						shallowEventCopy["message"].(map[string]interface{})["sentAt"] = sentAt.Format(misc.RFC3339Milli)
+						shallowEventCopy["message"].(map[string]interface{})["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339Milli)
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDest[destType]
@@ -487,15 +536,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
+	logger.Debug("[Processor: processJobsForDest] calling transformations")
 	for destID, destEventList := range eventsByDest {
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
 		url := integrations.GetDestinationURL(destID)
+		logger.Debug("Transform input size", len(destEventList))
 		response := proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), len(destEventList))
 		response = proc.transformer.Transform(response.Events, url, transformBatchSize)
 		destTransformEventList := response.Events
 		logger.Debug("Transform output size", len(destTransformEventList))
 		if !response.Success {
+			logger.Debug("[Processor: processJobsForDest] Request to transformer not a success ", response.Events, response.SourceIDList)
 			continue
 		}
 
