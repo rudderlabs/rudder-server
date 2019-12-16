@@ -170,7 +170,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			logger.Debug("[Processor: addJobsToSessions] bad event")
 			continue
 		}
-		userID, ok := misc.GetRudderEventUserID(eventList)
+		userID, ok := misc.GetAnonymousID(eventList[0])
 		if !ok {
 			logger.Error("[Processor: addJobsToSessions] Failed to get userID for job")
 			continue
@@ -443,23 +443,17 @@ func enhanceWithTimeFields(event map[string]interface{}, singularEventMap map[st
 // add metadata to each singularEvent which will be returned by transformer in response
 func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT, userToSessionMap map[string]string) {
 	event["metadata"] = make(map[string]interface{})
-	event["metadata"].(map[string]interface{})["source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
-	event["metadata"].(map[string]interface{})["job_id"] = batchEvent.JobID
-	event["metadata"].(map[string]interface{})["destination_id"] = destination.ID
-	event["metadata"].(map[string]interface{})["destination_type"] = destination.DestinationDefinition.Name
-	event["metadata"].(map[string]interface{})["message_id"] = event["message"].(map[string]interface{})["messageId"].(string)
-
-	userID := event["message"].(map[string]interface{})["anonymousId"].(string)
-	var (
-		sessionID string
-		ok        bool
-	)
-	if sessionID, ok = userToSessionMap[userID]; !ok {
-		sessionID = uuid.NewV4().String()
-		userToSessionMap[userID] = sessionID
+	event["metadata"].(map[string]interface{})["sourceId"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+	event["metadata"].(map[string]interface{})["jobId"] = batchEvent.JobID
+	event["metadata"].(map[string]interface{})["destinationId"] = destination.ID
+	event["metadata"].(map[string]interface{})["destinationType"] = destination.DestinationDefinition.Name
+	event["metadata"].(map[string]interface{})["messageId"] = event["message"].(map[string]interface{})["messageId"].(string)
+	if sessionID, ok := event["session_id"].(string); ok {
+		event["metadata"].(map[string]interface{})["sessionId"] = sessionID
 	}
-	event["metadata"].(map[string]interface{})["anonymous_id"] = userID
-	event["metadata"].(map[string]interface{})["session_id"] = sessionID
+	if anonymousID, ok := misc.GetAnonymousID(event["message"]); ok {
+		event["metadata"].(map[string]interface{})["anonymousId"] = anonymousID
+	}
 }
 
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]interface{}) {
@@ -588,7 +582,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			// read source_id from metadata that is replayed back from transformer
 			// in case of custom transformations metadata of first event is returned along with all events in session
 			// source_id will be same for all events belong to same user in a session
-			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["source_id"].(string)
+			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
 			if !ok {
 				logger.Errorf("Error retrieving source_id from transformed event: %+v\n", destEvent)
 			}
