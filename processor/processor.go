@@ -441,14 +441,25 @@ func enhanceWithTimeFields(event map[string]interface{}, singularEventMap map[st
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
-func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT) {
+func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT, userToSessionMap map[string]string) {
 	event["metadata"] = make(map[string]interface{})
 	event["metadata"].(map[string]interface{})["source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	event["metadata"].(map[string]interface{})["job_id"] = batchEvent.JobID
 	event["metadata"].(map[string]interface{})["destination_id"] = destination.ID
 	event["metadata"].(map[string]interface{})["destination_type"] = destination.DestinationDefinition.Name
 	event["metadata"].(map[string]interface{})["message_id"] = event["message"].(map[string]interface{})["messageId"].(string)
-	event["metadata"].(map[string]interface{})["anonymous_id"] = event["message"].(map[string]interface{})["anonymousId"].(string)
+
+	userID := event["message"].(map[string]interface{})["anonymousId"].(string)
+	var (
+		sessionID string
+		ok        bool
+	)
+	if sessionID, ok = userToSessionMap[userID]; !ok {
+		sessionID = uuid.NewV4().String()
+		userToSessionMap[userID] = sessionID
+	}
+	event["metadata"].(map[string]interface{})["anonymous_id"] = userID
+	event["metadata"].(map[string]interface{})["session_id"] = sessionID
 }
 
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]interface{}) {
@@ -459,6 +470,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var eventsByDest = make(map[string][]interface{})
+	userToSessionMap := make(map[string]string)
 
 	misc.Assert(parsedEventList == nil || len(jobList) == len(parsedEventList))
 	//Each block we receive from a client has a bunch of
@@ -518,7 +530,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
 
 						enhanceWithTimeFields(shallowEventCopy, singularEventMap, receivedAt)
-						enhanceWithMetadata(shallowEventCopy, batchEvent, destination)
+						enhanceWithMetadata(shallowEventCopy, batchEvent, destination, userToSessionMap)
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDest[destType]
@@ -573,6 +585,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 			//Need to replace UUID his with messageID from client
 			id := uuid.NewV4()
+			// read source_id from metadata that is replayed back from transformer
+			// in case of custom transformations metadata of first event is returned along with all events in session
+			// source_id will be same for all events belong to same user in a session
 			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["source_id"].(string)
 			if !ok {
 				logger.Errorf("Error retrieving source_id from transformed event: %+v\n", destEvent)
