@@ -441,7 +441,7 @@ func enhanceWithTimeFields(event map[string]interface{}, singularEventMap map[st
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
-func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT, userToSessionMap map[string]string) {
+func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT) {
 	event["metadata"] = make(map[string]interface{})
 	event["metadata"].(map[string]interface{})["sourceId"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	event["metadata"].(map[string]interface{})["jobId"] = batchEvent.JobID
@@ -464,7 +464,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var eventsByDest = make(map[string][]interface{})
-	userToSessionMap := make(map[string]string)
 
 	misc.Assert(parsedEventList == nil || len(jobList) == len(parsedEventList))
 	//Each block we receive from a client has a bunch of
@@ -524,7 +523,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
 
 						enhanceWithTimeFields(shallowEventCopy, singularEventMap, receivedAt)
-						enhanceWithMetadata(shallowEventCopy, batchEvent, destination, userToSessionMap)
+						enhanceWithMetadata(shallowEventCopy, batchEvent, destination)
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDest[destType]
