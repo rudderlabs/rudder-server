@@ -21,19 +21,25 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey strin
 
 //GetBackendConfig returns sources from the workspace
 func (workspaceConfig *WorkspaceConfig) GetBackendConfig() (SourcesT, bool) {
+	url := fmt.Sprintf("%s/workspaceConfig", configBackendURL)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		logger.Error("Errored when sending request to the server", err)
+		return SourcesT{}, false
+	}
+
+	req.SetBasicAuth(configBackendToken, "")
+	req.Header.Set("Content-Type", "application/json")
+
 	client := &http.Client{}
-	url := fmt.Sprintf("%s/workspace-config?workspaceToken=%s", configBackendURL, configBackendToken)
-	resp, err := client.Get(url)
+	resp, err := client.Do(req)
 
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
 		respBody, _ = ioutil.ReadAll(resp.Body)
 		defer resp.Body.Close()
 	}
-	if err != nil {
-		logger.Error("Errored when sending request to the server", err)
-		return SourcesT{}, false
-	}
+
 	var sourcesJSON SourcesT
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {

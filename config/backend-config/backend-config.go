@@ -14,8 +14,8 @@ import (
 
 var (
 	backendConfig                        BackendConfig
-	hostedService                        bool
-	hostedServiceSecret                  string
+	isMultiWorkspace                     bool
+	multiWorkspaceSecret                 string
 	configBackendURL, configBackendToken string
 	pollInterval                         time.Duration
 	curSourceJSON                        SourcesT
@@ -72,10 +72,10 @@ type BackendConfig interface {
 }
 
 func loadConfig() {
-	// Rudder as Hosted service. false by default
-	hostedService = config.GetEnvAsBool("HOSTED_SERVICE", false)
-	// Secret to be sent in basic auth for Hosted service. password by default
-	hostedServiceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+	// Rudder supporting multiple workspaces. false by default
+	isMultiWorkspace = config.GetEnvAsBool("HOSTED_SERVICE", false)
+	// Secret to be sent in basic auth for supporting multiple workspaces. password by default
+	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
 
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	configBackendToken = config.GetEnv("CONFIG_BACKEND_TOKEN", "1P2tfQQKarhlsG6S3JGLdXptyZY")
@@ -133,7 +133,7 @@ func WaitForConfig() {
 
 // Setup backend config
 func Setup() {
-	if hostedService {
+	if isMultiWorkspace {
 		backendConfig = new(MultiWorkspaceConfig)
 	} else {
 		backendConfig = new(WorkspaceConfig)

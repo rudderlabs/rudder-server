@@ -47,7 +47,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetBackendConfig() (SourcesT, 
 		return SourcesT{}, false
 	}
 
-	req.SetBasicAuth(hostedServiceSecret, "")
+	req.SetBasicAuth(multiWorkspaceSecret, "")
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}

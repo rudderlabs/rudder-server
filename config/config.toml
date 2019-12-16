@@ -19,16 +19,9 @@ maxDBWriterProcess = 4
 CustomVal = "GW"
 maxBatchSize = 32
 batchTimeoutInMS = 20
-respOk = "OK"
-respRequestBodyNil = "Request body is nil"
-respTooManyRequests = "Max Events Limit reached. Dropping Events."
-respNoWriteKeyInBasicAuth = "Failed to read writeKey from header"
-respRequestBodyReadFailed = "Failed to read body from request"
-respRequestBodyTooLarge = "Request size exceeds max limit"
-respInvalidWriteKey = "Invalid Write Key"
 maxReqSizeInKB = 100000
 enableDedup = true
-enableRateLimit = true
+enableRateLimit = false
 dedupWindowInS = 86400
 
 [SourceDebugger]
