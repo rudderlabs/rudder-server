@@ -131,7 +131,7 @@ func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 		if len(columnMap) > 0 {
 			err := bq.addColumns(tableName, columnMap)
 			if err != nil {
-				logger.Error(err)
+				logger.Errorf("BQ: Error creating columns in bigquery table %s: %+v\n", tableName, err)
 			}
 		}
 	}
@@ -148,7 +148,7 @@ func (bq *HandleT) load(schema map[string]map[string]string) (err error) {
 		gcsRef.SourceFormat = bigquery.JSON
 		gcsRef.MaxBadRecords = 100
 		gcsRef.IgnoreUnknownValues = true
-		fmt.Printf("%+v\n", fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", "")))
+		// create partitioned table in format tableName$20191221
 		loader := bq.Db.Dataset(bq.SchemaName).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
 
 		job, err := loader.Run(bq.BQContext)

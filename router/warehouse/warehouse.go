@@ -244,7 +244,6 @@ func (wh *HandleT) mainLoop() {
 			time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
 			continue
 		}
-		time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
 		for _, warehouse := range warehouses {
 			if isDestInProgress(warehouse.Destination.ID) {
 				continue
@@ -296,6 +295,7 @@ func (wh *HandleT) mainLoop() {
 			id, startCSVID, err := wh.initUpload(warehouse, jsonUploadsList, consolidatedSchema)
 			wh.processQ <- ProcessJSONsJobT{List: jsonUploadsList, Schema: consolidatedSchema, Warehouse: warehouse, UploadID: id, StartCSVID: startCSVID}
 		}
+		time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
 	}
 }
 
@@ -351,7 +351,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[job.Warehouse.Destination.DestinationDefinition.Name],
-		Bucket:   config.GetEnv("WAREHOUSE_JSON_DUMP_BUCKET", "rl-redshift-json-dump"),
+		Bucket:   job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucket1"].(string),
 	})
 
 	err = downloader.Download(jsonFile, job.JSON.Location)
@@ -415,7 +415,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[job.Warehouse.Destination.DestinationDefinition.Name],
-		Bucket:   config.GetEnv("WAREHOUSE_CSV_DUMP_BUCKET", "rl-redshift-csv-dump"),
+		Bucket:   job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucket1"].(string),
 	})
 
 	misc.AssertError(err)

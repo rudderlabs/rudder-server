@@ -101,7 +101,7 @@ func updateDestStatusStats(id string, count int, isSuccess bool) {
 func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
 	var bucketName, dirName string
 	if isWarehouse {
-		bucketName = config.GetString("WAREHOUSE_JSON_UPLOADS_BUCKET", "rl-redshift-json-dump")
+		bucketName = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["preLoadBucket1"].(string)
 		dirName = "/rudder-warehouse-json-uploads/"
 	} else {
 		bucketName = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
