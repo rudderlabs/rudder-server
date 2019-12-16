@@ -351,7 +351,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[job.Warehouse.Destination.DestinationDefinition.Name],
-		Bucket:   job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucket1"].(string),
+		Bucket:   job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string),
 	})
 
 	err = downloader.Download(jsonFile, job.JSON.Location)
@@ -416,14 +416,14 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[job.Warehouse.Destination.DestinationDefinition.Name],
-		Bucket:   job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucket1"].(string),
+		Bucket:   job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string),
 	})
 
 	misc.AssertError(err)
 	for tableName, csvFile := range csvFileMap {
 		file, err := os.Open(csvFile.Name())
 		defer os.Remove(csvFile.Name())
-		uploadLocation, err := uploader.Upload(file, tableName, job.Warehouse.Source.ID, strconv.FormatInt(job.UploadID, 10))
+		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, strconv.FormatInt(job.UploadID, 10))
 		misc.AssertError(err)
 		sqlStatement := fmt.Sprintf(`INSERT INTO %s (json_id, location, source_id, destination_id, destination_type, table_name, created_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $7)`, warehouseCSVUploadsTable)

@@ -101,7 +101,7 @@ func updateDestStatusStats(id string, count int, isSuccess bool) {
 func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
 	var bucketName, dirName string
 	if isWarehouse {
-		bucketName = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["preLoadBucket1"].(string)
+		bucketName = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string)
 		dirName = "/rudder-warehouse-json-uploads/"
 	} else {
 		bucketName = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
@@ -147,7 +147,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 	var keyPrefixes []string
 	if isWarehouse {
-		keyPrefixes = []string{config.GetEnv("WAREHOUSE_BUCKET_FOLDER_NAME", "rudder-warehouse-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+		keyPrefixes = []string{config.GetEnv("WAREHOUSE_BUCKET_FOLDER_NAME", "rudder-warehouse-json-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
 	} else {
 		keyPrefixes = []string{config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
 	}
