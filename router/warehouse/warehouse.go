@@ -392,6 +392,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 			for _, columnName := range sortedTableColumnMap[tableName] {
 				columnVal, _ := jsonLine[columnName]
 				if stringVal, ok := columnVal.(string); ok {
+					// handle commas in column values for csv
 					if strings.Contains(stringVal, ",") {
 						columnVal = strings.ReplaceAll(stringVal, "\"", "\"\"")
 						columnVal = fmt.Sprintf(`"%s"`, columnVal)
