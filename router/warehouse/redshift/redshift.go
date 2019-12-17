@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/iancoleman/strcase"
+	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -67,8 +68,8 @@ func (rs *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (rs *HandleT) addColumns(tableName string, columns map[string]string) (err error) {
-	_, err = rs.Db.Exec(fmt.Sprintf(`ALTER TABLE %v  %v `, tableName, columnsWithDataTypes(columns, "ADD COLUMN ")))
+func (rs *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+	_, err = rs.Db.Exec(fmt.Sprintf(`ALTER TABLE %v ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType]))
 	return
 }
 
@@ -98,13 +99,27 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 			continue
 		}
 		if len(columnMap) > 0 {
-			err := rs.addColumns(fmt.Sprintf(`%s.%s`, rs.SchemaName, tableName), columnMap)
-			if err != nil {
-				logger.Error(err)
+			for columnName, columnType := range columnMap {
+				err := rs.addColumn(fmt.Sprintf(`%s.%s`, rs.SchemaName, tableName), columnName, columnType)
+				if !checkAndIgnoreAlreadyExistError(err) {
+					return nil, err
+				}
 			}
 		}
 	}
 	return
+}
+
+func checkAndIgnoreAlreadyExistError(err error) bool {
+	if err != nil {
+		if e, ok := err.(*pq.Error); ok {
+			if e.Code == "42701" {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 type S3ManifestEntryT struct {
