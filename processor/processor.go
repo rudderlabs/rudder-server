@@ -175,6 +175,10 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			logger.Error("[Processor: addJobsToSessions] Failed to get userID for job")
 			continue
 		}
+
+		//Prefixing write key to userID. This is done to create session per user per source
+		userID = gjson.GetBytes(job.EventPayload, "writeKey").Str + ":" + userID
+
 		_, ok = proc.userJobListMap[userID]
 		if !ok {
 			proc.userJobListMap[userID] = make([]*jobsdb.JobT, 0)
