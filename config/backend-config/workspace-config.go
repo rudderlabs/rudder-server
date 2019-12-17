@@ -51,7 +51,7 @@ func (workspaceConfig *WorkspaceConfig) GetBackendConfig() (SourcesT, bool) {
 	for _, source := range sourcesJSON.Sources {
 		destinations := make([]DestinationT, 0)
 		for _, destination := range source.Destinations {
-			isTransformerNotSupported := destination.Config.(map[string]interface{})["isTransformerNotSupported"]
+			isTransformerNotSupported := destination.Config.(map[string]interface{})["isDeviceModeOnly"]
 			if isTransformerNotSupported == nil || isTransformerNotSupported == "false" {
 				destinations = append(destinations, destination)
 			}
