@@ -46,5 +46,19 @@ func (workspaceConfig *WorkspaceConfig) GetBackendConfig() (SourcesT, bool) {
 		logger.Error("Errored while parsing request", err, string(respBody), resp.StatusCode)
 		return SourcesT{}, false
 	}
-	return sourcesJSON, true
+	var modifiedSources SourcesT
+	modifiedSources.Sources = make([]SourceT, 0)
+	for _, source := range sourcesJSON.Sources {
+		destinations := make([]DestinationT, 0)
+		for _, destination := range source.Destinations {
+			isTransformerNotSupported := destination.Config.(map[string]interface{})["isTransformerNotSupported"]
+			if isTransformerNotSupported == nil || isTransformerNotSupported == "false" {
+				destinations = append(destinations, destination)
+			}
+		}
+		source.Destinations = destinations
+		modifiedSources.Sources = append(modifiedSources.Sources, source)
+	}
+
+	return modifiedSources, true
 }
