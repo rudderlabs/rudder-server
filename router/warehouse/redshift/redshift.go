@@ -53,10 +53,10 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr[:], ",")
 }
 
-func (rs *HandleT) setUploadError(err error) {
+func (rs *HandleT) setUploadError(err error, state string) {
 	warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportingDataFailedState, rs.DbHandle)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2 WHERE id=$3`, warehouseUploadsTable)
-	_, err = rs.DbHandle.Exec(sqlStatement, warehouseutils.ExportingDataFailedState, err.Error(), rs.UploadID)
+	_, err = rs.DbHandle.Exec(sqlStatement, state, err.Error(), rs.UploadID)
 	misc.AssertError(err)
 }
 
@@ -172,7 +172,6 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 		stagingTableName := "staging-" + tableName + "-" + uuid.NewV4().String()
 		err = rs.createTable(fmt.Sprintf(`%s."%s"`, rs.SchemaName, stagingTableName), schema[tableName])
 		if err != nil {
-			rs.setUploadError(err)
 			return err
 		}
 		defer rs.dropStagingTable(stagingTableName)
@@ -180,7 +179,6 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 		// BEGIN TRANSACTION
 		tx, err := rs.Db.Begin()
 		if err != nil {
-			rs.setUploadError(err)
 			return err
 		}
 
@@ -189,7 +187,6 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
 			tx.Rollback()
-			rs.setUploadError(err)
 			return err
 		}
 
@@ -197,7 +194,6 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
 			tx.Rollback()
-			rs.setUploadError(err)
 			return err
 		}
 
@@ -213,16 +209,13 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
 			tx.Rollback()
-			rs.setUploadError(err)
 			return err
 		}
 
 		err = tx.Commit()
 		if err != nil {
-			rs.setUploadError(err)
 			return err
 		}
-
 	}
 	return
 }
@@ -269,14 +262,14 @@ func (rs *HandleT) MigrateSchema() (err error) {
 	warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.UpdatingSchemaState, rs.DbHandle)
 	updatedSchema, err := rs.updateSchema()
 	if err != nil {
-		rs.setUploadError(err)
+		rs.setUploadError(err, warehouseutils.UpdatingSchemaFailedState)
 		return
 	}
 	err = warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.UpdatedSchemaState, rs.DbHandle)
 	misc.AssertError(err)
 	err = warehouseutils.UpdateCurrentSchema(rs.Warehouse, rs.UploadID, rs.CurrentSchema, updatedSchema, rs.DbHandle)
 	if err != nil {
-		rs.setUploadError(err)
+		rs.setUploadError(err, warehouseutils.UpdatingSchemaFailedState)
 		return
 	}
 	return
@@ -288,7 +281,7 @@ func (rs *HandleT) Export() {
 	misc.AssertError(err)
 	err = rs.load(rs.UploadSchema)
 	if err != nil {
-		rs.setUploadError(err)
+		rs.setUploadError(err, warehouseutils.ExportingDataFailedState)
 		return
 	}
 	err = warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportedDataState, rs.DbHandle)
@@ -311,7 +304,7 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) {
 		password: rs.Warehouse.Destination.Config.(map[string]interface{})["password"].(string),
 	})
 	if err != nil {
-		rs.setUploadError(err)
+		rs.setUploadError(err, warehouseutils.UpdatingSchemaFailedState)
 		return
 	}
 	rs.CurrentSchema, err = warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)

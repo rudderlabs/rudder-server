@@ -13,6 +13,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -42,10 +43,10 @@ var dataTypesMap = map[string]bigquery.FieldType{
 	"datetime": bigquery.TimestampFieldType,
 }
 
-func (bq *HandleT) setUploadError(err error) {
+func (bq *HandleT) setUploadError(err error, state string) {
 	warehouseutils.SetUploadStatus(bq.UploadID, warehouseutils.ExportingDataFailedState, bq.DbHandle)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2 WHERE id=$3`, warehouseUploadsTable)
-	_, err = bq.DbHandle.Exec(sqlStatement, warehouseutils.ExportingDataFailedState, err.Error(), bq.UploadID)
+	_, err = bq.DbHandle.Exec(sqlStatement, state, err.Error(), bq.UploadID)
 	misc.AssertError(err)
 }
 
@@ -83,7 +84,7 @@ func (bq *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (bq *HandleT) addColumns(tableName string, columns map[string]string) (err error) {
+func (bq *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
 	logger.Debugf("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s\n", tableName, bq.SchemaName, bq.ProjectID)
 	tableRef := bq.Db.Dataset(bq.SchemaName).Table(tableName)
 	meta, err := tableRef.Metadata(bq.BQContext)
@@ -91,7 +92,7 @@ func (bq *HandleT) addColumns(tableName string, columns map[string]string) (err 
 		return err
 	}
 	newSchema := append(meta.Schema,
-		getTableSchema(columns)...,
+		&bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]},
 	)
 	update := bigquery.TableMetadataToUpdate{
 		Schema: newSchema,
@@ -107,19 +108,31 @@ func (bq *HandleT) createSchema() (err error) {
 	return
 }
 
+func checkAndIgnoreAlreadyExistError(err error) bool {
+	if err != nil {
+		if e, ok := err.(*googleapi.Error); ok {
+			if e.Code == 409 || e.Code == 400 {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
 func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
 	diff := warehouseutils.GetSchemaDiff(bq.CurrentSchema, bq.UploadSchema)
 	updatedSchema = diff.UpdatedSchema
 	if len(bq.CurrentSchema) == 0 {
 		err = bq.createSchema()
-		if err != nil {
+		if !checkAndIgnoreAlreadyExistError(err) {
 			return nil, err
 		}
 	}
 	processedTables := make(map[string]bool)
 	for _, tableName := range diff.Tables {
 		err = bq.createTable(tableName, diff.ColumnMaps[tableName])
-		if err != nil {
+		if !checkAndIgnoreAlreadyExistError(err) {
 			return nil, err
 		}
 		processedTables[tableName] = true
@@ -129,9 +142,12 @@ func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 			continue
 		}
 		if len(columnMap) > 0 {
-			err := bq.addColumns(tableName, columnMap)
-			if err != nil {
-				logger.Errorf("BQ: Error creating columns in bigquery table %s: %+v\n", tableName, err)
+			var err error
+			for columnName, columnType := range columnMap {
+				err = bq.addColumn(tableName, columnName, columnType)
+				if !checkAndIgnoreAlreadyExistError(err) {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -194,14 +210,14 @@ func (bq *HandleT) MigrateSchema() (err error) {
 	logger.Debugf("BQ: Updaing schema for bigquery in project: %s\n", bq.ProjectID)
 	updatedSchema, err := bq.updateSchema()
 	if err != nil {
-		bq.setUploadError(err)
+		bq.setUploadError(err, warehouseutils.UpdatingSchemaFailedState)
 		return
 	}
 	err = warehouseutils.SetUploadStatus(bq.UploadID, warehouseutils.UpdatedSchemaState, bq.DbHandle)
 	misc.AssertError(err)
 	err = warehouseutils.UpdateCurrentSchema(bq.Warehouse, bq.UploadID, bq.CurrentSchema, updatedSchema, bq.DbHandle)
 	if err != nil {
-		bq.setUploadError(err)
+		bq.setUploadError(err, warehouseutils.UpdatingSchemaFailedState)
 		return
 	}
 	return
@@ -213,7 +229,7 @@ func (bq *HandleT) Export() {
 	misc.AssertError(err)
 	err = bq.load(bq.UploadSchema)
 	if err != nil {
-		bq.setUploadError(err)
+		bq.setUploadError(err, warehouseutils.ExportingDataFailedState)
 		return
 	}
 	err = warehouseutils.SetUploadStatus(bq.UploadID, warehouseutils.ExportedDataState, bq.DbHandle)
@@ -235,7 +251,7 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) {
 		credentials: bq.Warehouse.Destination.Config.(map[string]interface{})["credentials"].(string),
 	})
 	if err != nil {
-		bq.setUploadError(err)
+		bq.setUploadError(err, warehouseutils.UpdatingSchemaFailedState)
 		return
 	}
 	bq.CurrentSchema, err = warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
