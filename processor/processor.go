@@ -170,7 +170,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			logger.Debug("[Processor: addJobsToSessions] bad event")
 			continue
 		}
-		userID, ok := misc.GetRudderEventUserID(eventList)
+		userID, ok := misc.GetAnonymousID(eventList[0])
 		if !ok {
 			logger.Error("[Processor: addJobsToSessions] Failed to get userID for job")
 			continue
@@ -432,6 +432,34 @@ func getTimestampFromEvent(event map[string]interface{}, field string) time.Time
 	return timestamp
 }
 
+func enhanceWithTimeFields(event map[string]interface{}, singularEventMap map[string]interface{}, receivedAt time.Time) {
+	// set timestamp skew based on timestamp fields from SDKs
+	originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
+	sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
+
+	// set all timestamps in RFC3339 format
+	event["message"].(map[string]interface{})["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
+	event["message"].(map[string]interface{})["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339Milli)
+	event["message"].(map[string]interface{})["sentAt"] = sentAt.Format(misc.RFC3339Milli)
+	event["message"].(map[string]interface{})["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339Milli)
+}
+
+// add metadata to each singularEvent which will be returned by transformer in response
+func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT) {
+	event["metadata"] = make(map[string]interface{})
+	event["metadata"].(map[string]interface{})["sourceId"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+	event["metadata"].(map[string]interface{})["jobId"] = batchEvent.JobID
+	event["metadata"].(map[string]interface{})["destinationId"] = destination.ID
+	event["metadata"].(map[string]interface{})["destinationType"] = destination.DestinationDefinition.Name
+	event["metadata"].(map[string]interface{})["messageId"] = event["message"].(map[string]interface{})["messageId"].(string)
+	if sessionID, ok := event["session_id"].(string); ok {
+		event["metadata"].(map[string]interface{})["sessionId"] = sessionID
+	}
+	if anonymousID, ok := misc.GetAnonymousID(event["message"]); ok {
+		event["metadata"].(map[string]interface{})["anonymousId"] = anonymousID
+	}
+}
+
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]interface{}) {
 
 	proc.statsJobs.Start()
@@ -497,17 +525,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy["message"] = singularEventMap
 						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
-						shallowEventCopy["message"].(map[string]interface{})["source_id"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 
-						// set timestamp skew based on timestamp fields from SDKs
-						originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
-						sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
-
-						// set all timestamps in RFC3339 format
-						shallowEventCopy["message"].(map[string]interface{})["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
-						shallowEventCopy["message"].(map[string]interface{})["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339Milli)
-						shallowEventCopy["message"].(map[string]interface{})["sentAt"] = sentAt.Format(misc.RFC3339Milli)
-						shallowEventCopy["message"].(map[string]interface{})["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339Milli)
+						enhanceWithTimeFields(shallowEventCopy, singularEventMap, receivedAt)
+						enhanceWithMetadata(shallowEventCopy, batchEvent, destination)
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDest[destType]
@@ -547,13 +567,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		destTransformEventList := response.Events
 		logger.Debug("Transform output size", len(destTransformEventList))
 		if !response.Success {
-			logger.Debug("[Processor: processJobsForDest] Request to transformer not a success ", response.Events, response.SourceIDList)
+			logger.Debug("[Processor: processJobsForDest] Request to transformer not a success ", response.Events)
 			continue
 		}
 
 		//Save the JSON in DB. This is what the rotuer uses
-		for idx, destEvent := range destTransformEventList {
-			destEventJSON, err := json.Marshal(destEvent)
+		for _, destEvent := range destTransformEventList {
+			destEventJSON, err := json.Marshal(destEvent.(map[string]interface{})["output"])
 			//Should be a valid JSON since its our transformation
 			//but we handle anyway
 			if err != nil {
@@ -562,7 +582,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 			//Need to replace UUID his with messageID from client
 			id := uuid.NewV4()
-			sourceID := response.SourceIDList[idx]
+			// read source_id from metadata that is replayed back from transformer
+			// in case of custom transformations metadata of first event is returned along with all events in session
+			// source_id will be same for all events belong to same user in a session
+			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
+			if !ok {
+				logger.Errorf("Error retrieving source_id from transformed event: %+v\n", destEvent)
+			}
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID)),

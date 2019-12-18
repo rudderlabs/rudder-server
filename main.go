@@ -167,7 +167,8 @@ func main() {
 	flag.Parse()
 
 	// Check if there is a probable inconsistent state of Data
-	db.HandleRecovery(*normalMode, *degradedMode, *maintenanceMode)
+	misc.AppStartTime = time.Now().Unix()
+	db.HandleRecovery(*normalMode, *degradedMode, *maintenanceMode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
 

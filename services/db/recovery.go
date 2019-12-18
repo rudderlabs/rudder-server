@@ -135,7 +135,7 @@ func alertOps(mode string) {
 	}
 }
 
-func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool) {
+func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool, currTime int64) {
 
 	enabled := config.GetBool("recovery.enabled", false)
 	if !enabled {
@@ -173,7 +173,6 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool)
 	} else {
 		recoveryModeStat.Gauge(1)
 	}
-	currTime := time.Now().Unix()
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()

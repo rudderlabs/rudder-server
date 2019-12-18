@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var (
