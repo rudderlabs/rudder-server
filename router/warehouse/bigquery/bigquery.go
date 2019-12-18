@@ -43,6 +43,10 @@ var dataTypesMap = map[string]bigquery.FieldType{
 	"datetime": bigquery.TimestampFieldType,
 }
 
+var primaryKeyMap = map[string]string{
+	"identifies": "user_id",
+}
+
 func (bq *HandleT) setUploadError(err error, state string) {
 	warehouseutils.SetUploadStatus(bq.UploadID, warehouseutils.ExportingDataFailedState, bq.DbHandle)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2 WHERE id=$3`, warehouseUploadsTable)
@@ -67,12 +71,19 @@ func (bq *HandleT) createTable(name string, columns map[string]string) (err erro
 	}
 	tableRef := bq.Db.Dataset(bq.SchemaName).Table(name)
 	err = tableRef.Create(bq.BQContext, metaData)
-	if err != nil {
+	if !checkAndIgnoreAlreadyExistError(err) {
+		fmt.Printf("%+v\n", err)
 		return err
 	}
 
+	primaryKey := "id"
+	if column, ok := primaryKeyMap[name]; ok {
+		primaryKey = column
+	}
+
+	// assuming it has field named id upon which dedup is done in view
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY id) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.SchemaName + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + primaryKey + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.SchemaName + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
 					AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
 			)
 		WHERE __row_number = 1`
@@ -151,7 +162,7 @@ func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 			}
 		}
 	}
-	return
+	return updatedSchema, nil
 }
 
 func (bq *HandleT) load(schema map[string]map[string]string) (err error) {
