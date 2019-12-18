@@ -429,9 +429,8 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 	var json = []byte(`{"server":"UP","db":"UP"}`)
-	sjson.SetBytes(json, "server", "UP")
 	if !gateway.jobsDB.CheckPGHealth() {
-		sjson.SetBytes(json, "db", "DOWN")
+		json, _ = sjson.SetBytes(json, "db", "DOWN")
 	}
 	w.Write(json)
 }
