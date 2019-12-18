@@ -1,6 +1,8 @@
 package db
 
-import "github.com/rudderlabs/rudder-server/config"
+import (
+	"github.com/rudderlabs/rudder-server/config"
+)
 
 func (handler *NormalModeHandler) RecordAppStart(currTime int64) {
 	handler.recoveryData.StartTimes = append(handler.recoveryData.StartTimes, currTime)
