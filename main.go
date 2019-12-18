@@ -38,15 +38,8 @@ var (
 	rawDataDestinations                         []string
 )
 
-var gitCommit string
 var version = "Not an official release. Get the latest release from the github repo."
-var major = ""
-var minor = ""
-var commit = ""
-var buildDate = ""
-var builtBy = ""
-var gitURL = ""
-var patch = ""
+var major, minor, commit, buildDate, builtBy, gitURL, patch string
 
 func loadConfig() {
 	maxProcess = config.GetInt("maxProcess", 12)
