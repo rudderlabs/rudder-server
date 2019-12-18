@@ -87,6 +87,7 @@ pollIntervalInS = 5
 # Stores related metadata in storagePath
 [recovery]
 enabled = true
+errorStorePath = "/tmp/error_store.json"
 storagePath = "/tmp/recovery_data.json"
     [recovery.normal]
     crashThreshold = 5
