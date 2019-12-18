@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -26,20 +27,6 @@ import (
 var RFC3339Milli = "2006-01-02T15:04:05.999Z07:00"
 
 var AppStartTime int64
-
-// errorString is a trivial implementation of error.
-type errorString struct {
-	s string
-}
-
-func (e *errorString) Error() string {
-	return e.s
-}
-
-// NewError returns an error that formats as the given text.
-func NewError(text string) error {
-	return &errorString{text}
-}
 
 // ErrorStoreT : DS to store the app errors
 type ErrorStoreT struct {
@@ -78,7 +65,7 @@ func saveErrorStore(errorStore ErrorStoreT) {
 	AssertError(err)
 }
 
-//RecordAppError appends the error occured to recovery_data.json
+//RecordAppError appends the error occured to error_store.json
 func RecordAppError(err error) {
 	if AppStartTime == 0 {
 		return
@@ -127,7 +114,7 @@ func Assert(cond bool) {
 		//debug.SetTraceback("all")
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
-		RecordAppError(NewError("Assertion failed"))
+		RecordAppError(errors.New("Assertion failed"))
 		panic("Assertion failed")
 	}
 }

@@ -135,11 +135,11 @@ func alertOps(mode string) {
 	}
 }
 
-func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool) int64 {
+func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool, currTime int64) {
 
 	enabled := config.GetBool("recovery.enabled", false)
 	if !enabled {
-		return 0
+		return
 	}
 	forceMode := getForceRecoveryMode(forceNormal, forceDegraded, forceMaintenance)
 	isForced := false
@@ -173,11 +173,8 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool)
 	} else {
 		recoveryModeStat.Gauge(1)
 	}
-	currTime := time.Now().Unix()
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
 	logger.Infof("Starting in %s mode\n", recoveryData.Mode)
-
-	return currTime
 }
