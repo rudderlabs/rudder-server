@@ -22,6 +22,7 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/thoas/go-funk"
 )
 
 // RFC3339 with milli sec precision
@@ -435,4 +436,10 @@ func IncrementMapByKey(m map[string]int, key string, increment int) {
 // timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
 	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
+}
+
+func StringKeys(input interface{}) []string {
+	keys := funk.Keys(input)
+	stringKeys := keys.([]string)
+	return stringKeys
 }

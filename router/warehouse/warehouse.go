@@ -44,6 +44,7 @@ var (
 )
 
 type HandleT struct {
+	destType  string
 	dbHandle  *sql.DB
 	processQ  chan ProcessJSONsJobT
 	uploadQ   chan JSONToCSVsJobT
@@ -93,7 +94,7 @@ func loadConfig() {
 	inProgressMap = map[string]bool{}
 }
 
-func backendConfigSubscriber() {
+func (wh *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch)
 	for {
@@ -104,7 +105,7 @@ func backendConfigSubscriber() {
 		for _, source := range allSources.Sources {
 			if source.Enabled && len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if destination.Enabled && misc.Contains(availableWarehouses, destination.DestinationDefinition.Name) {
+					if destination.Enabled && misc.Contains(availableWarehouses, wh.destType) {
 						warehouses = append(warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
 						break
 					}
@@ -183,7 +184,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	startJSONID := jsonUploadsList[0].ID
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
 	currentSchema, err := json.Marshal(schema)
-	row := stmt.QueryRow(warehouse.Source.ID, strings.ToLower(strcase.ToSnake(warehouse.Source.Name)), warehouse.Destination.ID, warehouse.Destination.DestinationDefinition.Name, startJSONID, endJSONID, startCSVID, warehouseutils.GeneratingCsvState, currentSchema, time.Now(), time.Now())
+	row := stmt.QueryRow(warehouse.Source.ID, strings.ToLower(strcase.ToSnake(warehouse.Source.Name)), warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, startCSVID, warehouseutils.GeneratingCsvState, currentSchema, time.Now(), time.Now())
 	err = row.Scan(&uploadID)
 	misc.AssertError(err)
 	return
@@ -252,7 +253,7 @@ func (wh *HandleT) mainLoop() {
 
 			pendingUpload, ok := wh.getPendingUpload(warehouse)
 			if ok {
-				whManager, err := NewWhManager(warehouse.Destination.DestinationDefinition.Name)
+				whManager, err := NewWhManager(wh.destType)
 				misc.AssertError(err)
 				switch pendingUpload.Status {
 				case warehouseutils.GeneratedCsvState, warehouseutils.UpdatingSchemaState, warehouseutils.UpdatingSchemaFailedState:
@@ -325,7 +326,7 @@ func (wh *HandleT) initWorkers() {
 				sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, end_csv_id=$2 WHERE id=$3`, warehouseUploadsTable)
 				_, err = wh.dbHandle.Exec(sqlStatement, warehouseutils.GeneratedCsvState, endCSVID, processJSONsJob.UploadID)
 				misc.AssertError(err)
-				whManager, err := NewWhManager(processJSONsJob.Warehouse.Destination.DestinationDefinition.Name)
+				whManager, err := NewWhManager(wh.destType)
 				misc.AssertError(err)
 				whManager.Process(warehouseutils.ConfigT{
 					DbHandle:   wh.dbHandle,
@@ -344,13 +345,13 @@ func (wh *HandleT) initWorkers() {
 func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	dirName := "/rudder-warehouse-json-uploads-tmp/"
 	tmpDirPath := misc.CreateTMPDIR()
-	jsonPath := tmpDirPath + dirName + job.Warehouse.Destination.DestinationDefinition.Name + "/" + job.JSON.Location
+	jsonPath := tmpDirPath + dirName + wh.destType + "/" + job.JSON.Location
 	err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 	jsonFile, err := os.Create(jsonPath)
 	misc.AssertError(err)
 
 	downloader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: warehouseutils.ObjectStorageMap[job.Warehouse.Destination.DestinationDefinition.Name],
+		Provider: warehouseutils.ObjectStorageMap[wh.destType],
 		Bucket:   job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string),
 	})
 
@@ -382,7 +383,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 		if _, ok := tableContentMap[tableName]; !ok {
 			tableContentMap[tableName] = ""
 		}
-		if job.Warehouse.Destination.DestinationDefinition.Name == "BQ" {
+		if wh.destType == "BQ" {
 			delete(jsonLine, "metadata")
 			line, err := json.Marshal(jsonLine)
 			misc.AssertError(err)
@@ -415,7 +416,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	}
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: warehouseutils.ObjectStorageMap[job.Warehouse.Destination.DestinationDefinition.Name],
+		Provider: warehouseutils.ObjectStorageMap[wh.destType],
 		Bucket:   job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string),
 	})
 
@@ -431,7 +432,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 		misc.AssertError(err)
 		defer stmt.Close()
 
-		_, err = stmt.Exec(job.JSON.ID, uploadLocation.Location, job.JSON.SourceID, job.Warehouse.Destination.ID, job.Warehouse.Destination.DestinationDefinition.Name, tableName, time.Now())
+		_, err = stmt.Exec(job.JSON.ID, uploadLocation.Location, job.JSON.SourceID, job.Warehouse.Destination.ID, wh.destType, tableName, time.Now())
 		misc.AssertError(err)
 	}
 	return err
@@ -526,15 +527,17 @@ func (wh *HandleT) Disable() {
 	wh.isEnabled = false
 }
 
-func (wh *HandleT) Setup() {
+func (wh *HandleT) Setup(whType string) {
 	var err error
 	psqlInfo := jobsdb.GetConnectionString()
 	wh.dbHandle, err = sql.Open("postgres", psqlInfo)
 	misc.AssertError(err)
 	wh.setupTables()
+	wh.destType = whType
+	wh.isEnabled = true
 	wh.processQ = make(chan ProcessJSONsJobT)
 	wh.uploadQ = make(chan JSONToCSVsJobT)
-	go backendConfigSubscriber()
+	go wh.backendConfigSubscriber()
 	go wh.initUploaders()
 	go wh.initWorkers()
 	go wh.mainLoop()

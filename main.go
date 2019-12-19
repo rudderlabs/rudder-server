@@ -32,7 +32,6 @@ var (
 	maxProcess                                  int
 	gwDBRetention, routerDBRetention            time.Duration
 	enableProcessor, enableRouter, enableBackup bool
-	enabledDestinations                         []backendconfig.DestinationT
 	configSubscriberLock                        sync.RWMutex
 	objectStorageDestinations                   []string
 	warehouseDestinations                       []string
@@ -67,36 +66,40 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch)
 	dstToRouter := make(map[string]*router.HandleT)
-	isBatchRouterSetup := false
-	isWarehouseSetup := false
-	var brt batchrouter.HandleT
-	var wh warehouse.HandleT
+	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
+	dstToWhRouter := make(map[string]*warehouse.HandleT)
 
 	for {
 		config := <-ch
 		logger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.SourcesT)
-		enabledDestinations = enabledDestinations[:0]
-		enableBatchRouter := false
-		enableWarehouses := false
+		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				for _, destination := range source.Destinations {
 					if destination.Enabled {
-						enabledDestinations = append(enabledDestinations, destination)
+						enabledDestinations[destination.DestinationDefinition.Name] = true
 						if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) {
-							enableBatchRouter = true
-							brt.Enable()
-							if !isBatchRouterSetup {
-								isBatchRouterSetup = true
-								brt.Setup(batchRouterDB)
+							brt, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+							if !ok {
+								logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
+								var brt batchrouter.HandleT
+								brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
+								dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
+							} else {
+								logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
+								brt.Enable()
 							}
 						} else if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-							enableWarehouses = true
-							wh.Enable()
-							if !isWarehouseSetup {
-								isWarehouseSetup = true
-								wh.Setup()
+							wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
+							if !ok {
+								logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+								var wh warehouse.HandleT
+								wh.Setup(destination.DestinationDefinition.Name)
+								dstToWhRouter[destination.DestinationDefinition.Name] = &wh
+							} else {
+								logger.Info("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+								wh.Enable()
 							}
 						} else {
 							rt, ok := dstToRouter[destination.DestinationDefinition.Name]
@@ -109,32 +112,34 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 								logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
 								rt.Enable()
 							}
-
 						}
 
 					}
 				}
 			}
 		}
-		for destID, rtHandle := range dstToRouter {
-			found := false
-			for _, dst := range enabledDestinations {
-				if destID == dst.DestinationDefinition.Name {
-					found = true
-					break
+
+		keys := misc.StringKeys(dstToRouter)
+		keys = append(keys, misc.StringKeys(dstToBatchRouter)...)
+		keys = append(keys, misc.StringKeys(dstToWhRouter)...)
+		for _, key := range keys {
+			if _, ok := enabledDestinations[key]; !ok {
+				if rtHandle, ok := dstToRouter[key]; ok {
+					logger.Info("Disabling a existing destination: ", key)
+					rtHandle.Disable()
+					continue
+				}
+				if brtHandle, ok := dstToBatchRouter[key]; ok {
+					logger.Info("Disabling a existing batch destination: ", key)
+					brtHandle.Disable()
+					continue
+				}
+				if whHandle, ok := dstToWhRouter[key]; ok {
+					logger.Info("Disabling a existing warehouse destination: ", key)
+					whHandle.Disable()
+					continue
 				}
 			}
-			//Router is not in enabled list. Disable it
-			if !found {
-				logger.Info("Disabling a existing destination", destID)
-				rtHandle.Disable()
-			}
-		}
-		if !enableBatchRouter {
-			brt.Disable()
-		}
-		if !enableWarehouses {
-			wh.Disable()
 		}
 	}
 }
@@ -225,9 +230,6 @@ func main() {
 		var processor processor.HandleT
 		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
 	}
-
-	var warehouse warehouse.HandleT
-	warehouse.Setup()
 
 	var gateway gateway.HandleT
 	var rateLimiter ratelimiter.HandleT
