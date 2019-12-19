@@ -30,7 +30,6 @@ var (
 	jobQueryBatchSize         int
 	noOfWorkers               int
 	mainLoopSleepInS          int
-	batchDestinations         []DestinationT
 	configSubscriberLock      sync.RWMutex
 	objectStorageDestinations []string
 	warehouseDestinations     []string
@@ -42,11 +41,12 @@ var (
 )
 
 type HandleT struct {
-	destType     string
-	processQ     chan BatchJobsT
-	jobsDB       *jobsdb.HandleT
-	jobsDBHandle *sql.DB
-	isEnabled    bool
+	destType          string
+	batchDestinations []DestinationT
+	processQ          chan BatchJobsT
+	jobsDB            *jobsdb.HandleT
+	jobsDBHandle      *sql.DB
+	isEnabled         bool
 }
 
 type ObjectStorageT struct {
@@ -61,13 +61,13 @@ func (brt *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
-		batchDestinations = []DestinationT{}
+		brt.batchDestinations = []DestinationT{}
 		allSources := config.Data.(backendconfig.SourcesT)
 		for _, source := range allSources.Sources {
 			if source.Enabled && len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if destination.Enabled && (misc.Contains(objectStorageDestinations, brt.destType) || misc.Contains(warehouseDestinations, brt.destType)) {
-						batchDestinations = append(batchDestinations, DestinationT{Source: source, Destination: destination})
+					if destination.Enabled && destination.DestinationDefinition.Name == brt.destType {
+						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
 					}
 				}
 			}
@@ -322,7 +322,7 @@ func (brt *HandleT) mainLoop() {
 			continue
 		}
 		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
-		for _, batchDestination := range batchDestinations {
+		for _, batchDestination := range brt.batchDestinations {
 			if isSourceInProgress(batchDestination) {
 				continue
 			}

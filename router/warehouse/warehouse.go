@@ -24,6 +24,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -32,7 +33,6 @@ var (
 	noOfWorkers               int
 	warehouseUploadSleepInMin int
 	mainLoopSleepInS          int
-	warehouses                []warehouseutils.WarehouseT
 	configSubscriberLock      sync.RWMutex
 	availableWarehouses       []string
 	inProgressMap             map[string]bool
@@ -44,11 +44,12 @@ var (
 )
 
 type HandleT struct {
-	destType  string
-	dbHandle  *sql.DB
-	processQ  chan ProcessJSONsJobT
-	uploadQ   chan JSONToCSVsJobT
-	isEnabled bool
+	destType   string
+	warehouses []warehouseutils.WarehouseT
+	dbHandle   *sql.DB
+	processQ   chan ProcessJSONsJobT
+	uploadQ    chan JSONToCSVsJobT
+	isEnabled  bool
 }
 
 type ProcessJSONsJobT struct {
@@ -64,7 +65,7 @@ type JSONToCSVsJobT struct {
 	JSON      *JSONUploadT
 	Schema    map[string]map[string]string
 	Warehouse warehouseutils.WarehouseT
-	Wg        *sync.WaitGroup
+	Wg        *misc.WaitGroup
 }
 
 type JSONUploadT struct {
@@ -100,13 +101,13 @@ func (wh *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
-		warehouses = []warehouseutils.WarehouseT{}
+		wh.warehouses = []warehouseutils.WarehouseT{}
 		allSources := config.Data.(backendconfig.SourcesT)
 		for _, source := range allSources.Sources {
 			if source.Enabled && len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if destination.Enabled && misc.Contains(availableWarehouses, wh.destType) {
-						warehouses = append(warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
+					if destination.Enabled && destination.DestinationDefinition.Name == wh.destType {
+						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
 						break
 					}
 				}
@@ -245,7 +246,7 @@ func (wh *HandleT) mainLoop() {
 			time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
 			continue
 		}
-		for _, warehouse := range warehouses {
+		for _, warehouse := range wh.warehouses {
 			if isDestInProgress(warehouse.Destination.ID) {
 				continue
 			}
@@ -296,7 +297,8 @@ func (wh *HandleT) mainLoop() {
 			id, startCSVID, err := wh.initUpload(warehouse, jsonUploadsList, consolidatedSchema)
 			wh.processQ <- ProcessJSONsJobT{List: jsonUploadsList, Schema: consolidatedSchema, Warehouse: warehouse, UploadID: id, StartCSVID: startCSVID}
 		}
-		time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
+		// time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
+		time.Sleep(time.Duration(2) * time.Second)
 	}
 }
 
@@ -310,17 +312,23 @@ func (wh *HandleT) initWorkers() {
 					jsonIDs = append(jsonIDs, job.ID)
 				}
 				warehouseutils.SetJSONUploadStatus(jsonIDs, warehouseutils.JSONProcessExecutingState, wh.dbHandle)
-				var wg sync.WaitGroup
+
+				wg := misc.NewWaitGroup()
 				wg.Add(len(processJSONsJob.List))
 				for _, toProcessJSON := range processJSONsJob.List {
-					wh.uploadQ <- JSONToCSVsJobT{UploadID: processJSONsJob.UploadID, JSON: toProcessJSON, Schema: processJSONsJob.Schema, Warehouse: processJSONsJob.Warehouse, Wg: &wg}
+					wh.uploadQ <- JSONToCSVsJobT{UploadID: processJSONsJob.UploadID, JSON: toProcessJSON, Schema: processJSONsJob.Schema, Warehouse: processJSONsJob.Warehouse, Wg: wg}
 				}
-				wg.Wait()
+				err := wg.Wait()
+				if err != nil {
+					warehouseutils.SetJSONUploadStatus(jsonIDs, warehouseutils.JSONProcessFailedState, wh.dbHandle)
+					setDestInProgress(processJSONsJob.Warehouse.Destination.ID, false)
+					continue
+				}
 				warehouseutils.SetJSONUploadStatus(jsonIDs, warehouseutils.JSONProcessSucceededState, wh.dbHandle)
 
 				var endCSVID int64
 				lastCSVIDSql := fmt.Sprintf(`SELECT id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY id DESC LIMIT 1`, warehouseCSVUploadsTable, processJSONsJob.Warehouse.Source.ID, processJSONsJob.Warehouse.Destination.ID)
-				err := wh.dbHandle.QueryRow(lastCSVIDSql).Scan(&endCSVID)
+				err = wh.dbHandle.QueryRow(lastCSVIDSql).Scan(&endCSVID)
 				misc.AssertError(err)
 
 				sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, end_csv_id=$2 WHERE id=$3`, warehouseUploadsTable)
@@ -350,13 +358,19 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	jsonFile, err := os.Create(jsonPath)
 	misc.AssertError(err)
 
+	preLoadBucketName, ok := job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string)
+	if !ok {
+		return errors.New("WH: Pre load bucket not provided in warehouse configuration")
+	}
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
-		Bucket:   job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string),
+		Bucket:   preLoadBucketName,
 	})
 
 	err = downloader.Download(jsonFile, job.JSON.Location)
-	misc.AssertError(err)
+	if err != nil {
+		return err
+	}
 	jsonFile.Close()
 	defer os.Remove(jsonPath)
 
@@ -370,7 +384,9 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	}
 
 	rawf, err := os.Open(jsonPath)
-	reader, _ := gzip.NewReader(rawf)
+	misc.AssertError(err)
+	reader, err := gzip.NewReader(rawf)
+	misc.AssertError(err)
 
 	tableContentMap := make(map[string]string)
 	sc := bufio.NewScanner(reader)
@@ -417,15 +433,17 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
-		Bucket:   job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string),
+		Bucket:   preLoadBucketName,
 	})
-
 	misc.AssertError(err)
+
 	for tableName, csvFile := range csvFileMap {
 		file, err := os.Open(csvFile.Name())
 		defer os.Remove(csvFile.Name())
 		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, strconv.FormatInt(job.UploadID, 10))
-		misc.AssertError(err)
+		if err != nil {
+			return err
+		}
 		sqlStatement := fmt.Sprintf(`INSERT INTO %s (json_id, location, source_id, destination_id, destination_type, table_name, created_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $7)`, warehouseCSVUploadsTable)
 		stmt, err := wh.dbHandle.Prepare(sqlStatement)
@@ -443,8 +461,12 @@ func (wh *HandleT) initUploaders() {
 		go func() {
 			for {
 				jsonToCSVsJob := <-wh.uploadQ
-				wh.processJSON(jsonToCSVsJob)
-				jsonToCSVsJob.Wg.Done()
+				err := wh.processJSON(jsonToCSVsJob)
+				if err != nil {
+					jsonToCSVsJob.Wg.Err(err)
+				} else {
+					jsonToCSVsJob.Wg.Done()
+				}
 			}
 		}()
 	}
@@ -528,6 +550,7 @@ func (wh *HandleT) Disable() {
 }
 
 func (wh *HandleT) Setup(whType string) {
+	logger.Infof("WH: Warehouse Router started: %s\n", whType)
 	var err error
 	psqlInfo := jobsdb.GetConnectionString()
 	wh.dbHandle, err = sql.Open("postgres", psqlInfo)
