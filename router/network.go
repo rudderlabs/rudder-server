@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -17,10 +19,8 @@ type NetHandleT struct {
 	httpClient *http.Client
 }
 
-func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
-
+func (network *NetHandleT) processOldResponseType(jsonData []byte) (int, string, string) {
 	client := network.httpClient
-
 	//Parse the response to get parameters
 	postInfo := integrations.GetPostInfo(jsonData)
 
@@ -93,6 +93,126 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	}
 
 	return resp.StatusCode, resp.Status, string(respBody)
+}
+
+func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string, string) {
+	client := network.httpClient
+	//Parse the response to get parameters
+	postInfo := integrations.GetPostInfoNew(jsonData)
+
+	isRest := postInfo.Type == "REST"
+
+	isMultipart := len(postInfo.Files.(map[string]interface{})) > 0
+
+	// going forward we may want to support GraphQL and multipart requests
+	// the files key in the response is specifically to handle the multipart usecase
+	// for type GraphQL may need to support more keys like expected response format etc
+	// in future it's expected that we will build on top of this response type
+	// so, code addition should be done here instead of version bumping of response.
+	if isRest && !isMultipart {
+		requestMethod := postInfo.RequestMethod
+		requestBody := postInfo.Body.(map[string]interface{})
+		requestQueryParams := postInfo.QueryParams.(map[string]interface{})
+		var bodyFormat string
+		var bodyValue map[string]interface{}
+		for k, v := range requestBody {
+			if len(v.(map[string]interface{})) > 0 {
+				bodyFormat = k
+				bodyValue = v.(map[string]interface{})
+				break
+			}
+
+		}
+
+		var req *http.Request
+		var err error
+		if useTestSink {
+			req, err = http.NewRequest(requestMethod, testSinkURL, nil)
+			misc.AssertError(err)
+		} else {
+			req, err = http.NewRequest(requestMethod, postInfo.URL, nil)
+			misc.AssertError(err)
+		}
+
+		// add queryparams to the url
+		// support of array type in params is handled if the
+		// response from transformers are "," seperated
+		queryParams := req.URL.Query()
+		for key, val := range requestQueryParams {
+			valString := fmt.Sprint(val)
+			list := strings.Split(valString, ",")
+			for _, listItem := range list {
+				queryParams.Add(key, fmt.Sprint(listItem))
+			}
+		}
+
+		req.URL.RawQuery = queryParams.Encode()
+
+		// support for JSON and FORM body type
+		if len(bodyValue) > 0 {
+			switch bodyFormat {
+			case "JSON":
+				jsonValue, err := json.Marshal(bodyValue)
+				misc.AssertError(err)
+				req.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
+
+			case "FORM":
+				formValues := url.Values{}
+				for key, val := range bodyValue {
+					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
+				}
+				req.Body = ioutil.NopCloser(strings.NewReader(formValues.Encode()))
+
+			default:
+				misc.Assert(false)
+
+			}
+		}
+
+		headerKV, ok := postInfo.Headers.(map[string]interface{})
+		misc.Assert(ok)
+		for key, val := range headerKV {
+			req.Header.Add(key, val.(string))
+		}
+
+		req.Header.Add("User-Agent", "RudderLabs")
+
+		resp, err := client.Do(req)
+
+		var respBody []byte
+
+		if resp != nil && resp.Body != nil {
+			respBody, _ = ioutil.ReadAll(resp.Body)
+			defer resp.Body.Close()
+		}
+
+		if err != nil {
+			logger.Error("Errored when sending request to the server", err)
+			return http.StatusGatewayTimeout, "", string(respBody)
+		}
+
+		return resp.StatusCode, resp.Status, string(respBody)
+
+	}
+
+	// returning 200 with a message in case of unsupported processing
+	// so that we don't process again. can change this code to anything
+	// to be not picked up by router again
+	return 200, "method not implemented", ""
+
+}
+
+func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
+	// map of version to prarsing logic
+	versionToFunc := map[string]func([]byte) (int, string, string){
+		"0": network.processOldResponseType,
+		"1": network.processNewResponseType,
+	}
+	// Get response version
+	version := integrations.GetResponseVersion(jsonData)
+
+	return versionToFunc[version](jsonData)
+
 }
 
 //Setup initializes the module
