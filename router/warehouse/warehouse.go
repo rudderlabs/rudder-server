@@ -121,6 +121,8 @@ func (wh *HandleT) getPendingJSONs(warehouse warehouseutils.WarehouseT) ([]*JSON
 	var lastJSONID int
 	sqlStatement := fmt.Sprintf(`SELECT end_staging_file_id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status= '%[4]s') ORDER BY %[1]s.id DESC`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState)
 
+	fmt.Printf("%+v\n", sqlStatement)
+
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&lastJSONID)
 	if err != nil && err != sql.ErrNoRows {
 		misc.AssertError(err)
@@ -357,14 +359,14 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	jsonFile, err := os.Create(jsonPath)
 	misc.AssertError(err)
 
-	preLoadBucketName, ok := job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string)
-	if !ok {
-		return errors.New("WH: Pre load bucket not provided in warehouse configuration")
-	}
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
-		Bucket:   preLoadBucketName,
+		// TODO: Move preLoadBucketName to bucketName if needed
+		Config: job.Warehouse.Destination.Config.(map[string]interface{}),
 	})
+	if err != nil {
+		return err
+	}
 
 	err = downloader.Download(jsonFile, job.JSON.Location)
 	if err != nil {
@@ -432,7 +434,8 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
-		Bucket:   preLoadBucketName,
+		// TODO: Move preLoadBucketName to bucketName if needed
+		Config: job.Warehouse.Destination.Config.(map[string]interface{}),
 	})
 	misc.AssertError(err)
 
