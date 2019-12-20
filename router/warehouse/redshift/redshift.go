@@ -46,6 +46,10 @@ var dataTypesMap = map[string]string{
 	"datetime": "timestamp",
 }
 
+var primaryKeyMap = map[string]string{
+	"identifies": "user_id",
+}
+
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	arr := []string{}
 	for name, dataType := range columns {
@@ -132,7 +136,7 @@ type S3ManifestT struct {
 }
 
 func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
-	csvObjectLocations, err := warehouseutils.GetCSVLocations(rs.DbHandle, tableName, rs.StartCSVID, rs.EndCSVID)
+	csvObjectLocations, err := warehouseutils.GetCSVLocations(rs.DbHandle, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, tableName, rs.StartCSVID, rs.EndCSVID)
 	misc.AssertError(err)
 	csvS3Locations, err := warehouseutils.GetS3Locations(csvObjectLocations)
 	var manifest S3ManifestT
@@ -205,7 +209,12 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 			return err
 		}
 
-		sqlStatement = fmt.Sprintf(`delete from %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.id = %[1]s.%[2]s.id`, rs.SchemaName, tableName, stagingTableName)
+		primaryKey := "id"
+		if column, ok := primaryKeyMap[tableName]; ok {
+			primaryKey = column
+		}
+
+		sqlStatement = fmt.Sprintf(`delete from %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.SchemaName, tableName, stagingTableName, primaryKey)
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
 			tx.Rollback()
@@ -220,7 +229,7 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 			}
 		}
 
-		sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY id ORDER BY received_at ASC) AS _rudder_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.SchemaName, tableName, quotedColumnNames, stagingTableName)
+		sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.SchemaName, tableName, quotedColumnNames, stagingTableName, primaryKey)
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
 			tx.Rollback()

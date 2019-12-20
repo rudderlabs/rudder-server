@@ -128,9 +128,9 @@ func (wh *HandleT) getPendingJSONs(warehouse warehouseutils.WarehouseT) ([]*JSON
 
 	sqlStatement = fmt.Sprintf(`SELECT id, location, source_id, schema, status, created_at
                                 FROM %[1]s
-								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s'
+								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
 								ORDER BY id ASC`,
-		warehouseJSONUploadsTable, lastJSONID, warehouse.Source.ID)
+		warehouseJSONUploadsTable, lastJSONID, warehouse.Source.ID, warehouse.Destination.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		misc.AssertError(err)
@@ -155,13 +155,13 @@ func consolidateSchema(jsonUploadsList []*JSONUploadT) map[string]map[string]str
 		var schema map[string]map[string]string
 		err := json.Unmarshal(upload.Schema, &schema)
 		misc.AssertError(err)
-		for key, val := range schema {
-			if schemaMap[key] != nil {
-				for columnName, columnType := range val {
-					schemaMap[key][columnName] = columnType
-				}
+		for tableName, columnMap := range schema {
+			if schemaMap[tableName] == nil {
+				schemaMap[tableName] = columnMap
 			} else {
-				schemaMap[key] = val
+				for columnName, columnType := range columnMap {
+					schemaMap[tableName][columnName] = columnType
+				}
 			}
 		}
 	}
@@ -297,8 +297,7 @@ func (wh *HandleT) mainLoop() {
 			id, startCSVID, err := wh.initUpload(warehouse, jsonUploadsList, consolidatedSchema)
 			wh.processQ <- ProcessJSONsJobT{List: jsonUploadsList, Schema: consolidatedSchema, Warehouse: warehouse, UploadID: id, StartCSVID: startCSVID}
 		}
-		// time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
-		time.Sleep(time.Duration(2) * time.Second)
+		time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
 	}
 }
 
@@ -353,7 +352,7 @@ func (wh *HandleT) initWorkers() {
 func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	dirName := "/rudder-warehouse-json-uploads-tmp/"
 	tmpDirPath := misc.CreateTMPDIR()
-	jsonPath := tmpDirPath + dirName + wh.destType + "/" + job.JSON.Location
+	jsonPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, wh.destType, job.Warehouse.Destination.ID) + job.JSON.Location
 	err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 	jsonFile, err := os.Create(jsonPath)
 	misc.AssertError(err)
@@ -395,19 +394,19 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 		var jsonLine map[string]interface{}
 		json.Unmarshal(lineBytes, &jsonLine)
 		metadata, _ := jsonLine["metadata"]
+		columnData := jsonLine["data"].(map[string]interface{})
 		tableName, _ := metadata.(map[string]interface{})["table"].(string)
 		if _, ok := tableContentMap[tableName]; !ok {
 			tableContentMap[tableName] = ""
 		}
 		if wh.destType == "BQ" {
-			delete(jsonLine, "metadata")
-			line, err := json.Marshal(jsonLine)
+			line, err := json.Marshal(columnData)
 			misc.AssertError(err)
 			tableContentMap[tableName] += string(line) + "\n"
 		} else {
 			csvRow := []string{}
 			for _, columnName := range sortedTableColumnMap[tableName] {
-				columnVal, _ := jsonLine[columnName]
+				columnVal, _ := columnData[columnName]
 				if stringVal, ok := columnVal.(string); ok {
 					// handle commas in column values for csv
 					if strings.Contains(stringVal, ",") {

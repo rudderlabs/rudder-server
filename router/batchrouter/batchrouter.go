@@ -198,13 +198,13 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 	}
 	logger.Debugf("Creating record for uploaded json in %s table with schema: %+v\n", warehouseJSONUploadsTable, schemaMap)
 	schemaPayload, err := json.Marshal(schemaMap)
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, status, created_at)
-									   VALUES ($1, $2, $3, $4, $5)`, warehouseJSONUploadsTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at)
+									   VALUES ($1, $2, $3, $4, $5, $6)`, warehouseJSONUploadsTable)
 	stmt, err := brt.jobsDBHandle.Prepare(sqlStatement)
 	misc.AssertError(err)
 	defer stmt.Close()
 
-	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, warehouseutils.JSONProcessWaitingState, time.Now())
+	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, batchJobs.BatchDestination.Destination.ID, warehouseutils.JSONProcessWaitingState, time.Now())
 	misc.AssertError(err)
 	return err
 }
@@ -466,6 +466,7 @@ func (brt *HandleT) setupWarehouseJSONUploadsTable() {
                                       id BIGSERIAL PRIMARY KEY,
 									  location TEXT NOT NULL,
 									  source_id VARCHAR(64) NOT NULL,
+									  destination_id VARCHAR(64) NOT NULL,
 									  schema JSONB NOT NULL,
 									  status wh_json_upload_state_type,
 									  created_at TIMESTAMP NOT NULL);`, warehouseJSONUploadsTable)
