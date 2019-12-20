@@ -22,6 +22,7 @@ import (
 	"compress/gzip"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -134,6 +135,7 @@ func (jd *HandleT) assertError(err error) {
 		// jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify(err)
+		misc.RecordAppError(err)
 		panic(err)
 	}
 }
@@ -145,6 +147,7 @@ func (jd *HandleT) assert(cond bool) {
 		// jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify("Assertion failed")
+		misc.RecordAppError(errors.New("Assertion failed"))
 		panic("Assertion failed")
 	}
 }
@@ -291,13 +294,13 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	if jd.toBackup {
 		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: "S3",
-			Bucket:   config.GetEnv("JOBS_BACKUP_BUCKET", ""),
+			Provider: config.GetEnv("OBJECT_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfig(),
 		})
 		jd.assertError(err)
 		jd.jobStatusFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: "S3",
-			Bucket:   config.GetEnv("JOB_STATUS_BACKUP_BUCKET", ""),
+			Provider: config.GetEnv("OBJECT_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfig(),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()

@@ -352,8 +352,9 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
-		Bucket:   job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string),
+		Config:   job.Warehouse.Destination.Config.(map[string]interface{}),
 	})
+	misc.AssertError(err)
 
 	err = downloader.Download(jsonFile, job.JSON.Location)
 	misc.AssertError(err)
@@ -417,8 +418,9 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
-		Bucket:   job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string),
+		Config:   job.Warehouse.Destination.Config.(map[string]interface{}),
 	})
+	misc.AssertError(err)
 
 	misc.AssertError(err)
 	for tableName, csvFile := range csvFileMap {

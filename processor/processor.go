@@ -134,7 +134,7 @@ func loadConfig() {
 	numTransformWorker = config.GetInt("Processor.numTransformWorker", 32)
 	maxRetry = config.GetInt("Processor.maxRetry", 3)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	rawDataDestinations = []string{"S3", "GCS", "RS", "BQ"}
+	rawDataDestinations = []string{"S3", "GCS", "RS", "BQ", "AZURE_BLOB"}
 }
 
 func backendConfigSubscriber() {
@@ -562,6 +562,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//the JSON we can send to the destination
 		url := integrations.GetDestinationURL(destID)
 		logger.Debug("Transform input size", len(destEventList))
+		logger.Info(integrations.GetUserTransformURL())
+		logger.Info(url)
 		response := proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), len(destEventList))
 		response = proc.transformer.Transform(response.Events, url, transformBatchSize)
 		destTransformEventList := response.Events
