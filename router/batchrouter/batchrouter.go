@@ -30,7 +30,6 @@ var (
 	jobQueryBatchSize         int
 	noOfWorkers               int
 	mainLoopSleepInS          int
-	batchDestinations         []DestinationT
 	configSubscriberLock      sync.RWMutex
 	objectStorageDestinations []string
 	warehouseDestinations     []string
@@ -42,11 +41,12 @@ var (
 )
 
 type HandleT struct {
-	destType     string
-	processQ     chan BatchJobsT
-	jobsDB       *jobsdb.HandleT
-	jobsDBHandle *sql.DB
-	isEnabled    bool
+	destType          string
+	batchDestinations []DestinationT
+	processQ          chan BatchJobsT
+	jobsDB            *jobsdb.HandleT
+	jobsDBHandle      *sql.DB
+	isEnabled         bool
 }
 
 type ObjectStorageT struct {
@@ -61,13 +61,13 @@ func (brt *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
-		batchDestinations = []DestinationT{}
+		brt.batchDestinations = []DestinationT{}
 		allSources := config.Data.(backendconfig.SourcesT)
 		for _, source := range allSources.Sources {
 			if source.Enabled && len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if destination.Enabled && (misc.Contains(objectStorageDestinations, brt.destType) || misc.Contains(warehouseDestinations, brt.destType)) {
-						batchDestinations = append(batchDestinations, DestinationT{Source: source, Destination: destination})
+					if destination.Enabled && destination.DestinationDefinition.Name == brt.destType {
+						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
 					}
 				}
 			}
@@ -199,13 +199,13 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 	}
 	logger.Debugf("Creating record for uploaded json in %s table with schema: %+v\n", warehouseJSONUploadsTable, schemaMap)
 	schemaPayload, err := json.Marshal(schemaMap)
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, status, created_at)
-									   VALUES ($1, $2, $3, $4, $5)`, warehouseJSONUploadsTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at)
+									   VALUES ($1, $2, $3, $4, $5, $6)`, warehouseJSONUploadsTable)
 	stmt, err := brt.jobsDBHandle.Prepare(sqlStatement)
 	misc.AssertError(err)
 	defer stmt.Close()
 
-	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, warehouseutils.JSONProcessWaitingState, time.Now())
+	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, batchJobs.BatchDestination.Destination.ID, warehouseutils.JSONProcessWaitingState, time.Now())
 	misc.AssertError(err)
 	return err
 }
@@ -321,7 +321,7 @@ func (brt *HandleT) mainLoop() {
 			continue
 		}
 		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
-		for _, batchDestination := range batchDestinations {
+		for _, batchDestination := range brt.batchDestinations {
 			if isSourceInProgress(batchDestination) {
 				continue
 			}
@@ -466,6 +466,7 @@ func (brt *HandleT) setupWarehouseJSONUploadsTable() {
                                       id BIGSERIAL PRIMARY KEY,
 									  location TEXT NOT NULL,
 									  source_id VARCHAR(64) NOT NULL,
+									  destination_id VARCHAR(64) NOT NULL,
 									  schema JSONB NOT NULL,
 									  status wh_json_upload_state_type,
 									  created_at TIMESTAMP NOT NULL);`, warehouseJSONUploadsTable)

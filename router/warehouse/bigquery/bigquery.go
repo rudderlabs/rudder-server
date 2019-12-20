@@ -167,7 +167,7 @@ func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 
 func (bq *HandleT) load(schema map[string]map[string]string) (err error) {
 	for tableName := range schema {
-		locations, err := warehouseutils.GetCSVLocations(bq.DbHandle, tableName, bq.StartCSVID, bq.EndCSVID)
+		locations, err := warehouseutils.GetCSVLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.StartCSVID, bq.EndCSVID)
 		misc.AssertError(err)
 		locations, err = warehouseutils.GetGCSLocations(locations)
 		logger.Debugf("Loading data into table: %s in bigquery dataset: %s in project: %s from %v\n", tableName, bq.SchemaName, bq.ProjectID, locations)
@@ -188,7 +188,6 @@ func (bq *HandleT) load(schema map[string]map[string]string) (err error) {
 		}
 
 		if status.Err() != nil {
-			misc.AssertError(status.Err())
 			return fmt.Errorf("job completed with error: %v", status.Err())
 		}
 	}

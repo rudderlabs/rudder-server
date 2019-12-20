@@ -79,7 +79,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 				for _, destination := range source.Destinations {
 					if destination.Enabled {
 						enabledDestinations[destination.DestinationDefinition.Name] = true
-						if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) {
+						if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
 							brt, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 							if !ok {
 								logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
@@ -90,16 +90,17 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 								logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
 								brt.Enable()
 							}
-						} else if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-							wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-							if !ok {
-								logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-								var wh warehouse.HandleT
-								wh.Setup(destination.DestinationDefinition.Name)
-								dstToWhRouter[destination.DestinationDefinition.Name] = &wh
-							} else {
-								logger.Info("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-								wh.Enable()
+							if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+								wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
+								if !ok {
+									logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+									var wh warehouse.HandleT
+									wh.Setup(destination.DestinationDefinition.Name)
+									dstToWhRouter[destination.DestinationDefinition.Name] = &wh
+								} else {
+									logger.Info("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+									wh.Enable()
+								}
 							}
 						} else {
 							rt, ok := dstToRouter[destination.DestinationDefinition.Name]
@@ -132,12 +133,10 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 				if brtHandle, ok := dstToBatchRouter[key]; ok {
 					logger.Info("Disabling a existing batch destination: ", key)
 					brtHandle.Disable()
-					continue
 				}
 				if whHandle, ok := dstToWhRouter[key]; ok {
 					logger.Info("Disabling a existing warehouse destination: ", key)
 					whHandle.Disable()
-					continue
 				}
 			}
 		}
