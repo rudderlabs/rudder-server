@@ -29,18 +29,18 @@ import (
 )
 
 var (
-	jobQueryBatchSize         int
-	noOfWorkers               int
-	warehouseUploadSleepInMin int
-	mainLoopSleepInS          int
-	configSubscriberLock      sync.RWMutex
-	availableWarehouses       []string
-	inProgressMap             map[string]bool
-	inProgressMapLock         sync.RWMutex
-	warehouseCSVUploadsTable  string
-	warehouseJSONUploadsTable string
-	warehouseUploadsTable     string
-	warehouseSchemasTable     string
+	jobQueryBatchSize          int
+	noOfWorkers                int
+	warehouseUploadSleepInS    int
+	mainLoopSleepInS           int
+	configSubscriberLock       sync.RWMutex
+	availableWarehouses        []string
+	inProgressMap              map[string]bool
+	inProgressMapLock          sync.RWMutex
+	warehouseLoadFilesTable    string
+	warehouseStagingFilesTable string
+	warehouseUploadsTable      string
+	warehouseSchemasTable      string
 )
 
 type HandleT struct {
@@ -85,9 +85,9 @@ func init() {
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
-	warehouseUploadSleepInMin = config.GetInt("BatchRouter.warehouseUploadSleepInMin", 60)
-	warehouseJSONUploadsTable = config.GetString("Warehouse.jsonUploadsTable", "wh_json_uploads")
-	warehouseCSVUploadsTable = config.GetString("Warehouse.csvUploadsTable", "wh_csv_uploads")
+	warehouseUploadSleepInS = config.GetInt("BatchRouter.warehouseUploadSleepInS", 1800)
+	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
+	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
 	mainLoopSleepInS = config.GetInt("BatchRouter.mainLoopSleepInS", 5)
@@ -119,7 +119,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 
 func (wh *HandleT) getPendingJSONs(warehouse warehouseutils.WarehouseT) ([]*JSONUploadT, error) {
 	var lastJSONID int
-	sqlStatement := fmt.Sprintf(`SELECT end_json_id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status= '%[4]s') ORDER BY %[1]s.id DESC`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState)
+	sqlStatement := fmt.Sprintf(`SELECT end_staging_file_id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status= '%[4]s') ORDER BY %[1]s.id DESC`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState)
 
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&lastJSONID)
 	if err != nil && err != sql.ErrNoRows {
@@ -130,7 +130,7 @@ func (wh *HandleT) getPendingJSONs(warehouse warehouseutils.WarehouseT) ([]*JSON
                                 FROM %[1]s
 								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
 								ORDER BY id ASC`,
-		warehouseJSONUploadsTable, lastJSONID, warehouse.Source.ID, warehouse.Destination.ID)
+		warehouseStagingFilesTable, lastJSONID, warehouse.Source.ID, warehouse.Destination.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		misc.AssertError(err)
@@ -170,13 +170,13 @@ func consolidateSchema(jsonUploadsList []*JSONUploadT) map[string]map[string]str
 
 func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*JSONUploadT, schema map[string]map[string]string) (uploadID, startCSVID int64, err error) {
 
-	startCSVIDSql := fmt.Sprintf(`SELECT end_csv_id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status='%[4]s') ORDER BY id DESC LIMIT 1`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState)
+	startCSVIDSql := fmt.Sprintf(`SELECT end_load_file_id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status='%[4]s') ORDER BY id DESC LIMIT 1`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState)
 	err = wh.dbHandle.QueryRow(startCSVIDSql).Scan(&startCSVID)
 	if err != nil && err != sql.ErrNoRows {
 		misc.AssertError(err)
 	}
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, source_schema_name, destination_id, destination_type, start_json_id, end_json_id, start_csv_id, status, schema, created_at, updated_at)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, status, schema, created_at, updated_at)
 									   VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11) RETURNING id`, warehouseUploadsTable)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	misc.AssertError(err)
@@ -185,7 +185,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	startJSONID := jsonUploadsList[0].ID
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
 	currentSchema, err := json.Marshal(schema)
-	row := stmt.QueryRow(warehouse.Source.ID, strings.ToLower(strcase.ToSnake(warehouse.Source.Name)), warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, startCSVID, warehouseutils.GeneratingCsvState, currentSchema, time.Now(), time.Now())
+	row := stmt.QueryRow(warehouse.Source.ID, strings.ToLower(strcase.ToSnake(warehouse.Source.Name)), warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, startCSVID, warehouseutils.GeneratingLoadFileState, currentSchema, time.Now(), time.Now())
 	err = row.Scan(&uploadID)
 	misc.AssertError(err)
 	return
@@ -193,7 +193,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 func (wh *HandleT) getPendingUpload(warehouse warehouseutils.WarehouseT) (warehouseutils.WarehouseUploadT, bool) {
 	var upload warehouseutils.WarehouseUploadT
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, start_csv_id, end_csv_id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s' AND %[1]s.status!='%[5]s')`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.GeneratingCsvState)
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, start_load_file_id, end_load_file_id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s' AND %[1]s.status!='%[5]s')`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.GeneratingLoadFileState)
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&upload.ID, &upload.Status, &upload.Schema, &upload.StartCSVID, &upload.EndCSVID)
 	if err != nil && err != sql.ErrNoRows {
 		misc.AssertError(err)
@@ -257,7 +257,7 @@ func (wh *HandleT) mainLoop() {
 				whManager, err := NewWhManager(wh.destType)
 				misc.AssertError(err)
 				switch pendingUpload.Status {
-				case warehouseutils.GeneratedCsvState, warehouseutils.UpdatingSchemaState, warehouseutils.UpdatingSchemaFailedState:
+				case warehouseutils.GeneratedLoadFileState, warehouseutils.UpdatingSchemaState, warehouseutils.UpdatingSchemaFailedState:
 					go func() {
 						whManager.Process(warehouseutils.ConfigT{
 							DbHandle:   wh.dbHandle,
@@ -297,7 +297,7 @@ func (wh *HandleT) mainLoop() {
 			id, startCSVID, err := wh.initUpload(warehouse, jsonUploadsList, consolidatedSchema)
 			wh.processQ <- ProcessJSONsJobT{List: jsonUploadsList, Schema: consolidatedSchema, Warehouse: warehouse, UploadID: id, StartCSVID: startCSVID}
 		}
-		time.Sleep(time.Duration(warehouseUploadSleepInMin) * time.Minute)
+		time.Sleep(time.Duration(warehouseUploadSleepInS) * time.Second)
 	}
 }
 
@@ -326,12 +326,12 @@ func (wh *HandleT) initWorkers() {
 				warehouseutils.SetJSONUploadStatus(jsonIDs, warehouseutils.JSONProcessSucceededState, wh.dbHandle)
 
 				var endCSVID int64
-				lastCSVIDSql := fmt.Sprintf(`SELECT id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY id DESC LIMIT 1`, warehouseCSVUploadsTable, processJSONsJob.Warehouse.Source.ID, processJSONsJob.Warehouse.Destination.ID)
+				lastCSVIDSql := fmt.Sprintf(`SELECT id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY id DESC LIMIT 1`, warehouseLoadFilesTable, processJSONsJob.Warehouse.Source.ID, processJSONsJob.Warehouse.Destination.ID)
 				err = wh.dbHandle.QueryRow(lastCSVIDSql).Scan(&endCSVID)
 				misc.AssertError(err)
 
-				sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, end_csv_id=$2 WHERE id=$3`, warehouseUploadsTable)
-				_, err = wh.dbHandle.Exec(sqlStatement, warehouseutils.GeneratedCsvState, endCSVID, processJSONsJob.UploadID)
+				sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, end_load_file_id=$2 WHERE id=$3`, warehouseUploadsTable)
+				_, err = wh.dbHandle.Exec(sqlStatement, warehouseutils.GeneratedLoadFileState, endCSVID, processJSONsJob.UploadID)
 				misc.AssertError(err)
 				whManager, err := NewWhManager(wh.destType)
 				misc.AssertError(err)
@@ -443,8 +443,8 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 		if err != nil {
 			return err
 		}
-		sqlStatement := fmt.Sprintf(`INSERT INTO %s (json_id, location, source_id, destination_id, destination_type, table_name, created_at)
-									   VALUES ($1, $2, $3, $4, $5, $6, $7)`, warehouseCSVUploadsTable)
+		sqlStatement := fmt.Sprintf(`INSERT INTO %s (staging_file_id, location, source_id, destination_id, destination_type, table_name, created_at)
+									   VALUES ($1, $2, $3, $4, $5, $6, $7)`, warehouseLoadFilesTable)
 		stmt, err := wh.dbHandle.Prepare(sqlStatement)
 		misc.AssertError(err)
 		defer stmt.Close()
@@ -474,13 +474,13 @@ func (wh *HandleT) initUploaders() {
 func (wh *HandleT) setupTables() {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 									  id BIGSERIAL PRIMARY KEY,
-									  json_id BIGINT,
+									  staging_file_id BIGINT,
 									  location TEXT NOT NULL,
 									  source_id VARCHAR(64) NOT NULL,
 									  destination_id VARCHAR(64) NOT NULL,
 									  destination_type VARCHAR(64) NOT NULL,
 									  table_name VARCHAR(64) NOT NULL,
-									  created_at TIMESTAMP NOT NULL);`, warehouseCSVUploadsTable)
+									  created_at TIMESTAMP NOT NULL);`, warehouseLoadFilesTable)
 
 	_, err := wh.dbHandle.Exec(sqlStatement)
 	misc.AssertError(err)
@@ -488,9 +488,9 @@ func (wh *HandleT) setupTables() {
 	sqlStatement = `DO $$ BEGIN
                                 CREATE TYPE wh_upload_state_type
                                      AS ENUM(
-											  'generating_csv',
-											  'generating_csv_failed',
-											  'generated_csv',
+											  'generationg_load_file',
+											  'generationg_load_file_failed',
+											  'generated_load_file',
 											  'updating_schema',
 											  'updating_schema_failed',
 											  'updated_schema',
@@ -507,13 +507,13 @@ func (wh *HandleT) setupTables() {
 	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
                                       id BIGSERIAL PRIMARY KEY,
 									  source_id VARCHAR(64) NOT NULL,
-									  source_schema_name VARCHAR(64) NOT NULL,
+									  namespace VARCHAR(64) NOT NULL,
 									  destination_id VARCHAR(64) NOT NULL,
 									  destination_type VARCHAR(64) NOT NULL,
-									  start_json_id BIGINT,
-									  end_json_id BIGINT,
-									  start_csv_id BIGINT,
-									  end_csv_id BIGINT,
+									  start_staging_file_id BIGINT,
+									  end_staging_file_id BIGINT,
+									  start_load_file_id BIGINT,
+									  end_load_file_id BIGINT,
 									  status wh_upload_state_type NOT NULL,
 									  schema JSONB NOT NULL,
 									  error TEXT,
@@ -527,7 +527,7 @@ func (wh *HandleT) setupTables() {
 									  id BIGSERIAL PRIMARY KEY,
 									  wh_upload_id BIGSERIAL,
 									  source_id VARCHAR(64) NOT NULL,
-									  source_schema_name VARCHAR(64) NOT NULL,
+									  namespace VARCHAR(64) NOT NULL,
 									  destination_id VARCHAR(64) NOT NULL,
 									  destination_type VARCHAR(64) NOT NULL,
 									  schema JSONB NOT NULL,

@@ -61,11 +61,11 @@ mainLoopSleepInS = 2
 noOfWorkers = 8
 
 [Warehouse]
-jsonUploadsTable = "wh_json_uploads"
-csvUploadsTable = "wh_csv_uploads"
+stagingFilesTable = "wh_staging_files"
+loadFilesTable = "wh_load_files"
 uploadsTable = "wh_uploads"
 schemasTable = "wh_schemas"
-uploadSleepInMin = 15
+uploadSleepInS = 1800
 noOfWorkers = 8
 mainLoopSleepInS = 10
 

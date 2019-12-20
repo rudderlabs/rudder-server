@@ -27,17 +27,17 @@ import (
 )
 
 var (
-	jobQueryBatchSize         int
-	noOfWorkers               int
-	mainLoopSleepInS          int
-	configSubscriberLock      sync.RWMutex
-	objectStorageDestinations []string
-	warehouseDestinations     []string
-	inProgressMap             map[string]bool
-	inProgressMapLock         sync.RWMutex
-	uploadedRawDataJobsCache  map[string]bool
-	errorsCountStat           *stats.RudderStats
-	warehouseJSONUploadsTable string
+	jobQueryBatchSize          int
+	noOfWorkers                int
+	mainLoopSleepInS           int
+	configSubscriberLock       sync.RWMutex
+	objectStorageDestinations  []string
+	warehouseDestinations      []string
+	inProgressMap              map[string]bool
+	inProgressMapLock          sync.RWMutex
+	uploadedRawDataJobsCache   map[string]bool
+	errorsCountStat            *stats.RudderStats
+	warehouseStagingFilesTable string
 )
 
 type HandleT struct {
@@ -103,7 +103,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	var bucketName, localTmpDirName string
 	if isWarehouse {
 		bucketName = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string)
-		localTmpDirName = "/rudder-warehouse-json-uploads/"
+		localTmpDirName = "/rudder-warehouse-staging-uploads/"
 	} else {
 		bucketName = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
 		localTmpDirName = "/rudder-raw-data-destination-logs/"
@@ -148,7 +148,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 	var keyPrefixes []string
 	if isWarehouse {
-		keyPrefixes = []string{config.GetEnv("WAREHOUSE_BUCKET_FOLDER_NAME", "rudder-warehouse-json-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+		keyPrefixes = []string{config.GetEnv("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
 	} else {
 		keyPrefixes = []string{config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
 	}
@@ -196,10 +196,10 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 			}
 		}
 	}
-	logger.Debugf("Creating record for uploaded json in %s table with schema: %+v\n", warehouseJSONUploadsTable, schemaMap)
+	logger.Debugf("Creating record for uploaded json in %s table with schema: %+v\n", warehouseStagingFilesTable, schemaMap)
 	schemaPayload, err := json.Marshal(schemaMap)
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at)
-									   VALUES ($1, $2, $3, $4, $5, $6)`, warehouseJSONUploadsTable)
+									   VALUES ($1, $2, $3, $4, $5, $6)`, warehouseStagingFilesTable)
 	stmt, err := brt.jobsDBHandle.Prepare(sqlStatement)
 	misc.AssertError(err)
 	defer stmt.Close()
@@ -446,10 +446,10 @@ func (brt *HandleT) crashRecover() {
 	brt.dedupRawDataDestJobsOnCrash()
 }
 
-func (brt *HandleT) setupWarehouseJSONUploadsTable() {
+func (brt *HandleT) setupWarehouseStagingFilesTable() {
 
 	sqlStatement := `DO $$ BEGIN
-                                CREATE TYPE wh_json_upload_state_type
+                                CREATE TYPE wh_staging_state_type
                                      AS ENUM(
                                               'waiting',
                                               'executing',
@@ -468,8 +468,8 @@ func (brt *HandleT) setupWarehouseJSONUploadsTable() {
 									  source_id VARCHAR(64) NOT NULL,
 									  destination_id VARCHAR(64) NOT NULL,
 									  schema JSONB NOT NULL,
-									  status wh_json_upload_state_type,
-									  created_at TIMESTAMP NOT NULL);`, warehouseJSONUploadsTable)
+									  status wh_staging_state_type,
+									  created_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
 
 	_, err = brt.jobsDBHandle.Exec(sqlStatement)
 	misc.AssertError(err)
@@ -479,7 +479,7 @@ func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
 	mainLoopSleepInS = config.GetInt("BatchRouter.mainLoopSleepInS", 5)
-	warehouseJSONUploadsTable = config.GetString("Warehouse.jsonUploadsTable", "wh_json_uploads")
+	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
 	objectStorageDestinations = []string{"S3", "GCS"}
 	warehouseDestinations = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
@@ -499,7 +499,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.jobsDB = jobsDB
 	brt.jobsDBHandle = brt.jobsDB.GetDBHandle()
 	brt.isEnabled = true
-	brt.setupWarehouseJSONUploadsTable()
+	brt.setupWarehouseStagingFilesTable()
 	brt.processQ = make(chan BatchJobsT)
 	brt.crashRecover()
 

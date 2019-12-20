@@ -14,15 +14,15 @@ import (
 )
 
 const (
-	GeneratingCsvState        = "generating_csv"
-	GeneratingCsvFailedState  = "generating_csv_failed"
-	GeneratedCsvState         = "generated_csv"
-	UpdatingSchemaState       = "updating_schema"
-	UpdatingSchemaFailedState = "updating_schema_failed"
-	UpdatedSchemaState        = "updated_schema"
-	ExportingDataState        = "exporting_data"
-	ExportingDataFailedState  = "exporting_data_failed"
-	ExportedDataState         = "exported_data"
+	GeneratingLoadFileState       = "generationg_load_file"
+	GeneratingLoadFileFailedState = "generationg_load_file_failed"
+	GeneratedLoadFileState        = "generated_load_file"
+	UpdatingSchemaState           = "updating_schema"
+	UpdatingSchemaFailedState     = "updating_schema_failed"
+	UpdatedSchemaState            = "updated_schema"
+	ExportingDataState            = "exporting_data"
+	ExportingDataFailedState      = "exporting_data_failed"
+	ExportedDataState             = "exported_data"
 )
 
 const (
@@ -34,10 +34,10 @@ const (
 )
 
 var (
-	warehouseUploadsTable     string
-	warehouseSchemasTable     string
-	warehouseCSVUploadsTable  string
-	warehouseJSONUploadsTable string
+	warehouseUploadsTable      string
+	warehouseSchemasTable      string
+	warehouseLoadFilesTable    string
+	warehouseStagingFilesTable string
 )
 
 var ObjectStorageMap = map[string]string{
@@ -53,8 +53,8 @@ func init() {
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
-	warehouseCSVUploadsTable = config.GetString("Warehouse.csvUploadsTable", "wh_csv_uploads")
-	warehouseJSONUploadsTable = config.GetString("Warehouse.jsonUploadsTable", "wh_json_uploads")
+	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
+	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
 }
 
 type WarehouseT struct {
@@ -148,7 +148,7 @@ func SetUploadStatus(id int64, status string, dbHandle *sql.DB) (err error) {
 }
 
 func SetJSONUploadStatus(ids []int64, status string, dbHandle *sql.DB) (err error) {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE id=ANY($2)`, warehouseJSONUploadsTable)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE id=ANY($2)`, warehouseStagingFilesTable)
 	_, err = dbHandle.Exec(sqlStatement, status, pq.Array(ids))
 	misc.AssertError(err)
 	return
@@ -157,7 +157,7 @@ func SetJSONUploadStatus(ids []int64, status string, dbHandle *sql.DB) (err erro
 func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
 	marshalledSchema, err := json.Marshal(schema)
 	if len(currentSchema) == 0 {
-		sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_upload_id, source_id, source_schema_name, destination_id, destination_type, schema, created_at)
+		sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_upload_id, source_id, namespace, destination_id, destination_type, schema, created_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $7)`, warehouseSchemasTable)
 		stmt, err := dbHandle.Prepare(sqlStatement)
 		misc.AssertError(err)
@@ -175,7 +175,7 @@ func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema ma
 func GetCSVLocations(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (locations []string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s
 								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id > %[5]v AND %[1]s.id <= %[6]v)`,
-		warehouseCSVUploadsTable, sourceId, destinationId, tableName, start, end)
+		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
 	rows, err := dbHandle.Query(sqlStatement)
 	defer rows.Close()
 	misc.AssertError(err)
