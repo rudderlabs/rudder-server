@@ -158,7 +158,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
-		Bucket:   config.GetEnv("REDSHIFT_MANIFESTS_BUCKET", "rl-redshift-manifests"),
+		Config:   map[string]interface{}{"bucketName": config.GetEnv("REDSHIFT_MANIFESTS_BUCKET", "rl-redshift-manifests")},
 	})
 
 	uploadOutput, err := uploader.Upload(file, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())

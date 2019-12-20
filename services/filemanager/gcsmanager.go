@@ -28,7 +28,7 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 	}
 	fileName += splitFileName[len(splitFileName)-1]
 
-	bh := client.Bucket(manager.Bucket)
+	bh := client.Bucket(manager.Config.Bucket)
 	obj := bh.Object(fileName)
 	w := obj.NewWriter(ctx)
 	if _, err := io.Copy(w, file); err != nil {
@@ -48,7 +48,7 @@ func (manager *GCSManager) Download(output *os.File, key string) error {
 	if err != nil {
 		return err
 	}
-	rc, err := client.Bucket(manager.Bucket).Object(key).NewReader(ctx)
+	rc, err := client.Bucket(manager.Config.Bucket).Object(key).NewReader(ctx)
 	if err != nil {
 		return err
 	}
@@ -59,5 +59,13 @@ func (manager *GCSManager) Download(output *os.File, key string) error {
 }
 
 type GCSManager struct {
+	Config *GCSConfig
+}
+
+func GetGCSConfig(config map[string]interface{}) *GCSConfig {
+	return &GCSConfig{Bucket: config["bucketName"].(string)}
+}
+
+type GCSConfig struct {
 	Bucket string
 }

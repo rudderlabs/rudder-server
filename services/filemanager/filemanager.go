@@ -3,6 +3,8 @@ package filemanager
 import (
 	"errors"
 	"os"
+
+	"github.com/rudderlabs/rudder-server/config"
 )
 
 type UploadOutput struct {
@@ -18,7 +20,7 @@ type FileManager interface {
 // SettingsT sets configuration for FileManager
 type SettingsT struct {
 	Provider string
-	Bucket   string
+	Config   map[string]interface{}
 }
 
 // New returns FileManager backed by configured privider
@@ -26,12 +28,29 @@ func New(settings *SettingsT) (FileManager, error) {
 	switch settings.Provider {
 	case "S3":
 		return &S3Manager{
-			Bucket: settings.Bucket,
+			Config: GetS3Config(settings.Config),
 		}, nil
 	case "GCS":
 		return &GCSManager{
-			Bucket: settings.Bucket,
+			Config: GetGCSConfig(settings.Config),
+		}, nil
+	case "AZURE_BLOB":
+		return &AzureBlobStorageManager{
+			Config: GetAzureBlogStorageConfig(settings.Config),
 		}, nil
 	}
 	return nil, errors.New("No provider configured for FileManager")
+}
+
+// GetProviderConfig returns the provider config
+func GetProviderConfig() map[string]interface{} {
+	providerConfig := make(map[string]interface{})
+	provider := config.GetEnv("OBJECT_STORAGE_PROVIDER", "S3")
+	switch provider {
+	case "S3":
+		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+	case "AZURE_BLOB":
+		providerConfig["containerName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+	}
+	return providerConfig
 }

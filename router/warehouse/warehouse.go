@@ -358,13 +358,16 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 	misc.AssertError(err)
 
 	preLoadBucketName, ok := job.Warehouse.Destination.Config.(map[string]interface{})["preLoadBucketName"].(string)
+
 	if !ok {
 		return errors.New("WH: Pre load bucket not provided in warehouse configuration")
 	}
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
-		Bucket:   preLoadBucketName,
+    // TODO: Move preLoadBucketName to bucketName if needed
+		Config:   job.Warehouse.Destination.Config.(map[string]interface{}),
 	})
+	misc.AssertError(err)
 
 	err = downloader.Download(jsonFile, job.JSON.Location)
 	if err != nil {
@@ -432,7 +435,8 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
-		Bucket:   preLoadBucketName,
+    // TODO: Move preLoadBucketName to bucketName if needed
+		Config:   job.Warehouse.Destination.Config.(map[string]interface{}),
 	})
 	misc.AssertError(err)
 
