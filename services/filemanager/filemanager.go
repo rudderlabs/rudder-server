@@ -42,10 +42,10 @@ func New(settings *SettingsT) (FileManager, error) {
 	return nil, errors.New("No provider configured for FileManager")
 }
 
-// GetProviderConfig returns the provider config
-func GetProviderConfig() map[string]interface{} {
+// GetProviderConfigFromEnv returns the provider config
+func GetProviderConfigFromEnv() map[string]interface{} {
 	providerConfig := make(map[string]interface{})
-	provider := config.GetEnv("OBJECT_STORAGE_PROVIDER", "S3")
+	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	switch provider {
 	case "S3":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")

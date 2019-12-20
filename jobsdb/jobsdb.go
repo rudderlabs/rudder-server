@@ -294,13 +294,13 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	if jd.toBackup {
 		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: config.GetEnv("OBJECT_STORAGE_PROVIDER", "S3"),
-			Config:   filemanager.GetProviderConfig(),
+			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfigFromEnv(),
 		})
 		jd.assertError(err)
 		jd.jobStatusFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: config.GetEnv("OBJECT_STORAGE_PROVIDER", "S3"),
-			Config:   filemanager.GetProviderConfig(),
+			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfigFromEnv(),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()

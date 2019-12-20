@@ -27,7 +27,7 @@ func supressMinorErrors(err error) error {
 	return err
 }
 
-// Upload passed in file to s3
+// Upload passed in file to Azure Blob Storage
 func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
 	if manager.Config.Container == "" {
 		return UploadOutput{}, errors.New("no container configured to uploader")
