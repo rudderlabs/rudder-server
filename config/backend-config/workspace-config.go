@@ -33,6 +33,10 @@ func (workspaceConfig *WorkspaceConfig) GetBackendConfig() (SourcesT, bool) {
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
+	if err != nil {
+		logger.Error("Errored when sending request to the server", err)
+		return SourcesT{}, false
+	}
 
 	var respBody []byte
 	if resp != nil && resp.Body != nil {

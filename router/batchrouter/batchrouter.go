@@ -379,6 +379,11 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		var object ObjectStorageT
 		err := json.Unmarshal(entry.OpPayload, &object)
 		misc.AssertError(err)
+		if len(object.Config) == 0 {
+			//Backward compatibility. If old entries dont have config, just delete journal entry
+			brt.jobsDB.JournalDeleteEntry(entry.OpID)
+			continue
+		}
 		downloader, err := filemanager.New(&filemanager.SettingsT{
 			Provider: object.Provider,
 			Config:   object.Config,
