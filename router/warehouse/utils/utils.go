@@ -154,6 +154,13 @@ func SetJSONUploadStatus(ids []int64, status string, dbHandle *sql.DB) (err erro
 	return
 }
 
+func SetJSONUploadError(ids []int64, status string, dbHandle *sql.DB, statusError error) (err error) {
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2 WHERE id=ANY($3)`, warehouseStagingFilesTable)
+	_, err = dbHandle.Exec(sqlStatement, status, statusError.Error(), pq.Array(ids))
+	misc.AssertError(err)
+	return
+}
+
 func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
 	marshalledSchema, err := json.Marshal(schema)
 	if len(currentSchema) == 0 {

@@ -164,7 +164,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	_, err = uploader.Upload(gzipFile, keyPrefixes...)
 
 	if err != nil {
-		logger.Debug(err)
+		logger.Error(err)
 		return StorageUploadOutput{
 			Error:       err,
 			JournalOpID: opID,
@@ -219,7 +219,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	destinationConfig = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})
 
 	if err != nil {
-		logger.Errorf("BRT: Error uploading to object storage: %v", err)
+		logger.Errorf("BRT: Error uploading to object storage: %v %v %v\n", err, destinationConfig, batchJobs.BatchDestination.Source.ID)
 		jobState = jobsdb.FailedState
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
@@ -467,7 +467,8 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
 									  location TEXT NOT NULL,
 									  source_id VARCHAR(64) NOT NULL,
 									  destination_id VARCHAR(64) NOT NULL,
-									  schema JSONB NOT NULL,
+										schema JSONB NOT NULL,
+										error TEXT,
 									  status wh_staging_state_type,
 									  created_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
 

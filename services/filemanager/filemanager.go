@@ -49,6 +49,8 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 	switch provider {
 	case "S3":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+	case "GCS":
+		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 	case "AZURE_BLOB":
 		providerConfig["containerName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 	}

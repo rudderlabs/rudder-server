@@ -85,12 +85,12 @@ func init() {
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
-	warehouseUploadSleepInS = config.GetInt("BatchRouter.warehouseUploadSleepInS", 1800)
+	warehouseUploadSleepInS = config.GetInt("Warehouse.uploadSleepInS", 1800)
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
 	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
-	mainLoopSleepInS = config.GetInt("BatchRouter.mainLoopSleepInS", 5)
+	mainLoopSleepInS = config.GetInt("Warehouse.mainLoopSleepInS", 5)
 	availableWarehouses = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
 }
@@ -321,7 +321,7 @@ func (wh *HandleT) initWorkers() {
 				}
 				err := wg.Wait()
 				if err != nil {
-					warehouseutils.SetJSONUploadStatus(jsonIDs, warehouseutils.JSONProcessFailedState, wh.dbHandle)
+					warehouseutils.SetJSONUploadError(jsonIDs, warehouseutils.JSONProcessFailedState, wh.dbHandle, err)
 					setDestInProgress(processJSONsJob.Warehouse.Destination.ID, false)
 					continue
 				}

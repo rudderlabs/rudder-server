@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"cloud.google.com/go/storage"
+	"google.golang.org/api/option"
 )
 
 func objectURL(objAttrs *storage.ObjectAttrs) string {
@@ -16,7 +17,16 @@ func objectURL(objAttrs *storage.ObjectAttrs) string {
 
 func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
 	ctx := context.Background()
-	client, err := storage.NewClient(ctx)
+	var client *storage.Client
+	var err error
+
+	if _, ok := manager.Config.destConfig["credentials"]; ok {
+		credentialsStr := manager.Config.destConfig["credentials"].(string)
+		client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(credentialsStr)))
+	} else {
+		client, err = storage.NewClient(ctx)
+	}
+
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -44,10 +54,20 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 
 func (manager *GCSManager) Download(output *os.File, key string) error {
 	ctx := context.Background()
-	client, err := storage.NewClient(ctx)
+	var client *storage.Client
+	var err error
+
+	if _, ok := manager.Config.destConfig["credentials"]; ok {
+		credentialsStr := manager.Config.destConfig["credentials"].(string)
+		client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(credentialsStr)))
+	} else {
+		client, err = storage.NewClient(ctx)
+	}
+
 	if err != nil {
 		return err
 	}
+
 	rc, err := client.Bucket(manager.Config.Bucket).Object(key).NewReader(ctx)
 	if err != nil {
 		return err
@@ -63,9 +83,10 @@ type GCSManager struct {
 }
 
 func GetGCSConfig(config map[string]interface{}) *GCSConfig {
-	return &GCSConfig{Bucket: config["bucketName"].(string)}
+	return &GCSConfig{Bucket: config["bucketName"].(string), destConfig: config}
 }
 
 type GCSConfig struct {
-	Bucket string
+	Bucket     string
+	destConfig map[string]interface{}
 }
