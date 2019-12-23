@@ -14,12 +14,12 @@ import (
 )
 
 // Upload passed in file to s3
-func (manager *S3Manager) Upload(file *os.File, prefixes ...string) error {
-	if manager.Bucket == "" {
-		return errors.New("no S3 bucket configured to uploader")
+func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
+	if manager.Config.Bucket == "" {
+		return UploadOutput{}, errors.New("no storage bucket configured to uploader")
 	}
 	getRegionSession := session.Must(session.NewSession())
-	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Bucket, "us-east-1")
+	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
 	uploadSession := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String(region),
 		// Credentials: credentials.NewStaticCredentials(config.GetEnv("IAM_S3_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_S3_COPY_SECRET_ACCESS_KEY", ""), ""),
@@ -31,25 +31,28 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) error {
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
-	_, err = s3manager.Upload(&awsS3Manager.UploadInput{
+	output, err := s3manager.Upload(&awsS3Manager.UploadInput{
 		ACL:    aws.String("bucket-owner-full-control"),
-		Bucket: aws.String(manager.Bucket),
+		Bucket: aws.String(manager.Config.Bucket),
 		Key:    aws.String(fileName),
 		Body:   file,
 	})
 	// do not panic if upload has failed for customer s3 bucket
 	// misc.AssertError(err)
-	return err
+	if err != nil {
+		return UploadOutput{}, err
+	}
+	return UploadOutput{Location: output.Location}, err
 }
 
-func (uploader *S3Manager) Download(output *os.File, key string) error {
+func (manager *S3Manager) Download(output *os.File, key string) error {
 	sess, _ := session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1")},
 	)
 	downloader := s3manager.NewDownloader(sess)
 	_, err := downloader.Download(output,
 		&s3.GetObjectInput{
-			Bucket: aws.String(uploader.Bucket),
+			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
 		})
 	// do not panic if download has failed for customer s3 bucket
@@ -66,7 +69,7 @@ func (uploader *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, erro
 	s3Objects := make([]*S3Object, 0)
 
 	getRegionSession := session.Must(session.NewSession())
-	region, err := s3manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, uploader.Bucket, "us-east-1")
+	region, err := s3manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, uploader.Config.Bucket, "us-east-1")
 	uploadSession := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String(region),
 	}))
@@ -76,7 +79,7 @@ func (uploader *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, erro
 
 	// Get the list of items
 	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{
-		Bucket: aws.String(uploader.Bucket),
+		Bucket: aws.String(uploader.Config.Bucket),
 		Prefix: aws.String(prefix),
 		// Delimiter: aws.String("/"),
 	})
@@ -92,5 +95,13 @@ func (uploader *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, erro
 }
 
 type S3Manager struct {
+	Config *S3Config
+}
+
+func GetS3Config(config map[string]interface{}) *S3Config {
+	return &S3Config{Bucket: config["bucketName"].(string)}
+}
+
+type S3Config struct {
 	Bucket string
 }

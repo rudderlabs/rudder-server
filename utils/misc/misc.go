@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"runtime/debug"
@@ -21,6 +22,7 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/thoas/go-funk"
 )
 
 // RFC3339 with milli sec precision
@@ -227,6 +229,29 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	return err
 }
 
+// UnZipSingleFile unzips zip containing single file into ouputfile path passed
+func UnZipSingleFile(outputfile string, filename string) {
+	r, err := zip.OpenReader(filename)
+	AssertError(err)
+	defer r.Close()
+	inputfile := r.File[0]
+	// Make File
+	err = os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
+	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
+	AssertError(err)
+	rc, err := inputfile.Open()
+	_, err = io.Copy(outFile, rc)
+	outFile.Close()
+	rc.Close()
+}
+
+func RemoveFilePaths(filepaths ...string) {
+	for _, filepath := range filepaths {
+		err := os.Remove(filepath)
+		logger.Error(err)
+	}
+}
+
 // ReadLines reads a whole file into memory
 // and returns a slice of its lines.
 func ReadLines(path string) ([]string, error) {
@@ -411,4 +436,10 @@ func IncrementMapByKey(m map[string]int, key string, increment int) {
 // timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
 	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
+}
+
+func StringKeys(input interface{}) []string {
+	keys := funk.Keys(input)
+	stringKeys := keys.([]string)
+	return stringKeys
 }

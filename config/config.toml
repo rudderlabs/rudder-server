@@ -26,11 +26,9 @@ dedupWindowInS = 86400
 
 [SourceDebugger]
 maxBatchSize = 32
-maxESQueueSize = 1024
 maxRetry = 3
 batchTimeoutInS = 2
 retrySleepInMS = 100
-disableEventUploads = false
 
 [JobsDB]
 # Migration related parameters
@@ -61,6 +59,15 @@ keepOrderOnFailure = true
 mainLoopSleepInS = 30
 noOfWorkers = 8
 jobQueryBatchSize = 100000
+
+[Warehouse]
+stagingFilesTable = "wh_staging_files"
+loadFilesTable = "wh_load_files"
+uploadsTable = "wh_uploads"
+schemasTable = "wh_schemas"
+uploadSleepInS = 1800
+noOfWorkers = 8
+mainLoopSleepInS = 60
 
 [Processor]
 loopSleepInMS = 10

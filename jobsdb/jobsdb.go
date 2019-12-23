@@ -22,11 +22,11 @@ import (
 	"compress/gzip"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"sort"
 	"unicode/utf8"
 
@@ -130,22 +130,24 @@ var dbErrorMap = map[string]string{
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
-		debug.SetTraceback("all")
-		debug.PrintStack()
-		jd.printLists(true)
+		// debug.SetTraceback("all")
+		// debug.PrintStack()
+		// jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify(err)
+		misc.RecordAppError(err)
 		panic(err)
 	}
 }
 
 func (jd *HandleT) assert(cond bool) {
 	if !cond {
-		debug.SetTraceback("all")
-		debug.PrintStack()
-		jd.printLists(true)
+		// debug.SetTraceback("all")
+		// debug.PrintStack()
+		// jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify("Assertion failed")
+		misc.RecordAppError(errors.New("Assertion failed"))
 		panic("Assertion failed")
 	}
 }
@@ -233,6 +235,10 @@ func GetConnectionString() string {
 
 }
 
+func (jd *HandleT) GetDBHandle() *sql.DB {
+	return jd.dbHandle
+}
+
 /*
 Setup is used to initialize the HandleT structure.
 clearAll = True means it will remove all existing tables
@@ -288,13 +294,13 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	if jd.toBackup {
 		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: "S3",
-			Bucket:   config.GetEnv("JOBS_BACKUP_BUCKET", ""),
+			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfigFromEnv(),
 		})
 		jd.assertError(err)
 		jd.jobStatusFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: "S3",
-			Bucket:   config.GetEnv("JOB_STATUS_BACKUP_BUCKET", ""),
+			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfigFromEnv(),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()
@@ -1479,9 +1485,9 @@ func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool,
 	pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
 
 	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
-		err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
+		_, err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
 	} else {
-		err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
+		_, err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
 	}
 	if err != nil {
 		logger.Errorf("Failed to upload table %v dump to S3", tableName)
