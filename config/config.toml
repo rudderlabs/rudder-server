@@ -38,7 +38,6 @@ maxDSSize = 100000
 maxMigrateOnce = 10
 mainCheckSleepDurationInS = 2
 backupCheckSleepDurationIns = 5
-eventsInJSONFileDump = 1000
 enableBackup = true
 
 [Router]
@@ -57,8 +56,9 @@ maxFailedCountForJob = 8
 keepOrderOnFailure = true
 
 [BatchRouter]
-mainLoopSleepInS = 2
+mainLoopSleepInS = 30
 noOfWorkers = 8
+jobQueryBatchSize = 100000
 
 [Warehouse]
 stagingFilesTable = "wh_staging_files"
@@ -67,7 +67,7 @@ uploadsTable = "wh_uploads"
 schemasTable = "wh_schemas"
 uploadSleepInS = 1800
 noOfWorkers = 8
-mainLoopSleepInS = 10
+mainLoopSleepInS = 60
 
 [Processor]
 loopSleepInMS = 10
@@ -78,16 +78,11 @@ sessionThresholdInS = 10
 maxChanSize = 2048
 processSessions = true
 numTransformWorker = 8
-maxRetry = 3
+maxRetry = 30
 retrySleepInMS = 100
 
 [BackendConfig]
 pollIntervalInS = 5
-
-[Aws]
-region = "us-east-1"
-jobsBackupDSBucket = "dump-gateway-jobs-test"
-jobStatusBackupDSBucket = "dump-gateway-job-status-test"
 
 
 # If the server crashes 'crashThreshold' times in 'durationInS' seconds,
