@@ -2,6 +2,7 @@ package backendconfig
 
 import (
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -19,10 +20,11 @@ var (
 	configBackendURL, configBackendToken string
 	pollInterval                         time.Duration
 	curSourceJSON                        SourcesT
+	curSourceJSONLock                    sync.RWMutex
 	initialized                          bool
 )
 
-var Eb *utils.EventBus
+var Eb = new(utils.EventBus)
 
 type DestinationDefinitionT struct {
 	ID          string
@@ -99,7 +101,9 @@ func pollConfigUpdate() {
 			statConfigBackendError.Increment()
 		}
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
+			curSourceJSONLock.Lock()
 			curSourceJSON = sourceJSON
+			curSourceJSONLock.Unlock()
 			initialized = true
 			Eb.Publish("backendconfig", sourceJSON)
 		}
@@ -117,7 +121,9 @@ func GetWorkspaceIDForWriteKey(writeKey string) string {
 
 func Subscribe(channel chan utils.DataEvent) {
 	Eb.Subscribe("backendconfig", channel)
+	curSourceJSONLock.RLock()
 	Eb.PublishToChannel(channel, "backendconfig", curSourceJSON)
+	curSourceJSONLock.RUnlock()
 }
 
 func WaitForConfig() {
@@ -140,6 +146,5 @@ func Setup() {
 	}
 
 	backendConfig.SetUp()
-	Eb = new(utils.EventBus)
 	go pollConfigUpdate()
 }

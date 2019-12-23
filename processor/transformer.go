@@ -67,7 +67,8 @@ func (trans *transformerHandleT) transformWorker() {
 
 		// Remove Assertion?
 		misc.Assert(resp.StatusCode == http.StatusOK ||
-			resp.StatusCode == http.StatusBadRequest)
+			resp.StatusCode == http.StatusBadRequest ||
+			resp.StatusCode == http.StatusNotFound)
 
 		var toSendData interface{}
 		if resp.StatusCode == http.StatusOK {

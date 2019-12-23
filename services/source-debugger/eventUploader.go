@@ -205,11 +205,11 @@ func getKeys(dataMap map[string]interface{}) []string {
 }
 
 func handleEvents() {
-	eventBuffer = make([]*GatewayEventBatchT, 0)
 	for {
 		select {
 		case eventSchema := <-eventBatchChannel:
 			eventBufferLock.Lock()
+			eventBuffer = make([]*GatewayEventBatchT, 0)
 
 			//If eventBuffer size is more than maxESQueueSize, Delete oldest.
 			if len(eventBuffer) > maxESQueueSize {

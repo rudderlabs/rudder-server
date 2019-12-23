@@ -99,8 +99,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		batchTimeStat.Start()
 		logger.Debug("Router :: trying to send payload to GA", respBody)
 
-		postInfo := integrations.GetPostInfo(job.EventPayload)
-		userID := postInfo.UserID
+		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
 		misc.Assert(userID != "")
 
 		//If sink is not enabled mark all jobs as waiting
@@ -273,13 +272,13 @@ func getHash(s string) int {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	postInfo := integrations.GetPostInfo(job.EventPayload)
+	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
 
 	var index int
 	if randomWorkerAssign {
 		index = rand.Intn(noOfWorkers)
 	} else {
-		index = int(math.Abs(float64(getHash(postInfo.UserID) % noOfWorkers)))
+		index = int(math.Abs(float64(getHash(userID) % noOfWorkers)))
 	}
 
 	worker := rt.workers[index]
@@ -288,7 +287,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	//#JobOrder (see other #JobOrder comment)
 	worker.failedJobIDMutex.RLock()
 	defer worker.failedJobIDMutex.RUnlock()
-	blockJobID, found := worker.failedJobIDMap[postInfo.UserID]
+	blockJobID, found := worker.failedJobIDMap[userID]
 	if !found {
 		return worker
 	}
