@@ -4,12 +4,23 @@ phases:
   install:
     runtime-versions:
       golang: 1.12
+  pre_build:
+    commands:
+      - docker login --username rudderlabs --password $DOCKERHUB_PASSWORD
   build:
     commands:
       - ls
       - export GO111MODULE=on
-      - go build -mod vendor
-
+      - CGO_ENABLED=0 GOOS=linux go build -mod vendor -a -installsuffix cgo
+      - echo build Docker image on `date`
+      - docker build -t rudder-server:latest -f build/Dockerfile-aws .
+      - docker tag rudder-server:latest rudderlabs/rudder-server:latest
+  post_build:
+    commands:
+      - echo build Docker image complete `date`
+      - echo push latest Docker images to docker hub...
+      - docker push rudderlabs/rudder-server:latest
 artifacts:
   files:
     - "**/*"
+  
