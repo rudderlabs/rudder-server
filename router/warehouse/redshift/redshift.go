@@ -40,7 +40,7 @@ type HandleT struct {
 
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
-	"int":      "int",
+	"int":      "double precision",
 	"float":    "double precision",
 	"string":   "varchar(512)",
 	"datetime": "timestamp",
@@ -161,7 +161,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		Config:   map[string]interface{}{"bucketName": config.GetEnv("REDSHIFT_MANIFESTS_BUCKET", "rl-redshift-manifests")},
 	})
 
-	uploadOutput, err := uploader.Upload(file, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
+	uploadOutput, err := uploader.Upload(file, "rudder-redshift-manifests", rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
 
 	misc.AssertError(err)
 

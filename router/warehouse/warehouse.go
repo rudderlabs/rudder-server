@@ -131,7 +131,7 @@ func (wh *HandleT) getPendingJSONs(warehouse warehouseutils.WarehouseT) ([]*JSON
 	sqlStatement = fmt.Sprintf(`SELECT id, location, source_id, schema, status, created_at
                                 FROM %[1]s
 								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
-								ORDER BY id ASC`,
+								ORDER BY id ASC LIMIT 20`,
 		warehouseStagingFilesTable, lastJSONID, warehouse.Source.ID, warehouse.Destination.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
