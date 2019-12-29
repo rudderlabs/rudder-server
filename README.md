@@ -25,16 +25,6 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion around Rudder.
 
-## Features
-
-1. Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer & Facebook destinations. Lot more coming soon.
-2. S3 dump. Redshift and other data warehouses coming soon.
-3. User-specified transformation to filter/transform events.
-4. Stand-alone system. The only dependency is on Postgres.
-5. High performance. On a single m4.2xlarge, Rudder can process ~3K events/sec. Performance numbers on other instance types soon.
-6. Rich UI written in react.
-7. [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or [iOS](https://github.com/rudderlabs/rudder-sdk-ios). Server-side SDKs coming soon.
-
 # Contribute or Stay Connected
 
 1. Join our [Discord](https://discordapp.com/invite/xNEdEGw) 
@@ -93,6 +83,16 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 3. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `./scripts/generate-event <writeKeyHere> http://localhost:8080/v1/batch`. NOTE: `writeKey` is different from the `your_workspace_token` in step 2. Former is associated with the source while the latter is for your account.
 4. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
 5. You can use our [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or [iOS](https://github.com/rudderlabs/rudder-sdk-ios) SDKs for sending events from your app.
+
+## Features
+
+1. Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer & Facebook destinations. Lot more coming soon.
+2. S3 dump. Redshift and other data warehouses coming soon.
+3. User-specified transformation to filter/transform events.
+4. Stand-alone system. The only dependency is on Postgres.
+5. High performance. On a single m4.2xlarge, Rudder can process ~3K events/sec. Performance numbers on other instance types soon.
+6. Rich UI written in react.
+7. [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or [iOS](https://github.com/rudderlabs/rudder-sdk-ios). Server-side SDKs coming soon.
 
 
 # UI Pages
