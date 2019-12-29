@@ -40,6 +40,12 @@ See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion a
 1. Join our [Discord](https://discordapp.com/invite/xNEdEGw) 
 2. Follow us on [Twitter](https://twitter.com/rudderlabs)
 
+# Setup Instructions (Hosted Demo Account)
+
+1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account. 
+2. Select `Rudder Hosted Service` from the top right corner after you login.
+3. Follow (Send Test Events) instructions below to send test event.
+
 # Setup Instructions (Docker)
 
 The docker setup is the easiest & fastest way to try out Rudder.
