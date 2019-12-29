@@ -48,13 +48,18 @@ The docker setup is the easiest & fastest way to try out Rudder.
 6. Run the command `docker-compose up --build` to bring up all the services.
 7. Follow (Send Test Events) instructions below to send test event.
 
+# Setup Instructions (Kubernetes)
+
+Our helm scripts and instructions are in a separate repo - [Download Here](https://github.com/rudderlabs/rudderstack-helm)
+
 # Setup Instructions (Terraform)
 
 Our terraform scripts and instructions are in a separate repo - [Download Here](https://github.com/rudderlabs/rudder-terraform)
 
+
 # Setup Instructions (Native Installation)
 
-If you want to run each of the services without docker please follow the following steps
+Disclaimer: This is not the easiest way of installing Rudder.  Please use this if you want to know more about the internals.
 
 1. Install Golang 1.12 or above. [Download Here](https://golang.org/dl/)
 2. Install NodeJS 10.6 or above. [Download Here](https://nodejs.org/en/download/)
