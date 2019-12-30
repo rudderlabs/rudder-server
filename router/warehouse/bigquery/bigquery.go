@@ -49,8 +49,8 @@ var primaryKeyMap = map[string]string{
 
 func (bq *HandleT) setUploadError(err error, state string) {
 	warehouseutils.SetUploadStatus(bq.UploadID, warehouseutils.ExportingDataFailedState, bq.DbHandle)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2 WHERE id=$3`, warehouseUploadsTable)
-	_, err = bq.DbHandle.Exec(sqlStatement, state, err.Error(), bq.UploadID)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseUploadsTable)
+	_, err = bq.DbHandle.Exec(sqlStatement, state, err.Error(), time.Now(), bq.UploadID)
 	misc.AssertError(err)
 }
 

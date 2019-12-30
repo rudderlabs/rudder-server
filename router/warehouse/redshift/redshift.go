@@ -60,8 +60,8 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 
 func (rs *HandleT) setUploadError(err error, state string) {
 	warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportingDataFailedState, rs.DbHandle)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2 WHERE id=$3`, warehouseUploadsTable)
-	_, err = rs.DbHandle.Exec(sqlStatement, state, err.Error(), rs.UploadID)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseUploadsTable)
+	_, err = rs.DbHandle.Exec(sqlStatement, state, err.Error(), time.Now(), rs.UploadID)
 	misc.AssertError(err)
 }
 

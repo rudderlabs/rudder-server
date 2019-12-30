@@ -199,8 +199,8 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 	}
 	logger.Debugf("Creating record for uploaded json in %s table with schema: %+v\n", warehouseStagingFilesTable, schemaMap)
 	schemaPayload, err := json.Marshal(schemaMap)
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at)
-									   VALUES ($1, $2, $3, $4, $5, $6)`, warehouseStagingFilesTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at, updated_at)
+									   VALUES ($1, $2, $3, $4, $5, $6, $6)`, warehouseStagingFilesTable)
 	stmt, err := brt.jobsDBHandle.Prepare(sqlStatement)
 	misc.AssertError(err)
 	defer stmt.Close()
@@ -475,7 +475,8 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
 										schema JSONB NOT NULL,
 										error TEXT,
 									  status wh_staging_state_type,
-									  created_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
+									  created_at TIMESTAMP NOT NULL,
+									  updated_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
 
 	_, err = brt.jobsDBHandle.Exec(sqlStatement)
 	misc.AssertError(err)

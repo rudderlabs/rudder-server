@@ -141,22 +141,22 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 }
 
 func SetUploadStatus(id int64, status string, dbHandle *sql.DB) (err error) {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE id=$2`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement, status, id)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=$3`, warehouseUploadsTable)
+	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), id)
 	misc.AssertError(err)
 	return
 }
 
 func SetJSONUploadStatus(ids []int64, status string, dbHandle *sql.DB) (err error) {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE id=ANY($2)`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement, status, pq.Array(ids))
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseStagingFilesTable)
+	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), pq.Array(ids))
 	misc.AssertError(err)
 	return
 }
 
 func SetJSONUploadError(ids []int64, status string, dbHandle *sql.DB, statusError error) (err error) {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2 WHERE id=ANY($3)`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement, status, statusError.Error(), pq.Array(ids))
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseStagingFilesTable)
+	_, err = dbHandle.Exec(sqlStatement, status, statusError.Error(), time.Now(), pq.Array(ids))
 	misc.AssertError(err)
 	return
 }

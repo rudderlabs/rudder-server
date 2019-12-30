@@ -332,8 +332,8 @@ func (wh *HandleT) initWorkers() {
 				err = wh.dbHandle.QueryRow(lastCSVIDSql).Scan(&endCSVID)
 				misc.AssertError(err)
 
-				sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, end_load_file_id=$2 WHERE id=$3`, warehouseUploadsTable)
-				_, err = wh.dbHandle.Exec(sqlStatement, warehouseutils.GeneratedLoadFileState, endCSVID, processJSONsJob.UploadID)
+				sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, end_load_file_id=$2, updated_at=$3 WHERE id=$4`, warehouseUploadsTable)
+				_, err = wh.dbHandle.Exec(sqlStatement, warehouseutils.GeneratedLoadFileState, endCSVID, time.Now(), processJSONsJob.UploadID)
 				misc.AssertError(err)
 				whManager, err := NewWhManager(wh.destType)
 				misc.AssertError(err)
