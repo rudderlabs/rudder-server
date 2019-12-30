@@ -398,6 +398,7 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 		metadata, _ := jsonLine["metadata"]
 		columnData := jsonLine["data"].(map[string]interface{})
 		tableName, _ := metadata.(map[string]interface{})["table"].(string)
+		columns, _ := metadata.(map[string]interface{})["columns"].(map[string]interface{})
 		if _, ok := tableContentMap[tableName]; !ok {
 			tableContentMap[tableName] = ""
 		}
@@ -415,6 +416,11 @@ func (wh *HandleT) processJSON(job JSONToCSVsJobT) (err error) {
 						columnVal = strings.ReplaceAll(stringVal, "\"", "\"\"")
 						columnVal = fmt.Sprintf(`"%s"`, columnVal)
 					}
+				}
+				// avoid printing integers like 5000000 as 5e+06
+				columnType := columns[columnName].(string)
+				if columnType == "int" {
+					columnVal = int(columnVal.(float64))
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}

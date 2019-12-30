@@ -40,7 +40,7 @@ type HandleT struct {
 
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
-	"int":      "double precision",
+	"int":      "int",
 	"float":    "double precision",
 	"string":   "varchar(512)",
 	"datetime": "timestamp",
