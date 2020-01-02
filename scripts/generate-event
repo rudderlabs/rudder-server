@@ -2,8 +2,8 @@
 
 if [ $# != 2 ]
 then
-  echo "Usage: ./generate-events.sh <write_key> <end_point>"
-  echo "Example: ./generate-events.sh 1S0ibSaDlSSGkaQuHLi9feJqIUBNAE https://<data_plane_url>/v1/batch"
+  echo "Usage: ./generate-event <write_key> <end_point>"
+  echo "Example: ./generate-event 1S0ibSaDlSSGkaQuHLi9feJqIUBNAE https://<data_plane_url>/v1/batch"
   exit
 fi
 

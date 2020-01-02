@@ -38,6 +38,10 @@ func New(settings *SettingsT) (FileManager, error) {
 		return &AzureBlobStorageManager{
 			Config: GetAzureBlogStorageConfig(settings.Config),
 		}, nil
+	case "MINIO":
+		return &MinioManager{
+			Config: GetMinioConfig(settings.Config),
+		}, nil
 	}
 	return nil, errors.New("No provider configured for FileManager")
 }
@@ -53,6 +57,8 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 	case "AZURE_BLOB":
 		providerConfig["containerName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+	case "MINIO":
+		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 	}
 	return providerConfig
 }
