@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/iancoleman/strcase"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
@@ -29,13 +28,9 @@ var (
 type HandleT struct {
 	DbHandle      *sql.DB
 	Db            *sql.DB
-	UploadSchema  map[string]map[string]string
 	CurrentSchema map[string]map[string]string
-	UploadID      int64
 	Warehouse     warehouseutils.WarehouseT
-	SchemaName    string
-	StartCSVID    int64
-	EndCSVID      int64
+	Upload        warehouseutils.UploadT
 }
 
 var dataTypesMap = map[string]string{
@@ -58,13 +53,6 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr[:], ",")
 }
 
-func (rs *HandleT) setUploadError(err error, state string) {
-	warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportingDataFailedState, rs.DbHandle)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseUploadsTable)
-	_, err = rs.DbHandle.Exec(sqlStatement, state, err.Error(), time.Now(), rs.UploadID)
-	misc.AssertError(err)
-}
-
 func (rs *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sortKeyField := "received_at"
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) SORTKEY(%s)`, name, columnsWithDataTypes(columns, ""), sortKeyField)
@@ -79,12 +67,12 @@ func (rs *HandleT) addColumn(tableName string, columnName string, columnType str
 
 func (rs *HandleT) createSchema() (err error) {
 	// TODO: Change to use source_schema_name in wh_schemas table
-	_, err = rs.Db.Exec(fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, rs.SchemaName))
+	_, err = rs.Db.Exec(fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, rs.Upload.Namespace))
 	return
 }
 
 func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
-	diff := warehouseutils.GetSchemaDiff(rs.CurrentSchema, rs.UploadSchema)
+	diff := warehouseutils.GetSchemaDiff(rs.CurrentSchema, rs.Upload.Schema)
 	updatedSchema = diff.UpdatedSchema
 	if len(rs.CurrentSchema) == 0 {
 		err = rs.createSchema()
@@ -94,7 +82,7 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	}
 	processedTables := make(map[string]bool)
 	for _, tableName := range diff.Tables {
-		err = rs.createTable(fmt.Sprintf(`%s.%s`, rs.SchemaName, tableName), diff.ColumnMaps[tableName])
+		err = rs.createTable(fmt.Sprintf(`%s.%s`, rs.Upload.Namespace, tableName), diff.ColumnMaps[tableName])
 		misc.AssertError(err)
 		processedTables[tableName] = true
 	}
@@ -104,7 +92,7 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 		}
 		if len(columnMap) > 0 {
 			for columnName, columnType := range columnMap {
-				err := rs.addColumn(fmt.Sprintf(`%s.%s`, rs.SchemaName, tableName), columnName, columnType)
+				err := rs.addColumn(fmt.Sprintf(`%s.%s`, rs.Upload.Namespace, tableName), columnName, columnType)
 				if !checkAndIgnoreAlreadyExistError(err) {
 					return nil, err
 				}
@@ -136,7 +124,7 @@ type S3ManifestT struct {
 }
 
 func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
-	csvObjectLocations, err := warehouseutils.GetCSVLocations(rs.DbHandle, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, tableName, rs.StartCSVID, rs.EndCSVID)
+	csvObjectLocations, err := warehouseutils.GetCSVLocations(rs.DbHandle, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, tableName, rs.Upload.StartLoadFileID, rs.Upload.EndLoadFileID)
 	misc.AssertError(err)
 	csvS3Locations, err := warehouseutils.GetS3Locations(csvObjectLocations)
 	var manifest S3ManifestT
@@ -171,11 +159,11 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 }
 
 func (rs *HandleT) dropStagingTable(stagingTableName string) {
-	rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.SchemaName, stagingTableName))
+	rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.Upload.Namespace, stagingTableName))
 }
 
-func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
-	for tableName, columnMap := range schema {
+func (rs *HandleT) load() (err error) {
+	for tableName, columnMap := range rs.Upload.Schema {
 		manifestLocation, err := rs.generateManifest(tableName, columnMap)
 		misc.AssertError(err)
 
@@ -189,7 +177,7 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 		sortedColumnNames := strings.Join(strkeys, ",")
 
 		stagingTableName := "staging-" + tableName + "-" + uuid.NewV4().String()
-		err = rs.createTable(fmt.Sprintf(`%s."%s"`, rs.SchemaName, stagingTableName), schema[tableName])
+		err = rs.createTable(fmt.Sprintf(`%s."%s"`, rs.Upload.Namespace, stagingTableName), rs.Upload.Schema[tableName])
 		if err != nil {
 			return err
 		}
@@ -201,7 +189,7 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 			return err
 		}
 
-		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION 'us-east-1'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.SchemaName, stagingTableName), sortedColumnNames, manifestLocation, config.GetEnv("IAM_REDSHIFT_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_REDSHIFT_COPY_SECRET_ACCESS_KEY", ""))
+		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION 'us-east-1'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.Upload.Namespace, stagingTableName), sortedColumnNames, manifestLocation, config.GetEnv("IAM_REDSHIFT_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_REDSHIFT_COPY_SECRET_ACCESS_KEY", ""))
 
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
@@ -214,7 +202,7 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 			primaryKey = column
 		}
 
-		sqlStatement = fmt.Sprintf(`delete from %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.SchemaName, tableName, stagingTableName, primaryKey)
+		sqlStatement = fmt.Sprintf(`delete from %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Upload.Namespace, tableName, stagingTableName, primaryKey)
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
 			tx.Rollback()
@@ -229,7 +217,7 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 			}
 		}
 
-		sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.SchemaName, tableName, quotedColumnNames, stagingTableName, primaryKey)
+		sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Upload.Namespace, tableName, quotedColumnNames, stagingTableName, primaryKey)
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
 			tx.Rollback()
@@ -283,17 +271,17 @@ func init() {
 }
 
 func (rs *HandleT) MigrateSchema() (err error) {
-	warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.UpdatingSchemaState, rs.DbHandle)
+	warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatingSchemaState, rs.DbHandle)
 	updatedSchema, err := rs.updateSchema()
 	if err != nil {
-		rs.setUploadError(err, warehouseutils.UpdatingSchemaFailedState)
+		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
 		return
 	}
-	err = warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.UpdatedSchemaState, rs.DbHandle)
+	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatedSchemaState, rs.DbHandle)
 	misc.AssertError(err)
-	err = warehouseutils.UpdateCurrentSchema(rs.Warehouse, rs.UploadID, rs.CurrentSchema, updatedSchema, rs.DbHandle)
+	err = warehouseutils.UpdateCurrentSchema(rs.Warehouse, rs.Upload.ID, rs.CurrentSchema, updatedSchema, rs.DbHandle)
 	if err != nil {
-		rs.setUploadError(err, warehouseutils.UpdatingSchemaFailedState)
+		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
 		return
 	}
 	return
@@ -301,25 +289,22 @@ func (rs *HandleT) MigrateSchema() (err error) {
 
 func (rs *HandleT) Export() {
 	logger.Debugf("Starting export to redshift: ")
-	err := warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportingDataState, rs.DbHandle)
+	err := warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportingDataState, rs.DbHandle)
 	misc.AssertError(err)
-	err = rs.load(rs.UploadSchema)
+	err = rs.load()
 	if err != nil {
-		rs.setUploadError(err, warehouseutils.ExportingDataFailedState)
+		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.ExportingDataFailedState, rs.DbHandle)
 		return
 	}
-	err = warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportedDataState, rs.DbHandle)
+	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportedDataState, rs.DbHandle)
 	misc.AssertError(err)
 }
 
 func (rs *HandleT) Process(config warehouseutils.ConfigT) {
 	var err error
 	rs.DbHandle = config.DbHandle
-	rs.UploadID = config.UploadID
-	rs.UploadSchema = config.Schema
 	rs.Warehouse = config.Warehouse
-	rs.StartCSVID = config.StartCSVID
-	rs.EndCSVID = config.EndCSVID
+	rs.Upload = config.Upload
 	rs.Db, err = connect(RedshiftCredentialsT{
 		host:     rs.Warehouse.Destination.Config.(map[string]interface{})["host"].(string),
 		port:     rs.Warehouse.Destination.Config.(map[string]interface{})["port"].(string),
@@ -328,12 +313,12 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) {
 		password: rs.Warehouse.Destination.Config.(map[string]interface{})["password"].(string),
 	})
 	if err != nil {
-		rs.setUploadError(err, warehouseutils.UpdatingSchemaFailedState)
+		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
 		return
 	}
 	rs.CurrentSchema, err = warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
 	misc.AssertError(err)
-	rs.SchemaName = strings.ToLower(strcase.ToSnake(rs.Warehouse.Source.Name))
+	// rs.Upload.Namespace = strings.ToLower(strcase.ToSnake(rs.Warehouse.Source.Name))
 
 	if config.Stage == "ExportData" {
 		rs.Export()

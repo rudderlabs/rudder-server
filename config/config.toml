@@ -68,6 +68,7 @@ schemasTable = "wh_schemas"
 uploadSleepInS = 1800
 noOfWorkers = 8
 mainLoopSleepInS = 60
+maxRetry = 3
 
 [Processor]
 loopSleepInMS = 10

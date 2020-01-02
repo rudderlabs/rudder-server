@@ -205,7 +205,7 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 	misc.AssertError(err)
 	defer stmt.Close()
 
-	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, batchJobs.BatchDestination.Destination.ID, warehouseutils.JSONProcessWaitingState, time.Now())
+	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, batchJobs.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, time.Now())
 	misc.AssertError(err)
 	return err
 }
@@ -472,8 +472,8 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
 									  location TEXT NOT NULL,
 									  source_id VARCHAR(64) NOT NULL,
 									  destination_id VARCHAR(64) NOT NULL,
-										schema JSONB NOT NULL,
-										error TEXT,
+									  schema JSONB NOT NULL,
+									  error TEXT,
 									  status wh_staging_state_type,
 									  created_at TIMESTAMP NOT NULL,
 									  updated_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
