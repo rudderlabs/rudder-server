@@ -272,6 +272,7 @@ func init() {
 
 func (rs *HandleT) MigrateSchema() (err error) {
 	warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatingSchemaState, rs.DbHandle)
+	logger.Debugf("RS: Updaing schema for redshfit schemaname: %s\n", rs.Upload.Namespace)
 	updatedSchema, err := rs.updateSchema()
 	if err != nil {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
@@ -288,7 +289,7 @@ func (rs *HandleT) MigrateSchema() (err error) {
 }
 
 func (rs *HandleT) Export() {
-	logger.Debugf("Starting export to redshift: ")
+	logger.Debugf("RS: Starting export to redshift for source:%s and wh_upload:%s", rs.Warehouse.Source.ID, rs.Upload.ID)
 	err := warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportingDataState, rs.DbHandle)
 	misc.AssertError(err)
 	err = rs.load()
@@ -318,7 +319,6 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) {
 	}
 	rs.CurrentSchema, err = warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
 	misc.AssertError(err)
-	// rs.Upload.Namespace = strings.ToLower(strcase.ToSnake(rs.Warehouse.Source.Name))
 
 	if config.Stage == "ExportData" {
 		rs.Export()

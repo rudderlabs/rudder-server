@@ -228,7 +228,7 @@ func (bq *HandleT) MigrateSchema() (err error) {
 }
 
 func (bq *HandleT) Export() {
-	logger.Debugf("BQ: Starting export to bigquery: ")
+	logger.Debugf("BQ: Starting export to redshift for source:%s and wh_upload:%s", bq.Warehouse.Source.ID, bq.Upload.ID)
 	err := warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataState, bq.DbHandle)
 	misc.AssertError(err)
 	err = bq.load()

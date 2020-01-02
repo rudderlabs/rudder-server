@@ -373,7 +373,7 @@ func (brt *HandleT) Disable() {
 }
 
 func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
-	logger.Debugf("BRT: Checking for incomplete journal entries to recover from...")
+	logger.Debug("BRT: Checking for incomplete journal entries to recover from...")
 	entries := brt.jobsDB.GetJournalEntries(jobsdb.RawDataDestUploadOperation)
 	for _, entry := range entries {
 		var object ObjectStorageT
@@ -398,10 +398,10 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		jsonFile, err := os.Create(jsonPath)
 		misc.AssertError(err)
 
-		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s with config: %s at key: %s", object.Provider, object.Config, object.Key)
+		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s with config: %s at key: %s\n", object.Provider, object.Config, object.Key)
 		err = downloader.Download(jsonFile, object.Key)
 		if err != nil {
-			logger.Debugf("BRT: Failed to download data for incomplete journal entry to recover from %s with config: %s at key: %s with error: %v", object.Provider, object.Config, object.Key, err)
+			logger.Debugf("BRT: Failed to download data for incomplete journal entry to recover from %s with config: %s at key: %s with error: %v\n", object.Provider, object.Config, object.Key, err)
 			continue
 		}
 
@@ -413,7 +413,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 
 		sc := bufio.NewScanner(reader)
 
-		logger.Debugf("BRT: Setting go map cache for incomplete journal entry to recover from...")
+		logger.Debug("BRT: Setting go map cache for incomplete journal entry to recover from...")
 		for sc.Scan() {
 			lineBytes := sc.Bytes()
 			eventID := gjson.GetBytes(lineBytes, "messageId").String()
