@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
@@ -21,8 +22,8 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	getRegionSession := session.Must(session.NewSession())
 	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
 	uploadSession := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(region),
-		// Credentials: credentials.NewStaticCredentials(config.GetEnv("IAM_S3_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_S3_COPY_SECRET_ACCESS_KEY", ""), ""),
+		Region:      aws.String(region),
+		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
 	}))
 	s3manager := awsS3Manager.NewUploader(uploadSession)
 	splitFileName := strings.Split(file.Name(), "/")
@@ -47,8 +48,9 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 
 func (manager *S3Manager) Download(output *os.File, key string) error {
 	sess, _ := session.NewSession(&aws.Config{
-		Region: aws.String("us-east-1")},
-	)
+		Region:      aws.String("us-east-1"),
+		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+	})
 	downloader := s3manager.NewDownloader(sess)
 	_, err := downloader.Download(output,
 		&s3.GetObjectInput{
@@ -99,9 +101,21 @@ type S3Manager struct {
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {
-	return &S3Config{Bucket: config["bucketName"].(string)}
+	var bucketName, accessKeyID, accessKey string
+	if config["bucketName"] != nil {
+		bucketName = config["bucketName"].(string)
+	}
+	if config["accessKeyID"] != nil {
+		accessKeyID = config["accessKeyID"].(string)
+	}
+	if config["accessKey"] != nil {
+		accessKey = config["accessKey"].(string)
+	}
+	return &S3Config{Bucket: bucketName, AccessKeyID: accessKeyID, AccessKey: accessKey}
 }
 
 type S3Config struct {
-	Bucket string
+	Bucket      string
+	AccessKeyID string
+	AccessKey   string
 }
