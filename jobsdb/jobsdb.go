@@ -124,7 +124,8 @@ type StoreJobRespT struct {
 }
 
 var dbErrorMap = map[string]string{
-	"Invalid JSON": "22P02",
+	"Invalid JSON":    "22P02",
+	"Invalid Unicode": "22P05",
 }
 
 //Some helper functions
@@ -924,20 +925,19 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 }
 
 func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (errorMessage string) {
-
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (uuid, custom_val, parameters, event_payload, created_at, expire_at)
-                                       VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds.JobTable)
+	                                   VALUES ($1, $2, $3, (regexp_replace($4::text, '\\u0000', '', 'g'))::json, $5, $6) RETURNING job_id`, ds.JobTable)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
-
 	_, err = stmt.Exec(job.UUID, job.CustomVal, string(job.Parameters), string(job.EventPayload),
 		job.CreatedAt, job.ExpireAt)
 	if err == nil {
 		return
 	}
 	pqErr := err.(*pq.Error)
-	if string(pqErr.Code) == dbErrorMap["Invalid JSON"] {
+	errCode := string(pqErr.Code)
+	if errCode == dbErrorMap["Invalid JSON"] || errCode == dbErrorMap["Invalid Unicode"] {
 		return "Invalid JSON"
 	}
 	jd.assertError(err)
