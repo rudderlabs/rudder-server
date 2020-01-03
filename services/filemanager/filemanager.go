@@ -2,10 +2,8 @@ package filemanager
 
 import (
 	"errors"
-	"os"
-	"strconv"
-
 	"github.com/rudderlabs/rudder-server/config"
+	"os"
 )
 
 type UploadOutput struct {
@@ -63,10 +61,7 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["endPoint"] = config.GetEnv("MINIO_ENDPOINT", "http://localhost:9000")
 		providerConfig["accessKeyID"] = config.GetEnv("MINIO_ACCESS_KEY_ID", "minioadmin")
 		providerConfig["secretAccessKey"] = config.GetEnv("MINIO_SECRET_ACCESS_KEY", "minioadmin")
-		useSSL, err := strconv.ParseBool(config.GetEnv("MINIO_SSL", "false"))
-		if err != nil {
-			useSSL = false
-		}
+		useSSL:= config.GetEnvAsBool("MINIO_SSL", false)
 		providerConfig["useSSL"] = useSSL
 	}
 	return providerConfig
