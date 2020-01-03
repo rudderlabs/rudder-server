@@ -21,10 +21,18 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	}
 	getRegionSession := session.Must(session.NewSession())
 	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
-	uploadSession := session.Must(session.NewSession(&aws.Config{
-		Region:      aws.String(region),
-		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-	}))
+
+	var uploadSession *session.Session
+	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
+		uploadSession = session.Must(session.NewSession(&aws.Config{
+			Region: aws.String(region),
+		}))
+	} else {
+		uploadSession = session.Must(session.NewSession(&aws.Config{
+			Region:      aws.String(region),
+			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+		}))
+	}
 	s3manager := awsS3Manager.NewUploader(uploadSession)
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
@@ -47,12 +55,23 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 }
 
 func (manager *S3Manager) Download(output *os.File, key string) error {
-	sess, _ := session.NewSession(&aws.Config{
-		Region:      aws.String("us-east-1"),
-		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-	})
+	getRegionSession := session.Must(session.NewSession())
+	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
+
+	var sess *session.Session
+	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
+		sess = session.Must(session.NewSession(&aws.Config{
+			Region: aws.String(region),
+		}))
+	} else {
+		sess = session.Must(session.NewSession(&aws.Config{
+			Region:      aws.String(region),
+			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+		}))
+	}
+
 	downloader := s3manager.NewDownloader(sess)
-	_, err := downloader.Download(output,
+	_, err = downloader.Download(output,
 		&s3.GetObjectInput{
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
@@ -67,21 +86,30 @@ type S3Object struct {
 	LastModifiedTime time.Time
 }
 
-func (uploader *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error) {
+func (manager *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error) {
 	s3Objects := make([]*S3Object, 0)
 
 	getRegionSession := session.Must(session.NewSession())
-	region, err := s3manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, uploader.Config.Bucket, "us-east-1")
-	uploadSession := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(region),
-	}))
+	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
+
+	var sess *session.Session
+	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
+		sess = session.Must(session.NewSession(&aws.Config{
+			Region: aws.String(region),
+		}))
+	} else {
+		sess = session.Must(session.NewSession(&aws.Config{
+			Region:      aws.String(region),
+			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+		}))
+	}
 
 	// Create S3 service client
-	svc := s3.New(uploadSession)
+	svc := s3.New(sess)
 
 	// Get the list of items
 	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{
-		Bucket: aws.String(uploader.Config.Bucket),
+		Bucket: aws.String(manager.Config.Bucket),
 		Prefix: aws.String(prefix),
 		// Delimiter: aws.String("/"),
 	})
