@@ -5,24 +5,18 @@ import (
 	"github.com/minio/minio-go/v6"
 	"github.com/rudderlabs/rudder-server/config"
 	"os"
-	"strconv"
 	"strings"
 )
 
 func ObjectUrl(bucketName string, objectName string) string {
-	return config.GetEnv("MINIO_PROTOCOL", "http") + "://" + config.GetEnv("MINIO_END_POINT", "localhost:9000") + "/" + bucketName + "/" + objectName
+	return config.GetEnv("MINIO_PROTOCOL", "http") + "://" + config.GetEnv("MINIO_ENDPOINT", "localhost:9000") + "/" + bucketName + "/" + objectName
 }
 
 func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
 	if manager.Config.Bucket == "" {
 		return UploadOutput{}, errors.New("no storage bucket configured to uploader")
 	}
-	endPoint, accessKeyid, secretAccessKey, ssl := config.GetEnv("MINIO_END_POINT", "http://localhost:9000"), config.GetEnv("MINIO_ACCESS_KEY_ID", "minioadmin"), config.GetEnv("MINIO_SECRET_ACCESS_KEY", "minioadmin"), config.GetEnv("MINIO_SSL", "false")
-	sslBool, err := strconv.ParseBool(ssl)
-	if err != nil {
-		sslBool = false
-	}
-	minioClient, err := minio.New(endPoint, accessKeyid, secretAccessKey, sslBool)
+	minioClient, err := minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -47,12 +41,7 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 }
 
 func (manager *MinioManager) Download(file *os.File, key string) error {
-	endPoint, accessKeyid, secretAccessKey, ssl := config.GetEnv("MINIO_END_POINT", "http://localhost:9000"), config.GetEnv("MINIO_ACCESS_KEY_ID", "minioadmin"), config.GetEnv("MINIO_SECRET_ACCESS_KEY", "minioadmin"), config.GetEnv("MINIO_SSL", "false")
-	sslBool, err := strconv.ParseBool(ssl)
-	if err != nil {
-		sslBool = false
-	}
-	minioClient, err := minio.New(endPoint, accessKeyid, secretAccessKey, sslBool)
+	minioClient, err := minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
 	if err != nil {
 		return err
 	}
@@ -61,7 +50,27 @@ func (manager *MinioManager) Download(file *os.File, key string) error {
 }
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
-	return &MinioConfig{Bucket: config["bucketName"].(string)}
+	var bucketName, endPoint, accessKeyID, secretAccessKey string
+	if config["bucketName"] != nil {
+		bucketName = config["bucketName"].(string)
+	}
+	if config["endPoint"] != nil {
+		endPoint = config["endPoint"].(string)
+	}
+	if config["accessKeyID"] != nil {
+		accessKeyID = config["accessKeyID"].(string)
+	}
+	if config["secretAccessKey"] != nil {
+		secretAccessKey = config["secretAccessKey"].(string)
+	}
+
+	return &MinioConfig{
+		Bucket: bucketName,
+		EndPoint: endPoint,
+		AccessKeyID: accessKeyID,
+		SecretAccessKey: secretAccessKey,
+		UseSSL: config["useSSL"].(bool),
+	}
 }
 
 type MinioManager struct {
@@ -69,4 +78,9 @@ type MinioManager struct {
 }
 type MinioConfig struct {
 	Bucket string
+	EndPoint string
+	AccessKeyID string
+	SecretAccessKey string
+	UseSSL bool
+
 }
