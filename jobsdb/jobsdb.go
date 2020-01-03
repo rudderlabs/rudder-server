@@ -1490,7 +1490,8 @@ func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool,
 		_, err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
 	}
 	if err != nil {
-		logger.Errorf("Failed to upload table %v dump to S3", tableName)
+		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
+		logger.Errorf("Failed to upload table %v dump to %s\n", tableName, storageProvider)
 	} else {
 		// Do not record stat in error case as error case time might be low and skew stats
 		fileUploadTimeStat.End()
