@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -196,10 +197,17 @@ func GetCSVLocations(dbHandle *sql.DB, sourceId string, destinationId string, ta
 	return
 }
 
-func GetS3Location(location string) string {
-	str1 := strings.Replace(location, "https", "s3", 1)
-	str2 := strings.Replace(str1, ".s3.amazonaws.com", "", 1)
-	return str2
+func GetS3Location(location string) (string, string) {
+	r, _ := regexp.Compile(".s3.*.amazonaws.com")
+	subLocation := r.FindString(location)
+	regionTokens := strings.Split(subLocation, ".")
+	var region string
+	if len(regionTokens) > 3 {
+		region = regionTokens[2]
+	}
+	str1 := r.ReplaceAllString(location, "")
+	str2 := strings.Replace(str1, "https", "s3", 1)
+	return region, str2
 }
 
 func GetGCSLocation(location string) string {
@@ -210,7 +218,8 @@ func GetGCSLocation(location string) string {
 
 func GetS3Locations(locations []string) (s3Locations []string, err error) {
 	for _, location := range locations {
-		s3Locations = append(s3Locations, GetS3Location((location)))
+		_, s3Location := GetS3Location(location)
+		s3Locations = append(s3Locations, s3Location)
 	}
 	return
 }

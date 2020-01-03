@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -27,20 +26,20 @@ func supressMinorErrors(err error) error {
 	return err
 }
 
-// Upload passed in file to Azure Blob Storage
-func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
+func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, error) {
 	if manager.Config.Container == "" {
-		return UploadOutput{}, errors.New("no container configured to uploader")
+		return azblob.ContainerURL{}, errors.New("no container configured to downloader")
 	}
-	accountName, accountKey := config.GetEnv("AZURE_STORAGE_ACCOUNT", ""), config.GetEnv("AZURE_STORAGE_ACCESS_KEY", "")
+
+	accountName, accountKey := manager.Config.AccountName, manager.Config.AccountKey
 	if len(accountName) == 0 || len(accountKey) == 0 {
-		return UploadOutput{}, errors.New("Either the AZURE_STORAGE_ACCOUNT or AZURE_STORAGE_ACCESS_KEY environment variable is not set")
+		return azblob.ContainerURL{}, errors.New("Either the AccountName or AccountKey is not correct")
 	}
 
 	// Create a default request pipeline using your storage account name and account key.
 	credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
 	if err != nil {
-		return UploadOutput{}, err
+		return azblob.ContainerURL{}, err
 	}
 	p := azblob.NewPipeline(credential, azblob.PipelineOptions{})
 
@@ -48,9 +47,18 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 	URL, _ := url.Parse(
 		fmt.Sprintf("https://%s.blob.core.windows.net/%s", accountName, manager.Config.Container))
 
-	// Create a ContainerURL object that wraps the container URL and a request
-	// pipeline to make requests.
 	containerURL := azblob.NewContainerURL(*URL, p)
+
+	return containerURL, nil
+}
+
+// Upload passed in file to Azure Blob Storage
+func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
+	containerURL, err := manager.getContainerURL()
+	if err != nil {
+		return UploadOutput{}, err
+	}
+
 	ctx := context.Background()
 	_, err = containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
 	err = supressMinorErrors(err)
@@ -80,26 +88,10 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 }
 
 func (manager *AzureBlobStorageManager) Download(output *os.File, key string) error {
-	if manager.Config.Container == "" {
-		return errors.New("no container configured to downloader")
-	}
-	accountName, accountKey := config.GetEnv("AZURE_STORAGE_ACCOUNT", ""), config.GetEnv("AZURE_STORAGE_ACCESS_KEY", "")
-	if len(accountName) == 0 || len(accountKey) == 0 {
-		return errors.New("Either the AZURE_STORAGE_ACCOUNT or AZURE_STORAGE_ACCESS_KEY environment variable is not set")
-	}
-
-	// Create a default request pipeline using your storage account name and account key.
-	credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
+	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return err
 	}
-	p := azblob.NewPipeline(credential, azblob.PipelineOptions{})
-
-	// From the Azure portal, get your storage account blob service URL endpoint.
-	URL, _ := url.Parse(
-		fmt.Sprintf("https://%s.blob.core.windows.net/%s", accountName, manager.Config.Container))
-
-	containerURL := azblob.NewContainerURL(*URL, p)
 
 	blobURL := containerURL.NewBlockBlobURL(key)
 	ctx := context.Background()
@@ -128,9 +120,23 @@ type AzureBlobStorageManager struct {
 }
 
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
-	return &AzureBlobStorageConfig{Container: config["containerName"].(string)}
+	var containerName, accountName, accountKey string
+	if config["containerName"] != nil {
+		containerName = config["containerName"].(string)
+	}
+	if config["accountName"] != nil {
+		accountName = config["accountName"].(string)
+	}
+	if config["accountKey"] != nil {
+		accountKey = config["accountKey"].(string)
+	}
+	return &AzureBlobStorageConfig{Container: containerName,
+		AccountName: accountName,
+		AccountKey:  accountKey}
 }
 
 type AzureBlobStorageConfig struct {
-	Container string
+	Container   string
+	AccountName string
+	AccountKey  string
 }

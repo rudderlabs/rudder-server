@@ -135,7 +135,7 @@ type S3ManifestT struct {
 	Entries []S3ManifestEntryT `json:"entries"`
 }
 
-func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
+func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[string]string) (string, error) {
 	csvObjectLocations, err := warehouseutils.GetCSVLocations(rs.DbHandle, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, tableName, rs.StartCSVID, rs.EndCSVID)
 	misc.AssertError(err)
 	csvS3Locations, err := warehouseutils.GetS3Locations(csvObjectLocations)
@@ -145,7 +145,8 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	}
 	manifestJSON, err := json.Marshal(&manifest)
 
-	dirName := "/rudder-redshift-manifests/"
+	manifestFolder := "rudder-redshift-manifests"
+	dirName := "/" + manifestFolder + "/"
 	tmpDirPath := misc.CreateTMPDIR()
 	localManifestPath := fmt.Sprintf("%v%v", tmpDirPath+dirName, uuid.NewV4().String())
 	err = os.MkdirAll(filepath.Dir(localManifestPath), os.ModePerm)
@@ -158,25 +159,34 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
-		Config:   map[string]interface{}{"bucketName": config.GetEnv("REDSHIFT_MANIFESTS_BUCKET", "rl-redshift-manifests")},
+		Config:   map[string]interface{}{"bucketName": bucketName},
 	})
 
-	uploadOutput, err := uploader.Upload(file, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
+	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
 
 	misc.AssertError(err)
 
-	uploadLocation := warehouseutils.GetS3Location(uploadOutput.Location)
-
-	return uploadLocation, nil
+	return uploadOutput.Location, nil
 }
 
 func (rs *HandleT) dropStagingTable(stagingTableName string) {
 	rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.SchemaName, stagingTableName))
 }
 
-func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
+func (rs *HandleT) load(config map[string]interface{}, schema map[string]map[string]string) (err error) {
+	var accessKeyID, accessKey, bucketName string
+	if config["accessKeyID"] != nil {
+		accessKeyID = config["accessKeyID"].(string)
+	}
+	if config["accessKey"] != nil {
+		accessKey = config["accessKey"].(string)
+	}
+	if config["bucketName"] != nil {
+		bucketName = config["bucketName"].(string)
+	}
+
 	for tableName, columnMap := range schema {
-		manifestLocation, err := rs.generateManifest(tableName, columnMap)
+		manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap)
 		misc.AssertError(err)
 
 		// sort columnnames
@@ -201,7 +211,9 @@ func (rs *HandleT) load(schema map[string]map[string]string) (err error) {
 			return err
 		}
 
-		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION 'us-east-1'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.SchemaName, stagingTableName), sortedColumnNames, manifestLocation, config.GetEnv("IAM_REDSHIFT_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_REDSHIFT_COPY_SECRET_ACCESS_KEY", ""))
+		region, manifestS3Location := warehouseutils.GetS3Location(manifestLocation)
+
+		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.SchemaName, stagingTableName), sortedColumnNames, manifestS3Location, accessKeyID, accessKey, region)
 
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
@@ -299,11 +311,11 @@ func (rs *HandleT) MigrateSchema() (err error) {
 	return
 }
 
-func (rs *HandleT) Export() {
+func (rs *HandleT) Export(config map[string]interface{}) {
 	logger.Debugf("Starting export to redshift: ")
 	err := warehouseutils.SetUploadStatus(rs.UploadID, warehouseutils.ExportingDataState, rs.DbHandle)
 	misc.AssertError(err)
-	err = rs.load(rs.UploadSchema)
+	err = rs.load(config, rs.UploadSchema)
 	if err != nil {
 		rs.setUploadError(err, warehouseutils.ExportingDataFailedState)
 		return
@@ -336,11 +348,11 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) {
 	rs.SchemaName = strings.ToLower(strcase.ToSnake(rs.Warehouse.Source.Name))
 
 	if config.Stage == "ExportData" {
-		rs.Export()
+		rs.Export(rs.Warehouse.Destination.Config.(map[string]interface{}))
 	} else {
 		err := rs.MigrateSchema()
 		if err == nil {
-			rs.Export()
+			rs.Export(rs.Warehouse.Destination.Config.(map[string]interface{}))
 		}
 	}
 }
