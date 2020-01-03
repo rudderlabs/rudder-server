@@ -5,6 +5,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"gopkg.in/alexcesaro/statsd.v2"
+	"sync"
 )
 
 const (
@@ -20,7 +21,7 @@ var statsEnabled bool
 var statsdServerURL string
 var instanceName string
 var conn statsd.Option
-
+var newWriteKeyStatLock sync.Mutex
 func init() {
 	config.Initialize()
 	statsEnabled = config.GetBool("enableStats", false)
@@ -50,6 +51,8 @@ func NewStat(Name string, StatType string) (rStats *RudderStats) {
 func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *RudderStats) {
 	if _, found := writeKeyClientsMap[writeKey]; !found {
 		var err error
+		newWriteKeyStatLock.Lock()
+		defer newWriteKeyStatLock.Unlock()
 		writeKeyClientsMap[writeKey], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName, "writekey", writeKey))
 		if err != nil {
 			// If nothing is listening on the target port, an error is returned and
