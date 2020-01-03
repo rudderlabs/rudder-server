@@ -169,7 +169,9 @@ func (rs *HandleT) load() (err error) {
 		timer.Start()
 		manifestLocation, err := rs.generateManifest(tableName, columnMap)
 		timer.End()
-		misc.AssertError(err)
+		if err != nil {
+			return err
+		}
 
 		// sort columnnames
 		keys := reflect.ValueOf(columnMap).MapKeys()
@@ -193,7 +195,7 @@ func (rs *HandleT) load() (err error) {
 			return err
 		}
 
-		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION 'us-east-1'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.Upload.Namespace, stagingTableName), sortedColumnNames, manifestLocation, config.GetEnv("IAM_REDSHIFT_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_REDSHIFT_COPY_SECRET_ACCESS_KEY", ""))
+		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.Upload.Namespace, stagingTableName), sortedColumnNames, manifestLocation, config.GetEnv("IAM_REDSHIFT_COPY_ACCESS_KEY_ID", ""), config.GetEnv("IAM_REDSHIFT_COPY_SECRET_ACCESS_KEY", ""))
 
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
@@ -257,10 +259,6 @@ func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 	var db *sql.DB
 	if db, err = sql.Open("postgres", url); err != nil {
 		return nil, fmt.Errorf("redshift connect error : (%v)", err)
-	}
-
-	if err = db.Ping(); err != nil {
-		return nil, fmt.Errorf("redshift ping error : (%v)", err)
 	}
 	return db, nil
 }

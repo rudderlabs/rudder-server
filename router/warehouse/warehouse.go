@@ -430,6 +430,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (err error) {
 
 	// read from staging file and write a separate load file for each table in warehouse
 	tableContentMap := make(map[string]string)
+	uuidTS := time.Now()
 	sc := bufio.NewScanner(reader)
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
@@ -443,6 +444,8 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (err error) {
 			tableContentMap[tableName] = ""
 		}
 		if wh.destType == "BQ" {
+			// add uuid_ts to track when event was processed into load_file
+			columnData["uuid_ts"] = uuidTS.Format("2006-01-02 15:04:05 Z")
 			line, err := json.Marshal(columnData)
 			misc.AssertError(err)
 			tableContentMap[tableName] += string(line) + "\n"
@@ -450,6 +453,10 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (err error) {
 			csvRow := []string{}
 			for _, columnName := range sortedTableColumnMap[tableName] {
 				columnVal, _ := columnData[columnName]
+				if columnName == "uuid_ts" {
+					// add uuid_ts to track when event was processed into load_file
+					columnVal = uuidTS.Format(misc.RFC3339Milli)
+				}
 				if stringVal, ok := columnVal.(string); ok {
 					// handle commas in column values for csv
 					if strings.Contains(stringVal, ",") {
