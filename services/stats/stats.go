@@ -49,10 +49,10 @@ func NewStat(Name string, StatType string) (rStats *RudderStats) {
 
 // NewWriteKeyStat is used to create new writekey specific stat. Writekey is added as one of the tags in this case
 func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *RudderStats) {
+	newWriteKeyStatLock.Lock()
+	defer newWriteKeyStatLock.Unlock()
 	if _, found := writeKeyClientsMap[writeKey]; !found {
 		var err error
-		newWriteKeyStatLock.Lock()
-		defer newWriteKeyStatLock.Unlock()
 		writeKeyClientsMap[writeKey], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName, "writekey", writeKey))
 		if err != nil {
 			// If nothing is listening on the target port, an error is returned and
