@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
@@ -124,7 +125,7 @@ type S3ManifestT struct {
 }
 
 func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
-	csvObjectLocations, err := warehouseutils.GetCSVLocations(rs.DbHandle, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, tableName, rs.Upload.StartLoadFileID, rs.Upload.EndLoadFileID)
+	csvObjectLocations, err := warehouseutils.GetLoadFileLocations(rs.DbHandle, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, tableName, rs.Upload.StartLoadFileID, rs.Upload.EndLoadFileID)
 	misc.AssertError(err)
 	csvS3Locations, err := warehouseutils.GetS3Locations(csvObjectLocations)
 	var manifest S3ManifestT
@@ -164,7 +165,10 @@ func (rs *HandleT) dropStagingTable(stagingTableName string) {
 
 func (rs *HandleT) load() (err error) {
 	for tableName, columnMap := range rs.Upload.Schema {
+		timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
+		timer.Start()
 		manifestLocation, err := rs.generateManifest(tableName, columnMap)
+		timer.End()
 		misc.AssertError(err)
 
 		// sort columnnames
@@ -271,6 +275,8 @@ func init() {
 }
 
 func (rs *HandleT) MigrateSchema() (err error) {
+	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", rs.Warehouse.Destination.ID)
+	timer.Start()
 	warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatingSchemaState, rs.DbHandle)
 	logger.Debugf("RS: Updaing schema for redshfit schemaname: %s\n", rs.Upload.Namespace)
 	updatedSchema, err := rs.updateSchema()
@@ -281,6 +287,7 @@ func (rs *HandleT) MigrateSchema() (err error) {
 	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatedSchemaState, rs.DbHandle)
 	misc.AssertError(err)
 	err = warehouseutils.UpdateCurrentSchema(rs.Warehouse, rs.Upload.ID, rs.CurrentSchema, updatedSchema, rs.DbHandle)
+	timer.End()
 	if err != nil {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
 		return
@@ -292,7 +299,10 @@ func (rs *HandleT) Export() {
 	logger.Debugf("RS: Starting export to redshift for source:%s and wh_upload:%s", rs.Warehouse.Source.ID, rs.Upload.ID)
 	err := warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportingDataState, rs.DbHandle)
 	misc.AssertError(err)
+	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", rs.Warehouse.Destination.ID)
+	timer.Start()
 	err = rs.load()
+	timer.End()
 	if err != nil {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.ExportingDataFailedState, rs.DbHandle)
 		return

@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/warehouse/redshift"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -328,6 +329,10 @@ func (wh *HandleT) initWorkers() {
 			for {
 				// handle job to process staging files and convert them into load files
 				processStagingFilesJob := <-wh.processQ
+				// stat for time taken to process staging files in a single job
+				timer := warehouseutils.DestStat(stats.TimerType, "process_staging_files_batch_time", processStagingFilesJob.Warehouse.Destination.ID)
+				timer.Start()
+
 				var jsonIDs []int64
 				for _, job := range processStagingFilesJob.List {
 					jsonIDs = append(jsonIDs, job.ID)
@@ -346,12 +351,15 @@ func (wh *HandleT) initWorkers() {
 					}
 				}
 				err := wg.Wait()
+				timer.End()
 				if err != nil {
 					warehouseutils.SetStagingFilesError(jsonIDs, warehouseutils.StagingFileFailedState, wh.dbHandle, err)
 					setDestInProgress(processStagingFilesJob.Warehouse.Destination.ID, false)
+					warehouseutils.DestStat(stats.CountType, "process_staging_files_failures", processStagingFilesJob.Warehouse.Destination.ID).Count(len(processStagingFilesJob.List))
 					continue
 				}
 				warehouseutils.SetStagingFilesStatus(jsonIDs, warehouseutils.StagingFileSucceededState, wh.dbHandle)
+				warehouseutils.DestStat(stats.CountType, "process_staging_files_success", processStagingFilesJob.Warehouse.Destination.ID).Count(len(processStagingFilesJob.List))
 
 				var endLoadFileID int64
 				lastLoadFileIDSql := fmt.Sprintf(`SELECT id FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY id DESC LIMIT 1`, warehouseLoadFilesTable, processStagingFilesJob.Warehouse.Source.ID, processStagingFilesJob.Warehouse.Destination.ID)
@@ -503,7 +511,10 @@ func (wh *HandleT) initUploaders() {
 		go func() {
 			for {
 				makeLoadFilesJob := <-wh.uploadQ
+				timer := warehouseutils.DestStat(stats.TimerType, "process_staging_file_time", makeLoadFilesJob.Warehouse.Destination.ID)
+				timer.Start()
 				err := wh.processStagingFile(makeLoadFilesJob)
+				timer.End()
 				if err != nil {
 					makeLoadFilesJob.Wg.Err(err)
 				} else {

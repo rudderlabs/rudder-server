@@ -36,7 +36,6 @@ var (
 	inProgressMap              map[string]bool
 	inProgressMapLock          sync.RWMutex
 	uploadedRawDataJobsCache   map[string]bool
-	errorsCountStat            *stats.RudderStats
 	warehouseStagingFilesTable string
 )
 
@@ -94,7 +93,6 @@ func updateDestStatusStats(id string, count int, isSuccess bool) {
 		destStatsD = stats.NewBatchDestStat("batch_router.dest_successful_events", stats.CountType, id)
 	} else {
 		destStatsD = stats.NewBatchDestStat("batch_router.dest_failed_attempts", stats.CountType, id)
-		errorsCountStat.Count(count)
 	}
 	destStatsD.Count(count)
 }
@@ -268,6 +266,8 @@ func (brt *HandleT) initWorkers() {
 						destUploadStat.End()
 						setSourceInProgress(batchJobs.BatchDestination, false)
 					case misc.ContainsString(warehouseDestinations, brt.destType):
+						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType)
+						destUploadStat.Start()
 						output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
 						if output.Error == nil {
 							brt.updateWarehouseMetadata(batchJobs, output.Key)
@@ -275,6 +275,7 @@ func (brt *HandleT) initWorkers() {
 						brt.setJobStatus(batchJobs, true, output.Error)
 						brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
+						destUploadStat.End()
 						setSourceInProgress(batchJobs.BatchDestination, false)
 					}
 
@@ -496,7 +497,6 @@ func init() {
 	config.Initialize()
 	loadConfig()
 	uploadedRawDataJobsCache = make(map[string]bool)
-	errorsCountStat = stats.NewStat("batch_router.errors", stats.CountType)
 }
 
 //Setup initializes this module
