@@ -3,13 +3,12 @@ package filemanager
 import (
 	"errors"
 	"github.com/minio/minio-go/v6"
-	"github.com/rudderlabs/rudder-server/config"
 	"os"
 	"strings"
 )
 
-func ObjectUrl(bucketName string, objectName string) string {
-	return config.GetEnv("MINIO_PROTOCOL", "http") + "://" + config.GetEnv("MINIO_ENDPOINT", "localhost:9000") + "/" + bucketName + "/" + objectName
+func (manager *MinioManager) ObjectUrl(objectName string) string {
+	return manager.Config.Protocol + "://" + manager.Config.EndPoint + "/" + manager.Config.Bucket + "/" + objectName
 }
 
 func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
@@ -22,7 +21,7 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 	}
 	if err = minioClient.MakeBucket(manager.Config.Bucket, "us-east-1"); err != nil {
 		exists, err := minioClient.BucketExists(manager.Config.Bucket)
-		if !(err == nil && exists) {
+		if !exists {
 			return UploadOutput{}, err
 		}
 	}
@@ -33,11 +32,11 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 	}
 	fileName += splitFileName[len(splitFileName)-1]
 	_, err = minioClient.FPutObject(manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
-	if err!=nil {
+	if err != nil {
 		return UploadOutput{}, nil
 	}
 
-	return UploadOutput{Location: ObjectUrl(manager.Config.Bucket, fileName)}, nil
+	return UploadOutput{Location: manager.ObjectUrl(fileName)}, nil
 }
 
 func (manager *MinioManager) Download(file *os.File, key string) error {
@@ -45,12 +44,12 @@ func (manager *MinioManager) Download(file *os.File, key string) error {
 	if err != nil {
 		return err
 	}
-	err = minioClient.FGetObject(manager.Config.Bucket, key , file.Name(), minio.GetObjectOptions{})
+	err = minioClient.FGetObject(manager.Config.Bucket, key, file.Name(), minio.GetObjectOptions{})
 	return err
 }
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
-	var bucketName, endPoint, accessKeyID, secretAccessKey string
+	var bucketName, endPoint, accessKeyID, secretAccessKey, protocol string
 	var useSSL bool
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
@@ -67,24 +66,29 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	if config["useSSL"] != nil {
 		useSSL = config["useSSL"].(bool)
 	}
+	if config["protocol"] != nil {
+		protocol = config["protocol"].(string)
+	}
 
 	return &MinioConfig{
-		Bucket: bucketName,
-		EndPoint: endPoint,
-		AccessKeyID: accessKeyID,
+		Bucket:          bucketName,
+		EndPoint:        endPoint,
+		AccessKeyID:     accessKeyID,
 		SecretAccessKey: secretAccessKey,
-		UseSSL: useSSL,
+		UseSSL:          useSSL,
+		Protocol:        protocol,
 	}
 }
 
 type MinioManager struct {
 	Config *MinioConfig
 }
-type MinioConfig struct {
-	Bucket string
-	EndPoint string
-	AccessKeyID string
-	SecretAccessKey string
-	UseSSL bool
 
+type MinioConfig struct {
+	Bucket          string
+	EndPoint        string
+	AccessKeyID     string
+	SecretAccessKey string
+	UseSSL          bool
+	Protocol        string
 }

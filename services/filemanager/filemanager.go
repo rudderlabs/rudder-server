@@ -71,8 +71,8 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["endPoint"] = config.GetEnv("MINIO_ENDPOINT", "http://localhost:9000")
 		providerConfig["accessKeyID"] = config.GetEnv("MINIO_ACCESS_KEY_ID", "minioadmin")
 		providerConfig["secretAccessKey"] = config.GetEnv("MINIO_SECRET_ACCESS_KEY", "minioadmin")
-		useSSL:= config.GetEnvAsBool("MINIO_SSL", false)
-		providerConfig["useSSL"] = useSSL
+		providerConfig["useSSL"] = config.GetEnvAsBool("MINIO_SSL", false)
+		providerConfig["protocol"] = config.GetEnv("MINIO_PROTOCOL", "http")
 	}
 	return providerConfig
 }
