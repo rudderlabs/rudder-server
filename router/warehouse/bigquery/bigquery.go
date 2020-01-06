@@ -33,7 +33,7 @@ type HandleT struct {
 
 var dataTypesMap = map[string]bigquery.FieldType{
 	"boolean":  bigquery.BooleanFieldType,
-	"int":      bigquery.IntegerFieldType,
+	"int":      bigquery.FloatFieldType,
 	"float":    bigquery.FloatFieldType,
 	"string":   bigquery.StringFieldType,
 	"datetime": bigquery.TimestampFieldType,

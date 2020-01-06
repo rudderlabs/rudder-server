@@ -466,8 +466,8 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (err error) {
 				}
 				// avoid printing integers like 5000000 as 5e+06
 				columnType := columns[columnName].(string)
-				if columnType == "bigint" || columnType == "int" {
-					columnVal = int64(columnVal.(float64))
+				if columnType == "bigint" || columnType == "int" || columnType == "float" {
+					columnVal = columnVal.(float64)
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
