@@ -4,11 +4,15 @@ import (
 	"archive/zip"
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"runtime/debug"
 	"strings"
 
@@ -18,10 +22,66 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/thoas/go-funk"
 )
 
 // RFC3339 with milli sec precision
 var RFC3339Milli = "2006-01-02T15:04:05.999Z07:00"
+
+var AppStartTime int64
+
+// ErrorStoreT : DS to store the app errors
+type ErrorStoreT struct {
+	Errors []RudderError
+}
+
+//RudderError : to store rudder error
+type RudderError struct {
+	StartTime  int64
+	Message    string
+	StackTrace string
+	Code       int
+}
+
+func getErrorStore() ErrorStoreT {
+	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
+	data, err := ioutil.ReadFile(errorStorePath)
+	if os.IsNotExist(err) {
+		defaultErrorStoreJSON := "{\"Errors\":[]}"
+		data = []byte(defaultErrorStoreJSON)
+	} else {
+		AssertError(err)
+	}
+
+	var errorStore ErrorStoreT
+	err = json.Unmarshal(data, &errorStore)
+	AssertError(err)
+
+	return errorStore
+}
+
+func saveErrorStore(errorStore ErrorStoreT) {
+	errorStoreJSON, err := json.MarshalIndent(&errorStore, "", " ")
+	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
+	err = ioutil.WriteFile(errorStorePath, errorStoreJSON, 0644)
+	AssertError(err)
+}
+
+//RecordAppError appends the error occured to error_store.json
+func RecordAppError(err error) {
+	if AppStartTime == 0 {
+		return
+	}
+
+	byteArr := make([]byte, 2048) // adjust buffer size to be larger than expected stack
+	n := runtime.Stack(byteArr, false)
+	stackTrace := string(byteArr[:n])
+
+	errorStore := getErrorStore()
+	//TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
+	errorStore.Errors = append(errorStore.Errors, RudderError{StartTime: AppStartTime, Message: err.Error(), StackTrace: stackTrace, Code: 101})
+	saveErrorStore(errorStore)
+}
 
 //AssertError panics if error
 func AssertError(err error) {
@@ -29,6 +89,7 @@ func AssertError(err error) {
 		// debug.SetTraceback("all")
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
+		RecordAppError(err)
 		panic(err)
 	}
 }
@@ -44,6 +105,7 @@ func AssertErrorIfDev(err error) {
 		// debug.SetTraceback("all")
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
+		RecordAppError(err)
 		panic(err)
 	}
 }
@@ -54,6 +116,7 @@ func Assert(cond bool) {
 		//debug.SetTraceback("all")
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
+		RecordAppError(errors.New("Assertion failed"))
 		panic("Assertion failed")
 	}
 }
@@ -104,9 +167,9 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
 	return eventListJSONBatchType, true
 }
 
-//GetRudderEventUserID return the UserID from the object
-func GetRudderEventUserID(eventList []interface{}) (string, bool) {
-	userID, ok := GetRudderEventVal("anonymousId", eventList[0])
+//GetAnonymousID return the UserID from the object
+func GetAnonymousID(event interface{}) (string, bool) {
+	userID, ok := GetRudderEventVal("anonymousId", event)
 	if !ok {
 		return "", false
 	}
@@ -164,6 +227,29 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	AssertError(err)
 	_, err = io.Copy(writer, fileToZip)
 	return err
+}
+
+// UnZipSingleFile unzips zip containing single file into ouputfile path passed
+func UnZipSingleFile(outputfile string, filename string) {
+	r, err := zip.OpenReader(filename)
+	AssertError(err)
+	defer r.Close()
+	inputfile := r.File[0]
+	// Make File
+	err = os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
+	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
+	AssertError(err)
+	rc, err := inputfile.Open()
+	_, err = io.Copy(outFile, rc)
+	outFile.Close()
+	rc.Close()
+}
+
+func RemoveFilePaths(filepaths ...string) {
+	for _, filepath := range filepaths {
+		err := os.Remove(filepath)
+		logger.Error(err)
+	}
 }
 
 // ReadLines reads a whole file into memory
@@ -350,4 +436,10 @@ func IncrementMapByKey(m map[string]int, key string, increment int) {
 // timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
 	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
+}
+
+func StringKeys(input interface{}) []string {
+	keys := funk.Keys(input)
+	stringKeys := keys.([]string)
+	return stringKeys
 }

@@ -25,20 +25,16 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion around Rudder.
 
-## Features
-
-1. Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer & Facebook destinations. Lot more coming soon.
-2. S3 dump. Redshift and other data warehouses coming soon.
-3. User-specified transformation to filter/transform events.
-4. Stand-alone system. The only dependency is on Postgres.
-5. High performance. On a single m4.2xlarge, Rudder can process ~3K events/sec. Performance numbers on other instance types soon.
-6. Rich UI written in react.
-7. [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or [iOS](https://github.com/rudderlabs/rudder-sdk-ios). Server-side SDKs coming soon.
-
 # Contribute or Stay Connected
 
 1. Join our [Discord](https://discordapp.com/invite/xNEdEGw) 
 2. Follow us on [Twitter](https://twitter.com/rudderlabs)
+
+# Setup Instructions (Hosted Demo Account)
+
+1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account. 
+2. Select `Rudder Hosted Service` from the top right corner after you login.
+3. Follow (Send Test Events) instructions below to send test event.
 
 # Setup Instructions (Docker)
 
@@ -52,13 +48,18 @@ The docker setup is the easiest & fastest way to try out Rudder.
 6. Run the command `docker-compose up --build` to bring up all the services.
 7. Follow (Send Test Events) instructions below to send test event.
 
+# Setup Instructions (Kubernetes)
+
+Our helm scripts and instructions are in a separate repo - [Download Here](https://github.com/rudderlabs/rudderstack-helm)
+
 # Setup Instructions (Terraform)
 
 Our terraform scripts and instructions are in a separate repo - [Download Here](https://github.com/rudderlabs/rudder-terraform)
 
+
 # Setup Instructions (Native Installation)
 
-If you want to run each of the services without docker please follow the following steps
+Disclaimer: This is not the easiest way of installing Rudder.  Please use this if you want to know more about the internals.
 
 1. Install Golang 1.12 or above. [Download Here](https://golang.org/dl/)
 2. Install NodeJS 10.6 or above. [Download Here](https://nodejs.org/en/download/)
@@ -87,6 +88,16 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 3. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `./scripts/generate-event <writeKeyHere> http://localhost:8080/v1/batch`. NOTE: `writeKey` is different from the `your_workspace_token` in step 2. Former is associated with the source while the latter is for your account.
 4. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
 5. You can use our [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or [iOS](https://github.com/rudderlabs/rudder-sdk-ios) SDKs for sending events from your app.
+
+## Features
+
+1. Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer & Facebook destinations. Lot more coming soon.
+2. S3 dump. Redshift and other data warehouses coming soon.
+3. User-specified transformation to filter/transform events.
+4. Stand-alone system. The only dependency is on Postgres.
+5. High performance. On a single m4.2xlarge, Rudder can process ~3K events/sec. Performance numbers on other instance types soon.
+6. Rich UI written in react.
+7. [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or [iOS](https://github.com/rudderlabs/rudder-sdk-ios). Server-side SDKs coming soon.
 
 
 # UI Pages

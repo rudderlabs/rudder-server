@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -25,49 +27,60 @@ import (
 )
 
 var (
-	jobQueryBatchSize        int
-	noOfWorkers              int
-	mainLoopSleepInS         int
-	batchDestinations        []BatchDestinationT
-	configSubscriberLock     sync.RWMutex
-	rawDataDestinations      []string
-	inProgressMap            map[string]bool
-	inProgressMapLock        sync.RWMutex
-	uploadedRawDataJobsCache map[string]bool
-	errorsCountStat          *stats.RudderStats
+	jobQueryBatchSize          int
+	noOfWorkers                int
+	mainLoopSleepInS           int
+	configSubscriberLock       sync.RWMutex
+	objectStorageDestinations  []string
+	warehouseDestinations      []string
+	inProgressMap              map[string]bool
+	inProgressMapLock          sync.RWMutex
+	uploadedRawDataJobsCache   map[string]bool
+	warehouseStagingFilesTable string
 )
 
 type HandleT struct {
-	processQ  chan BatchJobsT
-	jobsDB    *jobsdb.HandleT
-	isEnabled bool
+	destType          string
+	batchDestinations []DestinationT
+	processQ          chan BatchJobsT
+	jobsDB            *jobsdb.HandleT
+	jobsDBHandle      *sql.DB
+	isEnabled         bool
 }
 
 type ObjectStorageT struct {
-	Bucket   string
+	Config   map[string]interface{}
 	Key      string
 	Provider string
 }
 
-func backendConfigSubscriber() {
+func (brt *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
-		batchDestinations = []BatchDestinationT{}
+		brt.batchDestinations = []DestinationT{}
 		allSources := config.Data.(backendconfig.SourcesT)
 		for _, source := range allSources.Sources {
 			if source.Enabled && len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if misc.Contains(rawDataDestinations, destination.DestinationDefinition.Name) {
-						batchDestinations = append(batchDestinations, BatchDestinationT{Source: source, Destination: destination})
+					if destination.Enabled && destination.DestinationDefinition.Name == brt.destType {
+						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
 					}
 				}
 			}
 		}
 		configSubscriberLock.Unlock()
 	}
+}
+
+type StorageUploadOutput struct {
+	Config         map[string]interface{}
+	Key            string
+	LocalFilePaths []string
+	Error          error
+	JournalOpID    int64
 }
 
 type ErrorResponseT struct {
@@ -80,19 +93,25 @@ func updateDestStatusStats(id string, count int, isSuccess bool) {
 		destStatsD = stats.NewBatchDestStat("batch_router.dest_successful_events", stats.CountType, id)
 	} else {
 		destStatsD = stats.NewBatchDestStat("batch_router.dest_failed_attempts", stats.CountType, id)
-		errorsCountStat.Count(count)
 	}
 	destStatsD.Count(count)
 }
 
-func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT) {
-	bucketName := batchJobs.BatchDestination.Destination.Config.(map[string]interface{})["bucketName"].(string)
-	uuid := uuid.NewV4()
-	logger.Debugf("BRT: Starting logging to %s: %s", provider, bucketName)
+func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
+	var localTmpDirName string
+	destinationConfig := batchJobs.BatchDestination.Destination.Config.(map[string]interface{})
+	if isWarehouse {
+		localTmpDirName = "/rudder-warehouse-staging-uploads/"
+	} else {
+		localTmpDirName = "/rudder-raw-data-destination-logs/"
+	}
 
-	dirName := "/rudder-raw-data-destination-logs/"
+	uuid := uuid.NewV4()
+	logger.Debugf("BRT: Starting logging to %s: %s\n", provider, destinationConfig)
+
 	tmpDirPath := misc.CreateTMPDIR()
-	path := fmt.Sprintf("%v%v.json", tmpDirPath+dirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
+	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
+
 	var contentSlice [][]byte
 	for _, job := range batchJobs.Jobs {
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
@@ -113,37 +132,98 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT) {
 	misc.AssertError(err)
 	gzipWriter.Close()
 
-	logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
+	logger.Debugf("BRT: Logged to local file: %v\n", gzipFilePath)
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
-		Bucket:   bucketName,
+		Config:   batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
 	})
+	misc.AssertError(err)
+
 	gzipFile, err = os.Open(gzipFilePath)
 	misc.AssertError(err)
 
-	logger.Debugf("BRT: Starting upload to %s: %s", provider, bucketName)
-	keyPrefixes := []string{config.GetEnv("DESTINATION_S3_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+	logger.Debugf("BRT: Starting upload to %s: config:%s\n", provider, destinationConfig)
+
+	var keyPrefixes []string
+	if isWarehouse {
+		keyPrefixes = []string{config.GetEnv("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+	} else {
+		keyPrefixes = []string{config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+	}
+
 	_, fileName := filepath.Split(gzipFilePath)
 	opPayload, err := json.Marshal(&ObjectStorageT{
-		Bucket:   bucketName,
+		Config:   batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
 		Key:      strings.Join(append(keyPrefixes, fileName), "/"),
 		Provider: provider,
 	})
 	opID := brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
-	err = uploader.Upload(gzipFile, keyPrefixes...)
-	var (
-		jobState  string
-		errorResp []byte
-	)
+	_, err = uploader.Upload(gzipFile, keyPrefixes...)
+
 	if err != nil {
-		logger.Errorf("BRT: Error uploading to %s: %v", provider, err)
+		logger.Error(err)
+		return StorageUploadOutput{
+			Error:       err,
+			JournalOpID: opID,
+		}
+	}
+
+	return StorageUploadOutput{
+		Config:         batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
+		Key:            strings.Join(keyPrefixes, "/") + "/" + fileName,
+		LocalFilePaths: []string{gzipFilePath},
+		JournalOpID:    opID,
+	}
+}
+
+func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location string) (err error) {
+	schemaMap := make(map[string]map[string]interface{})
+	for _, job := range batchJobs.Jobs {
+		var payload map[string]interface{}
+		err := json.Unmarshal(job.EventPayload, &payload)
+		misc.AssertError(err)
+		tableName := payload["metadata"].(map[string]interface{})["table"].(string)
+		var ok bool
+		if _, ok = schemaMap[tableName]; !ok {
+			schemaMap[tableName] = make(map[string]interface{})
+		}
+		columns := payload["metadata"].(map[string]interface{})["columns"].(map[string]interface{})
+		for columnName, columnType := range columns {
+			if _, ok := schemaMap[tableName][columnName]; !ok {
+				schemaMap[tableName][columnName] = columnType
+			}
+		}
+	}
+	logger.Debugf("Creating record for uploaded json in %s table with schema: %+v\n", warehouseStagingFilesTable, schemaMap)
+	schemaPayload, err := json.Marshal(schemaMap)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at, updated_at)
+									   VALUES ($1, $2, $3, $4, $5, $6, $6)`, warehouseStagingFilesTable)
+	stmt, err := brt.jobsDBHandle.Prepare(sqlStatement)
+	misc.AssertError(err)
+	defer stmt.Close()
+
+	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, batchJobs.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, time.Now())
+	misc.AssertError(err)
+	return err
+}
+
+func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err error) {
+	var (
+		jobState          string
+		errorResp         []byte
+		destinationConfig map[string]interface{}
+	)
+	destinationConfig = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})
+
+	if err != nil {
+		logger.Errorf("BRT: Error uploading to object storage: %v %v %v\n", err, destinationConfig, batchJobs.BatchDestination.Source.ID)
 		jobState = jobsdb.FailedState
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
 	} else {
-		logger.Debugf("BRT: Uploaded to S3 bucket: %v %v %v", bucketName, batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
+		logger.Debugf("BRT: Uploaded to object storage with config: %v %v %v\n", destinationConfig, batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		jobState = jobsdb.SucceededState
 		errorResp = []byte(`{"success":"OK"}`)
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
@@ -166,11 +246,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT) {
 	}
 
 	//Mark the jobs as executing
-	brt.jobsDB.UpdateJobStatus(statusList, []string{batchJobs.BatchDestination.Destination.DestinationDefinition.Name}, batchJobs.BatchDestination.Source.ID)
-	brt.jobsDB.JournalDeleteEntry(opID)
-
-	err = os.Remove(gzipFilePath)
-	misc.AssertError(err)
+	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, batchJobs.BatchDestination.Source.ID)
 }
 
 func (brt *HandleT) initWorkers() {
@@ -179,33 +255,49 @@ func (brt *HandleT) initWorkers() {
 			for {
 				select {
 				case batchJobs := <-brt.processQ:
-					switch batchJobs.BatchDestination.Destination.DestinationDefinition.Name {
-					case "S3":
-						s3DestUploadStat := stats.NewStat("batch_router.S3_dest_upload_time", stats.TimerType)
-						s3DestUploadStat.Start()
-						brt.copyJobsToStorage("S3", batchJobs)
-						s3DestUploadStat.End()
-						setSourceInProgress(batchJobs.BatchDestination.Source.ID, false)
+					switch {
+					case misc.ContainsString(objectStorageDestinations, brt.destType):
+						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+						destUploadStat.Start()
+						output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
+						brt.setJobStatus(batchJobs, false, output.Error)
+						brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
+						misc.RemoveFilePaths(output.LocalFilePaths...)
+						destUploadStat.End()
+						setSourceInProgress(batchJobs.BatchDestination, false)
+					case misc.ContainsString(warehouseDestinations, brt.destType):
+						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType)
+						destUploadStat.Start()
+						output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
+						if output.Error == nil {
+							brt.updateWarehouseMetadata(batchJobs, output.Key)
+						}
+						brt.setJobStatus(batchJobs, true, output.Error)
+						brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
+						misc.RemoveFilePaths(output.LocalFilePaths...)
+						destUploadStat.End()
+						setSourceInProgress(batchJobs.BatchDestination, false)
 					}
+
 				}
 			}
 		}()
 	}
 }
 
-type BatchDestinationT struct {
+type DestinationT struct {
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
 }
 
 type BatchJobsT struct {
 	Jobs             []*jobsdb.JobT
-	BatchDestination BatchDestinationT
+	BatchDestination DestinationT
 }
 
-func isSourceInProgress(sourceID string) bool {
+func isSourceInProgress(batchDestination DestinationT) bool {
 	inProgressMapLock.RLock()
-	if inProgressMap[sourceID] {
+	if inProgressMap[batchDestination.Source.ID+"_"+batchDestination.Destination.ID] {
 		inProgressMapLock.RUnlock()
 		return true
 	}
@@ -213,12 +305,12 @@ func isSourceInProgress(sourceID string) bool {
 	return false
 }
 
-func setSourceInProgress(sourceID string, starting bool) {
+func setSourceInProgress(batchDestination DestinationT, starting bool) {
 	inProgressMapLock.Lock()
 	if starting {
-		inProgressMap[sourceID] = true
+		inProgressMap[batchDestination.Source.ID+"_"+batchDestination.Destination.ID] = true
 	} else {
-		delete(inProgressMap, sourceID)
+		delete(inProgressMap, batchDestination.Source.ID+"_"+batchDestination.Destination.ID)
 	}
 	inProgressMapLock.Unlock()
 }
@@ -230,19 +322,19 @@ func (brt *HandleT) mainLoop() {
 			continue
 		}
 		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
-		for _, batchDestination := range batchDestinations {
-			if isSourceInProgress(batchDestination.Source.ID) {
+		for _, batchDestination := range brt.batchDestinations {
+			if isSourceInProgress(batchDestination) {
 				continue
 			}
-			setSourceInProgress(batchDestination.Source.ID, true)
+			setSourceInProgress(batchDestination, true)
 			toQuery := jobQueryBatchSize
-			retryList := brt.jobsDB.GetToRetry([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID)
+			retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, batchDestination.Source.ID)
 			toQuery -= len(retryList)
-			waitList := brt.jobsDB.GetWaiting([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID) //Jobs send to waiting state
+			waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, batchDestination.Source.ID) //Jobs send to waiting state
 			toQuery -= len(waitList)
-			unprocessedList := brt.jobsDB.GetUnprocessed([]string{batchDestination.Destination.DestinationDefinition.Name}, toQuery, batchDestination.Source.ID)
+			unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, batchDestination.Source.ID)
 			if len(waitList)+len(unprocessedList)+len(retryList) == 0 {
-				delete(inProgressMap, batchDestination.Source.ID)
+				setSourceInProgress(batchDestination, false)
 				continue
 			}
 
@@ -265,7 +357,7 @@ func (brt *HandleT) mainLoop() {
 			}
 
 			//Mark the jobs as executing
-			brt.jobsDB.UpdateJobStatus(statusList, []string{batchDestination.Destination.DestinationDefinition.Name}, batchDestination.Source.ID)
+			brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, batchDestination.Source.ID)
 			brt.processQ <- BatchJobsT{Jobs: combinedList, BatchDestination: batchDestination}
 		}
 	}
@@ -282,29 +374,35 @@ func (brt *HandleT) Disable() {
 }
 
 func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
-	logger.Debugf("BRT: Checking for incomplete journal entries to recover from...")
+	logger.Debug("BRT: Checking for incomplete journal entries to recover from...")
 	entries := brt.jobsDB.GetJournalEntries(jobsdb.RawDataDestUploadOperation)
 	for _, entry := range entries {
 		var object ObjectStorageT
 		err := json.Unmarshal(entry.OpPayload, &object)
 		misc.AssertError(err)
+		if len(object.Config) == 0 {
+			//Backward compatibility. If old entries dont have config, just delete journal entry
+			brt.jobsDB.JournalDeleteEntry(entry.OpID)
+			continue
+		}
 		downloader, err := filemanager.New(&filemanager.SettingsT{
 			Provider: object.Provider,
-			Bucket:   object.Bucket,
+			Config:   object.Config,
 		})
+		misc.AssertError(err)
 
-		dirName := "/rudder-raw-data-dest-upload-crash-recovery/"
+		localTmpDirName := "/rudder-raw-data-dest-upload-crash-recovery/"
 		tmpDirPath := misc.CreateTMPDIR()
-		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+dirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
+		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
 
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		jsonFile, err := os.Create(jsonPath)
 		misc.AssertError(err)
 
-		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s in bucket: %s at key: %s", object.Provider, object.Bucket, object.Key)
+		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s with config: %s at key: %s\n", object.Provider, object.Config, object.Key)
 		err = downloader.Download(jsonFile, object.Key)
 		if err != nil {
-			logger.Debugf("BRT: Failed to download data for incomplete journal entry to recover from %s in bucket: %s at key: %s with error: %v", object.Provider, object.Bucket, object.Key, err)
+			logger.Debugf("BRT: Failed to download data for incomplete journal entry to recover from %s with config: %s at key: %s with error: %v\n", object.Provider, object.Config, object.Key, err)
 			continue
 		}
 
@@ -316,7 +414,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 
 		sc := bufio.NewScanner(reader)
 
-		logger.Debugf("BRT: Setting go map cache for incomplete journal entry to recover from...")
+		logger.Debug("BRT: Setting go map cache for incomplete journal entry to recover from...")
 		for sc.Scan() {
 			lineBytes := sc.Bytes()
 			eventID := gjson.GetBytes(lineBytes, "messageId").String()
@@ -354,11 +452,44 @@ func (brt *HandleT) crashRecover() {
 	brt.dedupRawDataDestJobsOnCrash()
 }
 
+func (brt *HandleT) setupWarehouseStagingFilesTable() {
+
+	sqlStatement := `DO $$ BEGIN
+                                CREATE TYPE wh_staging_state_type
+                                     AS ENUM(
+                                              'waiting',
+                                              'executing',
+											  'failed',
+											  'succeeded');
+                                     EXCEPTION
+                                        WHEN duplicate_object THEN null;
+                            END $$;`
+
+	_, err := brt.jobsDBHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+                                      id BIGSERIAL PRIMARY KEY,
+									  location TEXT NOT NULL,
+									  source_id VARCHAR(64) NOT NULL,
+									  destination_id VARCHAR(64) NOT NULL,
+									  schema JSONB NOT NULL,
+									  error TEXT,
+									  status wh_staging_state_type,
+									  created_at TIMESTAMP NOT NULL,
+									  updated_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
+
+	_, err = brt.jobsDBHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+}
+
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
 	mainLoopSleepInS = config.GetInt("BatchRouter.mainLoopSleepInS", 5)
-	rawDataDestinations = []string{"S3"}
+	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
+	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB"}
+	warehouseDestinations = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
 }
 
@@ -366,17 +497,20 @@ func init() {
 	config.Initialize()
 	loadConfig()
 	uploadedRawDataJobsCache = make(map[string]bool)
-	errorsCountStat = stats.NewStat("batch_router.errors", stats.CountType)
 }
 
 //Setup initializes this module
-func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT) {
-	logger.Info("BRT: Batch Router started")
+func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
+	logger.Infof("BRT: Batch Router started: %s\n", destType)
+	brt.destType = destType
 	brt.jobsDB = jobsDB
+	brt.jobsDBHandle = brt.jobsDB.GetDBHandle()
+	brt.isEnabled = true
+	brt.setupWarehouseStagingFilesTable()
 	brt.processQ = make(chan BatchJobsT)
 	brt.crashRecover()
 
 	go brt.initWorkers()
-	go backendConfigSubscriber()
+	go brt.backendConfigSubscriber()
 	go brt.mainLoop()
 }

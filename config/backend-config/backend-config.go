@@ -1,11 +1,8 @@
 package backendconfig
 
 import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"net/http"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -17,13 +14,17 @@ import (
 )
 
 var (
+	backendConfig                        BackendConfig
+	isMultiWorkspace                     bool
+	multiWorkspaceSecret                 string
 	configBackendURL, configBackendToken string
 	pollInterval                         time.Duration
 	curSourceJSON                        SourcesT
+	curSourceJSONLock                    sync.RWMutex
 	initialized                          bool
 )
 
-var Eb *utils.EventBus
+var Eb = new(utils.EventBus)
 
 type DestinationDefinitionT struct {
 	ID          string
@@ -66,7 +67,18 @@ type TransformationT struct {
 	VersionID   string
 }
 
+type BackendConfig interface {
+	SetUp()
+	GetBackendConfig() (SourcesT, bool)
+	GetWorkspaceIDForWriteKey(string) string
+}
+
 func loadConfig() {
+	// Rudder supporting multiple workspaces. false by default
+	isMultiWorkspace = config.GetEnvAsBool("HOSTED_SERVICE", false)
+	// Secret to be sent in basic auth for supporting multiple workspaces. password by default
+	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	configBackendToken = config.GetEnv("CONFIG_BACKEND_TOKEN", "1P2tfQQKarhlsG6S3JGLdXptyZY")
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
@@ -74,29 +86,6 @@ func loadConfig() {
 
 func GetConfigBackendToken() string {
 	return configBackendToken
-}
-
-func getBackendConfig() (SourcesT, bool) {
-	client := &http.Client{}
-	url := fmt.Sprintf("%s/workspace-config?workspaceToken=%s", configBackendURL, configBackendToken)
-	resp, err := client.Get(url)
-
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = ioutil.ReadAll(resp.Body)
-		defer resp.Body.Close()
-	}
-	if err != nil {
-		logger.Error("Errored when sending request to the server", err)
-		return SourcesT{}, false
-	}
-	var sourcesJSON SourcesT
-	err = json.Unmarshal(respBody, &sourcesJSON)
-	if err != nil {
-		logger.Error("Errored while parsing request", err, string(respBody), resp.StatusCode)
-		return SourcesT{}, false
-	}
-	return sourcesJSON, true
 }
 
 func init() {
@@ -107,12 +96,14 @@ func init() {
 func pollConfigUpdate() {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
-		sourceJSON, ok := getBackendConfig()
+		sourceJSON, ok := backendConfig.GetBackendConfig()
 		if !ok {
 			statConfigBackendError.Increment()
 		}
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
+			curSourceJSONLock.Lock()
 			curSourceJSON = sourceJSON
+			curSourceJSONLock.Unlock()
 			initialized = true
 			Eb.Publish("backendconfig", sourceJSON)
 		}
@@ -124,9 +115,15 @@ func GetConfig() SourcesT {
 	return curSourceJSON
 }
 
+func GetWorkspaceIDForWriteKey(writeKey string) string {
+	return backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+}
+
 func Subscribe(channel chan utils.DataEvent) {
 	Eb.Subscribe("backendconfig", channel)
+	curSourceJSONLock.RLock()
 	Eb.PublishToChannel(channel, "backendconfig", curSourceJSON)
+	curSourceJSONLock.RUnlock()
 }
 
 func WaitForConfig() {
@@ -142,6 +139,12 @@ func WaitForConfig() {
 
 // Setup backend config
 func Setup() {
-	Eb = new(utils.EventBus)
+	if isMultiWorkspace {
+		backendConfig = new(MultiWorkspaceConfig)
+	} else {
+		backendConfig = new(WorkspaceConfig)
+	}
+
+	backendConfig.SetUp()
 	go pollConfigUpdate()
 }

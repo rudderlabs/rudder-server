@@ -22,11 +22,11 @@ import (
 	"compress/gzip"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"sort"
 	"unicode/utf8"
 
@@ -124,28 +124,31 @@ type StoreJobRespT struct {
 }
 
 var dbErrorMap = map[string]string{
-	"Invalid JSON": "22P02",
+	"Invalid JSON":    "22P02",
+	"Invalid Unicode": "22P05",
 }
 
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
-		debug.SetTraceback("all")
-		debug.PrintStack()
-		jd.printLists(true)
+		// debug.SetTraceback("all")
+		// debug.PrintStack()
+		// jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify(err)
+		misc.RecordAppError(err)
 		panic(err)
 	}
 }
 
 func (jd *HandleT) assert(cond bool) {
 	if !cond {
-		debug.SetTraceback("all")
-		debug.PrintStack()
-		jd.printLists(true)
+		// debug.SetTraceback("all")
+		// debug.PrintStack()
+		// jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify("Assertion failed")
+		misc.RecordAppError(errors.New("Assertion failed"))
 		panic("Assertion failed")
 	}
 }
@@ -233,6 +236,10 @@ func GetConnectionString() string {
 
 }
 
+func (jd *HandleT) GetDBHandle() *sql.DB {
+	return jd.dbHandle
+}
+
 /*
 Setup is used to initialize the HandleT structure.
 clearAll = True means it will remove all existing tables
@@ -288,13 +295,13 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	if jd.toBackup {
 		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: "S3",
-			Bucket:   config.GetEnv("JOBS_BACKUP_BUCKET", ""),
+			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfigFromEnv(),
 		})
 		jd.assertError(err)
 		jd.jobStatusFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: "S3",
-			Bucket:   config.GetEnv("JOB_STATUS_BACKUP_BUCKET", ""),
+			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfigFromEnv(),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()
@@ -918,20 +925,19 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 }
 
 func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (errorMessage string) {
-
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (uuid, custom_val, parameters, event_payload, created_at, expire_at)
-                                       VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds.JobTable)
+	                                   VALUES ($1, $2, $3, (regexp_replace($4::text, '\\u0000', '', 'g'))::json, $5, $6) RETURNING job_id`, ds.JobTable)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
-
 	_, err = stmt.Exec(job.UUID, job.CustomVal, string(job.Parameters), string(job.EventPayload),
 		job.CreatedAt, job.ExpireAt)
 	if err == nil {
 		return
 	}
 	pqErr := err.(*pq.Error)
-	if string(pqErr.Code) == dbErrorMap["Invalid JSON"] {
+	errCode := string(pqErr.Code)
+	if errCode == dbErrorMap["Invalid JSON"] || errCode == dbErrorMap["Invalid Unicode"] {
 		return "Invalid JSON"
 	}
 	jd.assertError(err)
@@ -1479,12 +1485,13 @@ func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool,
 	pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
 
 	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
-		err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
+		_, err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
 	} else {
-		err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
+		_, err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
 	}
 	if err != nil {
-		logger.Errorf("Failed to upload table %v dump to S3", tableName)
+		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
+		logger.Errorf("Failed to upload table %v dump to %s\n", tableName, storageProvider)
 	} else {
 		// Do not record stat in error case as error case time might be low and skew stats
 		fileUploadTimeStat.End()

@@ -67,7 +67,8 @@ func (trans *transformerHandleT) transformWorker() {
 
 		// Remove Assertion?
 		misc.Assert(resp.StatusCode == http.StatusOK ||
-			resp.StatusCode == http.StatusBadRequest)
+			resp.StatusCode == http.StatusBadRequest ||
+			resp.StatusCode == http.StatusNotFound)
 
 		var toSendData interface{}
 		if resp.StatusCode == http.StatusOK {
@@ -102,9 +103,8 @@ func (trans *transformerHandleT) Setup() {
 }
 
 type ResponseT struct {
-	Events       []interface{}
-	Success      bool
-	SourceIDList []string
+	Events  []interface{}
+	Success bool
 }
 
 //Transform function is used to invoke transformer API
@@ -131,10 +131,6 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 
 	trans.perfStats.Start()
 	var toSendData interface{}
-	sourceIDList := []string{}
-	for _, clientEvent := range clientEvents {
-		sourceIDList = append(sourceIDList, clientEvent.(map[string]interface{})["message"].(map[string]interface{})["source_id"].(string))
-	}
 
 	for {
 		//The channel is still live and the last batch has been sent
@@ -192,9 +188,8 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	misc.Assert(transformResponse[len(transformResponse)-1].index == len(clientEvents))
 
 	outClientEvents := make([]interface{}, 0)
-	outClientEventsSourceIDs := []string{}
 
-	for idx, resp := range transformResponse {
+	for _, resp := range transformResponse {
 		if resp.data == nil {
 			continue
 		}
@@ -212,7 +207,6 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 				}
 			}
 			outClientEvents = append(outClientEvents, respElem)
-			outClientEventsSourceIDs = append(outClientEventsSourceIDs, sourceIDList[idx])
 		}
 
 	}
@@ -222,8 +216,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	trans.perfStats.Print()
 
 	return ResponseT{
-		Events:       outClientEvents,
-		Success:      true,
-		SourceIDList: outClientEventsSourceIDs,
+		Events:  outClientEvents,
+		Success: true,
 	}
 }
