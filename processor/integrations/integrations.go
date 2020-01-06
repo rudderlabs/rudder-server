@@ -66,6 +66,9 @@ type PostParameterNewT struct {
 // GetResponseVersion Get version of the transformer response
 func GetResponseVersion(response json.RawMessage) string {
 	parsedResponse := gjson.ParseBytes(response)
+	if parsedResponse.Get("output").Exists() {
+		return "-1"
+	}
 	if !parsedResponse.Get("version").Exists() {
 		return "0"
 	}
@@ -79,6 +82,9 @@ func GetPostInfoNew(transformRaw json.RawMessage) PostParameterNewT {
 	var postInfo PostParameterNewT
 	var ok bool
 	parsedJSON := gjson.ParseBytes(transformRaw)
+	if parsedJSON.Get("output").Exists() {
+		parsedJSON = parsedJSON.Get("output")
+	}
 	postInfo.Type, ok = parsedJSON.Get("type").Value().(string)
 	misc.Assert(ok)
 	postInfo.URL, ok = parsedJSON.Get("endpoint").Value().(string)
@@ -125,7 +131,7 @@ func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) string {
 	case "0":
 		response := GetPostInfo(transformRaw)
 		userID = response.UserID
-	case "1":
+	case "-1", "1":
 		response := GetPostInfoNew(transformRaw)
 		userID = response.UserID
 	default:
