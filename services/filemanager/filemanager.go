@@ -39,6 +39,10 @@ func New(settings *SettingsT) (FileManager, error) {
 		return &AzureBlobStorageManager{
 			Config: GetAzureBlogStorageConfig(settings.Config),
 		}, nil
+	case "MINIO":
+		return &MinioManager{
+			Config: GetMinioConfig(settings.Config),
+		}, nil
 	}
 	return nil, errors.New("No provider configured for FileManager")
 }
@@ -62,6 +66,13 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["containerName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		providerConfig["accountName"] = config.GetEnv("AZURE_STORAGE_ACCOUNT", "")
 		providerConfig["accountKey"] = config.GetEnv("AZURE_STORAGE_ACCESS_KEY", "")
+	case "MINIO":
+		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		providerConfig["endPoint"] = config.GetEnv("MINIO_ENDPOINT", "http://localhost:9000")
+		providerConfig["accessKeyID"] = config.GetEnv("MINIO_ACCESS_KEY_ID", "minioadmin")
+		providerConfig["secretAccessKey"] = config.GetEnv("MINIO_SECRET_ACCESS_KEY", "minioadmin")
+		providerConfig["useSSL"] = config.GetEnvAsBool("MINIO_SSL", false)
+		providerConfig["protocol"] = config.GetEnv("MINIO_PROTOCOL", "http")
 	}
 	return providerConfig
 }
