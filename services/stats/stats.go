@@ -5,6 +5,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"gopkg.in/alexcesaro/statsd.v2"
+	"sync"
 )
 
 const (
@@ -20,6 +21,8 @@ var statsEnabled bool
 var statsdServerURL string
 var instanceName string
 var conn statsd.Option
+var writeKeyClientsMapLock sync.Mutex
+var destClientsMapLock sync.Mutex
 
 func init() {
 	config.Initialize()
@@ -48,6 +51,8 @@ func NewStat(Name string, StatType string) (rStats *RudderStats) {
 
 // NewWriteKeyStat is used to create new writekey specific stat. Writekey is added as one of the tags in this case
 func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *RudderStats) {
+	writeKeyClientsMapLock.Lock()
+	defer writeKeyClientsMapLock.Unlock()
 	if _, found := writeKeyClientsMap[writeKey]; !found {
 		var err error
 		writeKeyClientsMap[writeKey], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName, "writekey", writeKey))
@@ -67,6 +72,8 @@ func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *Rud
 }
 
 func NewBatchDestStat(Name string, StatType string, destID string) *RudderStats {
+	destClientsMapLock.Lock()
+	defer destClientsMapLock.Unlock()
 	if _, found := destClientsMap[destID]; !found {
 		var err error
 		destClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName, "destID", destID))
