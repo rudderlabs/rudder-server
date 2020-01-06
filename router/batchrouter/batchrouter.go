@@ -36,7 +36,6 @@ var (
 	inProgressMap              map[string]bool
 	inProgressMapLock          sync.RWMutex
 	uploadedRawDataJobsCache   map[string]bool
-	errorsCountStat            *stats.RudderStats
 	warehouseStagingFilesTable string
 )
 
@@ -94,7 +93,6 @@ func updateDestStatusStats(id string, count int, isSuccess bool) {
 		destStatsD = stats.NewBatchDestStat("batch_router.dest_successful_events", stats.CountType, id)
 	} else {
 		destStatsD = stats.NewBatchDestStat("batch_router.dest_failed_attempts", stats.CountType, id)
-		errorsCountStat.Count(count)
 	}
 	destStatsD.Count(count)
 }
@@ -199,13 +197,13 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 	}
 	logger.Debugf("Creating record for uploaded json in %s table with schema: %+v\n", warehouseStagingFilesTable, schemaMap)
 	schemaPayload, err := json.Marshal(schemaMap)
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at)
-									   VALUES ($1, $2, $3, $4, $5, $6)`, warehouseStagingFilesTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at, updated_at)
+									   VALUES ($1, $2, $3, $4, $5, $6, $6)`, warehouseStagingFilesTable)
 	stmt, err := brt.jobsDBHandle.Prepare(sqlStatement)
 	misc.AssertError(err)
 	defer stmt.Close()
 
-	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, batchJobs.BatchDestination.Destination.ID, warehouseutils.JSONProcessWaitingState, time.Now())
+	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, batchJobs.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, time.Now())
 	misc.AssertError(err)
 	return err
 }
@@ -268,6 +266,8 @@ func (brt *HandleT) initWorkers() {
 						destUploadStat.End()
 						setSourceInProgress(batchJobs.BatchDestination, false)
 					case misc.ContainsString(warehouseDestinations, brt.destType):
+						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType)
+						destUploadStat.Start()
 						output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
 						if output.Error == nil {
 							brt.updateWarehouseMetadata(batchJobs, output.Key)
@@ -275,6 +275,7 @@ func (brt *HandleT) initWorkers() {
 						brt.setJobStatus(batchJobs, true, output.Error)
 						brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
+						destUploadStat.End()
 						setSourceInProgress(batchJobs.BatchDestination, false)
 					}
 
@@ -373,7 +374,7 @@ func (brt *HandleT) Disable() {
 }
 
 func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
-	logger.Debugf("BRT: Checking for incomplete journal entries to recover from...")
+	logger.Debug("BRT: Checking for incomplete journal entries to recover from...")
 	entries := brt.jobsDB.GetJournalEntries(jobsdb.RawDataDestUploadOperation)
 	for _, entry := range entries {
 		var object ObjectStorageT
@@ -398,10 +399,10 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		jsonFile, err := os.Create(jsonPath)
 		misc.AssertError(err)
 
-		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s with config: %s at key: %s", object.Provider, object.Config, object.Key)
+		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s with config: %s at key: %s\n", object.Provider, object.Config, object.Key)
 		err = downloader.Download(jsonFile, object.Key)
 		if err != nil {
-			logger.Debugf("BRT: Failed to download data for incomplete journal entry to recover from %s with config: %s at key: %s with error: %v", object.Provider, object.Config, object.Key, err)
+			logger.Debugf("BRT: Failed to download data for incomplete journal entry to recover from %s with config: %s at key: %s with error: %v\n", object.Provider, object.Config, object.Key, err)
 			continue
 		}
 
@@ -413,7 +414,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 
 		sc := bufio.NewScanner(reader)
 
-		logger.Debugf("BRT: Setting go map cache for incomplete journal entry to recover from...")
+		logger.Debug("BRT: Setting go map cache for incomplete journal entry to recover from...")
 		for sc.Scan() {
 			lineBytes := sc.Bytes()
 			eventID := gjson.GetBytes(lineBytes, "messageId").String()
@@ -472,10 +473,11 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
 									  location TEXT NOT NULL,
 									  source_id VARCHAR(64) NOT NULL,
 									  destination_id VARCHAR(64) NOT NULL,
-										schema JSONB NOT NULL,
-										error TEXT,
+									  schema JSONB NOT NULL,
+									  error TEXT,
 									  status wh_staging_state_type,
-									  created_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
+									  created_at TIMESTAMP NOT NULL,
+									  updated_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
 
 	_, err = brt.jobsDBHandle.Exec(sqlStatement)
 	misc.AssertError(err)
@@ -495,7 +497,6 @@ func init() {
 	config.Initialize()
 	loadConfig()
 	uploadedRawDataJobsCache = make(map[string]bool)
-	errorsCountStat = stats.NewStat("batch_router.errors", stats.CountType)
 }
 
 //Setup initializes this module

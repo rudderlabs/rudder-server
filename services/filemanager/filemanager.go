@@ -2,6 +2,7 @@ package filemanager
 
 import (
 	"errors"
+	"io/ioutil"
 	"os"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -49,10 +50,18 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 	switch provider {
 	case "S3":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		providerConfig["accessKeyID"] = config.GetEnv("AWS_ACCESS_KEY_ID", "")
+		providerConfig["accessKey"] = config.GetEnv("AWS_SECRET_ACCESS_KEY", "")
 	case "GCS":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		credentials, err := ioutil.ReadFile(config.GetEnv("GOOGLE_APPLICATION_CREDENTIALS", ""))
+		if err == nil {
+			providerConfig["credentials"] = string(credentials)
+		}
 	case "AZURE_BLOB":
 		providerConfig["containerName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		providerConfig["accountName"] = config.GetEnv("AZURE_STORAGE_ACCOUNT", "")
+		providerConfig["accountKey"] = config.GetEnv("AZURE_STORAGE_ACCESS_KEY", "")
 	}
 	return providerConfig
 }

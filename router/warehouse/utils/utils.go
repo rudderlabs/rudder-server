@@ -4,18 +4,20 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
-	GeneratingLoadFileState       = "generationg_load_file"
-	GeneratingLoadFileFailedState = "generationg_load_file_failed"
+	GeneratingLoadFileState       = "generating_load_file"
+	GeneratingLoadFileFailedState = "generating_load_file_failed"
 	GeneratedLoadFileState        = "generated_load_file"
 	UpdatingSchemaState           = "updating_schema"
 	UpdatingSchemaFailedState     = "updating_schema_failed"
@@ -23,14 +25,15 @@ const (
 	ExportingDataState            = "exporting_data"
 	ExportingDataFailedState      = "exporting_data_failed"
 	ExportedDataState             = "exported_data"
+	AbortedState                  = "aborted"
 )
 
 const (
-	JSONProcessSucceededState = "succeeded"
-	JSONProcessFailedState    = "failed"
-	JSONProcessExecutingState = "executing"
-	JSONProcessAbortedState   = "aborted"
-	JSONProcessWaitingState   = "waiting"
+	StagingFileSucceededState = "succeeded"
+	StagingFileFailedState    = "failed"
+	StagingFileExecutingState = "executing"
+	StagingFileAbortedState   = "aborted"
+	StagingFileWaitingState   = "waiting"
 )
 
 var (
@@ -38,6 +41,7 @@ var (
 	warehouseSchemasTable      string
 	warehouseLoadFilesTable    string
 	warehouseStagingFilesTable string
+	maxRetry                   int
 )
 
 var ObjectStorageMap = map[string]string{
@@ -55,6 +59,7 @@ func loadConfig() {
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
 	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
+	maxRetry = config.GetInt("Warehouse.maxRetry", 3)
 }
 
 type WarehouseT struct {
@@ -63,24 +68,26 @@ type WarehouseT struct {
 }
 
 type ConfigT struct {
-	DbHandle   *sql.DB
-	UploadID   int64
-	StartCSVID int64
-	EndCSVID   int64
-	Schema     map[string]map[string]string
-	Warehouse  WarehouseT
-	Stage      string
+	DbHandle  *sql.DB
+	Upload    UploadT
+	Warehouse WarehouseT
+	Stage     string
 }
 
-type WarehouseUploadT struct {
-	ID              int64
-	SourceID        int64
-	DestinationID   int64
-	DestinationType string
-	Status          string
-	Schema          json.RawMessage
-	StartCSVID      int64
-	EndCSVID        int64
+type UploadT struct {
+	ID                 int64
+	Namespace          string
+	SourceID           string
+	DestinationID      string
+	DestinationType    string
+	StartStagingFileID int64
+	EndStagingFileID   int64
+	StartLoadFileID    int64
+	EndLoadFileID      int64
+	Status             string
+	Schema             map[string]map[string]string
+	Error              json.RawMessage
+	// Error              map[string]map[string]interface{}
 }
 
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
@@ -140,23 +147,57 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 	return
 }
 
-func SetUploadStatus(id int64, status string, dbHandle *sql.DB) (err error) {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE id=$2`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement, status, id)
+func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error) {
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=$3`, warehouseUploadsTable)
+	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), upload.ID)
 	misc.AssertError(err)
 	return
 }
 
-func SetJSONUploadStatus(ids []int64, status string, dbHandle *sql.DB) (err error) {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE id=ANY($2)`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement, status, pq.Array(ids))
+func SetUploadError(upload UploadT, statusError error, state string, dbHandle *sql.DB) (err error) {
+	SetUploadStatus(upload, ExportingDataFailedState, dbHandle)
+	var e map[string]map[string]interface{}
+	json.Unmarshal(upload.Error, &e)
+	if e == nil {
+		e = make(map[string]map[string]interface{})
+	}
+	if _, ok := e[state]; !ok {
+		e[state] = make(map[string]interface{})
+	}
+	errorByState := e[state]
+	// increment attempts for errored stage
+	if attempt, ok := errorByState["attempt"]; ok {
+		errorByState["attempt"] = int(attempt.(float64)) + 1
+	} else {
+		errorByState["attempt"] = 1
+	}
+	// append errors for errored stage
+	if errList, ok := errorByState["errors"]; ok {
+		errorByState["errors"] = append(errList.([]interface{}), statusError.Error())
+	} else {
+		errorByState["errors"] = []string{statusError.Error()}
+	}
+	// abort after configured retry attempts
+	if errorByState["attempt"].(int) > maxRetry {
+		state = AbortedState
+	}
+	serializedErr, _ := json.Marshal(&e)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseUploadsTable)
+	_, err = dbHandle.Exec(sqlStatement, state, serializedErr, time.Now(), upload.ID)
 	misc.AssertError(err)
 	return
 }
 
-func SetJSONUploadError(ids []int64, status string, dbHandle *sql.DB, statusError error) (err error) {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2 WHERE id=ANY($3)`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement, status, statusError.Error(), pq.Array(ids))
+func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err error) {
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseStagingFilesTable)
+	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), pq.Array(ids))
+	misc.AssertError(err)
+	return
+}
+
+func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusError error) (err error) {
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseStagingFilesTable)
+	_, err = dbHandle.Exec(sqlStatement, status, statusError.Error(), time.Now(), pq.Array(ids))
 	misc.AssertError(err)
 	return
 }
@@ -179,7 +220,7 @@ func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema ma
 	return
 }
 
-func GetCSVLocations(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (locations []string, err error) {
+func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (locations []string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s
 								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id > %[5]v AND %[1]s.id <= %[6]v)`,
 		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
@@ -196,10 +237,17 @@ func GetCSVLocations(dbHandle *sql.DB, sourceId string, destinationId string, ta
 	return
 }
 
-func GetS3Location(location string) string {
-	str1 := strings.Replace(location, "https", "s3", 1)
-	str2 := strings.Replace(str1, ".s3.amazonaws.com", "", 1)
-	return str2
+func GetS3Location(location string) (string, string) {
+	r, _ := regexp.Compile("\\.s3.*\\.amazonaws\\.com")
+	subLocation := r.FindString(location)
+	regionTokens := strings.Split(subLocation, ".")
+	var region string
+	if len(regionTokens) == 5 {
+		region = regionTokens[2]
+	}
+	str1 := r.ReplaceAllString(location, "")
+	str2 := strings.Replace(str1, "https", "s3", 1)
+	return region, str2
 }
 
 func GetGCSLocation(location string) string {
@@ -210,7 +258,8 @@ func GetGCSLocation(location string) string {
 
 func GetS3Locations(locations []string) (s3Locations []string, err error) {
 	for _, location := range locations {
-		s3Locations = append(s3Locations, GetS3Location((location)))
+		_, s3Location := GetS3Location(location)
+		s3Locations = append(s3Locations, s3Location)
 	}
 	return
 }
@@ -227,4 +276,8 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	err := json.Unmarshal(rawMsg, &schema)
 	misc.AssertError(err)
 	return schema
+}
+
+func DestStat(statType string, statName string, id string) *stats.RudderStats {
+	return stats.NewBatchDestStat(fmt.Sprintf("warehouse.%s", statName), statType, id)
 }
