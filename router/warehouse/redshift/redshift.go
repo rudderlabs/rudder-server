@@ -37,6 +37,7 @@ type HandleT struct {
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
 	"int":      "int",
+	"bigint":   "int8",
 	"float":    "double precision",
 	"string":   "varchar(512)",
 	"datetime": "timestamp",
@@ -84,7 +85,9 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	processedTables := make(map[string]bool)
 	for _, tableName := range diff.Tables {
 		err = rs.createTable(fmt.Sprintf(`%s.%s`, rs.Upload.Namespace, tableName), diff.ColumnMaps[tableName])
-		misc.AssertError(err)
+		if err != nil {
+			return nil, err
+		}
 		processedTables[tableName] = true
 	}
 	for tableName, columnMap := range diff.ColumnMaps {
@@ -153,7 +156,9 @@ func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[
 
 	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
 
-	misc.AssertError(err)
+	if err != nil {
+		return "", err
+	}
 
 	return uploadOutput.Location, nil
 }

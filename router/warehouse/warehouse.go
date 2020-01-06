@@ -466,8 +466,8 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (err error) {
 				}
 				// avoid printing integers like 5000000 as 5e+06
 				columnType := columns[columnName].(string)
-				if columnType == "int" {
-					columnVal = int(columnVal.(float64))
+				if columnType == "bigint" || columnType == "int" {
+					columnVal = int64(columnVal.(float64))
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
@@ -549,8 +549,8 @@ func (wh *HandleT) setupTables() {
 	sqlStatement = `DO $$ BEGIN
                                 CREATE TYPE wh_upload_state_type
                                      AS ENUM(
-											  'generationg_load_file',
-											  'generationg_load_file_failed',
+											  'generating_load_file',
+											  'generating_load_file_failed',
 											  'generated_load_file',
 											  'updating_schema',
 											  'updating_schema_failed',

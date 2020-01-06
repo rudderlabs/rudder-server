@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	GeneratingLoadFileState       = "generationg_load_file"
-	GeneratingLoadFileFailedState = "generationg_load_file_failed"
+	GeneratingLoadFileState       = "generating_load_file"
+	GeneratingLoadFileFailedState = "generating_load_file_failed"
 	GeneratedLoadFileState        = "generated_load_file"
 	UpdatingSchemaState           = "updating_schema"
 	UpdatingSchemaFailedState     = "updating_schema_failed"

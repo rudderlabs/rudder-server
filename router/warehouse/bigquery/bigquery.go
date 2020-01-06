@@ -251,6 +251,7 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) {
 	var err error
 	bq.DbHandle = config.DbHandle
 	bq.Warehouse = config.Warehouse
+	bq.Upload = config.Upload
 	bq.ProjectID = strings.TrimSpace(bq.Warehouse.Destination.Config.(map[string]interface{})["project"].(string))
 
 	bq.Db, err = bq.connect(BQCredentialsT{
