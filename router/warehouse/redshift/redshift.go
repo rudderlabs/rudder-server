@@ -164,8 +164,11 @@ func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[
 	return uploadOutput.Location, nil
 }
 
-func (rs *HandleT) dropStagingTable(stagingTableName string) {
-	rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.Upload.Namespace, stagingTableName))
+func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
+	for _, stagingTableName := range stagingTableNames {
+		_, err := rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.Upload.Namespace, stagingTableName))
+		misc.AssertError(err)
+	}
 }
 
 func (rs *HandleT) load() (err error) {
@@ -180,82 +183,96 @@ func (rs *HandleT) load() (err error) {
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
 	}
-	for tableName, columnMap := range rs.Upload.Schema {
-		timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
-		timer.Start()
-		manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap)
-		timer.End()
-		if err != nil {
-			return err
-		}
 
-		// sort columnnames
-		keys := reflect.ValueOf(columnMap).MapKeys()
-		strkeys := make([]string, len(keys))
-		for i := 0; i < len(keys); i++ {
-			strkeys[i] = keys[i].String()
-		}
-		sort.Strings(strkeys)
-		sortedColumnNames := strings.Join(strkeys, ",")
-
-		stagingTableName := "staging-" + tableName + "-" + uuid.NewV4().String()
-		err = rs.createTable(fmt.Sprintf(`%s."%s"`, rs.Upload.Namespace, stagingTableName), rs.Upload.Schema[tableName])
-		if err != nil {
-			return err
-		}
-		defer rs.dropStagingTable(stagingTableName)
-
-		// BEGIN TRANSACTION
-		tx, err := rs.Db.Begin()
-		if err != nil {
-			return err
-		}
-
-		region, manifestS3Location := warehouseutils.GetS3Location(manifestLocation)
-		if region == "" {
-			region = "us-east-1"
-		}
-		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.Upload.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, accessKeyID, accessKey, region)
-
-		_, err = tx.Exec(sqlStatement)
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-
-		primaryKey := "id"
-		if column, ok := primaryKeyMap[tableName]; ok {
-			primaryKey = column
-		}
-
-		sqlStatement = fmt.Sprintf(`delete from %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Upload.Namespace, tableName, stagingTableName, primaryKey)
-		_, err = tx.Exec(sqlStatement)
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-
-		var quotedColumnNames string
-		for idx, str := range strkeys {
-			quotedColumnNames += "\"" + str + "\""
-			if idx != len(strkeys)-1 {
-				quotedColumnNames += ","
-			}
-		}
-
-		sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Upload.Namespace, tableName, quotedColumnNames, stagingTableName, primaryKey)
-		_, err = tx.Exec(sqlStatement)
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-
-		err = tx.Commit()
-		if err != nil {
-			return err
-		}
+	// BEGIN TRANSACTION
+	tx, err := rs.Db.Begin()
+	if err != nil {
+		return err
 	}
-	return
+
+	wg := misc.NewWaitGroup()
+	wg.Add(len(rs.Upload.Schema))
+	stagingTableNames := []string{}
+
+	for tName, cMap := range rs.Upload.Schema {
+		go func(tableName string, columnMap map[string]string) {
+			timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
+			timer.Start()
+			manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap)
+			timer.End()
+			if err != nil {
+				wg.Err(err)
+				return
+			}
+
+			// sort columnnames
+			keys := reflect.ValueOf(columnMap).MapKeys()
+			strkeys := make([]string, len(keys))
+			for i := 0; i < len(keys); i++ {
+				strkeys[i] = keys[i].String()
+			}
+			sort.Strings(strkeys)
+			sortedColumnNames := strings.Join(strkeys, ",")
+
+			stagingTableName := "staging-" + tableName + "-" + uuid.NewV4().String()
+			err = rs.createTable(fmt.Sprintf(`%s."%s"`, rs.Upload.Namespace, stagingTableName), rs.Upload.Schema[tableName])
+			if err != nil {
+				wg.Err(err)
+				return
+			}
+			stagingTableNames = append(stagingTableNames, stagingTableName)
+
+			region, manifestS3Location := warehouseutils.GetS3Location(manifestLocation)
+			if region == "" {
+				region = "us-east-1"
+			}
+			sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.Upload.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, accessKeyID, accessKey, region)
+
+			_, err = tx.Exec(sqlStatement)
+			if err != nil {
+				wg.Err(err)
+				return
+			}
+
+			primaryKey := "id"
+			if column, ok := primaryKeyMap[tableName]; ok {
+				primaryKey = column
+			}
+
+			sqlStatement = fmt.Sprintf(`delete from %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Upload.Namespace, tableName, stagingTableName, primaryKey)
+			_, err = tx.Exec(sqlStatement)
+			if err != nil {
+				wg.Err(err)
+				return
+			}
+
+			var quotedColumnNames string
+			for idx, str := range strkeys {
+				quotedColumnNames += "\"" + str + "\""
+				if idx != len(strkeys)-1 {
+					quotedColumnNames += ","
+				}
+			}
+
+			sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Upload.Namespace, tableName, quotedColumnNames, stagingTableName, primaryKey)
+			_, err = tx.Exec(sqlStatement)
+			if err != nil {
+				wg.Err(err)
+				return
+			}
+			wg.Done()
+		}(tName, cMap)
+	}
+
+	err = wg.Wait()
+	defer rs.dropStagingTables(stagingTableNames)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	err = tx.Commit()
+	return err
 }
 
 // RedshiftCredentialsT ...
