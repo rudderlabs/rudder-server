@@ -6,12 +6,12 @@
 
 **Long answer:** Rudder is a platform for collecting, storing and routing customer event data to dozens of tools. Rudder is open-source, can run in your cloud environment (AWS, GCP, Azure or even your data-centre) and provides a powerful transformation framework to process your event data on the fly.
 
-Rudder runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation code which are node scripts. This repo contains the core backend and the transformation modules of Rudder. 
-The client SDKs are in a separate repo (link below). 
+Rudder runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation code which are node scripts. This repo contains the core backend and the transformation modules of Rudder.
+The client SDKs are in a separate repo (link below).
 
 Rudder server is released under [SSPL License](https://www.mongodb.com/licensing/server-side-public-license)
 
-Questions? Join our [Discord](https://discordapp.com/invite/xNEdEGw) channel. Or please email soumyadeb at rudderlabs.com. 
+Questions? Join our [Discord](https://discordapp.com/invite/xNEdEGw) channel. Or please email soumyadeb at rudderlabs.com.
 
 # Why Rudder ?
 
@@ -25,14 +25,16 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion around Rudder.
 
-# Contribute or Stay Connected
+# Contribution
+We would love to see people contributing to rudder. see [CONTRIBUTING.md](CONTRIBUTING.md) for more information on contributing to rudder.
+# Stay Connected
 
-1. Join our [Discord](https://discordapp.com/invite/xNEdEGw) 
-2. Follow us on [Twitter](https://twitter.com/rudderlabs)
+1. Join our [Discord](https://discordapp.com/invite/xNEdEGw)
+2. Follow [Rudderlabs](https://twitter.com/rudderlabs) on Twitter
 
 # Setup Instructions (Hosted Demo Account)
 
-1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account. 
+1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account.
 2. Select `Rudder Hosted Service` from the top right corner after you login.
 3. Follow (Send Test Events) instructions below to send test event.
 
@@ -41,7 +43,7 @@ See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion a
 The docker setup is the easiest & fastest way to try out Rudder.
 
 1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
-2. Clone this repository with [SSH](https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls) and 
+2. Clone this repository with [SSH](https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls) and
 3. Replace `<your_workspace_token>` in `build/docker.env` with the above token.
 4. (Optional) Uncomment and set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `build/docker.env` if you want to add S3 as a destination on the UI.
 5. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
