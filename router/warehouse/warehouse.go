@@ -546,6 +546,11 @@ func (wh *HandleT) setupTables() {
 	_, err := wh.dbHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 
+	// index on source_id, destination_id combination
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseLoadFilesTable)
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
 	sqlStatement = `DO $$ BEGIN
                                 CREATE TYPE wh_upload_state_type
                                      AS ENUM(
@@ -585,6 +590,21 @@ func (wh *HandleT) setupTables() {
 	_, err = wh.dbHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 
+	// index on id
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_id_index ON %[1]s (id);`, warehouseUploadsTable)
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	// index on status
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_index ON %[1]s (status);`, warehouseUploadsTable)
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	// index on source_id, destination_id combination
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseUploadsTable)
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
 	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 									  id BIGSERIAL PRIMARY KEY,
 									  wh_upload_id BIGSERIAL,
@@ -596,6 +616,11 @@ func (wh *HandleT) setupTables() {
 									  error VARCHAR(512),
 									  created_at TIMESTAMP NOT NULL);`, warehouseSchemasTable)
 
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	// index on source_id, destination_id combination
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseSchemasTable)
 	_, err = wh.dbHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 }

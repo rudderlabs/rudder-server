@@ -90,13 +90,19 @@ type UploadT struct {
 	// Error              map[string]map[string]interface{}
 }
 
-func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
+type CurrentSchemaT struct {
+	Namespace string
+	Schema    map[string]map[string]string
+}
+
+func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, error) {
 	var rawSchema json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
+	var namespace string
+	sqlStatement := fmt.Sprintf(`SELECT namespace, schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace, &rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return make(map[string]map[string]string), nil
+			return CurrentSchemaT{}, nil
 		}
 		misc.AssertError(err)
 	}
@@ -112,7 +118,7 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[st
 		}
 		schema[key] = y
 	}
-	return schema, nil
+	return CurrentSchemaT{Namespace: namespace, Schema: schema}, nil
 }
 
 type SchemaDiffT struct {

@@ -25,6 +25,7 @@ type HandleT struct {
 	BQContext     context.Context
 	DbHandle      *sql.DB
 	Db            *bigquery.Client
+	Namespace     string
 	CurrentSchema map[string]map[string]string
 	Warehouse     warehouseutils.WarehouseT
 	ProjectID     string
@@ -262,8 +263,13 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
 		return
 	}
-	bq.CurrentSchema, err = warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
+	curreSchema, err := warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
 	misc.AssertError(err)
+	bq.CurrentSchema = curreSchema.Schema
+	bq.Namespace = curreSchema.Namespace
+	if bq.Namespace == "" {
+		bq.Namespace = bq.Upload.Namespace
+	}
 
 	if config.Stage == "ExportData" {
 		bq.Export()

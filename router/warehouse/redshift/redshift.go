@@ -29,6 +29,7 @@ var (
 type HandleT struct {
 	DbHandle      *sql.DB
 	Db            *sql.DB
+	Namespace     string
 	CurrentSchema map[string]map[string]string
 	Warehouse     warehouseutils.WarehouseT
 	Upload        warehouseutils.UploadT
@@ -344,8 +345,13 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
 		return
 	}
-	rs.CurrentSchema, err = warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
+	curreSchema, err := warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
 	misc.AssertError(err)
+	rs.CurrentSchema = curreSchema.Schema
+	rs.Namespace = curreSchema.Namespace
+	if rs.Namespace == "" {
+		rs.Namespace = rs.Upload.Namespace
+	}
 
 	if config.Stage == "ExportData" {
 		rs.Export()
