@@ -100,6 +100,6 @@ Describe the testing you've done to validate your change.  Give instructions
 for reviewers to replicate your tests.  Performance-related changes should
 include before- and after- benchmark results.
 
-
+[discord]: https://discordapp.com/invite/xNEdEGw
 [issue]: https://github.com/rudderlabs/rudder-server/issues/new
 [slack]: https://rudderlabs.slack.com/
