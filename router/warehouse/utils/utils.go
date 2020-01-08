@@ -87,7 +87,6 @@ type UploadT struct {
 	Status             string
 	Schema             map[string]map[string]string
 	Error              json.RawMessage
-	// Error              map[string]map[string]interface{}
 }
 
 type CurrentSchemaT struct {
@@ -228,7 +227,7 @@ func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema ma
 
 func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (locations []string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s
-								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id > %[5]v AND %[1]s.id <= %[6]v)`,
+								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)`,
 		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
 	rows, err := dbHandle.Query(sqlStatement)
 	defer rows.Close()

@@ -45,7 +45,8 @@ var dataTypesMap = map[string]string{
 }
 
 var primaryKeyMap = map[string]string{
-	"identifies": "user_id",
+	"users":      "id",
+	"identifies": "id",
 }
 
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
@@ -330,9 +331,9 @@ func (rs *HandleT) MigrateSchema() (err error) {
 	return
 }
 
-func (rs *HandleT) Export() {
+func (rs *HandleT) Export() (err error) {
 	logger.Debugf("RS: Starting export to redshift for source:%s and wh_upload:%s", rs.Warehouse.Source.ID, rs.Upload.ID)
-	err := warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportingDataState, rs.DbHandle)
+	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportingDataState, rs.DbHandle)
 	misc.AssertError(err)
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", rs.Warehouse.Destination.ID)
 	timer.Start()
@@ -340,14 +341,14 @@ func (rs *HandleT) Export() {
 	timer.End()
 	if err != nil {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.ExportingDataFailedState, rs.DbHandle)
-		return
+		return err
 	}
 	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportedDataState, rs.DbHandle)
 	misc.AssertError(err)
+	return
 }
 
-func (rs *HandleT) Process(config warehouseutils.ConfigT) {
-	var err error
+func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	rs.DbHandle = config.DbHandle
 	rs.Warehouse = config.Warehouse
 	rs.Upload = config.Upload
@@ -360,7 +361,7 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) {
 	})
 	if err != nil {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
-		return
+		return err
 	}
 	curreSchema, err := warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
 	misc.AssertError(err)
@@ -371,11 +372,12 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) {
 	}
 
 	if config.Stage == "ExportData" {
-		rs.Export()
+		err = rs.Export()
 	} else {
-		err := rs.MigrateSchema()
+		err = rs.MigrateSchema()
 		if err == nil {
-			rs.Export()
+			err = rs.Export()
 		}
 	}
+	return
 }

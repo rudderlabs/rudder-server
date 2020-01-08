@@ -232,9 +232,9 @@ func (bq *HandleT) MigrateSchema() (err error) {
 	return
 }
 
-func (bq *HandleT) Export() {
+func (bq *HandleT) Export() (err error) {
 	logger.Debugf("BQ: Starting export to redshift for source:%s and wh_upload:%s", bq.Warehouse.Source.ID, bq.Upload.ID)
-	err := warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataState, bq.DbHandle)
+	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataState, bq.DbHandle)
 	misc.AssertError(err)
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", bq.Warehouse.Destination.ID)
 	timer.Start()
@@ -242,14 +242,14 @@ func (bq *HandleT) Export() {
 	timer.End()
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.ExportingDataFailedState, bq.DbHandle)
-		return
+		return err
 	}
 	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportedDataState, bq.DbHandle)
 	misc.AssertError(err)
+	return
 }
 
-func (bq *HandleT) Process(config warehouseutils.ConfigT) {
-	var err error
+func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	bq.DbHandle = config.DbHandle
 	bq.Warehouse = config.Warehouse
 	bq.Upload = config.Upload
@@ -261,7 +261,7 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) {
 	})
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
-		return
+		return err
 	}
 	curreSchema, err := warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
 	misc.AssertError(err)
@@ -272,11 +272,12 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) {
 	}
 
 	if config.Stage == "ExportData" {
-		bq.Export()
+		err = bq.Export()
 	} else {
-		err := bq.MigrateSchema()
+		err = bq.MigrateSchema()
 		if err == nil {
-			bq.Export()
+			err = bq.Export()
 		}
 	}
+	return
 }
