@@ -43,32 +43,47 @@ type RudderError struct {
 	Code       int
 }
 
-func getErrorStore() ErrorStoreT {
+func getErrorStore() (ErrorStoreT, error) {
+	var errorStore ErrorStoreT
 	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
 	data, err := ioutil.ReadFile(errorStorePath)
 	if os.IsNotExist(err) {
 		defaultErrorStoreJSON := "{\"Errors\":[]}"
 		data = []byte(defaultErrorStoreJSON)
-	} else {
-		AssertError(err)
+	} else if err != nil {
+		logger.Fatal("Failed to get ErrorStore", err)
+		return errorStore, err
 	}
 
-	var errorStore ErrorStoreT
 	err = json.Unmarshal(data, &errorStore)
-	AssertError(err)
 
-	return errorStore
+	if err != nil {
+		logger.Fatal("Failed to get ErrorStore", err)
+		return errorStore, err
+	}
+
+	return errorStore, nil
 }
 
 func saveErrorStore(errorStore ErrorStoreT) {
 	errorStoreJSON, err := json.MarshalIndent(&errorStore, "", " ")
+	if err != nil {
+		logger.Fatal("failed to marshal errorStore", errorStore)
+		return
+	}
 	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
 	err = ioutil.WriteFile(errorStorePath, errorStoreJSON, 0644)
-	AssertError(err)
+	if err != nil {
+		logger.Fatal("failed to write to errorStore")
+	}
 }
 
 //RecordAppError appends the error occured to error_store.json
 func RecordAppError(err error) {
+	if err == nil {
+		return
+	}
+
 	if AppStartTime == 0 {
 		return
 	}
@@ -77,7 +92,11 @@ func RecordAppError(err error) {
 	n := runtime.Stack(byteArr, false)
 	stackTrace := string(byteArr[:n])
 
-	errorStore := getErrorStore()
+	errorStore, localErr := getErrorStore()
+	if localErr != nil || errorStore.Errors == nil {
+		return
+	}
+
 	//TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
 	errorStore.Errors = append(errorStore.Errors, RudderError{StartTime: AppStartTime, Message: err.Error(), StackTrace: stackTrace, Code: 101})
 	saveErrorStore(errorStore)
