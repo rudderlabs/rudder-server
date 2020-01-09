@@ -37,6 +37,7 @@ var (
 	stagingFilesBatchSize      int
 	configSubscriberLock       sync.RWMutex
 	availableWarehouses        []string
+	crashRecoverWarehouses     []string
 	inProgressMap              map[string]bool
 	inRecoveryMap              map[string]bool
 	inProgressMapLock          sync.RWMutex
@@ -87,7 +88,7 @@ func init() {
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
-	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 1)
+	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 100)
 	warehouseUploadSleepInS = config.GetInt("Warehouse.uploadSleepInS", 1800)
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
 	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
@@ -95,6 +96,7 @@ func loadConfig() {
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
 	mainLoopSleepInS = config.GetInt("Warehouse.mainLoopSleepInS", 5)
 	availableWarehouses = []string{"RS", "BQ"}
+	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
 }
@@ -277,6 +279,7 @@ func isDestInProgress(destID string) bool {
 
 type WarehouseManager interface {
 	Process(config warehouseutils.ConfigT) error
+	CrashRecover(config warehouseutils.ConfigT) (err error)
 }
 
 func NewWhManager(destType string) (WarehouseManager, error) {
@@ -304,9 +307,10 @@ func (wh *HandleT) mainLoop() {
 			setDestInProgress(warehouse.Destination.ID, true)
 
 			_, ok := inRecoveryMap[warehouse.Destination.ID]
-			if warehouse.Destination.DestinationDefinition.Name == "RS" && ok {
-				var rs redshift.HandleT
-				err := rs.CrashRecover(warehouseutils.ConfigT{
+			if ok {
+				whManager, err := NewWhManager(wh.destType)
+				misc.AssertError(err)
+				err = whManager.CrashRecover(warehouseutils.ConfigT{
 					DbHandle:  wh.dbHandle,
 					Warehouse: warehouse,
 				})
@@ -437,7 +441,6 @@ waitForLoadFiles:
 func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err error) {
 	whManager, err := NewWhManager(wh.destType)
 	misc.AssertError(err)
-	job.Upload.Status = warehouseutils.GeneratedLoadFileState
 	err = whManager.Process(warehouseutils.ConfigT{
 		DbHandle:  wh.dbHandle,
 		Upload:    job.Upload,
@@ -455,6 +458,8 @@ func (wh *HandleT) initWorkers() {
 
 				for _, job := range processStagingFilesJobList {
 					// generate load files only if not done before
+					// upload records have start_load_file_id and end_load_file_id set to 0 on creation
+					// and are updated on creation of load files
 					if job.Upload.StartLoadFileID == 0 {
 						err := wh.createLoadFiles(&job)
 						if err != nil {
@@ -720,7 +725,7 @@ func (wh *HandleT) Disable() {
 }
 
 func (wh *HandleT) setInterruptedDestinations() (err error) {
-	if wh.destType != "RS" {
+	if !misc.Contains(crashRecoverWarehouses, wh.destType) {
 		return
 	}
 	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND status='%s'`, warehouseUploadsTable, wh.destType, warehouseutils.ExportingDataState)

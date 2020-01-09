@@ -249,6 +249,10 @@ func (bq *HandleT) Export() (err error) {
 	return
 }
 
+func (bq *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
+	return
+}
+
 func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	bq.DbHandle = config.DbHandle
 	bq.Warehouse = config.Warehouse

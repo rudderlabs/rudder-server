@@ -24,6 +24,7 @@ import (
 
 var (
 	warehouseUploadsTable string
+	stagingTablePrefix    string
 )
 
 type HandleT struct {
@@ -215,15 +216,13 @@ func (rs *HandleT) load() (err error) {
 			sort.Strings(strkeys)
 			sortedColumnNames := strings.Join(strkeys, ",")
 
-			stagingTableName := fmt.Sprintf(`rudder-staging-%s-%s-%s`, rs.Namespace, tableName, uuid.NewV4().String())
+			stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
 			err = rs.createTable(fmt.Sprintf(`%s."%s"`, rs.Namespace, stagingTableName), rs.Upload.Schema[tableName])
 			if err != nil {
 				wg.Err(err)
 				return
 			}
 			stagingTableNames = append(stagingTableNames, stagingTableName)
-
-			panic("crashing................")
 
 			region, manifestS3Location := warehouseutils.GetS3Location(manifestLocation)
 			if region == "" {
@@ -305,6 +304,7 @@ func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
+	stagingTablePrefix = "rudder-staging-"
 }
 
 func init() {
@@ -354,8 +354,7 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 
 	sqlStatement := fmt.Sprintf(`select table_name
 								 from information_schema.tables
-								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, "rudder-staging-%")
-	fmt.Printf("%+v\n", sqlStatement)
+								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
 	rows, err := rs.Db.Query(sqlStatement)
 	defer rows.Close()
 	misc.AssertError(err)
@@ -369,9 +368,6 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 	}
 
 	delSuccess := true
-	fmt.Printf("%+v\n", "**********")
-	fmt.Printf("%+v\n", stagingTableNames)
-	fmt.Printf("%+v\n", "**********")
 	for _, stagingTableName := range stagingTableNames {
 		_, err := rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
