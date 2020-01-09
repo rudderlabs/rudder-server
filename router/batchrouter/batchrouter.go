@@ -482,11 +482,6 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
 	_, err = brt.jobsDBHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 
-	// index on id
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_id_index ON %[1]s (id);`, warehouseStagingFilesTable)
-	_, err = brt.jobsDBHandle.Exec(sqlStatement)
-	misc.AssertError(err)
-
 	// index on source_id, destination_id combination
 	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_id_index ON %[1]s (source_id, destination_id);`, warehouseStagingFilesTable)
 	_, err = brt.jobsDBHandle.Exec(sqlStatement)

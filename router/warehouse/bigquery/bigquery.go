@@ -60,13 +60,13 @@ func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 }
 
 func (bq *HandleT) createTable(name string, columns map[string]string) (err error) {
-	logger.Debugf("BQ: Creating table: %s in bigquery dataset: %s in project: %s\n", name, bq.Upload.Namespace, bq.ProjectID)
+	logger.Debugf("BQ: Creating table: %s in bigquery dataset: %s in project: %s\n", name, bq.Namespace, bq.ProjectID)
 	sampleSchema := getTableSchema(columns)
 	metaData := &bigquery.TableMetadata{
 		Schema:           sampleSchema,
 		TimePartitioning: &bigquery.TimePartitioning{Expiration: time.Duration(24*60) * time.Hour},
 	}
-	tableRef := bq.Db.Dataset(bq.Upload.Namespace).Table(name)
+	tableRef := bq.Db.Dataset(bq.Namespace).Table(name)
 	err = tableRef.Create(bq.BQContext, metaData)
 	if !checkAndIgnoreAlreadyExistError(err) {
 		return err
@@ -79,21 +79,21 @@ func (bq *HandleT) createTable(name string, columns map[string]string) (err erro
 
 	// assuming it has field named id upon which dedup is done in view
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + primaryKey + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Upload.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + primaryKey + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
 					AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
 			)
 		WHERE __row_number = 1`
 	metaData = &bigquery.TableMetadata{
 		ViewQuery: viewQuery,
 	}
-	tableRef = bq.Db.Dataset(bq.Upload.Namespace).Table(name + "_view")
+	tableRef = bq.Db.Dataset(bq.Namespace).Table(name + "_view")
 	err = tableRef.Create(bq.BQContext, metaData)
 	return
 }
 
 func (bq *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	logger.Debugf("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s\n", tableName, bq.Upload.Namespace, bq.ProjectID)
-	tableRef := bq.Db.Dataset(bq.Upload.Namespace).Table(tableName)
+	logger.Debugf("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s\n", tableName, bq.Namespace, bq.ProjectID)
+	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
 	meta, err := tableRef.Metadata(bq.BQContext)
 	if err != nil {
 		return err
@@ -109,8 +109,8 @@ func (bq *HandleT) addColumn(tableName string, columnName string, columnType str
 }
 
 func (bq *HandleT) createSchema() (err error) {
-	logger.Debugf("BQ: Creating bigquery dataset: %s in project: %s\n", bq.Upload.Namespace, bq.ProjectID)
-	ds := bq.Db.Dataset(bq.Upload.Namespace)
+	logger.Debugf("BQ: Creating bigquery dataset: %s in project: %s\n", bq.Namespace, bq.ProjectID)
+	ds := bq.Db.Dataset(bq.Namespace)
 	err = ds.Create(bq.BQContext, nil)
 	return
 }
@@ -166,13 +166,13 @@ func (bq *HandleT) load() (err error) {
 		locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
 		misc.AssertError(err)
 		locations, err = warehouseutils.GetGCSLocations(locations)
-		logger.Debugf("Loading data into table: %s in bigquery dataset: %s in project: %s from %v\n", tableName, bq.Upload.Namespace, bq.ProjectID, locations)
+		logger.Debugf("Loading data into table: %s in bigquery dataset: %s in project: %s from %v\n", tableName, bq.Namespace, bq.ProjectID, locations)
 		gcsRef := bigquery.NewGCSReference(locations...)
 		gcsRef.SourceFormat = bigquery.JSON
 		gcsRef.MaxBadRecords = 100
 		gcsRef.IgnoreUnknownValues = true
 		// create partitioned table in format tableName$20191221
-		loader := bq.Db.Dataset(bq.Upload.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
+		loader := bq.Db.Dataset(bq.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
 
 		job, err := loader.Run(bq.BQContext)
 		if err != nil {

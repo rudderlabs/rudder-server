@@ -38,6 +38,7 @@ var (
 	configSubscriberLock       sync.RWMutex
 	availableWarehouses        []string
 	inProgressMap              map[string]bool
+	inRecoveryMap              map[string]bool
 	inProgressMapLock          sync.RWMutex
 	warehouseLoadFilesTable    string
 	warehouseStagingFilesTable string
@@ -95,6 +96,7 @@ func loadConfig() {
 	mainLoopSleepInS = config.GetInt("Warehouse.mainLoopSleepInS", 5)
 	availableWarehouses = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
+	inRecoveryMap = map[string]bool{}
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
@@ -301,6 +303,20 @@ func (wh *HandleT) mainLoop() {
 			}
 			setDestInProgress(warehouse.Destination.ID, true)
 
+			_, ok := inRecoveryMap[warehouse.Destination.ID]
+			if warehouse.Destination.DestinationDefinition.Name == "RS" && ok {
+				var rs redshift.HandleT
+				err := rs.CrashRecover(warehouseutils.ConfigT{
+					DbHandle:  wh.dbHandle,
+					Warehouse: warehouse,
+				})
+				if err != nil {
+					setDestInProgress(warehouse.Destination.ID, false)
+					continue
+				}
+				delete(inRecoveryMap, warehouse.Destination.ID)
+			}
+
 			// fetch any pending wh_uploads records (query for not successful/aborted uploads)
 			pendingUploads, ok := wh.getPendingUploads(warehouse)
 			if ok {
@@ -367,7 +383,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 
 	wg := misc.NewWaitGroup()
 	wg.Add(len(job.List))
-	ch := make(chan []int64, len(job.List))
+	ch := make(chan []int64)
 	for _, stagingFile := range job.List {
 		wh.createLoadFilesQ <- LoadFileJobT{
 			Upload:          job.Upload,
@@ -380,7 +396,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	}
 	var loadFileIDs []int64
 
-	waitChan := make(chan error, 1)
+	waitChan := make(chan error)
 	go func() {
 		err = wg.Wait()
 		waitChan <- err
@@ -566,7 +582,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	for tableName, outputFile := range outputFileMap {
 		file, err := os.Open(outputFile.Name())
 		defer os.Remove(outputFile.Name())
-		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %s\n", wh.destType, warehouseutils.ObjectStorageMap[wh.destType], tableName, job.StagingFile.ID)
+		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v\n", wh.destType, warehouseutils.ObjectStorageMap[wh.destType], tableName, job.StagingFile.ID)
 		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, strconv.FormatInt(job.Upload.ID, 10))
 		if err != nil {
 			return loadFileIDs, err
@@ -663,11 +679,6 @@ func (wh *HandleT) setupTables() {
 	_, err = wh.dbHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 
-	// index on id
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_id_index ON %[1]s (id);`, warehouseUploadsTable)
-	_, err = wh.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
-
 	// index on status
 	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_index ON %[1]s (status);`, warehouseUploadsTable)
 	_, err = wh.dbHandle.Exec(sqlStatement)
@@ -708,6 +719,24 @@ func (wh *HandleT) Disable() {
 	wh.isEnabled = false
 }
 
+func (wh *HandleT) setInterruptedDestinations() (err error) {
+	if wh.destType != "RS" {
+		return
+	}
+	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND status='%s'`, warehouseUploadsTable, wh.destType, warehouseutils.ExportingDataState)
+	rows, err := wh.dbHandle.Query(sqlStatement)
+	defer rows.Close()
+	misc.AssertError(err)
+
+	for rows.Next() {
+		var destID string
+		err := rows.Scan(&destID)
+		misc.AssertError(err)
+		inRecoveryMap[destID] = true
+	}
+	return err
+}
+
 func (wh *HandleT) Setup(whType string) {
 	logger.Infof("WH: Warehouse Router started: %s\n", whType)
 	var err error
@@ -716,7 +745,8 @@ func (wh *HandleT) Setup(whType string) {
 	misc.AssertError(err)
 	wh.setupTables()
 	wh.destType = whType
-	wh.isEnabled = true
+	wh.setInterruptedDestinations()
+	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
 	go wh.backendConfigSubscriber()

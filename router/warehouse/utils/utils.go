@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/iancoleman/strcase"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -216,7 +217,7 @@ func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema ma
 		misc.AssertError(err)
 		defer stmt.Close()
 
-		_, err = stmt.Exec(uploadID, wh.Source.ID, strings.ToLower(wh.Source.Name), wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, time.Now())
+		_, err = stmt.Exec(uploadID, wh.Source.ID, strcase.ToSnake(wh.Source.Name), wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, time.Now())
 	} else {
 		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3`, warehouseSchemasTable)
 		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, wh.Source.ID, wh.Destination.ID)
