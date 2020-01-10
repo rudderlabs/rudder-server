@@ -521,6 +521,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	misc.AssertError(err)
 	reader, err := gzip.NewReader(rawf)
 	misc.AssertError(err)
+	defer reader.Close()
 
 	// read from staging file and write a separate load file for each table in warehouse
 	tableContentMap := make(map[string]string)

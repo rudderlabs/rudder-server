@@ -420,6 +420,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 			eventID := gjson.GetBytes(lineBytes, "messageId").String()
 			uploadedRawDataJobsCache[eventID] = true
 		}
+		reader.Close()
 	}
 }
 

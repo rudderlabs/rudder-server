@@ -210,6 +210,7 @@ func getS3DestData() {
 			count++
 		}
 		pipe.Exec()
+		reader.Close()
 	}
 }
 
