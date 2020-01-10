@@ -87,7 +87,7 @@ func init() {
 
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
-	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
+	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 1)
 	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 100)
 	warehouseUploadSleepInS = config.GetInt("Warehouse.uploadSleepInS", 1800)
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
@@ -388,18 +388,21 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	wg := misc.NewWaitGroup()
 	wg.Add(len(job.List))
 	ch := make(chan []int64)
-	for _, stagingFile := range job.List {
-		wh.createLoadFilesQ <- LoadFileJobT{
-			Upload:          job.Upload,
-			StagingFile:     stagingFile,
-			Schema:          job.Upload.Schema,
-			Warehouse:       job.Warehouse,
-			Wg:              wg,
-			LoadFileIDsChan: ch,
+	// queue the staging files in a go routine so that job.List can be higher than number of workers in createLoadFilesQ and not be blocked
+	go func() {
+		for _, stagingFile := range job.List {
+			wh.createLoadFilesQ <- LoadFileJobT{
+				Upload:          job.Upload,
+				StagingFile:     stagingFile,
+				Schema:          job.Upload.Schema,
+				Warehouse:       job.Warehouse,
+				Wg:              wg,
+				LoadFileIDsChan: ch,
+			}
 		}
-	}
-	var loadFileIDs []int64
+	}()
 
+	var loadFileIDs []int64
 	waitChan := make(chan error)
 	go func() {
 		err = wg.Wait()
