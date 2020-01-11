@@ -403,20 +403,28 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	}()
 
 	var loadFileIDs []int64
-	waitChan := make(chan error)
+	// waitChan := make(chan error)
+	// go func() {
+	// 	err = wg.Wait()
+	// 	waitChan <- err
+	// }()
 	go func() {
-		err = wg.Wait()
-		waitChan <- err
-	}()
-waitForLoadFiles:
-	for {
-		select {
-		case ids := <-ch:
-			loadFileIDs = append(loadFileIDs, ids...)
-		case err = <-waitChan:
-			break waitForLoadFiles
+		for index := 0; index < len(job.List); index++ {
+			x := <-ch
+			loadFileIDs = append(loadFileIDs, x...)
 		}
-	}
+	}()
+	// waitForLoadFiles:
+	// 	for {
+	// 		select {
+	// 		case ids := <-ch:
+	// 			loadFileIDs = append(loadFileIDs, ids...)
+	// 		case err = <-waitChan:
+	// 			break waitForLoadFiles
+	// 		}
+	// 	}
+	err = wg.Wait()
+	close(ch)
 	timer.End()
 	if err != nil {
 		warehouseutils.SetStagingFilesError(jsonIDs, warehouseutils.StagingFileFailedState, wh.dbHandle, err)
