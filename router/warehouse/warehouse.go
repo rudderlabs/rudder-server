@@ -486,7 +486,7 @@ func (wh *HandleT) initWorkers() {
 					// generate load files only if not done before
 					// upload records have start_load_file_id and end_load_file_id set to 0 on creation
 					// and are updated on creation of load files
-					logger.Infof("****Processing staging files job: %+v\n", job)
+					logger.Infof("****Processing staging files job: %+v %v %v\n", len(job.List), job.List[0].ID, job.List[len(job.List)-1].ID)
 					if job.Upload.StartLoadFileID == 0 {
 						warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
 						err := wh.createLoadFiles(&job)
