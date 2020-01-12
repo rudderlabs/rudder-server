@@ -127,7 +127,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
 	sqlStatement := fmt.Sprintf(`SELECT id, location, source_id, schema, status, created_at
                                 FROM %[1]s
-								WHERE %[1]s.id >= %[2]v AND %[1]s.id >= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
+								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
 								ORDER BY id ASC`,
 		warehouseStagingFilesTable, startID, endID, warehouse.Source.ID, warehouse.Destination.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
@@ -509,6 +509,7 @@ func (wh *HandleT) initWorkers() {
 // Each Staging File has data for multiple tables in warehouse
 // Create separate Load File out of Staging File for each table
 func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, err error) {
+	logger.Infof("***Starting processing staging file: %v %v\n", job.StagingFile.ID, job.StagingFile.Location)
 	// download staging file into a temp dir
 	dirName := "/rudder-warehouse-json-uploads-tmp/"
 	tmpDirPath := misc.CreateTMPDIR()
