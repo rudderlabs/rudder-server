@@ -61,18 +61,22 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 func (rs *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sortKeyField := "received_at"
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) SORTKEY(%s)`, name, columnsWithDataTypes(columns, ""), sortKeyField)
+	logger.Infof("***Creating table in redshift: %v****\n", sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
 
 func (rs *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	_, err = rs.Db.Exec(fmt.Sprintf(`ALTER TABLE %v ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType]))
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType])
+	logger.Infof("***Adding column in redshift: %v****\n", sqlStatement)
+	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
 
 func (rs *HandleT) createSchema() (err error) {
-	// TODO: Change to use source_schema_name in wh_schemas table
-	_, err = rs.Db.Exec(fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, rs.Namespace))
+	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, rs.Namespace)
+	logger.Infof("***Creating schemaname in redshift: %v****\n", sqlStatement)
+	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
 

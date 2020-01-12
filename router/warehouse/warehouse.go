@@ -300,6 +300,7 @@ func (wh *HandleT) mainLoop() {
 			time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
 			continue
 		}
+		logger.Infof("Looping through warehouses: %s\n", len(wh.warehouses))
 		for _, warehouse := range wh.warehouses {
 			if isDestInProgress(warehouse.Destination.ID) {
 				continue
