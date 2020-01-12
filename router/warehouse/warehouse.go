@@ -552,6 +552,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	tableContentMap := make(map[string]string)
 	uuidTS := time.Now()
 	sc := bufio.NewScanner(reader)
+	fmt.Println("******1")
+	PrintMemUsage()
+	fmt.Println("******1")
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
 		var jsonLine map[string]interface{}
@@ -591,12 +594,12 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
-			fmt.Println("******")
-			PrintMemUsage()
-			fmt.Println("******")
 			tableContentMap[tableName] += strings.Join(csvRow, ",") + "\n"
 		}
 	}
+	fmt.Println("******2")
+	PrintMemUsage()
+	fmt.Println("******2")
 
 	// gzip and write to file
 	outputFileMap := make(map[string]*os.File)
@@ -615,6 +618,10 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		Config:   job.Warehouse.Destination.Config.(map[string]interface{}),
 	})
 	misc.AssertError(err)
+
+	fmt.Println("******3")
+	PrintMemUsage()
+	fmt.Println("******3")
 
 	for tableName, outputFile := range outputFileMap {
 		file, err := os.Open(outputFile.Name())
