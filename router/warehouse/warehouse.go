@@ -325,6 +325,7 @@ func (wh *HandleT) mainLoop() {
 			// fetch any pending wh_uploads records (query for not successful/aborted uploads)
 			pendingUploads, ok := wh.getPendingUploads(warehouse)
 			if ok {
+				logger.Infof("***Found pending uploads: %v\n", len(pendingUploads))
 				jobs := []ProcessStagingFilesJobT{}
 				for _, pendingUpload := range pendingUploads {
 					stagingFilesList, err := wh.getStagingFiles(warehouse, pendingUpload.StartStagingFileID, pendingUpload.EndStagingFileID)
@@ -339,6 +340,7 @@ func (wh *HandleT) mainLoop() {
 			} else {
 				// fetch staging files that are not processed yet
 				stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
+				logger.Infof("***Found pending staging files: %v\n", len(stagingFilesList))
 				misc.AssertError(err)
 				if len(stagingFilesList) == 0 {
 					setDestInProgress(warehouse.Destination.ID, false)
@@ -483,6 +485,7 @@ func (wh *HandleT) initWorkers() {
 					// generate load files only if not done before
 					// upload records have start_load_file_id and end_load_file_id set to 0 on creation
 					// and are updated on creation of load files
+					logger.Infof("****Processing staging files job: %+v\n", job)
 					if job.Upload.StartLoadFileID == 0 {
 						warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
 						err := wh.createLoadFiles(&job)
