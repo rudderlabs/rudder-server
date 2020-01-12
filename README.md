@@ -1,5 +1,5 @@
 ![Build Status][Build Status]
-
+[![Go Report Card][GoReportCardBadge]][GoReportCard]
 # What is Rudder?
 
 **Short answer:** Rudder is an open-source Segment alternative written in Go, built for the enterprise. .
@@ -168,6 +168,8 @@ The client SDKs provide APIs collecting events and sending it to the Rudder Back
 [Build Status]: https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master
 [Discord]: https://discordapp.com/invite/xNEdEGw
 [Twitter]: https://twitter.com/rudderlabs
+[GoReportCard]: https://goreportcard.com/report/github.com/rudderlabs/rudder-server
+[GoReportCardBadge]: https://goreportcard.com/badge/github.com/rudderlabs/rudder-server
 [Dashboard]: https://app.rudderlabs.com
 [SSPL_License]: https://www.mongodb.com/licensing/server-side-public-license
 [HackerNews]: https://news.ycombinator.com/item?id=21081756
