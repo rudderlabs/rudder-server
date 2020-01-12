@@ -231,7 +231,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]warehouseutils.UploadT, bool) {
 
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s' AND %[1]s.status!='%[5]s')`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s' AND %[1]s.status!='%[5]s')`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
 
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
@@ -245,7 +245,7 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 	for rows.Next() {
 		var upload warehouseutils.UploadT
 		var schema json.RawMessage
-		err := rows.Scan(&upload.ID, &upload.Status, &schema, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
+		err := rows.Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
 		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
 		misc.AssertError(err)
 		uploads = append(uploads, upload)
@@ -506,6 +506,35 @@ func (wh *HandleT) initWorkers() {
 	}
 }
 
+type F struct {
+	f  *os.File
+	gf *gzip.Writer
+	fw *bufio.Writer
+}
+
+func CreateGZ(s string) (f F, err error) {
+
+	fi, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	if err != nil {
+		return
+	}
+	gf := gzip.NewWriter(fi)
+	fw := bufio.NewWriter(gf)
+	f = F{fi, gf, fw}
+	return
+}
+
+func WriteGZ(f F, s string) {
+	(f.fw).WriteString(s)
+}
+
+func CloseGZ(f F) {
+	f.fw.Flush()
+	// Close the gzip first.
+	f.gf.Close()
+	f.f.Close()
+}
+
 // Each Staging File has data for multiple tables in warehouse
 // Create separate Load File out of Staging File for each table
 func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, err error) {
@@ -547,10 +576,11 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	misc.AssertError(err)
 	reader, err := gzip.NewReader(rawf)
 	misc.AssertError(err)
-	defer reader.Close()
+	// defer reader.Close()
 
 	// read from staging file and write a separate load file for each table in warehouse
-	tableContentMap := make(map[string]string)
+	// tableContentMap := make(map[string]string)
+	outputFileMap := make(map[string]F)
 	uuidTS := time.Now()
 	sc := bufio.NewScanner(reader)
 	fmt.Println("******1")
@@ -564,15 +594,24 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		columnData := jsonLine["data"].(map[string]interface{})
 		tableName, _ := metadata.(map[string]interface{})["table"].(string)
 		columns, _ := metadata.(map[string]interface{})["columns"].(map[string]interface{})
-		if _, ok := tableContentMap[tableName]; !ok {
-			tableContentMap[tableName] = ""
+		if _, ok := outputFileMap[tableName]; !ok {
+			outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + ".csv.gz"
+			// outputFile, err := os.Create(outputFilePath)
+			outputFile, err := CreateGZ(outputFilePath)
+			if err != nil {
+				return nil, err
+			}
+			outputFileMap[tableName] = outputFile
 		}
 		if wh.destType == "BQ" {
 			// add uuid_ts to track when event was processed into load_file
 			columnData["uuid_ts"] = uuidTS.Format("2006-01-02 15:04:05 Z")
 			line, err := json.Marshal(columnData)
-			misc.AssertError(err)
-			tableContentMap[tableName] += string(line) + "\n"
+			if err != nil {
+				return loadFileIDs, err
+			}
+			WriteGZ(outputFileMap[tableName], string(line)+"\n")
+			// fmt.Fprintln(outputFileMap[tableName], string(line))
 		} else {
 			csvRow := []string{}
 			for _, columnName := range sortedTableColumnMap[tableName] {
@@ -595,24 +634,26 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
-			tableContentMap[tableName] += strings.Join(csvRow, ",") + "\n"
+			WriteGZ(outputFileMap[tableName], strings.Join(csvRow, ",")+"\n")
 		}
 	}
+	reader.Close()
 	fmt.Println("******2")
 	PrintMemUsage()
 	fmt.Println("******2")
 
 	// gzip and write to file
-	outputFileMap := make(map[string]*os.File)
-	for tableName, content := range tableContentMap {
-		outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + ".csv.gz"
-		outputFile, err := os.Create(outputFilePath)
-		outputFileMap[tableName] = outputFile
-		gzipWriter := gzip.NewWriter(outputFile)
-		_, err = gzipWriter.Write([]byte(content))
-		misc.AssertError(err)
-		gzipWriter.Close()
-	}
+	// for tableName, content := range tableContentMap {
+	// 	outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + ".csv.gz"
+	// 	outputFile, err := os.Create(outputFilePath)
+	// 	outputFileMap[tableName] = outputFile
+	// 	gzipWriter := gzip.NewWriter(outputFile)
+	// 	_, err = gzipWriter.Write([]byte(content))
+	// 	gzipWriter.Close()
+	// 	if err != nil {
+	// 		return loadFileIDs, err
+	// 	}
+	// }
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
@@ -625,8 +666,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	fmt.Println("******3")
 
 	for tableName, outputFile := range outputFileMap {
-		file, err := os.Open(outputFile.Name())
-		defer os.Remove(outputFile.Name())
+		CloseGZ(outputFile)
+		file, err := os.Open(outputFile.f.Name())
+		defer os.Remove(outputFile.f.Name())
 		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v\n", wh.destType, warehouseutils.ObjectStorageMap[wh.destType], tableName, job.StagingFile.ID)
 		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, strconv.FormatInt(job.Upload.ID, 10))
 		if err != nil {
