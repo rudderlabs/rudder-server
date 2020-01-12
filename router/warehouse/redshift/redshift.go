@@ -425,6 +425,7 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	rs.CurrentSchema = curreSchema.Schema
 	rs.Namespace = curreSchema.Namespace
 	if rs.Namespace == "" {
+		logger.Infof("***Namespace not foung in currentschema, setting from upload: %s***\n", rs.Upload.Namespace)
 		rs.Namespace = rs.Upload.Namespace
 	}
 
