@@ -1,4 +1,4 @@
-![Build Status](https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master)
+![Build Status][Build Status]
 
 # What is Rudder?
 
@@ -9,9 +9,9 @@
 Rudder runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation code which are node scripts. This repo contains the core backend and the transformation modules of Rudder.
 The client SDKs are in a separate repo (link below).
 
-Rudder server is released under [SSPL License](https://www.mongodb.com/licensing/server-side-public-license)
+Rudder server is released under [SSPL License][SSPL_License]
 
-Questions? Join our [Discord](https://discordapp.com/invite/xNEdEGw) channel. Or please email soumyadeb at rudderlabs.com.
+Questions? Join our [Discord][Discord] channel. Or please email soumyadeb at rudderlabs.com.
 
 # Why Rudder ?
 
@@ -23,18 +23,18 @@ We are building Rudder because we believe open-source and cloud-prem is importan
 
 3. **Unlimited Events:** Event volume-based pricing of most commercial systems is broken. You should be able to collect as much data as possible without worrying about overrunning event budgets. Rudder's core BE is open-source and free to use.
 
-See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion around Rudder.
+See the [HackerNews][HackerNews] discussion around Rudder.
 
 # Contribution
 We would love to see people contributing to rudder. see [CONTRIBUTING.md](CONTRIBUTING.md) for more information on contributing to rudder.
 # Stay Connected
 
-1. Join our [Discord](https://discordapp.com/invite/xNEdEGw)
-2. Follow [Rudderlabs](https://twitter.com/rudderlabs) on Twitter
+1. Join our [Discord][Discord]
+2. Follow [Rudderlabs][Twitter] on Twitter
 
 # Setup Instructions (Hosted Demo Account)
 
-1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account.
+1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account.
 2. Select `Rudder Hosted Service` from the top right corner after you login.
 3. Follow (Send Test Events) instructions below to send test event.
 
@@ -42,7 +42,7 @@ We would love to see people contributing to rudder. see [CONTRIBUTING.md](CONTRI
 
 The docker setup is the easiest & fastest way to try out Rudder.
 
-1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
+1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
 2. Clone this repository with [SSH](https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls) and
 3. Replace `<your_workspace_token>` in `build/docker.env` with the above token.
 4. (Optional) Uncomment and set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `build/docker.env` if you want to add S3 as a destination on the UI.
@@ -52,19 +52,19 @@ The docker setup is the easiest & fastest way to try out Rudder.
 
 # Setup Instructions (Kubernetes)
 
-Our helm scripts and instructions are in a separate repo - [Download Here](https://github.com/rudderlabs/rudderstack-helm)
+Our helm scripts and instructions are in a separate repo - [Download Here][HelmScriptsGitRepo]
 
 # Setup Instructions (Terraform)
 
-Our terraform scripts and instructions are in a separate repo - [Download Here](https://github.com/rudderlabs/rudder-terraform)
+Our terraform scripts and instructions are in a separate repo - [Download Here][TerraformScriptsGitRepo]
 
 
 # Setup Instructions (Native Installation)
 
 Disclaimer: This is not the easiest way of installing Rudder.  Please use this if you want to know more about the internals.
 
-1. Install Golang 1.12 or above. [Download Here](https://golang.org/dl/)
-2. Install NodeJS 10.6 or above. [Download Here](https://nodejs.org/en/download/)
+1. Install Golang 1.12 or above. [Download Here][Golang]
+2. Install NodeJS 10.6 or above. [Download Here][Node]
 3. Install PostgreSQL 10 or above and set up the DB
 
 ```
@@ -74,7 +74,7 @@ psql "jobsdb" -c "alter user rudder with encrypted password 'rudder'";
 psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 ```
 
-4. Go to the [dashboard](https://app.rudderlabs.com/signup) and set up your account. Copy your workspace token from top of the home page
+4. Go to the [dashboard][Dashboard] and set up your account. Copy your workspace token from top of the home page
 5. Clone this repository. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
  and navigate to the transformer directory `cd rudder-transformer`
 6. Start the destination transformer `node destTransformer.js`
@@ -89,7 +89,7 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 2. Create one source (Android or iOS) and configure a Google Analytics destination for the same with the above tracking ID
 3. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `./scripts/generate-event <writeKeyHere> http://localhost:8080/v1/batch`. NOTE: `writeKey` is different from the `your_workspace_token` in step 2. Former is associated with the source while the latter is for your account.
 4. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
-5. You can use our [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or [iOS](https://github.com/rudderlabs/rudder-sdk-ios) SDKs for sending events from your app.
+5. You can use our [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkIOSGitRepo] SDKs for sending events from your app.
 
 ## Features
 
@@ -99,7 +99,7 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 4. Stand-alone system. The only dependency is on Postgres.
 5. High performance. On a single m4.2xlarge, Rudder can process ~3K events/sec. Performance numbers on other instance types soon.
 6. Rich UI written in react.
-7. [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or [iOS](https://github.com/rudderlabs/rudder-sdk-ios). Server-side SDKs coming soon.
+7. [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][[RudderSdkAndroidGitRepo]]. Server-side SDKs coming soon.
 
 
 # UI Pages
@@ -163,3 +163,18 @@ The client SDKs provide APIs collecting events and sending it to the Rudder Back
 5. More SDKs (or Segment compatibility)
 6. Transformations from UI
 
+<!----variable's---->
+
+[Build Status]: https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master
+[Discord]: https://discordapp.com/invite/xNEdEGw
+[Twitter]: https://twitter.com/rudderlabs
+[Dashboard]: https://app.rudderlabs.com
+[SSPL_License]: https://www.mongodb.com/licensing/server-side-public-license
+[HackerNews]: https://news.ycombinator.com/item?id=21081756
+[HelmScriptsGitRepo]: https://github.com/rudderlabs/rudderstack-helm
+[TerraformScriptsGitRepo]: https://github.com/rudderlabs/rudder-terraform
+[Golang]: https://golang.org/dl/
+[Node]: https://nodejs.org/en/download/
+[RudderSdkJsGitRepo]: https://github.com/rudderlabs/rudder-sdk-js
+[RudderSdkAndroidGitRepo]: https://github.com/rudderlabs/rudder-sdk-android
+[RudderSdkIOSGitRepo]: https://github.com/rudderlabs/rudder-sdk-ios
