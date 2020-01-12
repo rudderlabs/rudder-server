@@ -162,7 +162,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	_, err = uploader.Upload(gzipFile, keyPrefixes...)
 
 	if err != nil {
-		logger.Error(err)
+		logger.Errorf("BRT: Error uploading to %s: config:%s: %v\n", provider, destinationConfig, err)
 		return StorageUploadOutput{
 			Error:       err,
 			JournalOpID: opID,
@@ -195,7 +195,7 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 			}
 		}
 	}
-	logger.Debugf("Creating record for uploaded json in %s table with schema: %+v\n", warehouseStagingFilesTable, schemaMap)
+	logger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v\n", warehouseStagingFilesTable, schemaMap)
 	schemaPayload, err := json.Marshal(schemaMap)
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at, updated_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $6)`, warehouseStagingFilesTable)

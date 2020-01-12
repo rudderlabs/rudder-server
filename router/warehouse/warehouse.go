@@ -209,7 +209,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
 	currentSchema, err := json.Marshal(schema)
 	namespace := strings.ToLower(strcase.ToSnake(warehouse.Source.Name))
-	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.GeneratingLoadFileState, currentSchema, "{}", time.Now(), time.Now())
+	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, currentSchema, "{}", time.Now(), time.Now())
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
@@ -223,7 +223,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		DestinationType:    wh.destType,
 		StartStagingFileID: startJSONID,
 		EndStagingFileID:   endJSONID,
-		Status:             warehouseutils.GeneratingLoadFileState,
+		Status:             warehouseutils.WaitingState,
 		Schema:             schema,
 	}
 }
@@ -389,6 +389,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	wg.Add(len(job.List))
 	ch := make(chan []int64)
 	// queue the staging files in a go routine so that job.List can be higher than number of workers in createLoadFilesQ and not be blocked
+	logger.Infof("***Starting batch processing %v stage files with %v workers***\n", len(job.List), noOfWorkers)
 	go func() {
 		for _, stagingFile := range job.List {
 			wh.createLoadFilesQ <- LoadFileJobT{
@@ -403,27 +404,37 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	}()
 
 	var loadFileIDs []int64
-	// waitChan := make(chan error)
-	// go func() {
-	// 	err = wg.Wait()
-	// 	waitChan <- err
-	// }()
+	waitChan := make(chan error)
 	go func() {
-		for index := 0; index < len(job.List); index++ {
-			x := <-ch
-			loadFileIDs = append(loadFileIDs, x...)
-		}
+		err = wg.Wait()
+		waitChan <- err
 	}()
-	// waitForLoadFiles:
-	// 	for {
-	// 		select {
-	// 		case ids := <-ch:
-	// 			loadFileIDs = append(loadFileIDs, ids...)
-	// 		case err = <-waitChan:
-	// 			break waitForLoadFiles
-	// 		}
+	// go func() {
+	// 	for index := 0; index < len(job.List); index++ {
+	// 		x := <-ch
+	// 		loadFileIDs = append(loadFileIDs, x...)
 	// 	}
-	err = wg.Wait()
+	// }()
+	count := 0
+waitForLoadFiles:
+	for {
+		select {
+		case ids := <-ch:
+			loadFileIDs = append(loadFileIDs, ids...)
+			count++
+			logger.Infof("*** %v staging files processed in batch of %v***\n", count, len(job.List))
+			logger.Infof("***Received load files with ids: %v***\n", loadFileIDs)
+			if count == len(job.List) {
+				break waitForLoadFiles
+			}
+		case err = <-waitChan:
+			if err != nil {
+				logger.Infof("***Discontinuing processing of staging files due to error: %v***\n", err)
+				break waitForLoadFiles
+			}
+		}
+	}
+	// err = wg.Wait()
 	close(ch)
 	timer.End()
 	if err != nil {
@@ -472,6 +483,7 @@ func (wh *HandleT) initWorkers() {
 					// upload records have start_load_file_id and end_load_file_id set to 0 on creation
 					// and are updated on creation of load files
 					if job.Upload.StartLoadFileID == 0 {
+						warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
 						err := wh.createLoadFiles(&job)
 						if err != nil {
 							warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
@@ -660,6 +672,7 @@ func (wh *HandleT) setupTables() {
 	sqlStatement = `DO $$ BEGIN
                                 CREATE TYPE wh_upload_state_type
                                      AS ENUM(
+										 	  'waiting',
 											  'generating_load_file',
 											  'generating_load_file_failed',
 											  'generated_load_file',
@@ -673,6 +686,11 @@ func (wh *HandleT) setupTables() {
                                      EXCEPTION
                                         WHEN duplicate_object THEN null;
                             END $$;`
+
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'waiting';`
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
 	misc.AssertError(err)

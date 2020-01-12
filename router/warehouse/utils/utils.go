@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	WaitingState                  = "waiting"
 	GeneratingLoadFileState       = "generating_load_file"
 	GeneratingLoadFileFailedState = "generating_load_file_failed"
 	GeneratedLoadFileState        = "generated_load_file"

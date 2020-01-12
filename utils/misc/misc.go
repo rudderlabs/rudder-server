@@ -248,7 +248,9 @@ func UnZipSingleFile(outputfile string, filename string) {
 func RemoveFilePaths(filepaths ...string) {
 	for _, filepath := range filepaths {
 		err := os.Remove(filepath)
-		logger.Error(err)
+		if err != nil {
+			logger.Error(err)
+		}
 	}
 }
 

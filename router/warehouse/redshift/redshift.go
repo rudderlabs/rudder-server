@@ -169,7 +169,9 @@ func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[
 func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
 	for _, stagingTableName := range stagingTableNames {
 		_, err := rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.Namespace, stagingTableName))
-		logger.Error(err)
+		if err != nil {
+			logger.Errorf("WH: RS:  Error dropping staging tables in redshift: %v\n", err)
+		}
 	}
 }
 
@@ -371,6 +373,7 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 	for _, stagingTableName := range stagingTableNames {
 		_, err := rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
+			logger.Errorf("WH: RS:  Error dropping dangling staging tables in redshift: %v\n", err)
 			delSuccess = false
 		}
 	}
