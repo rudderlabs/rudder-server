@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -590,6 +591,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
+			fmt.Println("******")
+			PrintMemUsage()
+			fmt.Println("******")
 			tableContentMap[tableName] += strings.Join(csvRow, ",") + "\n"
 		}
 	}
@@ -632,6 +636,22 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		loadFileIDs = append(loadFileIDs, fileID)
 	}
 	return
+}
+
+// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
+// of garage collection cycles completed.
+func PrintMemUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+	fmt.Printf("Alloc = %v MiB\n", bToMb(m.Alloc))
+	fmt.Printf("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
+	fmt.Printf("\tSys = %v MiB\n", bToMb(m.Sys))
+	fmt.Printf("\tNumGC = %v\n", m.NumGC)
+}
+
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
 }
 
 func (wh *HandleT) initUploaders() {
