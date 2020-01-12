@@ -43,7 +43,7 @@ We would love to see people contributing to rudder. see [CONTRIBUTING.md](CONTRI
 The docker setup is the easiest & fastest way to try out Rudder.
 
 1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
-2. Clone this repository with [SSH](https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls) and
+2. Clone this repository with [SSH][SSH] and
 3. Replace `<your_workspace_token>` in `build/docker.env` with the above token.
 4. (Optional) Uncomment and set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `build/docker.env` if you want to add S3 as a destination on the UI.
 5. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
@@ -99,7 +99,7 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 4. Stand-alone system. The only dependency is on Postgres.
 5. High performance. On a single m4.2xlarge, Rudder can process ~3K events/sec. Performance numbers on other instance types soon.
 6. Rich UI written in react.
-7. [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][[RudderSdkAndroidGitRepo]]. Server-side SDKs coming soon.
+7. [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkAndroidGitRepo]. Server-side SDKs coming soon.
 
 
 # UI Pages
@@ -170,6 +170,7 @@ The client SDKs provide APIs collecting events and sending it to the Rudder Back
 [Twitter]: https://twitter.com/rudderlabs
 [GoReportCard]: https://goreportcard.com/report/github.com/rudderlabs/rudder-server
 [GoReportCardBadge]: https://goreportcard.com/badge/github.com/rudderlabs/rudder-server
+[SSH]: https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls
 [Dashboard]: https://app.rudderlabs.com
 [SSPL_License]: https://www.mongodb.com/licensing/server-side-public-license
 [HackerNews]: https://news.ycombinator.com/item?id=21081756
