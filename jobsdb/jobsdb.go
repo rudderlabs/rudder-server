@@ -290,7 +290,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	//If no DS present, add one
 	if len(jd.datasetList) == 0 {
-		jd.addNewDS(true, dataSetT{})
+		jd.addNewDS(true, dataSetT{}, false)
 	}
 
 	if jd.toBackup {
@@ -585,7 +585,7 @@ func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
 	return jobTable, jobStatusTable
 }
 
-func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
+func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT, migrationTarget bool) (dataSetT, int64) {
 
 	//Get the max index
 	dList := jd.getDSList(true)
@@ -627,6 +627,13 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	var newDS dataSetT
 	newDS.JobTable, newDS.JobStatusTable = jd.createTableNames(newDSIdx)
 	newDS.Index = newDSIdx
+
+	var migrateTransactionOpID int64
+	if migrationTarget {
+		opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
+		jd.assertError(err)
+		migrateTransactionOpID = jd.JournalMarkStart(migrateTransactionOperation, opPayload)
+	}
 
 	//Mark the start of operation. If we crash somewhere here, we delete the
 	//DS being added
@@ -680,11 +687,11 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 			_, err = jd.dbHandle.Exec(sqlStatement)
 			jd.assertError(err)
 		}
-		return dList[len(dList)-1]
+		return dList[len(dList)-1], migrateTransactionOpID
 	}
 	//This is the migration case. We don't yet update the in-memory list till
 	//we finish the migration
-	return newDS
+	return newDS, migrateTransactionOpID
 }
 
 //Drop a dataset
@@ -1323,7 +1330,7 @@ func (jd *HandleT) mainCheckLoop() {
 			//take the list lock
 			jd.dsListLock.Lock()
 			logger.Info("Main check:NewDS")
-			jd.addNewDS(true, dataSetT{})
+			jd.addNewDS(true, dataSetT{}, false)
 			jd.dsListLock.Unlock()
 		}
 
@@ -1348,9 +1355,16 @@ func (jd *HandleT) mainCheckLoop() {
 		}
 		//Add a temp DS to append to
 		if len(migrateFrom) > 0 {
+			migrating := false
+			var migrateTo dataSetT
+			var migrateTransactionOpID int64
 			if liveCount > 0 {
+				//addNewDS, migrateJobs and postMigrateHandleDS should happen in transaction
+				//adding a new journal entry for this transaction
+				migrating = true
+
 				jd.dsListLock.Lock()
-				migrateTo := jd.addNewDS(false, insertBeforeDS)
+				migrateTo, migrateTransactionOpID = jd.addNewDS(false, insertBeforeDS, true)
 				jd.dsListLock.Unlock()
 
 				logger.Info("Migrate from:", migrateFrom)
@@ -1359,6 +1373,10 @@ func (jd *HandleT) mainCheckLoop() {
 				//Mark the start of copy operation. If we fail here
 				//we just delete the new DS being copied into. The
 				//sources are still around
+
+				//TODO remove
+				//err1 := errors.New("test error")
+				//panic(err1)
 
 				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: migrateTo})
 				jd.assertError(err)
@@ -1383,6 +1401,10 @@ func (jd *HandleT) mainCheckLoop() {
 			jd.dsListLock.Unlock()
 
 			jd.JournalMarkDone(opID)
+
+			if migrating {
+				jd.JournalMarkDone(migrateTransactionOpID)
+			}
 		}
 
 		jd.dsMigrationLock.Unlock()
@@ -1537,13 +1559,14 @@ func (jd *HandleT) getBackupDS() dataSetT {
 We keep a journal of all the operations. The journal helps
 */
 const (
-	addDSOperation             = "ADD_DS"
-	migrateCopyOperation       = "MIGRATE_COPY"
-	postMigrateDSOperation     = "POST_MIGRATE_DS_OP"
-	backupDSOperation          = "BACKUP_DS"
-	backupDropDSOperation      = "BACKUP_DROP_DS"
-	dropDSOperation            = "DROP_DS"
-	RawDataDestUploadOperation = "S3_DEST_UPLOAD"
+	addDSOperation              = "ADD_DS"
+	migrateCopyOperation        = "MIGRATE_COPY"
+	postMigrateDSOperation      = "POST_MIGRATE_DS_OP"
+	migrateTransactionOperation = "MIGRATE_TRANSACTION"
+	backupDSOperation           = "BACKUP_DS"
+	backupDropDSOperation       = "BACKUP_DROP_DS"
+	dropDSOperation             = "DROP_DS"
+	RawDataDestUploadOperation  = "S3_DEST_UPLOAD"
 )
 
 type JournalEntryT struct {
@@ -1576,7 +1599,7 @@ func (jd *HandleT) delJournal() {
 
 func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) int64 {
 
-	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == backupDSOperation || opType == backupDropDSOperation || opType == dropDSOperation || opType == RawDataDestUploadOperation)
+	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == migrateTransactionOperation || opType == backupDSOperation || opType == backupDropDSOperation || opType == dropDSOperation || opType == RawDataDestUploadOperation)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
                                        VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
@@ -1634,7 +1657,7 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 	var opTypes []string
 	switch goRoutineType {
 	case mainGoRoutine:
-		opTypes = []string{addDSOperation, migrateCopyOperation, postMigrateDSOperation, dropDSOperation}
+		opTypes = []string{addDSOperation, migrateCopyOperation, postMigrateDSOperation, migrateTransactionOperation, dropDSOperation}
 	case backupGoRoutine:
 		opTypes = []string{backupDSOperation, backupDropDSOperation}
 	}
@@ -1708,6 +1731,14 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		}
 		logger.Info("Recovering migrateDel operation", migrateSrc)
 		undoOp = false
+	case migrateTransactionOperation:
+		migrateDest := opPayloadJSON.To
+		//Delete the destination of the interrupted
+		//migration transaction. After we start, code should
+		//redo the migration
+		logger.Info("Recovering migrateTransactionOperation", migrateDest)
+		jd.dropDS(migrateDest, true)
+		undoOp = true
 	case backupDSOperation:
 		jd.removeTableJSONDumps()
 		logger.Info("Removing all stale json dumps of tables")
@@ -2126,7 +2157,7 @@ func (jd *HandleT) dynamicDSTestMigrate() {
 	testEndPoint := "4"
 
 	for i := 0; i < testRuns; i++ {
-		jd.addNewDS(true, dataSetT{})
+		jd.addNewDS(true, dataSetT{}, false)
 		var jobList []*JobT
 		for i := 0; i < testNumRecs; i++ {
 			id := uuid.NewV4()
