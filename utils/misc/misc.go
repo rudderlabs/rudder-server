@@ -488,9 +488,6 @@ func CreateGZ(s string) (w GZipWriter, err error) {
 }
 
 func (w GZipWriter) WriteGZ(s string) {
-	// w.bufWriter.W
-	// var x json.RawMessage
-	// w.bufWriter.WriteByte(x)
 	w.BufWriter.WriteString(s)
 }
 
