@@ -116,14 +116,22 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	misc.AssertError(err)
 	gzWriter, err := misc.CreateGZ(gzipFilePath)
 
+	eventsFound := false
 	for _, job := range batchJobs.Jobs {
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
 		var ok bool
 		if _, ok = uploadedRawDataJobsCache[eventID]; !ok {
+			eventsFound = true
 			gzWriter.WriteGZ(fmt.Sprintf(`%s`, job.EventPayload) + "\n")
 		}
 	}
 	gzWriter.CloseGZ()
+	if !eventsFound {
+		logger.Infof("BRT: All events in this batch for %s are de-deuplicated...\n", provider)
+		return StorageUploadOutput{
+			LocalFilePaths: []string{gzipFilePath},
+		}
+	}
 
 	logger.Debugf("BRT: Logged to local file: %v\n", gzipFilePath)
 
@@ -254,7 +262,9 @@ func (brt *HandleT) initWorkers() {
 						destUploadStat.Start()
 						output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
 						brt.setJobStatus(batchJobs, false, output.Error)
-						brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
+						if output.JournalOpID != 0 {
+							brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
+						}
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						destUploadStat.End()
 						setSourceInProgress(batchJobs.BatchDestination, false)
@@ -326,12 +336,12 @@ func (brt *HandleT) mainLoop() {
 			waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, batchDestination.Source.ID) //Jobs send to waiting state
 			toQuery -= len(waitList)
 			unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, batchDestination.Source.ID)
-			if len(waitList)+len(unprocessedList)+len(retryList) == 0 {
+
+			combinedList := append(waitList, append(unprocessedList, retryList...)...)
+			if len(combinedList) == 0 {
 				setSourceInProgress(batchDestination, false)
 				continue
 			}
-
-			combinedList := append(waitList, append(unprocessedList, retryList...)...)
 
 			var statusList []*jobsdb.JobStatusT
 

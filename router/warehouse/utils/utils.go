@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -121,7 +120,6 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, e
 		schema[key] = y
 	}
 	currentSchema := CurrentSchemaT{Namespace: namespace, Schema: schema}
-	logger.Infof("*** GetCurrentSchema() returning: %+v***\n", currentSchema)
 	return currentSchema, nil
 }
 

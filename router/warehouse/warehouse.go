@@ -411,12 +411,6 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 		err = wg.Wait()
 		waitChan <- err
 	}()
-	// go func() {
-	// 	for index := 0; index < len(job.List); index++ {
-	// 		x := <-ch
-	// 		loadFileIDs = append(loadFileIDs, x...)
-	// 	}
-	// }()
 	count := 0
 waitForLoadFiles:
 	for {
@@ -436,7 +430,6 @@ waitForLoadFiles:
 			}
 		}
 	}
-	// err = wg.Wait()
 	close(ch)
 	timer.End()
 	if err != nil {
@@ -545,7 +538,6 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	misc.AssertError(err)
 	reader, err := gzip.NewReader(rawf)
 	misc.AssertError(err)
-	// defer reader.Close()
 
 	// read from staging file and write a separate load file for each table in warehouse
 	// tableContentMap := make(map[string]string)
@@ -565,6 +557,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		if _, ok := outputFileMap[tableName]; !ok {
 			outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + ".csv.gz"
 			gzWriter, err := misc.CreateGZ(outputFilePath)
+			defer gzWriter.CloseGZ()
 			if err != nil {
 				return nil, err
 			}
