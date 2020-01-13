@@ -3,6 +3,7 @@ package misc
 import (
 	"archive/zip"
 	"bufio"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -267,7 +268,9 @@ func UnZipSingleFile(outputfile string, filename string) {
 func RemoveFilePaths(filepaths ...string) {
 	for _, filepath := range filepaths {
 		err := os.Remove(filepath)
-		logger.Error(err)
+		if err != nil {
+			logger.Error(err)
+		}
 	}
 }
 
@@ -461,4 +464,54 @@ func StringKeys(input interface{}) []string {
 	keys := funk.Keys(input)
 	stringKeys := keys.([]string)
 	return stringKeys
+}
+
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
+}
+
+// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
+// of garage collection cycles completed.
+func PrintMemUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+	logger.Debug("#########")
+	logger.Debugf("Alloc = %v MiB\n", bToMb(m.Alloc))
+	logger.Debugf("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
+	logger.Debugf("\tSys = %v MiB\n", bToMb(m.Sys))
+	logger.Debugf("\tNumGC = %v\n", m.NumGC)
+	logger.Debug("#########")
+}
+
+type GZipWriter struct {
+	File      *os.File
+	GzWriter  *gzip.Writer
+	BufWriter *bufio.Writer
+}
+
+func CreateGZ(s string) (w GZipWriter, err error) {
+
+	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	if err != nil {
+		return
+	}
+	gzWriter := gzip.NewWriter(file)
+	bufWriter := bufio.NewWriter(gzWriter)
+	w = GZipWriter{
+		File:      file,
+		GzWriter:  gzWriter,
+		BufWriter: bufWriter,
+	}
+	return
+}
+
+func (w GZipWriter) WriteGZ(s string) {
+	w.BufWriter.WriteString(s)
+}
+
+func (w GZipWriter) CloseGZ() {
+	w.BufWriter.Flush()
+	w.GzWriter.Close()
+	w.File.Close()
 }

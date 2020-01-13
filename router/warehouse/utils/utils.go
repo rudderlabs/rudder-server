@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/iancoleman/strcase"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -16,6 +17,7 @@ import (
 )
 
 const (
+	WaitingState                  = "waiting"
 	GeneratingLoadFileState       = "generating_load_file"
 	GeneratingLoadFileFailedState = "generating_load_file_failed"
 	GeneratedLoadFileState        = "generated_load_file"
@@ -87,16 +89,21 @@ type UploadT struct {
 	Status             string
 	Schema             map[string]map[string]string
 	Error              json.RawMessage
-	// Error              map[string]map[string]interface{}
 }
 
-func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
+type CurrentSchemaT struct {
+	Namespace string
+	Schema    map[string]map[string]string
+}
+
+func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, error) {
 	var rawSchema json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
+	var namespace string
+	sqlStatement := fmt.Sprintf(`SELECT namespace, schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace, &rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return make(map[string]map[string]string), nil
+			return CurrentSchemaT{}, nil
 		}
 		misc.AssertError(err)
 	}
@@ -112,7 +119,8 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[st
 		}
 		schema[key] = y
 	}
-	return schema, nil
+	currentSchema := CurrentSchemaT{Namespace: namespace, Schema: schema}
+	return currentSchema, nil
 }
 
 type SchemaDiffT struct {
@@ -211,7 +219,7 @@ func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema ma
 		misc.AssertError(err)
 		defer stmt.Close()
 
-		_, err = stmt.Exec(uploadID, wh.Source.ID, strings.ToLower(wh.Source.Name), wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, time.Now())
+		_, err = stmt.Exec(uploadID, wh.Source.ID, strcase.ToSnake(wh.Source.Name), wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, time.Now())
 	} else {
 		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3`, warehouseSchemasTable)
 		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, wh.Source.ID, wh.Destination.ID)
@@ -222,7 +230,7 @@ func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema ma
 
 func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (locations []string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s
-								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id > %[5]v AND %[1]s.id <= %[6]v)`,
+								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)`,
 		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
 	rows, err := dbHandle.Query(sqlStatement)
 	defer rows.Close()
