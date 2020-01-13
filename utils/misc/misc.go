@@ -447,6 +447,24 @@ func StringKeys(input interface{}) []string {
 	return stringKeys
 }
 
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
+}
+
+// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
+// of garage collection cycles completed.
+func PrintMemUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+	logger.Debug("#########")
+	logger.Debugf("Alloc = %v MiB\n", bToMb(m.Alloc))
+	logger.Debugf("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
+	logger.Debugf("\tSys = %v MiB\n", bToMb(m.Sys))
+	logger.Debugf("\tNumGC = %v\n", m.NumGC)
+	logger.Debug("#########")
+}
+
 type GZipWriter struct {
 	File      *os.File
 	GzWriter  *gzip.Writer

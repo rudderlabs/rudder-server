@@ -114,25 +114,16 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
 	err := os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	misc.AssertError(err)
-	// gzipFile, err := os.Create(gzipFilePath)
-	gzipFile, err := misc.CreateGZ(gzipFilePath)
+	gzWriter, err := misc.CreateGZ(gzipFilePath)
 
-	var contentSlice [][]byte
 	for _, job := range batchJobs.Jobs {
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
 		var ok bool
 		if _, ok = uploadedRawDataJobsCache[eventID]; !ok {
-			contentSlice = append(contentSlice, job.EventPayload)
+			gzWriter.WriteGZ(fmt.Sprintf(`%s`, job.EventPayload) + "\n")
 		}
-		gzipFile.WriteGZ(fmt.Sprintf(`%s`, job.EventPayload) + "\n")
 	}
-	// content := bytes.Join(contentSlice[:], []byte("\n"))
-	gzipFile.CloseGZ()
-
-	// gzipWriter := gzip.NewWriter(gzipFile)
-	// _, err = gzipWriter.Write(content)
-	// misc.AssertError(err)
-	// gzipWriter.Close()
+	gzWriter.CloseGZ()
 
 	logger.Debugf("BRT: Logged to local file: %v\n", gzipFilePath)
 

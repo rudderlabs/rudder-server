@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -201,7 +200,7 @@ func consolidateSchema(jsonUploadsList []*StagingFileT) map[string]map[string]st
 func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT, schema map[string]map[string]string) warehouseutils.UploadT {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, created_at, updated_at)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13) RETURNING id`, warehouseUploadsTable)
-	logger.Debugf("WH: %s: Creating record in wh_load_file id: %v\n", wh.destType, sqlStatement)
+	logger.Debugf("WH: %s: Creating record in wh_load_files id: %v\n", wh.destType, sqlStatement)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	misc.AssertError(err)
 	defer stmt.Close()
@@ -301,7 +300,6 @@ func (wh *HandleT) mainLoop() {
 			time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
 			continue
 		}
-		logger.Infof("Looping through warehouses: %v\n", len(wh.warehouses))
 		for _, warehouse := range wh.warehouses {
 			if isDestInProgress(warehouse.Destination.ID) {
 				continue
@@ -326,7 +324,7 @@ func (wh *HandleT) mainLoop() {
 			// fetch any pending wh_uploads records (query for not successful/aborted uploads)
 			pendingUploads, ok := wh.getPendingUploads(warehouse)
 			if ok {
-				logger.Infof("***Found pending uploads: %v\n", len(pendingUploads))
+				logger.Debugf("WH: Found pending uploads: %v for %s:%s\n", len(pendingUploads), wh.destType, warehouse.Destination.ID)
 				jobs := []ProcessStagingFilesJobT{}
 				for _, pendingUpload := range pendingUploads {
 					stagingFilesList, err := wh.getStagingFiles(warehouse, pendingUpload.StartStagingFileID, pendingUpload.EndStagingFileID)
@@ -341,7 +339,7 @@ func (wh *HandleT) mainLoop() {
 			} else {
 				// fetch staging files that are not processed yet
 				stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
-				logger.Infof("***Found pending staging files: %v\n", len(stagingFilesList))
+				logger.Debugf("WH: Found pending staging files for %s:%s %v\n", wh.destType, warehouse.Destination.ID, len(stagingFilesList))
 				misc.AssertError(err)
 				if len(stagingFilesList) == 0 {
 					setDestInProgress(warehouse.Destination.ID, false)
@@ -393,7 +391,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	wg.Add(len(job.List))
 	ch := make(chan []int64)
 	// queue the staging files in a go routine so that job.List can be higher than number of workers in createLoadFilesQ and not be blocked
-	logger.Infof("***Starting batch processing %v stage files with %v workers***\n", len(job.List), noOfWorkers)
+	logger.Debugf("WH: Starting batch processing %v stage files with %v workers for %s:%s\n", len(job.List), noOfWorkers, wh.destType, job.Warehouse.Destination.ID)
 	go func() {
 		for _, stagingFile := range job.List {
 			wh.createLoadFilesQ <- LoadFileJobT{
@@ -426,14 +424,14 @@ waitForLoadFiles:
 		case ids := <-ch:
 			loadFileIDs = append(loadFileIDs, ids...)
 			count++
-			logger.Infof("*** %v staging files processed in batch of %v***\n", count, len(job.List))
-			logger.Infof("***Received load files with ids: %v***\n", loadFileIDs)
+			logger.Debugf("WH: Processed %v staging files in batch of %v for %s:%s\n", count, len(job.List), wh.destType, job.Warehouse.Destination.ID)
+			logger.Debugf("WH: Received load files with ids: %v for %s:%s\n", loadFileIDs, wh.destType, job.Warehouse.Destination.ID)
 			if count == len(job.List) {
 				break waitForLoadFiles
 			}
 		case err = <-waitChan:
 			if err != nil {
-				logger.Infof("***Discontinuing processing of staging files due to error: %v***\n", err)
+				logger.Errorf("WH: Discontinuing processing of staging files for %s:%s due to error: %v\n", wh.destType, job.Warehouse.Destination.ID, err)
 				break waitForLoadFiles
 			}
 		}
@@ -486,7 +484,7 @@ func (wh *HandleT) initWorkers() {
 					// generate load files only if not done before
 					// upload records have start_load_file_id and end_load_file_id set to 0 on creation
 					// and are updated on creation of load files
-					logger.Infof("****Processing staging files job: %+v %v %v\n", len(job.List), job.List[0].ID, job.List[len(job.List)-1].ID)
+					logger.Debugf("WH: Processing staging files in upload job:%v with staging files from %v to %v for %s:%s\n", len(job.List), job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
 					if job.Upload.StartLoadFileID == 0 {
 						warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
 						err := wh.createLoadFiles(&job)
@@ -509,7 +507,7 @@ func (wh *HandleT) initWorkers() {
 // Each Staging File has data for multiple tables in warehouse
 // Create separate Load File out of Staging File for each table
 func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, err error) {
-	logger.Infof("***Starting processing staging file: %v %v\n", job.StagingFile.ID, job.StagingFile.Location)
+	logger.Debugf("WH: Starting processing staging file: %v at %v for %s:%s\n", job.StagingFile.ID, job.StagingFile.Location, wh.destType, job.Warehouse.Destination.ID)
 	// download staging file into a temp dir
 	dirName := "/rudder-warehouse-json-uploads-tmp/"
 	tmpDirPath := misc.CreateTMPDIR()
@@ -554,9 +552,8 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	outputFileMap := make(map[string]misc.GZipWriter)
 	uuidTS := time.Now()
 	sc := bufio.NewScanner(reader)
-	fmt.Println("******1")
-	PrintMemUsage()
-	fmt.Println("******1")
+	misc.PrintMemUsage()
+
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
 		var jsonLine map[string]interface{}
@@ -567,12 +564,11 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		columns, _ := metadata.(map[string]interface{})["columns"].(map[string]interface{})
 		if _, ok := outputFileMap[tableName]; !ok {
 			outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + ".csv.gz"
-			// outputFile, err := os.Create(outputFilePath)
-			outputFile, err := misc.CreateGZ(outputFilePath)
+			gzWriter, err := misc.CreateGZ(outputFilePath)
 			if err != nil {
 				return nil, err
 			}
-			outputFileMap[tableName] = outputFile
+			outputFileMap[tableName] = gzWriter
 		}
 		if wh.destType == "BQ" {
 			// add uuid_ts to track when event was processed into load_file
@@ -582,7 +578,6 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				return loadFileIDs, err
 			}
 			outputFileMap[tableName].WriteGZ(string(line) + "\n")
-			// fmt.Fprintln(outputFileMap[tableName], string(line))
 		} else {
 			csvRow := []string{}
 			for _, columnName := range sortedTableColumnMap[tableName] {
@@ -609,32 +604,13 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		}
 	}
 	reader.Close()
-	fmt.Println("******2")
-	PrintMemUsage()
-	fmt.Println("******2")
-
-	// gzip and write to file
-	// for tableName, content := range tableContentMap {
-	// 	outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + ".csv.gz"
-	// 	outputFile, err := os.Create(outputFilePath)
-	// 	outputFileMap[tableName] = outputFile
-	// 	gzipWriter := gzip.NewWriter(outputFile)
-	// 	_, err = gzipWriter.Write([]byte(content))
-	// 	gzipWriter.Close()
-	// 	if err != nil {
-	// 		return loadFileIDs, err
-	// 	}
-	// }
+	misc.PrintMemUsage()
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
 		Config:   job.Warehouse.Destination.Config.(map[string]interface{}),
 	})
 	misc.AssertError(err)
-
-	fmt.Println("******3")
-	PrintMemUsage()
-	fmt.Println("******3")
 
 	for tableName, outputFile := range outputFileMap {
 		outputFile.CloseGZ()
@@ -657,22 +633,6 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		loadFileIDs = append(loadFileIDs, fileID)
 	}
 	return
-}
-
-// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
-// of garage collection cycles completed.
-func PrintMemUsage() {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
-	fmt.Printf("Alloc = %v MiB\n", bToMb(m.Alloc))
-	fmt.Printf("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
-	fmt.Printf("\tSys = %v MiB\n", bToMb(m.Sys))
-	fmt.Printf("\tNumGC = %v\n", m.NumGC)
-}
-
-func bToMb(b uint64) uint64 {
-	return b / 1024 / 1024
 }
 
 func (wh *HandleT) initUploaders() {
