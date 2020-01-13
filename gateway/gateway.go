@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,6 +18,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
+	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -428,11 +430,16 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
-	var json = []byte(`{"server":"UP","db":"UP"}`)
+	var dbService string = "UP"
+	var enabledRouter string = "TRUE"
 	if !gateway.jobsDB.CheckPGHealth() {
-		json, _ = sjson.SetBytes(json, "db", "DOWN")
+		dbService = "DOWN"
 	}
-	w.Write(json)
+	if !config.GetBool("enableRouter", true) {
+		enabledRouter = "FALSE"
+	}
+	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode))
+	w.Write([]byte(healthVal))
 }
 
 func reflectOrigin(origin string) bool {

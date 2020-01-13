@@ -28,6 +28,8 @@ type RecoveryHandler interface {
 	Handle()
 }
 
+var CurrentMode string = normalMode // default mode
+
 // RecoveryDataT : DS to store the recovery process data
 type RecoveryDataT struct {
 	StartTimes                []int64
@@ -177,4 +179,5 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
 	logger.Infof("Starting in %s mode\n", recoveryData.Mode)
+	CurrentMode = recoveryData.Mode
 }
