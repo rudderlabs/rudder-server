@@ -506,35 +506,6 @@ func (wh *HandleT) initWorkers() {
 	}
 }
 
-type F struct {
-	f  *os.File
-	gf *gzip.Writer
-	fw *bufio.Writer
-}
-
-func CreateGZ(s string) (f F, err error) {
-
-	fi, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
-	if err != nil {
-		return
-	}
-	gf := gzip.NewWriter(fi)
-	fw := bufio.NewWriter(gf)
-	f = F{fi, gf, fw}
-	return
-}
-
-func WriteGZ(f F, s string) {
-	(f.fw).WriteString(s)
-}
-
-func CloseGZ(f F) {
-	f.fw.Flush()
-	// Close the gzip first.
-	f.gf.Close()
-	f.f.Close()
-}
-
 // Each Staging File has data for multiple tables in warehouse
 // Create separate Load File out of Staging File for each table
 func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, err error) {
@@ -580,7 +551,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 
 	// read from staging file and write a separate load file for each table in warehouse
 	// tableContentMap := make(map[string]string)
-	outputFileMap := make(map[string]F)
+	outputFileMap := make(map[string]misc.GZipWriter)
 	uuidTS := time.Now()
 	sc := bufio.NewScanner(reader)
 	fmt.Println("******1")
@@ -597,7 +568,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		if _, ok := outputFileMap[tableName]; !ok {
 			outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + ".csv.gz"
 			// outputFile, err := os.Create(outputFilePath)
-			outputFile, err := CreateGZ(outputFilePath)
+			outputFile, err := misc.CreateGZ(outputFilePath)
 			if err != nil {
 				return nil, err
 			}
@@ -610,7 +581,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 			if err != nil {
 				return loadFileIDs, err
 			}
-			WriteGZ(outputFileMap[tableName], string(line)+"\n")
+			outputFileMap[tableName].WriteGZ(string(line) + "\n")
 			// fmt.Fprintln(outputFileMap[tableName], string(line))
 		} else {
 			csvRow := []string{}
@@ -634,7 +605,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
-			WriteGZ(outputFileMap[tableName], strings.Join(csvRow, ",")+"\n")
+			outputFileMap[tableName].WriteGZ(strings.Join(csvRow, ",") + "\n")
 		}
 	}
 	reader.Close()
@@ -666,9 +637,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	fmt.Println("******3")
 
 	for tableName, outputFile := range outputFileMap {
-		CloseGZ(outputFile)
-		file, err := os.Open(outputFile.f.Name())
-		defer os.Remove(outputFile.f.Name())
+		outputFile.CloseGZ()
+		file, err := os.Open(outputFile.File.Name())
+		defer os.Remove(outputFile.File.Name())
 		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v\n", wh.destType, warehouseutils.ObjectStorageMap[wh.destType], tableName, job.StagingFile.ID)
 		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, strconv.FormatInt(job.Upload.ID, 10))
 		if err != nil {

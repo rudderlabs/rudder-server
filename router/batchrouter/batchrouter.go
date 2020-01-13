@@ -2,7 +2,6 @@ package batchrouter
 
 import (
 	"bufio"
-	"bytes"
 	"compress/gzip"
 	"database/sql"
 	"encoding/json"
@@ -112,6 +111,12 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	tmpDirPath := misc.CreateTMPDIR()
 	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
 
+	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
+	err := os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
+	misc.AssertError(err)
+	// gzipFile, err := os.Create(gzipFilePath)
+	gzipFile, err := misc.CreateGZ(gzipFilePath)
+
 	var contentSlice [][]byte
 	for _, job := range batchJobs.Jobs {
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
@@ -119,18 +124,15 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		if _, ok = uploadedRawDataJobsCache[eventID]; !ok {
 			contentSlice = append(contentSlice, job.EventPayload)
 		}
+		gzipFile.WriteGZ(fmt.Sprintf(`%s`, job.EventPayload) + "\n")
 	}
-	content := bytes.Join(contentSlice[:], []byte("\n"))
+	// content := bytes.Join(contentSlice[:], []byte("\n"))
+	gzipFile.CloseGZ()
 
-	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
-	err := os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
-	misc.AssertError(err)
-	gzipFile, err := os.Create(gzipFilePath)
-
-	gzipWriter := gzip.NewWriter(gzipFile)
-	_, err = gzipWriter.Write(content)
-	misc.AssertError(err)
-	gzipWriter.Close()
+	// gzipWriter := gzip.NewWriter(gzipFile)
+	// _, err = gzipWriter.Write(content)
+	// misc.AssertError(err)
+	// gzipWriter.Close()
 
 	logger.Debugf("BRT: Logged to local file: %v\n", gzipFilePath)
 
@@ -140,7 +142,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	})
 	misc.AssertError(err)
 
-	gzipFile, err = os.Open(gzipFilePath)
+	outputFile, err := os.Open(gzipFilePath)
 	misc.AssertError(err)
 
 	logger.Debugf("BRT: Starting upload to %s: config:%s\n", provider, destinationConfig)
@@ -159,7 +161,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		Provider: provider,
 	})
 	opID := brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
-	_, err = uploader.Upload(gzipFile, keyPrefixes...)
+	_, err = uploader.Upload(outputFile, keyPrefixes...)
 
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to %s: config:%s: %v\n", provider, destinationConfig, err)

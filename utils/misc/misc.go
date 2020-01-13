@@ -3,6 +3,7 @@ package misc
 import (
 	"archive/zip"
 	"bufio"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -444,4 +445,39 @@ func StringKeys(input interface{}) []string {
 	keys := funk.Keys(input)
 	stringKeys := keys.([]string)
 	return stringKeys
+}
+
+type GZipWriter struct {
+	File      *os.File
+	GzWriter  *gzip.Writer
+	BufWriter *bufio.Writer
+}
+
+func CreateGZ(s string) (w GZipWriter, err error) {
+
+	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	if err != nil {
+		return
+	}
+	gzWriter := gzip.NewWriter(file)
+	bufWriter := bufio.NewWriter(gzWriter)
+	w = GZipWriter{
+		File:      file,
+		GzWriter:  gzWriter,
+		BufWriter: bufWriter,
+	}
+	return
+}
+
+func (w GZipWriter) WriteGZ(s string) {
+	// w.bufWriter.W
+	// var x json.RawMessage
+	// w.bufWriter.WriteByte(x)
+	w.BufWriter.WriteString(s)
+}
+
+func (w GZipWriter) CloseGZ() {
+	w.BufWriter.Flush()
+	w.GzWriter.Close()
+	w.File.Close()
 }
