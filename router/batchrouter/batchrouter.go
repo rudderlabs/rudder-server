@@ -272,7 +272,7 @@ func (brt *HandleT) initWorkers() {
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType)
 						destUploadStat.Start()
 						output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
-						if output.Error == nil {
+						if output.Error == nil && output.Key != "" {
 							brt.updateWarehouseMetadata(batchJobs, output.Key)
 						}
 						brt.setJobStatus(batchJobs, true, output.Error)
