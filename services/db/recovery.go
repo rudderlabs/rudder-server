@@ -160,6 +160,7 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 		}
 		recoveryData.Mode = nextMode
 		recoveryHandler = NewRecoveryHandler(&recoveryData)
+		alertOps(recoveryData.Mode)
 	}
 
 	recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
@@ -169,7 +170,6 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 		} else if recoveryData.Mode == maintenanceMode {
 			recoveryModeStat.Gauge(3)
 		}
-		alertOps(recoveryData.Mode)
 	} else {
 		recoveryModeStat.Gauge(1)
 	}
