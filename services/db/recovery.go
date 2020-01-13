@@ -155,11 +155,12 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 		logger.Info("DB Recovery: Moving to next State. Threshold reached for " + recoveryData.Mode)
 		nextMode := getNextMode(recoveryData.Mode)
 		if nextMode == "" {
-			// If we can't recover in maintenance mode, just panic
-			panic("Not a valid mode")
+			logger.Fatal("Threshold reached for maintenance mode")
+		} else {
+			recoveryData.Mode = nextMode
+			recoveryHandler = NewRecoveryHandler(&recoveryData)
+			alertOps(recoveryData.Mode)
 		}
-		recoveryData.Mode = nextMode
-		recoveryHandler = NewRecoveryHandler(&recoveryData)
 	}
 
 	recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
@@ -169,7 +170,6 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 		} else if recoveryData.Mode == maintenanceMode {
 			recoveryModeStat.Gauge(3)
 		}
-		alertOps(recoveryData.Mode)
 	} else {
 		recoveryModeStat.Gauge(1)
 	}
