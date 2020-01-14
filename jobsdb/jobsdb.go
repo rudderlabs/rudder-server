@@ -1374,10 +1374,6 @@ func (jd *HandleT) mainCheckLoop() {
 				//we just delete the new DS being copied into. The
 				//sources are still around
 
-				//TODO remove
-				//err1 := errors.New("test error")
-				//panic(err1)
-
 				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: migrateTo})
 				jd.assertError(err)
 				opID := jd.JournalMarkStart(migrateCopyOperation, opPayload)
@@ -1386,6 +1382,11 @@ func (jd *HandleT) mainCheckLoop() {
 					logger.Info("Main check:Migrate", ds, migrateTo)
 					jd.migrateJobs(ds, migrateTo)
 				}
+
+				//TODO remove
+				//err1 := errors.New("test error")
+				//panic(err1)
+
 				jd.JournalMarkDone(opID)
 			}
 
@@ -1569,11 +1570,28 @@ const (
 	RawDataDestUploadOperation  = "S3_DEST_UPLOAD"
 )
 
+var transactionOperations = []TransactionOperationT{TransactionOperationT{operation: migrateTransactionOperation, allowedOpsCount: 2}}
+
+type TransactionOperationT struct {
+	operation       string
+	allowedOpsCount int
+}
+
 type JournalEntryT struct {
 	OpID      int64
 	OpType    string
 	OpDone    bool
 	OpPayload json.RawMessage
+}
+
+func isTransactionOp(operation string) (bool, int) {
+	for _, transactionOp := range transactionOperations {
+		if transactionOp.operation == operation {
+			return true, transactionOp.allowedOpsCount
+		}
+	}
+
+	return false, 1
 }
 
 func (jd *HandleT) setupJournal() {
@@ -1685,14 +1703,31 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 	var opPayloadJSON journalOpPayloadT
 	var undoOp = false
 	var count int
+	var transactionOperationsCount int
+	var allowedOpsCount int
+
+	opTypesArr := make([]string, 0)
 
 	for rows.Next() {
 		err = rows.Scan(&opID, &opType, &opDone, &opPayload)
 		jd.assertError(err)
 		jd.assert(opDone == false)
 		count++
+		opTypesArr = append(opTypesArr, opType)
+
+		if isTransaction, opsCount := isTransactionOp(opType); isTransaction {
+			transactionOperationsCount++
+			allowedOpsCount = opsCount
+		}
 	}
-	jd.assert(count <= 1)
+
+	//If journal entry has transaction operations, then we assert number of transaction operations and number of allowed operation for that transaction
+	if transactionOperationsCount > 0 {
+		jd.assert(transactionOperationsCount <= 1)
+		jd.assert(count <= allowedOpsCount)
+	} else {
+		jd.assert(count <= 1)
+	}
 
 	if count == 0 {
 		//Nothing to recoer
@@ -1704,62 +1739,64 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 	err = json.Unmarshal(opPayload, &opPayloadJSON)
 	jd.assertError(err)
 
-	switch opType {
-	case addDSOperation:
-		newDS := opPayloadJSON.To
-		undoOp = true
-		//Drop the table we were tring to create
-		logger.Info("Recovering new DS operation", newDS)
-		jd.dropDS(newDS, true)
-	case migrateCopyOperation:
-		migrateDest := opPayloadJSON.To
-		//Delete the destination of the interrupted
-		//migration. After we start, code should
-		//redo the migration
-		logger.Info("Recovering migrateCopy operation", migrateDest)
-		jd.dropDS(migrateDest, true)
-		undoOp = true
-	case postMigrateDSOperation:
-		//Some of the source datasets would have been
-		migrateSrc := opPayloadJSON.From
-		for _, ds := range migrateSrc {
-			if jd.toBackup {
-				jd.renameDS(ds, true)
-			} else {
-				jd.dropDS(ds, true)
+	for _, operationType := range opTypesArr {
+		switch operationType {
+		case addDSOperation:
+			newDS := opPayloadJSON.To
+			undoOp = true
+			//Drop the table we were tring to create
+			logger.Info("Recovering new DS operation", newDS)
+			jd.dropDS(newDS, true)
+		case migrateCopyOperation:
+			migrateDest := opPayloadJSON.To
+			//Delete the destination of the interrupted
+			//migration. After we start, code should
+			//redo the migration
+			logger.Info("Recovering migrateCopy operation", migrateDest)
+			jd.dropDS(migrateDest, true)
+			undoOp = true
+		case postMigrateDSOperation:
+			//Some of the source datasets would have been
+			migrateSrc := opPayloadJSON.From
+			for _, ds := range migrateSrc {
+				if jd.toBackup {
+					jd.renameDS(ds, true)
+				} else {
+					jd.dropDS(ds, true)
+				}
 			}
+			logger.Info("Recovering migrateDel operation", migrateSrc)
+			undoOp = false
+		case migrateTransactionOperation:
+			migrateDest := opPayloadJSON.To
+			//Delete the destination of the interrupted
+			//migration transaction. After we start, code should
+			//redo the migration
+			logger.Info("Recovering migrateTransactionOperation", migrateDest)
+			jd.dropDS(migrateDest, true)
+			undoOp = true
+		case backupDSOperation:
+			jd.removeTableJSONDumps()
+			logger.Info("Removing all stale json dumps of tables")
+			undoOp = true
+		case dropDSOperation, backupDropDSOperation:
+			//Some of the source datasets would have been
+			var dataset dataSetT
+			json.Unmarshal(opPayload, &dataset)
+			jd.dropDS(dataset, true)
+			logger.Info("Recovering dropDS operation", dataset)
+			undoOp = false
 		}
-		logger.Info("Recovering migrateDel operation", migrateSrc)
-		undoOp = false
-	case migrateTransactionOperation:
-		migrateDest := opPayloadJSON.To
-		//Delete the destination of the interrupted
-		//migration transaction. After we start, code should
-		//redo the migration
-		logger.Info("Recovering migrateTransactionOperation", migrateDest)
-		jd.dropDS(migrateDest, true)
-		undoOp = true
-	case backupDSOperation:
-		jd.removeTableJSONDumps()
-		logger.Info("Removing all stale json dumps of tables")
-		undoOp = true
-	case dropDSOperation, backupDropDSOperation:
-		//Some of the source datasets would have been
-		var dataset dataSetT
-		json.Unmarshal(opPayload, &dataset)
-		jd.dropDS(dataset, true)
-		logger.Info("Recovering dropDS operation", dataset)
-		undoOp = false
-	}
 
-	if undoOp {
-		sqlStatement = fmt.Sprintf(`DELETE FROM %s_journal WHERE id=$1`, jd.tablePrefix)
-	} else {
-		sqlStatement = fmt.Sprintf(`UPDATE %s_journal SET done=True WHERE id=$1`, jd.tablePrefix)
-	}
+		if undoOp {
+			sqlStatement = fmt.Sprintf(`DELETE FROM %s_journal WHERE id=$1`, jd.tablePrefix)
+		} else {
+			sqlStatement = fmt.Sprintf(`UPDATE %s_journal SET done=True WHERE id=$1`, jd.tablePrefix)
+		}
 
-	_, err = jd.dbHandle.Exec(sqlStatement, opID)
-	jd.assertError(err)
+		_, err = jd.dbHandle.Exec(sqlStatement, opID)
+		jd.assertError(err)
+	}
 }
 
 const (
