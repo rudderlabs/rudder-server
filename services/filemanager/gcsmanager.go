@@ -17,9 +17,7 @@ func objectURL(objAttrs *storage.ObjectAttrs) string {
 
 func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
 	ctx := context.Background()
-
 	client, err := storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
-
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -30,7 +28,9 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
-
+	if manager.Config.Folder != "" {
+		fileName = manager.Config.Folder + "/" + fileName
+	}
 	bh := client.Bucket(manager.Config.Bucket)
 	obj := bh.Object(fileName)
 	w := obj.NewWriter(ctx)
@@ -69,17 +69,21 @@ type GCSManager struct {
 }
 
 func GetGCSConfig(config map[string]interface{}) *GCSConfig {
-	var bucketName, credentials string
+	var bucketName, folderName, credentials string
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
+	}
+	if config["folderName"] != nil {
+		folderName = config["folderName"].(string)
 	}
 	if config["credentials"] != nil {
 		credentials = config["credentials"].(string)
 	}
-	return &GCSConfig{Bucket: bucketName, Credentials: credentials}
+	return &GCSConfig{Bucket: bucketName, Folder: folderName, Credentials: credentials}
 }
 
 type GCSConfig struct {
 	Bucket      string
+	Folder      string
 	Credentials string
 }

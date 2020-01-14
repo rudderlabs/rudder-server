@@ -49,10 +49,13 @@ func (manager *MinioManager) Download(file *os.File, key string) error {
 }
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
-	var bucketName, endPoint, accessKeyID, secretAccessKey, protocol string
+	var bucketName, folderName, endPoint, accessKeyID, secretAccessKey, protocol string
 	var useSSL bool
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
+	}
+	if config["folderName"] != nil {
+		folderName = config["folderName"].(string)
 	}
 	if config["endPoint"] != nil {
 		endPoint = config["endPoint"].(string)
@@ -72,6 +75,7 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 
 	return &MinioConfig{
 		Bucket:          bucketName,
+		Folder:          folderName,
 		EndPoint:        endPoint,
 		AccessKeyID:     accessKeyID,
 		SecretAccessKey: secretAccessKey,
@@ -86,6 +90,7 @@ type MinioManager struct {
 
 type MinioConfig struct {
 	Bucket          string
+	Folder          string
 	EndPoint        string
 	AccessKeyID     string
 	SecretAccessKey string
