@@ -221,7 +221,7 @@ func loadConfig() {
 	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres", 5)
 	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
-	maxTableSizeInMB = config.GetInt("JobsDB.maxTableSizeInMB", 100)
+	maxTableSizeInMB = config.GetInt("JobsDB.maxTableSizeInMB", 150)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
