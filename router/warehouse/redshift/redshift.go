@@ -284,6 +284,7 @@ func (rs *HandleT) load() (err error) {
 
 			err = tx.Commit()
 			if err != nil {
+				tx.Rollback()
 				wg.Err(err)
 				return
 			}
