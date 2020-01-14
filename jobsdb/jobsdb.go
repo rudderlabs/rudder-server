@@ -585,7 +585,7 @@ func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
 	return jobTable, jobStatusTable
 }
 
-func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT, migrationTarget bool) (dataSetT, int64) {
+func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT, isMigrationTarget bool) (dataSetT, int64) {
 
 	//Get the max index
 	dList := jd.getDSList(true)
@@ -629,7 +629,7 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT, migrationT
 	newDS.Index = newDSIdx
 
 	var migrateTransactionOpID int64
-	if migrationTarget {
+	if isMigrationTarget {
 		opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
 		jd.assertError(err)
 		migrateTransactionOpID = jd.JournalMarkStart(migrateTransactionOperation, opPayload)
@@ -1383,10 +1383,6 @@ func (jd *HandleT) mainCheckLoop() {
 					jd.migrateJobs(ds, migrateTo)
 				}
 
-				//TODO remove
-				//err1 := errors.New("test error")
-				//panic(err1)
-
 				jd.JournalMarkDone(opID)
 			}
 
@@ -1397,15 +1393,14 @@ func (jd *HandleT) mainCheckLoop() {
 			jd.assertError(err)
 			opID := jd.JournalMarkStart(postMigrateDSOperation, opPayload)
 
-			jd.dsListLock.Lock()
-			jd.postMigrateHandleDS(migrateFrom)
-			jd.dsListLock.Unlock()
-
-			jd.JournalMarkDone(opID)
-
 			if migrating {
 				jd.JournalMarkDone(migrateTransactionOpID)
 			}
+
+			jd.dsListLock.Lock()
+			jd.postMigrateHandleDS(migrateFrom)
+			jd.dsListLock.Unlock()
+			jd.JournalMarkDone(opID)
 		}
 
 		jd.dsMigrationLock.Unlock()
@@ -1700,13 +1695,14 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 	var opType string
 	var opDone bool
 	var opPayload json.RawMessage
-	var opPayloadJSON journalOpPayloadT
 	var undoOp = false
 	var count int
 	var transactionOperationsCount int
 	var allowedOpsCount int
 
+	opIDs := make([]int64, 0)
 	opTypesArr := make([]string, 0)
+	opPayloads := make([]json.RawMessage, 0)
 
 	for rows.Next() {
 		err = rows.Scan(&opID, &opType, &opDone, &opPayload)
@@ -1714,6 +1710,8 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		jd.assert(opDone == false)
 		count++
 		opTypesArr = append(opTypesArr, opType)
+		opIDs = append(opIDs, opID)
+		opPayloads = append(opPayloads, opPayload)
 
 		if isTransaction, opsCount := isTransactionOp(opType); isTransaction {
 			transactionOperationsCount++
@@ -1730,16 +1728,23 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 	}
 
 	if count == 0 {
-		//Nothing to recoer
+		//Nothing to recover
 		return
 	}
 
-	//Need to recover the last failed operation
-	//Get the payload and undo
-	err = json.Unmarshal(opPayload, &opPayloadJSON)
-	jd.assertError(err)
+	//count is greater than 0. So asserting length of opIDs is greater than 0.
+	jd.assert(len(opIDs) == len(opTypesArr))
+	jd.assert(len(opIDs) == len(opPayloads))
+	jd.assert(len(opIDs) > 0)
 
-	for _, operationType := range opTypesArr {
+	for i, operationType := range opTypesArr {
+
+		var opPayloadJSON journalOpPayloadT
+		//Need to recover the last failed operation
+		//Get the payload and undo
+		err = json.Unmarshal(opPayloads[i], &opPayloadJSON)
+		jd.assertError(err)
+
 		switch operationType {
 		case addDSOperation:
 			newDS := opPayloadJSON.To
@@ -1794,7 +1799,7 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 			sqlStatement = fmt.Sprintf(`UPDATE %s_journal SET done=True WHERE id=$1`, jd.tablePrefix)
 		}
 
-		_, err = jd.dbHandle.Exec(sqlStatement, opID)
+		_, err = jd.dbHandle.Exec(sqlStatement, opIDs[i])
 		jd.assertError(err)
 	}
 }
