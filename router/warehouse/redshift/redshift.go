@@ -193,12 +193,6 @@ func (rs *HandleT) load() (err error) {
 		bucketName = config["bucketName"].(string)
 	}
 
-	// BEGIN TRANSACTION
-	tx, err := rs.Db.Begin()
-	if err != nil {
-		return err
-	}
-
 	wg := misc.NewWaitGroup()
 	wg.Add(len(rs.Upload.Schema))
 	stagingTableNames := []string{}
@@ -230,17 +224,28 @@ func (rs *HandleT) load() (err error) {
 				wg.Err(err)
 				return
 			}
+			defer rs.dropStagingTables([]string{stagingTableName})
+
 			stagingTableNames = append(stagingTableNames, stagingTableName)
 
 			region, manifestS3Location := warehouseutils.GetS3Location(manifestLocation)
 			if region == "" {
 				region = "us-east-1"
 			}
+
+			// BEGIN TRANSACTION
+			tx, err := rs.Db.Begin()
+			if err != nil {
+				wg.Err(err)
+				return
+			}
+
 			sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, accessKeyID, accessKey, region)
 
 			logger.Debugf("RS: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
 			_, err = tx.Exec(sqlStatement)
 			if err != nil {
+				tx.Rollback()
 				wg.Err(err)
 				return
 			}
@@ -254,6 +259,7 @@ func (rs *HandleT) load() (err error) {
 			logger.Debugf("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 			_, err = tx.Exec(sqlStatement)
 			if err != nil {
+				tx.Rollback()
 				wg.Err(err)
 				return
 			}
@@ -269,23 +275,25 @@ func (rs *HandleT) load() (err error) {
 			sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, primaryKey)
 			logger.Debugf("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
 			_, err = tx.Exec(sqlStatement)
+
 			if err != nil {
+				tx.Rollback()
 				wg.Err(err)
 				return
 			}
+
+			err = tx.Commit()
+			if err != nil {
+				tx.Rollback()
+				wg.Err(err)
+				return
+			}
+
 			wg.Done()
 		}(tName, cMap)
 	}
-
 	err = wg.Wait()
-	defer rs.dropStagingTables(stagingTableNames)
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	err = tx.Commit()
-	return err
+	return
 }
 
 // RedshiftCredentialsT ...
