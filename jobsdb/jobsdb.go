@@ -164,6 +164,10 @@ const (
 	InternalState     = "NP"
 )
 
+const (
+	MegaByte = 1000000 // 1MB = 10^6 B
+)
+
 var validJobStates = map[string]bool{
 	InternalState:     false, //False means internal state
 	SucceededState:    true,
@@ -187,11 +191,11 @@ var (
 )
 
 var (
-	maxDSSize, maxMigrateOnce                  int
-	jobDoneMigrateThres, jobStatusMigrateThres float64
-	mainCheckSleepDuration                     time.Duration
-	backupCheckSleepDuration                   time.Duration
-	useJoinForUnprocessed                      bool
+	maxDSSize, maxMigrateOnce, maxTableSizeInMB int
+	jobDoneMigrateThres, jobStatusMigrateThres  float64
+	mainCheckSleepDuration                      time.Duration
+	backupCheckSleepDuration                    time.Duration
+	useJoinForUnprocessed                       bool
 )
 
 var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat *stats.RudderStats
@@ -211,11 +215,13 @@ func loadConfig() {
 			(every few seconds) so a DS may go beyond this size
 	maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
 	mainCheckSleepDuration: How often is the loop (which checks for adding/migrating DS) run
+	maxTableSizeInMB: Maximum Table size in MegaBytes
 	*/
 	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres", 0.8)
 	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres", 5)
 	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
+	maxTableSizeInMB = config.GetInt("JobsDB.maxTableSizeInMB", 100)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
@@ -536,14 +542,12 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 
 func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 
-	var totalCount int
-
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ds.JobTable)
+	var tableSize int64
+	sqlStatement := fmt.Sprintf(`SELECT PG_RELATION_SIZE('%s')`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
-	err := row.Scan(&totalCount)
+	err := row.Scan(&tableSize)
 	jd.assertError(err)
-
-	if totalCount > maxDSSize {
+	if tableSize > int64(maxTableSizeInMB*MegaByte) {
 		return true
 	}
 	return false
