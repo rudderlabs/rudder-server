@@ -32,7 +32,7 @@ import (
 var (
 	jobQueryBatchSize          int
 	noOfWorkers                int
-	warehouseUploadSleepInS    int
+	uploadFreq                 int64
 	mainLoopSleepInS           int
 	stagingFilesBatchSize      int
 	configSubscriberLock       sync.RWMutex
@@ -41,6 +41,7 @@ var (
 	inProgressMap              map[string]bool
 	inRecoveryMap              map[string]bool
 	inProgressMapLock          sync.RWMutex
+	lastExecMap                map[string]int64
 	warehouseLoadFilesTable    string
 	warehouseStagingFilesTable string
 	warehouseUploadsTable      string
@@ -89,7 +90,7 @@ func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 1)
 	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 100)
-	warehouseUploadSleepInS = config.GetInt("Warehouse.uploadSleepInS", 1800)
+	uploadFreq = config.GetInt64("Warehouse.uploadFreqInS", 1800)
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
 	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
@@ -99,6 +100,7 @@ func loadConfig() {
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
+	lastExecMap = map[string]int64{}
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
@@ -277,6 +279,14 @@ func isDestInProgress(destID string) bool {
 	return false
 }
 
+func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT) bool {
+	if lastExecTime, ok := lastExecMap[warehouse.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreq {
+		return true
+	}
+	lastExecMap[warehouse.Destination.ID] = time.Now().Unix()
+	return false
+}
+
 type WarehouseManager interface {
 	Process(config warehouseutils.ConfigT) error
 	CrashRecover(config warehouseutils.ConfigT) (err error)
@@ -302,6 +312,9 @@ func (wh *HandleT) mainLoop() {
 		}
 		for _, warehouse := range wh.warehouses {
 			if isDestInProgress(warehouse.Destination.ID) {
+				continue
+			}
+			if uploadFrequencyExceeded(warehouse) {
 				continue
 			}
 			setDestInProgress(warehouse.Destination.ID, true)
@@ -372,7 +385,7 @@ func (wh *HandleT) mainLoop() {
 				wh.uploadToWarehouseQ <- jobs
 			}
 		}
-		time.Sleep(time.Duration(warehouseUploadSleepInS) * time.Second)
+		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
 	}
 }
 
