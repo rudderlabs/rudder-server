@@ -1,29 +1,29 @@
 ![Build Status](https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master)
 
-# What is Rudder?
+# What is RudderStack?
 
-**Short answer:** Rudder is an open-source Segment alternative written in Go, built for the enterprise. .
+**Short answer:** RudderStack is an open-source Segment alternative written in Go, built for the enterprise. .
 
-**Long answer:** Rudder is a platform for collecting, storing and routing customer event data to dozens of tools. Rudder is open-source, can run in your cloud environment (AWS, GCP, Azure or even your data-centre) and provides a powerful transformation framework to process your event data on the fly.
+**Long answer:** RudderStack is a platform for collecting, storing and routing customer event data to dozens of tools. RudderStack is open-source, can run in your cloud environment (AWS, GCP, Azure or even your data-centre) and provides a powerful transformation framework to process your event data on the fly.
 
-Rudder runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation code which are node scripts. This repo contains the core backend and the transformation modules of Rudder. 
+RudderStack runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation code which are node scripts. This repo contains the core backend and the transformation modules of Rudder. 
 The client SDKs are in a separate repo (link below). 
 
-Rudder server is released under [SSPL License](https://www.mongodb.com/licensing/server-side-public-license)
+RudderStack server is released under [SSPL License](https://www.mongodb.com/licensing/server-side-public-license)
 
 Questions? Join our [Discord](https://discordapp.com/invite/xNEdEGw) channel. Or please email soumyadeb at rudderlabs.com. 
 
-# Why Rudder ?
+# Why RudderStack ?
 
-We are building Rudder because we believe open-source and cloud-prem is important for three main reasons
+We are building RudderStack because we believe open-source and cloud-prem is important for three main reasons
 
-1. **Privacy & Security:** You should be able to collect and store your customer data without sending everything to a 3rd party vendor or embedding proprietary SDKs. With Rudder, the event data is always in your control. Besides, Rudder gives you fine-grained control over what data to forward to what analytical tool.
+1. **Privacy & Security:** You should be able to collect and store your customer data without sending everything to a 3rd party vendor or embedding proprietary SDKs. With RudderStack, the event data is always in your control. Besides, RudderStack gives you fine-grained control over what data to forward to what analytical tool.
 
-2. **Processing Flexibility:** You should be able to enhance OR transform your event data by combining it with your other _internal_ data, e.g. stored in your transactional systems. Rudder makes that possible because it provides a powerful JS-based event transformation framework. Furthermore, since Rudder runs _inside_ your cloud or on-prem environment, you can access your production data to join with the event data.
+2. **Processing Flexibility:** You should be able to enhance OR transform your event data by combining it with your other _internal_ data, e.g. stored in your transactional systems. RudderStack makes that possible because it provides a powerful JS-based event transformation framework. Furthermore, since RudderStack runs _inside_ your cloud or on-prem environment, you can access your production data to join with the event data.
 
-3. **Unlimited Events:** Event volume-based pricing of most commercial systems is broken. You should be able to collect as much data as possible without worrying about overrunning event budgets. Rudder's core BE is open-source and free to use.
+3. **Unlimited Events:** Event volume-based pricing of most commercial systems is broken. You should be able to collect as much data as possible without worrying about overrunning event budgets. RudderStack's core BE is open-source and free to use.
 
-See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion around Rudder.
+See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion around RudderStack.
 
 # Contribute or Stay Connected
 
@@ -33,12 +33,12 @@ See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion a
 # Setup Instructions (Hosted Demo Account)
 
 1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account. 
-2. Select `Rudder Hosted Service` from the top right corner after you login.
+2. Select `RudderStack Hosted Service` from the top right corner after you login.
 3. Follow (Send Test Events) instructions below to send test event.
 
 # Setup Instructions (Docker)
 
-The docker setup is the easiest & fastest way to try out Rudder.
+The docker setup is the easiest & fastest way to try out RudderStack.
 
 1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
 2. Clone this repository with [SSH](https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls) and 
@@ -59,7 +59,7 @@ Our terraform scripts and instructions are in a separate repo - [Download Here](
 
 # Setup Instructions (Native Installation)
 
-Disclaimer: This is not the easiest way of installing Rudder.  Please use this if you want to know more about the internals.
+Disclaimer: This is not the easiest way of installing RudderStack.  Please use this if you want to know more about the internals.
 
 1. Install Golang 1.12 or above. [Download Here](https://golang.org/dl/)
 2. Install NodeJS 10.6 or above. [Download Here](https://nodejs.org/en/download/)
@@ -95,7 +95,7 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 2. S3 dump. Redshift and other data warehouses coming soon.
 3. User-specified transformation to filter/transform events.
 4. Stand-alone system. The only dependency is on Postgres.
-5. High performance. On a single m4.2xlarge, Rudder can process ~3K events/sec. Performance numbers on other instance types soon.
+5. High performance. On a single m4.2xlarge, RudderStack can process ~3K events/sec. Performance numbers on other instance types soon.
 6. Rich UI written in react.
 7. [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or [iOS](https://github.com/rudderlabs/rudder-sdk-ios). Server-side SDKs coming soon.
 
@@ -113,26 +113,26 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 
 # Architecture
 
-The following is a brief overview of the major components of Rudder Stack.
+The following is a brief overview of the major components of RudderStack.
 ![image](https://user-images.githubusercontent.com/52487451/64673994-471beb00-d48d-11e9-854f-2c3fbc021e63.jpg)
 
-## Rudder Control Plane
+## RudderStack Control Plane
 
 The UI to configure the sources, destinations etc. It consists of
 
 **Config backend**: This is the backend service that handles the sources, destinations and their connections. User management and access based roles are defined here.
 
-**Customer webapp**: This is the front end application that enables the teams to set up their customer data routing with Rudder. These will show you high-level data on event deliveries and more stats. It also provides access to custom enterprise features.
+**Customer webapp**: This is the front end application that enables the teams to set up their customer data routing with RudderStack. These will show you high-level data on event deliveries and more stats. It also provides access to custom enterprise features.
 
-## Rudder Data Plane
+## RudderStack Data Plane
 
 Data plane is our core engine that receives the events, stores, transforms them and reliably delivers to the destinations. This engine can be customized to your business requirements by a wide variety of configuration options. Eg. You can choose to enable backing up events to an S3 bucket, the maximum size of the event for the server to reject malicious requests. Sticking to defaults will work well for most of the companies but you have the flexibility to customize the data plane.
 
 The data plane uses Postgres as the store for events. We built our streaming framework on top of Postgres – that’s a topic for a future blog post. Reliable delivery and order of the events are the first principles in our design.
 
-## Rudder Destination Transformation
+## RudderStack Destination Transformation
 
-Conversion of events from Rudder format into destination-specific format is handled by the transformation module. The transformation codes are written in Javascript. I
+Conversion of events from RudderStack format into destination-specific format is handled by the transformation module. The transformation codes are written in Javascript. I
 
 The following blogs provide an overview of our transformation module
 
@@ -142,19 +142,19 @@ https://rudderlabs.com/transformations-in-rudder-part-2/
 
 If you are missing a transformation, please feel free to add it to the repository.
 
-## Rudder User Transformation
+## RudderStack User Transformation
 
-Rudder also supports user-specific transformations for real-time operations like aggregation, sampling, modifying events etc. The following blog describes one real-life use case of the transformation module
+RudderStack also supports user-specific transformations for real-time operations like aggregation, sampling, modifying events etc. The following blog describes one real-life use case of the transformation module
 
 https://rudderlabs.com/customer-case-study-casino-game/
 
 ## Client SDKs
 
-The client SDKs provide APIs collecting events and sending it to the Rudder Backend.
+The client SDKs provide APIs collecting events and sending it to the RudderStack Backend.
 
 # Coming Soon
 
-1. More performance benchmarks. On a single m4.2xlarge, Rudder can process ~3K events/sec. We will evaluate other instance types and publish numbers soon.
+1. More performance benchmarks. On a single m4.2xlarge, RudderStack can process ~3K events/sec. We will evaluate other instance types and publish numbers soon.
 2. More documentation
 3. More destination support
 4. HA support
