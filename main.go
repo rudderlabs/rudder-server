@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -36,6 +38,9 @@ var (
 	objectStorageDestinations                   []string
 	warehouseDestinations                       []string
 )
+
+var version = "Not an official release. Get the latest release from the github repo."
+var major, minor, commit, buildDate, builtBy, gitURL, patch string
 
 func loadConfig() {
 	maxProcess = config.GetInt("maxProcess", 12)
@@ -148,6 +153,22 @@ func init() {
 	loadConfig()
 }
 
+func versionInfo() map[string]interface{} {
+	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL}
+}
+
+func versionHandler(w http.ResponseWriter, r *http.Request) {
+	var version = versionInfo()
+	versionFormatted, _ := json.Marshal(&version)
+	w.Write(versionFormatted)
+}
+
+func printVersion() {
+	version := versionInfo()
+	versionFormatted, _ := json.MarshalIndent(&version, "", " ")
+	logger.Infof("Version Info %s", versionFormatted)
+}
+
 func main() {
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
@@ -167,8 +188,15 @@ func main() {
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
+	versionFlag := flag.Bool("v", false, "Print the current version and exit")
 
 	flag.Parse()
+	switch {
+	case *versionFlag:
+		printVersion()
+		return
+	}
+	http.HandleFunc("/version", versionHandler)
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
