@@ -355,12 +355,13 @@ func (wh *HandleT) mainLoop() {
 			} else {
 				// fetch staging files that are not processed yet
 				stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
-				logger.Infof("WH: Found pending staging files for %s:%s %v\n", wh.destType, warehouse.Destination.ID, len(stagingFilesList))
 				misc.AssertError(err)
 				if len(stagingFilesList) == 0 {
+					logger.Debugf("WH: Found no pending staging files for %s:%s\n", wh.destType, warehouse.Destination.ID)
 					setDestInProgress(warehouse.Destination.ID, false)
 					continue
 				}
+				logger.Infof("WH: Found %v pending staging files for %s:%s\n", len(stagingFilesList), wh.destType, warehouse.Destination.ID)
 
 				count := 0
 				jobs := []ProcessStagingFilesJobT{}

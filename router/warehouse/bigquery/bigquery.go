@@ -243,7 +243,7 @@ func (bq *HandleT) MigrateSchema() (err error) {
 }
 
 func (bq *HandleT) Export() (err error) {
-	logger.Infof("BQ: Starting export to redshift for source:%s and wh_upload:%v", bq.Warehouse.Source.ID, bq.Upload.ID)
+	logger.Infof("BQ: Starting export to Bigquery for source:%s and wh_upload:%v", bq.Warehouse.Source.ID, bq.Upload.ID)
 	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataState, bq.DbHandle)
 	misc.AssertError(err)
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", bq.Warehouse.Destination.ID)
