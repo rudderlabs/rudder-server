@@ -73,6 +73,9 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
+	if manager.Config.Folder != "" {
+		fileName = manager.Config.Folder + "/" + fileName
+	}
 	// Here's how to upload a blob.
 	blobURL := containerURL.NewBlockBlobURL(fileName)
 
@@ -137,6 +140,7 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 
 type AzureBlobStorageConfig struct {
 	Container   string
+	Folder      string
 	AccountName string
 	AccountKey  string
 }

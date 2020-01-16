@@ -40,6 +40,9 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
+	if manager.Config.Folder != "" {
+		fileName = manager.Config.Folder + "/" + fileName
+	}
 	output, err := s3manager.Upload(&awsS3Manager.UploadInput{
 		ACL:    aws.String("bucket-owner-full-control"),
 		Bucket: aws.String(manager.Config.Bucket),

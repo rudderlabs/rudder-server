@@ -8,7 +8,11 @@ import (
 )
 
 func (manager *MinioManager) ObjectUrl(objectName string) string {
-	return manager.Config.Protocol + "://" + manager.Config.EndPoint + "/" + manager.Config.Bucket + "/" + objectName
+	var protocol = "http"
+	if manager.Config.UseSSL == true {
+		protocol = "https"
+	}
+	return protocol + "://" + manager.Config.EndPoint + "/" + manager.Config.Bucket + "/" + objectName
 }
 
 func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
@@ -31,6 +35,9 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
+	if manager.Config.Folder != "" {
+		fileName = manager.Config.Folder + "/" + fileName
+	}
 	_, err = minioClient.FPutObject(manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
 	if err != nil {
 		return UploadOutput{}, nil
@@ -49,7 +56,7 @@ func (manager *MinioManager) Download(file *os.File, key string) error {
 }
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
-	var bucketName, folderName, endPoint, accessKeyID, secretAccessKey, protocol string
+	var bucketName, folderName, endPoint, accessKeyID, secretAccessKey string
 	var useSSL bool
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
@@ -69,9 +76,6 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	if config["useSSL"] != nil {
 		useSSL = config["useSSL"].(bool)
 	}
-	if config["protocol"] != nil {
-		protocol = config["protocol"].(string)
-	}
 
 	return &MinioConfig{
 		Bucket:          bucketName,
@@ -80,7 +84,6 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 		AccessKeyID:     accessKeyID,
 		SecretAccessKey: secretAccessKey,
 		UseSSL:          useSSL,
-		Protocol:        protocol,
 	}
 }
 
@@ -95,5 +98,4 @@ type MinioConfig struct {
 	AccessKeyID     string
 	SecretAccessKey string
 	UseSSL          bool
-	Protocol        string
 }
