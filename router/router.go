@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -59,6 +60,10 @@ var (
 	testSinkURL                                                                    string
 )
 
+func isSuccessStatus(status int) bool {
+	return status >= 200 && status < 300
+}
+
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
@@ -84,7 +89,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		fmt.Sprintf("router.%s_batch_time", rt.destID), stats.TimerType)
 	failedAttemptsStat := stats.NewStat(
 		fmt.Sprintf("router.%s_failed_attempts", rt.destID), stats.CountType)
-	eventsDeliveredStat := stats.NewStat("router.events_delivered", stats.CountType)
+	eventsDeliveredStat := stats.NewStat(
+		fmt.Sprintf("router.%s_events_delivered", rt.destID), stats.CountType)
 
 	for {
 		job := <-worker.channel
@@ -93,8 +99,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		batchTimeStat.Start()
 		logger.Debug("Router :: trying to send payload to GA", respBody)
 
-		postInfo := integrations.GetPostInfo(job.EventPayload)
-		userID := postInfo.UserID
+		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
 		misc.Assert(userID != "")
 
 		//If sink is not enabled mark all jobs as waiting
@@ -150,7 +155,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				//Internal test. No reason to sleep
 				break
 			}
-			if respStatusCode != http.StatusOK {
+			if !isSuccessStatus(respStatusCode) {
 				//400 series error are client errors. Can't continue
 				if respStatusCode >= http.StatusBadRequest && respStatusCode <= http.StatusUnavailableForLegalReasons {
 					break
@@ -182,11 +187,11 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
 			AttemptNum:    job.LastJobStatus.AttemptNum,
-			ErrorCode:     respStatus,
+			ErrorCode:     strconv.Itoa(respStatusCode),
 			ErrorResponse: []byte(`{}`),
 		}
 
-		if respStatusCode == http.StatusOK {
+		if isSuccessStatus(respStatusCode) {
 			//#JobOrder (see other #JobOrder comment)
 			failedAttemptsStat.Count(job.LastJobStatus.AttemptNum)
 			eventsDeliveredStat.Increment()
@@ -199,6 +204,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debugf("%v Router :: Job failed to send, analyzing...", rt.destID)
 			worker.failedJobs++
 			atomic.AddUint64(&rt.failCount, 1)
+			status.ErrorResponse = []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody)))
 
 			//#JobOrder (see other #JobOrder comment)
 			if !isPrevFailedUser && keepOrderOnFailure {
@@ -266,13 +272,13 @@ func getHash(s string) int {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	postInfo := integrations.GetPostInfo(job.EventPayload)
+	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
 
 	var index int
 	if randomWorkerAssign {
 		index = rand.Intn(noOfWorkers)
 	} else {
-		index = int(math.Abs(float64(getHash(postInfo.UserID) % noOfWorkers)))
+		index = int(math.Abs(float64(getHash(userID) % noOfWorkers)))
 	}
 
 	worker := rt.workers[index]
@@ -281,7 +287,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	//#JobOrder (see other #JobOrder comment)
 	worker.failedJobIDMutex.RLock()
 	defer worker.failedJobIDMutex.RUnlock()
-	blockJobID, found := worker.failedJobIDMap[postInfo.UserID]
+	blockJobID, found := worker.failedJobIDMap[userID]
 	if !found {
 		return worker
 	}

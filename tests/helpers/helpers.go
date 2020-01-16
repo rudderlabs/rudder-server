@@ -10,64 +10,67 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	uuid "github.com/satori/go.uuid"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/sjson"
 )
 
+// Ginkgo tests use the following credentials
+// CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com
+// CONFIG_BACKEND_TOKEN=1TEeQIJJqpviy5uAbWuxjk1XttY
+// USERNAME=srikanth+ginkgo@rudderlabs.com
+// PASSWORD=secret123
+
 var sampleEvent = `
 	{
-		"writeKey": "#rudderWriteKey#",
 		"batch": [
 			{
-			"message": {
-				"anonymous_id": "49e4bdd1c280bc00",
-				"channel": "android-sdk",
-				"destination_props": {
+			"anonymousId": "49e4bdd1c280bc00",
+			"channel": "android-sdk",
+			"destination_props": {
 				"AF": {
-					"af_uid": "1566363489499-3377330514807116178"
+				"af_uid": "1566363489499-3377330514807116178"
 				}
-				},
-				"context": {
+			},
+			"context": {
 				"app": {
-					"build": "1",
-					"name": "RudderAndroidClient",
-					"namespace": "com.rudderlabs.android.sdk",
-					"version": "1.0"
+				"build": "1",
+				"name": "RudderAndroidClient",
+				"namespace": "com.rudderlabs.android.sdk",
+				"version": "1.0"
 				},
 				"device": {
-					"id": "49e4bdd1c280bc00",
-					"manufacturer": "Google",
-					"model": "Android SDK built for x86",
-					"name": "generic_x86"
+				"id": "49e4bdd1c280bc00",
+				"manufacturer": "Google",
+				"model": "Android SDK built for x86",
+				"name": "generic_x86"
 				},
 				"locale": "en-US",
 				"network": {
-					"carrier": "Android"
+				"carrier": "Android"
 				},
 				"screen": {
-					"density": 420,
-					"height": 1794,
-					"width": 1080
+				"density": 420,
+				"height": 1794,
+				"width": 1080
 				},
 				"traits": {
-					"anonymous_id": "49e4bdd1c280bc00"
+				"anonymousId": "49e4bdd1c280bc00"
 				},
 				"user_agent": "Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"
-				},
-				"event": "Demo Track",
-				"integrations": {
-				"AD": true,
-				"AF": true
-				},
-				"message_id": "1566904375469-1baf3108-647a-4f20-9867-3072056a07f5",
-				"properties": {
+			},
+			"event": "Demo Track",
+			"integrations": {
+				"All": true
+			},
+			"properties": {
 				"label": "Demo Label",
 				"category": "Demo Category",
 				"value": 5
-				},
-				"timestamp": "2019-08-27 11:12:55+0000",
-				"type": "track"
-			}
+			},
+			"type": "track",
+			"originalTimestamp": "2019-08-12T05:08:30.909Z",
+			"sentAt": "2019-08-12T05:08:30.909Z"
 			}
 		]
 	}
@@ -78,6 +81,7 @@ type EventOptsT struct {
 	Integrations map[string]bool
 	WriteKey     string
 	ID           string
+	MessageID    string
 	GaVal        int
 }
 
@@ -85,28 +89,31 @@ type EventOptsT struct {
 func SendEventRequest(options EventOptsT) int {
 	if options.Integrations == nil {
 		options.Integrations = map[string]bool{
-			"All": false,
-			"GA":  true,
+			"All":              false,
+			"Google Analytics": true,
 		}
 	}
 	if options.WriteKey == "" {
-		options.WriteKey = "1REVKlIoVwDAIwv4WuMxYexaJ5w"
+		options.WriteKey = "1TEg8hHALRE6iIioOsUTAd3Ejq0"
 	}
 	if options.ID == "" {
 		options.ID = ksuid.New().String()
 	}
+	if options.MessageID == "" {
+		options.MessageID = uuid.NewV4().String()
+	}
 
-	serverIP := "http://localhost:8080/events"
+	serverIP := "http://localhost:8080/v1/batch"
 
-	jsonPayload, _ := sjson.Set(sampleEvent, "writeKey", options.WriteKey)
-	jsonPayload, _ = sjson.Set(jsonPayload, "sent_at", time.Now())
-	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.message.integrations", options.Integrations)
-	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.message.anonymous_id", options.ID)
-	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.message.traits.anonymous_id", options.ID)
-	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.message.properties.value", options.GaVal)
+	jsonPayload, _ := sjson.Set(sampleEvent, "batch.0.sentAt", time.Now())
+	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.integrations", options.Integrations)
+	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.anonymousId", options.ID)
+	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.messageId", options.MessageID)
+	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.properties.value", options.GaVal)
 
 	req, err := http.NewRequest("POST", serverIP, bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(options.WriteKey, "")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)

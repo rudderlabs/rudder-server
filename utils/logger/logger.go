@@ -47,7 +47,7 @@ func IsDebugLevel() bool {
 // Most verbose logging level.
 func Debug(args ...interface{}) (int, error) {
 	if levelDebug >= level {
-		fmt.Print("DEBUG: ")
+		fmt.Print(" DEBUG: ")
 		return fmt.Println(args...)
 	}
 	return 0, nil
@@ -57,7 +57,7 @@ func Debug(args ...interface{}) (int, error) {
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
 func Info(args ...interface{}) (int, error) {
 	if levelInfo >= level {
-		fmt.Print("INFO: ")
+		fmt.Print(" INFO: ")
 		return fmt.Println(args...)
 	}
 	return 0, nil
@@ -67,7 +67,7 @@ func Info(args ...interface{}) (int, error) {
 // Use this to log errors which dont immediately halt the application.
 func Error(args ...interface{}) (int, error) {
 	if levelError >= level {
-		fmt.Print("ERROR: ")
+		fmt.Print(" ERROR: ")
 		return fmt.Println(args...)
 	}
 	return 0, nil
@@ -77,7 +77,7 @@ func Error(args ...interface{}) (int, error) {
 // Use this to log errors which crash the application.
 func Fatal(args ...interface{}) (int, error) {
 	if levelFatal >= level {
-		fmt.Print("FATAL: ")
+		fmt.Print(" FATAL: ")
 		return fmt.Println(args...)
 	}
 	return 0, nil
@@ -87,7 +87,7 @@ func Fatal(args ...interface{}) (int, error) {
 // Most verbose logging level
 func Debugf(format string, args ...interface{}) (int, error) {
 	if levelDebug >= level {
-		fmt.Print("DEBUG: ")
+		fmt.Print(" DEBUG: ")
 		return fmt.Printf(format, args...)
 	}
 	return 0, nil
@@ -97,7 +97,7 @@ func Debugf(format string, args ...interface{}) (int, error) {
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
 func Infof(format string, args ...interface{}) (int, error) {
 	if levelInfo >= level {
-		fmt.Print("INFO: ")
+		fmt.Print(" INFO: ")
 		return fmt.Printf(format, args...)
 	}
 	return 0, nil
@@ -107,7 +107,7 @@ func Infof(format string, args ...interface{}) (int, error) {
 // Use this to log errors which dont immediately halt the application.
 func Errorf(format string, args ...interface{}) (int, error) {
 	if levelError >= level {
-		fmt.Print("ERROR: ")
+		fmt.Print(" ERROR: ")
 		return fmt.Printf(format, args...)
 	}
 	return 0, nil
@@ -117,7 +117,7 @@ func Errorf(format string, args ...interface{}) (int, error) {
 // Use this to log errors which crash the application.
 func Fatalf(format string, args ...interface{}) (int, error) {
 	if levelFatal >= level {
-		fmt.Print("FATAL: ")
+		fmt.Print(" FATAL: ")
 		return fmt.Printf(format, args...)
 	}
 	return 0, nil

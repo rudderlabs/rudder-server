@@ -28,6 +28,8 @@ type RecoveryHandler interface {
 	Handle()
 }
 
+var CurrentMode string = normalMode // default mode
+
 // RecoveryDataT : DS to store the recovery process data
 type RecoveryDataT struct {
 	StartTimes                []int64
@@ -135,7 +137,7 @@ func alertOps(mode string) {
 	}
 }
 
-func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool) {
+func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool, currTime int64) {
 
 	enabled := config.GetBool("recovery.enabled", false)
 	if !enabled {
@@ -155,11 +157,12 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool)
 		logger.Info("DB Recovery: Moving to next State. Threshold reached for " + recoveryData.Mode)
 		nextMode := getNextMode(recoveryData.Mode)
 		if nextMode == "" {
-			// If we can't recover in maintenance mode, just panic
-			panic("Not a valid mode")
+			logger.Fatal("Threshold reached for maintenance mode")
+		} else {
+			recoveryData.Mode = nextMode
+			recoveryHandler = NewRecoveryHandler(&recoveryData)
+			alertOps(recoveryData.Mode)
 		}
-		recoveryData.Mode = nextMode
-		recoveryHandler = NewRecoveryHandler(&recoveryData)
 	}
 
 	recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
@@ -169,13 +172,12 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool)
 		} else if recoveryData.Mode == maintenanceMode {
 			recoveryModeStat.Gauge(3)
 		}
-		alertOps(recoveryData.Mode)
 	} else {
 		recoveryModeStat.Gauge(1)
 	}
-	currTime := time.Now().Unix()
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
 	logger.Infof("Starting in %s mode\n", recoveryData.Mode)
+	CurrentMode = recoveryData.Mode
 }

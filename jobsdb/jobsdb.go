@@ -22,11 +22,11 @@ import (
 	"compress/gzip"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"sort"
 	"unicode/utf8"
 
@@ -126,28 +126,31 @@ type StoreJobRespT struct {
 }
 
 var dbErrorMap = map[string]string{
-	"Invalid JSON": "22P02",
+	"Invalid JSON":    "22P02",
+	"Invalid Unicode": "22P05",
 }
 
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
-		debug.SetTraceback("all")
-		debug.PrintStack()
-		jd.printLists(true)
+		// debug.SetTraceback("all")
+		// debug.PrintStack()
+		// jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify(err)
+		misc.RecordAppError(err)
 		panic(err)
 	}
 }
 
 func (jd *HandleT) assert(cond bool) {
 	if !cond {
-		debug.SetTraceback("all")
-		debug.PrintStack()
-		jd.printLists(true)
+		// debug.SetTraceback("all")
+		// debug.PrintStack()
+		// jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify("Assertion failed")
+		misc.RecordAppError(errors.New("Assertion failed"))
 		panic("Assertion failed")
 	}
 }
@@ -235,6 +238,10 @@ func GetConnectionString() string {
 
 }
 
+func (jd *HandleT) GetDBHandle() *sql.DB {
+	return jd.dbHandle
+}
+
 /*
 Setup is used to initialize the HandleT structure.
 clearAll = True means it will remove all existing tables
@@ -290,13 +297,13 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	if jd.toBackup {
 		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: "S3",
-			Bucket:   config.GetEnv("JOBS_BACKUP_BUCKET", ""),
+			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfigFromEnv(),
 		})
 		jd.assertError(err)
 		jd.jobStatusFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: "S3",
-			Bucket:   config.GetEnv("JOB_STATUS_BACKUP_BUCKET", ""),
+			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfigFromEnv(),
 		})
 		jd.assertError(err)
 		go jd.backupDSLoop()
@@ -937,20 +944,19 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 }
 
 func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (errorMessage string) {
-
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (uuid, custom_val, parameters, event_payload, created_at, expire_at)
-                                       VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds.JobTable)
+	                                   VALUES ($1, $2, $3, (regexp_replace($4::text, '\\u0000', '', 'g'))::json, $5, $6) RETURNING job_id`, ds.JobTable)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
-
 	_, err = stmt.Exec(job.UUID, job.CustomVal, string(job.Parameters), string(job.EventPayload),
 		job.CreatedAt, job.ExpireAt)
 	if err == nil {
 		return
 	}
 	pqErr := err.(*pq.Error)
-	if string(pqErr.Code) == dbErrorMap["Invalid JSON"] {
+	errCode := string(pqErr.Code)
+	if errCode == dbErrorMap["Invalid JSON"] || errCode == dbErrorMap["Invalid Unicode"] {
 		return "Invalid JSON"
 	}
 	jd.assertError(err)
@@ -1448,13 +1454,8 @@ func (jd *HandleT) backupDSLoop() {
 
 func (jd *HandleT) removeTableJSONDumps() {
 	backupPathDirName := "/rudder-s3-dumps/"
-	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
-	var err error
-	if tmpdirPath == "" {
-		tmpdirPath, err = os.UserHomeDir()
-		misc.AssertError(err)
-	}
-	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", tmpdirPath+backupPathDirName, jd.tablePrefix))
+	tmpDirPath := misc.CreateTMPDIR()
+	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", tmpDirPath+backupPathDirName, jd.tablePrefix))
 	jd.assertError(err)
 	for _, f := range files {
 		err = os.Remove(f)
@@ -1465,29 +1466,20 @@ func (jd *HandleT) removeTableJSONDumps() {
 func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable bool) (success bool, err error) {
 	tableFileDumpTimeStat.Start()
 	totalTableDumpTimeStat.Start()
-
-	var tableName, fileName, path string
-	var fileManager filemanager.FileManager
-
+	var tableName, path, pathPrefix string
 	backupPathDirName := "/rudder-s3-dumps/"
-	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
-	if tmpdirPath == "" {
-		tmpdirPath, err = os.UserHomeDir()
-		misc.AssertError(err)
-	}
+	tmpDirPath := misc.CreateTMPDIR()
 
 	if isJobStatusTable {
 		tableName = backupDSRange.ds.JobStatusTable
-		fileManager = jd.jobStatusFileUploader
-		fileName = strings.TrimPrefix(tableName, "pre_drop_")
-		path = fmt.Sprintf(`%v%v.gz`, tmpdirPath+backupPathDirName, fileName)
+		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
+		path = fmt.Sprintf(`%v%v.gz`, tmpDirPath+backupPathDirName, pathPrefix)
 	} else {
 		tableName = backupDSRange.ds.JobTable
-		fileManager = jd.jobsFileUploader
-		fileName = strings.TrimPrefix(tableName, "pre_drop_")
+		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
 		path = fmt.Sprintf(`%v%v.%v.%v.%v.%v.gz`,
-			tmpdirPath+backupPathDirName,
-			fileName,
+			tmpDirPath+backupPathDirName,
+			pathPrefix,
 			backupDSRange.minJobID,
 			backupDSRange.maxJobID,
 			backupDSRange.startTime,
@@ -1498,7 +1490,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	misc.AssertError(err)
 
-	stmt := fmt.Sprintf(`SELECT json_agg(%[1]s) FROM %[1]s`, tableName)
+	stmt := fmt.Sprintf(`SELECT json_agg(%[1]s order by job_id asc) FROM %[1]s`, tableName)
 	var rawJSONRows json.RawMessage
 	err = jd.dbHandle.QueryRow(stmt).Scan(&rawJSONRows)
 	misc.AssertError(err)
@@ -1529,9 +1521,14 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	pathPrefixes := make([]string, 0)
 	pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
 
-	err = fileManager.Upload(file, pathPrefixes...)
+	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
+		_, err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
+	} else {
+		_, err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
+	}
 	if err != nil {
-		logger.Errorf("Failed to upload table %v dump to S3", tableName)
+		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
+		logger.Errorf("Failed to upload table %v dump to %s\n", tableName, storageProvider)
 	} else {
 		// Do not record stat in error case as error case time might be low and skew stats
 		fileUploadTimeStat.End()

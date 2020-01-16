@@ -7,33 +7,30 @@ services:
       - build/docker.env
     ports:
       - "6432:5432"
-    networks:
-      - rudder
-  backend:
-    depends_on:
-      - db
-      - d-transformer
-    build:
-      context: ./
-      dockerfile: build/Dockerfile-dev
-    entrypoint: sh -c './build/wait-for db:5432 -- go run -mod=vendor main.go'
-    ports:
-      - "8080:8080"
-    env_file:
-      - build/docker.env
-    environment:
-      - JOBS_DB_HOST=db
-    networks:
-      - rudder
+  # backend:
+  #   depends_on:
+  #     - db
+  #     - d-transformer
+  #   build:
+  #     context: ./
+  #     dockerfile: build/Dockerfile-dev
+  #   entrypoint: sh -c './build/wait-for db:5432 -- go run -mod=vendor main.go'
+  #   ports:
+  #     - "8080:8080"
+  #   env_file:
+  #     - build/docker.env
+  #   environment:
+  #     - JOBS_DB_HOST=db
   d-transformer:
     build:
       context: ./rudder-transformer/
       dockerfile: Dockerfile
     ports:
       - "9090:9090"
-    networks:
-      - rudder
-
-networks:
-  rudder:
-    external: true
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+    env_file:
+      - build/docker.env
+    command: server /data

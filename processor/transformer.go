@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -68,7 +67,8 @@ func (trans *transformerHandleT) transformWorker() {
 
 		// Remove Assertion?
 		misc.Assert(resp.StatusCode == http.StatusOK ||
-			resp.StatusCode == http.StatusBadRequest)
+			resp.StatusCode == http.StatusBadRequest ||
+			resp.StatusCode == http.StatusNotFound)
 
 		var toSendData interface{}
 		if resp.StatusCode == http.StatusOK {
@@ -103,10 +103,8 @@ func (trans *transformerHandleT) Setup() {
 }
 
 type ResponseT struct {
-	Events            []interface{}
-	Success           bool
-	SourceIDList      []string
-	DestinationIDList []string
+	Events  []interface{}
+	Success bool
 }
 
 //Transform function is used to invoke transformer API
@@ -133,12 +131,6 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 
 	trans.perfStats.Start()
 	var toSendData interface{}
-	sourceIDList := []string{}
-	destinationIDList := []string{}
-	for _, clientEvent := range clientEvents {
-		sourceIDList = append(sourceIDList, clientEvent.(map[string]interface{})["message"].(map[string]interface{})["source_id"].(string))
-		destinationIDList = append(destinationIDList, clientEvent.(map[string]interface{})["destination"].(backendconfig.DestinationT).ID)
-	}
 
 	for {
 		//The channel is still live and the last batch has been sent
@@ -196,8 +188,6 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	misc.Assert(transformResponse[len(transformResponse)-1].index == len(clientEvents))
 
 	outClientEvents := make([]interface{}, 0)
-	outClientEventsSourceIDs := []string{}
-	outClientEventsDestinationIDs := []string{}
 
 	for _, resp := range transformResponse {
 		if resp.data == nil {
@@ -207,7 +197,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		misc.Assert(ok)
 		//Transform is one to many mapping so returned
 		//response for each is an array. We flatten it out
-		for idx, respElem := range respArray {
+		for _, respElem := range respArray {
 			respElemMap, castOk := respElem.(map[string]interface{})
 			if castOk {
 				if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
@@ -217,8 +207,6 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 				}
 			}
 			outClientEvents = append(outClientEvents, respElem)
-			outClientEventsSourceIDs = append(outClientEventsSourceIDs, sourceIDList[idx])
-			outClientEventsDestinationIDs = append(outClientEventsDestinationIDs, destinationIDList[idx])
 		}
 
 	}
@@ -228,9 +216,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	trans.perfStats.Print()
 
 	return ResponseT{
-		Events:            outClientEvents,
-		Success:           true,
-		SourceIDList:      outClientEventsSourceIDs,
-		DestinationIDList: outClientEventsDestinationIDs,
+		Events:  outClientEvents,
+		Success: true,
 	}
 }

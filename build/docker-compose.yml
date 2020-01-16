@@ -12,7 +12,6 @@ services:
     depends_on:
       - db
       - d-transformer
-      - u-transformer
     build:
       context: ../
       dockerfile: build/Dockerfile-dev
@@ -31,13 +30,5 @@ services:
       dockerfile: Dockerfile
     ports:
       - "9090:9090"
-    env_file:
-      - docker.env
-  u-transformer:
-    build:
-      context: ../rudder-transformer/
-      dockerfile: Dockerfile-ut
-    ports:
-      - "9191:9191"
     env_file:
       - docker.env

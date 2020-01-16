@@ -3,12 +3,17 @@ package misc
 import (
 	"archive/zip"
 	"bufio"
+	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"runtime/debug"
 	"strings"
 
@@ -16,8 +21,87 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/thoas/go-funk"
 )
+
+// RFC3339 with milli sec precision
+var RFC3339Milli = "2006-01-02T15:04:05.999Z07:00"
+
+var AppStartTime int64
+
+// ErrorStoreT : DS to store the app errors
+type ErrorStoreT struct {
+	Errors []RudderError
+}
+
+//RudderError : to store rudder error
+type RudderError struct {
+	StartTime  int64
+	Message    string
+	StackTrace string
+	Code       int
+}
+
+func getErrorStore() (ErrorStoreT, error) {
+	var errorStore ErrorStoreT
+	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
+	data, err := ioutil.ReadFile(errorStorePath)
+	if os.IsNotExist(err) {
+		defaultErrorStoreJSON := "{\"Errors\":[]}"
+		data = []byte(defaultErrorStoreJSON)
+	} else if err != nil {
+		logger.Fatal("Failed to get ErrorStore", err)
+		return errorStore, err
+	}
+
+	err = json.Unmarshal(data, &errorStore)
+
+	if err != nil {
+		logger.Fatal("Failed to get ErrorStore", err)
+		return errorStore, err
+	}
+
+	return errorStore, nil
+}
+
+func saveErrorStore(errorStore ErrorStoreT) {
+	errorStoreJSON, err := json.MarshalIndent(&errorStore, "", " ")
+	if err != nil {
+		logger.Fatal("failed to marshal errorStore", errorStore)
+		return
+	}
+	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
+	err = ioutil.WriteFile(errorStorePath, errorStoreJSON, 0644)
+	if err != nil {
+		logger.Fatal("failed to write to errorStore")
+	}
+}
+
+//RecordAppError appends the error occured to error_store.json
+func RecordAppError(err error) {
+	if err == nil {
+		return
+	}
+
+	if AppStartTime == 0 {
+		return
+	}
+
+	byteArr := make([]byte, 2048) // adjust buffer size to be larger than expected stack
+	n := runtime.Stack(byteArr, false)
+	stackTrace := string(byteArr[:n])
+
+	errorStore, localErr := getErrorStore()
+	if localErr != nil || errorStore.Errors == nil {
+		return
+	}
+
+	//TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
+	errorStore.Errors = append(errorStore.Errors, RudderError{StartTime: AppStartTime, Message: err.Error(), StackTrace: stackTrace, Code: 101})
+	saveErrorStore(errorStore)
+}
 
 //AssertError panics if error
 func AssertError(err error) {
@@ -25,6 +109,7 @@ func AssertError(err error) {
 		// debug.SetTraceback("all")
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
+		RecordAppError(err)
 		panic(err)
 	}
 }
@@ -40,6 +125,7 @@ func AssertErrorIfDev(err error) {
 		// debug.SetTraceback("all")
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
+		RecordAppError(err)
 		panic(err)
 	}
 }
@@ -50,6 +136,7 @@ func Assert(cond bool) {
 		//debug.SetTraceback("all")
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
+		RecordAppError(errors.New("Assertion failed"))
 		panic("Assertion failed")
 	}
 }
@@ -80,25 +167,29 @@ func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) 
 
 //ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
+	logger.Debug("[Misc: ParseRudderEventBatch] in ParseRudderEventBatch ")
 	var eventListJSON map[string]interface{}
 	err := json.Unmarshal(eventPayload, &eventListJSON)
 	if err != nil {
+		logger.Debug("json parsing of event payload failed ", string(eventPayload))
 		return nil, false
 	}
 	_, ok := eventListJSON["batch"]
 	if !ok {
+		logger.Debug("error retrieving value for batch key ", string(eventPayload))
 		return nil, false
 	}
 	eventListJSONBatchType, ok := eventListJSON["batch"].([]interface{})
 	if !ok {
+		logger.Error("error casting batch value to list of maps ", string(eventPayload))
 		return nil, false
 	}
 	return eventListJSONBatchType, true
 }
 
-//GetRudderEventUserID return the UserID from the object
-func GetRudderEventUserID(eventList []interface{}) (string, bool) {
-	userID, ok := GetRudderEventVal("anonymousId", eventList[0])
+//GetAnonymousID return the UserID from the object
+func GetAnonymousID(event interface{}) (string, bool) {
+	userID, ok := GetRudderEventVal("anonymousId", event)
 	if !ok {
 		return "", false
 	}
@@ -158,6 +249,31 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	return err
 }
 
+// UnZipSingleFile unzips zip containing single file into ouputfile path passed
+func UnZipSingleFile(outputfile string, filename string) {
+	r, err := zip.OpenReader(filename)
+	AssertError(err)
+	defer r.Close()
+	inputfile := r.File[0]
+	// Make File
+	err = os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
+	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
+	AssertError(err)
+	rc, err := inputfile.Open()
+	_, err = io.Copy(outFile, rc)
+	outFile.Close()
+	rc.Close()
+}
+
+func RemoveFilePaths(filepaths ...string) {
+	for _, filepath := range filepaths {
+		err := os.Remove(filepath)
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+}
+
 // ReadLines reads a whole file into memory
 // and returns a slice of its lines.
 func ReadLines(path string) ([]string, error) {
@@ -173,6 +289,17 @@ func ReadLines(path string) ([]string, error) {
 		lines = append(lines, scanner.Text())
 	}
 	return lines, scanner.Err()
+}
+
+// CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
+func CreateTMPDIR() string {
+	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	if tmpdirPath == "" {
+		var err error
+		tmpdirPath, err = os.UserHomeDir()
+		AssertError(err)
+	}
+	return tmpdirPath
 }
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
@@ -318,12 +445,12 @@ func Contains(in interface{}, elem interface{}) bool {
 }
 
 // IncrementMapByKey starts with 1 and increments the counter of a key
-func IncrementMapByKey(m map[string]int, key string) {
+func IncrementMapByKey(m map[string]int, key string, increment int) {
 	_, found := m[key]
 	if found {
-		m[key] = m[key] + 1
+		m[key] = m[key] + increment
 	} else {
-		m[key] = 1
+		m[key] = increment
 	}
 }
 
@@ -331,4 +458,60 @@ func IncrementMapByKey(m map[string]int, key string) {
 // timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
 	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
+}
+
+func StringKeys(input interface{}) []string {
+	keys := funk.Keys(input)
+	stringKeys := keys.([]string)
+	return stringKeys
+}
+
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
+}
+
+// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
+// of garage collection cycles completed.
+func PrintMemUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+	logger.Debug("#########")
+	logger.Debugf("Alloc = %v MiB\n", bToMb(m.Alloc))
+	logger.Debugf("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
+	logger.Debugf("\tSys = %v MiB\n", bToMb(m.Sys))
+	logger.Debugf("\tNumGC = %v\n", m.NumGC)
+	logger.Debug("#########")
+}
+
+type GZipWriter struct {
+	File      *os.File
+	GzWriter  *gzip.Writer
+	BufWriter *bufio.Writer
+}
+
+func CreateGZ(s string) (w GZipWriter, err error) {
+
+	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	if err != nil {
+		return
+	}
+	gzWriter := gzip.NewWriter(file)
+	bufWriter := bufio.NewWriter(gzWriter)
+	w = GZipWriter{
+		File:      file,
+		GzWriter:  gzWriter,
+		BufWriter: bufWriter,
+	}
+	return
+}
+
+func (w GZipWriter) WriteGZ(s string) {
+	w.BufWriter.WriteString(s)
+}
+
+func (w GZipWriter) CloseGZ() {
+	w.BufWriter.Flush()
+	w.GzWriter.Close()
+	w.File.Close()
 }
