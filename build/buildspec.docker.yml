@@ -9,18 +9,21 @@ phases:
       - docker login --username rudderlabs --password $DOCKERHUB_PASSWORD
   build:
     commands:
-      - env
       - export GO111MODULE=on
-      - CGO_ENABLED=0 GOOS=linux go build -mod vendor -a -installsuffix cgo
+      - VERSION=$(head -1 .version)
+      - DATE=$(date "+%F,%T")
+
+      - CGO_ENABLED=0 GOOS=linux go build -mod vendor -a -installsuffix cgo -ldflags="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID "
+
       - echo build Docker image on `date`
-      - VERSION_NUM=$(head -1 .version)
-      - docker build -t rudder-server:$VERSION_NUM -f build/Dockerfile-aws .
-      - docker tag rudder-server:$VERSION_NUM rudderlabs/rudder-server:$VERSION_NUM
+      - docker build -t rudder-server:$VERSION -f build/Dockerfile-aws .
+      - docker tag rudder-server:$VERSION rudderlabs/rudder-server:$VERSION
+      - docker tag rudder-server:$VERSION rudderlabs/rudder-server:$VERSION
   post_build:
     commands:
       - echo build Docker image complete `date`
       - echo push latest Docker images to docker hub...
-      - docker push rudderlabs/rudder-server:$VERSION_NUM
+      - docker push rudderlabs/rudder-server:$VERSION
 artifacts:
   files:
     - "**/*"
