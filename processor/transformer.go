@@ -66,9 +66,13 @@ func (trans *transformerHandleT) transformWorker() {
 		}
 
 		// Remove Assertion?
-		misc.Assert(resp.StatusCode == http.StatusOK ||
+		if !(resp.StatusCode == http.StatusOK ||
 			resp.StatusCode == http.StatusBadRequest ||
-			resp.StatusCode == http.StatusNotFound)
+			resp.StatusCode == http.StatusNotFound ||
+			resp.StatusCode == http.StatusRequestEntityTooLarge) {
+			logger.Errorf("Transformer returned status code: %v\n", resp.StatusCode)
+			misc.Assert(true)
+		}
 
 		var toSendData interface{}
 		if resp.StatusCode == http.StatusOK {
