@@ -162,31 +162,40 @@ func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 }
 
 func (bq *HandleT) load() (err error) {
-	for tableName := range bq.Upload.Schema {
-		locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
-		misc.AssertError(err)
-		locations, err = warehouseutils.GetGCSLocations(locations)
-		logger.Debugf("Loading data into table: %s in bigquery dataset: %s in project: %s from %v\n", tableName, bq.Namespace, bq.ProjectID, locations)
-		gcsRef := bigquery.NewGCSReference(locations...)
-		gcsRef.SourceFormat = bigquery.JSON
-		gcsRef.MaxBadRecords = 100
-		gcsRef.IgnoreUnknownValues = true
-		// create partitioned table in format tableName$20191221
-		loader := bq.Db.Dataset(bq.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
+	wg := misc.NewWaitGroup()
+	wg.Add(len(bq.Upload.Schema))
+	for tName := range bq.Upload.Schema {
+		go func(tableName string) {
+			locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
+			misc.AssertError(err)
+			locations, err = warehouseutils.GetGCSLocations(locations)
+			logger.Debugf("Loading data into table: %s in bigquery dataset: %s in project: %s from %v\n", tableName, bq.Namespace, bq.ProjectID, locations)
+			gcsRef := bigquery.NewGCSReference(locations...)
+			gcsRef.SourceFormat = bigquery.JSON
+			gcsRef.MaxBadRecords = 100
+			gcsRef.IgnoreUnknownValues = true
+			// create partitioned table in format tableName$20191221
+			loader := bq.Db.Dataset(bq.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
 
-		job, err := loader.Run(bq.BQContext)
-		if err != nil {
-			return err
-		}
-		status, err := job.Wait(bq.BQContext)
-		if err != nil {
-			return err
-		}
+			job, err := loader.Run(bq.BQContext)
+			if err != nil {
+				wg.Err(err)
+				return
+			}
+			status, err := job.Wait(bq.BQContext)
+			if err != nil {
+				wg.Err(err)
+				return
+			}
 
-		if status.Err() != nil {
-			return fmt.Errorf("job completed with error: %v", status.Err())
-		}
+			if status.Err() != nil {
+				wg.Err(err)
+				return
+			}
+			wg.Done()
+		}(tName)
 	}
+	err = wg.Wait()
 	return
 }
 

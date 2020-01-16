@@ -66,6 +66,16 @@ func (rs *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
+func (rs *HandleT) tableExists(tableName string) (exists bool, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1
+   								 FROM   information_schema.tables
+   								 WHERE  table_schema = '%s'
+   								 AND    table_name = '%s'
+								   )`, rs.Namespace, tableName)
+	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
+	return
+}
+
 func (rs *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType])
 	logger.Debugf("Adding column in redshift for RS:%s : %v\n", rs.Warehouse.Destination.ID, sqlStatement)
@@ -91,13 +101,21 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	}
 	processedTables := make(map[string]bool)
 	for _, tableName := range diff.Tables {
-		err = rs.createTable(fmt.Sprintf(`%s.%s`, rs.Namespace, tableName), diff.ColumnMaps[tableName])
+		tableExists, err := rs.tableExists(tableName)
 		if err != nil {
 			return nil, err
 		}
-		processedTables[tableName] = true
+		if !tableExists {
+			err = rs.createTable(fmt.Sprintf(`%s.%s`, rs.Namespace, tableName), diff.ColumnMaps[tableName])
+			if err != nil {
+				return nil, err
+			}
+			processedTables[tableName] = true
+		}
 	}
 	for tableName, columnMap := range diff.ColumnMaps {
+		// skip adding columns when table didn't exist previously and was created in the prev statement
+		// this to make sure all columns in the the columnMap exists in the table in redshift
 		if _, ok := processedTables[tableName]; ok {
 			continue
 		}
