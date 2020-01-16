@@ -202,7 +202,7 @@ func consolidateSchema(jsonUploadsList []*StagingFileT) map[string]map[string]st
 func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT, schema map[string]map[string]string) warehouseutils.UploadT {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, created_at, updated_at)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13) RETURNING id`, warehouseUploadsTable)
-	logger.Debugf("WH: %s: Creating record in wh_load_files id: %v\n", wh.destType, sqlStatement)
+	logger.Infof("WH: %s: Creating record in wh_load_files id: %v\n", wh.destType, sqlStatement)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	misc.AssertError(err)
 	defer stmt.Close()
@@ -210,7 +210,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	startJSONID := jsonUploadsList[0].ID
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
 	currentSchema, err := json.Marshal(schema)
-	namespace := strings.ToLower(strcase.ToSnake(warehouse.Source.Name))
+	namespace := misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouse.Source.Name)), 127)
 	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, currentSchema, "{}", time.Now(), time.Now())
 
 	var uploadID int64
@@ -312,9 +312,11 @@ func (wh *HandleT) mainLoop() {
 		}
 		for _, warehouse := range wh.warehouses {
 			if isDestInProgress(warehouse.Destination.ID) {
+				logger.Debugf("WH: Skipping upload loop since %s:%s upload in progess", wh.destType, warehouse.Destination.ID)
 				continue
 			}
 			if uploadFrequencyExceeded(warehouse) {
+				logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
 				continue
 			}
 			setDestInProgress(warehouse.Destination.ID, true)
@@ -323,6 +325,7 @@ func (wh *HandleT) mainLoop() {
 			if ok {
 				whManager, err := NewWhManager(wh.destType)
 				misc.AssertError(err)
+				logger.Infof("WH: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
 				err = whManager.CrashRecover(warehouseutils.ConfigT{
 					DbHandle:  wh.dbHandle,
 					Warehouse: warehouse,
@@ -337,7 +340,7 @@ func (wh *HandleT) mainLoop() {
 			// fetch any pending wh_uploads records (query for not successful/aborted uploads)
 			pendingUploads, ok := wh.getPendingUploads(warehouse)
 			if ok {
-				logger.Debugf("WH: Found pending uploads: %v for %s:%s\n", len(pendingUploads), wh.destType, warehouse.Destination.ID)
+				logger.Infof("WH: Found pending uploads: %v for %s:%s\n", len(pendingUploads), wh.destType, warehouse.Destination.ID)
 				jobs := []ProcessStagingFilesJobT{}
 				for _, pendingUpload := range pendingUploads {
 					stagingFilesList, err := wh.getStagingFiles(warehouse, pendingUpload.StartStagingFileID, pendingUpload.EndStagingFileID)
@@ -352,7 +355,7 @@ func (wh *HandleT) mainLoop() {
 			} else {
 				// fetch staging files that are not processed yet
 				stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
-				logger.Debugf("WH: Found pending staging files for %s:%s %v\n", wh.destType, warehouse.Destination.ID, len(stagingFilesList))
+				logger.Infof("WH: Found pending staging files for %s:%s %v\n", wh.destType, warehouse.Destination.ID, len(stagingFilesList))
 				misc.AssertError(err)
 				if len(stagingFilesList) == 0 {
 					setDestInProgress(warehouse.Destination.ID, false)
@@ -469,6 +472,7 @@ waitForLoadFiles:
 }
 
 func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err error) {
+	logger.Infof("WH: Starting load flow for %s:%s", wh.destType, job.Warehouse.Destination.ID)
 	whManager, err := NewWhManager(wh.destType)
 	misc.AssertError(err)
 	err = whManager.Process(warehouseutils.ConfigT{
@@ -490,7 +494,7 @@ func (wh *HandleT) initWorkers() {
 					// generate load files only if not done before
 					// upload records have start_load_file_id and end_load_file_id set to 0 on creation
 					// and are updated on creation of load files
-					logger.Debugf("WH: Processing staging files in upload job:%v with staging files from %v to %v for %s:%s\n", len(job.List), job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
+					logger.Infof("WH: Processing staging files in upload job:%v with staging files from %v to %v for %s:%s\n", len(job.List), job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
 					if job.Upload.StartLoadFileID == 0 {
 						warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
 						err := wh.createLoadFiles(&job)
@@ -675,6 +679,11 @@ func (wh *HandleT) setupTables() {
 	_, err := wh.dbHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 
+	// change table_name type to text to support table_names upto length 127
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, warehouseLoadFilesTable, "table_name")
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
 	// index on source_id, destination_id combination
 	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseLoadFilesTable)
 	_, err = wh.dbHandle.Exec(sqlStatement)
@@ -702,7 +711,9 @@ func (wh *HandleT) setupTables() {
 	misc.AssertError(err)
 
 	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'waiting';`
-
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'aborted';`
 	_, err = wh.dbHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 
