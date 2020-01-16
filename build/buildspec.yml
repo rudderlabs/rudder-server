@@ -9,7 +9,7 @@ phases:
       - docker login --username rudderlabs --password $DOCKERHUB_PASSWORD
   build:
     commands:
-      - ls
+      - env
       - export GO111MODULE=on
       - CGO_ENABLED=0 GOOS=linux go build -mod vendor -a -installsuffix cgo
       - echo build Docker image on `date`
@@ -23,4 +23,3 @@ phases:
 artifacts:
   files:
     - "**/*"
-  
