@@ -123,9 +123,12 @@ type AzureBlobStorageManager struct {
 }
 
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
-	var containerName, accountName, accountKey string
+	var containerName, accountName, accountKey, folderName string
 	if config["containerName"] != nil {
 		containerName = config["containerName"].(string)
+	}
+	if config["folderName"] != nil {
+		folderName = config["folderName"].(string)
 	}
 	if config["accountName"] != nil {
 		accountName = config["accountName"].(string)
@@ -133,9 +136,12 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 	if config["accountKey"] != nil {
 		accountKey = config["accountKey"].(string)
 	}
-	return &AzureBlobStorageConfig{Container: containerName,
+	return &AzureBlobStorageConfig{
+		Container:   containerName,
+		Folder:      folderName,
 		AccountName: accountName,
-		AccountKey:  accountKey}
+		AccountKey:  accountKey,
+	}
 }
 
 type AzureBlobStorageConfig struct {

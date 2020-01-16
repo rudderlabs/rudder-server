@@ -21,7 +21,6 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 	if err != nil {
 		return UploadOutput{}, err
 	}
-
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
 	if len(prefixes) > 0 {
