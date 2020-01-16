@@ -13,13 +13,14 @@ phases:
       - export GO111MODULE=on
       - CGO_ENABLED=0 GOOS=linux go build -mod vendor -a -installsuffix cgo
       - echo build Docker image on `date`
-      - docker build -t rudder-server:latest -f build/Dockerfile-aws .
-      - docker tag rudder-server:latest rudderlabs/rudder-server:latest
+      - VERSION_NUM=$(head -1 .version)
+      - docker build -t rudder-server:$VERSION_NUM -f build/Dockerfile-aws .
+      - docker tag rudder-server:$VERSION_NUM rudderlabs/rudder-server:$VERSION_NUM
   post_build:
     commands:
       - echo build Docker image complete `date`
       - echo push latest Docker images to docker hub...
-      - docker push rudderlabs/rudder-server:latest
+      - docker push rudderlabs/rudder-server:$VERSION_NUM
 artifacts:
   files:
     - "**/*"
