@@ -97,7 +97,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		var respStatusCode, attempts int
 		var respStatus, respBody string
 		batchTimeStat.Start()
-		logger.Debug("Router :: trying to send payload to GA", respBody)
+		logger.Debug("Router :: trying to send payload to ", job.CustomVal, respBody)
 
 		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
 		misc.Assert(userID != "")
