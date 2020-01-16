@@ -113,7 +113,6 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 			processedTables[tableName] = true
 		}
 	}
-	fmt.Printf("%+v\n", processedTables)
 	for tableName, columnMap := range diff.ColumnMaps {
 		// skip adding columns when table didn't exist previously and was created in the prev statement
 		// this to make sure all columns in the the columnMap exists in the table in redshift
