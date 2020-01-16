@@ -361,7 +361,7 @@ func (rs *HandleT) MigrateSchema() (err error) {
 	}
 	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatedSchemaState, rs.DbHandle)
 	misc.AssertError(err)
-	err = warehouseutils.UpdateCurrentSchema(rs.Warehouse, rs.Upload.ID, rs.CurrentSchema, updatedSchema, rs.DbHandle)
+	err = warehouseutils.UpdateCurrentSchema(rs.Namespace, rs.Warehouse, rs.Upload.ID, rs.CurrentSchema, updatedSchema, rs.DbHandle)
 	timer.End()
 	if err != nil {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)

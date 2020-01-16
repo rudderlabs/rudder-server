@@ -232,7 +232,7 @@ func (bq *HandleT) MigrateSchema() (err error) {
 	}
 	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatedSchemaState, bq.DbHandle)
 	misc.AssertError(err)
-	err = warehouseutils.UpdateCurrentSchema(bq.Warehouse, bq.Upload.ID, bq.CurrentSchema, updatedSchema, bq.DbHandle)
+	err = warehouseutils.UpdateCurrentSchema(bq.Namespace, bq.Warehouse, bq.Upload.ID, bq.CurrentSchema, updatedSchema, bq.DbHandle)
 	timer.End()
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)

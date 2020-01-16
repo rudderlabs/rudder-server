@@ -210,7 +210,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	startJSONID := jsonUploadsList[0].ID
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
 	currentSchema, err := json.Marshal(schema)
-	namespace := strings.ToLower(strcase.ToSnake(warehouse.Source.Name))
+	namespace := misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouse.Source.Name)), 127)
 	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, currentSchema, "{}", time.Now(), time.Now())
 
 	var uploadID int64
@@ -675,6 +675,11 @@ func (wh *HandleT) setupTables() {
 	_, err := wh.dbHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 
+	// change table_name type to text to support table_names upto length 127
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, warehouseLoadFilesTable, "table_name")
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
 	// index on source_id, destination_id combination
 	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseLoadFilesTable)
 	_, err = wh.dbHandle.Exec(sqlStatement)
@@ -702,7 +707,9 @@ func (wh *HandleT) setupTables() {
 	misc.AssertError(err)
 
 	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'waiting';`
-
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'aborted';`
 	_, err = wh.dbHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 
