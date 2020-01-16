@@ -156,6 +156,7 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 }
 
 func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error) {
+	logger.Debugf("WH: Setting status of %s for wh_upload:%v\n", status, upload.ID)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=$3`, warehouseUploadsTable)
 	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), upload.ID)
 	misc.AssertError(err)

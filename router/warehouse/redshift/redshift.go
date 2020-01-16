@@ -61,7 +61,7 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 func (rs *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sortKeyField := "received_at"
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) SORTKEY(%s)`, name, columnsWithDataTypes(columns, ""), sortKeyField)
-	logger.Debugf("Creating table in redshift for RS:%s : %v\n", rs.Warehouse.Destination.ID, sqlStatement)
+	logger.Infof("Creating table in redshift for RS:%s : %v\n", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -78,14 +78,14 @@ func (rs *HandleT) tableExists(tableName string) (exists bool, err error) {
 
 func (rs *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType])
-	logger.Debugf("Adding column in redshift for RS:%s : %v\n", rs.Warehouse.Destination.ID, sqlStatement)
+	logger.Infof("Adding column in redshift for RS:%s : %v\n", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
 
 func (rs *HandleT) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, rs.Namespace)
-	logger.Debugf("Creating schemaname in redshift for RS:%s : %v\n", rs.Warehouse.Destination.ID, sqlStatement)
+	logger.Infof("Creating schemaname in redshift for RS:%s : %v\n", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -160,7 +160,7 @@ func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[
 	for _, location := range csvS3Locations {
 		manifest.Entries = append(manifest.Entries, S3ManifestEntryT{Url: location, Mandatory: true})
 	}
-	logger.Debugf("RS: Generated manifest for table:%s %+v\n", tableName, manifest)
+	logger.Infof("RS: Generated manifest for table:%s %+v\n", tableName, manifest)
 	manifestJSON, err := json.Marshal(&manifest)
 
 	manifestFolder := "rudder-redshift-manifests"
@@ -225,7 +225,7 @@ func (rs *HandleT) load() (err error) {
 				wg.Err(err)
 				return
 			}
-			logger.Debugf("RS: Generated and stored manifest for table:%s at %s\n", tableName, manifestLocation)
+			logger.Infof("RS: Generated and stored manifest for table:%s at %s\n", tableName, manifestLocation)
 
 			// sort columnnames
 			keys := reflect.ValueOf(columnMap).MapKeys()
@@ -260,7 +260,7 @@ func (rs *HandleT) load() (err error) {
 
 			sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, accessKeyID, accessKey, region)
 
-			logger.Debugf("RS: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
+			logger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
 			_, err = tx.Exec(sqlStatement)
 			if err != nil {
 				tx.Rollback()
@@ -274,7 +274,7 @@ func (rs *HandleT) load() (err error) {
 			}
 
 			sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Namespace, tableName, stagingTableName, primaryKey)
-			logger.Debugf("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+			logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 			_, err = tx.Exec(sqlStatement)
 			if err != nil {
 				tx.Rollback()
@@ -291,7 +291,7 @@ func (rs *HandleT) load() (err error) {
 			}
 
 			sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, primaryKey)
-			logger.Debugf("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
+			logger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
 			_, err = tx.Exec(sqlStatement)
 
 			if err != nil {
@@ -353,7 +353,7 @@ func (rs *HandleT) MigrateSchema() (err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", rs.Warehouse.Destination.ID)
 	timer.Start()
 	warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatingSchemaState, rs.DbHandle)
-	logger.Debugf("RS: Updaing schema for redshfit schemaname: %s\n", rs.Namespace)
+	logger.Infof("RS: Updaing schema for redshfit schemaname: %s\n", rs.Namespace)
 	updatedSchema, err := rs.updateSchema()
 	if err != nil {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
@@ -371,7 +371,7 @@ func (rs *HandleT) MigrateSchema() (err error) {
 }
 
 func (rs *HandleT) Export() (err error) {
-	logger.Debugf("RS: Starting export to redshift for source:%s and wh_upload:%s", rs.Warehouse.Source.ID, rs.Upload.ID)
+	logger.Infof("RS: Starting export to redshift for source:%s and wh_upload:%v", rs.Warehouse.Source.ID, rs.Upload.ID)
 	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportingDataState, rs.DbHandle)
 	misc.AssertError(err)
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", rs.Warehouse.Destination.ID)
@@ -456,7 +456,7 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	rs.CurrentSchema = curreSchema.Schema
 	rs.Namespace = curreSchema.Namespace
 	if rs.Namespace == "" {
-		logger.Debugf("Namespace not found in currentschema for RS:%s, setting from upload: %s\n", rs.Warehouse.Destination.ID, rs.Upload.Namespace)
+		logger.Infof("Namespace not found in currentschema for RS:%s, setting from upload: %s\n", rs.Warehouse.Destination.ID, rs.Upload.Namespace)
 		rs.Namespace = rs.Upload.Namespace
 	}
 
