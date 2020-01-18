@@ -236,8 +236,8 @@ func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId strin
 								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)`,
 		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
 	rows, err := dbHandle.Query(sqlStatement)
-	defer rows.Close()
 	misc.AssertError(err)
+	defer rows.Close()
 
 	for rows.Next() {
 		var location string

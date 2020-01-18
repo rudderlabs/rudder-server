@@ -241,6 +241,7 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 	if err == sql.ErrNoRows {
 		return []warehouseutils.UploadT{}, false
 	}
+	defer rows.Close()
 
 	var uploads []warehouseutils.UploadT
 	for rows.Next() {
@@ -783,8 +784,8 @@ func (wh *HandleT) setInterruptedDestinations() (err error) {
 	}
 	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND status='%s'`, warehouseUploadsTable, wh.destType, warehouseutils.ExportingDataState)
 	rows, err := wh.dbHandle.Query(sqlStatement)
-	defer rows.Close()
 	misc.AssertError(err)
+	defer rows.Close()
 
 	for rows.Next() {
 		var destID string
