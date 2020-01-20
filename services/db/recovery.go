@@ -178,6 +178,6 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
-	logger.Infof("Starting in %s mode\n", recoveryData.Mode)
+	logger.Infof("Starting in %s mode", recoveryData.Mode)
 	CurrentMode = recoveryData.Mode
 }

@@ -449,7 +449,7 @@ func reflectOrigin(origin string) bool {
 
 func (gateway *HandleT) startWebHandler() {
 
-	logger.Infof("Starting in %d\n", webPort)
+	logger.Infof("Starting in %d", webPort)
 
 	http.HandleFunc("/v1/batch", stat(gateway.webBatchHandler))
 	http.HandleFunc("/v1/identify", stat(gateway.webIdentifyHandler))

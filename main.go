@@ -243,7 +243,7 @@ func main() {
 	var batchRouterDB jobsdb.HandleT
 
 	runtime.GOMAXPROCS(maxProcess)
-	logger.Info("Clearing DB", *clearDB)
+	logger.Info("Clearing DB ", *clearDB)
 
 	sourcedebugger.Setup()
 	backendconfig.Setup()

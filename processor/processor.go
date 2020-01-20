@@ -112,15 +112,15 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 }
 
 var (
-	loopSleep              time.Duration
-	dbReadBatchSize        int
-	transformBatchSize     int
-	sessionInactivityThresholdInS    time.Duration
-	sessionThresholdEvents int
-	processSessions        bool
-	writeKeyDestinationMap map[string][]backendconfig.DestinationT
-	rawDataDestinations    []string
-	configSubscriberLock   sync.RWMutex
+	loopSleep                     time.Duration
+	dbReadBatchSize               int
+	transformBatchSize            int
+	sessionInactivityThresholdInS time.Duration
+	sessionThresholdEvents        int
+	processSessions               bool
+	writeKeyDestinationMap        map[string][]backendconfig.DestinationT
+	rawDataDestinations           []string
+	configSubscriberLock          sync.RWMutex
 )
 
 func loadConfig() {
@@ -587,7 +587,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			// source_id will be same for all events belong to same user in a session
 			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
 			if !ok {
-				logger.Errorf("Error retrieving source_id from transformed event: %+v\n", destEvent)
+				logger.Errorf("Error retrieving source_id from transformed event: %+v", destEvent)
 			}
 			newJob := jobsdb.JobT{
 				UUID:         id,
