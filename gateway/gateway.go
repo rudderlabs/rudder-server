@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -438,7 +439,7 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 	if !config.GetBool("enableRouter", true) {
 		enabledRouter = "FALSE"
 	}
-	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode))
+	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine())
 	w.Write([]byte(healthVal))
 }
 

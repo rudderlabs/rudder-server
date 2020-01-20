@@ -127,7 +127,7 @@ var (
 	loopSleep              time.Duration
 	dbReadBatchSize        int
 	transformBatchSize     int
-	sessionThresholdInS    time.Duration
+	sessionInactivityThresholdInS    time.Duration
 	sessionThresholdEvents int
 	processSessions        bool
 	writeKeyDestinationMap map[string][]backendconfig.DestinationT
@@ -142,7 +142,7 @@ func loadConfig() {
 	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 100000)
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	sessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
-	sessionThresholdInS = config.GetDuration("Processor.sessionThresholdInS", time.Duration(20)) * time.Second
+	sessionInactivityThresholdInS = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(20)) * time.Second
 	processSessions = config.GetBool("Processor.processSessions", true)
 	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
 	numTransformWorker = config.GetInt("Processor.numTransformWorker", 32)
@@ -384,9 +384,9 @@ func (proc *HandleT) createSessions() {
 		proc.statActiveUsers.Gauge(len(proc.userJobListMap))
 		//Enough time hasn't transpired since last
 		oldestItem := proc.userJobPQ.Top()
-		if time.Since(oldestItem.lastTS) < time.Duration(sessionThresholdInS) {
+		if time.Since(oldestItem.lastTS) < time.Duration(sessionInactivityThresholdInS) {
 			proc.userPQLock.Unlock()
-			sleepTime := time.Duration(sessionThresholdInS) - time.Since(oldestItem.lastTS)
+			sleepTime := time.Duration(sessionInactivityThresholdInS) - time.Since(oldestItem.lastTS)
 			logger.Debug("Sleeping", sleepTime)
 			time.Sleep(sleepTime)
 			continue
@@ -401,7 +401,7 @@ func (proc *HandleT) createSessions() {
 				break
 			}
 			oldestItem := proc.userJobPQ.Top()
-			if time.Since(oldestItem.lastTS) > time.Duration(sessionThresholdInS) {
+			if time.Since(oldestItem.lastTS) > time.Duration(sessionInactivityThresholdInS) {
 				userID := oldestItem.userID
 				pqItem, ok := proc.userPQItemMap[userID]
 				misc.Assert(ok && pqItem == oldestItem)
@@ -415,7 +415,7 @@ func (proc *HandleT) createSessions() {
 				delete(proc.userEventsMap, userID)
 				proc.userJobPQ.Remove(proc.userPQItemMap[userID])
 				delete(proc.userPQItemMap, userID)
-				// A session ends when a user is inactive for a period of sessionThresholdInS
+				// A session ends when a user is inactive for a period of sessionInactivityThresholdInS
 				// or session limit on number of jobs has been achievd
 				// Refer addJobsToSession
 				delete(proc.userToSessionIDMap, userID)

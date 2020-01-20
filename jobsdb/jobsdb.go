@@ -368,8 +368,8 @@ func (jd *HandleT) getAllTableNames() []string {
 	defer stmt.Close()
 
 	rows, err := stmt.Query()
-	defer rows.Close()
 	jd.assertError(err)
+	defer rows.Close()
 
 	tableNames := []string{}
 	for rows.Next() {
@@ -1144,8 +1144,8 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 			ds.JobTable, ds.JobStatusTable, stateQuery)
 		var err error
 		rows, err = jd.dbHandle.Query(sqlStatement)
-		defer rows.Close()
 		jd.assertError(err)
+		defer rows.Close()
 	} else {
 		sqlStatement := fmt.Sprintf(`SELECT
                                                %[1]s.job_id, %[1]s.uuid,  %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload,
@@ -1170,8 +1170,8 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 		jd.assertError(err)
 		defer stmt.Close()
 		rows, err = stmt.Query(time.Now())
-		defer rows.Close()
 		jd.assertError(err)
+		defer rows.Close()
 	}
 
 	var jobList []*JobT
@@ -2015,11 +2015,11 @@ CheckPGHealth returns health check for pg database
 */
 func (jd *HandleT) CheckPGHealth() bool {
 	rows, err := jd.dbHandle.Query(fmt.Sprintf(`SELECT 'Rudder DB Health Check'::text as message`))
-	defer rows.Close()
 	if err != nil {
 		fmt.Println(err)
 		return false
 	}
+	defer rows.Close()
 	return true
 }
 
