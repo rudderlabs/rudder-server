@@ -410,9 +410,7 @@ func equal(expected, actual interface{}) bool {
 	if expected == nil || actual == nil {
 		return expected == actual
 	}
-
 	return reflect.DeepEqual(expected, actual)
-
 }
 
 // Contains returns true if an element is present in a iteratee.
@@ -464,6 +462,13 @@ func StringKeys(input interface{}) []string {
 	keys := funk.Keys(input)
 	stringKeys := keys.([]string)
 	return stringKeys
+}
+
+func TruncateStr(str string, limit int) string {
+	if len(str) > limit {
+		str = str[:limit]
+	}
+	return str
 }
 
 func bToMb(b uint64) uint64 {

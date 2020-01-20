@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"github.com/rudderlabs/rudder-server/config"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"io/ioutil"
 	"net/http"
-	"os"
 )
 
 /*
@@ -42,9 +40,11 @@ var (
 	enableTimestamp     bool
 	enableFileNameInLog bool
 	enableStackTrace    bool
+	logFileLocation     string
+	logFileSize         int
 )
 
-var log *zap.SugaredLogger
+var Log *zap.SugaredLogger
 
 func loadConfig() {
 	level = levelMap[config.GetEnv("LOG_LEVEL", "INFO")]
@@ -52,6 +52,8 @@ func loadConfig() {
 	enableFile = config.GetBool("Zapper.enableFile", false)
 	consoleJsonFormat = config.GetBool("Zapper.consoleJsonFormat", true)
 	fileJsonFormat = config.GetBool("Zapper.fileJsonFormat", false)
+	logFileLocation = config.GetString("Zapper.logFileLocation", "/tmp/rudder_log.txt")
+	logFileSize = config.GetInt("Zapper.logFileSize", 100)
 	enableTimestamp = config.GetBool("Zapper.enableTimestamp", false)
 	enableFileNameInLog = config.GetBool("Zapper.enableFileNameInLog", false)
 	enableStackTrace = config.GetBool("Zapper.enableStackTrace", false)
@@ -62,21 +64,7 @@ var options []zap.Option
 // Setup sets up the logger initially
 func Setup() {
 	loadConfig()
-	var cores []zapcore.Core
-	if enableConsole {
-		writer := zapcore.Lock(os.Stderr)
-		core := zapcore.NewCore(getEncoderConfig(consoleJsonFormat), writer, getZapLevel(level))
-		cores = append(cores, core)
-	}
-	combinedCore := zapcore.NewTee(cores...)
-	if enableFileNameInLog {
-		options = append(options, zap.AddCaller(), zap.AddCallerSkip(1))
-	}
-	if enableStackTrace {
-		options = append(options, zap.AddStacktrace(getZapLevel(level)))
-	}
-	zapLogger := zap.New(combinedCore, options...)
-	log = zapLogger.Sugar()
+	Log = configureLogger()
 }
 
 func IsDebugLevel() bool {
@@ -86,49 +74,49 @@ func IsDebugLevel() bool {
 // Debug level logging.
 // Most verbose logging level.
 func Debug(args ...interface{}) {
-	log.Debug(args...)
+	Log.Debug(args...)
 }
 
 // Info level logging.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
 func Info(args ...interface{}) {
-	log.Info(args...)
+	Log.Info(args...)
 }
 
 // Error level logging.
 // Use this to log errors which dont immediately halt the application.
 func Error(args ...interface{}) {
-	log.Error(args...)
+	Log.Error(args...)
 }
 
 // Fatal level logging.
 // Use this to log errors which crash the application.
 func Fatal(args ...interface{}) {
-	log.Fatal(args...)
+	Log.Fatal(args...)
 }
 
 // Debugf does debug level logging similar to fmt.Printf.
 // Most verbose logging level
 func Debugf(format string, args ...interface{}) {
-	log.Debug(args...)
+	Log.Debug(args...)
 }
 
 // Infof does info level logging similar to fmt.Printf.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
 func Infof(format string, args ...interface{}) {
-	log.Infof(format, args...)
+	Log.Infof(format, args...)
 }
 
 // Errorf does error level logging similar to fmt.Printf.
 // Use this to log errors which dont immediately halt the application.
 func Errorf(format string, args ...interface{}) {
-	log.Errorf(format, args...)
+	Log.Errorf(format, args...)
 }
 
 // Fatalf does fatal level logging similar to fmt.Printf.
 // Use this to log errors which crash the application.
 func Fatalf(format string, args ...interface{}) {
-	log.Fatalf(format, args...)
+	Log.Fatalf(format, args...)
 }
 
 // LogRequest reads and logs the request body and resets the body to original state.
@@ -139,6 +127,6 @@ func LogRequest(req *http.Request) {
 		bodyString := string(bodyBytes)
 		req.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
 		//print raw request body for debugging purposes
-		log.Debug("Request Body: ", bodyString)
+		Log.Debug("Request Body: ", bodyString)
 	}
 }
