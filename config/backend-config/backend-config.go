@@ -89,10 +89,6 @@ func loadConfig() {
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
 }
 
-func GetConfigBackenUrl() string {
-	return configBackendURL
-}
-
 func GetConfigBackendToken() string {
 	return configBackendToken
 }
@@ -102,6 +98,11 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 	backendURL := fmt.Sprintf("%s%s", url, endpoint)
 	dataJSON, _ := json.Marshal(data)
 	request, err := http.NewRequest("POST", backendURL, bytes.NewBuffer(dataJSON))
+	if err != nil {
+		logger.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
+		return []byte{}, false
+	}
+
 	request.SetBasicAuth(configBackendToken, "")
 	request.Header.Set("Content-Type", "application/json")
 
@@ -119,38 +120,12 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 	body, err := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
-	logger.Info("ConfigBackend: Successful %s", string(body))
+	logger.Debug("ConfigBackend: Successful %s", string(body))
 	return body, true
 }
 
 func MakeBackendPostRequest(endpoint string, data interface{}) (response []byte, ok bool) {
 	return MakePostRequest(configBackendURL, endpoint, data)
-}
-
-func getBackendConfig() (SourcesT, bool) {
-	client := &http.Client{}
-	url := fmt.Sprintf("%s/workspaceConfig", configBackendURL)
-	request, err := http.NewRequest("GET", url, nil)
-
-	request.SetBasicAuth(configBackendToken, "")
-	resp, err := client.Do(request)
-
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = ioutil.ReadAll(resp.Body)
-		defer resp.Body.Close()
-	}
-	if err != nil {
-		logger.Error("Errored when sending request to the server", err)
-		return SourcesT{}, false
-	}
-	var sourcesJSON SourcesT
-	err = json.Unmarshal(respBody, &sourcesJSON)
-	if err != nil {
-		logger.Error("Errored while parsing request", err, string(respBody), resp.StatusCode)
-		return SourcesT{}, false
-	}
-	return sourcesJSON, true
 }
 
 func init() {

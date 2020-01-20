@@ -434,6 +434,8 @@ func (proc *HandleT) createSessions() {
 }
 
 func getReplayEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
 	var enabledDests []backendconfig.DestinationT
 	for _, dest := range writeKeyDestinationMap[writeKey] {
 		replay := dest.Config.(map[string]interface{})["Replay"]
@@ -445,6 +447,8 @@ func getReplayEnabledDestinations(writeKey string, destinationName string) []bac
 }
 
 func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
 	var enabledDests []backendconfig.DestinationT
 	for _, dest := range writeKeyDestinationMap[writeKey] {
 		if destinationName == dest.DestinationDefinition.Name && dest.Enabled {
@@ -455,6 +459,8 @@ func getEnabledDestinations(writeKey string, destinationName string) []backendco
 }
 
 func getEnabledDestinationTypes(writeKey string) map[string]backendconfig.DestinationDefinitionT {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
 	var enabledDestinationTypes = make(map[string]backendconfig.DestinationDefinitionT)
 	for _, destination := range writeKeyDestinationMap[writeKey] {
 		if destination.Enabled {
@@ -685,6 +691,7 @@ func (proc *HandleT) handleReplay(combinedList []*jobsdb.JobT) {
 	if isReplayServer {
 		return
 	}
+
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 
