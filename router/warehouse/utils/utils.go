@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/iancoleman/strcase"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -156,6 +156,7 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 }
 
 func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error) {
+	logger.Debugf("WH: Setting status of %s for wh_upload:%v\n", status, upload.ID)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=$3`, warehouseUploadsTable)
 	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), upload.ID)
 	misc.AssertError(err)
@@ -163,6 +164,7 @@ func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error
 }
 
 func SetUploadError(upload UploadT, statusError error, state string, dbHandle *sql.DB) (err error) {
+	logger.Errorf("WH: Failed during %s stage: %v\n", ExportedDataState, statusError.Error())
 	SetUploadStatus(upload, ExportingDataFailedState, dbHandle)
 	var e map[string]map[string]interface{}
 	json.Unmarshal(upload.Error, &e)
@@ -204,13 +206,14 @@ func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err er
 }
 
 func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusError error) (err error) {
+	logger.Errorf("WH: Failed processing staging files: %v\n", statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseStagingFilesTable)
 	_, err = dbHandle.Exec(sqlStatement, status, statusError.Error(), time.Now(), pq.Array(ids))
 	misc.AssertError(err)
 	return
 }
 
-func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
+func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, currentSchema, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
 	marshalledSchema, err := json.Marshal(schema)
 	if len(currentSchema) == 0 {
 		sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_upload_id, source_id, namespace, destination_id, destination_type, schema, created_at)
@@ -219,7 +222,7 @@ func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema ma
 		misc.AssertError(err)
 		defer stmt.Close()
 
-		_, err = stmt.Exec(uploadID, wh.Source.ID, strcase.ToSnake(wh.Source.Name), wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, time.Now())
+		_, err = stmt.Exec(uploadID, wh.Source.ID, namespace, wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, time.Now())
 	} else {
 		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3`, warehouseSchemasTable)
 		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, wh.Source.ID, wh.Destination.ID)
@@ -233,8 +236,8 @@ func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId strin
 								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)`,
 		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
 	rows, err := dbHandle.Query(sqlStatement)
-	defer rows.Close()
 	misc.AssertError(err)
+	defer rows.Close()
 
 	for rows.Next() {
 		var location string

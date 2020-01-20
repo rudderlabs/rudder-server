@@ -34,7 +34,7 @@ var (
 	warehouseDestinations      []string
 	inProgressMap              map[string]bool
 	inProgressMapLock          sync.RWMutex
-	uploadedRawDataJobsCache   map[string]bool
+	uploadedRawDataJobsCache   map[string]map[string]bool
 	warehouseStagingFilesTable string
 )
 
@@ -48,9 +48,11 @@ type HandleT struct {
 }
 
 type ObjectStorageT struct {
-	Config   map[string]interface{}
-	Key      string
-	Provider string
+	Config          map[string]interface{}
+	Key             string
+	Provider        string
+	DestinationID   string
+	DestinationType string
 }
 
 func (brt *HandleT) backendConfigSubscriber() {
@@ -120,13 +122,19 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	for _, job := range batchJobs.Jobs {
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
 		var ok bool
-		if _, ok = uploadedRawDataJobsCache[eventID]; !ok {
+		interruptedEventsMap, isDestInterrupted := uploadedRawDataJobsCache[batchJobs.BatchDestination.Destination.ID]
+		if isDestInterrupted {
+			if _, ok = interruptedEventsMap[eventID]; !ok {
+				eventsFound = true
+				gzWriter.WriteGZ(fmt.Sprintf(`%s`, job.EventPayload) + "\n")
+			}
+		} else {
 			eventsFound = true
 			gzWriter.WriteGZ(fmt.Sprintf(`%s`, job.EventPayload) + "\n")
 		}
 	}
 	gzWriter.CloseGZ()
-	if !eventsFound {
+	if !isWarehouse && !eventsFound {
 		logger.Infof("BRT: All events in this batch for %s are de-deuplicated...\n", provider)
 		return StorageUploadOutput{
 			LocalFilePaths: []string{gzipFilePath},
@@ -154,12 +162,20 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 
 	_, fileName := filepath.Split(gzipFilePath)
-	opPayload, err := json.Marshal(&ObjectStorageT{
-		Config:   batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
-		Key:      strings.Join(append(keyPrefixes, fileName), "/"),
-		Provider: provider,
-	})
-	opID := brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
+	var (
+		opID      int64
+		opPayload json.RawMessage
+	)
+	if !isWarehouse {
+		opPayload, _ = json.Marshal(&ObjectStorageT{
+			Config:          batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
+			Key:             strings.Join(append(keyPrefixes, fileName), "/"),
+			Provider:        provider,
+			DestinationID:   batchJobs.BatchDestination.Destination.ID,
+			DestinationType: batchJobs.BatchDestination.Destination.DestinationDefinition.Name,
+		})
+		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
+	}
 	_, err = uploader.Upload(outputFile, keyPrefixes...)
 
 	if err != nil {
@@ -276,7 +292,6 @@ func (brt *HandleT) initWorkers() {
 							brt.updateWarehouseMetadata(batchJobs, output.Key)
 						}
 						brt.setJobStatus(batchJobs, true, output.Error)
-						brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						destUploadStat.End()
 						setSourceInProgress(batchJobs.BatchDestination, false)
@@ -421,7 +436,10 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		for sc.Scan() {
 			lineBytes := sc.Bytes()
 			eventID := gjson.GetBytes(lineBytes, "messageId").String()
-			uploadedRawDataJobsCache[eventID] = true
+			if _, ok := uploadedRawDataJobsCache[object.DestinationID]; !ok {
+				uploadedRawDataJobsCache[object.DestinationID] = make(map[string]bool)
+			}
+			uploadedRawDataJobsCache[object.DestinationID][eventID] = true
 		}
 		reader.Close()
 	}
@@ -453,7 +471,9 @@ func (brt *HandleT) crashRecover() {
 		}
 		brt.jobsDB.UpdateJobStatus(statusList, []string{})
 	}
-	brt.dedupRawDataDestJobsOnCrash()
+	if misc.Contains(objectStorageDestinations, brt.destType) {
+		brt.dedupRawDataDestJobsOnCrash()
+	}
 }
 
 func (brt *HandleT) setupWarehouseStagingFilesTable() {
@@ -505,7 +525,7 @@ func loadConfig() {
 func init() {
 	config.Initialize()
 	loadConfig()
-	uploadedRawDataJobsCache = make(map[string]bool)
+	uploadedRawDataJobsCache = make(map[string]map[string]bool)
 }
 
 //Setup initializes this module

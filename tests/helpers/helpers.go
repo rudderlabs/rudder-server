@@ -135,8 +135,8 @@ func GetTableNamesWithPrefix(dbHandle *sql.DB, prefix string) []string {
 	defer stmt.Close()
 
 	rows, err := stmt.Query()
-	defer rows.Close()
 	misc.AssertError(err)
+	defer rows.Close()
 
 	tableNames := []string{}
 	for rows.Next() {
