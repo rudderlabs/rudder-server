@@ -40,8 +40,12 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
-	if manager.Config.Folder != "" {
-		fileName = manager.Config.Folder + "/" + fileName
+	if manager.Config.Prefix != "" {
+		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
+			fileName = manager.Config.Prefix + fileName
+		} else {
+			fileName = manager.Config.Prefix + "/" + fileName
+		}
 	}
 	output, err := s3manager.Upload(&awsS3Manager.UploadInput{
 		ACL:    aws.String("bucket-owner-full-control"),
@@ -132,12 +136,12 @@ type S3Manager struct {
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {
-	var bucketName, folderName, accessKeyID, accessKey string
+	var bucketName, prefix, accessKeyID, accessKey string
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
 	}
-	if config["folderName"] != nil {
-		folderName = config["folderName"].(string)
+	if config["prefix"] != nil {
+		prefix = config["prefix"].(string)
 	}
 	if config["accessKeyID"] != nil {
 		accessKeyID = config["accessKeyID"].(string)
@@ -145,12 +149,12 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 	if config["accessKey"] != nil {
 		accessKey = config["accessKey"].(string)
 	}
-	return &S3Config{Bucket: bucketName, Folder: folderName, AccessKeyID: accessKeyID, AccessKey: accessKey}
+	return &S3Config{Bucket: bucketName, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey}
 }
 
 type S3Config struct {
 	Bucket      string
-	Folder      string
+	Prefix      string
 	AccessKeyID string
 	AccessKey   string
 }

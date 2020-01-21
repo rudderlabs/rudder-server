@@ -27,8 +27,12 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
-	if manager.Config.Folder != "" {
-		fileName = manager.Config.Folder + "/" + fileName
+	if manager.Config.Prefix != "" {
+		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
+			fileName = manager.Config.Prefix + fileName
+		} else {
+			fileName = manager.Config.Prefix + "/" + fileName
+		}
 	}
 	bh := client.Bucket(manager.Config.Bucket)
 	obj := bh.Object(fileName)
@@ -68,21 +72,21 @@ type GCSManager struct {
 }
 
 func GetGCSConfig(config map[string]interface{}) *GCSConfig {
-	var bucketName, folderName, credentials string
+	var bucketName, prefix, credentials string
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
 	}
-	if config["folderName"] != nil {
-		folderName = config["folderName"].(string)
+	if config["prefix"] != nil {
+		prefix = config["prefix"].(string)
 	}
 	if config["credentials"] != nil {
 		credentials = config["credentials"].(string)
 	}
-	return &GCSConfig{Bucket: bucketName, Folder: folderName, Credentials: credentials}
+	return &GCSConfig{Bucket: bucketName, Prefix: prefix, Credentials: credentials}
 }
 
 type GCSConfig struct {
 	Bucket      string
-	Folder      string
+	Prefix      string
 	Credentials string
 }

@@ -35,8 +35,12 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
-	if manager.Config.Folder != "" {
-		fileName = manager.Config.Folder + "/" + fileName
+	if manager.Config.Prefix != "" {
+		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
+			fileName = manager.Config.Prefix + fileName
+		} else {
+			fileName = manager.Config.Prefix + "/" + fileName
+		}
 	}
 	_, err = minioClient.FPutObject(manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
 	if err != nil {
@@ -56,13 +60,13 @@ func (manager *MinioManager) Download(file *os.File, key string) error {
 }
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
-	var bucketName, folderName, endPoint, accessKeyID, secretAccessKey string
+	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey string
 	var useSSL bool
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
 	}
-	if config["folderName"] != nil {
-		folderName = config["folderName"].(string)
+	if config["prefix"] != nil {
+		prefix = config["prefix"].(string)
 	}
 	if config["endPoint"] != nil {
 		endPoint = config["endPoint"].(string)
@@ -79,7 +83,7 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 
 	return &MinioConfig{
 		Bucket:          bucketName,
-		Folder:          folderName,
+		Prefix:          prefix,
 		EndPoint:        endPoint,
 		AccessKeyID:     accessKeyID,
 		SecretAccessKey: secretAccessKey,
@@ -93,7 +97,7 @@ type MinioManager struct {
 
 type MinioConfig struct {
 	Bucket          string
-	Folder          string
+	Prefix          string
 	EndPoint        string
 	AccessKeyID     string
 	SecretAccessKey string
