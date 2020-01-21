@@ -73,6 +73,13 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
+	if manager.Config.Prefix != "" {
+		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
+			fileName = manager.Config.Prefix + fileName
+		} else {
+			fileName = manager.Config.Prefix + "/" + fileName
+		}
+	}
 	// Here's how to upload a blob.
 	blobURL := containerURL.NewBlockBlobURL(fileName)
 
@@ -120,9 +127,12 @@ type AzureBlobStorageManager struct {
 }
 
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
-	var containerName, accountName, accountKey string
+	var containerName, accountName, accountKey, prefix string
 	if config["containerName"] != nil {
 		containerName = config["containerName"].(string)
+	}
+	if config["prefix"] != nil {
+		prefix = config["prefix"].(string)
 	}
 	if config["accountName"] != nil {
 		accountName = config["accountName"].(string)
@@ -130,13 +140,17 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 	if config["accountKey"] != nil {
 		accountKey = config["accountKey"].(string)
 	}
-	return &AzureBlobStorageConfig{Container: containerName,
+	return &AzureBlobStorageConfig{
+		Container:   containerName,
+		Prefix:      prefix,
 		AccountName: accountName,
-		AccountKey:  accountKey}
+		AccountKey:  accountKey,
+	}
 }
 
 type AzureBlobStorageConfig struct {
 	Container   string
+	Prefix      string
 	AccountName string
 	AccountKey  string
 }
