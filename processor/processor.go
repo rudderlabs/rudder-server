@@ -112,21 +112,23 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 }
 
 var (
-	loopSleep              time.Duration
-	dbReadBatchSize        int
-	transformBatchSize     int
-	sessionInactivityThresholdInS    time.Duration
-	sessionThresholdEvents int
-	processSessions        bool
-	writeKeyDestinationMap map[string][]backendconfig.DestinationT
-	rawDataDestinations    []string
-	configSubscriberLock   sync.RWMutex
+	loopSleep                     time.Duration
+	dbReadBatchSize               int
+	transformBatchSize            int
+	userTransformBatchSize        int
+	sessionInactivityThresholdInS time.Duration
+	sessionThresholdEvents        int
+	processSessions               bool
+	writeKeyDestinationMap        map[string][]backendconfig.DestinationT
+	rawDataDestinations           []string
+	configSubscriberLock          sync.RWMutex
 )
 
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
 	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 100000)
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
+	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
 	sessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	sessionInactivityThresholdInS = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(20)) * time.Second
 	processSessions = config.GetBool("Processor.processSessions", true)
@@ -562,10 +564,16 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//the JSON we can send to the destination
 		url := integrations.GetDestinationURL(destID)
 		logger.Debug("Transform input size", len(destEventList))
-		response := proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), len(destEventList))
-		response = proc.transformer.Transform(response.Events, url, transformBatchSize)
+		var response ResponseT
+		if processSessions {
+			response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, true)
+		} else {
+			response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, false)
+		}
+		logger.Debug("Custom Transform output size", len(response.Events))
+		response = proc.transformer.Transform(response.Events, url, transformBatchSize, false)
 		destTransformEventList := response.Events
-		logger.Debug("Transform output size", len(destTransformEventList))
+		logger.Debug("Dest Transform output size", len(destTransformEventList))
 		if !response.Success {
 			logger.Debug("[Processor: processJobsForDest] Request to transformer not a success ", response.Events)
 			continue
