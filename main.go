@@ -180,7 +180,6 @@ func main() {
 	})
 	logger.Setup()
 	logger.Info("Main starting")
-
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")

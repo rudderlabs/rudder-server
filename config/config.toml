@@ -14,7 +14,7 @@ rateLimitWindowInMins=60
 noOfBucketsInWindow=12
 
 [Gateway]
-webPort = 8080
+webPort = 8081
 maxDBWriterProcess = 64
 CustomVal = "GW"
 maxBatchSize = 32
@@ -108,3 +108,7 @@ storagePath = "/tmp/recovery_data.json"
     [recovery.maintenance]
     crashThreshold = 5
     durationInS = 300
+
+[Diagnosis]
+enableDiagnosis = true
+endpoint = "localhost:8080"
