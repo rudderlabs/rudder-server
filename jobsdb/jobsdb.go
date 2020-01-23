@@ -27,6 +27,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"unicode/utf8"
 
@@ -104,7 +105,7 @@ type HandleT struct {
 	dsListLock            sync.RWMutex
 	dsMigrationLock       sync.RWMutex
 	dsRetentionPeriod     time.Duration
-	dsEmptyResultCache    map[dataSetT]map[string]map[string]bool
+	dsEmptyResultCache    map[dataSetT]map[string]map[string]map[string]bool
 	dsCacheLock           sync.Mutex
 	toBackup              bool
 	jobsFileUploader      filemanager.FileManager
@@ -133,9 +134,9 @@ var dbErrorMap = map[string]string{
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
-		// debug.SetTraceback("all")
-		// debug.PrintStack()
-		// jd.printLists(true)
+		debug.SetTraceback("all")
+		debug.PrintStack()
+		jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify(err)
 		misc.RecordAppError(err)
@@ -145,9 +146,9 @@ func (jd *HandleT) assertError(err error) {
 
 func (jd *HandleT) assert(cond bool) {
 	if !cond {
-		// debug.SetTraceback("all")
-		// debug.PrintStack()
-		// jd.printLists(true)
+		debug.SetTraceback("all")
+		debug.PrintStack()
+		jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify("Assertion failed")
 		misc.RecordAppError(errors.New("Assertion failed"))
@@ -259,7 +260,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
 	jd.toBackup = toBackup
-	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]bool{}
+	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]bool{}
 
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
@@ -990,26 +991,30 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 
 	_, ok := jd.dsEmptyResultCache[ds]
 	if !ok {
-		jd.dsEmptyResultCache[ds] = map[string]map[string]bool{}
+		jd.dsEmptyResultCache[ds] = map[string]map[string]map[string]bool{}
 	}
 
 	for _, cVal := range customValFilters {
-		pVal := ""
+		_, ok := jd.dsEmptyResultCache[ds][cVal]
+		if !ok {
+			jd.dsEmptyResultCache[ds][cVal] = map[string]map[string]bool{}
+		}
 
+		pVal := ""
 		for _, key := range misc.SortedMapKeys(parametersFilters) {
 			pVal += fmt.Sprintf(`_%s_%s`, key, parametersFilters[key])
 		}
 
-		_, ok := jd.dsEmptyResultCache[ds][cVal+pVal]
+		_, ok = jd.dsEmptyResultCache[ds][cVal][pVal]
 		if !ok {
-			jd.dsEmptyResultCache[ds][cVal+pVal] = map[string]bool{}
+			jd.dsEmptyResultCache[ds][cVal][pVal] = map[string]bool{}
 		}
 
 		for _, st := range stateFilters {
 			if mark {
-				jd.dsEmptyResultCache[ds][cVal+pVal][st] = true
+				jd.dsEmptyResultCache[ds][cVal][pVal][st] = true
 			} else {
-				jd.dsEmptyResultCache[ds][cVal+pVal][st] = false
+				jd.dsEmptyResultCache[ds][cVal][pVal][st] = false
 			}
 		}
 	}
@@ -1031,14 +1036,23 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 	}
 
 	for _, cVal := range customValFilters {
-		pVal := ""
+		_, ok := jd.dsEmptyResultCache[ds][cVal]
+		if !ok {
+			return false
+		}
 
+		pVal := ""
 		for _, key := range misc.SortedMapKeys(parametersFilters) {
 			pVal += fmt.Sprintf(`_%s_%s`, key, parametersFilters[key])
 		}
 
+		_, ok = jd.dsEmptyResultCache[ds][cVal][pVal]
+		if !ok {
+			return false
+		}
+
 		for _, st := range stateFilters {
-			mark, ok := jd.dsEmptyResultCache[ds][cVal+pVal][st]
+			mark, ok := jd.dsEmptyResultCache[ds][cVal][pVal][st]
 			if !ok || mark == false {
 				return false
 			}
