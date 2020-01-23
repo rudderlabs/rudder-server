@@ -87,9 +87,11 @@ type dataSetT struct {
 }
 
 type dataSetRangeT struct {
-	minJobID int64
-	maxJobID int64
-	ds       dataSetT
+	minJobID  int64
+	maxJobID  int64
+	startTime int64
+	endTime   int64
+	ds        dataSetT
 }
 
 /*
@@ -164,6 +166,10 @@ const (
 	InternalState     = "NP"
 )
 
+const (
+	MegaByte = 1000000 // 1MB = 10^6 B
+)
+
 var validJobStates = map[string]bool{
 	InternalState:     false, //False means internal state
 	SucceededState:    true,
@@ -187,11 +193,11 @@ var (
 )
 
 var (
-	maxDSSize, maxMigrateOnce                  int
-	jobDoneMigrateThres, jobStatusMigrateThres float64
-	mainCheckSleepDuration                     time.Duration
-	backupCheckSleepDuration                   time.Duration
-	useJoinForUnprocessed                      bool
+	maxDSSize, maxMigrateOnce, maxTableSizeInMB int
+	jobDoneMigrateThres, jobStatusMigrateThres  float64
+	mainCheckSleepDuration                      time.Duration
+	backupCheckSleepDuration                    time.Duration
+	useJoinForUnprocessed                       bool
 )
 
 var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat *stats.RudderStats
@@ -211,11 +217,13 @@ func loadConfig() {
 			(every few seconds) so a DS may go beyond this size
 	maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
 	mainCheckSleepDuration: How often is the loop (which checks for adding/migrating DS) run
+	maxTableSizeInMB: Maximum Table size in MegaBytes
 	*/
 	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres", 0.8)
 	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres", 5)
 	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
+	maxTableSizeInMB = config.GetInt("JobsDB.maxTableSizeInMB", 150)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
@@ -536,14 +544,12 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 
 func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 
-	var totalCount int
-
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ds.JobTable)
+	var tableSize int64
+	sqlStatement := fmt.Sprintf(`SELECT PG_RELATION_SIZE('%s')`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
-	err := row.Scan(&totalCount)
+	err := row.Scan(&tableSize)
 	jd.assertError(err)
-
-	if totalCount > maxDSSize {
+	if tableSize > int64(maxTableSizeInMB*MegaByte) {
 		return true
 	}
 	return false
@@ -685,6 +691,23 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	//This is the migration case. We don't yet update the in-memory list till
 	//we finish the migration
 	return newDS
+}
+
+/*
+ * Function to return max dataset index in the DB
+ */
+func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
+
+	jd.dsListLock.RLock()
+	defer jd.dsListLock.RUnlock()
+
+	//dList is already sorted.
+	dList := jd.getDSList(false)
+	ds := dList[len(dList)-1]
+	maxDSIndex, err := strconv.ParseInt(ds.Index, 10, 64)
+	misc.AssertError(err)
+
+	return maxDSIndex
 }
 
 //Drop a dataset
@@ -1394,28 +1417,29 @@ func (jd *HandleT) backupDSLoop() {
 	for {
 		time.Sleep(backupCheckSleepDuration)
 		logger.Info("BackupDS check:Start")
-		backupDS := jd.getBackupDS()
+		backupDSRange := jd.getBackupDSRange()
 		// check if non empty dataset is present to backup
 		// else continue
-		if (dataSetT{} == backupDS) {
+		if (dataSetRangeT{} == backupDSRange) {
 			// sleep for more duration if no dataset is found
 			time.Sleep(5 * backupCheckSleepDuration)
 			continue
 		}
 
-		startTime := time.Now().Unix()
+		backupDS := backupDSRange.ds
+
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
 		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
 		// write jobs table to s3
-		_, err = jd.backupTable(backupDS.JobTable, startTime)
+		_, err = jd.backupTable(backupDSRange, false)
 		if err != nil {
 			logger.Errorf("Failed to backup table %v", backupDS.JobTable)
 			continue
 		}
 
 		// write job_status table to s3
-		_, err = jd.backupTable(backupDS.JobStatusTable, startTime)
+		_, err = jd.backupTable(backupDSRange, true)
 		jd.assertError(err)
 		if err != nil {
 			logger.Errorf("Failed to backup table %v", backupDS.JobStatusTable)
@@ -1443,13 +1467,30 @@ func (jd *HandleT) removeTableJSONDumps() {
 	}
 }
 
-func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool, err error) {
+func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable bool) (success bool, err error) {
 	tableFileDumpTimeStat.Start()
 	totalTableDumpTimeStat.Start()
-	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
+	var tableName, path, pathPrefix string
 	backupPathDirName := "/rudder-s3-dumps/"
 	tmpDirPath := misc.CreateTMPDIR()
-	path := fmt.Sprintf(`%v%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, startTime)
+
+	if isJobStatusTable {
+		tableName = backupDSRange.ds.JobStatusTable
+		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
+		path = fmt.Sprintf(`%v%v.gz`, tmpDirPath+backupPathDirName, pathPrefix)
+	} else {
+		tableName = backupDSRange.ds.JobTable
+		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
+		path = fmt.Sprintf(`%v%v.%v.%v.%v.%v.gz`,
+			tmpDirPath+backupPathDirName,
+			pathPrefix,
+			backupDSRange.minJobID,
+			backupDSRange.maxJobID,
+			backupDSRange.startTime,
+			backupDSRange.endTime,
+		)
+	}
+
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	misc.AssertError(err)
 
@@ -1504,8 +1545,9 @@ func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool,
 	return true, err
 }
 
-func (jd *HandleT) getBackupDS() dataSetT {
+func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 	var backupDS dataSetT
+	var backupDSRange dataSetRangeT
 
 	//Read the table names from PG
 	tableNames := jd.getAllTableNames()
@@ -1520,7 +1562,7 @@ func (jd *HandleT) getBackupDS() dataSetT {
 		}
 	}
 	if len(dnumList) == 0 {
-		return backupDS
+		return backupDSRange
 	}
 
 	jd.sortDnumList(dnumList)
@@ -1530,7 +1572,39 @@ func (jd *HandleT) getBackupDS() dataSetT {
 		JobStatusTable: fmt.Sprintf("pre_drop_%s_job_status_%s", jd.tablePrefix, dnumList[0]),
 		Index:          dnumList[0],
 	}
-	return backupDS
+
+	var minID, maxID sql.NullInt64
+	jobIDSQLStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, backupDS.JobTable)
+	row := jd.dbHandle.QueryRow(jobIDSQLStatement)
+	err := row.Scan(&minID, &maxID)
+	jd.assertError(err)
+
+	jobTimeSQLStatement := fmt.Sprintf(`SELECT job_id, created_at FROM %s WHERE job_id IN (%v, %v)`, backupDS.JobTable, minID.Int64, maxID.Int64)
+	logger.Debug(jobTimeSQLStatement)
+
+	rows, err := jd.dbHandle.Query(jobTimeSQLStatement)
+	defer rows.Close()
+	jd.assertError(err)
+
+	timestamps := map[int64]time.Time{}
+	for rows.Next() {
+		var createdAt time.Time
+		var jobID sql.NullInt64
+		err := rows.Scan(&jobID, &createdAt)
+		jd.assertError(err)
+		timestamps[jobID.Int64] = createdAt
+	}
+
+	jd.assert(!timestamps[minID.Int64].After(timestamps[maxID.Int64]))
+
+	backupDSRange = dataSetRangeT{
+		minJobID:  minID.Int64,
+		maxJobID:  maxID.Int64,
+		startTime: timestamps[minID.Int64].UnixNano() / int64(time.Millisecond),
+		endTime:   timestamps[maxID.Int64].UnixNano() / int64(time.Millisecond),
+		ds:        backupDS,
+	}
+	return backupDSRange
 }
 
 /*

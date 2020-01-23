@@ -34,6 +34,8 @@ var (
 	maxProcess                                  int
 	gwDBRetention, routerDBRetention            time.Duration
 	enableProcessor, enableRouter, enableBackup bool
+	isReplayServer                              bool
+	enabledDestinations                         []backendconfig.DestinationT
 	configSubscriberLock                        sync.RWMutex
 	objectStorageDestinations                   []string
 	warehouseDestinations                       []string
@@ -49,6 +51,7 @@ func loadConfig() {
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
 	enableBackup = config.GetBool("JobsDB.enableBackup", true)
+	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ"}
 }
@@ -247,7 +250,13 @@ func main() {
 
 	sourcedebugger.Setup()
 	backendconfig.Setup()
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup && true)
+
+	//Forcing enableBackup false if this server is for handling replayed events
+	if isReplayServer {
+		enableBackup = false
+	}
+
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, false)
 
