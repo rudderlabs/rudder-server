@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/bugsnag/bugsnag-go"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -173,6 +173,14 @@ func printVersion() {
 }
 
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			if logger.Log != nil {
+				logger.Log.Sync()
+			}
+			panic(r) // panicing in recover, so bugsnag can handle panics
+		}
+	}()
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),
@@ -181,9 +189,9 @@ func main() {
 		// more configuration options
 		AppType: "rudder-server",
 	})
+
 	logger.Setup()
 	logger.Info("Main starting")
-
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
