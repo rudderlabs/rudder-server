@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/diagnosis"
 	"net/http"
 	"os"
 	"os/signal"
@@ -180,6 +181,9 @@ func main() {
 	})
 	logger.Setup()
 	logger.Info("Main starting")
+	diagnosis.Track(diagnosis.ServerStart, map[string]interface{}{
+		diagnosis.ServerStart: time.Now(),
+	})
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")

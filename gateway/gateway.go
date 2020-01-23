@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/diagnosis"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -467,7 +468,9 @@ func (gateway *HandleT) startWebHandler() {
 		AllowCredentials: true,
 		AllowedHeaders:   []string{"*"},
 	})
-
+	diagnosis.Track(diagnosis.ServerStarted, map[string]interface{}{
+		diagnosis.ServerStarted: time.Now(),
+	})
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), c.Handler(bugsnag.Handler(nil))))
 }
 

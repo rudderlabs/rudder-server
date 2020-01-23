@@ -1,6 +1,7 @@
 package backendconfig
 
 import (
+	"github.com/rudderlabs/rudder-server/services/diagnosis"
 	"reflect"
 	"sync"
 	"time"
@@ -92,6 +93,27 @@ func init() {
 	config.Initialize()
 	loadConfig()
 }
+func diagoniseConfig(preConfig SourcesT, curConfig SourcesT) {
+	if len(preConfig.Sources) == 0 && len(curConfig.Sources)>0{
+
+		diagnosis.Identify( diagnosis.ConfigIdentify, map[string]interface{}{
+				diagnosis.ConfigIdentify: preConfig.Sources[0]
+
+
+			}
+		)
+		return
+	}
+	noOfSources := len(curConfig.Sources)
+	noOfDestinations := 0
+	for _, source := range curConfig.Sources {
+		noOfDestinations = noOfDestinations + len(source.Destinations)
+	}
+	diagnosis.Track(diagnosis.ConfigProcessed, map[string]interface{}{
+		diagnosis.SourcesCount:      noOfSources,
+		diagnosis.DesitanationCount: noOfDestinations,
+	})
+}
 
 func pollConfigUpdate() {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
@@ -102,6 +124,7 @@ func pollConfigUpdate() {
 		}
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
 			curSourceJSONLock.Lock()
+			diagoniseConfig(curSourceJSON, sourceJSON)
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()
 			initialized = true

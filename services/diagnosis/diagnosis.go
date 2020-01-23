@@ -7,11 +7,15 @@ import (
 	"time"
 )
 
-type Diagnosis struct {
-	Client    analytics.Client
-	StartTime time.Time
-	serverId  string
-}
+const (
+	StartTime         = "diagnosis_start_time"
+	ServerStart       = "server_start"
+	ConfigProcessed   = "config_processed"
+	SourcesCount      = "no_of_sources"
+	DesitanationCount = "no_of_destinations"
+	ServerStarted     = "server_started"
+	ConfigIdentify    = "identify"
+)
 
 var (
 	enableDiagnosis bool
@@ -20,49 +24,46 @@ var (
 
 var diagnosis Diagnosis
 
+type Diagnosis struct {
+	Client    analytics.Client
+	StartTime time.Time
+	serverId  string
+}
+
 func init() {
 	enableDiagnosis = config.GetBool("Diagnosis.enableDiagnosis", true)
-	rudderEndpoint = config.GetString("Diagnosis.endpoint", "123")
+	rudderEndpoint = config.GetString("Diagnosis.endpoint", "http://localhost:8080")
 	config := analytics.Config{
 		Endpoint: rudderEndpoint,
 	}
-	client, _ := analytics.NewWithConfig("123", config)
+	client, _ := analytics.NewWithConfig("1TnQwbNV2QBdOsVlZIeKsvP2cez", config)
 	diagnosis.Client = client
 	diagnosis.StartTime = time.Now()
 	diagnosis.serverId = uuid.NewV4().String()
-	track()
 }
 
-func track() {
+func Track(event string, properties map[string]interface{}) {
 	if enableDiagnosis {
-		serverStartProperties := make(map[string]interface{})
-		serverStartProperties["server_start"] = diagnosis.StartTime
+		properties[StartTime] = diagnosis.StartTime
 		diagnosis.Client.Enqueue(
 			analytics.Track{
-				Event:      "config_processed",
-				Properties: serverStartProperties,
+				Event:      event,
+				Properties: properties,
 				UserId:     diagnosis.serverId,
 			},
 		)
 	}
 }
 
-//func TrackBackendConfig(config backendconfig.SourcesT) {
-//	if enableDiagnosis {
-//		configProperties := make(map[string]interface{})
-//		configProperties["no_of_sources"] = len(config.Sources)
-//		var noOfDestinations int
-//		for _, source := range config.Sources {
-//			noOfDestinations = noOfDestinations + len(source.Destinations)
-//		}
-//		configProperties["no_of_destinations"] = noOfDestinations
-//		diagnosis.Client.Enqueue(
-//			analytics.Track{
-//				Event:      "config_processed",
-//				Properties: configProperties,
-//				UserId:     diagnosis.serverId,
-//			},
-//		)
-//	}
-//
-//}
+func Identify(event string, properties map[string]interface{}) {
+	if enableDiagnosis {
+		properties[StartTime] = diagnosis.StartTime
+		diagnosis.Client.Enqueue(
+			analytics.Track{
+				Event:      event,
+				Properties: properties,
+				UserId:     diagnosis.serverId,
+			},
+		)
+	}
+}

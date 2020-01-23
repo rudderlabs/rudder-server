@@ -28,12 +28,15 @@ require (
 	github.com/onsi/gomega v1.7.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/rs/cors v1.7.0
+	github.com/rudderlabs/analytics-go v3.1.0+incompatible
 	github.com/satori/go.uuid v1.2.0
+	github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c // indirect
 	github.com/segmentio/ksuid v1.0.2
 	github.com/spf13/viper v1.4.0
 	github.com/thoas/go-funk v0.5.0
 	github.com/tidwall/gjson v1.3.2
 	github.com/tidwall/sjson v1.0.4
+	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
 	go.opencensus.io v0.22.2 // indirect
 	golang.org/x/net v0.0.0-20191207000613-e7e4b65ae663 // indirect
 	golang.org/x/sys v0.0.0-20191206220618-eeba5f6aabab // indirect
