@@ -2,10 +2,13 @@ package logger
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/rudderlabs/rudder-server/config"
 	"go.uber.org/zap"
 	"io/ioutil"
 	"net/http"
+	"os"
+	"runtime"
 )
 
 /*
@@ -18,13 +21,15 @@ We use 4 logging levels here Debug, Info, Error and Fatal.
 */
 
 const (
-	levelDebug = iota + 1 // Most verbose logging level
-	levelInfo             // Logs about state of the application
-	levelError            // Logs about errors which dont immediately halt the application
-	levelFatal            // Logs which crashes the application
+	levelEvent = iota // Logs Event
+	levelDebug        // Most verbose logging level
+	levelInfo         // Logs about state of the application
+	levelError        // Logs about errors which dont immediately halt the application
+	levelFatal        // Logs which crashes the application
 )
 
 var levelMap = map[string]int{
+	"EVENT": levelEvent,
 	"DEBUG": levelDebug,
 	"INFO":  levelInfo,
 	"ERROR": levelError,
@@ -92,7 +97,14 @@ func Error(args ...interface{}) {
 // Fatal level logging.
 // Use this to log errors which crash the application.
 func Fatal(args ...interface{}) {
-	Log.Fatal(args...)
+	if levelFatal >= level {
+		fmt.Print("FATAL   ")
+		if _, file, lineNo, ok := runtime.Caller(1); ok {
+			dir, _ := os.Getwd()
+			fmt.Print(file[len(dir)+1:]+":", lineNo, "   ")
+		}
+		fmt.Println(args...)
+	}
 }
 
 // Debugf does debug level logging similar to fmt.Printf.
@@ -116,12 +128,21 @@ func Errorf(format string, args ...interface{}) {
 // Fatalf does fatal level logging similar to fmt.Printf.
 // Use this to log errors which crash the application.
 func Fatalf(format string, args ...interface{}) {
-	Log.Fatalf(format, args...)
+	if levelFatal >= level {
+		if levelFatal >= level {
+			fmt.Print("FATAL   ")
+			if _, file, lineNo, ok := runtime.Caller(1); ok {
+				dir, _ := os.Getwd()
+				fmt.Print(file[len(dir)+1:]+":", lineNo, "   ")
+			}
+			fmt.Println(fmt.Sprintf(format, args...))
+		}
+	}
 }
 
 // LogRequest reads and logs the request body and resets the body to original state.
 func LogRequest(req *http.Request) {
-	if levelDebug >= level {
+	if levelEvent >= level {
 		defer req.Body.Close()
 		bodyBytes, _ := ioutil.ReadAll(req.Body)
 		bodyString := string(bodyBytes)
