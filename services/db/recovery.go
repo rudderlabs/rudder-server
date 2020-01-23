@@ -127,7 +127,7 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 }
 
 func alertOps(mode string) {
-	instanceName := config.GetEnv("INSTANCE_NAME", "")
+	instanceName := config.GetEnv("INSTANCE_ID", "")
 
 	alertManager, err := alert.New()
 	if err != nil {
