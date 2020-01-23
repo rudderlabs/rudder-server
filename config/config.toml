@@ -110,14 +110,14 @@ storagePath = "/tmp/recovery_data.json"
     durationInS = 300
 
 # logger configuration
-[Zapper]
+[Logger]
 enableConsole=true
-enableFile=true
+enableFile=false
 consoleJsonFormat=false
-fileJsonFormat=true
-logFileLocation="/tmp/rudder_log.txt"
-logFileSize = 1 # in MB
+fileJsonFormat=false
+logFileLocation="/tmp/rudder_log.log"
+logFileSize = 100 # in MB
 enableTimestamp=false
-enableFileNameInLog=true
+enableFileNameInLog=false
 enableStackTrace=false
 

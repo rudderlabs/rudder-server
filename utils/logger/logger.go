@@ -53,15 +53,15 @@ var Log *zap.SugaredLogger
 
 func loadConfig() {
 	level = levelMap[config.GetEnv("LOG_LEVEL", "INFO")]
-	enableConsole = config.GetBool("Zapper.enableConsole", true)
-	enableFile = config.GetBool("Zapper.enableFile", false)
-	consoleJsonFormat = config.GetBool("Zapper.consoleJsonFormat", true)
-	fileJsonFormat = config.GetBool("Zapper.fileJsonFormat", false)
-	logFileLocation = config.GetString("Zapper.logFileLocation", "/tmp/rudder_log.txt")
-	logFileSize = config.GetInt("Zapper.logFileSize", 100)
-	enableTimestamp = config.GetBool("Zapper.enableTimestamp", false)
-	enableFileNameInLog = config.GetBool("Zapper.enableFileNameInLog", false)
-	enableStackTrace = config.GetBool("Zapper.enableStackTrace", false)
+	enableConsole = config.GetBool("Logger.enableConsole", true)
+	enableFile = config.GetBool("Logger.enableFile", false)
+	consoleJsonFormat = config.GetBool("Logger.consoleJsonFormat", true)
+	fileJsonFormat = config.GetBool("Logger.fileJsonFormat", false)
+	logFileLocation = config.GetString("Logger.logFileLocation", "/tmp/rudder_log.txt")
+	logFileSize = config.GetInt("Logger.logFileSize", 100)
+	enableTimestamp = config.GetBool("Logger.enableTimestamp", false)
+	enableFileNameInLog = config.GetBool("Logger.enableFileNameInLog", false)
+	enableStackTrace = config.GetBool("Logger.enableStackTrace", false)
 }
 
 var options []zap.Option
