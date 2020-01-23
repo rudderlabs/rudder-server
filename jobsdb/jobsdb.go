@@ -973,7 +973,7 @@ func (jd *HandleT) constructJSONQuery(paramKey string, jsonKey string, paramList
 * markClearEmptyResult() when mark=False clears a previous empty mark
  */
 
-func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parametersFilters map[string]string, mark bool) {
+func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters map[string]string, mark bool) {
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
@@ -1001,8 +1001,8 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 		}
 
 		pVal := ""
-		for _, key := range misc.SortedMapKeys(parametersFilters) {
-			pVal += fmt.Sprintf(`_%s_%s`, key, parametersFilters[key])
+		for _, key := range misc.SortedMapKeys(parameterFilters) {
+			pVal += fmt.Sprintf(`_%s_%s`, key, parameterFilters[key])
 		}
 
 		_, ok = jd.dsEmptyResultCache[ds][cVal][pVal]
@@ -1020,7 +1020,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 	}
 }
 
-func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parametersFilters map[string]string) bool {
+func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters map[string]string) bool {
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
@@ -1042,8 +1042,8 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 		}
 
 		pVal := ""
-		for _, key := range misc.SortedMapKeys(parametersFilters) {
-			pVal += fmt.Sprintf(`_%s_%s`, key, parametersFilters[key])
+		for _, key := range misc.SortedMapKeys(parameterFilters) {
+			pVal += fmt.Sprintf(`_%s_%s`, key, parameterFilters[key])
 		}
 
 		_, ok = jd.dsEmptyResultCache[ds][cVal][pVal]
@@ -1063,15 +1063,19 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 	return true
 }
 
-//limitCount == 0 means return all
+/*
+limitCount == 0 means return all
+stateFilters and customValFilters do a OR query on values passed in array
+parameterFilters do a AND query on values included in the map
+*/
 func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []string,
-	customValFilters []string, limitCount int, parametersFilters map[string]string) ([]*JobT, error) {
+	customValFilters []string, limitCount int, parameterFilters map[string]string) ([]*JobT, error) {
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
 	jd.checkValidJobState(stateFilters)
 
-	if jd.isEmptyResult(ds, stateFilters, customValFilters, parametersFilters) {
+	if jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
 		return []*JobT{}, nil
 	}
 
@@ -1089,9 +1093,9 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 		customValQuery = ""
 	}
 
-	if len(parametersFilters) > 0 {
+	if len(parameterFilters) > 0 {
 		jd.assert(!getAll)
-		for parameter, val := range parametersFilters {
+		for parameter, val := range parameterFilters {
 			// handle old data which does not have destination_id
 			if parameter == "destination_id" {
 				sourceQuery += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter,
@@ -1172,20 +1176,24 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	}
 
 	if len(jobList) == 0 {
-		jd.markClearEmptyResult(ds, stateFilters, customValFilters, parametersFilters, true)
+		jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, true)
 	}
 
 	return jobList, nil
 }
 
-//count == 0 means return all
+/*
+count == 0 means return all
+stateFilters and customValFilters do a OR query on values passed in array
+parameterFilters do a AND query on values included in the map
+*/
 func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
-	order bool, count int, parametersFilters map[string]string) ([]*JobT, error) {
+	order bool, count int, parameterFilters map[string]string) ([]*JobT, error) {
 
 	var rows *sql.Rows
 	var err error
 
-	if jd.isEmptyResult(ds, []string{"NP"}, customValFilters, parametersFilters) {
+	if jd.isEmptyResult(ds, []string{"NP"}, customValFilters, parameterFilters) {
 		return []*JobT{}, nil
 	}
 
@@ -1210,8 +1218,8 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 			customValFilters, "OR")
 	}
 
-	if len(parametersFilters) > 0 {
-		for parameter, val := range parametersFilters {
+	if len(parameterFilters) > 0 {
+		for parameter, val := range parameterFilters {
 			// handle old data which does not have destination_id
 			if parameter == "destination_id" {
 				sqlStatement += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter,
@@ -1244,13 +1252,13 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	}
 
 	if len(jobList) == 0 {
-		jd.markClearEmptyResult(ds, []string{"NP"}, customValFilters, parametersFilters, true)
+		jd.markClearEmptyResult(ds, []string{"NP"}, customValFilters, parameterFilters, true)
 	}
 
 	return jobList, nil
 }
 
-func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, parametersFilters map[string]string) (err error) {
+func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters map[string]string) (err error) {
 
 	if len(statusList) == 0 {
 		return nil
@@ -1289,7 +1297,7 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 		stateFilters = append(stateFilters, k)
 	}
 
-	jd.markClearEmptyResult(ds, stateFilters, customValFilters, parametersFilters, false)
+	jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, false)
 
 	return nil
 }
@@ -1758,7 +1766,7 @@ UpdateJobStatus updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parametersFilters map[string]string) {
+func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters map[string]string) {
 
 	if len(statusList) == 0 {
 		return
@@ -1795,7 +1803,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 					logger.Debug("Range:", ds, statusList[lastPos].JobID,
 						statusList[i-1].JobID, lastPos, i-1)
 				}
-				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parametersFilters)
+				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
 				jd.assertError(err)
 				lastPos = i
 				break
@@ -1804,7 +1812,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		//Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
 			logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
-			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parametersFilters)
+			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
 			jd.assertError(err)
 			lastPos = i
 			break
@@ -1857,7 +1865,7 @@ func (jd *HandleT) printLists(console bool) {
 GetUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, parametersFilters map[string]string) []*JobT {
+func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, parameterFilters map[string]string) []*JobT {
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -1875,7 +1883,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 	}
 	for _, ds := range dsList {
 		jd.assert(count > 0)
-		jobs, err := jd.getUnprocessedJobsDS(ds, customValFilters, true, count, parametersFilters)
+		jobs, err := jd.getUnprocessedJobsDS(ds, customValFilters, true, count, parameterFilters)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
@@ -1895,7 +1903,7 @@ relises on the caller to update it. That means that successive calls to GetProce
 can return the same set of events. It is the responsibility of the caller to call it from
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
-func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, parametersFilters map[string]string) []*JobT {
+func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, parameterFilters map[string]string) []*JobT {
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -1916,7 +1924,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	for _, ds := range dsList {
 		//count==0 means return all which we don't want
 		jd.assert(count > 0)
-		jobs, err := jd.getProcessedJobsDS(ds, false, stateFilter, customValFilters, count, parametersFilters)
+		jobs, err := jd.getProcessedJobsDS(ds, false, stateFilter, customValFilters, count, parameterFilters)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
@@ -1933,23 +1941,23 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 GetToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) GetToRetry(customValFilters []string, count int, parametersFilters map[string]string) []*JobT {
-	return jd.GetProcessed([]string{FailedState}, customValFilters, count, parametersFilters)
+func (jd *HandleT) GetToRetry(customValFilters []string, count int, parameterFilters map[string]string) []*JobT {
+	return jd.GetProcessed([]string{FailedState}, customValFilters, count, parameterFilters)
 }
 
 /*
 GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) GetWaiting(customValFilters []string, count int, parametersFilters map[string]string) []*JobT {
-	return jd.GetProcessed([]string{WaitingState}, customValFilters, count, parametersFilters)
+func (jd *HandleT) GetWaiting(customValFilters []string, count int, parameterFilters map[string]string) []*JobT {
+	return jd.GetProcessed([]string{WaitingState}, customValFilters, count, parameterFilters)
 }
 
 /*
 GetExecuting returns events which  in executing state
 */
-func (jd *HandleT) GetExecuting(customValFilters []string, count int, parametersFilters map[string]string) []*JobT {
-	return jd.GetProcessed([]string{ExecutingState}, customValFilters, count, parametersFilters)
+func (jd *HandleT) GetExecuting(customValFilters []string, count int, parameterFilters map[string]string) []*JobT {
+	return jd.GetProcessed([]string{ExecutingState}, customValFilters, count, parameterFilters)
 }
 
 /*
