@@ -8,7 +8,11 @@ import (
 )
 
 func (manager *MinioManager) ObjectUrl(objectName string) string {
-	return manager.Config.Protocol + "://" + manager.Config.EndPoint + "/" + manager.Config.Bucket + "/" + objectName
+	var protocol = "http"
+	if manager.Config.UseSSL == true {
+		protocol = "https"
+	}
+	return protocol + "://" + manager.Config.EndPoint + "/" + manager.Config.Bucket + "/" + objectName
 }
 
 func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
@@ -31,6 +35,13 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
+	if manager.Config.Prefix != "" {
+		if manager.Config.Prefix[len(manager.Config.Prefix)-1:] == "/" {
+			fileName = manager.Config.Prefix + fileName
+		} else {
+			fileName = manager.Config.Prefix + "/" + fileName
+		}
+	}
 	_, err = minioClient.FPutObject(manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
 	if err != nil {
 		return UploadOutput{}, nil
@@ -49,10 +60,13 @@ func (manager *MinioManager) Download(file *os.File, key string) error {
 }
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
-	var bucketName, endPoint, accessKeyID, secretAccessKey, protocol string
+	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey string
 	var useSSL bool
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
+	}
+	if config["prefix"] != nil {
+		prefix = config["prefix"].(string)
 	}
 	if config["endPoint"] != nil {
 		endPoint = config["endPoint"].(string)
@@ -66,17 +80,14 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	if config["useSSL"] != nil {
 		useSSL = config["useSSL"].(bool)
 	}
-	if config["protocol"] != nil {
-		protocol = config["protocol"].(string)
-	}
 
 	return &MinioConfig{
 		Bucket:          bucketName,
+		Prefix:          prefix,
 		EndPoint:        endPoint,
 		AccessKeyID:     accessKeyID,
 		SecretAccessKey: secretAccessKey,
 		UseSSL:          useSSL,
-		Protocol:        protocol,
 	}
 }
 
@@ -86,9 +97,9 @@ type MinioManager struct {
 
 type MinioConfig struct {
 	Bucket          string
+	Prefix          string
 	EndPoint        string
 	AccessKeyID     string
 	SecretAccessKey string
 	UseSSL          bool
-	Protocol        string
 }
