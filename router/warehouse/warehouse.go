@@ -260,19 +260,19 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 	return uploads, anyPending
 }
 
-func setDestInProgress(destID string, starting bool) {
+func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
 	inProgressMapLock.Lock()
 	if starting {
-		inProgressMap[destID] = true
+		inProgressMap[warehouse.Source.ID+"_"+warehouse.Destination.ID] = true
 	} else {
-		delete(inProgressMap, destID)
+		delete(inProgressMap, warehouse.Source.ID+"_"+warehouse.Destination.ID)
 	}
 	inProgressMapLock.Unlock()
 }
 
-func isDestInProgress(destID string) bool {
+func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 	inProgressMapLock.RLock()
-	if inProgressMap[destID] {
+	if inProgressMap[warehouse.Source.ID+"_"+warehouse.Destination.ID] {
 		inProgressMapLock.RUnlock()
 		return true
 	}
@@ -312,7 +312,7 @@ func (wh *HandleT) mainLoop() {
 			continue
 		}
 		for _, warehouse := range wh.warehouses {
-			if isDestInProgress(warehouse.Destination.ID) {
+			if isDestInProgress(warehouse) {
 				logger.Debugf("WH: Skipping upload loop since %s:%s upload in progess", wh.destType, warehouse.Destination.ID)
 				continue
 			}
@@ -320,7 +320,7 @@ func (wh *HandleT) mainLoop() {
 				logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
 				continue
 			}
-			setDestInProgress(warehouse.Destination.ID, true)
+			setDestInProgress(warehouse, true)
 
 			_, ok := inRecoveryMap[warehouse.Destination.ID]
 			if ok {
@@ -332,7 +332,7 @@ func (wh *HandleT) mainLoop() {
 					Warehouse: warehouse,
 				})
 				if err != nil {
-					setDestInProgress(warehouse.Destination.ID, false)
+					setDestInProgress(warehouse, false)
 					continue
 				}
 				delete(inRecoveryMap, warehouse.Destination.ID)
@@ -359,7 +359,7 @@ func (wh *HandleT) mainLoop() {
 				misc.AssertError(err)
 				if len(stagingFilesList) == 0 {
 					logger.Debugf("WH: Found no pending staging files for %s:%s\n", wh.destType, warehouse.Destination.ID)
-					setDestInProgress(warehouse.Destination.ID, false)
+					setDestInProgress(warehouse, false)
 					continue
 				}
 				logger.Infof("WH: Found %v pending staging files for %s:%s\n", len(stagingFilesList), wh.destType, warehouse.Destination.ID)
@@ -510,7 +510,7 @@ func (wh *HandleT) initWorkers() {
 						break
 					}
 				}
-				setDestInProgress(processStagingFilesJobList[0].Warehouse.Destination.ID, false)
+				setDestInProgress(processStagingFilesJobList[0].Warehouse, false)
 			}
 		}()
 	}
