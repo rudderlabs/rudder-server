@@ -8,13 +8,25 @@ import (
 )
 
 const (
-	StartTime         = "diagnosis_start_time"
-	ServerStart       = "server_start"
-	ConfigProcessed   = "config_processed"
-	SourcesCount      = "no_of_sources"
-	DesitanationCount = "no_of_destinations"
-	ServerStarted     = "server_started"
-	ConfigIdentify    = "identify"
+	StartTime               = "diagnosis_start_time"
+	ServerStart             = "server_start"
+	ConfigProcessed         = "config_processed"
+	SourcesCount            = "no_of_sources"
+	DesitanationCount       = "no_of_destinations"
+	ServerStarted           = "server_started"
+	ConfigIdentify          = "identify"
+	GatewayEvents           = "gateway_events"
+	GatewaySuccess          = "gateway_success"
+	GatewayFailure          = "gateway_failure"
+	RouterEvents            = "router_events"
+	RouterType              = "router_type"
+	RouterSuccess           = "router_success"
+	routerRetries           = "router_retries"
+	routerAborted           = "router_aborted"
+	BatchRouterEvents       = "batch_router_events"
+	BatchRouterType         = "batch_router_type"
+	BatchRouterFilesCreated = "batch_router_files_created"
+	BatchRouterErrors       = "batch_router_errors"
 )
 
 var (

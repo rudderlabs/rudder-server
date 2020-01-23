@@ -268,6 +268,10 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			jobIDReqMap[uuid].done <- err
 		}
+		diagnosis.Track(diagnosis.GatewayEvents, map[string]interface{}{
+			diagnosis.GatewaySuccess: writeKeySuccessStats,
+			diagnosis.GatewayFailure: writeKeyFailStats,
+		})
 
 		//Sending events to config backend
 		for _, event := range eventBatchesToRecord {

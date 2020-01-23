@@ -53,6 +53,7 @@ type SourceT struct {
 	SourceDefinition SourceDefinitionT
 	Config           interface{}
 	Enabled          bool
+	WorkspaceID      string
 	Destinations     []DestinationT
 	WriteKey         string
 }
@@ -94,13 +95,11 @@ func init() {
 	loadConfig()
 }
 func diagoniseConfig(preConfig SourcesT, curConfig SourcesT) {
-	if len(preConfig.Sources) == 0 && len(curConfig.Sources)>0{
+	if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
 
-		diagnosis.Identify( diagnosis.ConfigIdentify, map[string]interface{}{
-				diagnosis.ConfigIdentify: preConfig.Sources[0]
-
-
-			}
+		diagnosis.Identify(diagnosis.ConfigIdentify, map[string]interface{}{
+			diagnosis.ConfigIdentify: preConfig.Sources[0].WorkspaceID,
+		},
 		)
 		return
 	}
