@@ -112,16 +112,18 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 }
 
 var (
-	loopSleep                     time.Duration
-	dbReadBatchSize               int
-	transformBatchSize            int
-	userTransformBatchSize        int
-	sessionInactivityThresholdInS time.Duration
-	sessionThresholdEvents        int
-	processSessions               bool
-	writeKeyDestinationMap        map[string][]backendconfig.DestinationT
-	rawDataDestinations           []string
-	configSubscriberLock          sync.RWMutex
+	loopSleep                           time.Duration
+	dbReadBatchSize                     int
+	transformBatchSize                  int
+	userTransformBatchSize              int
+	sessionInactivityThresholdInS       time.Duration
+	sessionThresholdEvents              int
+	processSessions                     bool
+	writeKeyDestinationMap              map[string][]backendconfig.DestinationT
+	destinationIDtoTypeMap              map[string]string
+	destinationTransformationEnabledMap map[string]bool
+	rawDataDestinations                 []string
+	configSubscriberLock                sync.RWMutex
 )
 
 func loadConfig() {
@@ -146,10 +148,16 @@ func backendConfigSubscriber() {
 		config := <-ch
 		configSubscriberLock.Lock()
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
+		destinationIDtoTypeMap = make(map[string]string)
+		destinationTransformationEnabledMap = make(map[string]bool)
 		sources := config.Data.(backendconfig.SourcesT)
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				writeKeyDestinationMap[source.WriteKey] = source.Destinations
+				for _, destination := range source.Destinations {
+					destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
+					destinationTransformationEnabledMap[destination.ID] = len(destination.Transformations) > 0
+				}
 			}
 		}
 		configSubscriberLock.Unlock()
@@ -532,11 +540,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						enhanceWithMetadata(shallowEventCopy, batchEvent, destination)
 
 						//We have at-least one event so marking it good
-						_, ok = eventsByDest[destType]
+						_, ok = eventsByDest[destination.ID]
 						if !ok {
-							eventsByDest[destType] = make([]interface{}, 0)
+							eventsByDest[destination.ID] = make([]interface{}, 0)
 						}
-						eventsByDest[destType] = append(eventsByDest[destType],
+						eventsByDest[destination.ID] = append(eventsByDest[destination.ID],
 							shallowEventCopy)
 					}
 				}
@@ -562,16 +570,28 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	for destID, destEventList := range eventsByDest {
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
-		url := integrations.GetDestinationURL(destID)
+		configSubscriberLock.RLock()
+		destType := destinationIDtoTypeMap[destID]
+		transformationEnabled := destinationTransformationEnabledMap[destID]
+		configSubscriberLock.RUnlock()
+
+		url := integrations.GetDestinationURL(destType)
 		logger.Debug("Transform input size", len(destEventList))
 		var response ResponseT
-		if processSessions {
-			response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, true)
+		var eventsToTransform []interface{}
+		if transformationEnabled {
+			if processSessions {
+				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, true)
+			} else {
+				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, false)
+			}
+			eventsToTransform = response.Events
+			logger.Debug("Custom Transform output size", len(eventsToTransform))
 		} else {
-			response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, false)
+			logger.Debug("No custom transformation")
+			eventsToTransform = destEventList
 		}
-		logger.Debug("Custom Transform output size", len(response.Events))
-		response = proc.transformer.Transform(response.Events, url, transformBatchSize, false)
+		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 		destTransformEventList := response.Events
 		logger.Debug("Dest Transform output size", len(destTransformEventList))
 		if !response.Success {
@@ -602,7 +622,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
-				CustomVal:    destID,
+				CustomVal:    destType,
 				EventPayload: destEventJSON,
 			}
 			if misc.Contains(rawDataDestinations, newJob.CustomVal) {
