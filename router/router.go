@@ -2,6 +2,7 @@ package router
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/diagnosis"
 	"hash/fnv"
 	"math"
 	"math/rand"
@@ -60,6 +61,19 @@ var (
 	testSinkURL                                                                    string
 )
 
+type requestDiagnosis struct {
+	RequestRetries       int
+	RequestAborted       int
+	RequestSuccess       int
+	RequestCompletedTime time.Duration
+}
+
+var (
+	requestsDiagnosisLock sync.Mutex
+	diagnosisTicker       *time.Ticker
+	requestsDiagnosis     map[string][]requestDiagnosis
+)
+
 func isSuccessStatus(status int) bool {
 	return status >= 200 && status < 300
 }
@@ -79,6 +93,7 @@ func loadConfig() {
 	useTestSink = config.GetBool("Router.useTestSink", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
+	diagnosisTicker = time.NewTicker(60 * time.Second) // add and fetch from config
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -91,7 +106,6 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		fmt.Sprintf("router.%s_failed_attempts", rt.destID), stats.CountType)
 	eventsDeliveredStat := stats.NewStat(
 		fmt.Sprintf("router.%s_events_delivered", rt.destID), stats.CountType)
-
 	for {
 		job := <-worker.channel
 		var respStatusCode, attempts int
@@ -142,12 +156,13 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		if isPrevFailedUser {
 			misc.Assert(previousFailedJobID == job.JobID)
 		}
-
+		var reqDiagnosis requestDiagnosis
 		//We can execute thoe job
 		for attempts = 0; attempts < ser; attempts++ {
 			logger.Debugf("%v Router :: trying to send payload %v of %v", rt.destID, attempts, ser)
 
 			deliveryTimeStat.Start()
+			diagnosisStartTime := time.Now()
 			respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
 			deliveryTimeStat.End()
 
@@ -168,6 +183,11 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				logger.Debugf("%v Router :: worker %v sleeping for  %v ",
 					rt.destID, worker.workerID, worker.sleepTime)
 				time.Sleep(worker.sleepTime * time.Second)
+				reqDiagnosis.RequestRetries = reqDiagnosis.RequestRetries + 1
+				if attempts == ser-1 {
+					reqDiagnosis.RequestAborted = reqDiagnosis.RequestAborted + 1
+					reqDiagnosis.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
+				}
 				continue
 			} else {
 				atomic.AddUint64(&rt.successCount, 1)
@@ -178,10 +198,21 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				}
 				logger.Debugf("%v Router :: sleep for worker %v decreased to %v",
 					rt.destID, worker.workerID, worker.sleepTime)
+				// stop time - success
+				reqDiagnosis.RequestSuccess = reqDiagnosis.RequestSuccess + 1
+				reqDiagnosis.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
 				break
 			}
 		}
-
+		requestsDiagnosisLock.Lock()
+		if _, ok := requestsDiagnosis[rt.destID]; ok {
+			requestsDiagnosis[rt.destID] = append(requestsDiagnosis[rt.destID], reqDiagnosis)
+		} else {
+			requestsDiagnosis = map[string][]requestDiagnosis{
+				rt.destID: {reqDiagnosis},
+			}
+		}
+		requestsDiagnosisLock.Unlock()
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			ExecTime:      time.Now(),
@@ -390,6 +421,50 @@ func (rt *HandleT) statusInsertLoop() {
 
 }
 
+func startDiagnosis() {
+	for {
+		select {
+		case _ = <-diagnosisTicker.C:
+			requestsDiagnosisLock.Lock()
+			var diagnosisProperties map[string]interface{}
+			for destName, reqsDiagnosis := range requestsDiagnosis {
+				retries := 0
+				aborted := 0
+				success := 0
+				var compTime time.Duration
+				for _, reqDiagnosis := range reqsDiagnosis {
+					retries = retries + reqDiagnosis.RequestRetries
+					aborted = aborted + reqDiagnosis.RequestAborted
+					success = success + reqDiagnosis.RequestSuccess
+					compTime = compTime + reqDiagnosis.RequestCompletedTime
+				}
+				if diagnosisProperties == nil {
+					diagnosisProperties = map[string]interface{}{
+						destName: requestDiagnosis{
+							RequestRetries:       retries / len(reqsDiagnosis),
+							RequestAborted:       aborted / len(reqsDiagnosis),
+							RequestSuccess:       success / len(requestsDiagnosis),
+							RequestCompletedTime: compTime / time.Duration(len(reqsDiagnosis)),
+						},
+					}
+
+				} else {
+					diagnosisProperties[destName] = requestDiagnosis{
+						RequestRetries:       retries / len(reqsDiagnosis),
+						RequestAborted:       aborted / len(reqsDiagnosis),
+						RequestSuccess:       success / len(requestsDiagnosis),
+						RequestCompletedTime: compTime / time.Duration(len(reqsDiagnosis)),
+					}
+				}
+			}
+			diagnosis.Track(diagnosis.RouterEvents, diagnosisProperties)
+			requestsDiagnosis = nil
+			requestsDiagnosisLock.Unlock()
+		}
+	}
+
+}
+
 //#JobOrder (see other #JobOrder comment)
 //If a job fails (say with given failed_job_id), we need to fail other jobs from that user till
 //the failed_job_id succeeds. We achieve this by keeping the failed_job_id in a failedJobIDMap
@@ -570,8 +645,8 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.netHandle.Setup(destID)
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destID)
-
 	rt.initWorkers()
+	go startDiagnosis()
 	go rt.printStatsLoop()
 	go rt.statusInsertLoop()
 	go rt.generatorLoop()

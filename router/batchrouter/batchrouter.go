@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/diagnosis"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,6 +76,17 @@ func (brt *HandleT) backendConfigSubscriber() {
 		configSubscriberLock.Unlock()
 	}
 }
+
+type batchRequestDiagnosis struct {
+	batchRequestSuccess int
+	batchRequestFailed  int
+}
+
+var (
+	batchRequestsDiagnosisLock sync.Mutex
+	diagnosisTicker            *time.Ticker
+	batchRequestsDiagnosis     map[string][]batchRequestDiagnosis
+)
 
 type StorageUploadOutput struct {
 	Config         map[string]interface{}
@@ -232,20 +244,30 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		destinationConfig map[string]interface{}
 	)
 	destinationConfig = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})
-
+	var batchReqDiagnosis batchRequestDiagnosis
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to object storage: %v %v %v\n", err, destinationConfig, batchJobs.BatchDestination.Source.ID)
 		jobState = jobsdb.FailedState
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
+		batchReqDiagnosis.batchRequestFailed = 1
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
 	} else {
 		logger.Debugf("BRT: Uploaded to object storage with config: %v %v %v\n", destinationConfig, batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		jobState = jobsdb.SucceededState
 		errorResp = []byte(`{"success":"OK"}`)
+		batchReqDiagnosis.batchRequestSuccess = 1
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
 	}
-
+	batchRequestsDiagnosisLock.Lock()
+	if _, ok := batchRequestsDiagnosis[brt.destType]; ok {
+		batchRequestsDiagnosis[brt.destType] = append(batchRequestsDiagnosis[brt.destType], batchReqDiagnosis)
+	} else {
+		batchRequestsDiagnosis = map[string][]batchRequestDiagnosis{
+			brt.destType: {batchReqDiagnosis},
+		}
+	}
+	batchRequestsDiagnosisLock.Unlock()
 	var statusList []*jobsdb.JobStatusT
 
 	//Identify jobs which can be processed
@@ -511,7 +533,42 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
 	_, err = brt.jobsDBHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 }
+func startDiagnosis() {
+	if diagnosis.EnableDiagnosis {
+		for {
+			select {
+			case _ = <-diagnosisTicker.C:
+				batchRequestsDiagnosisLock.Lock()
+				var diagnosisProperties map[string]interface{}
+				for destName, batchReqsDiagnosis := range batchRequestsDiagnosis {
+					success := 0
+					failed := 0
+					for _, batchReqDiagnosis := range batchReqsDiagnosis {
+						success = success + batchReqDiagnosis.batchRequestSuccess
+						failed = failed + batchReqDiagnosis.batchRequestFailed
+					}
+					if diagnosisProperties == nil {
+						diagnosisProperties = map[string]interface{}{
+							destName: batchRequestDiagnosis{
+								batchRequestSuccess: success / len(batchReqsDiagnosis),
+								batchRequestFailed:  failed / len(batchReqsDiagnosis),
+							},
+						}
 
+					} else {
+						diagnosisProperties[destName] = batchRequestDiagnosis{
+							batchRequestSuccess: success / len(batchReqsDiagnosis),
+							batchRequestFailed:  failed / len(batchReqsDiagnosis),
+						}
+					}
+				}
+				diagnosis.Track(diagnosis.BatchRouterEvents, diagnosisProperties)
+				batchRequestsDiagnosis = nil
+				batchRequestsDiagnosisLock.Unlock()
+			}
+		}
+	}
+}
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
@@ -520,6 +577,7 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
+	diagnosisTicker = time.NewTicker(600 * time.Second) //TODO: add in config
 }
 
 func init() {
@@ -538,7 +596,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.setupWarehouseStagingFilesTable()
 	brt.processQ = make(chan BatchJobsT)
 	brt.crashRecover()
-
+	go startDiagnosis()
 	go brt.initWorkers()
 	go brt.backendConfigSubscriber()
 	go brt.mainLoop()

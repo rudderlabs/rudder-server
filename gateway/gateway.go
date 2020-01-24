@@ -60,6 +60,10 @@ var (
 	enableDedup                               bool
 	enableRateLimit                           bool
 	dedupWindow                               time.Duration
+	diagnosisSuccessCount                     int
+	diagnosisFailureCount                     int
+	diagnosisLock                             sync.Mutex
+	diagnosisTicker                           *time.Ticker
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -92,6 +96,7 @@ func loadConfig() {
 	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 	// Enable rate limit on incoming events. false by default
 	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
+	diagnosisTicker = time.NewTicker(60 * time.Second) // add and fetch from config
 }
 
 func init() {
@@ -268,16 +273,11 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			jobIDReqMap[uuid].done <- err
 		}
-		diagnosis.Track(diagnosis.GatewayEvents, map[string]interface{}{
-			diagnosis.GatewaySuccess: writeKeySuccessStats,
-			diagnosis.GatewayFailure: writeKeyFailStats,
-		})
-
 		//Sending events to config backend
 		for _, event := range eventBatchesToRecord {
 			sourcedebugger.RecordEvent(gjson.Get(event, "writeKey").Str, event)
-		}
 
+		}
 		batchTimeStat.End()
 		batchSizeStat.Count(len(breq.batchRequest))
 		// update stats request wise
@@ -426,6 +426,7 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	//Wait for batcher process to be done
 	errorMessage := <-done
 	atomic.AddUint64(&gateway.ackCount, 1)
+	requestDiagnose(errorMessage)
 	if errorMessage != "" {
 		logger.Debug(errorMessage)
 		http.Error(w, errorMessage, 400)
@@ -433,6 +434,32 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 		logger.Debug(getStatus(Ok))
 		w.Write([]byte(getStatus(Ok)))
 	}
+}
+
+func requestDiagnose(errorMessage string) {
+	diagnosisLock.Lock()
+	defer diagnosisLock.Unlock()
+	if errorMessage != "" {
+		diagnosisFailureCount = diagnosisFailureCount + 1
+	} else {
+		diagnosisSuccessCount = diagnosisSuccessCount + 1
+	}
+}
+func startDiagnosis() {
+	for {
+		select {
+		case _ = <-diagnosisTicker.C:
+			diagnosisLock.Lock()
+			diagnosis.Track(diagnosis.GatewayEvents, map[string]interface{}{
+				diagnosis.GatewaySuccess: diagnosisSuccessCount,
+				diagnosis.GatewayFailure: diagnosisFailureCount,
+			})
+			diagnosisSuccessCount = 0
+			diagnosisFailureCount = 0
+			diagnosisLock.Unlock()
+		}
+	}
+
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -535,6 +562,7 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.H
 	go gateway.webRequestBatcher()
 	go gateway.printStats()
 	go backendConfigSubscriber()
+	go startDiagnosis()
 	for i := 0; i < maxDBWriterProcess; i++ {
 		go gateway.webRequestBatchDBWriter(i)
 	}

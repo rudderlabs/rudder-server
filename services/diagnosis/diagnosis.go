@@ -20,9 +20,6 @@ const (
 	GatewayFailure          = "gateway_failure"
 	RouterEvents            = "router_events"
 	RouterType              = "router_type"
-	RouterSuccess           = "router_success"
-	routerRetries           = "router_retries"
-	routerAborted           = "router_aborted"
 	BatchRouterEvents       = "batch_router_events"
 	BatchRouterType         = "batch_router_type"
 	BatchRouterFilesCreated = "batch_router_files_created"
@@ -30,7 +27,7 @@ const (
 )
 
 var (
-	enableDiagnosis bool
+	EnableDiagnosis bool
 	rudderEndpoint  string
 )
 
@@ -43,7 +40,7 @@ type Diagnosis struct {
 }
 
 func init() {
-	enableDiagnosis = config.GetBool("Diagnosis.enableDiagnosis", true)
+	EnableDiagnosis = config.GetBool("Diagnosis.enableDiagnosis", true)
 	rudderEndpoint = config.GetString("Diagnosis.endpoint", "http://localhost:8080")
 	config := analytics.Config{
 		Endpoint: rudderEndpoint,
@@ -55,7 +52,7 @@ func init() {
 }
 
 func Track(event string, properties map[string]interface{}) {
-	if enableDiagnosis {
+	if EnableDiagnosis {
 		properties[StartTime] = diagnosis.StartTime
 		diagnosis.Client.Enqueue(
 			analytics.Track{
