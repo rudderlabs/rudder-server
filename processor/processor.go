@@ -579,10 +579,15 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		logger.Debug("Transform input size", len(destEventList))
 		var response ResponseT
 		var eventsToTransform []interface{}
+		// Send to custom transformer only if the destination has a transformer enabled
 		if transformationEnabled {
 			if processSessions {
+				// If processSessions is true, Transform should break into a new batch only when user changes.
+				// This way all the events of a user session are never broken into separate batches
+				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
 				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, true)
 			} else {
+				// We need not worry about breaking up a single user sessions in this case
 				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, false)
 			}
 			eventsToTransform = response.Events
