@@ -477,7 +477,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var destJobs []*jobsdb.JobT
 	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
-	var eventsByDest = make(map[string][]interface{})
+	var eventsByDestID = make(map[string][]interface{})
 
 	misc.Assert(parsedEventList == nil || len(jobList) == len(parsedEventList))
 	//Each block we receive from a client has a bunch of
@@ -540,11 +540,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						enhanceWithMetadata(shallowEventCopy, batchEvent, destination)
 
 						//We have at-least one event so marking it good
-						_, ok = eventsByDest[destination.ID]
+						_, ok = eventsByDestID[destination.ID]
 						if !ok {
-							eventsByDest[destination.ID] = make([]interface{}, 0)
+							eventsByDestID[destination.ID] = make([]interface{}, 0)
 						}
-						eventsByDest[destination.ID] = append(eventsByDest[destination.ID],
+						eventsByDestID[destination.ID] = append(eventsByDestID[destination.ID],
 							shallowEventCopy)
 					}
 				}
@@ -567,7 +567,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
 	logger.Debug("[Processor: processJobsForDest] calling transformations")
-	for destID, destEventList := range eventsByDest {
+	for destID, destEventList := range eventsByDestID {
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
 		configSubscriberLock.RLock()
