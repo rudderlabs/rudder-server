@@ -675,6 +675,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.routerDB.Store(destJobs)
 	proc.batchRouterDB.Store(batchDestJobs)
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
 	proc.statsDBW.End(len(statusList))
 	proc.statsJobs.End(totalEvents)
@@ -725,12 +726,14 @@ func (proc *HandleT) mainLoop() {
 
 		proc.statDBR.End()
 		if len(unprocessedList)+len(retryList) == 0 {
+			logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
 			proc.statsDBR.End(0)
 			time.Sleep(loopSleep)
 			continue
 		}
 
 		combinedList := append(unprocessedList, retryList...)
+		logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total: %v", len(retryList), len(unprocessedList), len(combinedList))
 		proc.statsDBR.End(len(combinedList))
 		proc.statGatewayDBR.Count(len(combinedList))
 

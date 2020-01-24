@@ -453,11 +453,13 @@ func (rt *HandleT) generatorLoop() {
 		toQuery -= len(waitList)
 		unprocessedList := rt.jobsDB.GetUnprocessed([]string{rt.destID}, toQuery, nil)
 		if len(waitList)+len(unprocessedList)+len(retryList) == 0 {
+			logger.Debugf("RT: DB Read Complete. No RT Jobs to process.")
 			time.Sleep(readSleep)
 			continue
 		}
 
 		combinedList := append(waitList, append(unprocessedList, retryList...)...)
+		logger.Debugf("RT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", rt.destID, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
 
 		sort.Slice(combinedList, func(i, j int) bool {
 			return combinedList[i].JobID < combinedList[j].JobID

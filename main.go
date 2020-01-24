@@ -95,7 +95,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 								brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
 								dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 							} else {
-								logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
+								logger.Debug("Enabling existing Destination", destination.DestinationDefinition.Name)
 								brt.Enable()
 							}
 							if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
@@ -106,7 +106,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 									wh.Setup(destination.DestinationDefinition.Name)
 									dstToWhRouter[destination.DestinationDefinition.Name] = &wh
 								} else {
-									logger.Info("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+									logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
 									wh.Enable()
 								}
 							}
@@ -118,7 +118,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 								router.Setup(routerDB, destination.DestinationDefinition.Name)
 								dstToRouter[destination.DestinationDefinition.Name] = &router
 							} else {
-								logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
+								logger.Debug("Enabling existing Destination", destination.DestinationDefinition.Name)
 								rt.Enable()
 							}
 						}

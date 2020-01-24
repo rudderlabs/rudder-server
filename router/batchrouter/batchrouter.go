@@ -355,9 +355,11 @@ func (brt *HandleT) mainLoop() {
 
 			combinedList := append(waitList, append(unprocessedList, retryList...)...)
 			if len(combinedList) == 0 {
+				logger.Debugf("BRT: DB Read Complete. No BRT Jobs to process.")
 				setDestInProgress(batchDestination, false)
 				continue
 			}
+			logger.Debugf("BRT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", brt.destType, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
 
 			var statusList []*jobsdb.JobStatusT
 
