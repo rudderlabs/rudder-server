@@ -101,6 +101,8 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.statRouterDBW = stats.NewStat("processor.router_db_write", stats.CountType)
 	proc.statBatchRouterDBW = stats.NewStat("processor.batch_router_db_write", stats.CountType)
 	proc.statActiveUsers = stats.NewStat("processor.active_users", stats.GaugeType)
+	proc.statDBR = stats.NewStat("processor.gateway_db_read_time", stats.TimerType)
+	proc.statDBW = stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
 
 	if !isReplayServer {
 		proc.replayProcessor = NewReplayProcessor()
@@ -712,6 +714,7 @@ func (proc *HandleT) mainLoop() {
 	for {
 
 		proc.statsDBR.Start()
+		proc.statDBR.Start()
 
 		toQuery := dbReadBatchSize
 		//Should not have any failure while processing (in v0) so
@@ -720,6 +723,7 @@ func (proc *HandleT) mainLoop() {
 
 		unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
 
+		proc.statDBR.End()
 		if len(unprocessedList)+len(retryList) == 0 {
 			proc.statsDBR.End(0)
 			time.Sleep(loopSleep)
