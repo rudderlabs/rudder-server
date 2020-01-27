@@ -96,7 +96,7 @@ func loadConfig() {
 	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 	// Enable rate limit on incoming events. false by default
 	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
-	diagnosisTicker = time.NewTicker(60 * time.Second) // add and fetch from config
+	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.gatewayTimePeriod", 1) * time.Minute)
 }
 
 func init() {
@@ -437,29 +437,33 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 }
 
 func requestDiagnose(errorMessage string) {
-	diagnosisLock.Lock()
-	defer diagnosisLock.Unlock()
-	if errorMessage != "" {
-		diagnosisFailureCount = diagnosisFailureCount + 1
-	} else {
-		diagnosisSuccessCount = diagnosisSuccessCount + 1
-	}
-}
-func startDiagnosis() {
-	for {
-		select {
-		case _ = <-diagnosisTicker.C:
-			diagnosisLock.Lock()
-			diagnosis.Track(diagnosis.GatewayEvents, map[string]interface{}{
-				diagnosis.GatewaySuccess: diagnosisSuccessCount,
-				diagnosis.GatewayFailure: diagnosisFailureCount,
-			})
-			diagnosisSuccessCount = 0
-			diagnosisFailureCount = 0
-			diagnosisLock.Unlock()
+	if diagnosis.EnableDiagnosis {
+		diagnosisLock.Lock()
+		defer diagnosisLock.Unlock()
+		if errorMessage != "" {
+			diagnosisFailureCount = diagnosisFailureCount + 1
+		} else {
+			diagnosisSuccessCount = diagnosisSuccessCount + 1
 		}
 	}
 
+}
+func startDiagnosis() {
+	if diagnosis.EnableDiagnosis {
+		for {
+			select {
+			case _ = <-diagnosisTicker.C:
+				diagnosisLock.Lock()
+				diagnosis.Track(diagnosis.GatewayEvents, map[string]interface{}{
+					diagnosis.GatewaySuccess: diagnosisSuccessCount,
+					diagnosis.GatewayFailure: diagnosisFailureCount,
+				})
+				diagnosisSuccessCount = 0
+				diagnosisFailureCount = 0
+				diagnosisLock.Unlock()
+			}
+		}
+	}
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {

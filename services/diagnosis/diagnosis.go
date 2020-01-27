@@ -3,12 +3,13 @@ package diagnosis
 import (
 	"github.com/rudderlabs/analytics-go"
 	"github.com/rudderlabs/rudder-server/config"
-	uuid "github.com/satori/go.uuid"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"time"
 )
 
 const (
 	StartTime           = "diagnosis_start_time"
+	InstanceId          = "server_instance_id"
 	ServerStart         = "server_start"
 	ConfigProcessed     = "config_processed"
 	SourcesCount        = "no_of_sources"
@@ -23,7 +24,7 @@ const (
 	RouterAborted       = "router_aborted"
 	RouterRetries       = "router_retries"
 	RouterSuccess       = "router_success"
-	RouterCompletedTime = "router_completed_time"
+	RouterCompletedTime = "router_average_job_time"
 	BatchRouterEvents   = "batch_router_events"
 	BatchRouterType     = "batch_router_type"
 	BatchRouterSuccess  = "batch_router_success"
@@ -38,31 +39,35 @@ var (
 var diagnosis Diagnosis
 
 type Diagnosis struct {
-	Client    analytics.Client
-	StartTime time.Time
-	serverId  string
+	Client     analytics.Client
+	StartTime  time.Time
+	MacAddress string
+	InstanceId string
 }
 
 func init() {
 	EnableDiagnosis = config.GetBool("Diagnosis.enableDiagnosis", true)
 	rudderEndpoint = config.GetString("Diagnosis.endpoint", "http://localhost:8080")
+	diagnosis.InstanceId = config.GetEnv("INSTANCE_NAME", "1")
 	config := analytics.Config{
 		Endpoint: rudderEndpoint,
 	}
 	client, _ := analytics.NewWithConfig("1TnQwbNV2QBdOsVlZIeKsvP2cez", config)
 	diagnosis.Client = client
 	diagnosis.StartTime = time.Now()
-	diagnosis.serverId = uuid.NewV4().String()
+	diagnosis.MacAddress = misc.GetMacAddress()
+
 }
 
 func Track(event string, properties map[string]interface{}) {
 	if EnableDiagnosis {
 		properties[StartTime] = diagnosis.StartTime
+		properties[InstanceId] = diagnosis.InstanceId
 		diagnosis.Client.Enqueue(
 			analytics.Track{
 				Event:      event,
 				Properties: properties,
-				UserId:     diagnosis.serverId,
+				UserId:     diagnosis.MacAddress,
 			},
 		)
 	}
@@ -71,11 +76,12 @@ func Track(event string, properties map[string]interface{}) {
 func Identify(event string, properties map[string]interface{}) {
 	if EnableDiagnosis {
 		properties[StartTime] = diagnosis.StartTime
+		properties[InstanceId] = diagnosis.InstanceId
 		diagnosis.Client.Enqueue(
 			analytics.Track{
 				Event:      event,
 				Properties: properties,
-				UserId:     diagnosis.serverId,
+				UserId:     diagnosis.MacAddress,
 			},
 		)
 	}

@@ -93,7 +93,7 @@ func loadConfig() {
 	useTestSink = config.GetBool("Router.useTestSink", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
-	diagnosisTicker = time.NewTicker(60 * time.Second) // add and fetch from config
+	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.routerTimePeriod", 1) * time.Minute)
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -204,15 +204,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				break
 			}
 		}
-		requestsDiagnosisLock.Lock()
-		if _, ok := requestsDiagnosis[rt.destID]; ok {
-			requestsDiagnosis[rt.destID] = append(requestsDiagnosis[rt.destID], reqDiagnosis)
-		} else {
-			requestsDiagnosis = map[string][]requestDiagnosis{
-				rt.destID: {reqDiagnosis},
-			}
-		}
-		requestsDiagnosisLock.Unlock()
+		rt.requestDiagnose(reqDiagnosis)
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			ExecTime:      time.Now(),
@@ -276,6 +268,19 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		}
 		batchTimeStat.End()
+	}
+}
+func (rt *HandleT) requestDiagnose(reqDiagnosis requestDiagnosis) {
+	if diagnosis.EnableDiagnosis {
+		requestsDiagnosisLock.Lock()
+		if _, ok := requestsDiagnosis[rt.destID]; ok {
+			requestsDiagnosis[rt.destID] = append(requestsDiagnosis[rt.destID], reqDiagnosis)
+		} else {
+			requestsDiagnosis = map[string][]requestDiagnosis{
+				rt.destID: {reqDiagnosis},
+			}
+		}
+		requestsDiagnosisLock.Unlock()
 	}
 }
 
@@ -422,50 +427,51 @@ func (rt *HandleT) statusInsertLoop() {
 }
 
 func startDiagnosis() {
-	for {
-		select {
-		case _ = <-diagnosisTicker.C:
-			requestsDiagnosisLock.Lock()
-			var diagnosisProperties map[string]interface{}
-			for destName, reqsDiagnosis := range requestsDiagnosis {
-				retries := 0
-				aborted := 0
-				success := 0
-				var compTime time.Duration
-				for _, reqDiagnosis := range reqsDiagnosis {
-					retries = retries + reqDiagnosis.RequestRetries
-					aborted = aborted + reqDiagnosis.RequestAborted
-					success = success + reqDiagnosis.RequestSuccess
-					compTime = compTime + reqDiagnosis.RequestCompletedTime
-				}
-				if diagnosisProperties == nil {
-					diagnosisProperties = map[string]interface{}{
-						destName: map[string]interface{}{
-							diagnosis.RouterAborted:       aborted / len(reqsDiagnosis),
-							diagnosis.RouterRetries:       retries / len(reqsDiagnosis),
-							diagnosis.RouterSuccess:       success / len(requestsDiagnosis),
-							diagnosis.RouterCompletedTime: compTime / time.Duration(len(reqsDiagnosis)),
-						},
+	if diagnosis.EnableDiagnosis {
+		for {
+			select {
+			case _ = <-diagnosisTicker.C:
+				requestsDiagnosisLock.Lock()
+				var diagnosisProperties map[string]interface{}
+				for destName, reqsDiagnosis := range requestsDiagnosis {
+					retries := 0
+					aborted := 0
+					success := 0
+					var compTime time.Duration
+					for _, reqDiagnosis := range reqsDiagnosis {
+						retries = retries + reqDiagnosis.RequestRetries
+						aborted = aborted + reqDiagnosis.RequestAborted
+						success = success + reqDiagnosis.RequestSuccess
+						compTime = compTime + reqDiagnosis.RequestCompletedTime
 					}
+					if diagnosisProperties == nil {
+						diagnosisProperties = map[string]interface{}{
+							destName: map[string]interface{}{
+								diagnosis.RouterAborted:       aborted,
+								diagnosis.RouterRetries:       retries,
+								diagnosis.RouterSuccess:       success,
+								diagnosis.RouterCompletedTime: (compTime / time.Duration(len(reqsDiagnosis))) / time.Millisecond,
+							},
+						}
 
-				} else {
-					diagnosisProperties[destName] = map[string]interface{}{
-						diagnosis.RouterAborted:       retries / len(reqsDiagnosis),
-						diagnosis.RouterRetries:       aborted / len(reqsDiagnosis),
-						diagnosis.RouterSuccess:       success / len(requestsDiagnosis),
-						diagnosis.RouterCompletedTime: compTime / time.Duration(len(reqsDiagnosis)),
+					} else {
+						diagnosisProperties[destName] = map[string]interface{}{
+							diagnosis.RouterAborted:       retries,
+							diagnosis.RouterRetries:       aborted,
+							diagnosis.RouterSuccess:       success,
+							diagnosis.RouterCompletedTime: (compTime / time.Duration(len(reqsDiagnosis))) / time.Millisecond,
+						}
 					}
 				}
-			}
-			if diagnosisProperties != nil {
-				diagnosis.Track(diagnosis.RouterEvents, diagnosisProperties)
-			}
+				if diagnosisProperties != nil {
+					diagnosis.Track(diagnosis.RouterEvents, diagnosisProperties)
+				}
 
-			requestsDiagnosis = nil
-			requestsDiagnosisLock.Unlock()
+				requestsDiagnosis = nil
+				requestsDiagnosisLock.Unlock()
+			}
 		}
 	}
-
 }
 
 //#JobOrder (see other #JobOrder comment)

@@ -259,15 +259,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		batchReqDiagnosis.batchRequestSuccess = 1
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
 	}
-	batchRequestsDiagnosisLock.Lock()
-	if _, ok := batchRequestsDiagnosis[brt.destType]; ok {
-		batchRequestsDiagnosis[brt.destType] = append(batchRequestsDiagnosis[brt.destType], batchReqDiagnosis)
-	} else {
-		batchRequestsDiagnosis = map[string][]batchRequestDiagnosis{
-			brt.destType: {batchReqDiagnosis},
-		}
-	}
-	batchRequestsDiagnosisLock.Unlock()
+	brt.requestDiagnosis(batchReqDiagnosis)
 	var statusList []*jobsdb.JobStatusT
 
 	//Identify jobs which can be processed
@@ -286,6 +278,20 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 
 	//Mark the jobs as executing
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, batchJobs.BatchDestination.Source.ID)
+}
+
+func (brt *HandleT) requestDiagnosis(batchReqDiagnosis batchRequestDiagnosis) {
+	if diagnosis.EnableDiagnosis {
+		batchRequestsDiagnosisLock.Lock()
+		if _, ok := batchRequestsDiagnosis[brt.destType]; ok {
+			batchRequestsDiagnosis[brt.destType] = append(batchRequestsDiagnosis[brt.destType], batchReqDiagnosis)
+		} else {
+			batchRequestsDiagnosis = map[string][]batchRequestDiagnosis{
+				brt.destType: {batchReqDiagnosis},
+			}
+		}
+		batchRequestsDiagnosisLock.Unlock()
+	}
 }
 
 func (brt *HandleT) initWorkers() {
@@ -550,15 +556,15 @@ func startDiagnosis() {
 					if diagnosisProperties == nil {
 						diagnosisProperties = map[string]interface{}{
 							destName: map[string]interface{}{
-								diagnosis.BatchRouterSuccess: success / len(batchReqsDiagnosis),
-								diagnosis.BatchRouterFailed:  failed / len(batchReqsDiagnosis),
+								diagnosis.BatchRouterSuccess: success,
+								diagnosis.BatchRouterFailed:  failed,
 							},
 						}
 
 					} else {
 						diagnosisProperties[destName] = map[string]interface{}{
-							diagnosis.BatchRouterSuccess: success / len(batchReqsDiagnosis),
-							diagnosis.BatchRouterFailed:  failed / len(batchReqsDiagnosis),
+							diagnosis.BatchRouterSuccess: success,
+							diagnosis.BatchRouterFailed:  failed,
 						}
 					}
 				}
@@ -580,7 +586,7 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
-	diagnosisTicker = time.NewTicker(60 * time.Second) //TODO: add in config
+	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.batchRouterTimePeriod", 1) * time.Minute)
 }
 
 func init() {

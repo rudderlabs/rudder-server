@@ -95,23 +95,26 @@ func init() {
 	loadConfig()
 }
 func diagoniseConfig(preConfig SourcesT, curConfig SourcesT) {
-	if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
+	if diagnosis.EnableDiagnosis {
+		if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
 
-		diagnosis.Identify(diagnosis.ConfigIdentify, map[string]interface{}{
-			diagnosis.ConfigIdentify: curConfig.Sources[0].WorkspaceID,
-		},
-		)
-		return
+			diagnosis.Identify(diagnosis.ConfigIdentify, map[string]interface{}{
+				diagnosis.ConfigIdentify: curConfig.Sources[0].WorkspaceID,
+			},
+			)
+			return
+		}
+		noOfSources := len(curConfig.Sources)
+		noOfDestinations := 0
+		for _, source := range curConfig.Sources {
+			noOfDestinations = noOfDestinations + len(source.Destinations)
+		}
+		diagnosis.Track(diagnosis.ConfigProcessed, map[string]interface{}{
+			diagnosis.SourcesCount:      noOfSources,
+			diagnosis.DesitanationCount: noOfDestinations,
+		})
 	}
-	noOfSources := len(curConfig.Sources)
-	noOfDestinations := 0
-	for _, source := range curConfig.Sources {
-		noOfDestinations = noOfDestinations + len(source.Destinations)
-	}
-	diagnosis.Track(diagnosis.ConfigProcessed, map[string]interface{}{
-		diagnosis.SourcesCount:      noOfSources,
-		diagnosis.DesitanationCount: noOfDestinations,
-	})
+
 }
 
 func pollConfigUpdate() {
