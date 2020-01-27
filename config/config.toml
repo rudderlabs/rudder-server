@@ -14,7 +14,7 @@ rateLimitWindowInMins=60
 noOfBucketsInWindow=12
 
 [Gateway]
-webPort = 8081
+webPort = 8080
 maxDBWriterProcess = 64
 CustomVal = "GW"
 maxBatchSize = 32

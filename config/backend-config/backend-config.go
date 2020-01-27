@@ -98,7 +98,7 @@ func diagoniseConfig(preConfig SourcesT, curConfig SourcesT) {
 	if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
 
 		diagnosis.Identify(diagnosis.ConfigIdentify, map[string]interface{}{
-			diagnosis.ConfigIdentify: preConfig.Sources[0].WorkspaceID,
+			diagnosis.ConfigIdentify: curConfig.Sources[0].WorkspaceID,
 		},
 		)
 		return

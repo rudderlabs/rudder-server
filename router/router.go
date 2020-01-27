@@ -440,24 +440,27 @@ func startDiagnosis() {
 				}
 				if diagnosisProperties == nil {
 					diagnosisProperties = map[string]interface{}{
-						destName: requestDiagnosis{
-							RequestRetries:       retries / len(reqsDiagnosis),
-							RequestAborted:       aborted / len(reqsDiagnosis),
-							RequestSuccess:       success / len(requestsDiagnosis),
-							RequestCompletedTime: compTime / time.Duration(len(reqsDiagnosis)),
+						destName: map[string]interface{}{
+							diagnosis.RouterAborted:       aborted / len(reqsDiagnosis),
+							diagnosis.RouterRetries:       retries / len(reqsDiagnosis),
+							diagnosis.RouterSuccess:       success / len(requestsDiagnosis),
+							diagnosis.RouterCompletedTime: compTime / time.Duration(len(reqsDiagnosis)),
 						},
 					}
 
 				} else {
-					diagnosisProperties[destName] = requestDiagnosis{
-						RequestRetries:       retries / len(reqsDiagnosis),
-						RequestAborted:       aborted / len(reqsDiagnosis),
-						RequestSuccess:       success / len(requestsDiagnosis),
-						RequestCompletedTime: compTime / time.Duration(len(reqsDiagnosis)),
+					diagnosisProperties[destName] = map[string]interface{}{
+						diagnosis.RouterAborted:       retries / len(reqsDiagnosis),
+						diagnosis.RouterRetries:       aborted / len(reqsDiagnosis),
+						diagnosis.RouterSuccess:       success / len(requestsDiagnosis),
+						diagnosis.RouterCompletedTime: compTime / time.Duration(len(reqsDiagnosis)),
 					}
 				}
 			}
-			diagnosis.Track(diagnosis.RouterEvents, diagnosisProperties)
+			if diagnosisProperties != nil {
+				diagnosis.Track(diagnosis.RouterEvents, diagnosisProperties)
+			}
+
 			requestsDiagnosis = nil
 			requestsDiagnosisLock.Unlock()
 		}

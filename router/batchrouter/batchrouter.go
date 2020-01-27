@@ -78,8 +78,8 @@ func (brt *HandleT) backendConfigSubscriber() {
 }
 
 type batchRequestDiagnosis struct {
-	batchRequestSuccess int
-	batchRequestFailed  int
+	batchRequestSuccess int `json:"batch_request_success"`
+	batchRequestFailed  int `json:"batch_request_failed"`
 }
 
 var (
@@ -549,20 +549,23 @@ func startDiagnosis() {
 					}
 					if diagnosisProperties == nil {
 						diagnosisProperties = map[string]interface{}{
-							destName: batchRequestDiagnosis{
-								batchRequestSuccess: success / len(batchReqsDiagnosis),
-								batchRequestFailed:  failed / len(batchReqsDiagnosis),
+							destName: map[string]interface{}{
+								diagnosis.BatchRouterSuccess: success / len(batchReqsDiagnosis),
+								diagnosis.BatchRouterFailed:  failed / len(batchReqsDiagnosis),
 							},
 						}
 
 					} else {
-						diagnosisProperties[destName] = batchRequestDiagnosis{
-							batchRequestSuccess: success / len(batchReqsDiagnosis),
-							batchRequestFailed:  failed / len(batchReqsDiagnosis),
+						diagnosisProperties[destName] = map[string]interface{}{
+							diagnosis.BatchRouterSuccess: success / len(batchReqsDiagnosis),
+							diagnosis.BatchRouterFailed:  failed / len(batchReqsDiagnosis),
 						}
 					}
 				}
-				diagnosis.Track(diagnosis.BatchRouterEvents, diagnosisProperties)
+				if diagnosisProperties != nil {
+					diagnosis.Track(diagnosis.BatchRouterEvents, diagnosisProperties)
+				}
+
 				batchRequestsDiagnosis = nil
 				batchRequestsDiagnosisLock.Unlock()
 			}
@@ -577,7 +580,7 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
-	diagnosisTicker = time.NewTicker(600 * time.Second) //TODO: add in config
+	diagnosisTicker = time.NewTicker(60 * time.Second) //TODO: add in config
 }
 
 func init() {
