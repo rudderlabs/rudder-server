@@ -8,22 +8,26 @@ import (
 )
 
 const (
-	StartTime               = "diagnosis_start_time"
-	ServerStart             = "server_start"
-	ConfigProcessed         = "config_processed"
-	SourcesCount            = "no_of_sources"
-	DesitanationCount       = "no_of_destinations"
-	ServerStarted           = "server_started"
-	ConfigIdentify          = "identify"
-	GatewayEvents           = "gateway_events"
-	GatewaySuccess          = "gateway_success"
-	GatewayFailure          = "gateway_failure"
-	RouterEvents            = "router_events"
-	RouterType              = "router_type"
-	BatchRouterEvents       = "batch_router_events"
-	BatchRouterType         = "batch_router_type"
-	BatchRouterFilesCreated = "batch_router_files_created"
-	BatchRouterErrors       = "batch_router_errors"
+	StartTime           = "diagnosis_start_time"
+	ServerStart         = "server_start"
+	ConfigProcessed     = "config_processed"
+	SourcesCount        = "no_of_sources"
+	DesitanationCount   = "no_of_destinations"
+	ServerStarted       = "server_started"
+	ConfigIdentify      = "identify"
+	GatewayEvents       = "gateway_events"
+	GatewaySuccess      = "gateway_success"
+	GatewayFailure      = "gateway_failure"
+	RouterEvents        = "router_events"
+	RouterType          = "router_type"
+	RouterAborted       = "router_aborted"
+	RouterRetries       = "router_retries"
+	RouterSuccess       = "router_success"
+	RouterCompletedTime = "router_completed_time"
+	BatchRouterEvents   = "batch_router_events"
+	BatchRouterType     = "batch_router_type"
+	BatchRouterSuccess  = "batch_router_success"
+	BatchRouterFailed   = "batch_router_failed"
 )
 
 var (
@@ -65,7 +69,7 @@ func Track(event string, properties map[string]interface{}) {
 }
 
 func Identify(event string, properties map[string]interface{}) {
-	if enableDiagnosis {
+	if EnableDiagnosis {
 		properties[StartTime] = diagnosis.StartTime
 		diagnosis.Client.Enqueue(
 			analytics.Track{
