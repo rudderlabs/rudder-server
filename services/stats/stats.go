@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"fmt"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -19,7 +20,7 @@ var writeKeyClientsMap = make(map[string]*statsd.Client)
 var destClientsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
 var statsdServerURL string
-var instanceName string
+var instanceID string
 var conn statsd.Option
 var writeKeyClientsMapLock sync.Mutex
 var destClientsMapLock sync.Mutex
@@ -28,16 +29,16 @@ func init() {
 	config.Initialize()
 	statsEnabled = config.GetBool("enableStats", false)
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
-	instanceName = config.GetEnv("INSTANCE_NAME", "")
+	instanceID = config.GetEnv("INSTANCE_ID", "")
 
 	var err error
 	conn = statsd.Address(statsdServerURL)
-	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName))
+	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID))
 	if err != nil {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
 		// just log the error and go on.
-		logger.Error(err)
+		fmt.Println(err)
 	}
 }
 
@@ -55,7 +56,7 @@ func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *Rud
 	defer writeKeyClientsMapLock.Unlock()
 	if _, found := writeKeyClientsMap[writeKey]; !found {
 		var err error
-		writeKeyClientsMap[writeKey], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName, "writekey", writeKey))
+		writeKeyClientsMap[writeKey], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "writekey", writeKey))
 		if err != nil {
 			// If nothing is listening on the target port, an error is returned and
 			// the returned client does nothing but is still usable. So we can
@@ -76,7 +77,7 @@ func NewBatchDestStat(Name string, StatType string, destID string) *RudderStats 
 	defer destClientsMapLock.Unlock()
 	if _, found := destClientsMap[destID]; !found {
 		var err error
-		destClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceName, "destID", destID))
+		destClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destID", destID))
 		if err != nil {
 			logger.Error(err)
 		}

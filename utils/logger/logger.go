@@ -3,10 +3,12 @@ package logger
 import (
 	"bytes"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/config"
+	"go.uber.org/zap"
 	"io/ioutil"
 	"net/http"
-
-	"github.com/rudderlabs/rudder-server/config"
+	"os"
+	"runtime"
 )
 
 /*
@@ -19,24 +21,55 @@ We use 4 logging levels here Debug, Info, Error and Fatal.
 */
 
 const (
-	levelDebug = iota + 1 // Most verbose logging level
-	levelInfo             // Logs about state of the application
-	levelError            // Logs about errors which dont immediately halt the application
-	levelFatal            // Logs which crashes the application
+	levelEvent = iota // Logs Event
+	levelDebug        // Most verbose logging level
+	levelInfo         // Logs about state of the application
+	levelError        // Logs about errors which dont immediately halt the application
+	levelFatal        // Logs which crashes the application
 )
 
 var levelMap = map[string]int{
+	"EVENT": levelEvent,
 	"DEBUG": levelDebug,
 	"INFO":  levelInfo,
 	"ERROR": levelError,
 	"FATAL": levelFatal,
 }
 
-var level int
+var (
+	enableConsole       bool
+	enableFile          bool
+	consoleJsonFormat   bool
+	fileJsonFormat      bool
+	level               int
+	enableTimestamp     bool
+	enableFileNameInLog bool
+	enableStackTrace    bool
+	logFileLocation     string
+	logFileSize         int
+)
+
+var Log *zap.SugaredLogger
+
+func loadConfig() {
+	level = levelMap[config.GetEnv("LOG_LEVEL", "INFO")]
+	enableConsole = config.GetBool("Logger.enableConsole", true)
+	enableFile = config.GetBool("Logger.enableFile", false)
+	consoleJsonFormat = config.GetBool("Logger.consoleJsonFormat", true)
+	fileJsonFormat = config.GetBool("Logger.fileJsonFormat", false)
+	logFileLocation = config.GetString("Logger.logFileLocation", "/tmp/rudder_log.txt")
+	logFileSize = config.GetInt("Logger.logFileSize", 100)
+	enableTimestamp = config.GetBool("Logger.enableTimestamp", false)
+	enableFileNameInLog = config.GetBool("Logger.enableFileNameInLog", false)
+	enableStackTrace = config.GetBool("Logger.enableStackTrace", false)
+}
+
+var options []zap.Option
 
 // Setup sets up the logger initially
 func Setup() {
-	level = levelMap[config.GetEnv("LOG_LEVEL", "INFO")]
+	loadConfig()
+	Log = configureLogger()
 }
 
 func IsDebugLevel() bool {
@@ -45,94 +78,76 @@ func IsDebugLevel() bool {
 
 // Debug level logging.
 // Most verbose logging level.
-func Debug(args ...interface{}) (int, error) {
-	if levelDebug >= level {
-		fmt.Print(" DEBUG: ")
-		return fmt.Println(args...)
-	}
-	return 0, nil
+func Debug(args ...interface{}) {
+	Log.Debug(args...)
 }
 
 // Info level logging.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
-func Info(args ...interface{}) (int, error) {
-	if levelInfo >= level {
-		fmt.Print(" INFO: ")
-		return fmt.Println(args...)
-	}
-	return 0, nil
+func Info(args ...interface{}) {
+	Log.Info(args...)
 }
 
 // Error level logging.
 // Use this to log errors which dont immediately halt the application.
-func Error(args ...interface{}) (int, error) {
-	if levelError >= level {
-		fmt.Print(" ERROR: ")
-		return fmt.Println(args...)
-	}
-	return 0, nil
+func Error(args ...interface{}) {
+	Log.Error(args...)
 }
 
 // Fatal level logging.
 // Use this to log errors which crash the application.
-func Fatal(args ...interface{}) (int, error) {
+func Fatal(args ...interface{}) {
 	if levelFatal >= level {
-		fmt.Print(" FATAL: ")
-		return fmt.Println(args...)
+		fmt.Print("FATAL   ")
+		if _, file, lineNo, ok := runtime.Caller(1); ok {
+			dir, _ := os.Getwd()
+			fmt.Print(file[len(dir)+1:]+":", lineNo, "   ")
+		}
+		fmt.Println(args...)
 	}
-	return 0, nil
 }
 
 // Debugf does debug level logging similar to fmt.Printf.
 // Most verbose logging level
-func Debugf(format string, args ...interface{}) (int, error) {
-	if levelDebug >= level {
-		fmt.Print(" DEBUG: ")
-		return fmt.Printf(format, args...)
-	}
-	return 0, nil
+func Debugf(format string, args ...interface{}) {
+	Log.Debug(args...)
 }
 
 // Infof does info level logging similar to fmt.Printf.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
-func Infof(format string, args ...interface{}) (int, error) {
-	if levelInfo >= level {
-		fmt.Print(" INFO: ")
-		return fmt.Printf(format, args...)
-	}
-	return 0, nil
+func Infof(format string, args ...interface{}) {
+	Log.Infof(format, args...)
 }
 
 // Errorf does error level logging similar to fmt.Printf.
 // Use this to log errors which dont immediately halt the application.
-func Errorf(format string, args ...interface{}) (int, error) {
-	if levelError >= level {
-		fmt.Print(" ERROR: ")
-		return fmt.Printf(format, args...)
-	}
-	return 0, nil
+func Errorf(format string, args ...interface{}) {
+	Log.Errorf(format, args...)
 }
 
 // Fatalf does fatal level logging similar to fmt.Printf.
 // Use this to log errors which crash the application.
-func Fatalf(format string, args ...interface{}) (int, error) {
+func Fatalf(format string, args ...interface{}) {
 	if levelFatal >= level {
-		fmt.Print(" FATAL: ")
-		return fmt.Printf(format, args...)
+		if levelFatal >= level {
+			fmt.Print("FATAL   ")
+			if _, file, lineNo, ok := runtime.Caller(1); ok {
+				dir, _ := os.Getwd()
+				fmt.Print(file[len(dir)+1:]+":", lineNo, "   ")
+			}
+			fmt.Println(fmt.Sprintf(format, args...))
+		}
 	}
-	return 0, nil
 }
 
 // LogRequest reads and logs the request body and resets the body to original state.
-func LogRequest(req *http.Request) (int, error) {
-	if levelDebug >= level {
+func LogRequest(req *http.Request) {
+	if levelEvent >= level {
 		defer req.Body.Close()
-		fmt.Print("DEBUG: Request Body: ")
 		bodyBytes, _ := ioutil.ReadAll(req.Body)
 		bodyString := string(bodyBytes)
 		req.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
 		//print raw request body for debugging purposes
-		return fmt.Println(bodyString)
+		Log.Debug("Request Body: ", bodyString)
 	}
-	return 0, nil
 }

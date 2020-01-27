@@ -377,7 +377,7 @@ func (gateway *HandleT) webRequestBatcher() {
 func (gateway *HandleT) printStats() {
 	for {
 		time.Sleep(10 * time.Second)
-		logger.Info("Gateway Recv/Ack", gateway.recvCount, gateway.ackCount)
+		logger.Info("Gateway Recv/Ack ", gateway.recvCount, gateway.ackCount)
 	}
 }
 
@@ -485,7 +485,7 @@ func reflectOrigin(origin string) bool {
 
 func (gateway *HandleT) startWebHandler() {
 
-	logger.Infof("Starting in %d\n", webPort)
+	logger.Infof("Starting in %d", webPort)
 
 	http.HandleFunc("/v1/batch", stat(gateway.webBatchHandler))
 	http.HandleFunc("/v1/identify", stat(gateway.webIdentifyHandler))

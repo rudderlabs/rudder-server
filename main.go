@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/services/diagnosis"
 	"net/http"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -35,6 +35,8 @@ var (
 	maxProcess                                  int
 	gwDBRetention, routerDBRetention            time.Duration
 	enableProcessor, enableRouter, enableBackup bool
+	isReplayServer                              bool
+	enabledDestinations                         []backendconfig.DestinationT
 	configSubscriberLock                        sync.RWMutex
 	objectStorageDestinations                   []string
 	warehouseDestinations                       []string
@@ -50,6 +52,7 @@ func loadConfig() {
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
 	enableBackup = config.GetBool("JobsDB.enableBackup", true)
+	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ"}
 }
@@ -171,6 +174,14 @@ func printVersion() {
 }
 
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			if logger.Log != nil {
+				logger.Log.Sync()
+			}
+			panic(r) // panicing in recover, so bugsnag can handle panics
+		}
+	}()
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),
@@ -179,6 +190,7 @@ func main() {
 		// more configuration options
 		AppType: "rudder-server",
 	})
+
 	logger.Setup()
 	logger.Info("Main starting")
 	diagnosis.Track(diagnosis.ServerStart, map[string]interface{}{
@@ -234,6 +246,10 @@ func main() {
 			err = pprof.WriteHeapProfile(f)
 			misc.AssertError(err)
 		}
+		// clearing zap Log buffer to std output
+		if logger.Log != nil {
+			logger.Log.Sync()
+		}
 		os.Exit(1)
 	}()
 
@@ -242,11 +258,17 @@ func main() {
 	var batchRouterDB jobsdb.HandleT
 
 	runtime.GOMAXPROCS(maxProcess)
-	logger.Info("Clearing DB", *clearDB)
+	logger.Info("Clearing DB ", *clearDB)
 
 	sourcedebugger.Setup()
 	backendconfig.Setup()
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup && true)
+
+	//Forcing enableBackup false if this server is for handling replayed events
+	if isReplayServer {
+		enableBackup = false
+	}
+
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, false)
 

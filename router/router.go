@@ -392,7 +392,7 @@ func (rt *HandleT) statusInsertLoop() {
 					return statusList[i].JobID < statusList[j].JobID
 				})
 				//Update the status
-				rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
+				rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID}, nil)
 			}
 
 			//#JobOrder (see other #JobOrder comment)
@@ -531,11 +531,11 @@ func (rt *HandleT) generatorLoop() {
 		//End of #JobOrder
 
 		toQuery := jobQueryBatchSize
-		retryList := rt.jobsDB.GetToRetry([]string{rt.destID}, toQuery)
+		retryList := rt.jobsDB.GetToRetry([]string{rt.destID}, toQuery, nil)
 		toQuery -= len(retryList)
-		waitList := rt.jobsDB.GetWaiting([]string{rt.destID}, toQuery) //Jobs send to waiting state
+		waitList := rt.jobsDB.GetWaiting([]string{rt.destID}, toQuery, nil) //Jobs send to waiting state
 		toQuery -= len(waitList)
-		unprocessedList := rt.jobsDB.GetUnprocessed([]string{rt.destID}, toQuery)
+		unprocessedList := rt.jobsDB.GetUnprocessed([]string{rt.destID}, toQuery, nil)
 		if len(waitList)+len(unprocessedList)+len(retryList) == 0 {
 			time.Sleep(readSleep)
 			continue
@@ -580,7 +580,7 @@ func (rt *HandleT) generatorLoop() {
 		}
 
 		//Mark the jobs as executing
-		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
+		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID}, nil)
 
 		//Send the jobs to the jobQ
 		for _, wrkJob := range toProcess {
@@ -595,7 +595,7 @@ func (rt *HandleT) generatorLoop() {
 func (rt *HandleT) crashRecover() {
 
 	for {
-		execList := rt.jobsDB.GetExecuting([]string{rt.destID}, jobQueryBatchSize)
+		execList := rt.jobsDB.GetExecuting([]string{rt.destID}, jobQueryBatchSize, nil)
 
 		if len(execList) == 0 {
 			break
@@ -616,7 +616,7 @@ func (rt *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID})
+		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destID}, nil)
 	}
 }
 
