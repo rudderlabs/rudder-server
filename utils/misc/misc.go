@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"strings"
 
 	//"runtime/debug"
@@ -469,6 +470,17 @@ func TruncateStr(str string, limit int) string {
 		str = str[:limit]
 	}
 	return str
+}
+
+func SortedMapKeys(input interface{}) []string {
+	inValue := reflect.ValueOf(input)
+	mapKeys := inValue.MapKeys()
+	keys := make([]string, 0, len(mapKeys))
+	for _, key := range mapKeys {
+		keys = append(keys, key.String())
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func bToMb(b uint64) uint64 {

@@ -263,7 +263,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	}
 
 	//Mark the jobs as executing
-	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, batchJobs.BatchDestination.Source.ID)
+	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, map[string]string{"source_id": batchJobs.BatchDestination.Source.ID, "destination_id": batchJobs.BatchDestination.Destination.ID})
 }
 
 func (brt *HandleT) initWorkers() {
@@ -283,7 +283,7 @@ func (brt *HandleT) initWorkers() {
 						}
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						destUploadStat.End()
-						setSourceInProgress(batchJobs.BatchDestination, false)
+						setDestInProgress(batchJobs.BatchDestination, false)
 					case misc.ContainsString(warehouseDestinations, brt.destType):
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType)
 						destUploadStat.Start()
@@ -294,7 +294,7 @@ func (brt *HandleT) initWorkers() {
 						brt.setJobStatus(batchJobs, true, output.Error)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						destUploadStat.End()
-						setSourceInProgress(batchJobs.BatchDestination, false)
+						setDestInProgress(batchJobs.BatchDestination, false)
 					}
 
 				}
@@ -313,7 +313,7 @@ type BatchJobsT struct {
 	BatchDestination DestinationT
 }
 
-func isSourceInProgress(batchDestination DestinationT) bool {
+func isDestInProgress(batchDestination DestinationT) bool {
 	inProgressMapLock.RLock()
 	if inProgressMap[batchDestination.Source.ID+"_"+batchDestination.Destination.ID] {
 		inProgressMapLock.RUnlock()
@@ -323,7 +323,7 @@ func isSourceInProgress(batchDestination DestinationT) bool {
 	return false
 }
 
-func setSourceInProgress(batchDestination DestinationT, starting bool) {
+func setDestInProgress(batchDestination DestinationT, starting bool) {
 	inProgressMapLock.Lock()
 	if starting {
 		inProgressMap[batchDestination.Source.ID+"_"+batchDestination.Destination.ID] = true
@@ -341,20 +341,20 @@ func (brt *HandleT) mainLoop() {
 		}
 		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
 		for _, batchDestination := range brt.batchDestinations {
-			if isSourceInProgress(batchDestination) {
+			if isDestInProgress(batchDestination) {
 				continue
 			}
-			setSourceInProgress(batchDestination, true)
+			setDestInProgress(batchDestination, true)
 			toQuery := jobQueryBatchSize
-			retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, batchDestination.Source.ID)
+			retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, map[string]string{"source_id": batchDestination.Source.ID, "destination_id": batchDestination.Destination.ID})
 			toQuery -= len(retryList)
-			waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, batchDestination.Source.ID) //Jobs send to waiting state
+			waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, map[string]string{"source_id": batchDestination.Source.ID, "destination_id": batchDestination.Destination.ID}) //Jobs send to waiting state
 			toQuery -= len(waitList)
-			unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, batchDestination.Source.ID)
+			unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, map[string]string{"source_id": batchDestination.Source.ID, "destination_id": batchDestination.Destination.ID})
 
 			combinedList := append(waitList, append(unprocessedList, retryList...)...)
 			if len(combinedList) == 0 {
-				setSourceInProgress(batchDestination, false)
+				setDestInProgress(batchDestination, false)
 				continue
 			}
 
@@ -375,7 +375,7 @@ func (brt *HandleT) mainLoop() {
 			}
 
 			//Mark the jobs as executing
-			brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, batchDestination.Source.ID)
+			brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, map[string]string{"source_id": batchDestination.Source.ID, "destination_id": batchDestination.Destination.ID})
 			brt.processQ <- BatchJobsT{Jobs: combinedList, BatchDestination: batchDestination}
 		}
 	}
@@ -448,7 +448,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 func (brt *HandleT) crashRecover() {
 
 	for {
-		execList := brt.jobsDB.GetExecuting([]string{}, jobQueryBatchSize)
+		execList := brt.jobsDB.GetExecuting([]string{}, jobQueryBatchSize, nil)
 
 		if len(execList) == 0 {
 			break
@@ -469,7 +469,7 @@ func (brt *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		brt.jobsDB.UpdateJobStatus(statusList, []string{})
+		brt.jobsDB.UpdateJobStatus(statusList, []string{}, nil)
 	}
 	if misc.Contains(objectStorageDestinations, brt.destType) {
 		brt.dedupRawDataDestJobsOnCrash()

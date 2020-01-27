@@ -617,10 +617,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
 	logger.Debug("[Processor: processJobsForDest] calling transformations")
-	for destID, destEventList := range eventsByDest {
+	for destType, destEventList := range eventsByDest {
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
-		url := integrations.GetDestinationURL(destID)
+		url := integrations.GetDestinationURL(destType)
 		logger.Debug("Transform input size", len(destEventList))
 		response := proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), len(destEventList))
 		response = proc.transformer.Transform(response.Events, url, transformBatchSize)
@@ -646,15 +646,16 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			// in case of custom transformations metadata of first event is returned along with all events in session
 			// source_id will be same for all events belong to same user in a session
 			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
+			destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
 			if !ok {
 				logger.Errorf("Error retrieving source_id from transformed event: %+v", destEvent)
 			}
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
-				CustomVal:    destID,
+				CustomVal:    destType,
 				EventPayload: destEventJSON,
 			}
 			if misc.Contains(rawDataDestinations, newJob.CustomVal) {
@@ -671,7 +672,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//XX: Need to do this in a transaction
 	proc.routerDB.Store(destJobs)
 	proc.batchRouterDB.Store(batchDestJobs)
-	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
+	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
 	//XX: End of transaction
 	proc.statsDBW.End(len(statusList))
 	proc.statsJobs.End(totalEvents)
@@ -715,9 +716,9 @@ func (proc *HandleT) mainLoop() {
 		toQuery := dbReadBatchSize
 		//Should not have any failure while processing (in v0) so
 		//retryList should be empty. Remove the assert
-		retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery)
+		retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
 
-		unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery)
+		unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
 
 		if len(unprocessedList)+len(retryList) == 0 {
 			proc.statsDBR.End(0)
@@ -754,7 +755,7 @@ func (proc *HandleT) mainLoop() {
 				}
 				statusList = append(statusList, &newStatus)
 			}
-			proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
+			proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
 			proc.addJobsToSessions(combinedList)
 		} else {
 			proc.processJobsForDest(combinedList, nil)
@@ -766,7 +767,7 @@ func (proc *HandleT) mainLoop() {
 func (proc *HandleT) crashRecover() {
 
 	for {
-		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize)
+		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize, nil)
 
 		if len(execList) == 0 {
 			break
@@ -787,6 +788,6 @@ func (proc *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
+		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
 	}
 }
