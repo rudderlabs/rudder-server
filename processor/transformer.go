@@ -120,7 +120,7 @@ type ResponseT struct {
 //instance is shared between both user specific transformation
 //code and destination transformation code.
 func (trans *transformerHandleT) Transform(clientEvents []interface{},
-	url string, batchSize int) ResponseT {
+	url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT {
 
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
@@ -140,24 +140,33 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		//The channel is still live and the last batch has been sent
 		//Construct the next batch
 		if reqQ != nil && toSendData == nil {
-			if batchSize > 0 {
-				clientBatch := make([]interface{}, 0)
-				batchCount := 0
-				for {
-					if batchCount >= batchSize || inputIdx >= len(clientEvents) {
+			clientBatch := make([]interface{}, 0)
+			batchCount := 0
+			for {
+				if (batchCount >= batchSize || inputIdx >= len(clientEvents)) && inputIdx != 0 {
+					// If processSessions is false or if dest transformer is being called, break using just the batchSize.
+					// Otherwise break when userId changes. This makes sure all events of a session go together as a batch
+					if !breakIntoBatchWhenUserChanges {
 						break
 					}
-					clientBatch = append(clientBatch, clientEvents[inputIdx])
-					batchCount++
-					inputIdx++
+					prevUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx-1].(map[string]interface{})["message"])
+					misc.Assert(ok)
+					currentUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx].(map[string]interface{})["message"])
+					misc.Assert(ok)
+					if currentUserID != prevUserID {
+						logger.Debug("Breaking batch at", inputIdx, prevUserID, currentUserID)
+						break
+					}
 				}
-				toSendData = clientBatch
-				trans.sentStat.Count(len(clientBatch))
-			} else {
-				toSendData = clientEvents[inputIdx]
-				trans.sentStat.Increment()
+				clientBatch = append(clientBatch, clientEvents[inputIdx])
+				batchCount++
 				inputIdx++
+				if inputIdx >= len(clientEvents) {
+					break
+				}
 			}
+			toSendData = clientBatch
+			trans.sentStat.Count(len(clientBatch))
 		}
 
 		select {

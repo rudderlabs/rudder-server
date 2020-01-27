@@ -124,23 +124,27 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 }
 
 var (
-	loopSleep                     time.Duration
-	dbReadBatchSize               int
-	transformBatchSize            int
-	sessionInactivityThresholdInS time.Duration
-	sessionThresholdEvents        int
-	processSessions               bool
-	writeKeyDestinationMap        map[string][]backendconfig.DestinationT
-	rawDataDestinations           []string
-	configSubscriberLock          sync.RWMutex
-	processReplays                []replayT
-	isReplayServer                bool
+	loopSleep                           time.Duration
+	dbReadBatchSize                     int
+	transformBatchSize                  int
+	userTransformBatchSize              int
+	sessionInactivityThresholdInS       time.Duration
+	sessionThresholdEvents              int
+	processSessions                     bool
+	writeKeyDestinationMap              map[string][]backendconfig.DestinationT
+	destinationIDtoTypeMap              map[string]string
+	destinationTransformationEnabledMap map[string]bool
+	rawDataDestinations                 []string
+	configSubscriberLock                sync.RWMutex
+	processReplays                      []replayT
+	isReplayServer                      bool
 )
 
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
 	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 100000)
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
+	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
 	sessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	sessionInactivityThresholdInS = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(20)) * time.Second
 	processSessions = config.GetBool("Processor.processSessions", true)
@@ -167,10 +171,16 @@ func (proc *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		configSubscriberLock.Lock()
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
+		destinationIDtoTypeMap = make(map[string]string)
+		destinationTransformationEnabledMap = make(map[string]bool)
 		sources := config.Data.(backendconfig.SourcesT)
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				writeKeyDestinationMap[source.WriteKey] = source.Destinations
+				for _, destination := range source.Destinations {
+					destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
+					destinationTransformationEnabledMap[destination.ID] = len(destination.Transformations) > 0
+				}
 			}
 
 			if isReplayServer {
@@ -522,7 +532,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var destJobs []*jobsdb.JobT
 	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
-	var eventsByDest = make(map[string][]interface{})
+	var eventsByDestID = make(map[string][]interface{})
 
 	misc.Assert(parsedEventList == nil || len(jobList) == len(parsedEventList))
 	//Each block we receive from a client has a bunch of
@@ -590,11 +600,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						enhanceWithMetadata(shallowEventCopy, batchEvent, destination)
 
 						//We have at-least one event so marking it good
-						_, ok = eventsByDest[destType]
+						_, ok = eventsByDestID[destination.ID]
 						if !ok {
-							eventsByDest[destType] = make([]interface{}, 0)
+							eventsByDestID[destination.ID] = make([]interface{}, 0)
 						}
-						eventsByDest[destType] = append(eventsByDest[destType],
+						eventsByDestID[destination.ID] = append(eventsByDestID[destination.ID],
 							shallowEventCopy)
 					}
 				}
@@ -617,15 +627,38 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
 	logger.Debug("[Processor: processJobsForDest] calling transformations")
-	for destType, destEventList := range eventsByDest {
+	for destID, destEventList := range eventsByDestID {
 		//Call transform for this destination. Returns
 		//the JSON we can send to the destination
+		configSubscriberLock.RLock()
+		destType := destinationIDtoTypeMap[destID]
+		transformationEnabled := destinationTransformationEnabledMap[destID]
+		configSubscriberLock.RUnlock()
+
 		url := integrations.GetDestinationURL(destType)
 		logger.Debug("Transform input size", len(destEventList))
-		response := proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), len(destEventList))
-		response = proc.transformer.Transform(response.Events, url, transformBatchSize)
+		var response ResponseT
+		var eventsToTransform []interface{}
+		// Send to custom transformer only if the destination has a transformer enabled
+		if transformationEnabled {
+			if processSessions {
+				// If processSessions is true, Transform should break into a new batch only when user changes.
+				// This way all the events of a user session are never broken into separate batches
+				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
+				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, true)
+			} else {
+				// We need not worry about breaking up a single user sessions in this case
+				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, false)
+			}
+			eventsToTransform = response.Events
+			logger.Debug("Custom Transform output size", len(eventsToTransform))
+		} else {
+			logger.Debug("No custom transformation")
+			eventsToTransform = destEventList
+		}
+		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 		destTransformEventList := response.Events
-		logger.Debug("Transform output size", len(destTransformEventList))
+		logger.Debug("Dest Transform output size", len(destTransformEventList))
 		if !response.Success {
 			logger.Debug("[Processor: processJobsForDest] Request to transformer not a success ", response.Events)
 			continue
