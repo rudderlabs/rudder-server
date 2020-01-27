@@ -45,6 +45,7 @@ type HandleT struct {
 	userToSessionIDMap map[string]string
 	userJobPQ          pqT
 	userPQLock         sync.Mutex
+	replayProcessor    *ReplayProcessorT
 }
 
 //Print the internal structure
@@ -101,9 +102,20 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.statBatchRouterDBW = stats.NewStat("processor.batch_router_db_write", stats.CountType)
 	proc.statActiveUsers = stats.NewStat("processor.active_users", stats.GaugeType)
 
-	go backendConfigSubscriber()
+	if !isReplayServer {
+		proc.replayProcessor = NewReplayProcessor()
+		proc.replayProcessor.Setup()
+	}
+
+	go proc.backendConfigSubscriber()
 	proc.transformer.Setup()
+
+	if !isReplayServer {
+		proc.replayProcessor.CrashRecover()
+	}
+
 	proc.crashRecover()
+
 	go proc.mainLoop()
 	if processSessions {
 		logger.Info("Starting session processor")
@@ -124,6 +136,8 @@ var (
 	destinationTransformationEnabledMap map[string]bool
 	rawDataDestinations                 []string
 	configSubscriberLock                sync.RWMutex
+	processReplays                      []replayT
+	isReplayServer                      bool
 )
 
 func loadConfig() {
@@ -139,9 +153,18 @@ func loadConfig() {
 	maxRetry = config.GetInt("Processor.maxRetry", 3)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB"}
+	processReplays = []replayT{}
+
+	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }
 
-func backendConfigSubscriber() {
+type replayT struct {
+	sourceID      string
+	destinationID string
+	notifyURL     string
+}
+
+func (proc *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch)
 	for {
@@ -158,6 +181,25 @@ func backendConfigSubscriber() {
 					destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
 					destinationTransformationEnabledMap[destination.ID] = len(destination.Transformations) > 0
 				}
+			}
+
+			if isReplayServer {
+				continue
+			}
+
+			var replays = []replayT{}
+			for _, dest := range source.Destinations {
+				if dest.Config.(map[string]interface{})["Replay"] == true {
+					notifyURL, ok := dest.Config.(map[string]interface{})["ReplayURL"].(string)
+					if !ok {
+						notifyURL = ""
+					}
+					replays = append(replays, replayT{sourceID: source.ID, destinationID: dest.ID, notifyURL: notifyURL})
+				}
+			}
+
+			if len(replays) > 0 {
+				processReplays = proc.replayProcessor.GetReplaysToProcess(replays)
 			}
 		}
 		configSubscriberLock.Unlock()
@@ -401,6 +443,19 @@ func (proc *HandleT) createSessions() {
 	}
 }
 
+func getReplayEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+	var enabledDests []backendconfig.DestinationT
+	for _, dest := range writeKeyDestinationMap[writeKey] {
+		replay := dest.Config.(map[string]interface{})["Replay"]
+		if destinationName == dest.DestinationDefinition.Name && dest.Enabled && replay != nil && replay.(bool) {
+			enabledDests = append(enabledDests, dest)
+		}
+	}
+	return enabledDests
+}
+
 func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
@@ -521,7 +576,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				}
 				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 				for _, destType := range destTypes {
-					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
+					var enabledDestinationsList []backendconfig.DestinationT
+					if isReplayServer {
+						enabledDestinationsList = getReplayEnabledDestinations(writeKey, destType)
+					} else {
+						enabledDestinationsList = getEnabledDestinations(writeKey, destType)
+					}
 					enabledDestinationsMap[destType] = enabledDestinationsList
 					// Adding a singular event multiple times if there are multiple destinations of same type
 					if len(destTypes) == 0 {
@@ -619,12 +679,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			// in case of custom transformations metadata of first event is returned along with all events in session
 			// source_id will be same for all events belong to same user in a session
 			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
+			destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
 			if !ok {
-				logger.Errorf("Error retrieving source_id from transformed event: %+v\n", destEvent)
+				logger.Errorf("Error retrieving source_id from transformed event: %+v", destEvent)
 			}
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, sourceID)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
@@ -644,7 +705,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//XX: Need to do this in a transaction
 	proc.routerDB.Store(destJobs)
 	proc.batchRouterDB.Store(batchDestJobs)
-	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
+	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
 	//XX: End of transaction
 	proc.statsDBW.End(len(statusList))
 	proc.statsJobs.End(totalEvents)
@@ -657,6 +718,27 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.statsDBW.Print()
 }
 
+/*
+ * If there is a new replay destination, compute the min JobID that the data plane would be routing for that source
+ */
+func (proc *HandleT) handleReplay(combinedList []*jobsdb.JobT) {
+	if isReplayServer {
+		return
+	}
+
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+
+	if len(processReplays) > 0 {
+		maxDSIndex := proc.gatewayDB.GetMaxDSIndex()
+		misc.Assert(len(combinedList) > 0)
+		replayMinJobID := combinedList[0].JobID
+
+		proc.replayProcessor.ProcessNewReplays(processReplays, replayMinJobID, maxDSIndex)
+		processReplays = []replayT{}
+	}
+}
+
 func (proc *HandleT) mainLoop() {
 
 	logger.Info("Processor loop started")
@@ -667,9 +749,9 @@ func (proc *HandleT) mainLoop() {
 		toQuery := dbReadBatchSize
 		//Should not have any failure while processing (in v0) so
 		//retryList should be empty. Remove the assert
-		retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery)
+		retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
 
-		unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery)
+		unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
 
 		if len(unprocessedList)+len(retryList) == 0 {
 			proc.statsDBR.End(0)
@@ -688,6 +770,9 @@ func (proc *HandleT) mainLoop() {
 			return combinedList[i].JobID < combinedList[j].JobID
 		})
 
+		// Need to process minJobID and new destinations at once
+		proc.handleReplay(combinedList)
+
 		if processSessions {
 			//Mark all as executing so next query doesn't pick it up
 			var statusList []*jobsdb.JobStatusT
@@ -703,7 +788,7 @@ func (proc *HandleT) mainLoop() {
 				}
 				statusList = append(statusList, &newStatus)
 			}
-			proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
+			proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
 			proc.addJobsToSessions(combinedList)
 		} else {
 			proc.processJobsForDest(combinedList, nil)
@@ -715,7 +800,7 @@ func (proc *HandleT) mainLoop() {
 func (proc *HandleT) crashRecover() {
 
 	for {
-		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize)
+		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize, nil)
 
 		if len(execList) == 0 {
 			break
@@ -736,6 +821,6 @@ func (proc *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal})
+		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
 	}
 }

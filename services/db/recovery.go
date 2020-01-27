@@ -127,7 +127,7 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 }
 
 func alertOps(mode string) {
-	instanceName := config.GetEnv("INSTANCE_NAME", "")
+	instanceName := config.GetEnv("INSTANCE_ID", "")
 
 	alertManager, err := alert.New()
 	if err != nil {
@@ -178,6 +178,6 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
-	logger.Infof("Starting in %s mode\n", recoveryData.Mode)
+	logger.Infof("Starting in %s mode", recoveryData.Mode)
 	CurrentMode = recoveryData.Mode
 }

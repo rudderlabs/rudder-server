@@ -70,7 +70,7 @@ func (trans *transformerHandleT) transformWorker() {
 			resp.StatusCode == http.StatusBadRequest ||
 			resp.StatusCode == http.StatusNotFound ||
 			resp.StatusCode == http.StatusRequestEntityTooLarge) {
-			logger.Errorf("Transformer returned status code: %v\n", resp.StatusCode)
+			logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
 			misc.Assert(true)
 		}
 
