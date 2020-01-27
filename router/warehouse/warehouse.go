@@ -202,7 +202,7 @@ func consolidateSchema(jsonUploadsList []*StagingFileT) map[string]map[string]st
 func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT, schema map[string]map[string]string) warehouseutils.UploadT {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, created_at, updated_at)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13) RETURNING id`, warehouseUploadsTable)
-	logger.Infof("WH: %s: Creating record in wh_load_files id: %v\n", wh.destType, sqlStatement)
+	logger.Infof("WH: %s: Creating record in wh_load_files id: %v", wh.destType, sqlStatement)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	misc.AssertError(err)
 	defer stmt.Close()
@@ -341,7 +341,7 @@ func (wh *HandleT) mainLoop() {
 			// fetch any pending wh_uploads records (query for not successful/aborted uploads)
 			pendingUploads, ok := wh.getPendingUploads(warehouse)
 			if ok {
-				logger.Infof("WH: Found pending uploads: %v for %s:%s\n", len(pendingUploads), wh.destType, warehouse.Destination.ID)
+				logger.Infof("WH: Found pending uploads: %v for %s:%s", len(pendingUploads), wh.destType, warehouse.Destination.ID)
 				jobs := []ProcessStagingFilesJobT{}
 				for _, pendingUpload := range pendingUploads {
 					stagingFilesList, err := wh.getStagingFiles(warehouse, pendingUpload.StartStagingFileID, pendingUpload.EndStagingFileID)
@@ -358,11 +358,11 @@ func (wh *HandleT) mainLoop() {
 				stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
 				misc.AssertError(err)
 				if len(stagingFilesList) == 0 {
-					logger.Debugf("WH: Found no pending staging files for %s:%s\n", wh.destType, warehouse.Destination.ID)
+					logger.Debugf("WH: Found no pending staging files for %s:%s", wh.destType, warehouse.Destination.ID)
 					setDestInProgress(warehouse, false)
 					continue
 				}
-				logger.Infof("WH: Found %v pending staging files for %s:%s\n", len(stagingFilesList), wh.destType, warehouse.Destination.ID)
+				logger.Infof("WH: Found %v pending staging files for %s:%s", len(stagingFilesList), wh.destType, warehouse.Destination.ID)
 
 				count := 0
 				jobs := []ProcessStagingFilesJobT{}
@@ -409,7 +409,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	wg.Add(len(job.List))
 	ch := make(chan []int64)
 	// queue the staging files in a go routine so that job.List can be higher than number of workers in createLoadFilesQ and not be blocked
-	logger.Debugf("WH: Starting batch processing %v stage files with %v workers for %s:%s\n", len(job.List), noOfWorkers, wh.destType, job.Warehouse.Destination.ID)
+	logger.Debugf("WH: Starting batch processing %v stage files with %v workers for %s:%s", len(job.List), noOfWorkers, wh.destType, job.Warehouse.Destination.ID)
 	go func() {
 		for _, stagingFile := range job.List {
 			wh.createLoadFilesQ <- LoadFileJobT{
@@ -436,14 +436,14 @@ waitForLoadFiles:
 		case ids := <-ch:
 			loadFileIDs = append(loadFileIDs, ids...)
 			count++
-			logger.Debugf("WH: Processed %v staging files in batch of %v for %s:%s\n", count, len(job.List), wh.destType, job.Warehouse.Destination.ID)
-			logger.Debugf("WH: Received load files with ids: %v for %s:%s\n", loadFileIDs, wh.destType, job.Warehouse.Destination.ID)
+			logger.Debugf("WH: Processed %v staging files in batch of %v for %s:%s", count, len(job.List), wh.destType, job.Warehouse.Destination.ID)
+			logger.Debugf("WH: Received load files with ids: %v for %s:%s", loadFileIDs, wh.destType, job.Warehouse.Destination.ID)
 			if count == len(job.List) {
 				break waitForLoadFiles
 			}
 		case err = <-waitChan:
 			if err != nil {
-				logger.Errorf("WH: Discontinuing processing of staging files for %s:%s due to error: %v\n", wh.destType, job.Warehouse.Destination.ID, err)
+				logger.Errorf("WH: Discontinuing processing of staging files for %s:%s due to error: %v", wh.destType, job.Warehouse.Destination.ID, err)
 				break waitForLoadFiles
 			}
 		}
@@ -496,7 +496,7 @@ func (wh *HandleT) initWorkers() {
 					// generate load files only if not done before
 					// upload records have start_load_file_id and end_load_file_id set to 0 on creation
 					// and are updated on creation of load files
-					logger.Infof("WH: Processing staging files in upload job:%v with staging files from %v to %v for %s:%s\n", len(job.List), job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
+					logger.Infof("WH: Processing staging files in upload job:%v with staging files from %v to %v for %s:%s", len(job.List), job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
 					if job.Upload.StartLoadFileID == 0 {
 						warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
 						err := wh.createLoadFiles(&job)
@@ -519,7 +519,7 @@ func (wh *HandleT) initWorkers() {
 // Each Staging File has data for multiple tables in warehouse
 // Create separate Load File out of Staging File for each table
 func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, err error) {
-	logger.Debugf("WH: Starting processing staging file: %v at %v for %s:%s\n", job.StagingFile.ID, job.StagingFile.Location, wh.destType, job.Warehouse.Destination.ID)
+	logger.Debugf("WH: Starting processing staging file: %v at %v for %s:%s", job.StagingFile.ID, job.StagingFile.Location, wh.destType, job.Warehouse.Destination.ID)
 	// download staging file into a temp dir
 	dirName := "/rudder-warehouse-json-uploads-tmp/"
 	tmpDirPath := misc.CreateTMPDIR()
@@ -628,7 +628,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		outputFile.CloseGZ()
 		file, err := os.Open(outputFile.File.Name())
 		defer os.Remove(outputFile.File.Name())
-		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v\n", wh.destType, warehouseutils.ObjectStorageMap[wh.destType], tableName, job.StagingFile.ID)
+		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v", wh.destType, warehouseutils.ObjectStorageMap[wh.destType], tableName, job.StagingFile.ID)
 		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, strconv.FormatInt(job.Upload.ID, 10))
 		if err != nil {
 			return loadFileIDs, err
@@ -797,7 +797,7 @@ func (wh *HandleT) setInterruptedDestinations() (err error) {
 }
 
 func (wh *HandleT) Setup(whType string) {
-	logger.Infof("WH: Warehouse Router started: %s\n", whType)
+	logger.Infof("WH: Warehouse Router started: %s", whType)
 	var err error
 	psqlInfo := jobsdb.GetConnectionString()
 	wh.dbHandle, err = sql.Open("postgres", psqlInfo)

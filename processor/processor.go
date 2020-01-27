@@ -648,7 +648,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
 			destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
 			if !ok {
-				logger.Errorf("Error retrieving source_id from transformed event: %+v\n", destEvent)
+				logger.Errorf("Error retrieving source_id from transformed event: %+v", destEvent)
 			}
 			newJob := jobsdb.JobT{
 				UUID:         id,
