@@ -482,6 +482,26 @@ func SortedMapKeys(input interface{}) []string {
 	return keys
 }
 
+func SortedStructSliceValues(input interface{}, filedName string) []string {
+	items := reflect.ValueOf(input)
+	var keys []string
+	if items.Kind() == reflect.Slice {
+		for i := 0; i < items.Len(); i++ {
+			item := items.Index(i)
+			if item.Kind() == reflect.Struct {
+				v := reflect.Indirect(item)
+				for j := 0; j < v.NumField(); j++ {
+					if v.Type().Field(j).Name == "Name" {
+						keys = append(keys, v.Field(j).String())
+					}
+				}
+			}
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func bToMb(b uint64) uint64 {
 	return b / 1024 / 1024
 }

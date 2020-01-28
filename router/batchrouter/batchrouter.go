@@ -264,8 +264,19 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		statusList = append(statusList, &status)
 	}
 
+	parameterFilters := []jobsdb.ParameterFilterT{
+		jobsdb.ParameterFilterT{
+			Name:  "source_id",
+			Value: batchJobs.BatchDestination.Source.ID,
+		},
+		jobsdb.ParameterFilterT{
+			Name:     "destination_id",
+			Value:    batchJobs.BatchDestination.Destination.ID,
+			Optional: true,
+		},
+	}
 	//Mark the jobs as executing
-	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, map[string]string{"source_id": batchJobs.BatchDestination.Source.ID, "destination_id": batchJobs.BatchDestination.Destination.ID})
+	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 }
 
 func (brt *HandleT) initWorkers() {
@@ -360,12 +371,25 @@ func (brt *HandleT) mainLoop() {
 				continue
 			}
 			setDestInProgress(batchDestination, true)
+
 			toQuery := jobQueryBatchSize
-			retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, map[string]string{"source_id": batchDestination.Source.ID, "destination_id": batchDestination.Destination.ID})
+			parameterFilters := []jobsdb.ParameterFilterT{
+				jobsdb.ParameterFilterT{
+					Name:  "source_id",
+					Value: batchDestination.Source.ID,
+				},
+				jobsdb.ParameterFilterT{
+					Name:     "destination_id",
+					Value:    batchDestination.Destination.ID,
+					Optional: true,
+				},
+			}
+
+			retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, parameterFilters)
 			toQuery -= len(retryList)
-			waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, map[string]string{"source_id": batchDestination.Source.ID, "destination_id": batchDestination.Destination.ID}) //Jobs send to waiting state
+			waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, parameterFilters) //Jobs send to waiting state
 			toQuery -= len(waitList)
-			unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, map[string]string{"source_id": batchDestination.Source.ID, "destination_id": batchDestination.Destination.ID})
+			unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, parameterFilters)
 
 			combinedList := append(waitList, append(unprocessedList, retryList...)...)
 			if len(combinedList) == 0 {
@@ -391,8 +415,19 @@ func (brt *HandleT) mainLoop() {
 				statusList = append(statusList, &status)
 			}
 
+			parameterFilters = []jobsdb.ParameterFilterT{
+				jobsdb.ParameterFilterT{
+					Name:  "source_id",
+					Value: batchDestination.Source.ID,
+				},
+				jobsdb.ParameterFilterT{
+					Name:     "destination_id",
+					Value:    batchDestination.Destination.ID,
+					Optional: true,
+				},
+			}
 			//Mark the jobs as executing
-			brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, map[string]string{"source_id": batchDestination.Source.ID, "destination_id": batchDestination.Destination.ID})
+			brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 			brt.processQ <- BatchJobsT{Jobs: combinedList, BatchDestination: batchDestination}
 		}
 	}
