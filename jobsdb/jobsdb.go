@@ -1552,7 +1552,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	}
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
-		logger.Errorf("Failed to upload table %v dump to %s\n", tableName, storageProvider)
+		logger.Errorf("Failed to upload table %v dump to %s", tableName, storageProvider)
 	} else {
 		// Do not record stat in error case as error case time might be low and skew stats
 		fileUploadTimeStat.End()

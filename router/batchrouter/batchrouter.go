@@ -110,7 +110,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 
 	uuid := uuid.NewV4()
-	logger.Debugf("BRT: Starting logging to %s: %s\n", provider, destinationConfig)
+	logger.Debugf("BRT: Starting logging to %s: %s", provider, destinationConfig)
 
 	tmpDirPath := misc.CreateTMPDIR()
 	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
@@ -137,13 +137,13 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 	gzWriter.CloseGZ()
 	if !isWarehouse && !eventsFound {
-		logger.Infof("BRT: All events in this batch for %s are de-deuplicated...\n", provider)
+		logger.Infof("BRT: All events in this batch for %s are de-deuplicated...", provider)
 		return StorageUploadOutput{
 			LocalFilePaths: []string{gzipFilePath},
 		}
 	}
 
-	logger.Debugf("BRT: Logged to local file: %v\n", gzipFilePath)
+	logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
@@ -154,7 +154,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	outputFile, err := os.Open(gzipFilePath)
 	misc.AssertError(err)
 
-	logger.Debugf("BRT: Starting upload to %s: config:%s\n", provider, destinationConfig)
+	logger.Debugf("BRT: Starting upload to %s: config:%s", provider, destinationConfig)
 
 	var keyPrefixes []string
 	if isWarehouse {
@@ -181,7 +181,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	_, err = uploader.Upload(outputFile, keyPrefixes...)
 
 	if err != nil {
-		logger.Errorf("BRT: Error uploading to %s: config:%s: %v\n", provider, destinationConfig, err)
+		logger.Errorf("BRT: Error uploading to %s: config:%s: %v", provider, destinationConfig, err)
 		return StorageUploadOutput{
 			Error:       err,
 			JournalOpID: opID,
@@ -214,7 +214,7 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 			}
 		}
 	}
-	logger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v\n", warehouseStagingFilesTable, schemaMap)
+	logger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseStagingFilesTable, schemaMap)
 	schemaPayload, err := json.Marshal(schemaMap)
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at, updated_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $6)`, warehouseStagingFilesTable)
@@ -236,13 +236,13 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	destinationConfig = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})
 
 	if err != nil {
-		logger.Errorf("BRT: Error uploading to object storage: %v %v %v\n", err, destinationConfig, batchJobs.BatchDestination.Source.ID)
+		logger.Errorf("BRT: Error uploading to object storage: %v %v %v", err, destinationConfig, batchJobs.BatchDestination.Source.ID)
 		jobState = jobsdb.FailedState
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
 	} else {
-		logger.Debugf("BRT: Uploaded to object storage with config: %v %v %v\n", destinationConfig, batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
+		logger.Debugf("BRT: Uploaded to object storage with config: %v %v %v", destinationConfig, batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		jobState = jobsdb.SucceededState
 		errorResp = []byte(`{"success":"OK"}`)
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
@@ -549,7 +549,7 @@ func init() {
 
 //Setup initializes this module
 func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
-	logger.Infof("BRT: Batch Router started: %s\n", destType)
+	logger.Infof("BRT: Batch Router started: %s", destType)
 	brt.destType = destType
 	brt.jobsDB = jobsDB
 	brt.jobsDBHandle = brt.jobsDB.GetDBHandle()

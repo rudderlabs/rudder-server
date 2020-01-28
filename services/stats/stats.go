@@ -1,12 +1,12 @@
 package stats
 
 import (
-	"sync"
-
+	"fmt"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"gopkg.in/alexcesaro/statsd.v2"
+	"sync"
 )
 
 const (
@@ -38,7 +38,7 @@ func init() {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
 		// just log the error and go on.
-		logger.Error(err)
+		fmt.Println(err)
 	}
 }
 
