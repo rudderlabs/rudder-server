@@ -384,12 +384,15 @@ func (brt *HandleT) mainLoop() {
 					Optional: true,
 				},
 			}
+			brtQueyrStat := stats.NewStat("batch_router.jobsdb_query_time", stats.TimerType)
+			brtQueyrStat.Start()
 
 			retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, parameterFilters)
 			toQuery -= len(retryList)
 			waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, parameterFilters) //Jobs send to waiting state
 			toQuery -= len(waitList)
 			unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, parameterFilters)
+			brtQueyrStat.End()
 
 			combinedList := append(waitList, append(unprocessedList, retryList...)...)
 			if len(combinedList) == 0 {
