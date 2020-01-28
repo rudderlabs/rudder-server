@@ -983,8 +983,8 @@ func (jd *HandleT) constructJSONQuery(paramKey string, jsonKey string, paramList
 	jd.assert(queryType == "OR" || queryType == "AND")
 	var queryList []string
 	for _, p := range paramList {
-		queryList = append(queryList, "("+paramKey+"@>'{"+fmt.Sprintf(`"%s"`, jsonKey)+":"+fmt.Sprintf(`"%s"`, p)+"}')")
-
+		// prefer json_field ->> 'key' = 'value' notation over json_field @> '{"key": "value"}' for faster queries
+		queryList = append(queryList, "("+paramKey+"->>"+fmt.Sprintf(`'%s'`, jsonKey)+"="+fmt.Sprintf(`'%s'`, p)+")")
 	}
 	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
 }

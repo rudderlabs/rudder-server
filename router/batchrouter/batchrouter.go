@@ -29,11 +29,13 @@ var (
 	jobQueryBatchSize          int
 	noOfWorkers                int
 	mainLoopSleepInS           int
+	uploadFreq                 int64
 	configSubscriberLock       sync.RWMutex
 	objectStorageDestinations  []string
 	warehouseDestinations      []string
 	inProgressMap              map[string]bool
 	inProgressMapLock          sync.RWMutex
+	lastExecMap                map[string]int64
 	uploadedRawDataJobsCache   map[string]map[string]bool
 	warehouseStagingFilesTable string
 )
@@ -334,6 +336,14 @@ func setDestInProgress(batchDestination DestinationT, starting bool) {
 	inProgressMapLock.Unlock()
 }
 
+func uploadFrequencyExceeded(batchDestination DestinationT) bool {
+	if lastExecTime, ok := lastExecMap[batchDestination.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreq {
+		return true
+	}
+	lastExecMap[batchDestination.Destination.ID] = time.Now().Unix()
+	return false
+}
+
 func (brt *HandleT) mainLoop() {
 	for {
 		if !brt.isEnabled {
@@ -343,6 +353,10 @@ func (brt *HandleT) mainLoop() {
 		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
 		for _, batchDestination := range brt.batchDestinations {
 			if isDestInProgress(batchDestination) {
+				continue
+			}
+			if uploadFrequencyExceeded(batchDestination) {
+				logger.Debugf("WH: Skipping batch router upload loop since %s:%s upload freq not exceeded", batchDestination.Destination.DestinationDefinition.Name, batchDestination.Destination.ID)
 				continue
 			}
 			setDestInProgress(batchDestination, true)
@@ -519,10 +533,12 @@ func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
 	mainLoopSleepInS = config.GetInt("BatchRouter.mainLoopSleepInS", 5)
+	uploadFreq = config.GetInt64("BatchRouter.uploadFreqInS", 30)
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
+	lastExecMap = map[string]int64{}
 }
 
 func init() {
