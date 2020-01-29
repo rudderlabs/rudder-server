@@ -1008,7 +1008,8 @@ func (jd *HandleT) constructJSONQuery(paramKey string, jsonKey string, paramList
 	var queryList []string
 	for _, p := range paramList {
 		// prefer json_field ->> 'key' = 'value' notation over json_field @> '{"key": "value"}' for faster queries
-		queryList = append(queryList, "("+paramKey+"->>"+fmt.Sprintf(`'%s'`, jsonKey)+"="+fmt.Sprintf(`'%s'`, p)+")")
+		// queryList = append(queryList, "("+paramKey+"->>"+fmt.Sprintf(`'%s'`, jsonKey)+"="+fmt.Sprintf(`'%s'`, p)+")")
+		queryList = append(queryList, "("+paramKey+"@>'{"+fmt.Sprintf(`"%s"`, jsonKey)+":"+fmt.Sprintf(`"%s"`, p)+"}')")
 	}
 	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
 }
@@ -1159,13 +1160,18 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 
 	if len(parameterFilters) > 0 {
 		jd.assert(!getAll)
+
 		for _, parameter := range parameterFilters {
 			// handle old data which does not have destination_id
-			if parameter.Optional {
-				sourceQuery += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
-					[]string{parameter.Value}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
-			} else {
-				sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
+			// if parameter.Optional {
+			// 	sourceQuery += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
+			// 		[]string{parameter.Value}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
+			// } else {
+			// 	sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
+			// 		[]string{parameter.Value}, "OR")
+			// }
+			if parameter.Name == "source_id" {
+				sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
 					[]string{parameter.Value}, "OR")
 			}
 		}
@@ -1293,11 +1299,15 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	if len(parameterFilters) > 0 {
 		for _, parameter := range parameterFilters {
 			// handle old data which does not have destination_id
-			if parameter.Optional {
-				sqlStatement += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
-					[]string{parameter.Value}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
-			} else {
-				sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
+			// if parameter.Optional {
+			// 	sqlStatement += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
+			// 		[]string{parameter.Value}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
+			// } else {
+			// 	sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
+			// 		[]string{parameter.Value}, "OR")
+			// }
+			if parameter.Name == "source_id" {
+				sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
 					[]string{parameter.Value}, "OR")
 			}
 		}
