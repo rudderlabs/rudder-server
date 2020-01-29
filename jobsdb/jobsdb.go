@@ -142,6 +142,7 @@ func (jd *HandleT) assertError(err error) {
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify(err)
 		misc.RecordAppError(err)
+		logger.Fatal(err)
 		panic(err)
 	}
 }
@@ -154,6 +155,7 @@ func (jd *HandleT) assert(cond bool) {
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify("Assertion failed")
 		misc.RecordAppError(errors.New("Assertion failed"))
+		logger.Fatal("Assertion failed")
 		panic("Assertion failed")
 	}
 }
