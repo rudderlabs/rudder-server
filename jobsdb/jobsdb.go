@@ -562,6 +562,16 @@ func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 	if tableSize > int64(maxTableSizeInMB*MegaByte) {
 		return true
 	}
+
+	var totalCount int
+	sqlStatement = fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ds.JobTable)
+	row = jd.dbHandle.QueryRow(sqlStatement)
+	err = row.Scan(&totalCount)
+	jd.assertError(err)
+	if totalCount > maxDSSize {
+		return true
+	}
+
 	return false
 }
 
