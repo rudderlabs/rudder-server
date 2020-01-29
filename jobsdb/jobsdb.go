@@ -203,7 +203,7 @@ var (
 	useJoinForUnprocessed                       bool
 )
 
-var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat, jobsdbQueryTimeStat *stats.RudderStats
+var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat *stats.RudderStats
 
 // Loads db config and migration related config from config file
 func loadConfig() {
