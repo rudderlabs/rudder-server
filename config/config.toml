@@ -125,7 +125,7 @@ enableStackTrace=false
 
 [Diagnosis]
 enableDiagnosis = true
-endpoint = "localhost:8080"
+endpoint = "https://hosted.rudderlabs.com"
 batchRouterTimePeriod = 10
 routerTimePeriod = 1
 gatewayTimePeriod = 1
