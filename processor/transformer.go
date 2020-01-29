@@ -158,12 +158,12 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 						break
 					}
 				}
-				clientBatch = append(clientBatch, clientEvents[inputIdx])
-				batchCount++
-				inputIdx++
 				if inputIdx >= len(clientEvents) {
 					break
 				}
+				clientBatch = append(clientBatch, clientEvents[inputIdx])
+				batchCount++
+				inputIdx++
 			}
 			toSendData = clientBatch
 			trans.sentStat.Count(len(clientBatch))
