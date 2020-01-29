@@ -59,7 +59,7 @@ keepOrderOnFailure = true
 [BatchRouter]
 mainLoopSleepInS = 2
 noOfWorkers = 8
-jobQueryBatchSize = 10000
+jobQueryBatchSize = 100000
 uploadFreqInS = 30
 
 [Warehouse]
