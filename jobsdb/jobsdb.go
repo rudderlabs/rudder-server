@@ -1163,17 +1163,17 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 
 		for _, parameter := range parameterFilters {
 			// handle old data which does not have destination_id
-			if parameter.Optional {
-				sourceQuery += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
-					[]string{parameter.Value}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
-			} else {
-				sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
-					[]string{parameter.Value}, "OR")
-			}
-			// if parameter.Name == "source_id" {
-			// 	sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
+			// if parameter.Optional {
+			// 	sourceQuery += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
+			// 		[]string{parameter.Value}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
+			// } else {
+			// 	sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
 			// 		[]string{parameter.Value}, "OR")
 			// }
+			if parameter.Name == "source_id" {
+				sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
+					[]string{parameter.Value}, "OR")
+			}
 		}
 	} else {
 		sourceQuery = ""
@@ -1299,17 +1299,17 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	if len(parameterFilters) > 0 {
 		for _, parameter := range parameterFilters {
 			// handle old data which does not have destination_id
-			if parameter.Optional {
-				sqlStatement += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
-					[]string{parameter.Value}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
-			} else {
-				sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
-					[]string{parameter.Value}, "OR")
-			}
-			// if parameter.Name == "source_id" {
-			// 	sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
+			// if parameter.Optional {
+			// 	sqlStatement += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
+			// 		[]string{parameter.Value}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
+			// } else {
+			// 	sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
 			// 		[]string{parameter.Value}, "OR")
 			// }
+			if parameter.Name == "source_id" {
+				sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
+					[]string{parameter.Value}, "OR")
+			}
 		}
 	}
 
