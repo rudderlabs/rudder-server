@@ -1017,11 +1017,20 @@ func (jd *HandleT) constructQuery(paramKey string, paramList []string, queryType
 // }
 
 func (jd *HandleT) constructParameterJSONQuery(table string, parameterFilters []ParameterFilterT) string {
-	keyValues := []string{}
+	var allKeyValues, mandatoryKeyValues, opQueries []string
 	for _, parameter := range parameterFilters {
-		keyValues = append(keyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
+		allKeyValues = append(allKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
+		if parameter.Optional {
+			opQueries = append(opQueries, fmt.Sprintf(`%s.parameters -> '%s' IS NULL`, table, parameter.Name))
+		} else {
+			mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
+		}
 	}
-	return fmt.Sprintf(`%s.parameters @> '{%s}'`, table, strings.Join(keyValues, ","))
+	opQuery := ""
+	if len(opQueries) > 0 {
+		opQuery += fmt.Sprintf(` OR (%s.parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opQueries, " AND "))
+	}
+	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
 }
 
 /*
@@ -1330,8 +1339,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	if count > 0 {
 		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 	}
-
-	fmt.Printf("%+v\n", sqlStatement)
 
 	rows, err = jd.dbHandle.Query(sqlStatement)
 	defer rows.Close()
