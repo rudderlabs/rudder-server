@@ -27,6 +27,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"unicode/utf8"
 
@@ -141,10 +142,10 @@ var dbErrorMap = map[string]string{
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
-		// debug.SetTraceback("all")
-		// debug.PrintStack()
-		// jd.printLists(true)
-		// logger.Fatal(jd.dsEmptyResultCache)
+		debug.SetTraceback("all")
+		debug.PrintStack()
+		jd.printLists(true)
+		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify(err)
 		misc.RecordAppError(err)
 		panic(err)
@@ -153,10 +154,10 @@ func (jd *HandleT) assertError(err error) {
 
 func (jd *HandleT) assert(cond bool) {
 	if !cond {
-		// debug.SetTraceback("all")
-		// debug.PrintStack()
-		// jd.printLists(true)
-		// logger.Fatal(jd.dsEmptyResultCache)
+		debug.SetTraceback("all")
+		debug.PrintStack()
+		jd.printLists(true)
+		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify("Assertion failed")
 		misc.RecordAppError(errors.New("Assertion failed"))
 		panic("Assertion failed")
@@ -556,19 +557,19 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 
 func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 
-	// var tableSize int64
-	// sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, ds.JobTable)
-	// row := jd.dbHandle.QueryRow(sqlStatement)
-	// err := row.Scan(&tableSize)
-	// jd.assertError(err)
-	// if tableSize > int64(maxTableSizeInMB*MegaByte) {
-	// 	return true
-	// }
+	var tableSize int64
+	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, ds.JobTable)
+	row := jd.dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&tableSize)
+	jd.assertError(err)
+	if tableSize > int64(maxTableSizeInMB*MegaByte) {
+		return true
+	}
 
 	var totalCount int
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ds.JobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
-	err := row.Scan(&totalCount)
+	sqlStatement = fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ds.JobTable)
+	row = jd.dbHandle.QueryRow(sqlStatement)
+	err = row.Scan(&totalCount)
 	jd.assertError(err)
 	if totalCount > maxDSSize {
 		return true
@@ -1005,29 +1006,19 @@ func (jd *HandleT) constructQuery(paramKey string, paramList []string, queryType
 	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
 }
 
-// func (jd *HandleT) constructJSONQuery(paramKey string, jsonKey string, paramList []string, queryType string) string {
-// 	jd.assert(queryType == "OR" || queryType == "AND")
-// 	var queryList []string
-// 	for _, p := range paramList {
-// 		// prefer json_field ->> 'key' = 'value' notation over json_field @> '{"key": "value"}' for faster queries
-// 		// queryList = append(queryList, "("+paramKey+"->>"+fmt.Sprintf(`'%s'`, jsonKey)+"="+fmt.Sprintf(`'%s'`, p)+")")
-// 		queryList = append(queryList, "("+paramKey+"@>'{"+fmt.Sprintf(`"%s"`, jsonKey)+":"+fmt.Sprintf(`"%s"`, p)+"}')")
-// 	}
-// 	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
-// }
-
 func (jd *HandleT) constructParameterJSONQuery(table string, parameterFilters []ParameterFilterT) string {
-	var allKeyValues, mandatoryKeyValues, opQueries []string
+	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
+	var allKeyValues, mandatoryKeyValues, opNullConditions []string
 	for _, parameter := range parameterFilters {
 		allKeyValues = append(allKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
 		if parameter.Optional {
-			opQueries = append(opQueries, fmt.Sprintf(`%s.parameters -> '%s' IS NULL`, table, parameter.Name))
+			opNullConditions = append(opNullConditions, fmt.Sprintf(`%s.parameters -> '%s' IS NULL`, table, parameter.Name))
 		} else {
 			mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
 		}
 	}
 	opQuery := ""
-	if len(opQueries) > 0 {
+	if len(opNullConditions) > 0 {
 		opQuery += fmt.Sprintf(` OR (%s.parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opQueries, " AND "))
 	}
 	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
@@ -1180,20 +1171,6 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	if len(parameterFilters) > 0 {
 		jd.assert(!getAll)
 		sourceQuery += " AND " + jd.constructParameterJSONQuery(ds.JobTable, parameterFilters)
-		// for _, parameter := range parameterFilters {
-		// 	// handle old data which does not have destination_id
-		// 	// if parameter.Optional {
-		// 	// 	sourceQuery += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
-		// 	// 		[]string{parameter.Value}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
-		// 	// } else {
-		// 	// 	sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
-		// 	// 		[]string{parameter.Value}, "OR")
-		// 	// }
-		// 	if parameter.Name == "source_id" {
-		// 		sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
-		// 			[]string{parameter.Value}, "OR")
-		// 	}
-		// }
 	} else {
 		sourceQuery = ""
 	}
@@ -1316,21 +1293,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 
 	if len(parameterFilters) > 0 {
 		sqlStatement += " AND " + jd.constructParameterJSONQuery(ds.JobTable, parameterFilters)
-
-		// for _, parameter := range parameterFilters {
-		// 	// handle old data which does not have destination_id
-		// 	// if parameter.Optional {
-		// 	// 	sqlStatement += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
-		// 	// 		[]string{parameter.Value}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
-		// 	// } else {
-		// 	// 	sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
-		// 	// 		[]string{parameter.Value}, "OR")
-		// 	// }
-		// 	if parameter.Name == "source_id" {
-		// 		sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
-		// 			[]string{parameter.Value}, "OR")
-		// 	}
-		// }
 	}
 
 	if order {
