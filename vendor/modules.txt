@@ -257,7 +257,9 @@ go.uber.org/zap/internal/exit
 go.uber.org/zap/zapcore
 # golang.org/x/crypto v0.0.0-20191206172530-e9b2fee46413
 golang.org/x/crypto/argon2
+golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blake2b
+golang.org/x/crypto/blowfish
 # golang.org/x/net v0.0.0-20191207000613-e7e4b65ae663
 golang.org/x/net/context
 golang.org/x/net/context/ctxhttp
