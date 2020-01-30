@@ -237,7 +237,7 @@ func main() {
 		}
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
-			logger.Log.Sync()
+			logger.Fatal("SIGTERM called. Process exiting")
 		}
 		os.Exit(1)
 	}()
