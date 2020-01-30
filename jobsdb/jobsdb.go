@@ -1615,7 +1615,9 @@ func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 		timestamps[jobID.Int64] = createdAt
 	}
 
-	jd.assert(!timestamps[minID.Int64].After(timestamps[maxID.Int64]))
+	if timestamps[minID.Int64].After(timestamps[maxID.Int64]) {
+		misc.AssertErrorIfDev(errors.New("Assertion failed. minJobID has createdAt greater than maxJobID"))
+	}
 
 	backupDSRange = dataSetRangeT{
 		minJobID:  minID.Int64,
