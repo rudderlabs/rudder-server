@@ -62,7 +62,7 @@ var (
 	dedupWindow                               time.Duration
 	trackSuccessCount                         int
 	trackFailureCount                         int
-	diagnosisLock                             sync.Mutex
+	gatewayRequestMetricLock                  sync.Mutex
 	diagnosisTicker                           *time.Ticker
 )
 
@@ -438,8 +438,8 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 
 func trackRequestMetrics(errorMessage string) {
 	if diagnosis.EnableGatewayMetric {
-		diagnosisLock.Lock()
-		defer diagnosisLock.Unlock()
+		gatewayRequestMetricLock.Lock()
+		defer gatewayRequestMetricLock.Unlock()
 		if errorMessage != "" {
 			trackFailureCount = trackFailureCount + 1
 		} else {
@@ -452,14 +452,14 @@ func collectMetrics() {
 		for {
 			select {
 			case _ = <-diagnosisTicker.C:
-				diagnosisLock.Lock()
+				gatewayRequestMetricLock.Lock()
 				diagnosis.Track(diagnosis.GatewayEvents, map[string]interface{}{
 					diagnosis.GatewaySuccess: trackSuccessCount,
 					diagnosis.GatewayFailure: trackFailureCount,
 				})
 				trackSuccessCount = 0
 				trackFailureCount = 0
-				diagnosisLock.Unlock()
+				gatewayRequestMetricLock.Unlock()
 			}
 		}
 	}

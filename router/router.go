@@ -156,7 +156,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		if isPrevFailedUser {
 			misc.Assert(previousFailedJobID == job.JobID)
 		}
-		var reqDiagnosis requestMetric
+		var reqMetric requestMetric
 		//We can execute thoe job
 		for attempts = 0; attempts < ser; attempts++ {
 			logger.Debugf("%v Router :: trying to send payload %v of %v", rt.destID, attempts, ser)
@@ -183,10 +183,10 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				logger.Debugf("%v Router :: worker %v sleeping for  %v ",
 					rt.destID, worker.workerID, worker.sleepTime)
 				time.Sleep(worker.sleepTime * time.Second)
-				reqDiagnosis.RequestRetries = reqDiagnosis.RequestRetries + 1
+				reqMetric.RequestRetries = reqMetric.RequestRetries + 1
 				if attempts == ser-1 {
-					reqDiagnosis.RequestAborted = reqDiagnosis.RequestAborted + 1
-					reqDiagnosis.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
+					reqMetric.RequestAborted = reqMetric.RequestAborted + 1
+					reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
 				}
 				continue
 			} else {
@@ -199,12 +199,12 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				logger.Debugf("%v Router :: sleep for worker %v decreased to %v",
 					rt.destID, worker.workerID, worker.sleepTime)
 				// stop time - success
-				reqDiagnosis.RequestSuccess = reqDiagnosis.RequestSuccess + 1
-				reqDiagnosis.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
+				reqMetric.RequestSuccess = reqMetric.RequestSuccess + 1
+				reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
 				break
 			}
 		}
-		rt.trackRequestMetric(reqDiagnosis)
+		rt.trackRequestMetric(reqMetric)
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			ExecTime:      time.Now(),
@@ -433,16 +433,16 @@ func collectMetrics() {
 			case _ = <-diagnosisTicker.C:
 				requestsMetricLock.Lock()
 				var diagnosisProperties map[string]interface{}
-				for destName, reqsDiagnosis := range requestsMetric {
+				for destName, reqsMetric := range requestsMetric {
 					retries := 0
 					aborted := 0
 					success := 0
 					var compTime time.Duration
-					for _, reqDiagnosis := range reqsDiagnosis {
-						retries = retries + reqDiagnosis.RequestRetries
-						aborted = aborted + reqDiagnosis.RequestAborted
-						success = success + reqDiagnosis.RequestSuccess
-						compTime = compTime + reqDiagnosis.RequestCompletedTime
+					for _, reqMetric := range reqsMetric {
+						retries = retries + reqMetric.RequestRetries
+						aborted = aborted + reqMetric.RequestAborted
+						success = success + reqMetric.RequestSuccess
+						compTime = compTime + reqMetric.RequestCompletedTime
 					}
 					if diagnosisProperties == nil {
 						diagnosisProperties = map[string]interface{}{
@@ -450,7 +450,7 @@ func collectMetrics() {
 								diagnosis.RouterAborted:       aborted,
 								diagnosis.RouterRetries:       retries,
 								diagnosis.RouterSuccess:       success,
-								diagnosis.RouterCompletedTime: (compTime / time.Duration(len(reqsDiagnosis))) / time.Millisecond,
+								diagnosis.RouterCompletedTime: (compTime / time.Duration(len(reqsMetric))) / time.Millisecond,
 							},
 						}
 
@@ -459,7 +459,7 @@ func collectMetrics() {
 							diagnosis.RouterAborted:       retries,
 							diagnosis.RouterRetries:       aborted,
 							diagnosis.RouterSuccess:       success,
-							diagnosis.RouterCompletedTime: (compTime / time.Duration(len(reqsDiagnosis))) / time.Millisecond,
+							diagnosis.RouterCompletedTime: (compTime / time.Duration(len(reqsMetric))) / time.Millisecond,
 						}
 					}
 				}

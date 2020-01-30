@@ -244,22 +244,22 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		destinationConfig map[string]interface{}
 	)
 	destinationConfig = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})
-	var batchReqDiagnosis batchRequestMetric
+	var batchReqMetric batchRequestMetric
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to object storage: %v %v %v", err, destinationConfig, batchJobs.BatchDestination.Source.ID)
 		jobState = jobsdb.FailedState
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
-		batchReqDiagnosis.batchRequestFailed = 1
+		batchReqMetric.batchRequestFailed = 1
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
 	} else {
 		logger.Debugf("BRT: Uploaded to object storage with config: %v %v %v", destinationConfig, batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		jobState = jobsdb.SucceededState
 		errorResp = []byte(`{"success":"OK"}`)
-		batchReqDiagnosis.batchRequestSuccess = 1
+		batchReqMetric.batchRequestSuccess = 1
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
 	}
-	brt.requestDiagnosis(batchReqDiagnosis)
+	brt.trackRequestMetric(batchReqMetric)
 	var statusList []*jobsdb.JobStatusT
 
 	//Identify jobs which can be processed
@@ -280,7 +280,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, map[string]string{"source_id": batchJobs.BatchDestination.Source.ID, "destination_id": batchJobs.BatchDestination.Destination.ID})
 }
 
-func (brt *HandleT) requestDiagnosis(batchReqDiagnosis batchRequestMetric) {
+func (brt *HandleT) trackRequestMetric(batchReqDiagnosis batchRequestMetric) {
 	if diagnosis.EnableBatchRouterMetric {
 		batchRequestsMetricLock.Lock()
 		if _, ok := batchRequestsMetric[brt.destType]; ok {
@@ -546,12 +546,12 @@ func collectMetrics() {
 			case _ = <-diagnosisTicker.C:
 				batchRequestsMetricLock.Lock()
 				var diagnosisProperties map[string]interface{}
-				for destName, batchReqsDiagnosis := range batchRequestsMetric {
+				for destName, batchReqsMetric := range batchRequestsMetric {
 					success := 0
 					failed := 0
-					for _, batchReqDiagnosis := range batchReqsDiagnosis {
-						success = success + batchReqDiagnosis.batchRequestSuccess
-						failed = failed + batchReqDiagnosis.batchRequestFailed
+					for _, batchReqMetric := range batchReqsMetric {
+						success = success + batchReqMetric.batchRequestSuccess
+						failed = failed + batchReqMetric.batchRequestFailed
 					}
 					if diagnosisProperties == nil {
 						diagnosisProperties = map[string]interface{}{
