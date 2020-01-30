@@ -160,7 +160,10 @@ https://rudderlabs.com/customer-case-study-casino-game/
 The client SDKs provide APIs collecting events and sending it to the RudderStack Backend.
 
 ## Telemetry
-Basic Telemetry is added to the data plane which will send diagnosis reports to https://hosted.rudderlabs.com, for monitoring data plane. The diagnosis report can be disabled or you can configure the url for which the diagnosis report is sent in config.toml.
+To help us improve Rudderstack, we collect performance and diagnostic metrics about how you use it and how it's working. No customer data is present in the metrics.
+The metrics collection can be disabled by setting the variable_name to false in config/config.toml
+
+All the collected metrics are listed in config/config.toml under the Diagnostics section
 
 # Coming Soon
 

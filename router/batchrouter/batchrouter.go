@@ -77,15 +77,15 @@ func (brt *HandleT) backendConfigSubscriber() {
 	}
 }
 
-type batchRequestDiagnosis struct {
-	batchRequestSuccess int `json:"batch_request_success"`
-	batchRequestFailed  int `json:"batch_request_failed"`
+type batchRequestMetric struct {
+	batchRequestSuccess int
+	batchRequestFailed  int
 }
 
 var (
-	batchRequestsDiagnosisLock sync.Mutex
-	diagnosisTicker            *time.Ticker
-	batchRequestsDiagnosis     map[string][]batchRequestDiagnosis
+	batchRequestsMetricLock sync.Mutex
+	diagnosisTicker         *time.Ticker
+	batchRequestsMetric     map[string][]batchRequestMetric
 )
 
 type StorageUploadOutput struct {
@@ -244,7 +244,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		destinationConfig map[string]interface{}
 	)
 	destinationConfig = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})
-	var batchReqDiagnosis batchRequestDiagnosis
+	var batchReqDiagnosis batchRequestMetric
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to object storage: %v %v %v", err, destinationConfig, batchJobs.BatchDestination.Source.ID)
 		jobState = jobsdb.FailedState
@@ -280,17 +280,17 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, map[string]string{"source_id": batchJobs.BatchDestination.Source.ID, "destination_id": batchJobs.BatchDestination.Destination.ID})
 }
 
-func (brt *HandleT) requestDiagnosis(batchReqDiagnosis batchRequestDiagnosis) {
+func (brt *HandleT) requestDiagnosis(batchReqDiagnosis batchRequestMetric) {
 	if diagnosis.EnableDiagnosis {
-		batchRequestsDiagnosisLock.Lock()
-		if _, ok := batchRequestsDiagnosis[brt.destType]; ok {
-			batchRequestsDiagnosis[brt.destType] = append(batchRequestsDiagnosis[brt.destType], batchReqDiagnosis)
+		batchRequestsMetricLock.Lock()
+		if _, ok := batchRequestsMetric[brt.destType]; ok {
+			batchRequestsMetric[brt.destType] = append(batchRequestsMetric[brt.destType], batchReqDiagnosis)
 		} else {
-			batchRequestsDiagnosis = map[string][]batchRequestDiagnosis{
+			batchRequestsMetric = map[string][]batchRequestMetric{
 				brt.destType: {batchReqDiagnosis},
 			}
 		}
-		batchRequestsDiagnosisLock.Unlock()
+		batchRequestsMetricLock.Unlock()
 	}
 }
 
@@ -539,14 +539,14 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
 	_, err = brt.jobsDBHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 }
-func startDiagnosis() {
-	if diagnosis.EnableDiagnosis {
+func collectMetrics() {
+	if diagnosis.EnableBatchRouterMetric {
 		for {
 			select {
 			case _ = <-diagnosisTicker.C:
-				batchRequestsDiagnosisLock.Lock()
+				batchRequestsMetricLock.Lock()
 				var diagnosisProperties map[string]interface{}
-				for destName, batchReqsDiagnosis := range batchRequestsDiagnosis {
+				for destName, batchReqsDiagnosis := range batchRequestsMetric {
 					success := 0
 					failed := 0
 					for _, batchReqDiagnosis := range batchReqsDiagnosis {
@@ -572,8 +572,8 @@ func startDiagnosis() {
 					diagnosis.Track(diagnosis.BatchRouterEvents, diagnosisProperties)
 				}
 
-				batchRequestsDiagnosis = nil
-				batchRequestsDiagnosisLock.Unlock()
+				batchRequestsMetric = nil
+				batchRequestsMetricLock.Unlock()
 			}
 		}
 	}
@@ -605,7 +605,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.setupWarehouseStagingFilesTable()
 	brt.processQ = make(chan BatchJobsT)
 	brt.crashRecover()
-	go startDiagnosis()
+	go collectMetrics()
 	go brt.initWorkers()
 	go brt.backendConfigSubscriber()
 	go brt.mainLoop()

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/bcrypt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -532,6 +533,14 @@ func (w GZipWriter) CloseGZ() {
 	w.BufWriter.Flush()
 	w.GzWriter.Close()
 	w.File.Close()
+}
+
+func GetHash(word string) string {
+	hash, err := bcrypt.GenerateFromPassword([]byte(word), bcrypt.MinCost)
+	if err != nil {
+		return ""
+	}
+	return string(hash)
 }
 
 func GetMacAddress() string {

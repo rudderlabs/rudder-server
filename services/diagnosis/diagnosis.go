@@ -32,8 +32,16 @@ const (
 )
 
 var (
-	EnableDiagnosis bool
-	rudderEndpoint  string
+	EnableDiagnosis             bool
+	endpoint                    string
+	writekey                    string
+	EnableServerStartMetric     bool
+	EnableConfigIdentifyMetric  bool
+	EnableServerStartedMetric   bool
+	EnableConfigProcessedMetric bool
+	EnableGatewayMetric         bool
+	EnableRouterMetric          bool
+	EnableBatchRouterMetric     bool
 )
 
 var diagnosis Diagnosis
@@ -41,21 +49,29 @@ var diagnosis Diagnosis
 type Diagnosis struct {
 	Client     analytics.Client
 	StartTime  time.Time
-	MacAddress string
+	UniqueId   string
 	InstanceId string
 }
 
 func init() {
 	EnableDiagnosis = config.GetBool("Diagnosis.enableDiagnosis", true)
-	rudderEndpoint = config.GetString("Diagnosis.endpoint", "http://localhost:8080")
-	diagnosis.InstanceId = config.GetEnv("INSTANCE_NAME", "1")
+	endpoint = config.GetString("Diagnosis.endpoint", "http://localhost:8080") //TODO: default endpoint and writekey??
+	writekey = config.GetString("Diagnosis.writekey", "")
+	EnableServerStartMetric = config.GetBool("Diagnosis.enableServerStartMetric", true)
+	EnableConfigIdentifyMetric = config.GetBool("Diagnosis.enableConfigIdentifyMetric", true)
+	EnableServerStartedMetric = config.GetBool("Diagnosis.enableServerStartedMetric", true)
+	EnableConfigProcessedMetric = config.GetBool("Diagnosis.enableConfigProcessedMetric", true)
+	EnableGatewayMetric = config.GetBool("Diagnosis.enableGatewayMetric", true)
+	EnableRouterMetric = config.GetBool("Diagnosis.enableRouterMetric", true)
+	EnableBatchRouterMetric = config.GetBool("Diagnosis.enableBatchRouterMetric", true)
+	diagnosis.InstanceId = config.GetEnv("INSTANCE_ID", "1")
 	config := analytics.Config{
-		Endpoint: rudderEndpoint,
+		Endpoint: endpoint,
 	}
 	client, _ := analytics.NewWithConfig("1TnQwbNV2QBdOsVlZIeKsvP2cez", config)
 	diagnosis.Client = client
 	diagnosis.StartTime = time.Now()
-	diagnosis.MacAddress = misc.GetMacAddress()
+	diagnosis.UniqueId = misc.GetHash(misc.GetMacAddress())
 
 }
 
@@ -67,7 +83,7 @@ func Track(event string, properties map[string]interface{}) {
 			analytics.Track{
 				Event:      event,
 				Properties: properties,
-				UserId:     diagnosis.MacAddress,
+				UserId:     diagnosis.UniqueId,
 			},
 		)
 	}
@@ -81,7 +97,7 @@ func Identify(event string, properties map[string]interface{}) {
 			analytics.Track{
 				Event:      event,
 				Properties: properties,
-				UserId:     diagnosis.MacAddress,
+				UserId:     diagnosis.UniqueId,
 			},
 		)
 	}

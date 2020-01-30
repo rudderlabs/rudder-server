@@ -60,8 +60,8 @@ var (
 	enableDedup                               bool
 	enableRateLimit                           bool
 	dedupWindow                               time.Duration
-	diagnosisSuccessCount                     int
-	diagnosisFailureCount                     int
+	trackSuccessCount                         int
+	trackFailureCount                         int
 	diagnosisLock                             sync.Mutex
 	diagnosisTicker                           *time.Ticker
 )
@@ -96,7 +96,7 @@ func loadConfig() {
 	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 	// Enable rate limit on incoming events. false by default
 	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
-	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.gatewayTimePeriod", 1) * time.Minute)
+	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.gatewayTimePeriod", 60) * time.Second)
 }
 
 func init() {
@@ -426,7 +426,7 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	//Wait for batcher process to be done
 	errorMessage := <-done
 	atomic.AddUint64(&gateway.ackCount, 1)
-	requestDiagnose(errorMessage)
+	trackRequestMetrics(errorMessage)
 	if errorMessage != "" {
 		logger.Debug(errorMessage)
 		http.Error(w, errorMessage, 400)
@@ -436,30 +436,29 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	}
 }
 
-func requestDiagnose(errorMessage string) {
-	if diagnosis.EnableDiagnosis {
+func trackRequestMetrics(errorMessage string) {
+	if diagnosis.EnableGatewayMetric {
 		diagnosisLock.Lock()
 		defer diagnosisLock.Unlock()
 		if errorMessage != "" {
-			diagnosisFailureCount = diagnosisFailureCount + 1
+			trackFailureCount = trackFailureCount + 1
 		} else {
-			diagnosisSuccessCount = diagnosisSuccessCount + 1
+			trackSuccessCount = trackSuccessCount + 1
 		}
 	}
-
 }
-func startDiagnosis() {
-	if diagnosis.EnableDiagnosis {
+func collectMetrics() {
+	if diagnosis.EnableGatewayMetric {
 		for {
 			select {
 			case _ = <-diagnosisTicker.C:
 				diagnosisLock.Lock()
 				diagnosis.Track(diagnosis.GatewayEvents, map[string]interface{}{
-					diagnosis.GatewaySuccess: diagnosisSuccessCount,
-					diagnosis.GatewayFailure: diagnosisFailureCount,
+					diagnosis.GatewaySuccess: trackSuccessCount,
+					diagnosis.GatewayFailure: trackFailureCount,
 				})
-				diagnosisSuccessCount = 0
-				diagnosisFailureCount = 0
+				trackSuccessCount = 0
+				trackFailureCount = 0
 				diagnosisLock.Unlock()
 			}
 		}
@@ -503,9 +502,11 @@ func (gateway *HandleT) startWebHandler() {
 		AllowCredentials: true,
 		AllowedHeaders:   []string{"*"},
 	})
-	diagnosis.Track(diagnosis.ServerStarted, map[string]interface{}{
-		diagnosis.ServerStarted: time.Now(),
-	})
+	if diagnosis.EnableServerStartedMetric {
+		diagnosis.Track(diagnosis.ServerStarted, map[string]interface{}{
+			diagnosis.ServerStarted: time.Now(),
+		})
+	}
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), c.Handler(bugsnag.Handler(nil))))
 }
 
@@ -566,7 +567,7 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.H
 	go gateway.webRequestBatcher()
 	go gateway.printStats()
 	go backendConfigSubscriber()
-	go startDiagnosis()
+	go collectMetrics()
 	for i := 0; i < maxDBWriterProcess; i++ {
 		go gateway.webRequestBatchDBWriter(i)
 	}

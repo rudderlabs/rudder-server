@@ -134,16 +134,16 @@ func init() {
 	config.Initialize()
 	loadConfig()
 }
-func diagoniseConfig(preConfig SourcesT, curConfig SourcesT) {
-	if diagnosis.EnableDiagnosis {
+func trackConfig(preConfig SourcesT, curConfig SourcesT) {
+	if diagnosis.EnableConfigIdentifyMetric {
 		if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
-
 			diagnosis.Identify(diagnosis.ConfigIdentify, map[string]interface{}{
 				diagnosis.ConfigIdentify: curConfig.Sources[0].WorkspaceID,
 			},
 			)
-			return
 		}
+	}
+	if diagnosis.EnableConfigProcessedMetric {
 		noOfSources := len(curConfig.Sources)
 		noOfDestinations := 0
 		for _, source := range curConfig.Sources {
@@ -154,7 +154,6 @@ func diagoniseConfig(preConfig SourcesT, curConfig SourcesT) {
 			diagnosis.DesitanationCount: noOfDestinations,
 		})
 	}
-
 }
 
 func pollConfigUpdate() {
@@ -166,7 +165,7 @@ func pollConfigUpdate() {
 		}
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
 			curSourceJSONLock.Lock()
-			diagoniseConfig(curSourceJSON, sourceJSON)
+			trackConfig(curSourceJSON, sourceJSON)
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()
 			initialized = true

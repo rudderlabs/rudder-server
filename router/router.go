@@ -61,7 +61,7 @@ var (
 	testSinkURL                                                                    string
 )
 
-type requestDiagnosis struct {
+type requestMetric struct {
 	RequestRetries       int
 	RequestAborted       int
 	RequestSuccess       int
@@ -69,9 +69,9 @@ type requestDiagnosis struct {
 }
 
 var (
-	requestsDiagnosisLock sync.Mutex
-	diagnosisTicker       *time.Ticker
-	requestsDiagnosis     map[string][]requestDiagnosis
+	requestsMetricLock sync.Mutex
+	diagnosisTicker    *time.Ticker
+	requestsMetric     map[string][]requestMetric
 )
 
 func isSuccessStatus(status int) bool {
@@ -156,7 +156,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		if isPrevFailedUser {
 			misc.Assert(previousFailedJobID == job.JobID)
 		}
-		var reqDiagnosis requestDiagnosis
+		var reqDiagnosis requestMetric
 		//We can execute thoe job
 		for attempts = 0; attempts < ser; attempts++ {
 			logger.Debugf("%v Router :: trying to send payload %v of %v", rt.destID, attempts, ser)
@@ -204,7 +204,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				break
 			}
 		}
-		rt.requestDiagnose(reqDiagnosis)
+		rt.trackRequestMetric(reqDiagnosis)
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			ExecTime:      time.Now(),
@@ -270,17 +270,17 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		batchTimeStat.End()
 	}
 }
-func (rt *HandleT) requestDiagnose(reqDiagnosis requestDiagnosis) {
+func (rt *HandleT) trackRequestMetric(reqMetric requestMetric) {
 	if diagnosis.EnableDiagnosis {
-		requestsDiagnosisLock.Lock()
-		if _, ok := requestsDiagnosis[rt.destID]; ok {
-			requestsDiagnosis[rt.destID] = append(requestsDiagnosis[rt.destID], reqDiagnosis)
+		requestsMetricLock.Lock()
+		if _, ok := requestsMetric[rt.destID]; ok {
+			requestsMetric[rt.destID] = append(requestsMetric[rt.destID], reqMetric)
 		} else {
-			requestsDiagnosis = map[string][]requestDiagnosis{
-				rt.destID: {reqDiagnosis},
+			requestsMetric = map[string][]requestMetric{
+				rt.destID: {reqMetric},
 			}
 		}
-		requestsDiagnosisLock.Unlock()
+		requestsMetricLock.Unlock()
 	}
 }
 
@@ -426,14 +426,14 @@ func (rt *HandleT) statusInsertLoop() {
 
 }
 
-func startDiagnosis() {
-	if diagnosis.EnableDiagnosis {
+func collectMetrics() {
+	if diagnosis.EnableRouterMetric {
 		for {
 			select {
 			case _ = <-diagnosisTicker.C:
-				requestsDiagnosisLock.Lock()
+				requestsMetricLock.Lock()
 				var diagnosisProperties map[string]interface{}
-				for destName, reqsDiagnosis := range requestsDiagnosis {
+				for destName, reqsDiagnosis := range requestsMetric {
 					retries := 0
 					aborted := 0
 					success := 0
@@ -467,8 +467,8 @@ func startDiagnosis() {
 					diagnosis.Track(diagnosis.RouterEvents, diagnosisProperties)
 				}
 
-				requestsDiagnosis = nil
-				requestsDiagnosisLock.Unlock()
+				requestsMetric = nil
+				requestsMetricLock.Unlock()
 			}
 		}
 	}
@@ -655,7 +655,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destID)
 	rt.initWorkers()
-	go startDiagnosis()
+	go collectMetrics()
 	go rt.printStatsLoop()
 	go rt.statusInsertLoop()
 	go rt.generatorLoop()
