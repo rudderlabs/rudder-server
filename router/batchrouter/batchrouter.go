@@ -281,7 +281,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 }
 
 func (brt *HandleT) requestDiagnosis(batchReqDiagnosis batchRequestMetric) {
-	if diagnosis.EnableDiagnosis {
+	if diagnosis.EnableBatchRouterMetric {
 		batchRequestsMetricLock.Lock()
 		if _, ok := batchRequestsMetric[brt.destType]; ok {
 			batchRequestsMetric[brt.destType] = append(batchRequestsMetric[brt.destType], batchReqDiagnosis)
@@ -586,7 +586,7 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
-	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.batchRouterTimePeriod", 1) * time.Minute)
+	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.batchRouterTimePeriod", 600) * time.Second)
 }
 
 func init() {

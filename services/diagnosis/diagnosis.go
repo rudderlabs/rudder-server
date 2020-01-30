@@ -54,8 +54,20 @@ type Diagnosis struct {
 }
 
 func init() {
+	config.Initialize()
+	loadConfig()
+	diagnosis.InstanceId = config.GetEnv("INSTANCE_ID", "1")
+	config := analytics.Config{
+		Endpoint: endpoint,
+	}
+	client, _ := analytics.NewWithConfig(writekey, config)
+	diagnosis.Client = client
+	diagnosis.StartTime = time.Now()
+	diagnosis.UniqueId = misc.GetHash(misc.GetMacAddress())
+}
+func loadConfig() {
 	EnableDiagnosis = config.GetBool("Diagnosis.enableDiagnosis", true)
-	endpoint = config.GetString("Diagnosis.endpoint", "http://localhost:8080") //TODO: default endpoint and writekey??
+	endpoint = config.GetString("Diagnosis.endpoint", "")
 	writekey = config.GetString("Diagnosis.writekey", "")
 	EnableServerStartMetric = config.GetBool("Diagnosis.enableServerStartMetric", true)
 	EnableConfigIdentifyMetric = config.GetBool("Diagnosis.enableConfigIdentifyMetric", true)
@@ -64,15 +76,6 @@ func init() {
 	EnableGatewayMetric = config.GetBool("Diagnosis.enableGatewayMetric", true)
 	EnableRouterMetric = config.GetBool("Diagnosis.enableRouterMetric", true)
 	EnableBatchRouterMetric = config.GetBool("Diagnosis.enableBatchRouterMetric", true)
-	diagnosis.InstanceId = config.GetEnv("INSTANCE_ID", "1")
-	config := analytics.Config{
-		Endpoint: endpoint,
-	}
-	client, _ := analytics.NewWithConfig("1TnQwbNV2QBdOsVlZIeKsvP2cez", config)
-	diagnosis.Client = client
-	diagnosis.StartTime = time.Now()
-	diagnosis.UniqueId = misc.GetHash(misc.GetMacAddress())
-
 }
 
 func Track(event string, properties map[string]interface{}) {

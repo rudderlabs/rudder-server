@@ -93,7 +93,7 @@ func loadConfig() {
 	useTestSink = config.GetBool("Router.useTestSink", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
-	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.routerTimePeriod", 1) * time.Minute)
+	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.routerTimePeriod", 60) * time.Second)
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -271,7 +271,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 	}
 }
 func (rt *HandleT) trackRequestMetric(reqMetric requestMetric) {
-	if diagnosis.EnableDiagnosis {
+	if diagnosis.EnableRouterMetric {
 		requestsMetricLock.Lock()
 		if _, ok := requestsMetric[rt.destID]; ok {
 			requestsMetric[rt.destID] = append(requestsMetric[rt.destID], reqMetric)
