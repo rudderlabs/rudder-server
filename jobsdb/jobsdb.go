@@ -126,6 +126,12 @@ type StoreJobRespT struct {
 	ErrorMessage string
 }
 
+type ParameterFilterT struct {
+	Name     string
+	Value    string
+	Optional bool
+}
+
 var dbErrorMap = map[string]string{
 	"Invalid JSON":             "22P02",
 	"Invalid Unicode":          "22P05",
@@ -203,7 +209,7 @@ var (
 	useJoinForUnprocessed                         bool
 )
 
-var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat *stats.RudderStats
+var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat, jobsdbQueryTimeStat *stats.RudderStats
 
 // Loads db config and migration related config from config file
 func loadConfig() {
@@ -240,6 +246,7 @@ func init() {
 	tableFileDumpTimeStat = stats.NewStat("jobsdb.table_file_dump_time", stats.TimerType)
 	fileUploadTimeStat = stats.NewStat("jobsdb.file_upload_time", stats.TimerType)
 	totalTableDumpTimeStat = stats.NewStat("jobsdb.total_table_dump_time", stats.TimerType)
+
 }
 
 func GetConnectionString() string {
@@ -265,7 +272,6 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	var err error
 	psqlInfo := GetConnectionString()
-
 	jd.assert(tablePrefix != "")
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
@@ -498,9 +504,10 @@ Or when the job_status table gets too big because of lot of retries/failures
 */
 
 func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
-
+	queryStat := stats.NewJobsDBStat("migration_ds_check", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	var delCount, totalCount, statusCount int
-
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&totalCount)
@@ -551,13 +558,23 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 
 	var tableSize int64
-	sqlStatement := fmt.Sprintf(`SELECT PG_RELATION_SIZE('%s')`, ds.JobTable)
+	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&tableSize)
 	jd.assertError(err)
 	if tableSize > int64(maxTableSizeInMB*MegaByte) {
 		return true
 	}
+
+	var totalCount int
+	sqlStatement = fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ds.JobTable)
+	row = jd.dbHandle.QueryRow(sqlStatement)
+	err = row.Scan(&totalCount)
+	jd.assertError(err)
+	if totalCount > maxDSSize {
+		return true
+	}
+
 	return false
 }
 
@@ -598,7 +615,9 @@ func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
 }
 
 func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
-
+	queryStat := stats.NewJobsDBStat("add_new_ds", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	//Get the max index
 	dList := jd.getDSList(true)
 	newDSIdx := ""
@@ -841,7 +860,9 @@ over. Then the status (only the latest) is set for those jobs
 */
 
 func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
-
+	queryStat := stats.NewJobsDBStat("migration_jobs", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	//Unprocessed jobs
 	unprocessedList, err := jd.getUnprocessedJobsDS(srcDS, []string{}, false, 0, nil)
 	jd.assertError(err)
@@ -899,6 +920,9 @@ a given dataset. The names should be self explainatory
 */
 
 func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
+	queryStat := stats.NewJobsDBStat("store_jobs", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 
 	var stmt *sql.Stmt
 	var err error
@@ -986,8 +1010,9 @@ func (jd *HandleT) constructJSONQuery(paramKey string, jsonKey string, paramList
 	jd.assert(queryType == "OR" || queryType == "AND")
 	var queryList []string
 	for _, p := range paramList {
+		// prefer json_field ->> 'key' = 'value' notation over json_field @> '{"key": "value"}' for faster queries
+		// queryList = append(queryList, "("+paramKey+"->>"+fmt.Sprintf(`'%s'`, jsonKey)+"="+fmt.Sprintf(`'%s'`, p)+")")
 		queryList = append(queryList, "("+paramKey+"@>'{"+fmt.Sprintf(`"%s"`, jsonKey)+":"+fmt.Sprintf(`"%s"`, p)+"}')")
-
 	}
 	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
 }
@@ -999,7 +1024,7 @@ func (jd *HandleT) constructJSONQuery(paramKey string, jsonKey string, paramList
 * markClearEmptyResult() when mark=False clears a previous empty mark
  */
 
-func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters map[string]string, mark bool) {
+func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT, mark bool) {
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
@@ -1027,8 +1052,11 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 		}
 
 		pVal := ""
-		for _, key := range misc.SortedMapKeys(parameterFilters) {
-			pVal += fmt.Sprintf(`_%s_%s`, key, parameterFilters[key])
+		for idx, key := range misc.SortedStructSliceValues(parameterFilters, "Name") {
+			if idx > 0 {
+				pVal += "_"
+			}
+			pVal += fmt.Sprintf(`%s_%s`, key, parameterFilters[idx].Name)
 		}
 
 		_, ok = jd.dsEmptyResultCache[ds][cVal][pVal]
@@ -1046,7 +1074,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 	}
 }
 
-func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters map[string]string) bool {
+func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
@@ -1068,8 +1096,11 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 		}
 
 		pVal := ""
-		for _, key := range misc.SortedMapKeys(parameterFilters) {
-			pVal += fmt.Sprintf(`_%s_%s`, key, parameterFilters[key])
+		for idx, key := range misc.SortedStructSliceValues(parameterFilters, "Name") {
+			if idx > 0 {
+				pVal += "_"
+			}
+			pVal += fmt.Sprintf(`%s_%s`, key, parameterFilters[idx].Name)
 		}
 
 		_, ok = jd.dsEmptyResultCache[ds][cVal][pVal]
@@ -1095,7 +1126,18 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
 func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []string,
-	customValFilters []string, limitCount int, parameterFilters map[string]string) ([]*JobT, error) {
+	customValFilters []string, limitCount int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
+	var queryStat *stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	if len(stateFilters) > 0 {
+		statName = statName + stateFilters[0] + "_"
+	}
+	queryStat = stats.NewJobsDBStat(statName+"processed_jobs", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
@@ -1121,15 +1163,20 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 
 	if len(parameterFilters) > 0 {
 		jd.assert(!getAll)
-		for parameter, val := range parameterFilters {
+
+		for _, parameter := range parameterFilters {
 			// handle old data which does not have destination_id
-			if parameter == "destination_id" {
-				sourceQuery += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter,
-					[]string{val}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
+			if parameter.Optional {
+				sourceQuery += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
+					[]string{parameter.Value}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
 			} else {
-				sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter,
-					[]string{val}, "OR")
+				sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
+					[]string{parameter.Value}, "OR")
 			}
+			// if parameter.Name == "source_id" {
+			// 	sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
+			// 		[]string{parameter.Value}, "OR")
+			// }
 		}
 	} else {
 		sourceQuery = ""
@@ -1214,7 +1261,15 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
 func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
-	order bool, count int, parameterFilters map[string]string) ([]*JobT, error) {
+	order bool, count int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
+	var queryStat *stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	queryStat = stats.NewJobsDBStat(statName+"unprocessed_jobs", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 
 	var rows *sql.Rows
 	var err error
@@ -1245,15 +1300,19 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	}
 
 	if len(parameterFilters) > 0 {
-		for parameter, val := range parameterFilters {
+		for _, parameter := range parameterFilters {
 			// handle old data which does not have destination_id
-			if parameter == "destination_id" {
-				sqlStatement += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter,
-					[]string{val}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
+			if parameter.Optional {
+				sqlStatement += " AND (" + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
+					[]string{parameter.Value}, "OR") + fmt.Sprintf(` OR  %s.parameters->>'destination_id' IS NULL)`, ds.JobTable)
 			} else {
-				sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter,
-					[]string{val}, "OR")
+				sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), parameter.Name,
+					[]string{parameter.Value}, "OR")
 			}
+			// if parameter.Name == "source_id" {
+			// 	sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
+			// 		[]string{parameter.Value}, "OR")
+			// }
 		}
 	}
 
@@ -1284,7 +1343,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	return jobList, nil
 }
 
-func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters map[string]string) (err error) {
+func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
 
 	if len(statusList) == 0 {
 		return nil
@@ -1382,6 +1441,8 @@ func (jd *HandleT) mainCheckLoop() {
 				break
 			}
 		}
+		migrationLoopStat := stats.NewJobsDBStat("migration_loop", stats.TimerType, jd.tablePrefix)
+		migrationLoopStat.Start()
 		//Add a temp DS to append to
 		if len(migrateFrom) > 0 {
 			if liveCount > 0 {
@@ -1420,7 +1481,7 @@ func (jd *HandleT) mainCheckLoop() {
 
 			jd.JournalMarkDone(opID)
 		}
-
+		migrationLoopStat.End()
 		jd.dsMigrationLock.Unlock()
 
 	}
@@ -1565,7 +1626,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	}
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
-		logger.Errorf("Failed to upload table %v dump to %s\n", tableName, storageProvider)
+		logger.Errorf("Failed to upload table %v dump to %s", tableName, storageProvider)
 	} else {
 		// Do not record stat in error case as error case time might be low and skew stats
 		fileUploadTimeStat.End()
@@ -1853,7 +1914,7 @@ UpdateJobStatus updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters map[string]string) {
+func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) {
 
 	if len(statusList) == 0 {
 		return
@@ -1952,11 +2013,19 @@ func (jd *HandleT) printLists(console bool) {
 GetUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, parameterFilters map[string]string) []*JobT {
+func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
+	var queryStat *stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	queryStat = stats.NewJobsDBStat(statName+"unprocessed", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
@@ -1990,11 +2059,22 @@ relises on the caller to update it. That means that successive calls to GetProce
 can return the same set of events. It is the responsibility of the caller to call it from
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
-func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, parameterFilters map[string]string) []*JobT {
+func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
+	var queryStat *stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	if len(stateFilter) > 0 {
+		statName = statName + stateFilter[0] + "_"
+	}
+	queryStat = stats.NewJobsDBStat(statName+"processed", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
@@ -2028,7 +2108,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 GetToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) GetToRetry(customValFilters []string, count int, parameterFilters map[string]string) []*JobT {
+func (jd *HandleT) GetToRetry(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 	return jd.GetProcessed([]string{FailedState}, customValFilters, count, parameterFilters)
 }
 
@@ -2036,14 +2116,14 @@ func (jd *HandleT) GetToRetry(customValFilters []string, count int, parameterFil
 GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) GetWaiting(customValFilters []string, count int, parameterFilters map[string]string) []*JobT {
+func (jd *HandleT) GetWaiting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 	return jd.GetProcessed([]string{WaitingState}, customValFilters, count, parameterFilters)
 }
 
 /*
 GetExecuting returns events which  in executing state
 */
-func (jd *HandleT) GetExecuting(customValFilters []string, count int, parameterFilters map[string]string) []*JobT {
+func (jd *HandleT) GetExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 	return jd.GetProcessed([]string{ExecutingState}, customValFilters, count, parameterFilters)
 }
 

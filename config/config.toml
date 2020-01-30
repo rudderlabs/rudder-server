@@ -57,9 +57,10 @@ maxFailedCountForJob = 8
 keepOrderOnFailure = true
 
 [BatchRouter]
-mainLoopSleepInS = 30
+mainLoopSleepInS = 2
 noOfWorkers = 8
 jobQueryBatchSize = 100000
+uploadFreqInS = 30
 
 [Warehouse]
 stagingFilesTable = "wh_staging_files"
@@ -69,13 +70,14 @@ schemasTable = "wh_schemas"
 uploadFreqInS = 1800
 noOfWorkers = 8
 mainLoopSleepInS = 60
-maxRetry = 3
+maxRetry = 5
 stagingFilesBatchSize = 100
 
 [Processor]
 loopSleepInMS = 10
 dbReadBatchSize = 10000
 transformBatchSize = 10
+userTransformBatchSize = 200
 sessionThresholdEvents = 100
 sessionInactivityThresholdInS = 120
 maxChanSize = 2048
@@ -108,3 +110,16 @@ storagePath = "/tmp/recovery_data.json"
     [recovery.maintenance]
     crashThreshold = 5
     durationInS = 300
+
+# logger configuration
+[Logger]
+enableConsole=true
+enableFile=false
+consoleJsonFormat=false
+fileJsonFormat=false
+logFileLocation="/tmp/rudder_log.log"
+logFileSize = 100 # in MB
+enableTimestamp=false
+enableFileNameInLog=false
+enableStackTrace=false
+
