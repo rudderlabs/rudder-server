@@ -1019,7 +1019,7 @@ func (jd *HandleT) constructParameterJSONQuery(table string, parameterFilters []
 	}
 	opQuery := ""
 	if len(opNullConditions) > 0 {
-		opQuery += fmt.Sprintf(` OR (%s.parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opQueries, " AND "))
+		opQuery += fmt.Sprintf(` OR (%s.parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
 	}
 	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
 }
