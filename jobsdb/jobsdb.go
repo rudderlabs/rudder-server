@@ -557,19 +557,19 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 
 func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 
-	var tableSize int64
-	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, ds.JobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
-	err := row.Scan(&tableSize)
-	jd.assertError(err)
-	if tableSize > int64(maxTableSizeInMB*MegaByte) {
-		return true
-	}
+	// var tableSize int64
+	// sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, ds.JobTable)
+	// row := jd.dbHandle.QueryRow(sqlStatement)
+	// err := row.Scan(&tableSize)
+	// jd.assertError(err)
+	// if tableSize > int64(maxTableSizeInMB*MegaByte) {
+	// 	return true
+	// }
 
 	var totalCount int
-	sqlStatement = fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ds.JobTable)
-	row = jd.dbHandle.QueryRow(sqlStatement)
-	err = row.Scan(&totalCount)
+	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ds.JobTable)
+	row := jd.dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&totalCount)
 	jd.assertError(err)
 	if totalCount > maxDSSize {
 		return true
