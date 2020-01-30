@@ -34,7 +34,7 @@ func (ops *VictorOps) Alert(message string) {
 	body, err := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
-	logger.Info("Alert: Successful %s", string(body))
+	logger.Infof("Alert: Successful %s", string(body))
 }
 
 type VictorOps struct {
