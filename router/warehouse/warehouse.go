@@ -23,10 +23,10 @@ import (
 	"github.com/rudderlabs/rudder-server/router/warehouse/redshift"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 )
 
 var (
@@ -396,7 +396,7 @@ func (wh *HandleT) mainLoop() {
 
 func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	// stat for time taken to process staging files in a single job
-	timer := warehouseutils.DestStat(stats.TimerType, "process_staging_files_batch_time", job.Warehouse.Destination.ID)
+	timer := warehouseutils.DestStat(monitoring.TimerType, "process_staging_files_batch_time", job.Warehouse.Destination.ID)
 	timer.Start()
 
 	var jsonIDs []int64
@@ -452,12 +452,12 @@ waitForLoadFiles:
 	timer.End()
 	if err != nil {
 		warehouseutils.SetStagingFilesError(jsonIDs, warehouseutils.StagingFileFailedState, wh.dbHandle, err)
-		warehouseutils.DestStat(stats.CountType, "process_staging_files_failures", job.Warehouse.Destination.ID).Count(len(job.List))
+		warehouseutils.DestStat(monitoring.CountType, "process_staging_files_failures", job.Warehouse.Destination.ID).Count(len(job.List))
 		return err
 	}
 	warehouseutils.SetStagingFilesStatus(jsonIDs, warehouseutils.StagingFileSucceededState, wh.dbHandle)
-	warehouseutils.DestStat(stats.CountType, "process_staging_files_success", job.Warehouse.Destination.ID).Count(len(job.List))
-	warehouseutils.DestStat(stats.CountType, "generate_load_files", job.Warehouse.Destination.ID).Count(len(loadFileIDs))
+	warehouseutils.DestStat(monitoring.CountType, "process_staging_files_success", job.Warehouse.Destination.ID).Count(len(job.List))
+	warehouseutils.DestStat(monitoring.CountType, "generate_load_files", job.Warehouse.Destination.ID).Count(len(loadFileIDs))
 
 	sort.Slice(loadFileIDs, func(i, j int) bool { return loadFileIDs[i] < loadFileIDs[j] })
 	startLoadFileID := loadFileIDs[0]
@@ -510,7 +510,7 @@ func (wh *HandleT) initWorkers() {
 					if err != nil {
 						break
 					}
-					warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.Warehouse.Destination.ID).Count(len(job.List))
+					warehouseutils.DestStat(monitoring.CountType, "load_staging_files_into_warehouse", job.Warehouse.Destination.ID).Count(len(job.List))
 				}
 				setDestInProgress(processStagingFilesJobList[0].Warehouse, false)
 			}
@@ -662,7 +662,7 @@ func (wh *HandleT) initUploaders() {
 		go func() {
 			for {
 				makeLoadFilesJob := <-wh.createLoadFilesQ
-				timer := warehouseutils.DestStat(stats.TimerType, "process_staging_file_time", makeLoadFilesJob.Warehouse.Destination.ID)
+				timer := warehouseutils.DestStat(monitoring.TimerType, "process_staging_file_time", makeLoadFilesJob.Warehouse.Destination.ID)
 				timer.Start()
 				loadFileIDs, err := wh.processStagingFile(makeLoadFilesJob)
 				timer.End()

@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 )
 
 //Structure which is used to pass message to the transformer workers
@@ -29,10 +29,10 @@ type transformerHandleT struct {
 	responseQ          chan *transformMessageT
 	accessLock         sync.Mutex
 	perfStats          *misc.PerfStats
-	sentStat           *stats.RudderStats
-	receivedStat       *stats.RudderStats
-	failedStat         *stats.RudderStats
-	transformTimerStat *stats.RudderStats
+	sentStat           *monitoring.RudderStats
+	receivedStat       *monitoring.RudderStats
+	failedStat         *monitoring.RudderStats
+	transformTimerStat *monitoring.RudderStats
 }
 
 var (
@@ -43,7 +43,7 @@ var (
 func (trans *transformerHandleT) transformWorker() {
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
-	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
+	transformRequestTimerStat := monitoring.NewStat("processor.transformer_request_time", monitoring.TimerType)
 
 	for job := range trans.requestQ {
 		//Call remote transformation
@@ -107,10 +107,10 @@ func (trans *transformerHandleT) transformWorker() {
 func (trans *transformerHandleT) Setup() {
 	trans.requestQ = make(chan *transformMessageT, maxChanSize)
 	trans.responseQ = make(chan *transformMessageT, maxChanSize)
-	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
-	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
-	trans.failedStat = stats.NewStat("processor.transformer_failed", stats.CountType)
-	trans.transformTimerStat = stats.NewStat("processor.transformation_time", stats.TimerType)
+	trans.sentStat = monitoring.NewStat("processor.transformer_sent", monitoring.CountType)
+	trans.receivedStat = monitoring.NewStat("processor.transformer_received", monitoring.CountType)
+	trans.failedStat = monitoring.NewStat("processor.transformer_failed", monitoring.CountType)
+	trans.transformTimerStat = monitoring.NewStat("processor.transformation_time", monitoring.TimerType)
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 	for i := 0; i < numTransformWorker; i++ {

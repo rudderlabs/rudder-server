@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/rruntime"
+
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/dgraph-io/badger"
 	"github.com/rs/cors"
@@ -21,16 +23,16 @@ import (
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
-var batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
+var batchSizeStat, batchTimeStat, latencyStat *monitoring.RudderStats
 
 /*
  * The gateway module handles incoming requests from client devices.
@@ -97,9 +99,9 @@ func init() {
 	config.Initialize()
 	loadConfig()
 	loadStatusMap()
-	latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
-	batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
-	batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
+	latencyStat = monitoring.NewStat("gateway.response_time", monitoring.TimerType)
+	batchSizeStat = monitoring.NewStat("gateway.batch_size", monitoring.CountType)
+	batchTimeStat = monitoring.NewStat("gateway.batch_time", monitoring.TimerType)
 }
 
 //HandleT is the struct returned by the Setup call
@@ -115,7 +117,7 @@ type HandleT struct {
 
 func updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
 	for writeKey, count := range writeKeyStats {
-		writeKeyStatsD := stats.NewWriteKeyStat(bucket, stats.CountType, writeKey)
+		writeKeyStatsD := monitoring.NewWriteKeyStat(bucket, monitoring.CountType, writeKey)
 		writeKeyStatsD.Count(count)
 	}
 }
@@ -145,7 +147,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		for _, req := range breq.batchRequest {
 			ipAddr := misc.GetIPFromReq(req.request)
 			if req.request.Body == nil {
-				req.done <- getStatus(RequestBodyNil)
+				req.done <- RequestBodyNil
 				preDbStoreCount++
 				continue
 			}
@@ -158,7 +160,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				//If ratelimiter returns true for LimitReached, Just drop the event batch and continue.
 				restrictorKey := backendconfig.GetWorkspaceIDForWriteKey(writeKey)
 				if gateway.rateLimiter.LimitReached(restrictorKey) {
-					req.done <- getStatus(TooManyRequests)
+					req.done <- TooManyRequests
 					preDbStoreCount++
 					misc.IncrementMapByKey(workspaceDropRequestStats, restrictorKey, 1)
 					continue
@@ -166,14 +168,14 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 
 			if !ok || writeKey == "" {
-				req.done <- getStatus(NoWriteKeyInBasicAuth)
+				req.done <- NoWriteKeyInBasicAuth
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
 				continue
 			}
 			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if err != nil {
-				req.done <- getStatus(RequestBodyReadFailed)
+				req.done <- RequestBodyReadFailed
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
@@ -187,14 +189,14 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(writeKeyEventStats, writeKey, totalEventsInReq)
 			if len(body) > maxReqSize {
-				req.done <- getStatus(RequestBodyTooLarge)
+				req.done <- RequestBodyTooLarge
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
 				continue
 			}
 			if !gateway.isWriteKeyEnabled(writeKey) {
-				req.done <- getStatus(InvalidWriteKey)
+				req.done <- InvalidWriteKey
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
@@ -229,7 +231,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				allMessageIds = append(allMessageIds, reqMessageIDs...)
 				gateway.dedupWithBadger(&body, reqMessageIDs, writeKey, writeKeyDupStats)
 				if len(gjson.GetBytes(body, "batch").Array()) == 0 {
-					req.done <- ""
+					req.done <- Ok
 					preDbStoreCount++
 					misc.IncrementMapByKey(writeKeySuccessEventStats, writeKey, totalEventsInReq)
 					continue
@@ -269,7 +271,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[uuid], 1)
 				misc.IncrementMapByKey(writeKeySuccessEventStats, jobWriteKeyMap[uuid], jobEventCountMap[uuid])
 			}
-			jobIDReqMap[uuid].done <- err
+			jobIDReqMap[uuid].done <- DBPersistFailed
 		}
 
 		//Sending events to config backend
@@ -417,24 +419,34 @@ func (gateway *HandleT) webGroupHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
-	logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
+
+	// Return 503 immediately if server shutdown is in progress
+	if rruntime.IsShutDownInProgess {
+		w.WriteHeader(getStatusCode(ServerShutdownInProgress))
+		fmt.Fprintln(w, getStatus(ServerShutdownInProgress))
+		return
+	}
+
 	done := make(chan string)
 	req := webRequestT{request: r, writer: &w, done: done, reqType: reqType}
 	gateway.webRequestQ <- &req
 	//Wait for batcher process to be done
-	errorMessage := <-done
+	responseKey := <-done
 	atomic.AddUint64(&gateway.ackCount, 1)
-	if errorMessage != "" {
-		logger.Debug(errorMessage)
-		http.Error(w, errorMessage, 400)
-	} else {
-		logger.Debug(getStatus(Ok))
-		w.Write([]byte(getStatus(Ok)))
-	}
+
+	logger.LogRequest(r, getStatusCode(responseKey) >= http.StatusBadRequest /*isError*/)
+	w.WriteHeader(getStatusCode(responseKey))
+	fmt.Fprintln(w, getStatus(responseKey))
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
+	if rruntime.IsShutDownInProgess {
+		w.WriteHeader(getStatusCode(ServerShutdownInProgress))
+		fmt.Fprintln(w, getStatus(ServerShutdownInProgress))
+		return
+	}
+
 	var dbService string = "UP"
 	var enabledRouter string = "TRUE"
 	if !gateway.jobsDB.CheckPGHealth() {

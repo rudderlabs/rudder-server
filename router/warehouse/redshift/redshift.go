@@ -17,9 +17,9 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 	uuid "github.com/satori/go.uuid"
 )
 
@@ -216,7 +216,7 @@ func (rs *HandleT) load() (errList []error) {
 	stagingTableNames := []string{}
 
 	for tableName, columnMap := range rs.Upload.Schema {
-		timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
+		timer := warehouseutils.DestStat(monitoring.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
 		timer.Start()
 		manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap)
 		timer.End()
@@ -345,7 +345,7 @@ func init() {
 }
 
 func (rs *HandleT) MigrateSchema() (err error) {
-	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", rs.Warehouse.Destination.ID)
+	timer := warehouseutils.DestStat(monitoring.TimerType, "migrate_schema_time", rs.Warehouse.Destination.ID)
 	timer.Start()
 	warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatingSchemaState, rs.DbHandle)
 	logger.Infof("RS: Updaing schema for redshfit schemaname: %s", rs.Namespace)
@@ -369,7 +369,7 @@ func (rs *HandleT) Export() (err error) {
 	logger.Infof("RS: Starting export to redshift for source:%s and wh_upload:%v", rs.Warehouse.Source.ID, rs.Upload.ID)
 	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportingDataState, rs.DbHandle)
 	misc.AssertError(err)
-	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", rs.Warehouse.Destination.ID)
+	timer := warehouseutils.DestStat(monitoring.TimerType, "upload_time", rs.Warehouse.Destination.ID)
 	timer.Start()
 	errList := rs.load()
 	timer.End()

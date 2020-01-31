@@ -5,12 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	"os"
-	"os/signal"
 	"runtime"
-	"runtime/pprof"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -29,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 )
 
 var (
@@ -208,39 +205,13 @@ func main() {
 	//Reload Config
 	loadConfig()
 
-	var f *os.File
 	if *cpuprofile != "" {
-		var err error
-		f, err = os.Create(*cpuprofile)
-		misc.AssertError(err)
-		runtime.SetBlockProfileRate(1)
-		err = pprof.StartCPUProfile(f)
-		misc.AssertError(err)
+		monitoring.StartCPUProfiling(*cpuprofile)
 	}
 
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		if *cpuprofile != "" {
-			logger.Info("Stopping CPU profile")
-			pprof.StopCPUProfile()
-			f.Close()
-		}
-		if *memprofile != "" {
-			f, err := os.Create(*memprofile)
-			misc.AssertError(err)
-			defer f.Close()
-			runtime.GC() // get up-to-date statistics
-			err = pprof.WriteHeapProfile(f)
-			misc.AssertError(err)
-		}
-		// clearing zap Log buffer to std output
-		if logger.Log != nil {
-			logger.Fatal("SIGTERM called. Process exiting")
-		}
-		os.Exit(1)
-	}()
+	if *memprofile != "" {
+		monitoring.StartMemoryProfiling(*memprofile)
+	}
 
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT

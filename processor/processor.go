@@ -14,10 +14,10 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 )
@@ -30,26 +30,26 @@ type HandleT struct {
 	transformer           *transformerHandleT
 	pStatsJobs            *misc.PerfStats
 	pStatsDBR             *misc.PerfStats
-	statGatewayDBR        *stats.RudderStats
+	statGatewayDBR        *monitoring.RudderStats
 	pStatsDBW             *misc.PerfStats
-	statGatewayDBW        *stats.RudderStats
-	statRouterDBW         *stats.RudderStats
-	statBatchRouterDBW    *stats.RudderStats
-	statActiveUsers       *stats.RudderStats
+	statGatewayDBW        *monitoring.RudderStats
+	statRouterDBW         *monitoring.RudderStats
+	statBatchRouterDBW    *monitoring.RudderStats
+	statActiveUsers       *monitoring.RudderStats
 	userJobListMap        map[string][]*jobsdb.JobT
 	userEventsMap         map[string][]interface{}
 	userPQItemMap         map[string]*pqItemT
-	statJobs              *stats.RudderStats
-	statDBR               *stats.RudderStats
-	statDBW               *stats.RudderStats
-	statLoopTime          *stats.RudderStats
-	statSessionTransform  *stats.RudderStats
-	statUserTransform     *stats.RudderStats
-	statDestTransform     *stats.RudderStats
-	statListSort          *stats.RudderStats
-	marshalSingularEvents *stats.RudderStats
-	destProcessing        *stats.RudderStats
-	statNumDests          *stats.RudderStats
+	statJobs              *monitoring.RudderStats
+	statDBR               *monitoring.RudderStats
+	statDBW               *monitoring.RudderStats
+	statLoopTime          *monitoring.RudderStats
+	statSessionTransform  *monitoring.RudderStats
+	statUserTransform     *monitoring.RudderStats
+	statDestTransform     *monitoring.RudderStats
+	statListSort          *monitoring.RudderStats
+	marshalSingularEvents *monitoring.RudderStats
+	destProcessing        *monitoring.RudderStats
+	statNumDests          *monitoring.RudderStats
 	destStats             map[string]*DestStatT
 	userToSessionIDMap    map[string]string
 	userJobPQ             pqT
@@ -59,19 +59,19 @@ type HandleT struct {
 
 type DestStatT struct {
 	id               string
-	numEvents        *stats.RudderStats
-	numOutputEvents  *stats.RudderStats
-	sessionTransform *stats.RudderStats
-	userTransform    *stats.RudderStats
-	destTransform    *stats.RudderStats
+	numEvents        *monitoring.RudderStats
+	numOutputEvents  *monitoring.RudderStats
+	sessionTransform *monitoring.RudderStats
+	userTransform    *monitoring.RudderStats
+	destTransform    *monitoring.RudderStats
 }
 
 func newDestinationStat(destID string) *DestStatT {
-	numEvents := stats.NewDestStat("proc_num_events", stats.CountType, destID)
-	numOutputEvents := stats.NewDestStat("proc_num_output_events", stats.CountType, destID)
-	sessionTransform := stats.NewDestStat("proc_session_transform", stats.TimerType, destID)
-	userTransform := stats.NewDestStat("proc_user_transform", stats.TimerType, destID)
-	destTransform := stats.NewDestStat("proc_dest_transform", stats.TimerType, destID)
+	numEvents := monitoring.NewDestStat("proc_num_events", monitoring.CountType, destID)
+	numOutputEvents := monitoring.NewDestStat("proc_num_output_events", monitoring.CountType, destID)
+	sessionTransform := monitoring.NewDestStat("proc_session_transform", monitoring.TimerType, destID)
+	userTransform := monitoring.NewDestStat("proc_user_transform", monitoring.TimerType, destID)
+	destTransform := monitoring.NewDestStat("proc_dest_transform", monitoring.TimerType, destID)
 	return &DestStatT{
 		id:               destID,
 		numEvents:        numEvents,
@@ -130,21 +130,21 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.pStatsDBR.Setup("ProcessorDBRead")
 	proc.pStatsDBW.Setup("ProcessorDBWrite")
 
-	proc.statGatewayDBR = stats.NewStat("processor.gateway_db_read", stats.CountType)
-	proc.statGatewayDBW = stats.NewStat("processor.gateway_db_write", stats.CountType)
-	proc.statRouterDBW = stats.NewStat("processor.router_db_write", stats.CountType)
-	proc.statBatchRouterDBW = stats.NewStat("processor.batch_router_db_write", stats.CountType)
-	proc.statActiveUsers = stats.NewStat("processor.active_users", stats.GaugeType)
-	proc.statDBR = stats.NewStat("processor.gateway_db_read_time", stats.TimerType)
-	proc.statDBW = stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
-	proc.statLoopTime = stats.NewStat("processor.loop_time", stats.TimerType)
-	proc.statSessionTransform = stats.NewStat("processor.session_transform_time", stats.TimerType)
-	proc.statUserTransform = stats.NewStat("processor.user_transform_time", stats.TimerType)
-	proc.statDestTransform = stats.NewStat("processor.dest_transform_time", stats.TimerType)
+	proc.statGatewayDBR = monitoring.NewStat("processor.gateway_db_read", monitoring.CountType)
+	proc.statGatewayDBW = monitoring.NewStat("processor.gateway_db_write", monitoring.CountType)
+	proc.statRouterDBW = monitoring.NewStat("processor.router_db_write", monitoring.CountType)
+	proc.statBatchRouterDBW = monitoring.NewStat("processor.batch_router_db_write", monitoring.CountType)
+	proc.statActiveUsers = monitoring.NewStat("processor.active_users", monitoring.GaugeType)
+	proc.statDBR = monitoring.NewStat("processor.gateway_db_read_time", monitoring.TimerType)
+	proc.statDBW = monitoring.NewStat("processor.gateway_db_write_time", monitoring.TimerType)
+	proc.statLoopTime = monitoring.NewStat("processor.loop_time", monitoring.TimerType)
+	proc.statSessionTransform = monitoring.NewStat("processor.session_transform_time", monitoring.TimerType)
+	proc.statUserTransform = monitoring.NewStat("processor.user_transform_time", monitoring.TimerType)
+	proc.statDestTransform = monitoring.NewStat("processor.dest_transform_time", monitoring.TimerType)
 
-	proc.statListSort = stats.NewStat("processor.job_list_sort", stats.TimerType)
-	proc.marshalSingularEvents = stats.NewStat("processor.marshal_singular_events", stats.TimerType)
-	proc.destProcessing = stats.NewStat("processor.dest_processing", stats.TimerType)
+	proc.statListSort = monitoring.NewStat("processor.job_list_sort", monitoring.TimerType)
+	proc.marshalSingularEvents = monitoring.NewStat("processor.marshal_singular_events", monitoring.TimerType)
+	proc.destProcessing = monitoring.NewStat("processor.dest_processing", monitoring.TimerType)
 	proc.destStats = make(map[string]*DestStatT)
 
 	if !isReplayServer {

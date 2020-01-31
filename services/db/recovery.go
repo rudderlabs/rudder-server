@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/alert"
-	"github.com/rudderlabs/rudder-server/services/stats"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 )
 
 const (
@@ -169,7 +169,7 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 		}
 	}
 
-	recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
+	recoveryModeStat := monitoring.NewStat("recovery.mode_normal", monitoring.GaugeType)
 	if recoveryData.Mode != normalMode {
 		if recoveryData.Mode == degradedMode {
 			recoveryModeStat.Gauge(2)

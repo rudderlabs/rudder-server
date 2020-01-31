@@ -16,7 +16,7 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 	"golang.org/x/time/rate"
 )
 
@@ -81,8 +81,8 @@ func countError(errType string) {
 	errorCounts[errType]++
 }
 
-var countStat = stats.NewStat("sink.request_count", stats.CountType)
-var successStat = stats.NewStat("sink.success_count", stats.CountType)
+var countStat = monitoring.NewStat("sink.request_count", monitoring.CountType)
+var successStat = monitoring.NewStat("sink.success_count", monitoring.CountType)
 
 func stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {

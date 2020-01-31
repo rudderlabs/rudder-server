@@ -19,8 +19,8 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 )
 
 const (
@@ -46,13 +46,13 @@ var badJSON *bool
 var badJSONRate *int
 var dupEventsRate *int
 
-var loadStat *stats.RudderStats
-var requestTimeStat *stats.RudderStats
+var loadStat *monitoring.RudderStats
+var requestTimeStat *monitoring.RudderStats
 
 func main() {
 
-	loadStat = stats.NewStat("genload.num_events", stats.CountType)
-	requestTimeStat = stats.NewStat("genload.event_time", stats.TimerType)
+	loadStat = monitoring.NewStat("genload.num_events", monitoring.CountType)
+	requestTimeStat = monitoring.NewStat("genload.event_time", monitoring.TimerType)
 
 	done = make(chan bool)
 

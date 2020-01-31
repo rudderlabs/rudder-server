@@ -41,8 +41,8 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 
 	"github.com/lib/pq"
 	uuid "github.com/satori/go.uuid"
@@ -112,10 +112,10 @@ type HandleT struct {
 	toBackup                      bool
 	jobsFileUploader              filemanager.FileManager
 	jobStatusFileUploader         filemanager.FileManager
-	statTableCount                *stats.RudderStats
-	statNewDSPeriod               *stats.RudderStats
+	statTableCount                *monitoring.RudderStats
+	statNewDSPeriod               *monitoring.RudderStats
 	isStatNewDSPeriodInitialized  bool
-	statDropDSPeriod              *stats.RudderStats
+	statDropDSPeriod              *monitoring.RudderStats
 	isStatDropDSPeriodInitialized bool
 }
 
@@ -222,7 +222,7 @@ var (
 	useJoinForUnprocessed                      bool
 )
 
-var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat, jobsdbQueryTimeStat *stats.RudderStats
+var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat, jobsdbQueryTimeStat *monitoring.RudderStats
 
 // Loads db config and migration related config from config file
 func loadConfig() {
@@ -254,9 +254,9 @@ func loadConfig() {
 func init() {
 	config.Initialize()
 	loadConfig()
-	tableFileDumpTimeStat = stats.NewStat("jobsdb.table_file_dump_time", stats.TimerType)
-	fileUploadTimeStat = stats.NewStat("jobsdb.file_upload_time", stats.TimerType)
-	totalTableDumpTimeStat = stats.NewStat("jobsdb.total_table_dump_time", stats.TimerType)
+	tableFileDumpTimeStat = monitoring.NewStat("jobsdb.table_file_dump_time", monitoring.TimerType)
+	fileUploadTimeStat = monitoring.NewStat("jobsdb.file_upload_time", monitoring.TimerType)
+	totalTableDumpTimeStat = monitoring.NewStat("jobsdb.total_table_dump_time", monitoring.TimerType)
 
 }
 
@@ -301,9 +301,9 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	//Kill any pending queries
 	jd.terminateQueries()
 
-	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
-	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
-	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
+	jd.statTableCount = monitoring.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), monitoring.GaugeType)
+	jd.statNewDSPeriod = monitoring.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), monitoring.TimerType)
+	jd.statDropDSPeriod = monitoring.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), monitoring.TimerType)
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
@@ -520,7 +520,7 @@ Or when the job_status table gets too big because of lot of retries/failures
 */
 
 func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
-	queryStat := stats.NewJobsDBStat("migration_ds_check", stats.TimerType, jd.tablePrefix)
+	queryStat := monitoring.NewJobsDBStat("migration_ds_check", monitoring.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
 	var delCount, totalCount, statusCount int
@@ -645,7 +645,7 @@ func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
 }
 
 func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
-	queryStat := stats.NewJobsDBStat("add_new_ds", stats.TimerType, jd.tablePrefix)
+	queryStat := monitoring.NewJobsDBStat("add_new_ds", monitoring.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
 	//Get the max index
@@ -907,7 +907,7 @@ over. Then the status (only the latest) is set for those jobs
 */
 
 func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
-	queryStat := stats.NewJobsDBStat("migration_jobs", stats.TimerType, jd.tablePrefix)
+	queryStat := monitoring.NewJobsDBStat("migration_jobs", monitoring.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
 	//Unprocessed jobs
@@ -967,7 +967,7 @@ a given dataset. The names should be self explainatory
 */
 
 func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
-	queryStat := stats.NewJobsDBStat("store_jobs", stats.TimerType, jd.tablePrefix)
+	queryStat := monitoring.NewJobsDBStat("store_jobs", monitoring.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1176,7 +1176,7 @@ parameterFilters do a AND query on values included in the map
 */
 func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []string,
 	customValFilters []string, limitCount int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
-	var queryStat *stats.RudderStats
+	var queryStat *monitoring.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
@@ -1184,7 +1184,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	if len(stateFilters) > 0 {
 		statName = statName + stateFilters[0] + "_"
 	}
-	queryStat = stats.NewJobsDBStat(statName+"processed_jobs", stats.TimerType, jd.tablePrefix)
+	queryStat = monitoring.NewJobsDBStat(statName+"processed_jobs", monitoring.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1296,12 +1296,12 @@ parameterFilters do a AND query on values included in the map
 */
 func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	order bool, count int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
-	var queryStat *stats.RudderStats
+	var queryStat *monitoring.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
 	}
-	queryStat = stats.NewJobsDBStat(statName+"unprocessed_jobs", stats.TimerType, jd.tablePrefix)
+	queryStat = monitoring.NewJobsDBStat(statName+"unprocessed_jobs", monitoring.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1472,7 +1472,7 @@ func (jd *HandleT) mainCheckLoop() {
 				break
 			}
 		}
-		migrationLoopStat := stats.NewJobsDBStat("migration_loop", stats.TimerType, jd.tablePrefix)
+		migrationLoopStat := monitoring.NewJobsDBStat("migration_loop", monitoring.TimerType, jd.tablePrefix)
 		migrationLoopStat.Start()
 		//Add a temp DS to append to
 		if len(migrateFrom) > 0 {
@@ -2032,12 +2032,12 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
-	var queryStat *stats.RudderStats
+	var queryStat *monitoring.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
 	}
-	queryStat = stats.NewJobsDBStat(statName+"unprocessed", stats.TimerType, jd.tablePrefix)
+	queryStat = monitoring.NewJobsDBStat(statName+"unprocessed", monitoring.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
 	jd.dsMigrationLock.RLock()
@@ -2078,7 +2078,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
-	var queryStat *stats.RudderStats
+	var queryStat *monitoring.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
@@ -2086,7 +2086,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	if len(stateFilter) > 0 {
 		statName = statName + stateFilter[0] + "_"
 	}
-	queryStat = stats.NewJobsDBStat(statName+"processed", stats.TimerType, jd.tablePrefix)
+	queryStat = monitoring.NewJobsDBStat(statName+"processed", monitoring.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
 	jd.dsMigrationLock.RLock()

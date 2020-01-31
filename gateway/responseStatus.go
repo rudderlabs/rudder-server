@@ -21,6 +21,10 @@ const (
 	InvalidWriteKey = "Invalid Write Key"
 	//InvalidJson - Invalid JSON
 	InvalidJson = "Invalid JSON"
+	//ServerShutdownInProgress - Used when server is in process of shutting down
+	ServerShutdownInProgress = "Server shutting down"
+	//DBPersistFailed - Used when db store causes an error
+	DBPersistFailed = "Request persist to DB failed"
 )
 
 var (
@@ -37,12 +41,14 @@ func loadStatusMap() {
 	statusMap = make(map[string]ResponseStatus)
 	statusMap[Ok] = ResponseStatus{message: Ok, code: http.StatusOK}
 	statusMap[RequestBodyNil] = ResponseStatus{message: RequestBodyNil, code: http.StatusBadRequest}
+	statusMap[DBPersistFailed] = ResponseStatus{message: DBPersistFailed, code: http.StatusBadRequest}
 	statusMap[TooManyRequests] = ResponseStatus{message: TooManyRequests, code: http.StatusTooManyRequests}
 	statusMap[NoWriteKeyInBasicAuth] = ResponseStatus{message: NoWriteKeyInBasicAuth, code: http.StatusUnauthorized}
 	statusMap[RequestBodyReadFailed] = ResponseStatus{message: RequestBodyReadFailed, code: http.StatusBadRequest}
 	statusMap[RequestBodyTooLarge] = ResponseStatus{message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge}
 	statusMap[InvalidWriteKey] = ResponseStatus{message: InvalidWriteKey, code: http.StatusUnauthorized}
 	statusMap[InvalidJson] = ResponseStatus{message: InvalidJson, code: http.StatusBadRequest}
+	statusMap[ServerShutdownInProgress] = ResponseStatus{message: ServerShutdownInProgress, code: http.StatusServiceUnavailable}
 }
 
 func getStatus(key string) string {
