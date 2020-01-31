@@ -202,11 +202,11 @@ var (
 )
 
 var (
-	maxDSSize, maxMigrateOnce, maxTableSizeInMB   int
-	jobDoneMigrateThres, jobStatusMigrateThres    float64
-	mainCheckSleepDuration, newDSCheckDurationInS time.Duration
-	backupCheckSleepDuration                      time.Duration
-	useJoinForUnprocessed                         bool
+	maxDSSize, maxMigrateOnce, maxTableSizeInMB int
+	jobDoneMigrateThres, jobStatusMigrateThres  float64
+	mainCheckSleepDuration                      time.Duration
+	backupCheckSleepDuration                    time.Duration
+	useJoinForUnprocessed                       bool
 )
 
 var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat, jobsdbQueryTimeStat *stats.RudderStats
@@ -233,9 +233,7 @@ func loadConfig() {
 	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	maxTableSizeInMB = config.GetInt("JobsDB.maxTableSizeInMB", 150)
-	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(10)) * time.Second)
-	newDSCheckDurationInS = (config.GetDuration("JobsDB.newDSCheckDurationInS", time.Duration(2)) * time.Second)
-
+	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 }
@@ -326,7 +324,6 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		go jd.backupDSLoop()
 	}
 	go jd.mainCheckLoop()
-	go jd.addLatestDSLoop()
 }
 
 /*
@@ -1400,6 +1397,16 @@ func (jd *HandleT) mainCheckLoop() {
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
 		jd.dsListLock.RUnlock()
+		latestDS := dsList[len(dsList)-1]
+		if jd.checkIfFullDS(latestDS) {
+			//Adding a new DS updates the list
+			//Doesn't move any data so we only
+			//take the list lock
+			jd.dsListLock.Lock()
+			logger.Info("Main check:NewDS")
+			jd.addNewDS(true, dataSetT{})
+			jd.dsListLock.Unlock()
+		}
 
 		//Take the lock and run actual migration
 		jd.dsMigrationLock.Lock()
@@ -1463,26 +1470,6 @@ func (jd *HandleT) mainCheckLoop() {
 		migrationLoopStat.End()
 		jd.dsMigrationLock.Unlock()
 
-	}
-}
-
-func (jd *HandleT) addLatestDSLoop() {
-	for {
-		time.Sleep(newDSCheckDurationInS)
-		logger.Debug("New DS check:Start")
-		jd.dsListLock.RLock()
-		dsList := jd.getDSList(false)
-		jd.dsListLock.RUnlock()
-		latestDS := dsList[len(dsList)-1]
-		if jd.checkIfFullDS(latestDS) {
-			//Adding a new DS updates the list
-			//Doesn't move any data so we only
-			//take the list lock
-			jd.dsListLock.Lock()
-			logger.Info("Main check:NewDS")
-			jd.addNewDS(true, dataSetT{})
-			jd.dsListLock.Unlock()
-		}
 	}
 }
 
