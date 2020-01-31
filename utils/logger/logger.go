@@ -98,6 +98,9 @@ func Error(args ...interface{}) {
 func Fatal(args ...interface{}) {
 	if levelFatal >= level {
 		Log.Error(args...)
+
+		//If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
+		//Else, we are force writing the stacktrace to the file.
 		if !enableStackTrace {
 			byteArr := make([]byte, 2048)
 			n := runtime.Stack(byteArr, false)
@@ -131,8 +134,10 @@ func Errorf(format string, args ...interface{}) {
 func Fatalf(format string, args ...interface{}) {
 	if levelFatal >= level {
 		Log.Errorf(format, args...)
-		if !enableStackTrace {
 
+		//If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
+		//Else, we are force writing the stacktrace to the file.
+		if !enableStackTrace {
 			byteArr := make([]byte, 2048)
 			n := runtime.Stack(byteArr, false)
 			stackTrace := string(byteArr[:n])
