@@ -2,13 +2,12 @@ package logger
 
 import (
 	"bytes"
-	"fmt"
-	"github.com/rudderlabs/rudder-server/config"
-	"go.uber.org/zap"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"runtime"
+
+	"github.com/rudderlabs/rudder-server/config"
+	"go.uber.org/zap"
 )
 
 /*
@@ -98,12 +97,17 @@ func Error(args ...interface{}) {
 // Use this to log errors which crash the application.
 func Fatal(args ...interface{}) {
 	if levelFatal >= level {
-		fmt.Print("FATAL   ")
-		if _, file, lineNo, ok := runtime.Caller(1); ok {
-			dir, _ := os.Getwd()
-			fmt.Print(file[len(dir)+1:]+":", lineNo, "   ")
+		Log.Error(args...)
+
+		//If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
+		//Else, we are force writing the stacktrace to the file.
+		if !enableStackTrace {
+			byteArr := make([]byte, 2048)
+			n := runtime.Stack(byteArr, false)
+			stackTrace := string(byteArr[:n])
+			Log.Error(stackTrace)
 		}
-		fmt.Println(args...)
+		Log.Sync()
 	}
 }
 
@@ -129,14 +133,17 @@ func Errorf(format string, args ...interface{}) {
 // Use this to log errors which crash the application.
 func Fatalf(format string, args ...interface{}) {
 	if levelFatal >= level {
-		if levelFatal >= level {
-			fmt.Print("FATAL   ")
-			if _, file, lineNo, ok := runtime.Caller(1); ok {
-				dir, _ := os.Getwd()
-				fmt.Print(file[len(dir)+1:]+":", lineNo, "   ")
-			}
-			fmt.Println(fmt.Sprintf(format, args...))
+		Log.Errorf(format, args...)
+
+		//If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
+		//Else, we are force writing the stacktrace to the file.
+		if !enableStackTrace {
+			byteArr := make([]byte, 2048)
+			n := runtime.Stack(byteArr, false)
+			stackTrace := string(byteArr[:n])
+			Log.Error(stackTrace)
 		}
+		Log.Sync()
 	}
 }
 
