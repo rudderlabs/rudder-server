@@ -127,6 +127,7 @@ func AssertErrorIfDev(err error) {
 
 	goEnv := os.Getenv("GO_ENV")
 	if goEnv == "production" {
+		logger.Error(err.Error())
 		return
 	}
 

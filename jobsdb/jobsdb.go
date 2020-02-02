@@ -152,6 +152,16 @@ func (jd *HandleT) assertError(err error) {
 	}
 }
 
+func (jd *HandleT) assertErrorIfDev(err error) {
+	goEnv := os.Getenv("GO_ENV")
+	if goEnv == "production" {
+		logger.Error(err.Error())
+		return
+	}
+
+	jd.assertError(err)
+}
+
 func (jd *HandleT) assert(cond bool) {
 	if !cond {
 		debug.SetTraceback("all")
@@ -1655,7 +1665,9 @@ func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 		timestamps[jobID.Int64] = createdAt
 	}
 
-	jd.assert(!timestamps[minID.Int64].After(timestamps[maxID.Int64]))
+	if timestamps[minID.Int64].After(timestamps[maxID.Int64]) {
+		jd.assertErrorIfDev(fmt.Errorf("[JobsDB] Backup minJobID > maxJobID for %s", backupDS.JobTable))
+	}
 
 	backupDSRange = dataSetRangeT{
 		minJobID:  minID.Int64,
