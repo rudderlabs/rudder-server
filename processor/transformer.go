@@ -50,11 +50,14 @@ func (trans *transformerHandleT) transformWorker() {
 		retryCount := 0
 		var resp *http.Response
 		//We should rarely have error communicating with our JS
+		reqFailed := false
+
 		for {
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
 			if err != nil {
-				logger.Errorf("JS HTTP connection error: Status: %v, Error: %v", resp.StatusCode, err)
+				reqFailed = true
+				logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
 				if retryCount > maxRetry {
 					misc.Assert(false)
 				}
@@ -62,6 +65,9 @@ func (trans *transformerHandleT) transformWorker() {
 				time.Sleep(retrySleep)
 				//Refresh the connection
 				continue
+			}
+			if reqFailed {
+				logger.Errorf("Failed request succeeded later: %v", job.url)
 			}
 			break
 		}
