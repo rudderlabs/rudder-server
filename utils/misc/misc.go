@@ -101,13 +101,14 @@ func RecordAppError(err error) {
 	}
 
 	//TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
-	errorStore.Errors = append(errorStore.Errors, 
+	errorStore.Errors = append(errorStore.Errors,
 		RudderError{
-			StartTime: AppStartTime,
+			StartTime:         AppStartTime,
 			ReadableStartTime: fmt.Sprint(time.Unix(AppStartTime, 0)),
-			Message: err.Error(),
-			StackTrace: stackTrace, Code: 101
-	})
+			Message:           err.Error(),
+			StackTrace:        stackTrace,
+			Code:              101,
+		})
 	saveErrorStore(errorStore)
 }
 
