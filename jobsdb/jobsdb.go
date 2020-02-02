@@ -142,7 +142,7 @@ var dbErrorMap = map[string]string{
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
-		debug.SetTraceback("all")
+		// debug.SetTraceback("all")
 		debug.PrintStack()
 		jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
@@ -164,7 +164,7 @@ func (jd *HandleT) assertErrorIfDev(err error) {
 
 func (jd *HandleT) assert(cond bool) {
 	if !cond {
-		debug.SetTraceback("all")
+		// debug.SetTraceback("all")
 		debug.PrintStack()
 		jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
@@ -2170,8 +2170,8 @@ func (jd *HandleT) createTables() error {
 							 parameters JSONB NOT NULL,
                              custom_val INT NOT NULL,
                              event_payload JSONB NOT NULL,
-                             created_at TIMESTAMP NOT NULL,
-                             expire_at TIMESTAMP NOT NULL);`
+                             created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                             expire_at TIMESTAMP NOT NULL DEFAULT NOW());`
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
