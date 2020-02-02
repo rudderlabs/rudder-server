@@ -142,7 +142,7 @@ var dbErrorMap = map[string]string{
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
-		debug.SetTraceback("all")
+		// debug.SetTraceback("all")
 		debug.PrintStack()
 		jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
@@ -164,7 +164,7 @@ func (jd *HandleT) assertErrorIfDev(err error) {
 
 func (jd *HandleT) assert(cond bool) {
 	if !cond {
-		debug.SetTraceback("all")
+		// debug.SetTraceback("all")
 		debug.PrintStack()
 		jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
@@ -319,6 +319,10 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	if len(jd.datasetList) == 0 {
 		jd.addNewDS(true, dataSetT{})
 	}
+
+	// Schema Migration: Created_at column should have a default now()
+	dList := jd.getDSList(false)
+	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
 
 	if jd.toBackup {
 		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
@@ -680,8 +684,8 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 									  parameters JSONB NOT NULL,
                                       custom_val VARCHAR(64) NOT NULL,
                                       event_payload JSONB NOT NULL,
-                                      created_at TIMESTAMP NOT NULL,
-                                      expire_at TIMESTAMP NOT NULL);`, newDS.JobTable)
+                                      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                                      expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, newDS.JobTable)
 
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
@@ -945,8 +949,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 			"event_payload", "created_at", "expire_at"))
 		jd.assertError(err)
 	} else {
-		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "parameters", "custom_val", "event_payload",
-			"created_at", "expire_at"))
+		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "parameters", "custom_val", "event_payload"))
 		jd.assertError(err)
 	}
 
@@ -959,8 +962,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 			_, err = stmt.Exec(job.JobID, job.UUID, job.Parameters, job.CustomVal,
 				string(job.EventPayload), job.CreatedAt, job.ExpireAt)
 		} else {
-			_, err = stmt.Exec(job.UUID, job.Parameters, job.CustomVal, string(job.EventPayload),
-				job.CreatedAt, job.ExpireAt)
+			_, err = stmt.Exec(job.UUID, job.Parameters, job.CustomVal, string(job.EventPayload))
 		}
 		jd.assertError(err)
 	}
@@ -1666,7 +1668,7 @@ func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 	}
 
 	if timestamps[minID.Int64].After(timestamps[maxID.Int64]) {
-		jd.assertErrorIfDev(fmt.Errorf("[JobsDB] Backup minJobID > maxJobID for %s", backupDS.JobTable))
+		jd.assertError(fmt.Errorf("[JobsDB] Backup minJobID > maxJobID for %s", backupDS.JobTable))
 	}
 
 	backupDSRange = dataSetRangeT{
@@ -1697,6 +1699,21 @@ type JournalEntryT struct {
 	OpType    string
 	OpDone    bool
 	OpPayload json.RawMessage
+}
+
+// Remove this after a release
+func (jd *HandleT) setDefaultNowColumns(dsIndex string) {
+
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s_jobs_%s ALTER COLUMN created_at set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
+
+	_, err := jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s_jobs_%s ALTER COLUMN expire_at set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
+
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
 }
 
 func (jd *HandleT) setupJournal() {
@@ -2170,8 +2187,8 @@ func (jd *HandleT) createTables() error {
 							 parameters JSONB NOT NULL,
                              custom_val INT NOT NULL,
                              event_payload JSONB NOT NULL,
-                             created_at TIMESTAMP NOT NULL,
-                             expire_at TIMESTAMP NOT NULL);`
+                             created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                             expire_at TIMESTAMP NOT NULL DEFAULT NOW());`
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 

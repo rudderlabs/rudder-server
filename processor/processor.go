@@ -127,6 +127,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 
 var (
 	loopSleep                           time.Duration
+	maxLoopSleep                        time.Duration
 	dbReadBatchSize                     int
 	transformBatchSize                  int
 	userTransformBatchSize              int
@@ -144,6 +145,7 @@ var (
 
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
+	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
 	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 100000)
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
@@ -745,6 +747,8 @@ func (proc *HandleT) handleReplay(combinedList []*jobsdb.JobT) {
 func (proc *HandleT) mainLoop() {
 
 	logger.Info("Processor loop started")
+	var currSleepTime int64
+
 	for {
 
 		proc.statsDBR.Start()
@@ -761,8 +765,17 @@ func (proc *HandleT) mainLoop() {
 		if len(unprocessedList)+len(retryList) == 0 {
 			logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
 			proc.statsDBR.End(0)
-			time.Sleep(loopSleep)
+
+			currSleepTime = 2*currSleepTime + 1
+			currLoopSleep := time.Duration(currSleepTime) * loopSleep
+			if currLoopSleep > maxLoopSleep {
+				currLoopSleep = maxLoopSleep
+			}
+
+			time.Sleep(currLoopSleep)
 			continue
+		} else {
+			currSleepTime = 0
 		}
 
 		combinedList := append(unprocessedList, retryList...)
