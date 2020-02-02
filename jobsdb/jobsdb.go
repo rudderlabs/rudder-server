@@ -185,10 +185,6 @@ const (
 	InternalState     = "NP"
 )
 
-const (
-	MegaByte = 1000000 // 1MB = 10^6 B
-)
-
 var validJobStates = map[string]bool{
 	InternalState:     false, //False means internal state
 	SucceededState:    true,
@@ -212,11 +208,12 @@ var (
 )
 
 var (
-	maxDSSize, maxMigrateOnce, maxTableSizeInMB int
-	jobDoneMigrateThres, jobStatusMigrateThres  float64
-	mainCheckSleepDuration                      time.Duration
-	backupCheckSleepDuration                    time.Duration
-	useJoinForUnprocessed                       bool
+	maxDSSize, maxMigrateOnce                  int
+	maxTableSize                               int64
+	jobDoneMigrateThres, jobStatusMigrateThres float64
+	mainCheckSleepDuration                     time.Duration
+	backupCheckSleepDuration                   time.Duration
+	useJoinForUnprocessed                      bool
 )
 
 var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat, jobsdbQueryTimeStat *stats.RudderStats
@@ -236,13 +233,13 @@ func loadConfig() {
 			(every few seconds) so a DS may go beyond this size
 	maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
 	mainCheckSleepDuration: How often is the loop (which checks for adding/migrating DS) run
-	maxTableSizeInMB: Maximum Table size in MegaBytes
+	maxTableSizeInMB: Maximum Table size in MB
 	*/
 	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres", 0.8)
 	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres", 5)
 	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
-	maxTableSizeInMB = config.GetInt("JobsDB.maxTableSizeInMB", 250)
+	maxTableSize = (config.GetInt64("JobsDB.maxTableSizeInMB", 300) * 1000000)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
@@ -589,7 +586,7 @@ func (jd *HandleT) getTableSize(jobTable string) int64 {
 func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 
 	tableSize := jd.getTableSize(ds.JobTable)
-	if tableSize > int64(maxTableSizeInMB*MegaByte) {
+	if tableSize > maxTableSize {
 		logger.Infof("[JobsDB] %s is full in size. Size: %v, Count: %v", ds.JobTable, tableSize, jd.getTableRowCount(ds.JobTable))
 		return true
 	}
