@@ -75,7 +75,7 @@ stagingFilesBatchSize = 100
 
 [Processor]
 loopSleepInMS = 10
-dbReadBatchSize = 50000
+dbReadBatchSize = 20000
 transformBatchSize = 100
 userTransformBatchSize = 200
 sessionThresholdEvents = 100

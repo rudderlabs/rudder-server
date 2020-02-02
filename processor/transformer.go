@@ -67,7 +67,7 @@ func (trans *transformerHandleT) transformWorker() {
 				continue
 			}
 			if reqFailed {
-				logger.Errorf("Failed request succeeded later: %v", job.url)
+				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
 			}
 			break
 		}

@@ -758,7 +758,7 @@ func (proc *HandleT) mainLoop() {
 		//Should not have any failure while processing (in v0) so
 		//retryList should be empty. Remove the assert
 		retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
-
+		toQuery -= len(retryList)
 		unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
 
 		proc.statDBR.End()
