@@ -320,6 +320,10 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		jd.addNewDS(true, dataSetT{})
 	}
 
+	// Schema Migration: Created_at column should have a default now()
+	dList := jd.getDSList(false)
+	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
+
 	if jd.toBackup {
 		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
 			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
@@ -680,8 +684,8 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 									  parameters JSONB NOT NULL,
                                       custom_val VARCHAR(64) NOT NULL,
                                       event_payload JSONB NOT NULL,
-                                      created_at TIMESTAMP NOT NULL,
-                                      expire_at TIMESTAMP NOT NULL);`, newDS.JobTable)
+                                      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                                      expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, newDS.JobTable)
 
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
@@ -1666,7 +1670,7 @@ func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 	}
 
 	if timestamps[minID.Int64].After(timestamps[maxID.Int64]) {
-		jd.assertErrorIfDev(fmt.Errorf("[JobsDB] Backup minJobID > maxJobID for %s", backupDS.JobTable))
+		jd.assertError(fmt.Errorf("[JobsDB] Backup minJobID > maxJobID for %s", backupDS.JobTable))
 	}
 
 	backupDSRange = dataSetRangeT{
@@ -1697,6 +1701,21 @@ type JournalEntryT struct {
 	OpType    string
 	OpDone    bool
 	OpPayload json.RawMessage
+}
+
+// Remove this after a release
+func (jd *HandleT) setDefaultNowColumns(dsIndex string) {
+
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s_jobs_%s ALTER COLUMN created_at set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
+
+	_, err := jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s_jobs_%s ALTER COLUMN expire_at set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
+
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
 }
 
 func (jd *HandleT) setupJournal() {
