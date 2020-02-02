@@ -3,12 +3,13 @@ package logger
 import (
 	"bytes"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/config"
-	"go.uber.org/zap"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"runtime"
+
+	"github.com/rudderlabs/rudder-server/config"
+	"go.uber.org/zap"
 )
 
 /*
@@ -110,7 +111,7 @@ func Fatal(args ...interface{}) {
 // Debugf does debug level logging similar to fmt.Printf.
 // Most verbose logging level
 func Debugf(format string, args ...interface{}) {
-	Log.Debug(args...)
+	Log.Debugf(format, args...)
 }
 
 // Infof does info level logging similar to fmt.Printf.

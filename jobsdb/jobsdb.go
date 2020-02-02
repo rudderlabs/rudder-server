@@ -949,8 +949,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 			"event_payload", "created_at", "expire_at"))
 		jd.assertError(err)
 	} else {
-		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "parameters", "custom_val", "event_payload",
-			"created_at", "expire_at"))
+		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "parameters", "custom_val", "event_payload"))
 		jd.assertError(err)
 	}
 
@@ -963,8 +962,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 			_, err = stmt.Exec(job.JobID, job.UUID, job.Parameters, job.CustomVal,
 				string(job.EventPayload), job.CreatedAt, job.ExpireAt)
 		} else {
-			_, err = stmt.Exec(job.UUID, job.Parameters, job.CustomVal, string(job.EventPayload),
-				job.CreatedAt, job.ExpireAt)
+			_, err = stmt.Exec(job.UUID, job.Parameters, job.CustomVal, string(job.EventPayload))
 		}
 		jd.assertError(err)
 	}
