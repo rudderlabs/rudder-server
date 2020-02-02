@@ -242,7 +242,7 @@ func loadConfig() {
 	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres", 5)
 	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
-	maxTableSizeInMB = config.GetInt("JobsDB.maxTableSizeInMB", 150)
+	maxTableSizeInMB = config.GetInt("JobsDB.maxTableSizeInMB", 250)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
@@ -566,25 +566,37 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	return false, totalCount - delCount
 }
 
-func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
+func (jd *HandleT) getTableRowCount(jobTable string) int {
+	var count int
 
+	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, jobTable)
+	row := jd.dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&count)
+	jd.assertError(err)
+	return count
+}
+
+func (jd *HandleT) getTableSize(jobTable string) int64 {
 	var tableSize int64
-	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, ds.JobTable)
+
+	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, jobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&tableSize)
 	jd.assertError(err)
+	return tableSize
+}
+
+func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
+
+	tableSize := jd.getTableSize(ds.JobTable)
 	if tableSize > int64(maxTableSizeInMB*MegaByte) {
-		logger.Infof("[JobsDB] DS %s_jobs_%s is full by size: %v", jd.tablePrefix, ds.Index, tableSize)
+		logger.Infof("[JobsDB] %s is full in size. Size: %v, Count: %v", ds.JobTable, tableSize, jd.getTableRowCount(ds.JobTable))
 		return true
 	}
 
-	var totalCount int
-	sqlStatement = fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ds.JobTable)
-	row = jd.dbHandle.QueryRow(sqlStatement)
-	err = row.Scan(&totalCount)
-	jd.assertError(err)
+	totalCount := jd.getTableRowCount(ds.JobTable)
 	if totalCount > maxDSSize {
-		logger.Infof("[JobsDB] DS %s_jobs_%s is full by row Count: %v", jd.tablePrefix, ds.Index, totalCount)
+		logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, jd.getTableSize(ds.JobTable))
 		return true
 	}
 
