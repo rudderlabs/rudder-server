@@ -574,6 +574,7 @@ func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 	err := row.Scan(&tableSize)
 	jd.assertError(err)
 	if tableSize > int64(maxTableSizeInMB*MegaByte) {
+		logger.Infof("[JobsDB] DS %s_jobs_%s is full by size: %v", jd.tablePrefix, ds.Index, tableSize)
 		return true
 	}
 
@@ -583,6 +584,7 @@ func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 	err = row.Scan(&totalCount)
 	jd.assertError(err)
 	if totalCount > maxDSSize {
+		logger.Infof("[JobsDB] DS %s_jobs_%s is full by row Count: %v", jd.tablePrefix, ds.Index, totalCount)
 		return true
 	}
 
