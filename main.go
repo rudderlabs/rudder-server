@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/bugsnag/bugsnag-go"
-	"github.com/rudderlabs/rudder-server/services/diagnosis"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"net/http"
 	"os"
 	"os/signal"
@@ -193,9 +193,9 @@ func main() {
 
 	logger.Setup()
 	logger.Info("Main starting")
-	if diagnosis.EnableServerStartMetric {
-		diagnosis.Track(diagnosis.ServerStart, map[string]interface{}{
-			diagnosis.ServerStart: time.Now(),
+	if diagnostics.EnableServerStartMetric {
+		diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
+			diagnostics.ServerStart: time.Now(),
 		})
 	}
 	normalMode := flag.Bool("normal-mode", false, "a bool")

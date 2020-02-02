@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/diagnosis"
+	diagnostics "github.com/rudderlabs/rudder-server/services/diagnostics"
 	"io/ioutil"
 	"net/http"
 	"reflect"
@@ -64,7 +64,8 @@ type SourceT struct {
 }
 
 type SourcesT struct {
-	Sources []SourceT `json:"sources"`
+	EnableMetrics bool      `json:"enableMetrics"`
+	Sources       []SourceT `json:"sources"`
 }
 
 type TransformationT struct {
@@ -135,23 +136,23 @@ func init() {
 	loadConfig()
 }
 func trackConfig(preConfig SourcesT, curConfig SourcesT) {
-	if diagnosis.EnableConfigIdentifyMetric {
+	diagnostics.DisableMetrics(curConfig.EnableMetrics)
+	if diagnostics.EnableConfigIdentifyMetric {
 		if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
-			diagnosis.Identify(diagnosis.ConfigIdentify, map[string]interface{}{
-				diagnosis.ConfigIdentify: curConfig.Sources[0].WorkspaceID,
-			},
-			)
+			diagnostics.Identify(map[string]interface{}{
+				diagnostics.ConfigIdentify: curConfig.Sources[0].WorkspaceID,
+			})
 		}
 	}
-	if diagnosis.EnableConfigProcessedMetric {
+	if diagnostics.EnableConfigProcessedMetric {
 		noOfSources := len(curConfig.Sources)
 		noOfDestinations := 0
 		for _, source := range curConfig.Sources {
 			noOfDestinations = noOfDestinations + len(source.Destinations)
 		}
-		diagnosis.Track(diagnosis.ConfigProcessed, map[string]interface{}{
-			diagnosis.SourcesCount:      noOfSources,
-			diagnosis.DesitanationCount: noOfDestinations,
+		diagnostics.Track(diagnostics.ConfigProcessed, map[string]interface{}{
+			diagnostics.SourcesCount:      noOfSources,
+			diagnostics.DesitanationCount: noOfDestinations,
 		})
 	}
 }

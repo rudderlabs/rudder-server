@@ -2,7 +2,7 @@ package gateway
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/diagnosis"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -437,7 +437,7 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 }
 
 func trackRequestMetrics(errorMessage string) {
-	if diagnosis.EnableGatewayMetric {
+	if diagnostics.EnableGatewayMetric {
 		gatewayRequestMetricLock.Lock()
 		defer gatewayRequestMetricLock.Unlock()
 		if errorMessage != "" {
@@ -448,14 +448,14 @@ func trackRequestMetrics(errorMessage string) {
 	}
 }
 func collectMetrics() {
-	if diagnosis.EnableGatewayMetric {
+	if diagnostics.EnableGatewayMetric {
 		for {
 			select {
 			case _ = <-diagnosisTicker.C:
 				gatewayRequestMetricLock.Lock()
-				diagnosis.Track(diagnosis.GatewayEvents, map[string]interface{}{
-					diagnosis.GatewaySuccess: trackSuccessCount,
-					diagnosis.GatewayFailure: trackFailureCount,
+				diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
+					diagnostics.GatewaySuccess: trackSuccessCount,
+					diagnostics.GatewayFailure: trackFailureCount,
 				})
 				trackSuccessCount = 0
 				trackFailureCount = 0
@@ -502,9 +502,9 @@ func (gateway *HandleT) startWebHandler() {
 		AllowCredentials: true,
 		AllowedHeaders:   []string{"*"},
 	})
-	if diagnosis.EnableServerStartedMetric {
-		diagnosis.Track(diagnosis.ServerStarted, map[string]interface{}{
-			diagnosis.ServerStarted: time.Now(),
+	if diagnostics.EnableServerStartedMetric {
+		diagnostics.Track(diagnostics.ServerStarted, map[string]interface{}{
+			diagnostics.ServerStarted: time.Now(),
 		})
 	}
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), c.Handler(bugsnag.Handler(nil))))

@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/diagnosis"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"os"
 	"path/filepath"
 	"strings"
@@ -281,7 +281,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 }
 
 func (brt *HandleT) trackRequestMetric(batchReqDiagnosis batchRequestMetric) {
-	if diagnosis.EnableBatchRouterMetric {
+	if diagnostics.EnableBatchRouterMetric {
 		batchRequestsMetricLock.Lock()
 		if _, ok := batchRequestsMetric[brt.destType]; ok {
 			batchRequestsMetric[brt.destType] = append(batchRequestsMetric[brt.destType], batchReqDiagnosis)
@@ -540,7 +540,7 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
 	misc.AssertError(err)
 }
 func collectMetrics() {
-	if diagnosis.EnableBatchRouterMetric {
+	if diagnostics.EnableBatchRouterMetric {
 		for {
 			select {
 			case _ = <-diagnosisTicker.C:
@@ -556,20 +556,20 @@ func collectMetrics() {
 					if diagnosisProperties == nil {
 						diagnosisProperties = map[string]interface{}{
 							destName: map[string]interface{}{
-								diagnosis.BatchRouterSuccess: success,
-								diagnosis.BatchRouterFailed:  failed,
+								diagnostics.BatchRouterSuccess: success,
+								diagnostics.BatchRouterFailed:  failed,
 							},
 						}
 
 					} else {
 						diagnosisProperties[destName] = map[string]interface{}{
-							diagnosis.BatchRouterSuccess: success,
-							diagnosis.BatchRouterFailed:  failed,
+							diagnostics.BatchRouterSuccess: success,
+							diagnostics.BatchRouterFailed:  failed,
 						}
 					}
 				}
 				if diagnosisProperties != nil {
-					diagnosis.Track(diagnosis.BatchRouterEvents, diagnosisProperties)
+					diagnostics.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
 				}
 
 				batchRequestsMetric = nil

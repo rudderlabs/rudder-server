@@ -1,4 +1,4 @@
-package diagnosis
+package diagnostics
 
 import (
 	"github.com/rudderlabs/analytics-go"
@@ -20,19 +20,17 @@ const (
 	GatewaySuccess      = "gateway_success"
 	GatewayFailure      = "gateway_failure"
 	RouterEvents        = "router_events"
-	RouterType          = "router_type"
 	RouterAborted       = "router_aborted"
 	RouterRetries       = "router_retries"
 	RouterSuccess       = "router_success"
 	RouterCompletedTime = "router_average_job_time"
 	BatchRouterEvents   = "batch_router_events"
-	BatchRouterType     = "batch_router_type"
 	BatchRouterSuccess  = "batch_router_success"
 	BatchRouterFailed   = "batch_router_failed"
 )
 
 var (
-	EnableDiagnosis             bool
+	EnableDiagnostics           bool
 	endpoint                    string
 	writekey                    string
 	EnableServerStartMetric     bool
@@ -44,29 +42,31 @@ var (
 	EnableBatchRouterMetric     bool
 )
 
-var diagnosis Diagnosis
+var diagnostics Diagnostics
 
-type Diagnosis struct {
+type Diagnostics struct {
 	Client     analytics.Client
 	StartTime  time.Time
 	UniqueId   string
+	UserId     string
 	InstanceId string
 }
 
 func init() {
 	config.Initialize()
 	loadConfig()
-	diagnosis.InstanceId = config.GetEnv("INSTANCE_ID", "1")
+	diagnostics.InstanceId = config.GetEnv("INSTANCE_ID", "1")
 	config := analytics.Config{
 		Endpoint: endpoint,
 	}
 	client, _ := analytics.NewWithConfig(writekey, config)
-	diagnosis.Client = client
-	diagnosis.StartTime = time.Now()
-	diagnosis.UniqueId = misc.GetHash(misc.GetMacAddress())
+	diagnostics.Client = client
+	diagnostics.StartTime = time.Now()
+	diagnostics.UniqueId = misc.GetHash(misc.GetMacAddress())
 }
+
 func loadConfig() {
-	EnableDiagnosis = config.GetBool("Diagnosis.enableDiagnosis", true)
+	EnableDiagnostics = config.GetBool("Diagnosis.enableDiagnosis", true)
 	endpoint = config.GetString("Diagnosis.endpoint", "")
 	writekey = config.GetString("Diagnosis.writekey", "")
 	EnableServerStartMetric = config.GetBool("Diagnosis.enableServerStartMetric", true)
@@ -79,28 +79,41 @@ func loadConfig() {
 }
 
 func Track(event string, properties map[string]interface{}) {
-	if EnableDiagnosis {
-		properties[StartTime] = diagnosis.StartTime
-		properties[InstanceId] = diagnosis.InstanceId
-		diagnosis.Client.Enqueue(
+	if EnableDiagnostics {
+		properties[StartTime] = diagnostics.StartTime
+		properties[InstanceId] = diagnostics.InstanceId
+		diagnostics.Client.Enqueue(
 			analytics.Track{
-				Event:      event,
-				Properties: properties,
-				UserId:     diagnosis.UniqueId,
+				Event:       event,
+				Properties:  properties,
+				AnonymousId: diagnostics.UniqueId,
+				UserId:      diagnostics.UserId,
 			},
 		)
 	}
 }
 
-func Identify(event string, properties map[string]interface{}) {
-	if EnableDiagnosis {
-		properties[StartTime] = diagnosis.StartTime
-		properties[InstanceId] = diagnosis.InstanceId
-		diagnosis.Client.Enqueue(
-			analytics.Track{
-				Event:      event,
-				Properties: properties,
-				UserId:     diagnosis.UniqueId,
+func DisableMetrics(enableMetrics bool) {
+	if !enableMetrics {
+		EnableServerStartedMetric = false
+		EnableConfigProcessedMetric = false
+		EnableGatewayMetric = false
+		EnableRouterMetric = false
+		EnableBatchRouterMetric = false
+	}
+
+}
+
+func Identify(properties map[string]interface{}) {
+	if EnableDiagnostics {
+		// add in traits
+		if val, ok := properties[ConfigIdentify]; ok {
+			diagnostics.UserId = val.(string)
+		}
+		diagnostics.Client.Enqueue(
+			analytics.Identify{
+				AnonymousId: diagnostics.UniqueId,
+				UserId:      diagnostics.UserId,
 			},
 		)
 	}

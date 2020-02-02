@@ -2,7 +2,7 @@ package router
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/diagnosis"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"hash/fnv"
 	"math"
 	"math/rand"
@@ -271,7 +271,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 	}
 }
 func (rt *HandleT) trackRequestMetric(reqMetric requestMetric) {
-	if diagnosis.EnableRouterMetric {
+	if diagnostics.EnableRouterMetric {
 		requestsMetricLock.Lock()
 		if _, ok := requestsMetric[rt.destID]; ok {
 			requestsMetric[rt.destID] = append(requestsMetric[rt.destID], reqMetric)
@@ -427,7 +427,7 @@ func (rt *HandleT) statusInsertLoop() {
 }
 
 func collectMetrics() {
-	if diagnosis.EnableRouterMetric {
+	if diagnostics.EnableRouterMetric {
 		for {
 			select {
 			case _ = <-diagnosisTicker.C:
@@ -447,24 +447,24 @@ func collectMetrics() {
 					if diagnosisProperties == nil {
 						diagnosisProperties = map[string]interface{}{
 							destName: map[string]interface{}{
-								diagnosis.RouterAborted:       aborted,
-								diagnosis.RouterRetries:       retries,
-								diagnosis.RouterSuccess:       success,
-								diagnosis.RouterCompletedTime: (compTime / time.Duration(len(reqsMetric))) / time.Millisecond,
+								diagnostics.RouterAborted:       aborted,
+								diagnostics.RouterRetries:       retries,
+								diagnostics.RouterSuccess:       success,
+								diagnostics.RouterCompletedTime: (compTime / time.Duration(len(reqsMetric))) / time.Millisecond,
 							},
 						}
 
 					} else {
 						diagnosisProperties[destName] = map[string]interface{}{
-							diagnosis.RouterAborted:       retries,
-							diagnosis.RouterRetries:       aborted,
-							diagnosis.RouterSuccess:       success,
-							diagnosis.RouterCompletedTime: (compTime / time.Duration(len(reqsMetric))) / time.Millisecond,
+							diagnostics.RouterAborted:       retries,
+							diagnostics.RouterRetries:       aborted,
+							diagnostics.RouterSuccess:       success,
+							diagnostics.RouterCompletedTime: (compTime / time.Duration(len(reqsMetric))) / time.Millisecond,
 						}
 					}
 				}
 				if diagnosisProperties != nil {
-					diagnosis.Track(diagnosis.RouterEvents, diagnosisProperties)
+					diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
 				}
 
 				requestsMetric = nil
