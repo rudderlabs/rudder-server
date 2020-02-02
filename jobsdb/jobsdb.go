@@ -142,6 +142,7 @@ func (jd *HandleT) assertError(err error) {
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify(err)
 		misc.RecordAppError(err)
+		logger.Fatal(err)
 		panic(err)
 	}
 }
@@ -154,6 +155,7 @@ func (jd *HandleT) assert(cond bool) {
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify("Assertion failed")
 		misc.RecordAppError(errors.New("Assertion failed"))
+		logger.Fatal("Assertion failed")
 		panic("Assertion failed")
 	}
 }
@@ -1615,7 +1617,9 @@ func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 		timestamps[jobID.Int64] = createdAt
 	}
 
-	jd.assert(!timestamps[minID.Int64].After(timestamps[maxID.Int64]))
+	if timestamps[minID.Int64].After(timestamps[maxID.Int64]) {
+		misc.AssertErrorIfDev(errors.New("Assertion failed. minJobID has createdAt greater than maxJobID"))
+	}
 
 	backupDSRange = dataSetRangeT{
 		minJobID:  minID.Int64,

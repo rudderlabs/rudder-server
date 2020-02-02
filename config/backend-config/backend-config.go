@@ -123,7 +123,7 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 	body, err := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
-	logger.Debug("ConfigBackend: Successful %s", string(body))
+	logger.Debugf("ConfigBackend: Successful %s", string(body))
 	return body, true
 }
 
