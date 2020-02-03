@@ -25,13 +25,14 @@ type transformMessageT struct {
 
 //HandleT is the handle for this class
 type transformerHandleT struct {
-	requestQ     chan *transformMessageT
-	responseQ    chan *transformMessageT
-	accessLock   sync.Mutex
-	perfStats    *misc.PerfStats
-	sentStat     *stats.RudderStats
-	receivedStat *stats.RudderStats
-	failedStat   *stats.RudderStats
+	requestQ           chan *transformMessageT
+	responseQ          chan *transformMessageT
+	accessLock         sync.Mutex
+	perfStats          *misc.PerfStats
+	sentStat           *stats.RudderStats
+	receivedStat       *stats.RudderStats
+	failedStat         *stats.RudderStats
+	transformTimerStat *stats.RudderStats
 }
 
 var (
@@ -49,11 +50,14 @@ func (trans *transformerHandleT) transformWorker() {
 		retryCount := 0
 		var resp *http.Response
 		//We should rarely have error communicating with our JS
+		reqFailed := false
+
 		for {
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
 			if err != nil {
-				logger.Error("JS HTTP connection error", err)
+				reqFailed = true
+				logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
 				if retryCount > maxRetry {
 					misc.Assert(false)
 				}
@@ -61,6 +65,9 @@ func (trans *transformerHandleT) transformWorker() {
 				time.Sleep(retrySleep)
 				//Refresh the connection
 				continue
+			}
+			if reqFailed {
+				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
 			}
 			break
 		}
@@ -98,6 +105,7 @@ func (trans *transformerHandleT) Setup() {
 	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
 	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
 	trans.failedStat = stats.NewStat("processor.transformer_failed", stats.CountType)
+	trans.transformTimerStat = stats.NewStat("processor.transformation_time", stats.TimerType)
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 	for i := 0; i < numTransformWorker; i++ {
@@ -124,6 +132,8 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
+
+	trans.transformTimerStat.Start()
 
 	var transformResponse = make([]*transformMessageT, 0)
 	//Enqueue all the jobs
@@ -227,6 +237,8 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	trans.receivedStat.Count(len(outClientEvents))
 	trans.perfStats.End(len(clientEvents))
 	trans.perfStats.Print()
+
+	trans.transformTimerStat.End()
 
 	return ResponseT{
 		Events:  outClientEvents,

@@ -101,6 +101,8 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.statRouterDBW = stats.NewStat("processor.router_db_write", stats.CountType)
 	proc.statBatchRouterDBW = stats.NewStat("processor.batch_router_db_write", stats.CountType)
 	proc.statActiveUsers = stats.NewStat("processor.active_users", stats.GaugeType)
+	proc.statDBR = stats.NewStat("processor.gateway_db_read_time", stats.TimerType)
+	proc.statDBW = stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
 
 	if !isReplayServer {
 		proc.replayProcessor = NewReplayProcessor()
@@ -125,6 +127,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 
 var (
 	loopSleep                           time.Duration
+	maxLoopSleep                        time.Duration
 	dbReadBatchSize                     int
 	transformBatchSize                  int
 	userTransformBatchSize              int
@@ -142,6 +145,7 @@ var (
 
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
+	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
 	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 100000)
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
@@ -706,6 +710,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.routerDB.Store(destJobs)
 	proc.batchRouterDB.Store(batchDestJobs)
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
 	proc.statsDBW.End(len(statusList))
 	proc.statsJobs.End(totalEvents)
@@ -742,24 +747,39 @@ func (proc *HandleT) handleReplay(combinedList []*jobsdb.JobT) {
 func (proc *HandleT) mainLoop() {
 
 	logger.Info("Processor loop started")
+	var currSleepTime int64
+
 	for {
 
 		proc.statsDBR.Start()
+		proc.statDBR.Start()
 
 		toQuery := dbReadBatchSize
 		//Should not have any failure while processing (in v0) so
 		//retryList should be empty. Remove the assert
 		retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
-
+		toQuery -= len(retryList)
 		unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
 
+		proc.statDBR.End()
 		if len(unprocessedList)+len(retryList) == 0 {
+			logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
 			proc.statsDBR.End(0)
-			time.Sleep(loopSleep)
+
+			currSleepTime = 2*currSleepTime + 1
+			currLoopSleep := time.Duration(currSleepTime) * loopSleep
+			if currLoopSleep > maxLoopSleep {
+				currLoopSleep = maxLoopSleep
+			}
+
+			time.Sleep(currLoopSleep)
 			continue
+		} else {
+			currSleepTime = 0
 		}
 
 		combinedList := append(unprocessedList, retryList...)
+		logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total: %v", len(retryList), len(unprocessedList), len(combinedList))
 		proc.statsDBR.End(len(combinedList))
 		proc.statGatewayDBR.Count(len(combinedList))
 

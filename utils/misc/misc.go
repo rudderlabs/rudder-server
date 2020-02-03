@@ -39,10 +39,11 @@ type ErrorStoreT struct {
 
 //RudderError : to store rudder error
 type RudderError struct {
-	StartTime  int64
-	Message    string
-	StackTrace string
-	Code       int
+	StartTime         int64
+	ReadableStartTime string
+	Message           string
+	StackTrace        string
+	Code              int
 }
 
 func getErrorStore() (ErrorStoreT, error) {
@@ -100,7 +101,14 @@ func RecordAppError(err error) {
 	}
 
 	//TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
-	errorStore.Errors = append(errorStore.Errors, RudderError{StartTime: AppStartTime, Message: err.Error(), StackTrace: stackTrace, Code: 101})
+	errorStore.Errors = append(errorStore.Errors,
+		RudderError{
+			StartTime:         AppStartTime,
+			ReadableStartTime: fmt.Sprint(time.Unix(AppStartTime, 0)),
+			Message:           err.Error(),
+			StackTrace:        stackTrace,
+			Code:              101,
+		})
 	saveErrorStore(errorStore)
 }
 
@@ -120,6 +128,7 @@ func AssertErrorIfDev(err error) {
 
 	goEnv := os.Getenv("GO_ENV")
 	if goEnv == "production" {
+		logger.Error(err.Error())
 		return
 	}
 
@@ -171,7 +180,6 @@ func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) 
 
 //ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
-	logger.Debug("[Misc: ParseRudderEventBatch] in ParseRudderEventBatch ")
 	var eventListJSON map[string]interface{}
 	err := json.Unmarshal(eventPayload, &eventListJSON)
 	if err != nil {
@@ -481,6 +489,26 @@ func SortedMapKeys(input interface{}) []string {
 	keys := make([]string, 0, len(mapKeys))
 	for _, key := range mapKeys {
 		keys = append(keys, key.String())
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func SortedStructSliceValues(input interface{}, filedName string) []string {
+	items := reflect.ValueOf(input)
+	var keys []string
+	if items.Kind() == reflect.Slice {
+		for i := 0; i < items.Len(); i++ {
+			item := items.Index(i)
+			if item.Kind() == reflect.Struct {
+				v := reflect.Indirect(item)
+				for j := 0; j < v.NumField(); j++ {
+					if v.Type().Field(j).Name == "Name" {
+						keys = append(keys, v.Field(j).String())
+					}
+				}
+			}
+		}
 	}
 	sort.Strings(keys)
 	return keys

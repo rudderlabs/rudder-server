@@ -29,11 +29,13 @@ var (
 	jobQueryBatchSize          int
 	noOfWorkers                int
 	mainLoopSleepInS           int
+	uploadFreq                 int64
 	configSubscriberLock       sync.RWMutex
 	objectStorageDestinations  []string
 	warehouseDestinations      []string
 	inProgressMap              map[string]bool
 	inProgressMapLock          sync.RWMutex
+	lastExecMap                map[string]int64
 	uploadedRawDataJobsCache   map[string]map[string]bool
 	warehouseStagingFilesTable string
 )
@@ -262,8 +264,19 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		statusList = append(statusList, &status)
 	}
 
+	parameterFilters := []jobsdb.ParameterFilterT{
+		jobsdb.ParameterFilterT{
+			Name:  "source_id",
+			Value: batchJobs.BatchDestination.Source.ID,
+		},
+		jobsdb.ParameterFilterT{
+			Name:     "destination_id",
+			Value:    batchJobs.BatchDestination.Destination.ID,
+			Optional: true,
+		},
+	}
 	//Mark the jobs as executing
-	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, map[string]string{"source_id": batchJobs.BatchDestination.Source.ID, "destination_id": batchJobs.BatchDestination.Destination.ID})
+	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 }
 
 func (brt *HandleT) initWorkers() {
@@ -290,6 +303,7 @@ func (brt *HandleT) initWorkers() {
 						output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
 						if output.Error == nil && output.Key != "" {
 							brt.updateWarehouseMetadata(batchJobs, output.Key)
+							warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
 						}
 						brt.setJobStatus(batchJobs, true, output.Error)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
@@ -333,6 +347,14 @@ func setDestInProgress(batchDestination DestinationT, starting bool) {
 	inProgressMapLock.Unlock()
 }
 
+func uploadFrequencyExceeded(batchDestination DestinationT) bool {
+	if lastExecTime, ok := lastExecMap[batchDestination.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreq {
+		return true
+	}
+	lastExecMap[batchDestination.Destination.ID] = time.Now().Unix()
+	return false
+}
+
 func (brt *HandleT) mainLoop() {
 	for {
 		if !brt.isEnabled {
@@ -344,19 +366,41 @@ func (brt *HandleT) mainLoop() {
 			if isDestInProgress(batchDestination) {
 				continue
 			}
+			if uploadFrequencyExceeded(batchDestination) {
+				logger.Debugf("WH: Skipping batch router upload loop since %s:%s upload freq not exceeded", batchDestination.Destination.DestinationDefinition.Name, batchDestination.Destination.ID)
+				continue
+			}
 			setDestInProgress(batchDestination, true)
+
 			toQuery := jobQueryBatchSize
-			retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, map[string]string{"source_id": batchDestination.Source.ID, "destination_id": batchDestination.Destination.ID})
+			parameterFilters := []jobsdb.ParameterFilterT{
+				jobsdb.ParameterFilterT{
+					Name:  "source_id",
+					Value: batchDestination.Source.ID,
+				},
+				jobsdb.ParameterFilterT{
+					Name:     "destination_id",
+					Value:    batchDestination.Destination.ID,
+					Optional: true,
+				},
+			}
+			brtQueryStat := stats.NewStat("batch_router.jobsdb_query_time", stats.TimerType)
+			brtQueryStat.Start()
+
+			retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, parameterFilters)
 			toQuery -= len(retryList)
-			waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, map[string]string{"source_id": batchDestination.Source.ID, "destination_id": batchDestination.Destination.ID}) //Jobs send to waiting state
+			waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, parameterFilters) //Jobs send to waiting state
 			toQuery -= len(waitList)
-			unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, map[string]string{"source_id": batchDestination.Source.ID, "destination_id": batchDestination.Destination.ID})
+			unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, parameterFilters)
+			brtQueryStat.End()
 
 			combinedList := append(waitList, append(unprocessedList, retryList...)...)
 			if len(combinedList) == 0 {
+				logger.Debugf("BRT: DB Read Complete. No BRT Jobs to process.")
 				setDestInProgress(batchDestination, false)
 				continue
 			}
+			logger.Debugf("BRT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", brt.destType, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
 
 			var statusList []*jobsdb.JobStatusT
 
@@ -374,8 +418,19 @@ func (brt *HandleT) mainLoop() {
 				statusList = append(statusList, &status)
 			}
 
+			parameterFilters = []jobsdb.ParameterFilterT{
+				jobsdb.ParameterFilterT{
+					Name:  "source_id",
+					Value: batchDestination.Source.ID,
+				},
+				jobsdb.ParameterFilterT{
+					Name:     "destination_id",
+					Value:    batchDestination.Destination.ID,
+					Optional: true,
+				},
+			}
 			//Mark the jobs as executing
-			brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, map[string]string{"source_id": batchDestination.Source.ID, "destination_id": batchDestination.Destination.ID})
+			brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 			brt.processQ <- BatchJobsT{Jobs: combinedList, BatchDestination: batchDestination}
 		}
 	}
@@ -516,10 +571,12 @@ func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
 	mainLoopSleepInS = config.GetInt("BatchRouter.mainLoopSleepInS", 5)
+	uploadFreq = config.GetInt64("BatchRouter.uploadFreqInS", 30)
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
+	lastExecMap = map[string]int64{}
 }
 
 func init() {

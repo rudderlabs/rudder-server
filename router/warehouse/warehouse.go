@@ -457,6 +457,7 @@ waitForLoadFiles:
 	}
 	warehouseutils.SetStagingFilesStatus(jsonIDs, warehouseutils.StagingFileSucceededState, wh.dbHandle)
 	warehouseutils.DestStat(stats.CountType, "process_staging_files_success", job.Warehouse.Destination.ID).Count(len(job.List))
+	warehouseutils.DestStat(stats.CountType, "generate_load_files", job.Warehouse.Destination.ID).Count(len(loadFileIDs))
 
 	sort.Slice(loadFileIDs, func(i, j int) bool { return loadFileIDs[i] < loadFileIDs[j] })
 	startLoadFileID := loadFileIDs[0]
@@ -509,6 +510,7 @@ func (wh *HandleT) initWorkers() {
 					if err != nil {
 						break
 					}
+					warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.Warehouse.Destination.ID).Count(len(job.List))
 				}
 				setDestInProgress(processStagingFilesJobList[0].Warehouse, false)
 			}
