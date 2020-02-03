@@ -241,8 +241,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, enabledWriteKeysSourceMap[writeKey])),
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
