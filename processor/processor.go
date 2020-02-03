@@ -42,6 +42,7 @@ type HandleT struct {
 	statJobs             *stats.RudderStats
 	statDBR              *stats.RudderStats
 	statDBW              *stats.RudderStats
+	statLoopTime         *stats.RudderStats
 	statSessionTransform *stats.RudderStats
 	statUserTransform    *stats.RudderStats
 	statDestTransform    *stats.RudderStats
@@ -106,6 +107,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.statActiveUsers = stats.NewStat("processor.active_users", stats.GaugeType)
 	proc.statDBR = stats.NewStat("processor.gateway_db_read_time", stats.TimerType)
 	proc.statDBW = stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
+	proc.statLoopTime = stats.NewStat("processor.loop_time", stats.TimerType)
 	proc.statSessionTransform = stats.NewStat("processor.session_transform_time", stats.TimerType)
 	proc.statUserTransform = stats.NewStat("processor.user_transform_time", stats.TimerType)
 	proc.statDestTransform = stats.NewStat("processor.dest_transform_time", stats.TimerType)
@@ -772,6 +774,7 @@ func (proc *HandleT) mainLoop() {
 
 	for {
 
+		proc.statLoopTime.Start()
 		proc.pStatsDBR.Start()
 		proc.statDBR.Start()
 
@@ -834,7 +837,7 @@ func (proc *HandleT) mainLoop() {
 		} else {
 			proc.processJobsForDest(combinedList, nil)
 		}
-
+		proc.statLoopTime.End()
 	}
 }
 

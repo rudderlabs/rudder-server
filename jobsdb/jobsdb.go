@@ -113,6 +113,8 @@ type HandleT struct {
 	jobsFileUploader      filemanager.FileManager
 	jobStatusFileUploader filemanager.FileManager
 	statTableCount        *stats.RudderStats
+	statNewDSPeriod       *stats.RudderStats
+	statDropDSPeriod      *stats.RudderStats
 }
 
 //The struct which is written to the journal
@@ -298,6 +300,8 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.terminateQueries()
 
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
+	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
+	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
@@ -688,7 +692,14 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
 	jd.assertError(err)
 	opID := jd.JournalMarkStart(addDSOperation, opPayload)
-	defer jd.JournalMarkDone(opID)
+	defer func() {
+		jd.JournalMarkDone(opID)
+		if appendLast {
+			// Tracking time interval between new ds creations. Hence calling end before start
+			jd.statNewDSPeriod.End()
+			jd.statNewDSPeriod.Start()
+		}
+	}()
 
 	//Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
@@ -782,6 +793,10 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	}
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
+
+	// Tracking time interval between drop ds operations. Hence calling end before start
+	jd.statDropDSPeriod.End()
+	jd.statDropDSPeriod.Start()
 }
 
 //Rename a dataset
