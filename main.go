@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/bugsnag/bugsnag-go"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/bugsnag/bugsnag-go"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -173,21 +174,14 @@ func printVersion() {
 }
 
 func main() {
-	defer func() {
-		if r := recover(); r != nil {
-			if logger.Log != nil {
-				logger.Log.Sync()
-			}
-			panic(r) // panicing in recover, so bugsnag can handle panics
-		}
-	}()
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),
 		// The import paths for the Go packages containing your source files
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
-		AppType: "rudder-server",
+		AppType:      "rudder-server",
+		PanicHandler: func() {},
 	})
 
 	logger.Setup()
@@ -244,7 +238,7 @@ func main() {
 		}
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
-			logger.Log.Sync()
+			logger.Fatal("SIGTERM called. Process exiting")
 		}
 		os.Exit(1)
 	}()

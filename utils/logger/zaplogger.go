@@ -1,10 +1,11 @@
 package logger
 
 import (
+	"os"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
-	"os"
 )
 
 // getZapLevel gives zapcore log level based on the level in config.toml
@@ -42,7 +43,7 @@ func getEncoderConfig(isJson bool) zapcore.Encoder {
 func configureLogger() *zap.SugaredLogger {
 	var cores []zapcore.Core
 	if enableConsole {
-		writer := zapcore.Lock(os.Stderr)
+		writer := zapcore.Lock(os.Stdout)
 		core := zapcore.NewCore(getEncoderConfig(consoleJsonFormat), writer, getZapLevel(level))
 		cores = append(cores, core)
 	}
