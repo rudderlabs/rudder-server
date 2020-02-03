@@ -36,6 +36,7 @@ var (
 	inProgressMap              map[string]bool
 	inProgressMapLock          sync.RWMutex
 	lastExecMap                map[string]int64
+	lastExecMapLock            sync.RWMutex
 	uploadedRawDataJobsCache   map[string]map[string]bool
 	warehouseStagingFilesTable string
 )
@@ -348,6 +349,8 @@ func setDestInProgress(batchDestination DestinationT, starting bool) {
 }
 
 func uploadFrequencyExceeded(batchDestination DestinationT) bool {
+	lastExecMapLock.Lock()
+	defer lastExecMapLock.Unlock()
 	if lastExecTime, ok := lastExecMap[batchDestination.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreq {
 		return true
 	}
