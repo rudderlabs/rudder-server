@@ -100,21 +100,23 @@ HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
-	dbHandle              *sql.DB
-	tablePrefix           string
-	datasetList           []dataSetT
-	datasetRangeList      []dataSetRangeT
-	dsListLock            sync.RWMutex
-	dsMigrationLock       sync.RWMutex
-	dsRetentionPeriod     time.Duration
-	dsEmptyResultCache    map[dataSetT]map[string]map[string]map[string]bool
-	dsCacheLock           sync.Mutex
-	toBackup              bool
-	jobsFileUploader      filemanager.FileManager
-	jobStatusFileUploader filemanager.FileManager
-	statTableCount        *stats.RudderStats
-	statNewDSPeriod       *stats.RudderStats
-	statDropDSPeriod      *stats.RudderStats
+	dbHandle                      *sql.DB
+	tablePrefix                   string
+	datasetList                   []dataSetT
+	datasetRangeList              []dataSetRangeT
+	dsListLock                    sync.RWMutex
+	dsMigrationLock               sync.RWMutex
+	dsRetentionPeriod             time.Duration
+	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]bool
+	dsCacheLock                   sync.Mutex
+	toBackup                      bool
+	jobsFileUploader              filemanager.FileManager
+	jobStatusFileUploader         filemanager.FileManager
+	statTableCount                *stats.RudderStats
+	statNewDSPeriod               *stats.RudderStats
+	isStatNewDSPeriodInitialized  bool
+	statDropDSPeriod              *stats.RudderStats
+	isStatDropDSPeriodInitialized bool
 }
 
 //The struct which is written to the journal
@@ -696,8 +698,11 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 		jd.JournalMarkDone(opID)
 		if appendLast {
 			// Tracking time interval between new ds creations. Hence calling end before start
-			jd.statNewDSPeriod.End()
+			if jd.isStatNewDSPeriodInitialized {
+				jd.statNewDSPeriod.End()
+			}
 			jd.statNewDSPeriod.Start()
+			jd.isStatNewDSPeriodInitialized = true
 		}
 	}()
 
@@ -795,8 +800,11 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	jd.assertError(err)
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
-	jd.statDropDSPeriod.End()
+	if jd.isStatDropDSPeriodInitialized {
+		jd.statDropDSPeriod.End()
+	}
 	jd.statDropDSPeriod.Start()
+	jd.isStatDropDSPeriodInitialized = true
 }
 
 //Rename a dataset
