@@ -60,7 +60,7 @@ func getErrorStore() (ErrorStoreT, error) {
 	err = json.Unmarshal(data, &errorStore)
 
 	if err != nil {
-		logger.Fatal("Failed to get ErrorStore", err)
+		logger.Fatal("Failed to unmarshall ErrorStore to json", err)
 		return errorStore, err
 	}
 
@@ -111,6 +111,7 @@ func AssertError(err error) {
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		RecordAppError(err)
+		logger.Fatal(err)
 		panic(err)
 	}
 }
@@ -127,6 +128,7 @@ func AssertErrorIfDev(err error) {
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		RecordAppError(err)
+		logger.Fatal(err)
 		panic(err)
 	}
 }
@@ -138,6 +140,7 @@ func Assert(cond bool) {
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		RecordAppError(errors.New("Assertion failed"))
+		logger.Fatal("Assertion failed")
 		panic("Assertion failed")
 	}
 }
