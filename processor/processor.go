@@ -28,10 +28,10 @@ type HandleT struct {
 	routerDB           *jobsdb.HandleT
 	batchRouterDB      *jobsdb.HandleT
 	transformer        *transformerHandleT
-	statsJobs          *misc.PerfStats
-	statsDBR           *misc.PerfStats
+	pStatsJobs         *misc.PerfStats
+	pStatsDBR          *misc.PerfStats
 	statGatewayDBR     *stats.RudderStats
-	statsDBW           *misc.PerfStats
+	pStatsDBW          *misc.PerfStats
 	statGatewayDBW     *stats.RudderStats
 	statRouterDBW      *stats.RudderStats
 	statBatchRouterDBW *stats.RudderStats
@@ -84,17 +84,17 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
 	proc.transformer = &transformerHandleT{}
-	proc.statsJobs = &misc.PerfStats{}
-	proc.statsDBR = &misc.PerfStats{}
-	proc.statsDBW = &misc.PerfStats{}
+	proc.pStatsJobs = &misc.PerfStats{}
+	proc.pStatsDBR = &misc.PerfStats{}
+	proc.pStatsDBW = &misc.PerfStats{}
 	proc.userJobListMap = make(map[string][]*jobsdb.JobT)
 	proc.userEventsMap = make(map[string][]interface{})
 	proc.userPQItemMap = make(map[string]*pqItemT)
 	proc.userToSessionIDMap = make(map[string]string)
 	proc.userJobPQ = make(pqT, 0)
-	proc.statsJobs.Setup("ProcessorJobs")
-	proc.statsDBR.Setup("ProcessorDBRead")
-	proc.statsDBW.Setup("ProcessorDBWrite")
+	proc.pStatsJobs.Setup("ProcessorJobs")
+	proc.pStatsDBR.Setup("ProcessorDBRead")
+	proc.pStatsDBW.Setup("ProcessorDBWrite")
 
 	proc.statGatewayDBR = stats.NewStat("processor.gateway_db_read", stats.CountType)
 	proc.statGatewayDBW = stats.NewStat("processor.gateway_db_write", stats.CountType)
@@ -531,7 +531,7 @@ func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, 
 
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]interface{}) {
 
-	proc.statsJobs.Start()
+	proc.pStatsJobs.Start()
 
 	var destJobs []*jobsdb.JobT
 	var batchDestJobs []*jobsdb.JobT
@@ -705,22 +705,30 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	misc.Assert(len(statusList) == len(jobList))
 
-	proc.statsDBW.Start()
+	proc.statDBW.Start()
+	proc.pStatsDBW.Start()
 	//XX: Need to do this in a transaction
-	proc.routerDB.Store(destJobs)
-	proc.batchRouterDB.Store(batchDestJobs)
+	if len(destJobs) > 0 {
+		proc.routerDB.Store(destJobs)
+	}
+	if len(batchDestJobs) > 0 {
+		proc.batchRouterDB.Store(batchDestJobs)
+	}
+
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	proc.statDBW.End()
+
 	logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
-	proc.statsDBW.End(len(statusList))
-	proc.statsJobs.End(totalEvents)
+	proc.pStatsDBW.End(len(statusList))
+	proc.pStatsJobs.End(totalEvents)
 
 	proc.statGatewayDBW.Count(len(statusList))
 	proc.statRouterDBW.Count(len(destJobs))
 	proc.statBatchRouterDBW.Count(len(batchDestJobs))
 
-	proc.statsJobs.Print()
-	proc.statsDBW.Print()
+	proc.pStatsJobs.Print()
+	proc.pStatsDBW.Print()
 }
 
 /*
@@ -751,7 +759,7 @@ func (proc *HandleT) mainLoop() {
 
 	for {
 
-		proc.statsDBR.Start()
+		proc.pStatsDBR.Start()
 		proc.statDBR.Start()
 
 		toQuery := dbReadBatchSize
@@ -764,7 +772,7 @@ func (proc *HandleT) mainLoop() {
 		proc.statDBR.End()
 		if len(unprocessedList)+len(retryList) == 0 {
 			logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
-			proc.statsDBR.End(0)
+			proc.pStatsDBR.End(0)
 
 			currSleepTime = 2*currSleepTime + 1
 			currLoopSleep := time.Duration(currSleepTime) * loopSleep
@@ -780,10 +788,10 @@ func (proc *HandleT) mainLoop() {
 
 		combinedList := append(unprocessedList, retryList...)
 		logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total: %v", len(retryList), len(unprocessedList), len(combinedList))
-		proc.statsDBR.End(len(combinedList))
+		proc.pStatsDBR.End(len(combinedList))
 		proc.statGatewayDBR.Count(len(combinedList))
 
-		proc.statsDBR.Print()
+		proc.pStatsDBR.Print()
 
 		//Sort by JOBID
 		sort.Slice(combinedList, func(i, j int) bool {
