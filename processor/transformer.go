@@ -43,6 +43,8 @@ var (
 func (trans *transformerHandleT) transformWorker() {
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
+	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
+
 	for job := range trans.requestQ {
 		//Call remote transformation
 		rawJSON, err := json.Marshal(job.data)
@@ -53,9 +55,11 @@ func (trans *transformerHandleT) transformWorker() {
 		reqFailed := false
 
 		for {
+			transformRequestTimerStat.Start()
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
 			if err != nil {
+				transformRequestTimerStat.End()
 				reqFailed = true
 				logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
 				if retryCount > maxRetry {
@@ -69,6 +73,7 @@ func (trans *transformerHandleT) transformWorker() {
 			if reqFailed {
 				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
 			}
+			transformRequestTimerStat.End()
 			break
 		}
 
