@@ -24,28 +24,37 @@ import (
 
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
-	gatewayDB          *jobsdb.HandleT
-	routerDB           *jobsdb.HandleT
-	batchRouterDB      *jobsdb.HandleT
-	transformer        *transformerHandleT
-	statsJobs          *misc.PerfStats
-	statsDBR           *misc.PerfStats
-	statGatewayDBR     *stats.RudderStats
-	statsDBW           *misc.PerfStats
-	statGatewayDBW     *stats.RudderStats
-	statRouterDBW      *stats.RudderStats
-	statBatchRouterDBW *stats.RudderStats
-	statActiveUsers    *stats.RudderStats
-	userJobListMap     map[string][]*jobsdb.JobT
-	userEventsMap      map[string][]interface{}
-	userPQItemMap      map[string]*pqItemT
-	statJobs           *stats.RudderStats
-	statDBR            *stats.RudderStats
-	statDBW            *stats.RudderStats
-	userToSessionIDMap map[string]string
-	userJobPQ          pqT
-	userPQLock         sync.Mutex
-	replayProcessor    *ReplayProcessorT
+	gatewayDB            *jobsdb.HandleT
+	routerDB             *jobsdb.HandleT
+	batchRouterDB        *jobsdb.HandleT
+	transformer          *transformerHandleT
+	pStatsJobs           *misc.PerfStats
+	pStatsDBR            *misc.PerfStats
+	statGatewayDBR       *stats.RudderStats
+	pStatsDBW            *misc.PerfStats
+	statGatewayDBW       *stats.RudderStats
+	statRouterDBW        *stats.RudderStats
+	statBatchRouterDBW   *stats.RudderStats
+	statActiveUsers      *stats.RudderStats
+	userJobListMap       map[string][]*jobsdb.JobT
+	userEventsMap        map[string][]interface{}
+	userPQItemMap        map[string]*pqItemT
+	statJobs             *stats.RudderStats
+	statDBR              *stats.RudderStats
+	statDBW              *stats.RudderStats
+	statLoopTime         *stats.RudderStats
+	statSessionTransform *stats.RudderStats
+	statUserTransform    *stats.RudderStats
+	statDestTransform    *stats.RudderStats
+	stepOne              *stats.RudderStats
+	stepTwo              *stats.RudderStats
+	stepThree            *stats.RudderStats
+	stepFour             *stats.RudderStats
+	stepFive             *stats.RudderStats
+	userToSessionIDMap   map[string]string
+	userJobPQ            pqT
+	userPQLock           sync.Mutex
+	replayProcessor      *ReplayProcessorT
 }
 
 //Print the internal structure
@@ -84,17 +93,17 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
 	proc.transformer = &transformerHandleT{}
-	proc.statsJobs = &misc.PerfStats{}
-	proc.statsDBR = &misc.PerfStats{}
-	proc.statsDBW = &misc.PerfStats{}
+	proc.pStatsJobs = &misc.PerfStats{}
+	proc.pStatsDBR = &misc.PerfStats{}
+	proc.pStatsDBW = &misc.PerfStats{}
 	proc.userJobListMap = make(map[string][]*jobsdb.JobT)
 	proc.userEventsMap = make(map[string][]interface{})
 	proc.userPQItemMap = make(map[string]*pqItemT)
 	proc.userToSessionIDMap = make(map[string]string)
 	proc.userJobPQ = make(pqT, 0)
-	proc.statsJobs.Setup("ProcessorJobs")
-	proc.statsDBR.Setup("ProcessorDBRead")
-	proc.statsDBW.Setup("ProcessorDBWrite")
+	proc.pStatsJobs.Setup("ProcessorJobs")
+	proc.pStatsDBR.Setup("ProcessorDBRead")
+	proc.pStatsDBW.Setup("ProcessorDBWrite")
 
 	proc.statGatewayDBR = stats.NewStat("processor.gateway_db_read", stats.CountType)
 	proc.statGatewayDBW = stats.NewStat("processor.gateway_db_write", stats.CountType)
@@ -103,6 +112,16 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.statActiveUsers = stats.NewStat("processor.active_users", stats.GaugeType)
 	proc.statDBR = stats.NewStat("processor.gateway_db_read_time", stats.TimerType)
 	proc.statDBW = stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
+	proc.statLoopTime = stats.NewStat("processor.loop_time", stats.TimerType)
+	proc.statSessionTransform = stats.NewStat("processor.session_transform_time", stats.TimerType)
+	proc.statUserTransform = stats.NewStat("processor.user_transform_time", stats.TimerType)
+	proc.statDestTransform = stats.NewStat("processor.dest_transform_time", stats.TimerType)
+
+	proc.stepOne = stats.NewStat("processor.step1", stats.TimerType)
+	proc.stepTwo = stats.NewStat("processor.step2", stats.TimerType)
+	proc.stepThree = stats.NewStat("processor.step3", stats.TimerType)
+	proc.stepFour = stats.NewStat("processor.step4", stats.TimerType)
+	proc.stepFive = stats.NewStat("processor.step5", stats.TimerType)
 
 	if !isReplayServer {
 		proc.replayProcessor = NewReplayProcessor()
@@ -531,7 +550,7 @@ func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, 
 
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]interface{}) {
 
-	proc.statsJobs.Start()
+	proc.pStatsJobs.Start()
 
 	var destJobs []*jobsdb.JobT
 	var batchDestJobs []*jobsdb.JobT
@@ -549,6 +568,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//Event count for performance stat monitoring
 	totalEvents := 0
 
+	proc.stepThree.Start()
 	for idx, batchEvent := range jobList {
 
 		var eventList []interface{}
@@ -628,8 +648,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		statusList = append(statusList, &newStatus)
 	}
 
+	proc.stepThree.End()
+
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
+
+	proc.stepFour.Start()
 	logger.Debug("[Processor: processJobsForDest] calling transformations")
 	for destID, destEventList := range eventsByDestID {
 		//Call transform for this destination. Returns
@@ -649,10 +673,14 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				// If processSessions is true, Transform should break into a new batch only when user changes.
 				// This way all the events of a user session are never broken into separate batches
 				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
+				proc.statSessionTransform.Start()
 				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, true)
+				proc.statSessionTransform.End()
 			} else {
 				// We need not worry about breaking up a single user sessions in this case
+				proc.statUserTransform.Start()
 				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, false)
+				proc.statUserTransform.End()
 			}
 			eventsToTransform = response.Events
 			logger.Debug("Custom Transform output size", len(eventsToTransform))
@@ -660,7 +688,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			logger.Debug("No custom transformation")
 			eventsToTransform = destEventList
 		}
+		proc.statDestTransform.Start()
 		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+		proc.statDestTransform.End()
+
 		destTransformEventList := response.Events
 		logger.Debug("Dest Transform output size", len(destTransformEventList))
 		if !response.Success {
@@ -703,24 +734,35 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 	}
 
+	proc.stepFour.End()
+	proc.stepFive.Start()
 	misc.Assert(len(statusList) == len(jobList))
 
-	proc.statsDBW.Start()
+	proc.statDBW.Start()
+	proc.pStatsDBW.Start()
 	//XX: Need to do this in a transaction
-	proc.routerDB.Store(destJobs)
-	proc.batchRouterDB.Store(batchDestJobs)
+	if len(destJobs) > 0 {
+		proc.routerDB.Store(destJobs)
+	}
+	if len(batchDestJobs) > 0 {
+		proc.batchRouterDB.Store(batchDestJobs)
+	}
+
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	proc.statDBW.End()
+
 	logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
-	proc.statsDBW.End(len(statusList))
-	proc.statsJobs.End(totalEvents)
+	proc.pStatsDBW.End(len(statusList))
+	proc.pStatsJobs.End(totalEvents)
 
 	proc.statGatewayDBW.Count(len(statusList))
 	proc.statRouterDBW.Count(len(destJobs))
 	proc.statBatchRouterDBW.Count(len(batchDestJobs))
 
-	proc.statsJobs.Print()
-	proc.statsDBW.Print()
+	proc.pStatsJobs.Print()
+	proc.pStatsDBW.Print()
+	proc.stepFive.End()
 }
 
 /*
@@ -751,8 +793,10 @@ func (proc *HandleT) mainLoop() {
 
 	for {
 
-		proc.statsDBR.Start()
+		proc.statLoopTime.Start()
+		proc.pStatsDBR.Start()
 		proc.statDBR.Start()
+		proc.stepOne.Start()
 
 		toQuery := dbReadBatchSize
 		//Should not have any failure while processing (in v0) so
@@ -764,7 +808,7 @@ func (proc *HandleT) mainLoop() {
 		proc.statDBR.End()
 		if len(unprocessedList)+len(retryList) == 0 {
 			logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
-			proc.statsDBR.End(0)
+			proc.pStatsDBR.End(0)
 
 			currSleepTime = 2*currSleepTime + 1
 			currLoopSleep := time.Duration(currSleepTime) * loopSleep
@@ -777,13 +821,15 @@ func (proc *HandleT) mainLoop() {
 		} else {
 			currSleepTime = 0
 		}
+		proc.stepOne.End()
 
+		proc.stepTwo.Start()
 		combinedList := append(unprocessedList, retryList...)
 		logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total: %v", len(retryList), len(unprocessedList), len(combinedList))
-		proc.statsDBR.End(len(combinedList))
+		proc.pStatsDBR.End(len(combinedList))
 		proc.statGatewayDBR.Count(len(combinedList))
 
-		proc.statsDBR.Print()
+		proc.pStatsDBR.Print()
 
 		//Sort by JOBID
 		sort.Slice(combinedList, func(i, j int) bool {
@@ -792,6 +838,7 @@ func (proc *HandleT) mainLoop() {
 
 		// Need to process minJobID and new destinations at once
 		proc.handleReplay(combinedList)
+		proc.stepTwo.End()
 
 		if processSessions {
 			//Mark all as executing so next query doesn't pick it up
@@ -813,7 +860,7 @@ func (proc *HandleT) mainLoop() {
 		} else {
 			proc.processJobsForDest(combinedList, nil)
 		}
-
+		proc.statLoopTime.End()
 	}
 }
 

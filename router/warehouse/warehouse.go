@@ -595,10 +595,15 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		} else {
 			csvRow := []string{}
 			for _, columnName := range sortedTableColumnMap[tableName] {
-				columnVal, _ := columnData[columnName]
 				if columnName == "uuid_ts" {
 					// add uuid_ts to track when event was processed into load_file
-					columnVal = uuidTS.Format(misc.RFC3339Milli)
+					csvRow = append(csvRow, fmt.Sprintf("%v", uuidTS.Format(misc.RFC3339Milli)))
+					continue
+				}
+				columnVal, ok := columnData[columnName]
+				if !ok {
+					csvRow = append(csvRow, "")
+					continue
 				}
 				if stringVal, ok := columnVal.(string); ok {
 					// handle commas in column values for csv
@@ -611,6 +616,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				columnType, castOk := columns[columnName].(string)
 				if castOk && columnType == "bigint" || columnType == "int" || columnType == "float" {
 					columnVal = columnVal.(float64)
+				}
+				if fmt.Sprintf("%v", columnVal) == "<nil>" {
+					columnVal = ""
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
@@ -784,7 +792,7 @@ func (wh *HandleT) setInterruptedDestinations() (err error) {
 	if !misc.Contains(crashRecoverWarehouses, wh.destType) {
 		return
 	}
-	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND status='%s'`, warehouseUploadsTable, wh.destType, warehouseutils.ExportingDataState)
+	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s')`, warehouseUploadsTable, wh.destType, warehouseutils.ExportingDataState, warehouseutils.ExportingDataFailedState)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	misc.AssertError(err)
 	defer rows.Close()

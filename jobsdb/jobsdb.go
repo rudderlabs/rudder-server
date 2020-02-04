@@ -100,19 +100,23 @@ HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
-	dbHandle              *sql.DB
-	tablePrefix           string
-	datasetList           []dataSetT
-	datasetRangeList      []dataSetRangeT
-	dsListLock            sync.RWMutex
-	dsMigrationLock       sync.RWMutex
-	dsRetentionPeriod     time.Duration
-	dsEmptyResultCache    map[dataSetT]map[string]map[string]map[string]bool
-	dsCacheLock           sync.Mutex
-	toBackup              bool
-	jobsFileUploader      filemanager.FileManager
-	jobStatusFileUploader filemanager.FileManager
-	statTableCount        *stats.RudderStats
+	dbHandle                      *sql.DB
+	tablePrefix                   string
+	datasetList                   []dataSetT
+	datasetRangeList              []dataSetRangeT
+	dsListLock                    sync.RWMutex
+	dsMigrationLock               sync.RWMutex
+	dsRetentionPeriod             time.Duration
+	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]bool
+	dsCacheLock                   sync.Mutex
+	toBackup                      bool
+	jobsFileUploader              filemanager.FileManager
+	jobStatusFileUploader         filemanager.FileManager
+	statTableCount                *stats.RudderStats
+	statNewDSPeriod               *stats.RudderStats
+	isStatNewDSPeriodInitialized  bool
+	statDropDSPeriod              *stats.RudderStats
+	isStatDropDSPeriodInitialized bool
 }
 
 //The struct which is written to the journal
@@ -148,6 +152,7 @@ func (jd *HandleT) assertError(err error) {
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify(err)
 		misc.RecordAppError(err)
+		logger.Fatal(err)
 		panic(err)
 	}
 }
@@ -170,6 +175,7 @@ func (jd *HandleT) assert(cond bool) {
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify("Assertion failed")
 		misc.RecordAppError(errors.New("Assertion failed"))
+		logger.Fatal("Assertion failed")
 		panic("Assertion failed")
 	}
 }
@@ -296,6 +302,8 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.terminateQueries()
 
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
+	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
+	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
@@ -686,7 +694,17 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
 	jd.assertError(err)
 	opID := jd.JournalMarkStart(addDSOperation, opPayload)
-	defer jd.JournalMarkDone(opID)
+	defer func() {
+		jd.JournalMarkDone(opID)
+		if appendLast {
+			// Tracking time interval between new ds creations. Hence calling end before start
+			if jd.isStatNewDSPeriodInitialized {
+				jd.statNewDSPeriod.End()
+			}
+			jd.statNewDSPeriod.Start()
+			jd.isStatNewDSPeriodInitialized = true
+		}
+	}()
 
 	//Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
@@ -780,6 +798,13 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	}
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
+
+	// Tracking time interval between drop ds operations. Hence calling end before start
+	if jd.isStatDropDSPeriodInitialized {
+		jd.statDropDSPeriod.End()
+	}
+	jd.statDropDSPeriod.Start()
+	jd.isStatDropDSPeriodInitialized = true
 }
 
 //Rename a dataset

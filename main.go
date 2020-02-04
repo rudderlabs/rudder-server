@@ -174,14 +174,6 @@ func printVersion() {
 }
 
 func main() {
-	defer func() {
-		if r := recover(); r != nil {
-			if logger.Log != nil {
-				logger.Log.Sync()
-			}
-			panic(r) // panicing in recover, so bugsnag can handle panics
-		}
-	}()
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),
@@ -246,7 +238,7 @@ func main() {
 		}
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
-			logger.Log.Sync()
+			logger.Fatal("SIGTERM called. Process exiting")
 		}
 		os.Exit(1)
 	}()
