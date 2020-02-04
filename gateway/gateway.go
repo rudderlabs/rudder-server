@@ -165,7 +165,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				}
 			}
 
-			if !ok {
+			if !ok || writeKey == "" {
 				req.done <- getStatus(NoWriteKeyInBasicAuth)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
@@ -174,6 +174,12 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if err != nil {
 				req.done <- getStatus(RequestBodyReadFailed)
+				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+				continue
+			}
+			if !gjson.ValidBytes(body) {
+				req.done <- getStatus(InvalidJson)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
