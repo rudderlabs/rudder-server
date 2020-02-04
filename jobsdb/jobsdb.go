@@ -595,7 +595,7 @@ func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 
 	tableSize := jd.getTableSize(ds.JobTable)
 	if tableSize > maxTableSize {
-		logger.Infof("[JobsDB] %s is full in size. Size: %v, Count: %v", ds.JobTable, tableSize, jd.getTableRowCount(ds.JobTable))
+		logger.Infof("[JobsDB] %s is full in size. Count: %v, Size: %v", ds.JobTable, jd.getTableRowCount(ds.JobTable), tableSize)
 		return true
 	}
 
