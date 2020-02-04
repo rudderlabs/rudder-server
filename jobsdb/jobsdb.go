@@ -1662,31 +1662,25 @@ func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 	err := row.Scan(&minID, &maxID)
 	jd.assertError(err)
 
-	jobTimeSQLStatement := fmt.Sprintf(`SELECT job_id, created_at FROM %s WHERE job_id IN (%v, %v)`, backupDS.JobTable, minID.Int64, maxID.Int64)
-	logger.Debug(jobTimeSQLStatement)
-
-	rows, err := jd.dbHandle.Query(jobTimeSQLStatement)
-	defer rows.Close()
-	jd.assertError(err)
-
-	timestamps := map[int64]time.Time{}
-	for rows.Next() {
-		var createdAt time.Time
-		var jobID sql.NullInt64
-		err := rows.Scan(&jobID, &createdAt)
-		jd.assertError(err)
-		timestamps[jobID.Int64] = createdAt
+	if minID.Int64 > maxID.Int64 {
+		jd.assertError(fmt.Errorf("[JobsDB] minID(%d) > maxID(%d) for %s", minID.Int64, maxID.Int64, backupDS.JobTable))
 	}
 
-	if timestamps[minID.Int64].After(timestamps[maxID.Int64]) {
-		jd.assertError(fmt.Errorf("[JobsDB] Backup minJobID > maxJobID for %s", backupDS.JobTable))
+	var minCreatedAt, maxCreatedAt time.Time
+	jobTimeSQLStatement := fmt.Sprintf(`SELECT MIN(created_at), MAX(created_at) FROM %s`, backupDS.JobTable)
+	row = jd.dbHandle.QueryRow(jobTimeSQLStatement)
+	err = row.Scan(&minCreatedAt, &maxCreatedAt)
+	jd.assertError(err)
+
+	if minCreatedAt.After(maxCreatedAt) {
+		jd.assertError(fmt.Errorf("[JobsDB] Backup minCreatedAt(%s) > maxCreatedAt(%s) for %s", minCreatedAt.String(), maxCreatedAt.String(), backupDS.JobTable))
 	}
 
 	backupDSRange = dataSetRangeT{
 		minJobID:  minID.Int64,
 		maxJobID:  maxID.Int64,
-		startTime: timestamps[minID.Int64].UnixNano() / int64(time.Millisecond),
-		endTime:   timestamps[maxID.Int64].UnixNano() / int64(time.Millisecond),
+		startTime: minCreatedAt.UnixNano() / int64(time.Millisecond),
+		endTime:   maxCreatedAt.UnixNano() / int64(time.Millisecond),
 		ds:        backupDS,
 	}
 	return backupDSRange
