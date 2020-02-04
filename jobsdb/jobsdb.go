@@ -286,7 +286,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.assert(tablePrefix != "")
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
-	jd.toBackup = false
+	jd.toBackup = toBackup
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]bool{}
 
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
@@ -593,16 +593,15 @@ func (jd *HandleT) getTableSize(jobTable string) int64 {
 
 func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 
-	totalCount := jd.getTableRowCount(ds.JobTable)
-	logger.Infof("[JobsDB] %v Row Count: %v", ds.JobTable, totalCount)
-	if totalCount > maxDSSize {
-		logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, jd.getTableSize(ds.JobTable))
-		return true
-	}
-
 	tableSize := jd.getTableSize(ds.JobTable)
 	if tableSize > maxTableSize {
 		logger.Infof("[JobsDB] %s is full in size. Size: %v, Count: %v", ds.JobTable, tableSize, jd.getTableRowCount(ds.JobTable))
+		return true
+	}
+
+	totalCount := jd.getTableRowCount(ds.JobTable)
+	if totalCount > maxDSSize {
+		logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, jd.getTableSize(ds.JobTable))
 		return true
 	}
 
@@ -1348,18 +1347,8 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 	}
 
-	if jd.tablePrefix == "batch_rt" {
-		logger.Infof("[JobsDB] Current table: %v rows: %v", ds.JobTable, jd.getTableRowCount(ds.JobTable))
-		logger.Infof("[JobsDB] Table: %v Query: %v", ds.JobTable, sqlStatement)
-		logger.Infof("[JobsDB] Before query: %v", time.Now())
-	}
 	rows, err = jd.dbHandle.Query(sqlStatement)
 	defer rows.Close()
-
-	if jd.tablePrefix == "batch_rt" {
-		logger.Infof("[JobsDB] After Current table: %v rows: %v", ds.JobTable, jd.getTableRowCount(ds.JobTable))
-		logger.Infof("[JobsDB] After query: %v", time.Now())
-	}
 	jd.assertError(err)
 
 	var jobList []*JobT
@@ -1907,7 +1896,7 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 			if jd.toBackup {
 				jd.renameDS(ds, true)
 			} else {
-				jd.renameDS(ds, true)
+				jd.dropDS(ds, true)
 			}
 		}
 		logger.Info("Recovering migrateDel operation", migrateSrc)
