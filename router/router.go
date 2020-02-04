@@ -92,7 +92,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 	eventsDeliveredStat := stats.NewStat(
 		fmt.Sprintf("router.%s_events_delivered", rt.destID), stats.CountType)
 	eventsAbortedStat := stats.NewStat(
-		fmt.Sprintf("router.%s_events_delivered", rt.destID), stats.CountType)
+		fmt.Sprintf("router.%s_events_aborted", rt.destID), stats.CountType)
 
 	for {
 		job := <-worker.channel
