@@ -46,6 +46,11 @@ type HandleT struct {
 	statSessionTransform *stats.RudderStats
 	statUserTransform    *stats.RudderStats
 	statDestTransform    *stats.RudderStats
+	stepOne              *stats.RudderStats
+	stepTwo              *stats.RudderStats
+	stepThree            *stats.RudderStats
+	stepFour             *stats.RudderStats
+	stepFive             *stats.RudderStats
 	userToSessionIDMap   map[string]string
 	userJobPQ            pqT
 	userPQLock           sync.Mutex
@@ -111,6 +116,12 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.statSessionTransform = stats.NewStat("processor.session_transform_time", stats.TimerType)
 	proc.statUserTransform = stats.NewStat("processor.user_transform_time", stats.TimerType)
 	proc.statDestTransform = stats.NewStat("processor.dest_transform_time", stats.TimerType)
+
+	proc.stepOne = stats.NewStat("processor.step1", stats.TimerType)
+	proc.stepTwo = stats.NewStat("processor.step2", stats.TimerType)
+	proc.stepThree = stats.NewStat("processor.step3", stats.TimerType)
+	proc.stepFour = stats.NewStat("processor.step4", stats.TimerType)
+	proc.stepFive = stats.NewStat("processor.step5", stats.TimerType)
 
 	if !isReplayServer {
 		proc.replayProcessor = NewReplayProcessor()
@@ -557,6 +568,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//Event count for performance stat monitoring
 	totalEvents := 0
 
+	proc.stepThree.Start()
 	for idx, batchEvent := range jobList {
 
 		var eventList []interface{}
@@ -636,8 +648,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		statusList = append(statusList, &newStatus)
 	}
 
+	proc.stepThree.End()
+
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
+
+	proc.stepFour.Start()
 	logger.Debug("[Processor: processJobsForDest] calling transformations")
 	for destID, destEventList := range eventsByDestID {
 		//Call transform for this destination. Returns
@@ -718,6 +734,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 	}
 
+	proc.stepFour.End()
+	proc.stepFive.Start()
 	misc.Assert(len(statusList) == len(jobList))
 
 	proc.statDBW.Start()
@@ -744,6 +762,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
+	proc.stepFive.End()
 }
 
 /*
@@ -777,6 +796,7 @@ func (proc *HandleT) mainLoop() {
 		proc.statLoopTime.Start()
 		proc.pStatsDBR.Start()
 		proc.statDBR.Start()
+		proc.stepOne.Start()
 
 		toQuery := dbReadBatchSize
 		//Should not have any failure while processing (in v0) so
@@ -801,7 +821,9 @@ func (proc *HandleT) mainLoop() {
 		} else {
 			currSleepTime = 0
 		}
+		proc.stepOne.End()
 
+		proc.stepTwo.Start()
 		combinedList := append(unprocessedList, retryList...)
 		logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total: %v", len(retryList), len(unprocessedList), len(combinedList))
 		proc.pStatsDBR.End(len(combinedList))
@@ -816,6 +838,7 @@ func (proc *HandleT) mainLoop() {
 
 		// Need to process minJobID and new destinations at once
 		proc.handleReplay(combinedList)
+		proc.stepTwo.End()
 
 		if processSessions {
 			//Mark all as executing so next query doesn't pick it up
