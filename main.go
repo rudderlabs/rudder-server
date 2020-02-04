@@ -190,7 +190,7 @@ func main() {
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
 
-	clearDB := flag.Bool("cleardb", false, "a bool")
+	clearDB := flag.Bool("cleardb", true, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
 	versionFlag := flag.Bool("v", false, "Print the current version and exit")
