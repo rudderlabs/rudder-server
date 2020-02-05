@@ -144,7 +144,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 
 	proc.statListSort = stats.NewStat("processor.job_list_sort", stats.TimerType)
 	proc.marshalSingularEvents = stats.NewStat("processor.marshal_singular_events", stats.TimerType)
-	proc.destProcessing = stats.NewStat("processor.step4", stats.TimerType)
+	proc.destProcessing = stats.NewStat("processor.dest_processing", stats.TimerType)
 	proc.destStats = make(map[string]*DestStatT)
 
 	if !isReplayServer {

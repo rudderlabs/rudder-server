@@ -110,7 +110,7 @@ func NewDestStat(Name string, StatType string, destID string) *RudderStats {
 		StatType:    StatType,
 		DestID:      destID,
 		Client:      destClientsMap[destID],
-		dontProcess: true,
+		dontProcess: false,
 	}
 }
 
