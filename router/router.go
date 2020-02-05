@@ -163,13 +163,13 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 					break
 				}
 				//Wait before the next retry
-				worker.sleepTime = 2*worker.sleepTime + 1 //+1 handles 0 sleepTime
+				worker.sleepTime = 2*worker.sleepTime + 1*time.Second //+1 handles 0 sleepTime
 				if worker.sleepTime > maxSleep {
 					worker.sleepTime = maxSleep
 				}
 				logger.Debugf("[%v Router] :: worker %v sleeping for  %v ",
 					rt.destID, worker.workerID, worker.sleepTime)
-				time.Sleep(worker.sleepTime * time.Second)
+				time.Sleep(worker.sleepTime)
 				continue
 			} else {
 				atomic.AddUint64(&rt.successCount, 1)
