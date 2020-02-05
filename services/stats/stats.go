@@ -2,11 +2,12 @@ package stats
 
 import (
 	"fmt"
+	"sync"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"gopkg.in/alexcesaro/statsd.v2"
-	"sync"
 )
 
 const (
@@ -17,6 +18,7 @@ const (
 
 var client *statsd.Client
 var writeKeyClientsMap = make(map[string]*statsd.Client)
+var batchDestClientsMap = make(map[string]*statsd.Client)
 var destClientsMap = make(map[string]*statsd.Client)
 var jobsdbClientsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
@@ -24,6 +26,7 @@ var statsdServerURL string
 var instanceID string
 var conn statsd.Option
 var writeKeyClientsMapLock sync.Mutex
+var batchDestClientsMapLock sync.Mutex
 var destClientsMapLock sync.Mutex
 var jobsdbClientsMapLock sync.Mutex
 
@@ -75,6 +78,24 @@ func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *Rud
 }
 
 func NewBatchDestStat(Name string, StatType string, destID string) *RudderStats {
+	batchDestClientsMapLock.Lock()
+	defer batchDestClientsMapLock.Unlock()
+	if _, found := batchDestClientsMap[destID]; !found {
+		var err error
+		batchDestClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destID", destID))
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+	return &RudderStats{
+		Name:     Name,
+		StatType: StatType,
+		DestID:   destID,
+		Client:   batchDestClientsMap[destID],
+	}
+}
+
+func NewDestStat(Name string, StatType string, destID string) *RudderStats {
 	destClientsMapLock.Lock()
 	defer destClientsMapLock.Unlock()
 	if _, found := destClientsMap[destID]; !found {
@@ -85,10 +106,11 @@ func NewBatchDestStat(Name string, StatType string, destID string) *RudderStats 
 		}
 	}
 	return &RudderStats{
-		Name:     Name,
-		StatType: StatType,
-		DestID:   destID,
-		Client:   destClientsMap[destID],
+		Name:        Name,
+		StatType:    StatType,
+		DestID:      destID,
+		Client:      destClientsMap[destID],
+		dontProcess: true,
 	}
 }
 
@@ -111,7 +133,7 @@ func NewJobsDBStat(Name string, StatType string, customVal string) *RudderStats 
 }
 
 func (rStats *RudderStats) Count(n int) {
-	if !statsEnabled {
+	if !statsEnabled || rStats.dontProcess {
 		return
 	}
 	misc.Assert(rStats.StatType == CountType)
@@ -119,7 +141,7 @@ func (rStats *RudderStats) Count(n int) {
 }
 
 func (rStats *RudderStats) Increment() {
-	if !statsEnabled {
+	if !statsEnabled || rStats.dontProcess {
 		return
 	}
 	misc.Assert(rStats.StatType == CountType)
@@ -127,7 +149,7 @@ func (rStats *RudderStats) Increment() {
 }
 
 func (rStats *RudderStats) Gauge(value interface{}) {
-	if !statsEnabled {
+	if !statsEnabled || rStats.dontProcess {
 		return
 	}
 	misc.Assert(rStats.StatType == GaugeType)
@@ -135,7 +157,7 @@ func (rStats *RudderStats) Gauge(value interface{}) {
 }
 
 func (rStats *RudderStats) Start() {
-	if !statsEnabled {
+	if !statsEnabled || rStats.dontProcess {
 		return
 	}
 	misc.Assert(rStats.StatType == TimerType)
@@ -143,7 +165,7 @@ func (rStats *RudderStats) Start() {
 }
 
 func (rStats *RudderStats) End() {
-	if !statsEnabled {
+	if !statsEnabled || rStats.dontProcess {
 		return
 	}
 	misc.Assert(rStats.StatType == TimerType)
@@ -151,17 +173,18 @@ func (rStats *RudderStats) End() {
 }
 
 func (rStats *RudderStats) DeferredTimer() {
-	if !statsEnabled {
+	if !statsEnabled || rStats.dontProcess {
 		return
 	}
 	rStats.Client.NewTiming().Send(rStats.Name)
 }
 
 type RudderStats struct {
-	Name     string
-	StatType string
-	Timing   statsd.Timing
-	writeKey string
-	DestID   string
-	Client   *statsd.Client
+	Name        string
+	StatType    string
+	Timing      statsd.Timing
+	writeKey    string
+	DestID      string
+	Client      *statsd.Client
+	dontProcess bool
 }

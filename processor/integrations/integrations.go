@@ -24,14 +24,6 @@ func loadConfig() {
 	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
 }
 
-//destJSTransformerMap keeps a mapping between the destinationID and
-//the NodeJS URL end point where the transformation function is hosted
-//This should be coming from the config when that's ready
-var destJSTransformerMap = map[string]string{
-	"GA": "/v0/ga",
-	"AM": "/v0/amplitude",
-}
-
 const (
 	//PostDataKV means post data is sent as KV
 	PostDataKV = iota + 1
