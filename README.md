@@ -41,9 +41,6 @@ See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion a
 ## Events Page
 ![image](https://user-images.githubusercontent.com/52487451/65647230-e2937c80-dfb2-11e9-88bd-3b015c4b576f.png)
 
-## Stats Page
-![image](https://user-images.githubusercontent.com/52487451/65647158-a2cc9500-dfb2-11e9-8397-d2642f0b8801.png)
-
 
 # Setup Instructions (Hosted Demo Account)
 
