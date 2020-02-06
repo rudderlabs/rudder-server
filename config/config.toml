@@ -2,7 +2,7 @@
 # Dont set secrets, passwords, api_keys etc. in this file. Use '.env' file for that
 
 maxProcess = 12 # Max number of cpu process to be used by go runtime
-gwDBRetention = 0
+gwDBRetentionInHr = 0
 routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
@@ -75,6 +75,7 @@ stagingFilesBatchSize = 240
 
 [Processor]
 loopSleepInMS = 10
+maxLoopSleepInMS = 5000
 dbReadBatchSize = 20000
 transformBatchSize = 100
 userTransformBatchSize = 200
