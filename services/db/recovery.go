@@ -161,6 +161,7 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 		nextMode := getNextMode(recoveryData.Mode)
 		if nextMode == "" {
 			logger.Fatal("Threshold reached for maintenance mode")
+			panic("Not a valid mode")
 		} else {
 			recoveryData.Mode = nextMode
 			recoveryHandler = NewRecoveryHandler(&recoveryData)
