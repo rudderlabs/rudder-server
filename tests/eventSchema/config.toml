@@ -31,7 +31,7 @@ enableBackup = false
 [Router]
 jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
-readSleepInMS = 10
+readSleepInMS = 1000
 noOfWorkers = 8
 noOfJobsPerChannel = 1000
 ser = 3
