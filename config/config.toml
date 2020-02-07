@@ -72,6 +72,7 @@ schemasTable = "wh_schemas"
 uploadFreqInS = 1800
 noOfWorkers = 8
 mainLoopSleepInS = 60
+maxRetry = 3
 stagingFilesBatchSize = 240
 
 [Processor]
