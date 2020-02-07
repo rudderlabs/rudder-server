@@ -1684,19 +1684,11 @@ func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 	err := row.Scan(&minID, &maxID)
 	jd.assertError(err)
 
-	if minID.Int64 > maxID.Int64 {
-		jd.assertError(fmt.Errorf("[JobsDB] minID(%d) > maxID(%d) for %s", minID.Int64, maxID.Int64, backupDS.JobTable))
-	}
-
 	var minCreatedAt, maxCreatedAt time.Time
 	jobTimeSQLStatement := fmt.Sprintf(`SELECT MIN(created_at), MAX(created_at) FROM %s`, backupDS.JobTable)
 	row = jd.dbHandle.QueryRow(jobTimeSQLStatement)
 	err = row.Scan(&minCreatedAt, &maxCreatedAt)
 	jd.assertError(err)
-
-	if minCreatedAt.After(maxCreatedAt) {
-		jd.assertError(fmt.Errorf("[JobsDB] Backup minCreatedAt(%s) > maxCreatedAt(%s) for %s", minCreatedAt.String(), maxCreatedAt.String(), backupDS.JobTable))
-	}
 
 	backupDSRange = dataSetRangeT{
 		minJobID:  minID.Int64,
