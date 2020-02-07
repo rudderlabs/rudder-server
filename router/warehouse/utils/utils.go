@@ -164,7 +164,7 @@ func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error
 }
 
 func SetUploadError(upload UploadT, statusError error, state string, dbHandle *sql.DB) (err error) {
-	logger.Errorf("WH: Failed during %s stage: %v", ExportedDataState, statusError.Error())
+	logger.Errorf("WH: Failed during %s stage: %v\n", state, statusError.Error())
 	SetUploadStatus(upload, ExportingDataFailedState, dbHandle)
 	var e map[string]map[string]interface{}
 	json.Unmarshal(upload.Error, &e)

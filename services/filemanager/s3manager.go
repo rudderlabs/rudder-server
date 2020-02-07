@@ -62,6 +62,10 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 }
 
 func (manager *S3Manager) Download(output *os.File, key string) error {
+	if manager.Config.Bucket == "" {
+		return errors.New("no storage bucket configured to downloader")
+	}
+
 	getRegionSession := session.Must(session.NewSession())
 	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
 

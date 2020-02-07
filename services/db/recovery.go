@@ -32,10 +32,13 @@ var CurrentMode string = normalMode // default mode
 
 // RecoveryDataT : DS to store the recovery process data
 type RecoveryDataT struct {
-	StartTimes                []int64
-	DegradedModeStartTimes    []int64
-	MaintenanceModeStartTimes []int64
-	Mode                      string
+	StartTimes                        []int64
+	ReadableStartTimes                []string
+	DegradedModeStartTimes            []int64
+	ReadableDegradedModeStartTimes    []string
+	MaintenanceModeStartTimes         []int64
+	ReadableMaintenanceModeStartTimes []string
+	Mode                              string
 }
 
 func getRecoveryData() RecoveryDataT {
@@ -158,6 +161,7 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 		nextMode := getNextMode(recoveryData.Mode)
 		if nextMode == "" {
 			logger.Fatal("Threshold reached for maintenance mode")
+			panic("Not a valid mode")
 		} else {
 			recoveryData.Mode = nextMode
 			recoveryHandler = NewRecoveryHandler(&recoveryData)

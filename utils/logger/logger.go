@@ -114,7 +114,7 @@ func Fatal(args ...interface{}) {
 // Debugf does debug level logging similar to fmt.Printf.
 // Most verbose logging level
 func Debugf(format string, args ...interface{}) {
-	Log.Debug(args...)
+	Log.Debugf(format, args...)
 }
 
 // Infof does info level logging similar to fmt.Printf.

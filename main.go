@@ -47,7 +47,7 @@ var major, minor, commit, buildDate, builtBy, gitURL, patch string
 
 func loadConfig() {
 	maxProcess = config.GetInt("maxProcess", 12)
-	gwDBRetention = config.GetDuration("gwDBRetention", time.Duration(1)) * time.Hour
+	gwDBRetention = config.GetDuration("gwDBRetentionInHr", 0) * time.Hour
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
@@ -80,7 +80,6 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 
 	for {
 		config := <-ch
-		logger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
@@ -96,7 +95,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 								brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
 								dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 							} else {
-								logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
+								logger.Debug("Enabling existing Destination", destination.DestinationDefinition.Name)
 								brt.Enable()
 							}
 							if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
@@ -107,7 +106,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 									wh.Setup(destination.DestinationDefinition.Name)
 									dstToWhRouter[destination.DestinationDefinition.Name] = &wh
 								} else {
-									logger.Info("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+									logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
 									wh.Enable()
 								}
 							}
@@ -119,7 +118,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 								router.Setup(routerDB, destination.DestinationDefinition.Name)
 								dstToRouter[destination.DestinationDefinition.Name] = &router
 							} else {
-								logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
+								logger.Debug("Enabling existing Destination", destination.DestinationDefinition.Name)
 								rt.Enable()
 							}
 						}
@@ -180,7 +179,8 @@ func main() {
 		// The import paths for the Go packages containing your source files
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
-		AppType: "rudder-server",
+		AppType:      "rudder-server",
+		PanicHandler: func() {},
 	})
 
 	logger.Setup()

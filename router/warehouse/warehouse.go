@@ -32,8 +32,8 @@ import (
 var (
 	jobQueryBatchSize          int
 	noOfWorkers                int
-	uploadFreq                 int64
-	mainLoopSleepInS           int
+	uploadFreqInS              int64
+	mainLoopSleep              time.Duration
 	stagingFilesBatchSize      int
 	configSubscriberLock       sync.RWMutex
 	availableWarehouses        []string
@@ -88,14 +88,14 @@ func init() {
 
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
-	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 1)
-	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 100)
-	uploadFreq = config.GetInt64("Warehouse.uploadFreqInS", 1800)
+	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
+	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
+	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
 	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
-	mainLoopSleepInS = config.GetInt("Warehouse.mainLoopSleepInS", 5)
+	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 60) * time.Second
 	availableWarehouses = []string{"RS", "BQ"}
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
@@ -281,7 +281,7 @@ func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 }
 
 func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT) bool {
-	if lastExecTime, ok := lastExecMap[warehouse.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreq {
+	if lastExecTime, ok := lastExecMap[warehouse.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
 		return true
 	}
 	lastExecMap[warehouse.Destination.ID] = time.Now().Unix()
@@ -308,7 +308,7 @@ func NewWhManager(destType string) (WarehouseManager, error) {
 func (wh *HandleT) mainLoop() {
 	for {
 		if !wh.isEnabled {
-			time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
+			time.Sleep(mainLoopSleep)
 			continue
 		}
 		for _, warehouse := range wh.warehouses {
@@ -390,7 +390,7 @@ func (wh *HandleT) mainLoop() {
 				wh.uploadToWarehouseQ <- jobs
 			}
 		}
-		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
+		time.Sleep(mainLoopSleep)
 	}
 }
 
@@ -457,6 +457,7 @@ waitForLoadFiles:
 	}
 	warehouseutils.SetStagingFilesStatus(jsonIDs, warehouseutils.StagingFileSucceededState, wh.dbHandle)
 	warehouseutils.DestStat(stats.CountType, "process_staging_files_success", job.Warehouse.Destination.ID).Count(len(job.List))
+	warehouseutils.DestStat(stats.CountType, "generate_load_files", job.Warehouse.Destination.ID).Count(len(loadFileIDs))
 
 	sort.Slice(loadFileIDs, func(i, j int) bool { return loadFileIDs[i] < loadFileIDs[j] })
 	startLoadFileID := loadFileIDs[0]
@@ -509,6 +510,7 @@ func (wh *HandleT) initWorkers() {
 					if err != nil {
 						break
 					}
+					warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.Warehouse.Destination.ID).Count(len(job.List))
 				}
 				setDestInProgress(processStagingFilesJobList[0].Warehouse, false)
 			}
@@ -593,10 +595,15 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		} else {
 			csvRow := []string{}
 			for _, columnName := range sortedTableColumnMap[tableName] {
-				columnVal, _ := columnData[columnName]
 				if columnName == "uuid_ts" {
 					// add uuid_ts to track when event was processed into load_file
-					columnVal = uuidTS.Format(misc.RFC3339Milli)
+					csvRow = append(csvRow, fmt.Sprintf("%v", uuidTS.Format(misc.RFC3339Milli)))
+					continue
+				}
+				columnVal, ok := columnData[columnName]
+				if !ok {
+					csvRow = append(csvRow, "")
+					continue
 				}
 				if stringVal, ok := columnVal.(string); ok {
 					// handle commas in column values for csv
@@ -609,6 +616,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				columnType, castOk := columns[columnName].(string)
 				if castOk && columnType == "bigint" || columnType == "int" || columnType == "float" {
 					columnVal = columnVal.(float64)
+				}
+				if fmt.Sprintf("%v", columnVal) == "<nil>" {
+					columnVal = ""
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
@@ -782,7 +792,7 @@ func (wh *HandleT) setInterruptedDestinations() (err error) {
 	if !misc.Contains(crashRecoverWarehouses, wh.destType) {
 		return
 	}
-	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND status='%s'`, warehouseUploadsTable, wh.destType, warehouseutils.ExportingDataState)
+	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s')`, warehouseUploadsTable, wh.destType, warehouseutils.ExportingDataState, warehouseutils.ExportingDataFailedState)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	misc.AssertError(err)
 	defer rows.Close()

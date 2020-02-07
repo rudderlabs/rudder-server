@@ -165,7 +165,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				}
 			}
 
-			if !ok {
+			if !ok || writeKey == "" {
 				req.done <- getStatus(NoWriteKeyInBasicAuth)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
@@ -174,6 +174,12 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if err != nil {
 				req.done <- getStatus(RequestBodyReadFailed)
+				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+				continue
+			}
+			if !gjson.ValidBytes(body) {
+				req.done <- getStatus(InvalidJson)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
@@ -241,8 +247,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, enabledWriteKeysSourceMap[writeKey])),
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}

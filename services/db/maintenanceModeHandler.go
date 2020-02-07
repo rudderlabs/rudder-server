@@ -56,6 +56,8 @@ func replaceDB() {
 func (handler *MaintenanceModeHandler) RecordAppStart(currTime int64) {
 	handler.recoveryData.MaintenanceModeStartTimes =
 		append(handler.recoveryData.MaintenanceModeStartTimes, currTime)
+	handler.recoveryData.ReadableMaintenanceModeStartTimes = append(handler.recoveryData.ReadableMaintenanceModeStartTimes, fmt.Sprint(time.Unix(currTime, 0)))
+
 }
 
 func (handler *MaintenanceModeHandler) HasThresholdReached() bool {
