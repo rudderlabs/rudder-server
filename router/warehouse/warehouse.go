@@ -32,8 +32,8 @@ import (
 var (
 	jobQueryBatchSize          int
 	noOfWorkers                int
-	uploadFreq                 int64
-	mainLoopSleepInS           int
+	uploadFreqInS              int64
+	mainLoopSleep              time.Duration
 	stagingFilesBatchSize      int
 	configSubscriberLock       sync.RWMutex
 	availableWarehouses        []string
@@ -88,14 +88,14 @@ func init() {
 
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
-	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 1)
-	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 100)
-	uploadFreq = config.GetInt64("Warehouse.uploadFreqInS", 1800)
+	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
+	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
+	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
 	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
-	mainLoopSleepInS = config.GetInt("Warehouse.mainLoopSleepInS", 5)
+	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 60) * time.Second
 	availableWarehouses = []string{"RS", "BQ"}
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
@@ -281,7 +281,7 @@ func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 }
 
 func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT) bool {
-	if lastExecTime, ok := lastExecMap[warehouse.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreq {
+	if lastExecTime, ok := lastExecMap[warehouse.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
 		return true
 	}
 	lastExecMap[warehouse.Destination.ID] = time.Now().Unix()
@@ -308,7 +308,7 @@ func NewWhManager(destType string) (WarehouseManager, error) {
 func (wh *HandleT) mainLoop() {
 	for {
 		if !wh.isEnabled {
-			time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
+			time.Sleep(mainLoopSleep)
 			continue
 		}
 		for _, warehouse := range wh.warehouses {
@@ -390,7 +390,7 @@ func (wh *HandleT) mainLoop() {
 				wh.uploadToWarehouseQ <- jobs
 			}
 		}
-		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
+		time.Sleep(mainLoopSleep)
 	}
 }
 
