@@ -1102,13 +1102,12 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 			jd.dsEmptyResultCache[ds][cVal] = map[string]map[string]bool{}
 		}
 
-		pVal := ""
-		for idx, key := range misc.SortedStructSliceValues(parameterFilters, "Name") {
-			if idx > 0 {
-				pVal += "_"
-			}
-			pVal += fmt.Sprintf(`%s_%s`, key, parameterFilters[idx].Name)
+		pVals := []string{}
+		for _, parameterFilter := range parameterFilters {
+			pVals = append(pVals, fmt.Sprintf(`%s_%s`, parameterFilter.Name, parameterFilter.Value))
 		}
+		sort.Strings(pVals)
+		pVal := strings.Join(pVals, "_")
 
 		_, ok = jd.dsEmptyResultCache[ds][cVal][pVal]
 		if !ok {
@@ -1146,13 +1145,12 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 			return false
 		}
 
-		pVal := ""
-		for idx, key := range misc.SortedStructSliceValues(parameterFilters, "Name") {
-			if idx > 0 {
-				pVal += "_"
-			}
-			pVal += fmt.Sprintf(`%s_%s`, key, parameterFilters[idx].Name)
+		pVals := []string{}
+		for _, parameterFilter := range parameterFilters {
+			pVals = append(pVals, fmt.Sprintf(`%s_%s`, parameterFilter.Name, parameterFilter.Value))
 		}
+		sort.Strings(pVals)
+		pVal := strings.Join(pVals, "_")
 
 		_, ok = jd.dsEmptyResultCache[ds][cVal][pVal]
 		if !ok {
@@ -1998,7 +1996,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		jd.assert(len(dsRangeList) == len(dsList)-1)
 		//Update status in the last element
 		logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
-		err := jd.updateJobStatusDS(dsList[len(dsList)-1], statusList[lastPos:], customValFilters, nil)
+		err := jd.updateJobStatusDS(dsList[len(dsList)-1], statusList[lastPos:], customValFilters, parameterFilters)
 		jd.assertError(err)
 	}
 
