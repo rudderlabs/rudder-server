@@ -62,7 +62,7 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 func (rs *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sortKeyField := "received_at"
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) SORTKEY(%s)`, name, columnsWithDataTypes(columns, ""), sortKeyField)
-	logger.Infof("Creating table in redshift for RS:%s : %v\n", rs.Warehouse.Destination.ID, sqlStatement)
+	logger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -79,14 +79,14 @@ func (rs *HandleT) tableExists(tableName string) (exists bool, err error) {
 
 func (rs *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType])
-	logger.Infof("Adding column in redshift for RS:%s : %v\n", rs.Warehouse.Destination.ID, sqlStatement)
+	logger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
 
 func (rs *HandleT) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, rs.Namespace)
-	logger.Infof("Creating schemaname in redshift for RS:%s : %v\n", rs.Warehouse.Destination.ID, sqlStatement)
+	logger.Infof("Creating schemaname in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -161,7 +161,7 @@ func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[
 	for _, location := range csvS3Locations {
 		manifest.Entries = append(manifest.Entries, S3ManifestEntryT{Url: location, Mandatory: true})
 	}
-	logger.Infof("RS: Generated manifest for table:%s %+v\n", tableName, manifest)
+	logger.Infof("RS: Generated manifest for table:%s", tableName)
 	manifestJSON, err := json.Marshal(&manifest)
 
 	manifestFolder := "rudder-redshift-manifests"
@@ -195,7 +195,7 @@ func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
 		logger.Infof("WH: dropping table %+v\n", stagingTableName)
 		_, err := rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
-			logger.Errorf("WH: RS:  Error dropping staging tables in redshift: %v\n", err)
+			logger.Errorf("WH: RS:  Error dropping staging tables in redshift: %v", err)
 		}
 	}
 }
@@ -257,7 +257,7 @@ func (rs *HandleT) load() (errList []error) {
 			continue
 		}
 
-		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, accessKeyID, accessKey, region)
+		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`, fmt.Sprintf(`%s."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, accessKeyID, accessKey, region)
 
 		logger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
 		_, err = tx.Exec(sqlStatement)
@@ -348,7 +348,7 @@ func (rs *HandleT) MigrateSchema() (err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", rs.Warehouse.Destination.ID)
 	timer.Start()
 	warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatingSchemaState, rs.DbHandle)
-	logger.Infof("RS: Updaing schema for redshfit schemaname: %s\n", rs.Namespace)
+	logger.Infof("RS: Updaing schema for redshfit schemaname: %s", rs.Namespace)
 	updatedSchema, err := rs.updateSchema()
 	if err != nil {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
@@ -462,7 +462,7 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	rs.CurrentSchema = curreSchema.Schema
 	rs.Namespace = curreSchema.Namespace
 	if rs.Namespace == "" {
-		logger.Infof("Namespace not found in currentschema for RS:%s, setting from upload: %s\n", rs.Warehouse.Destination.ID, rs.Upload.Namespace)
+		logger.Infof("Namespace not found in currentschema for RS:%s, setting from upload: %s", rs.Warehouse.Destination.ID, rs.Upload.Namespace)
 		rs.Namespace = rs.Upload.Namespace
 	}
 

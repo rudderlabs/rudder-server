@@ -203,17 +203,13 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 }
 
 func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
-	// map of version to prarsing logic
-	versionToFunc := map[string]func([]byte) (int, string, string){
-		"0":  network.processOldResponseType,
-		"1":  network.processNewResponseType,
-		"-1": network.processNewResponseType,
-	}
 	// Get response version
 	version := integrations.GetResponseVersion(jsonData)
 
-	return versionToFunc[version](jsonData)
-
+	if version == "0" {
+		return network.processOldResponseType(jsonData)
+	}
+	return network.processNewResponseType(jsonData)
 }
 
 //Setup initializes the module

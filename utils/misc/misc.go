@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"strings"
 
 	//"runtime/debug"
@@ -38,10 +39,11 @@ type ErrorStoreT struct {
 
 //RudderError : to store rudder error
 type RudderError struct {
-	StartTime  int64
-	Message    string
-	StackTrace string
-	Code       int
+	StartTime         int64
+	ReadableStartTime string
+	Message           string
+	StackTrace        string
+	Code              int
 }
 
 func getErrorStore() (ErrorStoreT, error) {
@@ -59,7 +61,7 @@ func getErrorStore() (ErrorStoreT, error) {
 	err = json.Unmarshal(data, &errorStore)
 
 	if err != nil {
-		logger.Fatal("Failed to get ErrorStore", err)
+		logger.Fatal("Failed to unmarshall ErrorStore to json", err)
 		return errorStore, err
 	}
 
@@ -99,7 +101,14 @@ func RecordAppError(err error) {
 	}
 
 	//TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
-	errorStore.Errors = append(errorStore.Errors, RudderError{StartTime: AppStartTime, Message: err.Error(), StackTrace: stackTrace, Code: 101})
+	errorStore.Errors = append(errorStore.Errors,
+		RudderError{
+			StartTime:         AppStartTime,
+			ReadableStartTime: fmt.Sprint(time.Unix(AppStartTime, 0)),
+			Message:           err.Error(),
+			StackTrace:        stackTrace,
+			Code:              101,
+		})
 	saveErrorStore(errorStore)
 }
 
@@ -110,6 +119,7 @@ func AssertError(err error) {
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		RecordAppError(err)
+		logger.Fatal(err)
 		panic(err)
 	}
 }
@@ -118,6 +128,7 @@ func AssertErrorIfDev(err error) {
 
 	goEnv := os.Getenv("GO_ENV")
 	if goEnv == "production" {
+		logger.Error(err.Error())
 		return
 	}
 
@@ -126,6 +137,7 @@ func AssertErrorIfDev(err error) {
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		RecordAppError(err)
+		logger.Fatal(err)
 		panic(err)
 	}
 }
@@ -137,6 +149,7 @@ func Assert(cond bool) {
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		RecordAppError(errors.New("Assertion failed"))
+		logger.Fatal("Assertion failed")
 		panic("Assertion failed")
 	}
 }
@@ -167,7 +180,6 @@ func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) 
 
 //ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
-	logger.Debug("[Misc: ParseRudderEventBatch] in ParseRudderEventBatch ")
 	var eventListJSON map[string]interface{}
 	err := json.Unmarshal(eventPayload, &eventListJSON)
 	if err != nil {
@@ -340,7 +352,7 @@ func (stats *PerfStats) Print() {
 	if time.Since(stats.lastPrintTime) > time.Duration(stats.printThres)*time.Second {
 		overallRate := float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime)
 		instantRate := float64(stats.eventCount-stats.lastPrintEventCount) * float64(time.Second) / float64(stats.elapsedTime-stats.lastPrintElapsedTime)
-		logger.Infof("%s: Total: %d Overall:%f, Instant(print):%f, Instant(call):%f\n",
+		logger.Infof("%s: Total: %d Overall:%f, Instant(print):%f, Instant(call):%f",
 			stats.compStr, stats.eventCount, overallRate, instantRate, stats.instantRateCall)
 		stats.lastPrintEventCount = stats.eventCount
 		stats.lastPrintElapsedTime = stats.elapsedTime
@@ -469,6 +481,37 @@ func TruncateStr(str string, limit int) string {
 		str = str[:limit]
 	}
 	return str
+}
+
+func SortedMapKeys(input interface{}) []string {
+	inValue := reflect.ValueOf(input)
+	mapKeys := inValue.MapKeys()
+	keys := make([]string, 0, len(mapKeys))
+	for _, key := range mapKeys {
+		keys = append(keys, key.String())
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func SortedStructSliceValues(input interface{}, filedName string) []string {
+	items := reflect.ValueOf(input)
+	var keys []string
+	if items.Kind() == reflect.Slice {
+		for i := 0; i < items.Len(); i++ {
+			item := items.Index(i)
+			if item.Kind() == reflect.Struct {
+				v := reflect.Indirect(item)
+				for j := 0; j < v.NumField(); j++ {
+					if v.Type().Field(j).Name == "Name" {
+						keys = append(keys, v.Field(j).String())
+					}
+				}
+			}
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func bToMb(b uint64) uint64 {

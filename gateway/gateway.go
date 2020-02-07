@@ -165,7 +165,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				}
 			}
 
-			if !ok {
+			if !ok || writeKey == "" {
 				req.done <- getStatus(NoWriteKeyInBasicAuth)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
@@ -174,6 +174,12 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if err != nil {
 				req.done <- getStatus(RequestBodyReadFailed)
+				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+				continue
+			}
+			if !gjson.ValidBytes(body) {
+				req.done <- getStatus(InvalidJson)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
@@ -241,8 +247,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, enabledWriteKeysSourceMap[writeKey])),
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
@@ -372,7 +376,7 @@ func (gateway *HandleT) webRequestBatcher() {
 func (gateway *HandleT) printStats() {
 	for {
 		time.Sleep(10 * time.Second)
-		logger.Info("Gateway Recv/Ack", gateway.recvCount, gateway.ackCount)
+		logger.Info("Gateway Recv/Ack ", gateway.recvCount, gateway.ackCount)
 	}
 }
 
@@ -449,7 +453,7 @@ func reflectOrigin(origin string) bool {
 
 func (gateway *HandleT) startWebHandler() {
 
-	logger.Infof("Starting in %d\n", webPort)
+	logger.Infof("Starting in %d", webPort)
 
 	http.HandleFunc("/v1/batch", stat(gateway.webBatchHandler))
 	http.HandleFunc("/v1/identify", stat(gateway.webIdentifyHandler))
