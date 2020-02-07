@@ -47,7 +47,7 @@ var major, minor, commit, buildDate, builtBy, gitURL, patch string
 
 func loadConfig() {
 	maxProcess = config.GetInt("maxProcess", 12)
-	gwDBRetention = config.GetDuration("gwDBRetention", time.Duration(1)) * time.Hour
+	gwDBRetention = config.GetDuration("gwDBRetentionInHr", 0) * time.Hour
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
@@ -80,7 +80,6 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 
 	for {
 		config := <-ch
-		logger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {

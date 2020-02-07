@@ -189,15 +189,15 @@ var (
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
 	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
-	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 100000)
+	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 10000)
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
 	sessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
-	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(20)) * time.Second
-	processSessions = config.GetBool("Processor.processSessions", true)
+	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
+	processSessions = config.GetBool("Processor.processSessions", false)
 	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
-	numTransformWorker = config.GetInt("Processor.numTransformWorker", 32)
-	maxRetry = config.GetInt("Processor.maxRetry", 3)
+	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
+	maxRetry = config.GetInt("Processor.maxRetry", 30)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB"}
 	processReplays = []replayT{}

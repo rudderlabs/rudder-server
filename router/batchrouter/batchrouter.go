@@ -28,8 +28,8 @@ import (
 var (
 	jobQueryBatchSize          int
 	noOfWorkers                int
-	mainLoopSleepInS           int
-	uploadFreq                 int64
+	mainLoopSleep              time.Duration
+	uploadFreqInS              int64
 	configSubscriberLock       sync.RWMutex
 	objectStorageDestinations  []string
 	warehouseDestinations      []string
@@ -103,7 +103,6 @@ func updateDestStatusStats(id string, count int, isSuccess bool) {
 
 func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
 	var localTmpDirName string
-	destinationConfig := batchJobs.BatchDestination.Destination.Config.(map[string]interface{})
 	if isWarehouse {
 		localTmpDirName = "/rudder-warehouse-staging-uploads/"
 	} else {
@@ -111,7 +110,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 
 	uuid := uuid.NewV4()
-	logger.Debugf("BRT: Starting logging to %s: %s", provider, destinationConfig)
+	logger.Debugf("BRT: Starting logging to %s", provider)
 
 	tmpDirPath := misc.CreateTMPDIR()
 	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
@@ -155,7 +154,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	outputFile, err := os.Open(gzipFilePath)
 	misc.AssertError(err)
 
-	logger.Debugf("BRT: Starting upload to %s: config:%s", provider, destinationConfig)
+	logger.Debugf("BRT: Starting upload to %s", provider)
 
 	var keyPrefixes []string
 	if isWarehouse {
@@ -182,7 +181,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	_, err = uploader.Upload(outputFile, keyPrefixes...)
 
 	if err != nil {
-		logger.Errorf("BRT: Error uploading to %s: config:%s: %v", provider, destinationConfig, err)
+		logger.Errorf("BRT: Error uploading to %s: Error: %v", provider, err)
 		return StorageUploadOutput{
 			Error:       err,
 			JournalOpID: opID,
@@ -230,20 +229,18 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 
 func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err error) {
 	var (
-		jobState          string
-		errorResp         []byte
-		destinationConfig map[string]interface{}
+		jobState  string
+		errorResp []byte
 	)
-	destinationConfig = batchJobs.BatchDestination.Destination.Config.(map[string]interface{})
 
 	if err != nil {
-		logger.Errorf("BRT: Error uploading to object storage: %v %v %v", err, destinationConfig, batchJobs.BatchDestination.Source.ID)
+		logger.Errorf("BRT: Error uploading to object storage: %v %v", err, batchJobs.BatchDestination.Source.ID)
 		jobState = jobsdb.FailedState
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
 	} else {
-		logger.Debugf("BRT: Uploaded to object storage with config: %v %v %v", destinationConfig, batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
+		logger.Debugf("BRT: Uploaded to object storage : %v at %v", batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		jobState = jobsdb.SucceededState
 		errorResp = []byte(`{"success":"OK"}`)
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
@@ -351,7 +348,7 @@ func setDestInProgress(batchDestination DestinationT, starting bool) {
 func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 	lastExecMapLock.Lock()
 	defer lastExecMapLock.Unlock()
-	if lastExecTime, ok := lastExecMap[batchDestination.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreq {
+	if lastExecTime, ok := lastExecMap[batchDestination.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
 		return true
 	}
 	lastExecMap[batchDestination.Destination.ID] = time.Now().Unix()
@@ -361,10 +358,10 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 func (brt *HandleT) mainLoop() {
 	for {
 		if !brt.isEnabled {
-			time.Sleep(time.Duration(2*mainLoopSleepInS) * time.Second)
+			time.Sleep(2 * mainLoopSleep)
 			continue
 		}
-		time.Sleep(time.Duration(mainLoopSleepInS) * time.Second)
+		time.Sleep(mainLoopSleep)
 		for _, batchDestination := range brt.batchDestinations {
 			if isDestInProgress(batchDestination) {
 				continue
@@ -475,10 +472,10 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		jsonFile, err := os.Create(jsonPath)
 		misc.AssertError(err)
 
-		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s with config: %s at key: %s\n", object.Provider, object.Config, object.Key)
+		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s at key: %s\n", object.Provider, object.Key)
 		err = downloader.Download(jsonFile, object.Key)
 		if err != nil {
-			logger.Debugf("BRT: Failed to download data for incomplete journal entry to recover from %s with config: %s at key: %s with error: %v\n", object.Provider, object.Config, object.Key, err)
+			logger.Debugf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
 			continue
 		}
 
@@ -573,8 +570,8 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
-	mainLoopSleepInS = config.GetInt("BatchRouter.mainLoopSleepInS", 5)
-	uploadFreq = config.GetInt64("BatchRouter.uploadFreqInS", 30)
+	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
+	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ"}
