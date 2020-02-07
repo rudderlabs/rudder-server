@@ -68,7 +68,7 @@ func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
 	readSleep = config.GetDuration("Router.readSleepInMS", time.Duration(1000)) * time.Millisecond
-	noOfWorkers = config.GetInt("Router.noOfWorkers", 8)
+	noOfWorkers = config.GetInt("Router.noOfWorkers", 64)
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	ser = config.GetInt("Router.ser", 3)
 	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(60)) * time.Second
