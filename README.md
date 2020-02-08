@@ -30,6 +30,18 @@ See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion a
 1. Join our [Discord](https://discordapp.com/invite/xNEdEGw) 
 2. Follow us on [Twitter](https://twitter.com/rudderlabs)
 
+# UI Pages
+
+
+
+
+## Connections Page
+![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
+
+## Events Page
+![image](https://user-images.githubusercontent.com/52487451/65647230-e2937c80-dfb2-11e9-88bd-3b015c4b576f.png)
+
+
 # Setup Instructions (Hosted Demo Account)
 
 1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account. 
@@ -41,12 +53,15 @@ See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion a
 The docker setup is the easiest & fastest way to try out RudderStack.
 
 1. Go to the [dashboard](https://app.rudderlabs.com) `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
-2. Clone this repository with [SSH](https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls) and 
+2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
+   
+   (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
+`sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule init && git submodule update`
+  
 3. Replace `<your_workspace_token>` in `build/docker.env` with the above token.
 4. (Optional) Uncomment and set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `build/docker.env` if you want to add S3 as a destination on the UI.
-5. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
-6. Run the command `docker-compose up --build` to bring up all the services.
-7. Follow (Send Test Events) instructions below to send test event.
+5. Run the command `docker-compose up --build` to bring up all the services.
+6. Follow (Send Test Events) instructions below to send test event.
 
 # Setup Instructions (Kubernetes)
 
@@ -85,7 +100,7 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 
 1. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID. The Google Analytics account needs to have a **Web** Property (**Web+App** does't seem to work)
 2. Create one source (Android or iOS) and configure a Google Analytics destination for the same with the above tracking ID
-3. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `./scripts/generate-event <writeKeyHere> http://localhost:8080/v1/batch`. NOTE: `writeKey` is different from the `your_workspace_token` in step 2. Former is associated with the source while the latter is for your account.
+3. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `cd scripts; ./generate-event <writeKeyHere> http://localhost:8080/v1/batch`. NOTE: `writeKey` is different from the `your_workspace_token` in step 2. Former is associated with the source while the latter is for your account.
 4. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
 5. You can use our [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or [iOS](https://github.com/rudderlabs/rudder-sdk-ios) SDKs for sending events from your app.
 
@@ -99,17 +114,6 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 6. Rich UI written in react.
 7. [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or [iOS](https://github.com/rudderlabs/rudder-sdk-ios). Server-side SDKs coming soon.
 
-
-# UI Pages
-
-## Connections Page
-![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
-
-## Events Page
-![image](https://user-images.githubusercontent.com/52487451/65647230-e2937c80-dfb2-11e9-88bd-3b015c4b576f.png)
-
-## Stats Page
-![image](https://user-images.githubusercontent.com/52487451/65647158-a2cc9500-dfb2-11e9-8397-d2642f0b8801.png)
 
 # Architecture
 

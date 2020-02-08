@@ -2,7 +2,7 @@
 # Dont set secrets, passwords, api_keys etc. in this file. Use '.env' file for that
 
 maxProcess = 12 # Max number of cpu process to be used by go runtime
-gwDBRetention = 0
+gwDBRetentionInHr = 0
 routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
@@ -15,7 +15,7 @@ noOfBucketsInWindow=12
 
 [Gateway]
 webPort = 8080
-maxDBWriterProcess = 4
+maxDBWriterProcess = 64
 CustomVal = "GW"
 maxBatchSize = 32
 batchTimeoutInMS = 20
@@ -26,9 +26,11 @@ dedupWindowInS = 86400
 
 [SourceDebugger]
 maxBatchSize = 32
+maxESQueueSize = 1024
 maxRetry = 3
 batchTimeoutInS = 2
 retrySleepInMS = 100
+disableEventUploads = false
 
 [JobsDB]
 # Migration related parameters
@@ -36,14 +38,15 @@ jobDoneMigrateThres = 0.8
 jobStatusMigrateThres = 5
 maxDSSize = 100000
 maxMigrateOnce = 10
-mainCheckSleepDurationInS = 2
+maxTableSizeInMB = 300
+mainCheckSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
 enableBackup = true
 
 [Router]
 jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
-readSleepInMS = 10
+readSleepInMS = 1000
 noOfWorkers = 64
 noOfJobsPerChannel = 1000
 ser = 3
@@ -56,9 +59,10 @@ maxFailedCountForJob = 8
 keepOrderOnFailure = true
 
 [BatchRouter]
-mainLoopSleepInS = 30
+mainLoopSleepInS = 2
 noOfWorkers = 8
 jobQueryBatchSize = 100000
+uploadFreqInS = 30
 
 [Warehouse]
 stagingFilesTable = "wh_staging_files"
@@ -69,12 +73,14 @@ uploadFreqInS = 1800
 noOfWorkers = 8
 mainLoopSleepInS = 60
 maxRetry = 3
-stagingFilesBatchSize = 100
+stagingFilesBatchSize = 240
 
 [Processor]
 loopSleepInMS = 10
+maxLoopSleepInMS = 5000
 dbReadBatchSize = 10000
-transformBatchSize = 10
+transformBatchSize = 100
+userTransformBatchSize = 200
 sessionThresholdEvents = 100
 sessionInactivityThresholdInS = 120
 maxChanSize = 2048
@@ -107,3 +113,16 @@ storagePath = "/tmp/recovery_data.json"
     [recovery.maintenance]
     crashThreshold = 5
     durationInS = 300
+
+# logger configuration
+[Logger]
+enableConsole=true
+enableFile=false
+consoleJsonFormat=false
+fileJsonFormat=false
+logFileLocation="/tmp/rudder_log.log"
+logFileSize = 100 # in MB
+enableTimestamp=false
+enableFileNameInLog=false
+enableStackTrace=false
+

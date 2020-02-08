@@ -60,7 +60,7 @@ func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 }
 
 func (bq *HandleT) createTable(name string, columns map[string]string) (err error) {
-	logger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s\n", name, bq.Namespace, bq.ProjectID)
+	logger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", name, bq.Namespace, bq.ProjectID)
 	sampleSchema := getTableSchema(columns)
 	metaData := &bigquery.TableMetadata{
 		Schema:           sampleSchema,
@@ -92,7 +92,7 @@ func (bq *HandleT) createTable(name string, columns map[string]string) (err erro
 }
 
 func (bq *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	logger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s\n", tableName, bq.Namespace, bq.ProjectID)
+	logger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
 	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
 	meta, err := tableRef.Metadata(bq.BQContext)
 	if err != nil {
@@ -109,7 +109,7 @@ func (bq *HandleT) addColumn(tableName string, columnName string, columnType str
 }
 
 func (bq *HandleT) createSchema() (err error) {
-	logger.Infof("BQ: Creating bigquery dataset: %s in project: %s\n", bq.Namespace, bq.ProjectID)
+	logger.Infof("BQ: Creating bigquery dataset: %s in project: %s", bq.Namespace, bq.ProjectID)
 	ds := bq.Db.Dataset(bq.Namespace)
 	err = ds.Create(bq.BQContext, nil)
 	return
@@ -119,7 +119,7 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	if err != nil {
 		if e, ok := err.(*googleapi.Error); ok {
 			if e.Code == 409 || e.Code == 400 {
-				logger.Debugf("BQ: Google API returned error with code: %v\n", e.Code)
+				logger.Debugf("BQ: Google API returned error with code: %v", e.Code)
 				return true
 			}
 		}
@@ -170,7 +170,7 @@ func (bq *HandleT) load() (err error) {
 			locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
 			misc.AssertError(err)
 			locations, err = warehouseutils.GetGCSLocations(locations)
-			logger.Infof("Loading data into table: %s in bigquery dataset: %s in project: %s from %v\n", tableName, bq.Namespace, bq.ProjectID, locations)
+			logger.Infof("Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
 			gcsRef := bigquery.NewGCSReference(locations...)
 			gcsRef.SourceFormat = bigquery.JSON
 			gcsRef.MaxBadRecords = 100
@@ -206,7 +206,7 @@ type BQCredentialsT struct {
 }
 
 func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
-	logger.Infof("BQ: Connecting to BigQuery in project: %s\n", cred.projectID)
+	logger.Infof("BQ: Connecting to BigQuery in project: %s", cred.projectID)
 	bq.BQContext = context.Background()
 	client, err := bigquery.NewClient(bq.BQContext, cred.projectID, option.WithCredentialsJSON([]byte(cred.credentials)))
 	return client, err
@@ -225,7 +225,7 @@ func (bq *HandleT) MigrateSchema() (err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", bq.Warehouse.Destination.ID)
 	timer.Start()
 	warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatingSchemaState, bq.DbHandle)
-	logger.Infof("BQ: Updaing schema for bigquery in project: %s\n", bq.ProjectID)
+	logger.Infof("BQ: Updaing schema for bigquery in project: %s", bq.ProjectID)
 	updatedSchema, err := bq.updateSchema()
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)

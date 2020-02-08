@@ -156,7 +156,7 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 }
 
 func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error) {
-	logger.Debugf("WH: Setting status of %s for wh_upload:%v\n", status, upload.ID)
+	logger.Debugf("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=$3`, warehouseUploadsTable)
 	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), upload.ID)
 	misc.AssertError(err)
@@ -164,7 +164,7 @@ func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error
 }
 
 func SetUploadError(upload UploadT, statusError error, state string, dbHandle *sql.DB) (err error) {
-	logger.Errorf("WH: Failed during %s stage: %v\n", ExportedDataState, statusError.Error())
+	logger.Errorf("WH: Failed during %s stage: %v\n", state, statusError.Error())
 	SetUploadStatus(upload, ExportingDataFailedState, dbHandle)
 	var e map[string]map[string]interface{}
 	json.Unmarshal(upload.Error, &e)
@@ -206,7 +206,7 @@ func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err er
 }
 
 func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusError error) (err error) {
-	logger.Errorf("WH: Failed processing staging files: %v\n", statusError.Error())
+	logger.Errorf("WH: Failed processing staging files: %v", statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseStagingFilesTable)
 	_, err = dbHandle.Exec(sqlStatement, status, statusError.Error(), time.Now(), pq.Array(ids))
 	misc.AssertError(err)
