@@ -28,7 +28,7 @@ See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion a
 # Contribute or Stay Connected
 
 1. Join our [Discord](https://discordapp.com/invite/xNEdEGw) 
-2. Follow us on [Twitter](https://twitter.com/rudderlabs)
+2. Follow us on [Twitter](https://twitter.com/rudderstack)
 
 # UI Pages
 
