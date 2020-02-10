@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/rruntime"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -94,7 +96,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 	eventsAbortedStat := monitoring.NewStat(
 		fmt.Sprintf("router.%s_events_aborted", rt.destID), monitoring.CountType)
 
-	for {
+	for !rruntime.IsShutDownInProgess {
 		job := <-worker.channel
 		var respStatusCode, attempts int
 		var respStatus, respBody string
@@ -159,7 +161,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			}
 			if !isSuccessStatus(respStatusCode) {
 				//400 series error are client errors. Can't continue
-				if respStatusCode >= http.StatusBadRequest && respStatusCode <= http.StatusUnavailableForLegalReasons {
+				if respStatusCode >= http.StatusBadRequest && respStatusCode < http.StatusInternalServerError {
 					break
 				}
 				//Wait before the next retry
@@ -429,7 +431,7 @@ func (rt *HandleT) generatorLoop() {
 	generatorStat := monitoring.NewStat("router.generator_loop", monitoring.TimerType)
 	countStat := monitoring.NewStat("router.generator_events", monitoring.CountType)
 
-	for {
+	for !rruntime.IsShutDownInProgess {
 		if !rt.isEnabled {
 			time.Sleep(1000)
 			continue
@@ -460,6 +462,10 @@ func (rt *HandleT) generatorLoop() {
 			logger.Debugf("RT: DB Read Complete. No RT Jobs to process.")
 			time.Sleep(readSleep)
 			continue
+		}
+
+		if rruntime.IsShutDownInProgess {
+			break
 		}
 
 		combinedList := append(waitList, append(unprocessedList, retryList...)...)

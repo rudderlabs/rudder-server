@@ -31,6 +31,8 @@ import (
 	"sort"
 	"unicode/utf8"
 
+	"github.com/rudderlabs/rudder-server/rruntime"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"strconv"
@@ -1436,7 +1438,7 @@ so take both the list and data lock
 
 func (jd *HandleT) mainCheckLoop() {
 
-	for {
+	for !rruntime.IsShutDownInProgess {
 		time.Sleep(mainCheckSleepDuration)
 		logger.Debug("Main check:Start")
 		jd.dsListLock.RLock()
@@ -1519,7 +1521,7 @@ func (jd *HandleT) mainCheckLoop() {
 }
 
 func (jd *HandleT) backupDSLoop() {
-	for {
+	for !rruntime.IsShutDownInProgess {
 		time.Sleep(backupCheckSleepDuration)
 		logger.Info("BackupDS check:Start")
 		backupDSRange := jd.getBackupDSRange()

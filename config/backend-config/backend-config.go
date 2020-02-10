@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/rruntime"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -134,7 +136,7 @@ func init() {
 
 func pollConfigUpdate() {
 	statConfigBackendError := monitoring.NewStat("config_backend.errors", monitoring.CountType)
-	for {
+	for !rruntime.IsShutDownInProgess {
 		sourceJSON, ok := backendConfig.GetBackendConfig()
 		if !ok {
 			statConfigBackendError.Increment()
