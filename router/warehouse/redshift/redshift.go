@@ -396,8 +396,11 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 								 from information_schema.tables
 								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
 	rows, err := rs.Db.Query(sqlStatement)
+	if err != nil {
+		logger.Errorf("WH: RS:  Error dropping dangling staging tables in redshift: %v\n", err)
+		return false
+	}
 	defer rows.Close()
-	misc.AssertError(err)
 
 	var stagingTableNames []string
 	for rows.Next() {
