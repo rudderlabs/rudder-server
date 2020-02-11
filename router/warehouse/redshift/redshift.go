@@ -383,7 +383,7 @@ func (rs *HandleT) Export() (err error) {
 			}
 		}
 		warehouseutils.SetUploadError(rs.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, rs.DbHandle)
-		return err
+		return errors.New(errStr)
 	}
 	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportedDataState, rs.DbHandle)
 	misc.AssertError(err)
