@@ -284,6 +284,9 @@ func (brt *HandleT) initWorkers() {
 			for !rruntime.IsShutDownInProgess {
 				select {
 				case batchJobs := <-brt.processQ:
+					if rruntime.IsShutDownInProgess {
+						break
+					}
 					switch {
 					case misc.ContainsString(objectStorageDestinations, brt.destType):
 						destUploadStat := monitoring.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), monitoring.TimerType)
@@ -357,14 +360,14 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 }
 
 func (brt *HandleT) mainLoop() {
-	for {
+	for !rruntime.IsShutDownInProgess {
 		if !brt.isEnabled {
 			time.Sleep(2 * mainLoopSleep)
 			continue
 		}
 		time.Sleep(mainLoopSleep)
 		for _, batchDestination := range brt.batchDestinations {
-			if isDestInProgress(batchDestination) {
+			if isDestInProgress(batchDestination) || rruntime.IsShutDownInProgess {
 				continue
 			}
 			if uploadFrequencyExceeded(batchDestination) {
@@ -402,6 +405,9 @@ func (brt *HandleT) mainLoop() {
 				continue
 			}
 			logger.Debugf("BRT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", brt.destType, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
+			if rruntime.IsShutDownInProgess {
+				break
+			}
 
 			var statusList []*jobsdb.JobStatusT
 
