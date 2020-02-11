@@ -606,9 +606,15 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 					continue
 				}
 				if stringVal, ok := columnVal.(string); ok {
+					// handle double quotes in column values for csv
+					if strings.Contains(stringVal, `"`) {
+						columnVal = strings.ReplaceAll(stringVal, `"`, `'`)
+					}
 					// handle commas in column values for csv
 					if strings.Contains(stringVal, ",") {
+						// escape double quotes
 						columnVal = strings.ReplaceAll(stringVal, "\"", "\"\"")
+						// put entire string in double qoutes
 						columnVal = fmt.Sprintf(`"%s"`, columnVal)
 					}
 				}
