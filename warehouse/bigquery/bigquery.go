@@ -9,10 +9,10 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	"github.com/rudderlabs/rudder-server/config"
-	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )

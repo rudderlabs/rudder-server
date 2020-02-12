@@ -69,6 +69,11 @@ type WarehouseT struct {
 	Destination backendconfig.DestinationT
 }
 
+type DestinationT struct {
+	Source      backendconfig.SourceT
+	Destination backendconfig.DestinationT
+}
+
 type ConfigT struct {
 	DbHandle  *sql.DB
 	Upload    UploadT
@@ -94,6 +99,12 @@ type UploadT struct {
 type CurrentSchemaT struct {
 	Namespace string
 	Schema    map[string]map[string]string
+}
+
+type StagingFileT struct {
+	Schema           map[string]map[string]interface{}
+	BatchDestination DestinationT
+	Location         string
 }
 
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, error) {

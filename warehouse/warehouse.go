@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,21 +18,25 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go"
 	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/router/warehouse/bigquery"
-	"github.com/rudderlabs/rudder-server/router/warehouse/redshift"
-	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/redshift"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
+	webPort                    int
+	dbHandle                   *sql.DB
+	warehouseDestinations      []string
 	jobQueryBatchSize          int
 	noOfWorkers                int
 	uploadFreqInS              int64
@@ -87,6 +94,9 @@ func init() {
 }
 
 func loadConfig() {
+	//Port where WH is running
+	webPort = config.GetInt("Warehouse.webPort", 8082)
+	warehouseDestinations = []string{"RS", "BQ"}
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
@@ -828,4 +838,272 @@ func (wh *HandleT) Setup(whType string) {
 	go wh.initUploaders()
 	go wh.initWorkers()
 	go wh.mainLoop()
+}
+
+// Gets the config from config backend and extracts enabled writekeys
+func monitorDestRouters() {
+	ch := make(chan utils.DataEvent)
+	backendconfig.Subscribe(ch)
+	dstToWhRouter := make(map[string]*HandleT)
+
+	for {
+		config := <-ch
+		logger.Debug("Got config from config-backend", config)
+		sources := config.Data.(backendconfig.SourcesT)
+		enabledDestinations := make(map[string]bool)
+		for _, source := range sources.Sources {
+			if source.Enabled {
+				for _, destination := range source.Destinations {
+					if destination.Enabled {
+						enabledDestinations[destination.DestinationDefinition.Name] = true
+						if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+							wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
+							if !ok {
+								logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+								var wh HandleT
+								wh.Setup(destination.DestinationDefinition.Name)
+								dstToWhRouter[destination.DestinationDefinition.Name] = &wh
+							} else {
+								logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+								wh.Enable()
+							}
+						}
+
+					}
+				}
+			}
+		}
+
+		keys := misc.StringKeys(dstToWhRouter)
+		for _, key := range keys {
+			if _, ok := enabledDestinations[key]; !ok {
+				if whHandle, ok := dstToWhRouter[key]; ok {
+					logger.Info("Disabling a existing warehouse destination: ", key)
+					whHandle.Disable()
+				}
+			}
+		}
+	}
+}
+
+func setupTables(dbHandle *sql.DB) {
+	sqlStatement := `DO $$ BEGIN
+                                CREATE TYPE wh_staging_state_type
+                                     AS ENUM(
+                                              'waiting',
+                                              'executing',
+											  'failed',
+											  'succeeded');
+                                     EXCEPTION
+                                        WHEN duplicate_object THEN null;
+                            END $$;`
+
+	_, err := dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+                                      id BIGSERIAL PRIMARY KEY,
+									  location TEXT NOT NULL,
+									  source_id VARCHAR(64) NOT NULL,
+									  destination_id VARCHAR(64) NOT NULL,
+									  schema JSONB NOT NULL,
+									  error TEXT,
+									  status wh_staging_state_type,
+									  created_at TIMESTAMP NOT NULL,
+									  updated_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
+
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	// index on source_id, destination_id combination
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_id_index ON %[1]s (source_id, destination_id);`, warehouseStagingFilesTable)
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+									  id BIGSERIAL PRIMARY KEY,
+									  staging_file_id BIGINT,
+									  location TEXT NOT NULL,
+									  source_id VARCHAR(64) NOT NULL,
+									  destination_id VARCHAR(64) NOT NULL,
+									  destination_type VARCHAR(64) NOT NULL,
+									  table_name VARCHAR(64) NOT NULL,
+									  created_at TIMESTAMP NOT NULL);`, warehouseLoadFilesTable)
+
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	// change table_name type to text to support table_names upto length 127
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, warehouseLoadFilesTable, "table_name")
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	// index on source_id, destination_id combination
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseLoadFilesTable)
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	sqlStatement = `DO $$ BEGIN
+                                CREATE TYPE wh_upload_state_type
+                                     AS ENUM(
+										 	  'waiting',
+											  'generating_load_file',
+											  'generating_load_file_failed',
+											  'generated_load_file',
+											  'updating_schema',
+											  'updating_schema_failed',
+											  'updated_schema',
+											  'exporting_data',
+											  'exporting_data_failed',
+											  'exported_data',
+											  'aborted');
+                                     EXCEPTION
+                                        WHEN duplicate_object THEN null;
+                            END $$;`
+
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'waiting';`
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'aborted';`
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+                                      id BIGSERIAL PRIMARY KEY,
+									  source_id VARCHAR(64) NOT NULL,
+									  namespace VARCHAR(64) NOT NULL,
+									  destination_id VARCHAR(64) NOT NULL,
+									  destination_type VARCHAR(64) NOT NULL,
+									  start_staging_file_id BIGINT,
+									  end_staging_file_id BIGINT,
+									  start_load_file_id BIGINT,
+									  end_load_file_id BIGINT,
+									  status wh_upload_state_type NOT NULL,
+									  schema JSONB NOT NULL,
+									  error JSONB,
+									  created_at TIMESTAMP NOT NULL,
+									  updated_at TIMESTAMP NOT NULL);`, warehouseUploadsTable)
+
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	// index on status
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_index ON %[1]s (status);`, warehouseUploadsTable)
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	// index on source_id, destination_id combination
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseUploadsTable)
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+									  id BIGSERIAL PRIMARY KEY,
+									  wh_upload_id BIGSERIAL,
+									  source_id VARCHAR(64) NOT NULL,
+									  namespace VARCHAR(64) NOT NULL,
+									  destination_id VARCHAR(64) NOT NULL,
+									  destination_type VARCHAR(64) NOT NULL,
+									  schema JSONB NOT NULL,
+									  error VARCHAR(512),
+									  created_at TIMESTAMP NOT NULL);`, warehouseSchemasTable)
+
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+
+	// index on source_id, destination_id combination
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseSchemasTable)
+	_, err = dbHandle.Exec(sqlStatement)
+	misc.AssertError(err)
+}
+
+func processHandler(w http.ResponseWriter, r *http.Request) {
+	logger.LogRequest(r)
+
+	// body, err := ioutil.ReadAll(r.Body)
+	// r.Body.Close()
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("Error reading body: %v", err)
+		http.Error(w, "can't read body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var stagingFile warehouseutils.StagingFileT
+	json.Unmarshal(body, &stagingFile)
+
+	logger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseStagingFilesTable, stagingFile.Schema)
+	schemaPayload, err := json.Marshal(stagingFile.Schema)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at, updated_at)
+									   VALUES ($1, $2, $3, $4, $5, $6, $6)`, warehouseStagingFilesTable)
+	stmt, err := dbHandle.Prepare(sqlStatement)
+	misc.AssertError(err)
+	defer stmt.Close()
+
+	_, err = stmt.Exec(stagingFile.Location, schemaPayload, stagingFile.BatchDestination.Source.ID, stagingFile.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, time.Now())
+	misc.AssertError(err)
+
+	// req := webRequestT{request: r, writer: &w, done: done, reqType: reqType}
+	// gateway.webRequestQ <- &req
+	// //Wait for batcher process to be done
+	// errorMessage := <-done
+	// atomic.AddUint64(&gateway.ackCount, 1)
+	// if errorMessage != "" {
+	// 	logger.Debug(errorMessage)
+	// 	http.Error(w, errorMessage, 400)
+	// } else {
+	// 	logger.Debug(getStatus(Ok))
+	// 	w.Write([]byte(getStatus(Ok)))
+	// }
+}
+
+func startWebHandler() {
+
+	// http.HandleFunc("/v1/batch", stat(gateway.webBatchHandler))
+	// http.HandleFunc("/v1/identify", stat(gateway.webIdentifyHandler))
+	// http.HandleFunc("/v1/track", stat(gateway.webTrackHandler))
+	// http.HandleFunc("/v1/page", stat(gateway.webPageHandler))
+	// http.HandleFunc("/v1/screen", stat(gateway.webScreenHandler))
+	// http.HandleFunc("/v1/alias", stat(gateway.webAliasHandler))
+	// http.HandleFunc("/v1/group", stat(gateway.webGroupHandler))
+	// http.HandleFunc("/health", gateway.healthHandler)
+
+	http.HandleFunc("/v1/process", processHandler)
+
+	backendconfig.WaitForConfig()
+
+	// c := cors.New(cors.Options{
+	// 	AllowOriginFunc:  reflectOrigin,
+	// 	AllowCredentials: true,
+	// 	AllowedHeaders:   []string{"*"},
+	// })
+
+	logger.Infof("Starting in %d", 8082)
+
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(8082), bugsnag.Handler(nil)))
+}
+
+func Start() {
+	logger.Infof("WH: Starting Warehouse service...")
+	var err error
+	psqlInfo := jobsdb.GetConnectionString()
+	dbHandle, err = sql.Open("postgres", psqlInfo)
+	misc.AssertError(err)
+	setupTables(dbHandle)
+	go monitorDestRouters()
+	startWebHandler()
+	// wh.destType = whType
+	// wh.setInterruptedDestinations()
+	// wh.Enable()
+	// wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
+	// wh.createLoadFilesQ = make(chan LoadFileJobT)
+	// go wh.backendConfigSubscriber()
+	// go wh.initUploaders()
+	// go wh.initWorkers()
+	// go wh.mainLoop()
 }

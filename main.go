@@ -23,12 +23,12 @@ import (
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/router/warehouse"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse"
 )
 
 var (
@@ -76,7 +76,6 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	backendconfig.Subscribe(ch)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
-	dstToWhRouter := make(map[string]*warehouse.HandleT)
 
 	for {
 		config := <-ch
@@ -98,18 +97,6 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 								logger.Debug("Enabling existing Destination", destination.DestinationDefinition.Name)
 								brt.Enable()
 							}
-							if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-								wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-								if !ok {
-									logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-									var wh warehouse.HandleT
-									wh.Setup(destination.DestinationDefinition.Name)
-									dstToWhRouter[destination.DestinationDefinition.Name] = &wh
-								} else {
-									logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-									wh.Enable()
-								}
-							}
 						} else {
 							rt, ok := dstToRouter[destination.DestinationDefinition.Name]
 							if !ok {
@@ -130,7 +117,6 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 
 		keys := misc.StringKeys(dstToRouter)
 		keys = append(keys, misc.StringKeys(dstToBatchRouter)...)
-		keys = append(keys, misc.StringKeys(dstToWhRouter)...)
 		for _, key := range keys {
 			if _, ok := enabledDestinations[key]; !ok {
 				if rtHandle, ok := dstToRouter[key]; ok {
@@ -141,10 +127,6 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 				if brtHandle, ok := dstToBatchRouter[key]; ok {
 					logger.Info("Disabling a existing batch destination: ", key)
 					brtHandle.Disable()
-				}
-				if whHandle, ok := dstToWhRouter[key]; ok {
-					logger.Info("Disabling a existing warehouse destination: ", key)
-					whHandle.Disable()
 				}
 			}
 		}
@@ -172,75 +154,19 @@ func printVersion() {
 	logger.Infof("Version Info %s", versionFormatted)
 }
 
-func main() {
-	bugsnag.Configure(bugsnag.Configuration{
-		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
-		ReleaseStage: config.GetEnv("GO_ENV", "development"),
-		// The import paths for the Go packages containing your source files
-		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
-		// more configuration options
-		AppType:      "rudder-server",
-		PanicHandler: func() {},
-	})
+func startWarehouseService() {
+	backendconfig.Setup()
+	warehouse.Start()
+}
 
-	logger.Setup()
+func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintenanceMode bool) {
 	logger.Info("Main starting")
-	normalMode := flag.Bool("normal-mode", false, "a bool")
-	degradedMode := flag.Bool("degraded-mode", false, "a bool")
-	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
-
-	clearDB := flag.Bool("cleardb", false, "a bool")
-	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
-	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
-	versionFlag := flag.Bool("v", false, "Print the current version and exit")
-
-	flag.Parse()
-	switch {
-	case *versionFlag:
-		printVersion()
-		return
-	}
-	http.HandleFunc("/version", versionHandler)
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
-	db.HandleRecovery(*normalMode, *degradedMode, *maintenanceMode, misc.AppStartTime)
+	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
-
-	var f *os.File
-	if *cpuprofile != "" {
-		var err error
-		f, err = os.Create(*cpuprofile)
-		misc.AssertError(err)
-		runtime.SetBlockProfileRate(1)
-		err = pprof.StartCPUProfile(f)
-		misc.AssertError(err)
-	}
-
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		if *cpuprofile != "" {
-			logger.Info("Stopping CPU profile")
-			pprof.StopCPUProfile()
-			f.Close()
-		}
-		if *memprofile != "" {
-			f, err := os.Create(*memprofile)
-			misc.AssertError(err)
-			defer f.Close()
-			runtime.GC() // get up-to-date statistics
-			err = pprof.WriteHeapProfile(f)
-			misc.AssertError(err)
-		}
-		// clearing zap Log buffer to std output
-		if logger.Log != nil {
-			logger.Fatal("SIGTERM called. Process exiting")
-		}
-		os.Exit(1)
-	}()
 
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
@@ -277,4 +203,79 @@ func main() {
 	rateLimiter.SetUp()
 	gateway.Setup(&gatewayDB, &rateLimiter, clearDB)
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+}
+
+func main() {
+	bugsnag.Configure(bugsnag.Configuration{
+		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
+		ReleaseStage: config.GetEnv("GO_ENV", "development"),
+		// The import paths for the Go packages containing your source files
+		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
+		// more configuration options
+		AppType:      "rudder-server",
+		PanicHandler: func() {},
+	})
+
+	logger.Setup()
+
+	isWarehouseService := flag.Bool("warehouse", false, "Indicates to start it as a warehouse service")
+
+	normalMode := flag.Bool("normal-mode", false, "a bool")
+	degradedMode := flag.Bool("degraded-mode", false, "a bool")
+	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
+
+	clearDB := flag.Bool("cleardb", false, "a bool")
+	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
+	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
+	versionFlag := flag.Bool("v", false, "Print the current version and exit")
+
+	flag.Parse()
+	switch {
+	case *versionFlag:
+		printVersion()
+		return
+	}
+	http.HandleFunc("/version", versionHandler)
+
+	var f *os.File
+	if *cpuprofile != "" {
+		var err error
+		f, err = os.Create(*cpuprofile)
+		misc.AssertError(err)
+		runtime.SetBlockProfileRate(1)
+		err = pprof.StartCPUProfile(f)
+		misc.AssertError(err)
+	}
+
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		if *cpuprofile != "" {
+			logger.Info("Stopping CPU profile")
+			pprof.StopCPUProfile()
+			f.Close()
+		}
+		if *memprofile != "" {
+			f, err := os.Create(*memprofile)
+			misc.AssertError(err)
+			defer f.Close()
+			runtime.GC() // get up-to-date statistics
+			err = pprof.WriteHeapProfile(f)
+			misc.AssertError(err)
+		}
+		// clearing zap Log buffer to std output
+		if logger.Log != nil {
+			logger.Fatal("SIGTERM called. Process exiting")
+		}
+		os.Exit(1)
+	}()
+
+	if *isWarehouseService {
+		fmt.Println("Starting as Warehouse Service...")
+		startWarehouseService()
+	} else {
+		startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+	}
+
 }

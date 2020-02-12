@@ -2,10 +2,12 @@ package batchrouter
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,12 +17,12 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 )
@@ -39,11 +41,13 @@ var (
 	lastExecMapLock            sync.RWMutex
 	uploadedRawDataJobsCache   map[string]map[string]bool
 	warehouseStagingFilesTable string
+	warehouseURL               string
 )
 
 type HandleT struct {
 	destType          string
 	batchDestinations []DestinationT
+	netHandle         *http.Client
 	processQ          chan BatchJobsT
 	jobsDB            *jobsdb.HandleT
 	jobsDBHandle      *sql.DB
@@ -227,6 +231,40 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 	return err
 }
 
+func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, location string) (err error) {
+	schemaMap := make(map[string]map[string]interface{})
+	for _, job := range batchJobs.Jobs {
+		var payload map[string]interface{}
+		err := json.Unmarshal(job.EventPayload, &payload)
+		misc.AssertError(err)
+		tableName := payload["metadata"].(map[string]interface{})["table"].(string)
+		var ok bool
+		if _, ok = schemaMap[tableName]; !ok {
+			schemaMap[tableName] = make(map[string]interface{})
+		}
+		columns := payload["metadata"].(map[string]interface{})["columns"].(map[string]interface{})
+		for columnName, columnType := range columns {
+			if _, ok := schemaMap[tableName][columnName]; !ok {
+				schemaMap[tableName][columnName] = columnType
+			}
+		}
+	}
+	payload := warehouseutils.StagingFileT{
+		Schema: schemaMap,
+		BatchDestination: warehouseutils.DestinationT{
+			Source:      batchJobs.BatchDestination.Source,
+			Destination: batchJobs.BatchDestination.Destination,
+		},
+		Location: location,
+	}
+
+	jsonPayload, err := json.Marshal(&payload)
+
+	_, err = brt.netHandle.Post(warehouseURL+"/v1/process", "application/json; charset=utf-8",
+		bytes.NewBuffer(jsonPayload))
+	return
+}
+
 func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err error) {
 	var (
 		jobState  string
@@ -300,7 +338,8 @@ func (brt *HandleT) initWorkers() {
 						destUploadStat.Start()
 						output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
 						if output.Error == nil && output.Key != "" {
-							brt.updateWarehouseMetadata(batchJobs, output.Key)
+							// brt.updateWarehouseMetadata(batchJobs, output.Key)
+							brt.postToWarehouse(batchJobs, output.Key)
 							warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
 						}
 						brt.setJobStatus(batchJobs, true, output.Error)
@@ -575,6 +614,7 @@ func loadConfig() {
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
+	warehouseURL = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
@@ -594,7 +634,11 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.jobsDB = jobsDB
 	brt.jobsDBHandle = brt.jobsDB.GetDBHandle()
 	brt.isEnabled = true
-	brt.setupWarehouseStagingFilesTable()
+
+	tr := &http.Transport{}
+	client := &http.Client{Transport: tr}
+	brt.netHandle = client
+
 	brt.processQ = make(chan BatchJobsT)
 	brt.crashRecover()
 
