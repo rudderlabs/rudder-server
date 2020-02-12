@@ -383,7 +383,7 @@ func (rs *HandleT) Export() (err error) {
 			}
 		}
 		warehouseutils.SetUploadError(rs.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, rs.DbHandle)
-		return err
+		return errors.New(errStr)
 	}
 	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportedDataState, rs.DbHandle)
 	misc.AssertError(err)
@@ -396,8 +396,11 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 								 from information_schema.tables
 								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
 	rows, err := rs.Db.Query(sqlStatement)
+	if err != nil {
+		logger.Errorf("WH: RS:  Error dropping dangling staging tables in redshift: %v\n", err)
+		return false
+	}
 	defer rows.Close()
-	misc.AssertError(err)
 
 	var stagingTableNames []string
 	for rows.Next() {

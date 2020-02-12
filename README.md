@@ -28,7 +28,7 @@ See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion a
 # Contribute or Stay Connected
 
 1. Join our [Discord](https://discordapp.com/invite/xNEdEGw) 
-2. Follow us on [Twitter](https://twitter.com/rudderlabs)
+2. Follow us on [Twitter](https://twitter.com/rudderstack)
 
 # UI Pages
 
@@ -163,5 +163,4 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 3. More destination support
 4. HA support
 5. More SDKs (or Segment compatibility)
-6. Transformations from UI
 

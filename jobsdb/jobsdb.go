@@ -1345,8 +1345,8 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	}
 
 	rows, err = jd.dbHandle.Query(sqlStatement)
-	defer rows.Close()
 	jd.assertError(err)
+	defer rows.Close()
 
 	var jobList []*JobT
 	for rows.Next() {
@@ -1763,6 +1763,7 @@ func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) in
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
                                        VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
+	jd.assertError(err)
 	defer stmt.Close()
 
 	var opID int64
@@ -1794,8 +1795,8 @@ func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 									operation = '%s'
 									ORDER BY id`, jd.tablePrefix, opType)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
-	defer stmt.Close()
 	jd.assertError(err)
+	defer stmt.Close()
 
 	rows, err := stmt.Query()
 	jd.assertError(err)
@@ -1830,8 +1831,8 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
                                 	ORDER BY id`, jd.tablePrefix)
 
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
-	defer stmt.Close()
 	jd.assertError(err)
+	defer stmt.Close()
 
 	rows, err := stmt.Query(pq.Array(opTypes))
 	jd.assertError(err)
@@ -2179,8 +2180,8 @@ func (jd *HandleT) setupEnumTypes() {
 		host, port, user, password, dbname)
 
 	dbHandle, err := sql.Open("postgres", psqlInfo)
-	defer dbHandle.Close()
 	jd.assertError(err)
+	defer dbHandle.Close()
 
 	sqlStatement := `DO $$ BEGIN
                                 CREATE TYPE job_state_type

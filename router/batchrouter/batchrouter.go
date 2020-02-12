@@ -483,7 +483,9 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		defer os.Remove(jsonPath)
 
 		rawf, err := os.Open(jsonPath)
-		reader, _ := gzip.NewReader(rawf)
+		misc.AssertError(err)
+		reader, err := gzip.NewReader(rawf)
+		misc.AssertError(err)
 
 		sc := bufio.NewScanner(reader)
 
