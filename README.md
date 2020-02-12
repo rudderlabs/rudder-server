@@ -76,7 +76,7 @@ Our terraform scripts and instructions are in a separate repo - [Download Here](
 
 Disclaimer: This is not the easiest way of installing RudderStack.  Please use this if you want to know more about the internals.
 
-1. Install Golang 1.12 or above. [Download Here](https://golang.org/dl/)
+1. Install Golang 1.13 or above. [Download Here](https://golang.org/dl/)
 2. Install NodeJS 10.6 or above. [Download Here](https://nodejs.org/en/download/)
 3. Install PostgreSQL 10 or above and set up the DB
 
