@@ -267,11 +267,13 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			if err != "" {
 				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[uuid], 1)
 				misc.IncrementMapByKey(writeKeyFailEventStats, jobWriteKeyMap[uuid], jobEventCountMap[uuid])
+				logger.Errorf("Request %v persist to db failed with error %v", uuid, err)
+				jobIDReqMap[uuid].done <- DBPersistFailed
 			} else {
 				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[uuid], 1)
 				misc.IncrementMapByKey(writeKeySuccessEventStats, jobWriteKeyMap[uuid], jobEventCountMap[uuid])
+				jobIDReqMap[uuid].done <- Ok
 			}
-			jobIDReqMap[uuid].done <- DBPersistFailed
 		}
 
 		//Sending events to config backend
