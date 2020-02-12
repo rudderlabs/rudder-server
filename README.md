@@ -163,5 +163,4 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 3. More destination support
 4. HA support
 5. More SDKs (or Segment compatibility)
-6. Transformations from UI
 
