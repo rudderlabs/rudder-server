@@ -85,66 +85,35 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				for _, destination := range source.Destinations {
-					if destination.Enabled {
-						enabledDestinations[destination.DestinationDefinition.Name] = true
-						if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-							brt, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+					enabledDestinations[destination.DestinationDefinition.Name] = true
+					//For batch router destinations
+					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
+							var brt batchrouter.HandleT
+							brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
+							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
+						}
+						if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+							_, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 							if !ok {
-								logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
-								var brt batchrouter.HandleT
-								brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
-								dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
-							} else {
-								logger.Debug("Enabling existing Destination", destination.DestinationDefinition.Name)
-								brt.Enable()
-							}
-							if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-								wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-								if !ok {
-									logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-									var wh warehouse.HandleT
-									wh.Setup(destination.DestinationDefinition.Name)
-									dstToWhRouter[destination.DestinationDefinition.Name] = &wh
-								} else {
-									logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-									wh.Enable()
-								}
-							}
-						} else {
-							rt, ok := dstToRouter[destination.DestinationDefinition.Name]
-							if !ok {
-								logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
-								var router router.HandleT
-								router.Setup(routerDB, destination.DestinationDefinition.Name)
-								dstToRouter[destination.DestinationDefinition.Name] = &router
-							} else {
-								logger.Debug("Enabling existing Destination", destination.DestinationDefinition.Name)
-								rt.Enable()
+								logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+								var wh warehouse.HandleT
+								wh.Setup(destination.DestinationDefinition.Name)
+								dstToWhRouter[destination.DestinationDefinition.Name] = &wh
 							}
 						}
-
+					} else {
+						_, ok := dstToRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
+							var router router.HandleT
+							router.Setup(routerDB, destination.DestinationDefinition.Name)
+							dstToRouter[destination.DestinationDefinition.Name] = &router
+						}
 					}
-				}
-			}
-		}
 
-		keys := misc.StringKeys(dstToRouter)
-		keys = append(keys, misc.StringKeys(dstToBatchRouter)...)
-		keys = append(keys, misc.StringKeys(dstToWhRouter)...)
-		for _, key := range keys {
-			if _, ok := enabledDestinations[key]; !ok {
-				if rtHandle, ok := dstToRouter[key]; ok {
-					logger.Info("Disabling a existing destination: ", key)
-					rtHandle.Disable()
-					continue
-				}
-				if brtHandle, ok := dstToBatchRouter[key]; ok {
-					logger.Info("Disabling a existing batch destination: ", key)
-					brtHandle.Disable()
-				}
-				if whHandle, ok := dstToWhRouter[key]; ok {
-					logger.Info("Disabling a existing warehouse destination: ", key)
-					whHandle.Disable()
 				}
 			}
 		}

@@ -430,10 +430,6 @@ func (rt *HandleT) generatorLoop() {
 	countStat := stats.NewStat("router.generator_events", stats.CountType)
 
 	for {
-		if !rt.isEnabled {
-			time.Sleep(1000)
-			continue
-		}
 		generatorStat.Start()
 
 		//#JobOrder (See comment marked #JobOrder
