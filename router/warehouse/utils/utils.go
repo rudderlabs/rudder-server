@@ -11,9 +11,9 @@ import (
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 )
 
 const (
@@ -289,6 +289,6 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	return schema
 }
 
-func DestStat(statType string, statName string, id string) *stats.RudderStats {
-	return stats.NewBatchDestStat(fmt.Sprintf("warehouse.%s", statName), statType, id)
+func DestStat(statType string, statName string, id string) *monitoring.RudderStats {
+	return monitoring.NewBatchDestStat(fmt.Sprintf("warehouse.%s", statName), statType, id)
 }

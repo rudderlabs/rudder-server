@@ -16,11 +16,12 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 )
@@ -92,11 +93,11 @@ type ErrorResponseT struct {
 }
 
 func updateDestStatusStats(id string, count int, isSuccess bool) {
-	var destStatsD *stats.RudderStats
+	var destStatsD *monitoring.RudderStats
 	if isSuccess {
-		destStatsD = stats.NewBatchDestStat("batch_router.dest_successful_events", stats.CountType, id)
+		destStatsD = monitoring.NewBatchDestStat("batch_router.dest_successful_events", monitoring.CountType, id)
 	} else {
-		destStatsD = stats.NewBatchDestStat("batch_router.dest_failed_attempts", stats.CountType, id)
+		destStatsD = monitoring.NewBatchDestStat("batch_router.dest_failed_attempts", monitoring.CountType, id)
 	}
 	destStatsD.Count(count)
 }
@@ -280,12 +281,15 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 func (brt *HandleT) initWorkers() {
 	for i := 0; i < noOfWorkers; i++ {
 		go func() {
-			for {
+			for !rruntime.IsShutDownInProgess {
 				select {
 				case batchJobs := <-brt.processQ:
+					if rruntime.IsShutDownInProgess {
+						break
+					}
 					switch {
 					case misc.ContainsString(objectStorageDestinations, brt.destType):
-						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+						destUploadStat := monitoring.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), monitoring.TimerType)
 						destUploadStat.Start()
 						output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
 						brt.setJobStatus(batchJobs, false, output.Error)
@@ -296,12 +300,12 @@ func (brt *HandleT) initWorkers() {
 						destUploadStat.End()
 						setDestInProgress(batchJobs.BatchDestination, false)
 					case misc.ContainsString(warehouseDestinations, brt.destType):
-						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType)
+						destUploadStat := monitoring.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), monitoring.TimerType)
 						destUploadStat.Start()
 						output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
 						if output.Error == nil && output.Key != "" {
 							brt.updateWarehouseMetadata(batchJobs, output.Key)
-							warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
+							warehouseutils.DestStat(monitoring.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
 						}
 						brt.setJobStatus(batchJobs, true, output.Error)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
@@ -356,14 +360,14 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 }
 
 func (brt *HandleT) mainLoop() {
-	for {
+	for !rruntime.IsShutDownInProgess {
 		if !brt.isEnabled {
 			time.Sleep(2 * mainLoopSleep)
 			continue
 		}
 		time.Sleep(mainLoopSleep)
 		for _, batchDestination := range brt.batchDestinations {
-			if isDestInProgress(batchDestination) {
+			if isDestInProgress(batchDestination) || rruntime.IsShutDownInProgess {
 				continue
 			}
 			if uploadFrequencyExceeded(batchDestination) {
@@ -384,7 +388,7 @@ func (brt *HandleT) mainLoop() {
 					Optional: true,
 				},
 			}
-			brtQueryStat := stats.NewStat("batch_router.jobsdb_query_time", stats.TimerType)
+			brtQueryStat := monitoring.NewStat("batch_router.jobsdb_query_time", monitoring.TimerType)
 			brtQueryStat.Start()
 
 			retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, parameterFilters)
@@ -401,6 +405,9 @@ func (brt *HandleT) mainLoop() {
 				continue
 			}
 			logger.Debugf("BRT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", brt.destType, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
+			if rruntime.IsShutDownInProgess {
+				break
+			}
 
 			var statusList []*jobsdb.JobStatusT
 

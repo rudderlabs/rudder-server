@@ -10,9 +10,9 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/rudderlabs/rudder-server/config"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
@@ -222,7 +222,7 @@ func init() {
 }
 
 func (bq *HandleT) MigrateSchema() (err error) {
-	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", bq.Warehouse.Destination.ID)
+	timer := warehouseutils.DestStat(monitoring.TimerType, "migrate_schema_time", bq.Warehouse.Destination.ID)
 	timer.Start()
 	warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatingSchemaState, bq.DbHandle)
 	logger.Infof("BQ: Updaing schema for bigquery in project: %s", bq.ProjectID)
@@ -246,7 +246,7 @@ func (bq *HandleT) Export() (err error) {
 	logger.Infof("BQ: Starting export to Bigquery for source:%s and wh_upload:%v", bq.Warehouse.Source.ID, bq.Upload.ID)
 	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataState, bq.DbHandle)
 	misc.AssertError(err)
-	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", bq.Warehouse.Destination.ID)
+	timer := warehouseutils.DestStat(monitoring.TimerType, "upload_time", bq.Warehouse.Destination.ID)
 	timer.Start()
 	err = bq.load()
 	timer.End()

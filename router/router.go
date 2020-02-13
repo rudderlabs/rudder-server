@@ -12,12 +12,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/rruntime"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/monitoring"
 )
 
 //HandleT is the handle to this module.
@@ -83,18 +85,18 @@ func loadConfig() {
 
 func (rt *HandleT) workerProcess(worker *workerT) {
 
-	deliveryTimeStat := stats.NewStat(
-		fmt.Sprintf("router.%s_delivery_time", rt.destID), stats.TimerType)
-	batchTimeStat := stats.NewStat(
-		fmt.Sprintf("router.%s_batch_time", rt.destID), stats.TimerType)
-	failedAttemptsStat := stats.NewStat(
-		fmt.Sprintf("router.%s_failed_attempts", rt.destID), stats.CountType)
-	eventsDeliveredStat := stats.NewStat(
-		fmt.Sprintf("router.%s_events_delivered", rt.destID), stats.CountType)
-	eventsAbortedStat := stats.NewStat(
-		fmt.Sprintf("router.%s_events_aborted", rt.destID), stats.CountType)
+	deliveryTimeStat := monitoring.NewStat(
+		fmt.Sprintf("router.%s_delivery_time", rt.destID), monitoring.TimerType)
+	batchTimeStat := monitoring.NewStat(
+		fmt.Sprintf("router.%s_batch_time", rt.destID), monitoring.TimerType)
+	failedAttemptsStat := monitoring.NewStat(
+		fmt.Sprintf("router.%s_failed_attempts", rt.destID), monitoring.CountType)
+	eventsDeliveredStat := monitoring.NewStat(
+		fmt.Sprintf("router.%s_events_delivered", rt.destID), monitoring.CountType)
+	eventsAbortedStat := monitoring.NewStat(
+		fmt.Sprintf("router.%s_events_aborted", rt.destID), monitoring.CountType)
 
-	for {
+	for !rruntime.IsShutDownInProgess {
 		job := <-worker.channel
 		var respStatusCode, attempts int
 		var respStatus, respBody string
@@ -159,7 +161,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			}
 			if !isSuccessStatus(respStatusCode) {
 				//400 series error are client errors. Can't continue
-				if respStatusCode >= http.StatusBadRequest && respStatusCode <= http.StatusUnavailableForLegalReasons {
+				if respStatusCode >= http.StatusBadRequest && respStatusCode < http.StatusInternalServerError {
 					break
 				}
 				//Wait before the next retry
@@ -328,8 +330,8 @@ func (rt *HandleT) statusInsertLoop() {
 	//Wait for the responses from statusQ
 	lastUpdate := time.Now()
 
-	statusStat := stats.NewStat("router.status_loop", stats.TimerType)
-	countStat := stats.NewStat("router.status_events", stats.CountType)
+	statusStat := monitoring.NewStat("router.status_loop", monitoring.TimerType)
+	countStat := monitoring.NewStat("router.status_events", monitoring.CountType)
 
 	for {
 		rt.perfStats.Start()
@@ -426,10 +428,10 @@ func (rt *HandleT) generatorLoop() {
 
 	logger.Info("Generator started")
 
-	generatorStat := stats.NewStat("router.generator_loop", stats.TimerType)
-	countStat := stats.NewStat("router.generator_events", stats.CountType)
+	generatorStat := monitoring.NewStat("router.generator_loop", monitoring.TimerType)
+	countStat := monitoring.NewStat("router.generator_events", monitoring.CountType)
 
-	for {
+	for !rruntime.IsShutDownInProgess {
 		if !rt.isEnabled {
 			time.Sleep(1000)
 			continue
@@ -460,6 +462,10 @@ func (rt *HandleT) generatorLoop() {
 			logger.Debugf("RT: DB Read Complete. No RT Jobs to process.")
 			time.Sleep(readSleep)
 			continue
+		}
+
+		if rruntime.IsShutDownInProgess {
+			break
 		}
 
 		combinedList := append(waitList, append(unprocessedList, retryList...)...)
