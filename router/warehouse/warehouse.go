@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/router/warehouse/redshift"
+	"github.com/rudderlabs/rudder-server/router/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -301,6 +302,9 @@ func NewWhManager(destType string) (WarehouseManager, error) {
 	case "BQ":
 		var bq bigquery.HandleT
 		return &bq, nil
+	case "SNOWFLAKE":
+		var sf snowflake.HandleT
+		return &sf, nil
 	}
 	return nil, errors.New("No provider configured for WarehouseManager")
 }
