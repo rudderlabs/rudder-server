@@ -54,7 +54,7 @@ func loadConfig() {
 	enableBackup = config.GetBool("JobsDB.enableBackup", true)
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 }
 
 // Test Function

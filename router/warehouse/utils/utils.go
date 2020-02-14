@@ -47,8 +47,9 @@ var (
 )
 
 var ObjectStorageMap = map[string]string{
-	"RS": "S3",
-	"BQ": "GCS",
+	"RS":        "S3",
+	"BQ":        "GCS",
+	"SNOWFLAKE": "S3",
 }
 
 func init() {
@@ -248,6 +249,15 @@ func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId strin
 	return
 }
 
+func GetLoadFileLocation(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (location string, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s
+								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v) LIMIT 1`,
+		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
+	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
+	misc.AssertError(err)
+	return
+}
+
 func GetS3Location(location string) (string, string) {
 	r, _ := regexp.Compile("\\.s3.*\\.amazonaws\\.com")
 	subLocation := r.FindString(location)
@@ -259,6 +269,12 @@ func GetS3Location(location string) (string, string) {
 	str1 := r.ReplaceAllString(location, "")
 	str2 := strings.Replace(str1, "https", "s3", 1)
 	return region, str2
+}
+
+func GetS3LocationFolder(location string) string {
+	_, s3Location := GetS3Location(location)
+	lastPos := strings.LastIndex(s3Location, "/")
+	return s3Location[:lastPos]
 }
 
 func GetGCSLocation(location string) string {
