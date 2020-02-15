@@ -90,7 +90,7 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 4. Go to the [dashboard](https://app.rudderlabs.com/signup) and set up your account. Copy your workspace token from top of the home page
 5. Clone this repository. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
  and navigate to the transformer directory `cd rudder-transformer`
-6. Start the destination transformer `node destTransformer.js`
+6. Install dependencies `npm i` and start the destination transformer `node destTransformer.js`
 7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
 8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4
 9. Run the backend server `go run -mod=vendor main.go`
