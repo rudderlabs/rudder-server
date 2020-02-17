@@ -61,8 +61,6 @@ keepOrderOnFailure = true
 [BatchRouter]
 mainLoopSleepInS = 2
 noOfWorkers = 8
-jobQueryBatchSize = 100000
-uploadFreqInS = 30
 
 [Warehouse]
 stagingFilesTable = "wh_staging_files"
@@ -90,6 +88,7 @@ maxRetry = 30
 retrySleepInMS = 100
 
 [BackendConfig]
+configFromFile = false
 pollIntervalInS = 5
 
 

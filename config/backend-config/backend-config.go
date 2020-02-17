@@ -24,6 +24,8 @@ var (
 	multiWorkspaceSecret                 string
 	configBackendURL, configBackendToken string
 	pollInterval                         time.Duration
+	configFromFile                       bool
+	configJSONPath                       string
 	curSourceJSON                        SourcesT
 	curSourceJSONLock                    sync.RWMutex
 	initialized                          bool
@@ -87,6 +89,8 @@ func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	configBackendToken = config.GetEnv("CONFIG_BACKEND_TOKEN", "1P2tfQQKarhlsG6S3JGLdXptyZY")
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
+	configJSONPath = config.GetString("BackendConfig.configJSONPath", "./workspaceConfig.json")
+	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
 }
 
 func GetConfigBackendToken() string {
