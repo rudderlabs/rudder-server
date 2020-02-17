@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
@@ -21,9 +20,8 @@ func Initialize() {
 	viper.SetConfigFile(configPath)
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig() // Find and read the config file
-	if err != nil {             // Handle errors reading the config file
-		defer bugsnag.AutoNotify()
-		panic(fmt.Errorf("Fatal error config file: %s", err))
+	if err != nil {             // Using the default config values when config.toml is not found
+		fmt.Println("Config toml file not found. Using the default values")
 	}
 }
 

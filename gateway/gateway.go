@@ -86,7 +86,7 @@ func loadConfig() {
 	// Maximum request size to gateway
 	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 100000) * 1000
 	// Enable dedup of incoming events by default
-	enableDedup = config.GetBool("Gateway.enableDedup", true)
+	enableDedup = config.GetBool("Gateway.enableDedup", false)
 	// Dedup time window in hours
 	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 	// Enable rate limit on incoming events. false by default
