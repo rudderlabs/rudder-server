@@ -91,6 +91,7 @@ retrySleepInMS = 100
 
 [BackendConfig]
 configFromFile = false
+configJSONPath = "./workspaceConfig.json"
 pollIntervalInS = 5
 
 
