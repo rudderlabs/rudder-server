@@ -126,3 +126,13 @@ enableTimestamp=false
 enableFileNameInLog=false
 enableStackTrace=false
 
+# runtime configuration
+[Runtime]
+publish=true
+pauseDuration=10
+enableCPU=true
+enableMem=true
+enableGC=true
+
+
+

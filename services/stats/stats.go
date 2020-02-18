@@ -2,7 +2,9 @@ package stats
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/stats/collector"
 	"sync"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -29,13 +31,22 @@ var writeKeyClientsMapLock sync.Mutex
 var batchDestClientsMapLock sync.Mutex
 var destClientsMapLock sync.Mutex
 var jobsdbClientsMapLock sync.Mutex
+var enableCPU bool
+var enableMem bool
+var enableGC bool
+var publishRuntimeStats bool
+var pauseDuration int64
 
 func init() {
 	config.Initialize()
 	statsEnabled = config.GetBool("enableStats", false)
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
 	instanceID = config.GetEnv("INSTANCE_ID", "")
-
+	enableCPU = config.GetBool("Runtime.enableCPU", true)
+	enableMem = config.GetBool("Runtime.enableMem", true)
+	enableGC = config.GetBool("Runtime.enableGC", true)
+	publishRuntimeStats = config.GetBool("Runtime.publish", true)
+	pauseDuration = config.GetInt64("Runtime.pauseDuration", 10)
 	var err error
 	conn = statsd.Address(statsdServerURL)
 	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID))
@@ -45,6 +56,10 @@ func init() {
 		// just log the error and go on.
 		fmt.Println(err)
 	}
+	if client != nil {
+		go runCollector(client)
+	}
+
 }
 
 func NewStat(Name string, StatType string) (rStats *RudderStats) {
@@ -187,4 +202,19 @@ type RudderStats struct {
 	DestID      string
 	Client      *statsd.Client
 	dontProcess bool
+}
+
+func runCollector(client *statsd.Client) {
+	gaugeFunc := func(key string, val uint64) {
+		client.Gauge("runtime_"+key, val)
+	}
+	c := collector.New(gaugeFunc)
+	c.PauseDur = time.Duration(pauseDuration) * time.Second
+	c.EnableCPU = enableCPU
+	c.EnableMem = enableMem
+	c.EnableGC = enableGC
+	if publishRuntimeStats {
+		c.Run()
+	}
+
 }

@@ -4,17 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"net/http"
-	"os"
-	"os/signal"
-	"runtime"
-	"runtime/pprof"
-	"sync"
-	"syscall"
-	"time"
-
 	"github.com/bugsnag/bugsnag-go"
-
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -29,6 +19,14 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"net/http"
+	"os"
+	"os/signal"
+	"runtime"
+	"runtime/pprof"
+	"sync"
+	"syscall"
+	"time"
 )
 
 var (
@@ -188,7 +186,6 @@ func main() {
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
-
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
