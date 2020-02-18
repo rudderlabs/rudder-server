@@ -19,15 +19,16 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey strin
 	return ""
 }
 
-//GetBackendConfig returns sources from the workspace
-func (workspaceConfig *WorkspaceConfig) GetBackendConfig() (SourcesT, bool) {
+//Get returns sources from the workspace
+func (workspaceConfig *WorkspaceConfig) Get() (SourcesT, bool) {
 	if configFromFile {
-		return workspaceConfig.getBackendConfigFromFile()
+		return workspaceConfig.getFromFile()
 	}
-	return workspaceConfig.getBackendConfigFromAPI()
+	return workspaceConfig.getFromAPI()
 }
 
-func (workspaceConfig *WorkspaceConfig) getBackendConfigFromAPI() (SourcesT, bool) {
+// getFromApi gets the workspace config from api
+func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 	url := fmt.Sprintf("%s/workspaceConfig", configBackendURL)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -60,7 +61,8 @@ func (workspaceConfig *WorkspaceConfig) getBackendConfigFromAPI() (SourcesT, boo
 	return sourcesJSON, true
 }
 
-func (workspaceConfig *WorkspaceConfig) getBackendConfigFromFile() (SourcesT, bool) {
+// getFromApi reads the workspace config from JSON file
+func (workspaceConfig *WorkspaceConfig) getFromFile() (SourcesT, bool) {
 	logger.Info("Reading workspace config from JSON file")
 	data, err := ioutil.ReadFile(configJSONPath)
 	if err != nil {

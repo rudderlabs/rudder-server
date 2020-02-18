@@ -76,7 +76,7 @@ type TransformationT struct {
 
 type BackendConfig interface {
 	SetUp()
-	GetBackendConfig() (SourcesT, bool)
+	Get() (SourcesT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 }
 
@@ -140,11 +140,12 @@ func init() {
 func pollConfigUpdate() {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
-		sourceJSON, ok := backendConfig.GetBackendConfig()
+		sourceJSON, ok := backendConfig.Get()
 		if !ok {
 			statConfigBackendError.Increment()
 		}
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
+			logger.Info("Config changed from ", curSourceJSON, " to : ", sourceJSON)
 			curSourceJSONLock.Lock()
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()
