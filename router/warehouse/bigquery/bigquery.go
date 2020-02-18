@@ -277,10 +277,10 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
 		return err
 	}
-	curreSchema, err := warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
+	currSchema, err := warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
 	misc.AssertError(err)
-	bq.CurrentSchema = curreSchema.Schema
-	bq.Namespace = curreSchema.Namespace
+	bq.CurrentSchema = currSchema.Schema
+	bq.Namespace = currSchema.Namespace
 	if bq.Namespace == "" {
 		bq.Namespace = bq.Upload.Namespace
 	}

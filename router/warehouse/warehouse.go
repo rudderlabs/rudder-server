@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	uuid "github.com/satori/go.uuid"
 )
 
 var (
@@ -181,7 +182,9 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	return stagingFilesList, nil
 }
 
-func consolidateSchema(jsonUploadsList []*StagingFileT) map[string]map[string]string {
+func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) map[string]map[string]string {
+	currSchema, err := warehouseutils.GetCurrentSchema(wh.dbHandle, warehouse)
+	misc.AssertError(err)
 	schemaMap := make(map[string]map[string]string)
 	for _, upload := range jsonUploadsList {
 		var schema map[string]map[string]string
@@ -189,11 +192,24 @@ func consolidateSchema(jsonUploadsList []*StagingFileT) map[string]map[string]st
 		misc.AssertError(err)
 		for tableName, columnMap := range schema {
 			if schemaMap[tableName] == nil {
-				schemaMap[tableName] = columnMap
-			} else {
-				for columnName, columnType := range columnMap {
-					schemaMap[tableName][columnName] = columnType
+				schemaMap[tableName] = make(map[string]string)
+			}
+			for columnName, columnType := range columnMap {
+				var currentType string
+				// take the currentType from already existing schema
+				if len(currSchema.Schema) > 0 {
+					if _, ok := currSchema.Schema[tableName]; ok {
+						currentType, ok = currSchema.Schema[tableName][columnName]
+					}
 				}
+				if _, ok := schemaMap[tableName][columnName]; ok {
+					columnType = schemaMap[tableName][columnName]
+				}
+				// if columnType is different from the existing one, set it to existing one
+				if currentType != "" && currentType != columnType {
+					columnType = currentType
+				}
+				schemaMap[tableName][columnName] = columnType
 			}
 		}
 	}
@@ -378,7 +394,7 @@ func (wh *HandleT) mainLoop() {
 						lastIndex = len(stagingFilesList)
 					}
 					// merge schemas over all staging files in this batch
-					consolidatedSchema := consolidateSchema(stagingFilesList[count:lastIndex])
+					consolidatedSchema := wh.consolidateSchema(warehouse, stagingFilesList[count:lastIndex])
 					// create record in wh_uploads to mark start of upload to warehouse flow
 					upload := wh.initUpload(warehouse, stagingFilesList[count:lastIndex], consolidatedSchema)
 					jobs = append(jobs, ProcessStagingFilesJobT{
@@ -609,6 +625,15 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 					csvRow = append(csvRow, "")
 					continue
 				}
+
+				// if the current data type doesnt match the one in warehouse, set value as NULL
+				dataTypeInEvent := job.Schema[tableName][columnName]
+				currDataType := warehouseutils.Datatype(columnVal)
+				if currDataType != dataTypeInEvent {
+					csvRow = append(csvRow, "")
+					continue
+				}
+
 				if stringVal, ok := columnVal.(string); ok {
 					// handle double quotes in column values for csv
 					if strings.Contains(stringVal, `"`) {
@@ -649,7 +674,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		file, err := os.Open(outputFile.File.Name())
 		defer os.Remove(outputFile.File.Name())
 		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v", wh.destType, warehouseutils.ObjectStorageMap[wh.destType], tableName, job.StagingFile.ID)
-		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, strconv.FormatInt(job.Upload.ID, 10))
+		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, fmt.Sprintf(`%v-%v`, strconv.FormatInt(job.Upload.ID, 10), uuid.NewV4().String()))
 		if err != nil {
 			return loadFileIDs, err
 		}

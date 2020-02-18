@@ -308,3 +308,27 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 func DestStat(statType string, statName string, id string) *stats.RudderStats {
 	return stats.NewBatchDestStat(fmt.Sprintf("warehouse.%s", statName), statType, id)
 }
+
+func Datatype(in interface{}) string {
+	if str, ok := in.(string); ok {
+		isTimestamp, _ := regexp.MatchString(`^([\+-]?\d{4})((-)((0[1-9]|1[0-2])(-([12]\d|0[1-9]|3[01])))([T\s]((([01]\d|2[0-3])((:)[0-5]\d))([\:]\d+)?)?(:[0-5]\d([\.]\d+)?)?([zZ]|([\+-])([01]\d|2[0-3]):?([0-5]\d)?)?)?)$`, str)
+
+		if isTimestamp {
+			return "datetime"
+		}
+	}
+
+	if _, ok := in.(bool); ok {
+		return "boolean"
+	}
+
+	if _, ok := in.(int); ok {
+		return "int"
+	}
+
+	if _, ok := in.(float64); ok {
+		return "float"
+	}
+
+	return "string"
+}

@@ -332,10 +332,10 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	sf.Warehouse = config.Warehouse
 	sf.Upload = config.Upload
 
-	curreSchema, err := warehouseutils.GetCurrentSchema(sf.DbHandle, sf.Warehouse)
+	currSchema, err := warehouseutils.GetCurrentSchema(sf.DbHandle, sf.Warehouse)
 	misc.AssertError(err)
-	sf.CurrentSchema = curreSchema.Schema
-	sf.Namespace = strings.ToUpper(curreSchema.Namespace)
+	sf.CurrentSchema = currSchema.Schema
+	sf.Namespace = strings.ToUpper(currSchema.Namespace)
 	if sf.Namespace == "" {
 		logger.Infof("Namespace not found in currentschema for SF:%s, setting from upload: %s", sf.Warehouse.Destination.ID, sf.Upload.Namespace)
 		sf.Namespace = strings.ToUpper(sf.Upload.Namespace)
