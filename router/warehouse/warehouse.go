@@ -2,13 +2,16 @@ package warehouse
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -44,6 +47,7 @@ var (
 	inRecoveryMap              map[string]bool
 	inProgressMapLock          sync.RWMutex
 	lastExecMap                map[string]int64
+	lastExecMapLock            sync.RWMutex
 	warehouseLoadFilesTable    string
 	warehouseStagingFilesTable string
 	warehouseUploadsTable      string
@@ -183,7 +187,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 }
 
 func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) map[string]map[string]string {
-	currSchema, err := warehouseutils.GetCurrentSchema(wh.dbHandle, warehouse)
+	schemaInDB, err := warehouseutils.GetCurrentSchema(wh.dbHandle, warehouse)
 	misc.AssertError(err)
 	schemaMap := make(map[string]map[string]string)
 	for _, upload := range jsonUploadsList {
@@ -195,21 +199,19 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 				schemaMap[tableName] = make(map[string]string)
 			}
 			for columnName, columnType := range columnMap {
-				var currentType string
-				// take the currentType from already existing schema
-				if len(currSchema.Schema) > 0 {
-					if _, ok := currSchema.Schema[tableName]; ok {
-						currentType, ok = currSchema.Schema[tableName][columnName]
+				// if column already has a type in db, use that
+				if len(schemaInDB.Schema) > 0 {
+					if _, ok := schemaInDB.Schema[tableName]; ok {
+						if columnTypeInDB, ok := schemaInDB.Schema[tableName][columnName]; ok {
+							schemaMap[tableName][columnName] = columnTypeInDB
+							continue
+						}
 					}
 				}
-				if _, ok := schemaMap[tableName][columnName]; ok {
-					columnType = schemaMap[tableName][columnName]
+				// check if we already set the columnType in schemaMap
+				if _, ok := schemaMap[tableName][columnName]; !ok {
+					schemaMap[tableName][columnName] = columnType
 				}
-				// if columnType is different from the existing one, set it to existing one
-				if currentType != "" && currentType != columnType {
-					columnType = currentType
-				}
-				schemaMap[tableName][columnName] = columnType
 			}
 		}
 	}
@@ -298,6 +300,8 @@ func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 }
 
 func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT) bool {
+	lastExecMapLock.Lock()
+	defer lastExecMapLock.Unlock()
 	if lastExecTime, ok := lastExecMap[warehouse.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
 		return true
 	}
@@ -614,6 +618,8 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 			outputFileMap[tableName].WriteGZ(string(line) + "\n")
 		} else {
 			csvRow := []string{}
+			var buff bytes.Buffer
+			csvWriter := csv.NewWriter(&buff)
 			for _, columnName := range sortedTableColumnMap[tableName] {
 				if columnName == "uuid_ts" {
 					// add uuid_ts to track when event was processed into load_file
@@ -626,38 +632,28 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 					continue
 				}
 
+				columnType, castOk := columns[columnName].(string)
+				// golang json unmarhsal converts int to float
+				// convert int back to float for comparision with dataTypeInSchema
+				if castOk && columnType == "int" {
+					goDataType := reflect.TypeOf(columnVal).Kind()
+					if goDataType == reflect.Float64 || goDataType == reflect.Float32 {
+						columnVal = int(columnVal.(float64))
+					}
+				}
+
 				// if the current data type doesnt match the one in warehouse, set value as NULL
-				dataTypeInEvent := job.Schema[tableName][columnName]
-				currDataType := warehouseutils.Datatype(columnVal)
-				if currDataType != dataTypeInEvent {
+				dataTypeInSchema := job.Schema[tableName][columnName]
+				dataTypeInColumnVal := warehouseutils.Datatype(columnVal)
+				if dataTypeInColumnVal != dataTypeInSchema {
 					csvRow = append(csvRow, "")
 					continue
 				}
-
-				if stringVal, ok := columnVal.(string); ok {
-					// handle double quotes in column values for csv
-					if strings.Contains(stringVal, `"`) {
-						columnVal = strings.ReplaceAll(stringVal, `"`, `'`)
-					}
-					// handle commas in column values for csv
-					if strings.Contains(stringVal, ",") {
-						// escape double quotes
-						columnVal = strings.ReplaceAll(stringVal, "\"", "\"\"")
-						// put entire string in double qoutes
-						columnVal = fmt.Sprintf(`"%s"`, columnVal)
-					}
-				}
-				// avoid printing integers like 5000000 as 5e+06
-				columnType, castOk := columns[columnName].(string)
-				if castOk && columnType == "bigint" || columnType == "int" || columnType == "float" {
-					columnVal = columnVal.(float64)
-				}
-				if fmt.Sprintf("%v", columnVal) == "<nil>" {
-					columnVal = ""
-				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
-			outputFileMap[tableName].WriteGZ(strings.Join(csvRow, ",") + "\n")
+			csvWriter.Write(csvRow)
+			csvWriter.Flush()
+			outputFileMap[tableName].WriteGZ(buff.String())
 		}
 	}
 	reader.Close()
