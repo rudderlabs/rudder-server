@@ -1,5 +1,6 @@
 ![Build Status][Build Status]
 [![Go Report Card][GoReportCardBadge]][GoReportCard]
+[![Release]][Release]
 
 # What is RudderStack?
 
@@ -168,6 +169,7 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 <!----variable's---->
 
 [Build Status]: https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master
+[Release]: https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver
 [Discord]: https://discordapp.com/invite/xNEdEGw
 [Twitter]: https://twitter.com/rudderlabs
 [GoReportCard]: https://goreportcard.com/report/github.com/rudderlabs/rudder-server
