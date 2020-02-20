@@ -561,12 +561,16 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		return loadFileIDs, err
 	}
 
+	timer := warehouseutils.DestStat(stats.TimerType, "download_staging_file_time", job.Warehouse.Destination.ID)
+	timer.Start()
+
 	err = downloader.Download(jsonFile, job.StagingFile.Location)
 	if err != nil {
 		return loadFileIDs, err
 	}
 	jsonFile.Close()
 	defer os.Remove(jsonPath)
+	timer.End()
 
 	sortedTableColumnMap := make(map[string][]string)
 	// sort columns per table so as to maintaing same order in load file (needed in case of csv load file)
@@ -589,6 +593,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	uuidTS := time.Now()
 	sc := bufio.NewScanner(reader)
 	misc.PrintMemUsage()
+
+	timer = warehouseutils.DestStat(stats.TimerType, "process_staging_file_to_csv_time", job.Warehouse.Destination.ID)
+	timer.Start()
 
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
@@ -653,6 +660,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		}
 	}
 	reader.Close()
+	timer.End()
 	misc.PrintMemUsage()
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
@@ -661,6 +669,8 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	})
 	misc.AssertError(err)
 
+	timer = warehouseutils.DestStat(stats.TimerType, "upload_load_files_per_staging_file_time", job.Warehouse.Destination.ID)
+	timer.Start()
 	for tableName, outputFile := range outputFileMap {
 		outputFile.CloseGZ()
 		file, err := os.Open(outputFile.File.Name())
@@ -681,6 +691,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		misc.AssertError(err)
 		loadFileIDs = append(loadFileIDs, fileID)
 	}
+	timer.End()
 	return
 }
 
