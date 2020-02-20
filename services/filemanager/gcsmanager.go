@@ -52,6 +52,9 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 	}
 
 	attrs, err := obj.Attrs(ctx)
+	if err != nil {
+		return UploadOutput{}, err
+	}
 	return UploadOutput{Location: objectURL(attrs)}, err
 }
 

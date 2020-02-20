@@ -22,12 +22,10 @@ import (
 	"compress/gzip"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"sort"
 	"unicode/utf8"
 
@@ -38,8 +36,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
+	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -100,23 +98,24 @@ HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
-	dbHandle                      *sql.DB
-	tablePrefix                   string
-	datasetList                   []dataSetT
-	datasetRangeList              []dataSetRangeT
-	dsListLock                    sync.RWMutex
-	dsMigrationLock               sync.RWMutex
-	dsRetentionPeriod             time.Duration
-	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]bool
-	dsCacheLock                   sync.Mutex
-	toBackup                      bool
-	jobsFileUploader              filemanager.FileManager
-	jobStatusFileUploader         filemanager.FileManager
-	statTableCount                *stats.RudderStats
-	statNewDSPeriod               *stats.RudderStats
-	isStatNewDSPeriodInitialized  bool
-	statDropDSPeriod              *stats.RudderStats
-	isStatDropDSPeriodInitialized bool
+	dbHandle                                                                               *sql.DB
+	tablePrefix                                                                            string
+	datasetList                                                                            []dataSetT
+	datasetRangeList                                                                       []dataSetRangeT
+	dsListLock                                                                             sync.RWMutex
+	dsMigrationLock                                                                        sync.RWMutex
+	dsRetentionPeriod                                                                      time.Duration
+	dsEmptyResultCache                                                                     map[dataSetT]map[string]map[string]map[string]bool
+	dsCacheLock                                                                            sync.Mutex
+	toBackup                                                                               bool
+	jobsFileUploader                                                                       filemanager.FileManager
+	jobStatusFileUploader                                                                  filemanager.FileManager
+	statTableCount                                                                         *stats.RudderStats
+	statNewDSPeriod                                                                        *stats.RudderStats
+	isStatNewDSPeriodInitialized                                                           bool
+	statDropDSPeriod                                                                       *stats.RudderStats
+	isStatDropDSPeriodInitialized                                                          bool
+	tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat, jobsdbQueryTimeStat *stats.RudderStats
 }
 
 //The struct which is written to the journal
@@ -146,13 +145,8 @@ var dbErrorMap = map[string]string{
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
-		// debug.SetTraceback("all")
-		debug.PrintStack()
 		jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
-		defer bugsnag.AutoNotify(err)
-		misc.RecordAppError(err)
-		logger.Fatal(err)
 		panic(err)
 	}
 }
@@ -169,13 +163,8 @@ func (jd *HandleT) assertErrorIfDev(err error) {
 
 func (jd *HandleT) assert(cond bool) {
 	if !cond {
-		// debug.SetTraceback("all")
-		debug.PrintStack()
 		jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
-		defer bugsnag.AutoNotify("Assertion failed")
-		misc.RecordAppError(errors.New("Assertion failed"))
-		logger.Fatal("Assertion failed")
 		panic("Assertion failed")
 	}
 }
@@ -222,8 +211,6 @@ var (
 	useJoinForUnprocessed                      bool
 )
 
-var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat, jobsdbQueryTimeStat *stats.RudderStats
-
 // Loads db config and migration related config from config file
 func loadConfig() {
 	host = config.GetEnv("JOBS_DB_HOST", "localhost")
@@ -254,9 +241,6 @@ func loadConfig() {
 func init() {
 	config.Initialize()
 	loadConfig()
-	tableFileDumpTimeStat = stats.NewStat("jobsdb.table_file_dump_time", stats.TimerType)
-	fileUploadTimeStat = stats.NewStat("jobsdb.file_upload_time", stats.TimerType)
-	totalTableDumpTimeStat = stats.NewStat("jobsdb.total_table_dump_time", stats.TimerType)
 
 }
 
@@ -304,6 +288,9 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
 	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
+	jd.tableFileDumpTimeStat = stats.NewStat(fmt.Sprintf("jobsdb.%s_table_file_dump_time", jd.tablePrefix), stats.TimerType)
+	jd.fileUploadTimeStat = stats.NewStat(fmt.Sprintf("jobsdb.%s_file_upload_time", jd.tablePrefix), stats.TimerType)
+	jd.totalTableDumpTimeStat = stats.NewStat(fmt.Sprintf("jobsdb.%s_total_table_dump_time", jd.tablePrefix), stats.TimerType)
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
@@ -340,9 +327,13 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 			Config:   filemanager.GetProviderConfigFromEnv(),
 		})
 		jd.assertError(err)
-		go jd.backupDSLoop()
+		GoroutineFactory.StartGoroutine(func() {
+			jd.backupDSLoop()
+		})
 	}
-	go jd.mainCheckLoop()
+	GoroutineFactory.StartGoroutine(func() {
+		jd.mainCheckLoop()
+	})
 }
 
 /*
@@ -1573,8 +1564,8 @@ func (jd *HandleT) removeTableJSONDumps() {
 }
 
 func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable bool) (success bool, err error) {
-	tableFileDumpTimeStat.Start()
-	totalTableDumpTimeStat.Start()
+	jd.tableFileDumpTimeStat.Start()
+	jd.totalTableDumpTimeStat.Start()
 	var tableName, path, pathPrefix string
 	backupPathDirName := "/rudder-s3-dumps/"
 	tmpDirPath := misc.CreateTMPDIR()
@@ -1620,9 +1611,9 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	_, err = gzipWriter.Write(content)
 	misc.AssertError(err)
 	gzipWriter.Close()
-	tableFileDumpTimeStat.End()
+	jd.tableFileDumpTimeStat.End()
 
-	fileUploadTimeStat.Start()
+	jd.fileUploadTimeStat.Start()
 	file, err := os.Open(path)
 	jd.assertError(err)
 	defer file.Close()
@@ -1640,8 +1631,8 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 		logger.Errorf("Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
 	} else {
 		// Do not record stat in error case as error case time might be low and skew stats
-		fileUploadTimeStat.End()
-		totalTableDumpTimeStat.End()
+		jd.fileUploadTimeStat.End()
+		jd.totalTableDumpTimeStat.End()
 	}
 
 	err = os.Remove(path)

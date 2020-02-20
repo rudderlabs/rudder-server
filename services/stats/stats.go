@@ -1,7 +1,6 @@
 package stats
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -35,7 +34,10 @@ func init() {
 	statsEnabled = config.GetBool("enableStats", false)
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
 	instanceID = config.GetEnv("INSTANCE_ID", "")
+}
 
+//CreateStatsClient creates a new statsd client
+func CreateStatsClient() {
 	var err error
 	conn = statsd.Address(statsdServerURL)
 	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID))
@@ -43,7 +45,7 @@ func init() {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
 		// just log the error and go on.
-		fmt.Println(err)
+		logger.Error(err)
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
+	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -279,39 +280,41 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 
 func (brt *HandleT) initWorkers() {
 	for i := 0; i < noOfWorkers; i++ {
-		go func() {
-			for {
-				select {
-				case batchJobs := <-brt.processQ:
-					switch {
-					case misc.ContainsString(objectStorageDestinations, brt.destType):
-						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
-						destUploadStat.Start()
-						output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
-						brt.setJobStatus(batchJobs, false, output.Error)
-						if output.JournalOpID != 0 {
-							brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
+		GoroutineFactory.StartGoroutine(func() {
+			func() {
+				for {
+					select {
+					case batchJobs := <-brt.processQ:
+						switch {
+						case misc.ContainsString(objectStorageDestinations, brt.destType):
+							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+							destUploadStat.Start()
+							output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
+							brt.setJobStatus(batchJobs, false, output.Error)
+							if output.JournalOpID != 0 {
+								brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
+							}
+							misc.RemoveFilePaths(output.LocalFilePaths...)
+							destUploadStat.End()
+							setDestInProgress(batchJobs.BatchDestination, false)
+						case misc.ContainsString(warehouseDestinations, brt.destType):
+							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType)
+							destUploadStat.Start()
+							output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
+							if output.Error == nil && output.Key != "" {
+								brt.updateWarehouseMetadata(batchJobs, output.Key)
+								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
+							}
+							brt.setJobStatus(batchJobs, true, output.Error)
+							misc.RemoveFilePaths(output.LocalFilePaths...)
+							destUploadStat.End()
+							setDestInProgress(batchJobs.BatchDestination, false)
 						}
-						misc.RemoveFilePaths(output.LocalFilePaths...)
-						destUploadStat.End()
-						setDestInProgress(batchJobs.BatchDestination, false)
-					case misc.ContainsString(warehouseDestinations, brt.destType):
-						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType)
-						destUploadStat.Start()
-						output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
-						if output.Error == nil && output.Key != "" {
-							brt.updateWarehouseMetadata(batchJobs, output.Key)
-							warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
-						}
-						brt.setJobStatus(batchJobs, true, output.Error)
-						misc.RemoveFilePaths(output.LocalFilePaths...)
-						destUploadStat.End()
-						setDestInProgress(batchJobs.BatchDestination, false)
-					}
 
+					}
 				}
-			}
-		}()
+			}()
+		})
 	}
 }
 
@@ -598,7 +601,13 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.processQ = make(chan BatchJobsT)
 	brt.crashRecover()
 
-	go brt.initWorkers()
-	go brt.backendConfigSubscriber()
-	go brt.mainLoop()
+	GoroutineFactory.StartGoroutine(func() {
+		brt.initWorkers()
+	})
+	GoroutineFactory.StartGoroutine(func() {
+		brt.backendConfigSubscriber()
+	})
+	GoroutineFactory.StartGoroutine(func() {
+		brt.mainLoop()
+	})
 }

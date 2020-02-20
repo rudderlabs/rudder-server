@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/router/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
+	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -430,25 +431,29 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	ch := make(chan []int64)
 	// queue the staging files in a go routine so that job.List can be higher than number of workers in createLoadFilesQ and not be blocked
 	logger.Debugf("WH: Starting batch processing %v stage files with %v workers for %s:%s", len(job.List), noOfWorkers, wh.destType, job.Warehouse.Destination.ID)
-	go func() {
-		for _, stagingFile := range job.List {
-			wh.createLoadFilesQ <- LoadFileJobT{
-				Upload:          job.Upload,
-				StagingFile:     stagingFile,
-				Schema:          job.Upload.Schema,
-				Warehouse:       job.Warehouse,
-				Wg:              wg,
-				LoadFileIDsChan: ch,
+	GoroutineFactory.StartGoroutine(func() {
+		func() {
+			for _, stagingFile := range job.List {
+				wh.createLoadFilesQ <- LoadFileJobT{
+					Upload:          job.Upload,
+					StagingFile:     stagingFile,
+					Schema:          job.Upload.Schema,
+					Warehouse:       job.Warehouse,
+					Wg:              wg,
+					LoadFileIDsChan: ch,
+				}
 			}
-		}
-	}()
+		}()
+	})
 
 	var loadFileIDs []int64
 	waitChan := make(chan error)
-	go func() {
-		err = wg.Wait()
-		waitChan <- err
-	}()
+	GoroutineFactory.StartGoroutine(func() {
+		func() {
+			err = wg.Wait()
+			waitChan <- err
+		}()
+	})
 	count := 0
 waitForLoadFiles:
 	for {
@@ -508,33 +513,35 @@ func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err e
 
 func (wh *HandleT) initWorkers() {
 	for i := 0; i < noOfWorkers; i++ {
-		go func() {
-			for {
-				// handle job to process staging files and convert them into load files
-				processStagingFilesJobList := <-wh.uploadToWarehouseQ
+		GoroutineFactory.StartGoroutine(func() {
+			func() {
+				for {
+					// handle job to process staging files and convert them into load files
+					processStagingFilesJobList := <-wh.uploadToWarehouseQ
 
-				for _, job := range processStagingFilesJobList {
-					// generate load files only if not done before
-					// upload records have start_load_file_id and end_load_file_id set to 0 on creation
-					// and are updated on creation of load files
-					logger.Infof("WH: Processing staging files in upload job:%v with staging files from %v to %v for %s:%s", len(job.List), job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
-					if job.Upload.StartLoadFileID == 0 {
-						warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
-						err := wh.createLoadFiles(&job)
+					for _, job := range processStagingFilesJobList {
+						// generate load files only if not done before
+						// upload records have start_load_file_id and end_load_file_id set to 0 on creation
+						// and are updated on creation of load files
+						logger.Infof("WH: Processing staging files in upload job:%v with staging files from %v to %v for %s:%s", len(job.List), job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
+						if job.Upload.StartLoadFileID == 0 {
+							warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
+							err := wh.createLoadFiles(&job)
+							if err != nil {
+								warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
+								break
+							}
+						}
+						err := wh.SyncLoadFilesToWarehouse(&job)
 						if err != nil {
-							warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
 							break
 						}
+						warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.Warehouse.Destination.ID).Count(len(job.List))
 					}
-					err := wh.SyncLoadFilesToWarehouse(&job)
-					if err != nil {
-						break
-					}
-					warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.Warehouse.Destination.ID).Count(len(job.List))
+					setDestInProgress(processStagingFilesJobList[0].Warehouse, false)
 				}
-				setDestInProgress(processStagingFilesJobList[0].Warehouse, false)
-			}
-		}()
+			}()
+		})
 	}
 }
 
@@ -694,21 +701,23 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 
 func (wh *HandleT) initUploaders() {
 	for i := 0; i < noOfWorkers; i++ {
-		go func() {
-			for {
-				makeLoadFilesJob := <-wh.createLoadFilesQ
-				timer := warehouseutils.DestStat(stats.TimerType, "process_staging_file_time", makeLoadFilesJob.Warehouse.Destination.ID)
-				timer.Start()
-				loadFileIDs, err := wh.processStagingFile(makeLoadFilesJob)
-				timer.End()
-				if err != nil {
-					makeLoadFilesJob.Wg.Err(err)
-				} else {
-					makeLoadFilesJob.LoadFileIDsChan <- loadFileIDs
-					makeLoadFilesJob.Wg.Done()
+		GoroutineFactory.StartGoroutine(func() {
+			func() {
+				for {
+					makeLoadFilesJob := <-wh.createLoadFilesQ
+					timer := warehouseutils.DestStat(stats.TimerType, "process_staging_file_time", makeLoadFilesJob.Warehouse.Destination.ID)
+					timer.Start()
+					loadFileIDs, err := wh.processStagingFile(makeLoadFilesJob)
+					timer.End()
+					if err != nil {
+						makeLoadFilesJob.Wg.Err(err)
+					} else {
+						makeLoadFilesJob.LoadFileIDsChan <- loadFileIDs
+						makeLoadFilesJob.Wg.Done()
+					}
 				}
-			}
-		}()
+			}()
+		})
 	}
 }
 
@@ -853,8 +862,16 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
-	go wh.backendConfigSubscriber()
-	go wh.initUploaders()
-	go wh.initWorkers()
-	go wh.mainLoop()
+	GoroutineFactory.StartGoroutine(func() {
+		wh.backendConfigSubscriber()
+	})
+	GoroutineFactory.StartGoroutine(func() {
+		wh.initUploaders()
+	})
+	GoroutineFactory.StartGoroutine(func() {
+		wh.initWorkers()
+	})
+	GoroutineFactory.StartGoroutine(func() {
+		wh.mainLoop()
+	})
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -152,7 +153,9 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 		proc.replayProcessor.Setup()
 	}
 
-	go proc.backendConfigSubscriber()
+	GoroutineFactory.StartGoroutine(func() {
+		proc.backendConfigSubscriber()
+	})
 	proc.transformer.Setup()
 
 	if !isReplayServer {
@@ -161,10 +164,14 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 
 	proc.crashRecover()
 
-	go proc.mainLoop()
+	GoroutineFactory.StartGoroutine(func() {
+		proc.mainLoop()
+	})
 	if processSessions {
 		logger.Info("Starting session processor")
-		go proc.createSessions()
+		GoroutineFactory.StartGoroutine(func() {
+			proc.createSessions()
+		})
 	}
 }
 

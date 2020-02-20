@@ -24,8 +24,10 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/router/warehouse"
+	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -169,10 +171,12 @@ func versionHandler(w http.ResponseWriter, r *http.Request) {
 func printVersion() {
 	version := versionInfo()
 	versionFormatted, _ := json.MarshalIndent(&version, "", " ")
-	logger.Infof("Version Info %s", versionFormatted)
+	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
 func main() {
+	version := versionInfo()
+
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),
@@ -180,11 +184,10 @@ func main() {
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
 		AppType:      "rudder-server",
+		AppVersion:   version["Version"].(string),
 		PanicHandler: func() {},
 	})
 
-	logger.Setup()
-	logger.Info("Main starting")
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
@@ -201,6 +204,13 @@ func main() {
 		return
 	}
 	http.HandleFunc("/version", versionHandler)
+
+	//Logger setup is the first thing to be done.
+	logger.Setup()
+	logger.Info("Main starting")
+
+	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
+	stats.CreateStatsClient()
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
@@ -264,7 +274,9 @@ func main() {
 	//Setup the three modules, the gateway, the router and the processor
 
 	if enableRouter {
-		go monitorDestRouters(&routerDB, &batchRouterDB)
+		GoroutineFactory.StartGoroutine(func() {
+			monitorDestRouters(&routerDB, &batchRouterDB)
+		})
 	}
 
 	if enableProcessor {

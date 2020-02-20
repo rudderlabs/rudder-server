@@ -50,6 +50,7 @@ var loadStat *stats.RudderStats
 var requestTimeStat *stats.RudderStats
 
 func main() {
+	stats.CreateStatsClient()
 
 	loadStat = stats.NewStat("genload.num_events", stats.CountType)
 	requestTimeStat = stats.NewStat("genload.event_time", stats.TimerType)

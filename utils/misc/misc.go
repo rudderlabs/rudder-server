@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -14,14 +13,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 	"sort"
 	"strings"
 
 	//"runtime/debug"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/thoas/go-funk"
@@ -115,11 +112,6 @@ func RecordAppError(err error) {
 //AssertError panics if error
 func AssertError(err error) {
 	if err != nil {
-		// debug.SetTraceback("all")
-		debug.PrintStack()
-		defer bugsnag.AutoNotify()
-		RecordAppError(err)
-		logger.Fatal(err)
 		panic(err)
 	}
 }
@@ -133,11 +125,6 @@ func AssertErrorIfDev(err error) {
 	}
 
 	if err != nil {
-		// debug.SetTraceback("all")
-		debug.PrintStack()
-		defer bugsnag.AutoNotify()
-		RecordAppError(err)
-		logger.Fatal(err)
 		panic(err)
 	}
 }
@@ -145,11 +132,6 @@ func AssertErrorIfDev(err error) {
 //Assert panics if false
 func Assert(cond bool) {
 	if !cond {
-		//debug.SetTraceback("all")
-		debug.PrintStack()
-		defer bugsnag.AutoNotify()
-		RecordAppError(errors.New("Assertion failed"))
-		logger.Fatal("Assertion failed")
 		panic("Assertion failed")
 	}
 }

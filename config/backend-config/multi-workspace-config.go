@@ -26,7 +26,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) SetUp() {
 	multiWorkspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
 }
 
-//GetWorkspaceIDForWriteKey return workspaceID for the given writeKey
+//GetWorkspaceIDForWriteKey returns workspaceID for the given writeKey
 func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForWriteKey(givenWriteKey string) string {
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
