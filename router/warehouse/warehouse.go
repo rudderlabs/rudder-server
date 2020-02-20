@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -632,22 +631,19 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 					continue
 				}
 
-				columnType, castOk := columns[columnName].(string)
-				// golang json unmarhsal converts int to float
-				// convert int back to float for comparision with dataTypeInSchema
-				if castOk && columnType == "int" {
-					goDataType := reflect.TypeOf(columnVal).Kind()
-					if goDataType == reflect.Float64 || goDataType == reflect.Float32 {
-						columnVal = int(columnVal.(float64))
-					}
-				}
-
+				columnType, ok := columns[columnName].(string)
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
-				dataTypeInColumnVal := warehouseutils.Datatype(columnVal)
-				if dataTypeInColumnVal != dataTypeInSchema {
-					csvRow = append(csvRow, "")
-					continue
+				// dataTypeInColumnVal := warehouseutils.Datatype(columnVal)
+				if ok && columnType != dataTypeInSchema {
+					if columnType == "int" && dataTypeInSchema == "float" {
+						// pass it along
+					} else if columnType == "float" && dataTypeInSchema == "int" {
+						columnVal = int(columnVal.(float64))
+					} else {
+						csvRow = append(csvRow, "")
+						continue
+					}
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
