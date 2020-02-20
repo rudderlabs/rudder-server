@@ -10,7 +10,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -66,7 +66,7 @@ func (r *ReplayProcessorT) CrashRecover() {
 	}
 
 	if len(replayConfigs) > 0 {
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			r.notifyReplayConfigs(replayConfigs)
 		})
 	}
@@ -117,7 +117,7 @@ func (r *ReplayProcessorT) ProcessNewReplays(replays []replayT, minJobID int64, 
 	}
 
 	if len(replayConfigs) > 0 {
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			r.notifyReplayConfigs(replayConfigs)
 		})
 	}

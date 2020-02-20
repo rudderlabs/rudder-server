@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"gopkg.in/alexcesaro/statsd.v2"
@@ -61,7 +61,7 @@ func CreateStatsClient() {
 		logger.Error(err)
 	}
 	if client != nil {
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			collectRuntimeStats(client)
 		})
 	}

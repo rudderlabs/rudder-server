@@ -24,7 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/router/warehouse"
-	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -198,8 +198,7 @@ func main() {
 	versionFlag := flag.Bool("v", false, "Print the current version and exit")
 
 	flag.Parse()
-	switch {
-	case *versionFlag:
+	if *versionFlag {
 		printVersion()
 		return
 	}
@@ -275,7 +274,7 @@ func main() {
 	//Setup the three modules, the gateway, the router and the processor
 
 	if enableRouter {
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			monitorDestRouters(&routerDB, &batchRouterDB)
 		})
 	}

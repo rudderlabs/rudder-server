@@ -10,7 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -91,13 +91,13 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 func Setup() {
 	// TODO: Fix the buffer size
 	eventBatchChannel = make(chan *GatewayEventBatchT)
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		backendConfigSubscriber()
 	})
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		handleEvents()
 	})
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		flushEvents()
 	})
 }

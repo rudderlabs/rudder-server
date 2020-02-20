@@ -14,7 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -153,7 +153,7 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 		proc.replayProcessor.Setup()
 	}
 
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
 	proc.transformer.Setup()
@@ -164,12 +164,12 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 
 	proc.crashRecover()
 
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		proc.mainLoop()
 	})
 	if processSessions {
 		logger.Info("Starting session processor")
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			proc.createSessions()
 		})
 	}

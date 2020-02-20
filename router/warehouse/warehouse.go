@@ -26,7 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/router/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
-	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -435,7 +435,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	ch := make(chan []int64)
 	// queue the staging files in a go routine so that job.List can be higher than number of workers in createLoadFilesQ and not be blocked
 	logger.Debugf("WH: Starting batch processing %v stage files with %v workers for %s:%s", len(job.List), noOfWorkers, wh.destType, job.Warehouse.Destination.ID)
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		func() {
 			for _, stagingFile := range job.List {
 				wh.createLoadFilesQ <- LoadFileJobT{
@@ -452,7 +452,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 
 	var loadFileIDs []int64
 	waitChan := make(chan error)
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		func() {
 			err = wg.Wait()
 			waitChan <- err
@@ -517,7 +517,7 @@ func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err e
 
 func (wh *HandleT) initWorkers() {
 	for i := 0; i < noOfWorkers; i++ {
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			func() {
 				for {
 					// handle job to process staging files and convert them into load files
@@ -697,7 +697,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 
 func (wh *HandleT) initUploaders() {
 	for i := 0; i < noOfWorkers; i++ {
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			func() {
 				for {
 					makeLoadFilesJob := <-wh.createLoadFilesQ
@@ -858,16 +858,16 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
 	})
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		wh.initUploaders()
 	})
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		wh.initWorkers()
 	})
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		wh.mainLoop()
 	})
 }

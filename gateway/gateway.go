@@ -19,7 +19,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
-	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -461,8 +461,6 @@ func (gateway *HandleT) startWebHandler() {
 	http.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
 	http.HandleFunc("/health", gateway.healthHandler)
 
-	backendconfig.WaitForConfig()
-
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
@@ -513,7 +511,7 @@ func (gateway *HandleT) openBadger(clearDB *bool) {
 		err = gateway.badgerDB.DropAll()
 		misc.AssertError(err)
 	}
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		gateway.gcBadgerDB()
 	})
 }
@@ -532,19 +530,20 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.H
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		gateway.webRequestBatcher()
 	})
-	GoroutineFactory.StartGoroutine(func() {
-		gateway.printStats()
-	})
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		backendConfigSubscriber()
 	})
 	for i := 0; i < maxDBWriterProcess; i++ {
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			gateway.webRequestBatchDBWriter(i)
 		})
 	}
+	backendconfig.WaitForConfig()
+	rruntime.Go(func() {
+		gateway.printStats()
+	})
 	gateway.startWebHandler()
 }

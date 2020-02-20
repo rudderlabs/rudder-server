@@ -16,7 +16,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
-	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -280,7 +280,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 
 func (brt *HandleT) initWorkers() {
 	for i := 0; i < noOfWorkers; i++ {
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			func() {
 				for {
 					select {
@@ -601,13 +601,13 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.processQ = make(chan BatchJobsT)
 	brt.crashRecover()
 
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		brt.initWorkers()
 	})
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		brt.backendConfigSubscriber()
 	})
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		brt.mainLoop()
 	})
 }

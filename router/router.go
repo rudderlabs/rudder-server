@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -265,7 +265,7 @@ func (rt *HandleT) initWorkers() {
 			failedJobs:     0,
 			sleepTime:      minSleep}
 		rt.workers[i] = worker
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			rt.workerProcess(worker)
 		})
 	}
@@ -581,13 +581,13 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.perfStats.Setup("StatsUpdate:" + destID)
 
 	rt.initWorkers()
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		rt.printStatsLoop()
 	})
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		rt.statusInsertLoop()
 	})
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		rt.generatorLoop()
 	})
 }

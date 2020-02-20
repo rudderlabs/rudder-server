@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -116,7 +116,7 @@ func (trans *transformerHandleT) Setup() {
 	trans.perfStats.Setup("JS Call")
 	for i := 0; i < numTransformWorker; i++ {
 		logger.Info("Starting transformer worker", i)
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			trans.transformWorker()
 		})
 	}

@@ -37,7 +37,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -276,11 +276,10 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
 
-	logger.Info("Connected to DB")
 	err = jd.dbHandle.Ping()
 	jd.assertError(err)
 
-	logger.Info("Sent Ping")
+	logger.Infof("Connected to %s DB", tablePrefix)
 
 	//Kill any pending queries
 	jd.terminateQueries()
@@ -327,11 +326,11 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 			Config:   filemanager.GetProviderConfigFromEnv(),
 		})
 		jd.assertError(err)
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			jd.backupDSLoop()
 		})
 	}
-	GoroutineFactory.StartGoroutine(func() {
+	rruntime.Go(func() {
 		jd.mainCheckLoop()
 	})
 }

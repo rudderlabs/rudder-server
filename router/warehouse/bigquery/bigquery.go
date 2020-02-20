@@ -10,7 +10,7 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/rudderlabs/rudder-server/config"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
-	GoroutineFactory "github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -167,7 +167,7 @@ func (bq *HandleT) load() (err error) {
 	wg := misc.NewWaitGroup()
 	wg.Add(len(bq.Upload.Schema))
 	for tName := range bq.Upload.Schema {
-		GoroutineFactory.StartGoroutine(func() {
+		rruntime.Go(func() {
 			func(tableName string) {
 				locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
 				misc.AssertError(err)
