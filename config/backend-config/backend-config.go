@@ -25,6 +25,8 @@ var (
 	multiWorkspaceSecret                 string
 	configBackendURL, configBackendToken string
 	pollInterval                         time.Duration
+	configFromFile                       bool
+	configJSONPath                       string
 	curSourceJSON                        SourcesT
 	curSourceJSONLock                    sync.RWMutex
 	initialized                          bool
@@ -75,7 +77,7 @@ type TransformationT struct {
 
 type BackendConfig interface {
 	SetUp()
-	GetBackendConfig() (SourcesT, bool)
+	Get() (SourcesT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 }
 
@@ -88,6 +90,8 @@ func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	configBackendToken = config.GetEnv("CONFIG_BACKEND_TOKEN", "1P2tfQQKarhlsG6S3JGLdXptyZY")
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
+	configJSONPath = config.GetString("BackendConfig.configJSONPath", "./workspaceConfig.json")
+	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
 }
 
 func GetConfigBackendToken() string {
@@ -137,11 +141,12 @@ func init() {
 func pollConfigUpdate() {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
-		sourceJSON, ok := backendConfig.GetBackendConfig()
+		sourceJSON, ok := backendConfig.Get()
 		if !ok {
 			statConfigBackendError.Increment()
 		}
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
+			logger.Info("Workspace Config changed")
 			curSourceJSONLock.Lock()
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()

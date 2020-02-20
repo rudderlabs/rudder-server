@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
-
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -249,6 +249,7 @@ func main() {
 		if logger.Log != nil {
 			logger.Fatal("SIGTERM called. Process exiting")
 		}
+		stats.StopRuntimeStats()
 		os.Exit(1)
 	}()
 

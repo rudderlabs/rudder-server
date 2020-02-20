@@ -90,6 +90,8 @@ maxRetry = 30
 retrySleepInMS = 100
 
 [BackendConfig]
+configFromFile = false
+configJSONPath = "./workspaceConfig.json"
 pollIntervalInS = 5
 
 
@@ -126,3 +128,10 @@ enableTimestamp=false
 enableFileNameInLog=false
 enableStackTrace=false
 
+# runtime stats are collected using go runtime package and published to statsd
+[RuntimeStats]
+enabled=true
+statsCollectionInterval=10
+enableCPUStats=true
+enableMemStats=true
+enableGCStats=true
