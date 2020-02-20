@@ -302,6 +302,7 @@ func (brt *HandleT) initWorkers() {
 						if output.Error == nil && output.Key != "" {
 							brt.updateWarehouseMetadata(batchJobs, output.Key)
 							warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
+							warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
 						}
 						brt.setJobStatus(batchJobs, true, output.Error)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
