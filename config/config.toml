@@ -124,7 +124,7 @@ consoleJsonFormat=false
 fileJsonFormat=false
 logFileLocation="/tmp/rudder_log.log"
 logFileSize = 100 # in MB
-enableTimestamp=false
+enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
 
