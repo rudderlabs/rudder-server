@@ -615,8 +615,31 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 			outputFileMap[tableName] = gzWriter
 		}
 		if wh.destType == "BQ" {
-			// add uuid_ts to track when event was processed into load_file
-			columnData["uuid_ts"] = uuidTS.Format("2006-01-02 15:04:05 Z")
+			for _, columnName := range sortedTableColumnMap[tableName] {
+				if columnName == "uuid_ts" {
+					// add uuid_ts to track when event was processed into load_file
+					columnData["uuid_ts"] = uuidTS.Format("2006-01-02 15:04:05 Z")
+					continue
+				}
+				columnVal, ok := columnData[columnName]
+				if !ok {
+					continue
+				}
+				columnType, ok := columns[columnName].(string)
+				// if the current data type doesnt match the one in warehouse, set value as NULL
+				dataTypeInSchema := job.Schema[tableName][columnName]
+				if ok && columnType != dataTypeInSchema {
+					if columnType == "int" && dataTypeInSchema == "float" {
+						// pass it along
+					} else if columnType == "float" && dataTypeInSchema == "int" {
+						columnData[columnName] = int(columnVal.(float64))
+					} else {
+						columnData[columnName] = nil
+						continue
+					}
+				}
+
+			}
 			line, err := json.Marshal(columnData)
 			if err != nil {
 				return loadFileIDs, err
@@ -641,7 +664,6 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				columnType, ok := columns[columnName].(string)
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
-				// dataTypeInColumnVal := warehouseutils.Datatype(columnVal)
 				if ok && columnType != dataTypeInSchema {
 					if columnType == "int" && dataTypeInSchema == "float" {
 						// pass it along
