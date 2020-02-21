@@ -58,7 +58,7 @@ func loadConfig() {
 	fileJsonFormat = config.GetBool("Logger.fileJsonFormat", false)
 	logFileLocation = config.GetString("Logger.logFileLocation", "/tmp/rudder_log.log")
 	logFileSize = config.GetInt("Logger.logFileSize", 100)
-	enableTimestamp = config.GetBool("Logger.enableTimestamp", false)
+	enableTimestamp = config.GetBool("Logger.enableTimestamp", true)
 	enableFileNameInLog = config.GetBool("Logger.enableFileNameInLog", false)
 	enableStackTrace = config.GetBool("Logger.enableStackTrace", false)
 }
