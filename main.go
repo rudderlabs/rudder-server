@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
-
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/warehouse"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -54,7 +55,7 @@ func loadConfig() {
 	enableBackup = config.GetBool("JobsDB.enableBackup", true)
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 }
 
 // Test Function
@@ -239,6 +240,7 @@ func main() {
 		if logger.Log != nil {
 			logger.Fatal("SIGTERM called. Process exiting")
 		}
+		stats.StopRuntimeStats()
 		os.Exit(1)
 	}()
 
