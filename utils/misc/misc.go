@@ -306,6 +306,15 @@ func ReadLines(path string) ([]string, error) {
 // CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
 func CreateTMPDIR() string {
 	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	// second chance: fallback to /tmp if this folder exists
+	if tmpdirPath == "" {
+		fallbackPath := "/tmp"
+		_, err := os.Stat(fallbackPath)
+		if err == nil {
+			tmpdirPath = fallbackPath
+			logger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
+		}
+	}
 	if tmpdirPath == "" {
 		var err error
 		tmpdirPath, err = os.UserHomeDir()
