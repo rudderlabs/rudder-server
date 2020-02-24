@@ -333,15 +333,6 @@ func DestStat(statType string, statName string, id string) *stats.RudderStats {
 }
 
 func Datatype(in interface{}) string {
-	fmt.Printf("%+v\n", in)
-	if str, ok := in.(string); ok {
-		isTimestamp, _ := regexp.MatchString(`^([\+-]?\d{4})((-)((0[1-9]|1[0-2])(-([12]\d|0[1-9]|3[01])))([T\s]((([01]\d|2[0-3])((:)[0-5]\d))([\:]\d+)?)?(:[0-5]\d([\.]\d+)?)?([zZ]|([\+-])([01]\d|2[0-3]):?([0-5]\d)?)?)?)$`, str)
-
-		if isTimestamp {
-			return "datetime"
-		}
-	}
-
 	if _, ok := in.(bool); ok {
 		return "boolean"
 	}
@@ -352,6 +343,14 @@ func Datatype(in interface{}) string {
 
 	if _, ok := in.(float64); ok {
 		return "float"
+	}
+
+	if str, ok := in.(string); ok {
+		isTimestamp, _ := regexp.MatchString(`^([\+-]?\d{4})((-)((0[1-9]|1[0-2])(-([12]\d|0[1-9]|3[01])))([T\s]((([01]\d|2[0-3])((:)[0-5]\d))([\:]\d+)?)?(:[0-5]\d([\.]\d+)?)?([zZ]|([\+-])([01]\d|2[0-3]):?([0-5]\d)?)?)?)$`, str)
+
+		if isTimestamp {
+			return "datetime"
+		}
 	}
 
 	return "string"

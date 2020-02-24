@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -595,12 +594,16 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		return loadFileIDs, err
 	}
 
+	timer := warehouseutils.DestStat(stats.TimerType, "download_staging_file_time", job.Warehouse.Destination.ID)
+	timer.Start()
+
 	err = downloader.Download(jsonFile, job.StagingFile.Location)
 	if err != nil {
 		return loadFileIDs, err
 	}
 	jsonFile.Close()
 	defer os.Remove(jsonPath)
+	timer.End()
 
 	sortedTableColumnMap := make(map[string][]string)
 	// sort columns per table so as to maintaing same order in load file (needed in case of csv load file)
@@ -628,6 +631,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	sc := bufio.NewScanner(reader)
 	misc.PrintMemUsage()
 
+	timer = warehouseutils.DestStat(stats.TimerType, "process_staging_file_to_csv_time", job.Warehouse.Destination.ID)
+	timer.Start()
+
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
 		var jsonLine map[string]interface{}
@@ -646,8 +652,31 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 			outputFileMap[tableName] = gzWriter
 		}
 		if wh.destType == "BQ" {
-			// add uuid_ts to track when event was processed into load_file
-			columnData["uuid_ts"] = uuidTS.Format("2006-01-02 15:04:05 Z")
+			for _, columnName := range sortedTableColumnMap[tableName] {
+				if columnName == "uuid_ts" {
+					// add uuid_ts to track when event was processed into load_file
+					columnData["uuid_ts"] = uuidTS.Format("2006-01-02 15:04:05 Z")
+					continue
+				}
+				columnVal, ok := columnData[columnName]
+				if !ok {
+					continue
+				}
+				columnType, ok := columns[columnName].(string)
+				// if the current data type doesnt match the one in warehouse, set value as NULL
+				dataTypeInSchema := job.Schema[tableName][columnName]
+				if ok && columnType != dataTypeInSchema {
+					if columnType == "int" && dataTypeInSchema == "float" {
+						// pass it along
+					} else if columnType == "float" && dataTypeInSchema == "int" {
+						columnData[columnName] = int(columnVal.(float64))
+					} else {
+						columnData[columnName] = nil
+						continue
+					}
+				}
+
+			}
 			line, err := json.Marshal(columnData)
 			if err != nil {
 				return loadFileIDs, err
@@ -669,22 +698,18 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 					continue
 				}
 
-				columnType, castOk := columns[columnName].(string)
-				// golang json unmarhsal converts int to float
-				// convert int back to float for comparision with dataTypeInSchema
-				if castOk && columnType == "int" {
-					goDataType := reflect.TypeOf(columnVal).Kind()
-					if goDataType == reflect.Float64 || goDataType == reflect.Float32 {
-						columnVal = int(columnVal.(float64))
-					}
-				}
-
+				columnType, ok := columns[columnName].(string)
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
-				dataTypeInColumnVal := warehouseutils.Datatype(columnVal)
-				if dataTypeInColumnVal != dataTypeInSchema {
-					csvRow = append(csvRow, "")
-					continue
+				if ok && columnType != dataTypeInSchema {
+					if columnType == "int" && dataTypeInSchema == "float" {
+						// pass it along
+					} else if columnType == "float" && dataTypeInSchema == "int" {
+						columnVal = int(columnVal.(float64))
+					} else {
+						csvRow = append(csvRow, "")
+						continue
+					}
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
@@ -694,6 +719,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		}
 	}
 	reader.Close()
+	timer.End()
 	misc.PrintMemUsage()
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
@@ -704,6 +730,8 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		panic(err)
 	}
 
+	timer = warehouseutils.DestStat(stats.TimerType, "upload_load_files_per_staging_file_time", job.Warehouse.Destination.ID)
+	timer.Start()
 	for tableName, outputFile := range outputFileMap {
 		outputFile.CloseGZ()
 		file, err := os.Open(outputFile.File.Name())
@@ -728,6 +756,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		}
 		loadFileIDs = append(loadFileIDs, fileID)
 	}
+	timer.End()
 	return
 }
 

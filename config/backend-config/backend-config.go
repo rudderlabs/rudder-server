@@ -38,6 +38,7 @@ type DestinationDefinitionT struct {
 	ID          string
 	Name        string
 	DisplayName string
+	Config      interface{}
 }
 
 type SourceDefinitionT struct {

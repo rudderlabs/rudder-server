@@ -32,8 +32,8 @@ type HandleT struct {
 
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
-	"int":      "double precision",
-	"bigint":   "double precision",
+	"int":      "number",
+	"bigint":   "number",
 	"float":    "double precision",
 	"string":   "varchar",
 	"datetime": "timestamp",
@@ -160,6 +160,8 @@ func (sf *HandleT) load() (errList []error) {
 	}
 
 	for tableName, columnMap := range sf.Upload.Schema {
+		timer := warehouseutils.DestStat(stats.TimerType, "single_table_upload_time", sf.Warehouse.Destination.ID)
+		timer.Start()
 		// sort columnnames
 		keys := reflect.ValueOf(columnMap).MapKeys()
 		strkeys := make([]string, len(keys))
@@ -241,6 +243,7 @@ func (sf *HandleT) load() (errList []error) {
 			errList = append(errList, err)
 			continue
 		}
+		timer.End()
 	}
 	return
 }
