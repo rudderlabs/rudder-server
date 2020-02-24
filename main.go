@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -187,6 +188,19 @@ func main() {
 		AppVersion:   version["Version"].(string),
 		PanicHandler: func() {},
 	})
+	ctx := bugsnag.StartSession(context.Background())
+	defer func() {
+		if r := recover(); r != nil {
+			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+				"GoRoutines": {
+					"Number": runtime.NumGoroutine(),
+				}})
+
+			misc.RecordAppError(fmt.Errorf("%v", r))
+			logger.Fatal(r)
+			panic(r)
+		}
+	}()
 
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")

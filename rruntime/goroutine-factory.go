@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"runtime"
-	"runtime/debug"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -28,7 +27,6 @@ func Go(function func()) {
 		ctx := bugsnag.StartSession(context.Background())
 		defer func() {
 			if r := recover(); r != nil {
-				debug.PrintStack()
 				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
 					"GoRoutines": {
 						"Number": runtime.NumGoroutine(),
