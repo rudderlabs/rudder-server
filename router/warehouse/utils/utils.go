@@ -12,10 +12,12 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
+	WaitingState                  = "waiting"
 	GeneratingLoadFileState       = "generating_load_file"
 	GeneratingLoadFileFailedState = "generating_load_file_failed"
 	GeneratedLoadFileState        = "generated_load_file"
@@ -45,8 +47,9 @@ var (
 )
 
 var ObjectStorageMap = map[string]string{
-	"RS": "S3",
-	"BQ": "GCS",
+	"RS":        "S3",
+	"BQ":        "GCS",
+	"SNOWFLAKE": "S3",
 }
 
 func init() {
@@ -87,16 +90,21 @@ type UploadT struct {
 	Status             string
 	Schema             map[string]map[string]string
 	Error              json.RawMessage
-	// Error              map[string]map[string]interface{}
 }
 
-func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
+type CurrentSchemaT struct {
+	Namespace string
+	Schema    map[string]map[string]string
+}
+
+func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, error) {
 	var rawSchema json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
+	var namespace string
+	sqlStatement := fmt.Sprintf(`SELECT namespace, schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace, &rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return make(map[string]map[string]string), nil
+			return CurrentSchemaT{}, nil
 		}
 		misc.AssertError(err)
 	}
@@ -112,7 +120,8 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[st
 		}
 		schema[key] = y
 	}
-	return schema, nil
+	currentSchema := CurrentSchemaT{Namespace: namespace, Schema: schema}
+	return currentSchema, nil
 }
 
 type SchemaDiffT struct {
@@ -148,6 +157,7 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 }
 
 func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error) {
+	logger.Debugf("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=$3`, warehouseUploadsTable)
 	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), upload.ID)
 	misc.AssertError(err)
@@ -155,6 +165,7 @@ func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error
 }
 
 func SetUploadError(upload UploadT, statusError error, state string, dbHandle *sql.DB) (err error) {
+	logger.Errorf("WH: Failed during %s stage: %v\n", state, statusError.Error())
 	SetUploadStatus(upload, ExportingDataFailedState, dbHandle)
 	var e map[string]map[string]interface{}
 	json.Unmarshal(upload.Error, &e)
@@ -196,13 +207,14 @@ func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err er
 }
 
 func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusError error) (err error) {
+	logger.Errorf("WH: Failed processing staging files: %v", statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseStagingFilesTable)
 	_, err = dbHandle.Exec(sqlStatement, status, statusError.Error(), time.Now(), pq.Array(ids))
 	misc.AssertError(err)
 	return
 }
 
-func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
+func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, currentSchema, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
 	marshalledSchema, err := json.Marshal(schema)
 	if len(currentSchema) == 0 {
 		sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_upload_id, source_id, namespace, destination_id, destination_type, schema, created_at)
@@ -211,7 +223,7 @@ func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema ma
 		misc.AssertError(err)
 		defer stmt.Close()
 
-		_, err = stmt.Exec(uploadID, wh.Source.ID, strings.ToLower(wh.Source.Name), wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, time.Now())
+		_, err = stmt.Exec(uploadID, wh.Source.ID, namespace, wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, time.Now())
 	} else {
 		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3`, warehouseSchemasTable)
 		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, wh.Source.ID, wh.Destination.ID)
@@ -222,11 +234,11 @@ func UpdateCurrentSchema(wh WarehouseT, uploadID int64, currentSchema, schema ma
 
 func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (locations []string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s
-								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id > %[5]v AND %[1]s.id <= %[6]v)`,
+								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)`,
 		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
 	rows, err := dbHandle.Query(sqlStatement)
-	defer rows.Close()
 	misc.AssertError(err)
+	defer rows.Close()
 
 	for rows.Next() {
 		var location string
@@ -234,6 +246,15 @@ func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId strin
 		misc.AssertError(err)
 		locations = append(locations, location)
 	}
+	return
+}
+
+func GetLoadFileLocation(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (location string, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s
+								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v) LIMIT 1`,
+		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
+	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
+	misc.AssertError(err)
 	return
 }
 
@@ -248,6 +269,12 @@ func GetS3Location(location string) (string, string) {
 	str1 := r.ReplaceAllString(location, "")
 	str2 := strings.Replace(str1, "https", "s3", 1)
 	return region, str2
+}
+
+func GetS3LocationFolder(location string) string {
+	_, s3Location := GetS3Location(location)
+	lastPos := strings.LastIndex(s3Location, "/")
+	return s3Location[:lastPos]
 }
 
 func GetGCSLocation(location string) string {
@@ -280,4 +307,28 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 
 func DestStat(statType string, statName string, id string) *stats.RudderStats {
 	return stats.NewBatchDestStat(fmt.Sprintf("warehouse.%s", statName), statType, id)
+}
+
+func Datatype(in interface{}) string {
+	if _, ok := in.(bool); ok {
+		return "boolean"
+	}
+
+	if _, ok := in.(int); ok {
+		return "int"
+	}
+
+	if _, ok := in.(float64); ok {
+		return "float"
+	}
+
+	if str, ok := in.(string); ok {
+		isTimestamp, _ := regexp.MatchString(`^([\+-]?\d{4})((-)((0[1-9]|1[0-2])(-([12]\d|0[1-9]|3[01])))([T\s]((([01]\d|2[0-3])((:)[0-5]\d))([\:]\d+)?)?(:[0-5]\d([\.]\d+)?)?([zZ]|([\+-])([01]\d|2[0-3]):?([0-5]\d)?)?)?)$`, str)
+
+		if isTimestamp {
+			return "datetime"
+		}
+	}
+
+	return "string"
 }

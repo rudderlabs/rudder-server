@@ -25,6 +25,7 @@ type HandleT struct {
 	BQContext     context.Context
 	DbHandle      *sql.DB
 	Db            *bigquery.Client
+	Namespace     string
 	CurrentSchema map[string]map[string]string
 	Warehouse     warehouseutils.WarehouseT
 	ProjectID     string
@@ -33,7 +34,7 @@ type HandleT struct {
 
 var dataTypesMap = map[string]bigquery.FieldType{
 	"boolean":  bigquery.BooleanFieldType,
-	"int":      bigquery.FloatFieldType,
+	"int":      bigquery.NumericFieldType,
 	"float":    bigquery.FloatFieldType,
 	"string":   bigquery.StringFieldType,
 	"datetime": bigquery.TimestampFieldType,
@@ -59,13 +60,13 @@ func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 }
 
 func (bq *HandleT) createTable(name string, columns map[string]string) (err error) {
-	logger.Debugf("BQ: Creating table: %s in bigquery dataset: %s in project: %s\n", name, bq.Upload.Namespace, bq.ProjectID)
+	logger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", name, bq.Namespace, bq.ProjectID)
 	sampleSchema := getTableSchema(columns)
 	metaData := &bigquery.TableMetadata{
 		Schema:           sampleSchema,
 		TimePartitioning: &bigquery.TimePartitioning{Expiration: time.Duration(24*60) * time.Hour},
 	}
-	tableRef := bq.Db.Dataset(bq.Upload.Namespace).Table(name)
+	tableRef := bq.Db.Dataset(bq.Namespace).Table(name)
 	err = tableRef.Create(bq.BQContext, metaData)
 	if !checkAndIgnoreAlreadyExistError(err) {
 		return err
@@ -78,21 +79,21 @@ func (bq *HandleT) createTable(name string, columns map[string]string) (err erro
 
 	// assuming it has field named id upon which dedup is done in view
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + primaryKey + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Upload.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + primaryKey + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
 					AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
 			)
 		WHERE __row_number = 1`
 	metaData = &bigquery.TableMetadata{
 		ViewQuery: viewQuery,
 	}
-	tableRef = bq.Db.Dataset(bq.Upload.Namespace).Table(name + "_view")
+	tableRef = bq.Db.Dataset(bq.Namespace).Table(name + "_view")
 	err = tableRef.Create(bq.BQContext, metaData)
 	return
 }
 
 func (bq *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	logger.Debugf("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s\n", tableName, bq.Upload.Namespace, bq.ProjectID)
-	tableRef := bq.Db.Dataset(bq.Upload.Namespace).Table(tableName)
+	logger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
+	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
 	meta, err := tableRef.Metadata(bq.BQContext)
 	if err != nil {
 		return err
@@ -108,8 +109,8 @@ func (bq *HandleT) addColumn(tableName string, columnName string, columnType str
 }
 
 func (bq *HandleT) createSchema() (err error) {
-	logger.Debugf("BQ: Creating bigquery dataset: %s in project: %s\n", bq.Upload.Namespace, bq.ProjectID)
-	ds := bq.Db.Dataset(bq.Upload.Namespace)
+	logger.Infof("BQ: Creating bigquery dataset: %s in project: %s", bq.Namespace, bq.ProjectID)
+	ds := bq.Db.Dataset(bq.Namespace)
 	err = ds.Create(bq.BQContext, nil)
 	return
 }
@@ -118,6 +119,7 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	if err != nil {
 		if e, ok := err.(*googleapi.Error); ok {
 			if e.Code == 409 || e.Code == 400 {
+				logger.Debugf("BQ: Google API returned error with code: %v", e.Code)
 				return true
 			}
 		}
@@ -161,31 +163,40 @@ func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 }
 
 func (bq *HandleT) load() (err error) {
-	for tableName := range bq.Upload.Schema {
-		locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
-		misc.AssertError(err)
-		locations, err = warehouseutils.GetGCSLocations(locations)
-		logger.Debugf("Loading data into table: %s in bigquery dataset: %s in project: %s from %v\n", tableName, bq.Upload.Namespace, bq.ProjectID, locations)
-		gcsRef := bigquery.NewGCSReference(locations...)
-		gcsRef.SourceFormat = bigquery.JSON
-		gcsRef.MaxBadRecords = 100
-		gcsRef.IgnoreUnknownValues = true
-		// create partitioned table in format tableName$20191221
-		loader := bq.Db.Dataset(bq.Upload.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
+	wg := misc.NewWaitGroup()
+	wg.Add(len(bq.Upload.Schema))
+	for tName := range bq.Upload.Schema {
+		go func(tableName string) {
+			locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
+			misc.AssertError(err)
+			locations, err = warehouseutils.GetGCSLocations(locations)
+			logger.Infof("Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
+			gcsRef := bigquery.NewGCSReference(locations...)
+			gcsRef.SourceFormat = bigquery.JSON
+			gcsRef.MaxBadRecords = 100
+			gcsRef.IgnoreUnknownValues = true
+			// create partitioned table in format tableName$20191221
+			loader := bq.Db.Dataset(bq.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
 
-		job, err := loader.Run(bq.BQContext)
-		if err != nil {
-			return err
-		}
-		status, err := job.Wait(bq.BQContext)
-		if err != nil {
-			return err
-		}
+			job, err := loader.Run(bq.BQContext)
+			if err != nil {
+				wg.Err(err)
+				return
+			}
+			status, err := job.Wait(bq.BQContext)
+			if err != nil {
+				wg.Err(err)
+				return
+			}
 
-		if status.Err() != nil {
-			return fmt.Errorf("job completed with error: %v", status.Err())
-		}
+			if status.Err() != nil {
+				wg.Err(err)
+				return
+			}
+			wg.Done()
+		}(tName)
 	}
+	err = wg.Wait()
 	return
 }
 
@@ -195,7 +206,7 @@ type BQCredentialsT struct {
 }
 
 func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
-	logger.Debugf("BQ: Connecting to BigQuery in project: %s\n", cred.projectID)
+	logger.Infof("BQ: Connecting to BigQuery in project: %s", cred.projectID)
 	bq.BQContext = context.Background()
 	client, err := bigquery.NewClient(bq.BQContext, cred.projectID, option.WithCredentialsJSON([]byte(cred.credentials)))
 	return client, err
@@ -214,7 +225,7 @@ func (bq *HandleT) MigrateSchema() (err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", bq.Warehouse.Destination.ID)
 	timer.Start()
 	warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatingSchemaState, bq.DbHandle)
-	logger.Debugf("BQ: Updaing schema for bigquery in project: %s\n", bq.ProjectID)
+	logger.Infof("BQ: Updaing schema for bigquery in project: %s", bq.ProjectID)
 	updatedSchema, err := bq.updateSchema()
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
@@ -222,7 +233,7 @@ func (bq *HandleT) MigrateSchema() (err error) {
 	}
 	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatedSchemaState, bq.DbHandle)
 	misc.AssertError(err)
-	err = warehouseutils.UpdateCurrentSchema(bq.Warehouse, bq.Upload.ID, bq.CurrentSchema, updatedSchema, bq.DbHandle)
+	err = warehouseutils.UpdateCurrentSchema(bq.Namespace, bq.Warehouse, bq.Upload.ID, bq.CurrentSchema, updatedSchema, bq.DbHandle)
 	timer.End()
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
@@ -231,9 +242,9 @@ func (bq *HandleT) MigrateSchema() (err error) {
 	return
 }
 
-func (bq *HandleT) Export() {
-	logger.Debugf("BQ: Starting export to redshift for source:%s and wh_upload:%s", bq.Warehouse.Source.ID, bq.Upload.ID)
-	err := warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataState, bq.DbHandle)
+func (bq *HandleT) Export() (err error) {
+	logger.Infof("BQ: Starting export to Bigquery for source:%s and wh_upload:%v", bq.Warehouse.Source.ID, bq.Upload.ID)
+	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataState, bq.DbHandle)
 	misc.AssertError(err)
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", bq.Warehouse.Destination.ID)
 	timer.Start()
@@ -241,14 +252,18 @@ func (bq *HandleT) Export() {
 	timer.End()
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.ExportingDataFailedState, bq.DbHandle)
-		return
+		return err
 	}
 	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportedDataState, bq.DbHandle)
 	misc.AssertError(err)
+	return
 }
 
-func (bq *HandleT) Process(config warehouseutils.ConfigT) {
-	var err error
+func (bq *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
+	return
+}
+
+func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	bq.DbHandle = config.DbHandle
 	bq.Warehouse = config.Warehouse
 	bq.Upload = config.Upload
@@ -260,17 +275,23 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) {
 	})
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
-		return
+		return err
 	}
-	bq.CurrentSchema, err = warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
+	currSchema, err := warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
 	misc.AssertError(err)
+	bq.CurrentSchema = currSchema.Schema
+	bq.Namespace = currSchema.Namespace
+	if bq.Namespace == "" {
+		bq.Namespace = bq.Upload.Namespace
+	}
 
 	if config.Stage == "ExportData" {
-		bq.Export()
+		err = bq.Export()
 	} else {
-		err := bq.MigrateSchema()
+		err = bq.MigrateSchema()
 		if err == nil {
-			bq.Export()
+			err = bq.Export()
 		}
 	}
+	return
 }

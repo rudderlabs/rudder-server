@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -23,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/warehouse"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -32,20 +36,26 @@ var (
 	maxProcess                                  int
 	gwDBRetention, routerDBRetention            time.Duration
 	enableProcessor, enableRouter, enableBackup bool
+	isReplayServer                              bool
+	enabledDestinations                         []backendconfig.DestinationT
 	configSubscriberLock                        sync.RWMutex
 	objectStorageDestinations                   []string
 	warehouseDestinations                       []string
 )
 
+var version = "Not an official release. Get the latest release from the github repo."
+var major, minor, commit, buildDate, builtBy, gitURL, patch string
+
 func loadConfig() {
 	maxProcess = config.GetInt("maxProcess", 12)
-	gwDBRetention = config.GetDuration("gwDBRetention", time.Duration(1)) * time.Hour
+	gwDBRetention = config.GetDuration("gwDBRetentionInHr", 0) * time.Hour
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
 	enableBackup = config.GetBool("JobsDB.enableBackup", true)
+	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 }
 
 // Test Function
@@ -71,7 +81,6 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 
 	for {
 		config := <-ch
-		logger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
@@ -87,7 +96,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 								brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
 								dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 							} else {
-								logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
+								logger.Debug("Enabling existing Destination", destination.DestinationDefinition.Name)
 								brt.Enable()
 							}
 							if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
@@ -98,7 +107,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 									wh.Setup(destination.DestinationDefinition.Name)
 									dstToWhRouter[destination.DestinationDefinition.Name] = &wh
 								} else {
-									logger.Info("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+									logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
 									wh.Enable()
 								}
 							}
@@ -110,7 +119,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 								router.Setup(routerDB, destination.DestinationDefinition.Name)
 								dstToRouter[destination.DestinationDefinition.Name] = &router
 							} else {
-								logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
+								logger.Debug("Enabling existing Destination", destination.DestinationDefinition.Name)
 								rt.Enable()
 							}
 						}
@@ -148,6 +157,22 @@ func init() {
 	loadConfig()
 }
 
+func versionInfo() map[string]interface{} {
+	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL}
+}
+
+func versionHandler(w http.ResponseWriter, r *http.Request) {
+	var version = versionInfo()
+	versionFormatted, _ := json.Marshal(&version)
+	w.Write(versionFormatted)
+}
+
+func printVersion() {
+	version := versionInfo()
+	versionFormatted, _ := json.MarshalIndent(&version, "", " ")
+	logger.Infof("Version Info %s", versionFormatted)
+}
+
 func main() {
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
@@ -155,11 +180,12 @@ func main() {
 		// The import paths for the Go packages containing your source files
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
-		AppType: "rudder-server",
+		AppType:      "rudder-server",
+		PanicHandler: func() {},
 	})
+
 	logger.Setup()
 	logger.Info("Main starting")
-
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
@@ -167,8 +193,15 @@ func main() {
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
+	versionFlag := flag.Bool("v", false, "Print the current version and exit")
 
 	flag.Parse()
+	switch {
+	case *versionFlag:
+		printVersion()
+		return
+	}
+	http.HandleFunc("/version", versionHandler)
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
@@ -203,6 +236,11 @@ func main() {
 			err = pprof.WriteHeapProfile(f)
 			misc.AssertError(err)
 		}
+		// clearing zap Log buffer to std output
+		if logger.Log != nil {
+			logger.Fatal("SIGTERM called. Process exiting")
+		}
+		stats.StopRuntimeStats()
 		os.Exit(1)
 	}()
 
@@ -211,11 +249,17 @@ func main() {
 	var batchRouterDB jobsdb.HandleT
 
 	runtime.GOMAXPROCS(maxProcess)
-	logger.Info("Clearing DB", *clearDB)
+	logger.Info("Clearing DB ", *clearDB)
 
 	sourcedebugger.Setup()
 	backendconfig.Setup()
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup && true)
+
+	//Forcing enableBackup false if this server is for handling replayed events
+	if isReplayServer {
+		enableBackup = false
+	}
+
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, false)
 

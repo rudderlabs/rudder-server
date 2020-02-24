@@ -25,13 +25,14 @@ type transformMessageT struct {
 
 //HandleT is the handle for this class
 type transformerHandleT struct {
-	requestQ     chan *transformMessageT
-	responseQ    chan *transformMessageT
-	accessLock   sync.Mutex
-	perfStats    *misc.PerfStats
-	sentStat     *stats.RudderStats
-	receivedStat *stats.RudderStats
-	failedStat   *stats.RudderStats
+	requestQ           chan *transformMessageT
+	responseQ          chan *transformMessageT
+	accessLock         sync.Mutex
+	perfStats          *misc.PerfStats
+	sentStat           *stats.RudderStats
+	receivedStat       *stats.RudderStats
+	failedStat         *stats.RudderStats
+	transformTimerStat *stats.RudderStats
 }
 
 var (
@@ -42,6 +43,8 @@ var (
 func (trans *transformerHandleT) transformWorker() {
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
+	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
+
 	for job := range trans.requestQ {
 		//Call remote transformation
 		rawJSON, err := json.Marshal(job.data)
@@ -49,11 +52,16 @@ func (trans *transformerHandleT) transformWorker() {
 		retryCount := 0
 		var resp *http.Response
 		//We should rarely have error communicating with our JS
+		reqFailed := false
+
 		for {
+			transformRequestTimerStat.Start()
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
 			if err != nil {
-				logger.Error("JS HTTP connection error", err)
+				transformRequestTimerStat.End()
+				reqFailed = true
+				logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
 				if retryCount > maxRetry {
 					misc.Assert(false)
 				}
@@ -62,13 +70,21 @@ func (trans *transformerHandleT) transformWorker() {
 				//Refresh the connection
 				continue
 			}
+			if reqFailed {
+				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
+			}
+			transformRequestTimerStat.End()
 			break
 		}
 
 		// Remove Assertion?
-		misc.Assert(resp.StatusCode == http.StatusOK ||
+		if !(resp.StatusCode == http.StatusOK ||
 			resp.StatusCode == http.StatusBadRequest ||
-			resp.StatusCode == http.StatusNotFound)
+			resp.StatusCode == http.StatusNotFound ||
+			resp.StatusCode == http.StatusRequestEntityTooLarge) {
+			logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
+			misc.Assert(true)
+		}
 
 		var toSendData interface{}
 		if resp.StatusCode == http.StatusOK {
@@ -94,6 +110,7 @@ func (trans *transformerHandleT) Setup() {
 	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
 	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
 	trans.failedStat = stats.NewStat("processor.transformer_failed", stats.CountType)
+	trans.transformTimerStat = stats.NewStat("processor.transformation_time", stats.TimerType)
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 	for i := 0; i < numTransformWorker; i++ {
@@ -116,10 +133,12 @@ type ResponseT struct {
 //instance is shared between both user specific transformation
 //code and destination transformation code.
 func (trans *transformerHandleT) Transform(clientEvents []interface{},
-	url string, batchSize int) ResponseT {
+	url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT {
 
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
+
+	trans.transformTimerStat.Start()
 
 	var transformResponse = make([]*transformMessageT, 0)
 	//Enqueue all the jobs
@@ -136,24 +155,33 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		//The channel is still live and the last batch has been sent
 		//Construct the next batch
 		if reqQ != nil && toSendData == nil {
-			if batchSize > 0 {
-				clientBatch := make([]interface{}, 0)
-				batchCount := 0
-				for {
-					if batchCount >= batchSize || inputIdx >= len(clientEvents) {
+			clientBatch := make([]interface{}, 0)
+			batchCount := 0
+			for {
+				if (batchCount >= batchSize || inputIdx >= len(clientEvents)) && inputIdx != 0 {
+					// If processSessions is false or if dest transformer is being called, break using just the batchSize.
+					// Otherwise break when userId changes. This makes sure all events of a session go together as a batch
+					if !breakIntoBatchWhenUserChanges || inputIdx >= len(clientEvents) {
 						break
 					}
-					clientBatch = append(clientBatch, clientEvents[inputIdx])
-					batchCount++
-					inputIdx++
+					prevUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx-1].(map[string]interface{})["message"])
+					misc.Assert(ok)
+					currentUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx].(map[string]interface{})["message"])
+					misc.Assert(ok)
+					if currentUserID != prevUserID {
+						logger.Debug("Breaking batch at", inputIdx, prevUserID, currentUserID)
+						break
+					}
 				}
-				toSendData = clientBatch
-				trans.sentStat.Count(len(clientBatch))
-			} else {
-				toSendData = clientEvents[inputIdx]
-				trans.sentStat.Increment()
+				if inputIdx >= len(clientEvents) {
+					break
+				}
+				clientBatch = append(clientBatch, clientEvents[inputIdx])
+				batchCount++
 				inputIdx++
 			}
+			toSendData = clientBatch
+			trans.sentStat.Count(len(clientBatch))
 		}
 
 		select {
@@ -214,6 +242,8 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	trans.receivedStat.Count(len(outClientEvents))
 	trans.perfStats.End(len(clientEvents))
 	trans.perfStats.Print()
+
+	trans.transformTimerStat.End()
 
 	return ResponseT{
 		Events:  outClientEvents,

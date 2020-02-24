@@ -30,7 +30,7 @@ var _ = BeforeSuite(func() {
 
 var _ = Describe("E2E", func() {
 	Context("With user sessions processing", func() {
-		It("verify event is processed only after sessionThresholdInS", func() {
+		It("verify event is processed only after sessionInactivityThresholdInS", func() {
 			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
 
@@ -41,41 +41,41 @@ var _ = Describe("E2E", func() {
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
 			Consistently(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			}, config.GetInt("Processor.sessionThresholdInS", 10)-1, dbPollFreqInS).Should(Equal(initialRouterJobsCount))
+			}, config.GetInt("Processor.sessionInactivityThresholdInS", 10)-1, dbPollFreqInS).Should(Equal(initialRouterJobsCount))
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			}, config.GetInt("Processor.sessionThresholdInS", 10)+1, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 1))
+			}, config.GetInt("Processor.sessionInactivityThresholdInS", 10)+1, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 1))
 		})
 
-		It("verify events are sessioned as per sessionThresholdInS", func() {
+		It("verify events are sessioned as per sessionInactivityThresholdInS", func() {
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
 
 			totalEvents := 5 // should be less than transformBatchSize
 			for i := 1; i <= totalEvents; i++ {
 				helpers.SendEventRequest(helpers.EventOptsT{})
 			}
-			time.AfterFunc(time.Duration(config.GetInt("Processor.sessionThresholdInS", 10))*time.Second, func() {
+			time.AfterFunc(time.Duration(config.GetInt("Processor.sessionInactivityThresholdInS", 10))*time.Second, func() {
 				helpers.SendEventRequest(helpers.EventOptsT{})
 			})
 
 			Consistently(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			}, config.GetInt("Processor.sessionThresholdInS", 10)-1, dbPollFreqInS).Should(Equal(initialRouterJobsCount))
+			}, config.GetInt("Processor.sessionInactivityThresholdInS", 10)-1, dbPollFreqInS).Should(Equal(initialRouterJobsCount))
 
 			// verify that first totalEvents events are batched into one session
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			}, config.GetInt("Processor.sessionThresholdInS", 10)+2, dbPollFreqInS).Should(Equal(initialRouterJobsCount + totalEvents))
+			}, config.GetInt("Processor.sessionInactivityThresholdInS", 10)+2, dbPollFreqInS).Should(Equal(initialRouterJobsCount + totalEvents))
 
-			time.AfterFunc(time.Duration(config.GetInt("Processor.sessionThresholdInS", 10))*time.Second, func() {
+			time.AfterFunc(time.Duration(config.GetInt("Processor.sessionInactivityThresholdInS", 10))*time.Second, func() {
 				Consistently(func() int {
 					return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-				}, config.GetInt("Processor.sessionThresholdInS", 10)-1, dbPollFreqInS).Should(Equal(initialRouterJobsCount + totalEvents))
+				}, config.GetInt("Processor.sessionInactivityThresholdInS", 10)-1, dbPollFreqInS).Should(Equal(initialRouterJobsCount + totalEvents))
 
 				// and next request after sessionThreshold has passes is in next session
 				Eventually(func() int {
 					return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-				}, config.GetInt("Processor.sessionThresholdInS", 10)+2, dbPollFreqInS).Should(Equal(initialRouterJobsCount + totalEvents + 1))
+				}, config.GetInt("Processor.sessionInactivityThresholdInS", 10)+2, dbPollFreqInS).Should(Equal(initialRouterJobsCount + totalEvents + 1))
 			})
 
 		})

@@ -21,7 +21,7 @@ func init() {
 func loadConfig() {
 	alertProvider = config.GetEnv("ALERT_PROVIDER", "victorops")
 	pagerDutyRoutingKey = config.GetEnv("PG_ROUTING_KEY", "")
-	instanceName = config.GetEnv("INSTANCE_NAME", "")
+	instanceName = config.GetEnv("INSTANCE_ID", "")
 	victorOpsRoutingKey = config.GetEnv("VICTOROPS_ROUTING_KEY", "")
 }
 

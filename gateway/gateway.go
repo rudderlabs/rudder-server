@@ -5,7 +5,9 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,6 +19,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
+	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -83,7 +86,7 @@ func loadConfig() {
 	// Maximum request size to gateway
 	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 100000) * 1000
 	// Enable dedup of incoming events by default
-	enableDedup = config.GetBool("Gateway.enableDedup", true)
+	enableDedup = config.GetBool("Gateway.enableDedup", false)
 	// Dedup time window in hours
 	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 	// Enable rate limit on incoming events. false by default
@@ -162,7 +165,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				}
 			}
 
-			if !ok {
+			if !ok || writeKey == "" {
 				req.done <- getStatus(NoWriteKeyInBasicAuth)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
@@ -171,6 +174,12 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if err != nil {
 				req.done <- getStatus(RequestBodyReadFailed)
+				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+				continue
+			}
+			if !gjson.ValidBytes(body) {
+				req.done <- getStatus(InvalidJson)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
@@ -238,8 +247,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, enabledWriteKeysSourceMap[writeKey])),
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
@@ -369,7 +376,7 @@ func (gateway *HandleT) webRequestBatcher() {
 func (gateway *HandleT) printStats() {
 	for {
 		time.Sleep(10 * time.Second)
-		logger.Info("Gateway Recv/Ack", gateway.recvCount, gateway.ackCount)
+		logger.Info("Gateway Recv/Ack ", gateway.recvCount, gateway.ackCount)
 	}
 }
 
@@ -428,11 +435,16 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
-	var json = []byte(`{"server":"UP","db":"UP"}`)
+	var dbService string = "UP"
+	var enabledRouter string = "TRUE"
 	if !gateway.jobsDB.CheckPGHealth() {
-		json, _ = sjson.SetBytes(json, "db", "DOWN")
+		dbService = "DOWN"
 	}
-	w.Write(json)
+	if !config.GetBool("enableRouter", true) {
+		enabledRouter = "FALSE"
+	}
+	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine())
+	w.Write([]byte(healthVal))
 }
 
 func reflectOrigin(origin string) bool {
@@ -441,7 +453,7 @@ func reflectOrigin(origin string) bool {
 
 func (gateway *HandleT) startWebHandler() {
 
-	logger.Infof("Starting in %d\n", webPort)
+	logger.Infof("Starting in %d", webPort)
 
 	http.HandleFunc("/v1/batch", stat(gateway.webBatchHandler))
 	http.HandleFunc("/v1/identify", stat(gateway.webIdentifyHandler))

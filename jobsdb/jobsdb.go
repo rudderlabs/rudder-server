@@ -27,6 +27,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"unicode/utf8"
 
@@ -87,9 +88,11 @@ type dataSetT struct {
 }
 
 type dataSetRangeT struct {
-	minJobID int64
-	maxJobID int64
-	ds       dataSetT
+	minJobID  int64
+	maxJobID  int64
+	startTime int64
+	endTime   int64
+	ds        dataSetT
 }
 
 /*
@@ -97,19 +100,23 @@ HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
-	dbHandle              *sql.DB
-	tablePrefix           string
-	datasetList           []dataSetT
-	datasetRangeList      []dataSetRangeT
-	dsListLock            sync.RWMutex
-	dsMigrationLock       sync.RWMutex
-	dsRetentionPeriod     time.Duration
-	dsEmptyResultCache    map[dataSetT]map[string]map[string]map[string]bool
-	dsCacheLock           sync.Mutex
-	toBackup              bool
-	jobsFileUploader      filemanager.FileManager
-	jobStatusFileUploader filemanager.FileManager
-	statTableCount        *stats.RudderStats
+	dbHandle                      *sql.DB
+	tablePrefix                   string
+	datasetList                   []dataSetT
+	datasetRangeList              []dataSetRangeT
+	dsListLock                    sync.RWMutex
+	dsMigrationLock               sync.RWMutex
+	dsRetentionPeriod             time.Duration
+	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]bool
+	dsCacheLock                   sync.Mutex
+	toBackup                      bool
+	jobsFileUploader              filemanager.FileManager
+	jobStatusFileUploader         filemanager.FileManager
+	statTableCount                *stats.RudderStats
+	statNewDSPeriod               *stats.RudderStats
+	isStatNewDSPeriodInitialized  bool
+	statDropDSPeriod              *stats.RudderStats
+	isStatDropDSPeriodInitialized bool
 }
 
 //The struct which is written to the journal
@@ -123,32 +130,52 @@ type StoreJobRespT struct {
 	ErrorMessage string
 }
 
+type ParameterFilterT struct {
+	Name     string
+	Value    string
+	Optional bool
+}
+
 var dbErrorMap = map[string]string{
-	"Invalid JSON":    "22P02",
-	"Invalid Unicode": "22P05",
+	"Invalid JSON":             "22P02",
+	"Invalid Unicode":          "22P05",
+	"Invalid Escape Sequence":  "22025",
+	"Invalid Escape Character": "22019",
 }
 
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
 		// debug.SetTraceback("all")
-		// debug.PrintStack()
-		// jd.printLists(true)
+		debug.PrintStack()
+		jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify(err)
 		misc.RecordAppError(err)
+		logger.Fatal(err)
 		panic(err)
 	}
+}
+
+func (jd *HandleT) assertErrorIfDev(err error) {
+	goEnv := os.Getenv("GO_ENV")
+	if goEnv == "production" {
+		logger.Error(err.Error())
+		return
+	}
+
+	jd.assertError(err)
 }
 
 func (jd *HandleT) assert(cond bool) {
 	if !cond {
 		// debug.SetTraceback("all")
-		// debug.PrintStack()
-		// jd.printLists(true)
+		debug.PrintStack()
+		jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		defer bugsnag.AutoNotify("Assertion failed")
 		misc.RecordAppError(errors.New("Assertion failed"))
+		logger.Fatal("Assertion failed")
 		panic("Assertion failed")
 	}
 }
@@ -188,13 +215,14 @@ var (
 
 var (
 	maxDSSize, maxMigrateOnce                  int
+	maxTableSize                               int64
 	jobDoneMigrateThres, jobStatusMigrateThres float64
 	mainCheckSleepDuration                     time.Duration
 	backupCheckSleepDuration                   time.Duration
 	useJoinForUnprocessed                      bool
 )
 
-var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat *stats.RudderStats
+var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat, jobsdbQueryTimeStat *stats.RudderStats
 
 // Loads db config and migration related config from config file
 func loadConfig() {
@@ -211,11 +239,13 @@ func loadConfig() {
 			(every few seconds) so a DS may go beyond this size
 	maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
 	mainCheckSleepDuration: How often is the loop (which checks for adding/migrating DS) run
+	maxTableSizeInMB: Maximum Table size in MB
 	*/
 	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres", 0.8)
 	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres", 5)
 	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
+	maxTableSize = (config.GetInt64("JobsDB.maxTableSizeInMB", 300) * 1000000)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
@@ -227,6 +257,7 @@ func init() {
 	tableFileDumpTimeStat = stats.NewStat("jobsdb.table_file_dump_time", stats.TimerType)
 	fileUploadTimeStat = stats.NewStat("jobsdb.file_upload_time", stats.TimerType)
 	totalTableDumpTimeStat = stats.NewStat("jobsdb.total_table_dump_time", stats.TimerType)
+
 }
 
 func GetConnectionString() string {
@@ -252,7 +283,6 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	var err error
 	psqlInfo := GetConnectionString()
-
 	jd.assert(tablePrefix != "")
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
@@ -272,6 +302,8 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.terminateQueries()
 
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
+	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
+	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
@@ -292,6 +324,10 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	if len(jd.datasetList) == 0 {
 		jd.addNewDS(true, dataSetT{})
 	}
+
+	// Schema Migration: Created_at column should have a default now()
+	dList := jd.getDSList(false)
+	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
 
 	if jd.toBackup {
 		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
@@ -366,8 +402,8 @@ func (jd *HandleT) getAllTableNames() []string {
 	defer stmt.Close()
 
 	rows, err := stmt.Query()
-	defer rows.Close()
 	jd.assertError(err)
+	defer rows.Close()
 
 	tableNames := []string{}
 	for rows.Next() {
@@ -484,9 +520,10 @@ Or when the job_status table gets too big because of lot of retries/failures
 */
 
 func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
-
+	queryStat := stats.NewJobsDBStat("migration_ds_check", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	var delCount, totalCount, statusCount int
-
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&totalCount)
@@ -534,18 +571,40 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	return false, totalCount - delCount
 }
 
+func (jd *HandleT) getTableRowCount(jobTable string) int {
+	var count int
+
+	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, jobTable)
+	row := jd.dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&count)
+	jd.assertError(err)
+	return count
+}
+
+func (jd *HandleT) getTableSize(jobTable string) int64 {
+	var tableSize int64
+
+	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, jobTable)
+	row := jd.dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&tableSize)
+	jd.assertError(err)
+	return tableSize
+}
+
 func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 
-	var totalCount int
-
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, ds.JobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
-	err := row.Scan(&totalCount)
-	jd.assertError(err)
-
-	if totalCount > maxDSSize {
+	tableSize := jd.getTableSize(ds.JobTable)
+	if tableSize > maxTableSize {
+		logger.Infof("[JobsDB] %s is full in size. Count: %v, Size: %v", ds.JobTable, jd.getTableRowCount(ds.JobTable), tableSize)
 		return true
 	}
+
+	totalCount := jd.getTableRowCount(ds.JobTable)
+	if totalCount > maxDSSize {
+		logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, jd.getTableSize(ds.JobTable))
+		return true
+	}
+
 	return false
 }
 
@@ -586,7 +645,9 @@ func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
 }
 
 func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
-
+	queryStat := stats.NewJobsDBStat("add_new_ds", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	//Get the max index
 	dList := jd.getDSList(true)
 	newDSIdx := ""
@@ -633,7 +694,17 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
 	jd.assertError(err)
 	opID := jd.JournalMarkStart(addDSOperation, opPayload)
-	defer jd.JournalMarkDone(opID)
+	defer func() {
+		jd.JournalMarkDone(opID)
+		if appendLast {
+			// Tracking time interval between new ds creations. Hence calling end before start
+			if jd.isStatNewDSPeriodInitialized {
+				jd.statNewDSPeriod.End()
+			}
+			jd.statNewDSPeriod.Start()
+			jd.isStatNewDSPeriodInitialized = true
+		}
+	}()
 
 	//Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
@@ -642,8 +713,8 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 									  parameters JSONB NOT NULL,
                                       custom_val VARCHAR(64) NOT NULL,
                                       event_payload JSONB NOT NULL,
-                                      created_at TIMESTAMP NOT NULL,
-                                      expire_at TIMESTAMP NOT NULL);`, newDS.JobTable)
+                                      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                                      expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, newDS.JobTable)
 
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
@@ -687,6 +758,23 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	return newDS
 }
 
+/*
+ * Function to return max dataset index in the DB
+ */
+func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
+
+	jd.dsListLock.RLock()
+	defer jd.dsListLock.RUnlock()
+
+	//dList is already sorted.
+	dList := jd.getDSList(false)
+	ds := dList[len(dList)-1]
+	maxDSIndex, err := strconv.ParseInt(ds.Index, 10, 64)
+	misc.AssertError(err)
+
+	return maxDSIndex
+}
+
 //Drop a dataset
 func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 
@@ -710,6 +798,13 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	}
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
+
+	// Tracking time interval between drop ds operations. Hence calling end before start
+	if jd.isStatDropDSPeriodInitialized {
+		jd.statDropDSPeriod.End()
+	}
+	jd.statDropDSPeriod.Start()
+	jd.isStatDropDSPeriodInitialized = true
 }
 
 //Rename a dataset
@@ -812,14 +907,16 @@ over. Then the status (only the latest) is set for those jobs
 */
 
 func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
-
+	queryStat := stats.NewJobsDBStat("migration_jobs", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	//Unprocessed jobs
-	unprocessedList, err := jd.getUnprocessedJobsDS(srcDS, []string{}, false, 0)
+	unprocessedList, err := jd.getUnprocessedJobsDS(srcDS, []string{}, false, 0, nil)
 	jd.assertError(err)
 
 	//Jobs which haven't finished processing
 	retryList, err := jd.getProcessedJobsDS(srcDS, true,
-		[]string{FailedState, WaitingState, WaitingRetryState, ExecutingState}, []string{}, 0)
+		[]string{FailedState, WaitingState, WaitingRetryState, ExecutingState}, []string{}, 0, nil)
 
 	jd.assertError(err)
 
@@ -841,7 +938,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
 		}
 		statusList = append(statusList, &newStatus)
 	}
-	jd.updateJobStatusDS(destDS, statusList, []string{})
+	jd.updateJobStatusDS(destDS, statusList, []string{}, nil)
 
 	return nil
 }
@@ -870,6 +967,9 @@ a given dataset. The names should be self explainatory
 */
 
 func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
+	queryStat := stats.NewJobsDBStat("store_jobs", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 
 	var stmt *sql.Stmt
 	var err error
@@ -885,8 +985,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 			"event_payload", "created_at", "expire_at"))
 		jd.assertError(err)
 	} else {
-		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "parameters", "custom_val", "event_payload",
-			"created_at", "expire_at"))
+		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "parameters", "custom_val", "event_payload"))
 		jd.assertError(err)
 	}
 
@@ -899,8 +998,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 			_, err = stmt.Exec(job.JobID, job.UUID, job.Parameters, job.CustomVal,
 				string(job.EventPayload), job.CreatedAt, job.ExpireAt)
 		} else {
-			_, err = stmt.Exec(job.UUID, job.Parameters, job.CustomVal, string(job.EventPayload),
-				job.CreatedAt, job.ExpireAt)
+			_, err = stmt.Exec(job.UUID, job.Parameters, job.CustomVal, string(job.EventPayload))
 		}
 		jd.assertError(err)
 	}
@@ -918,26 +1016,25 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 	}
 
 	//Empty customValFilters means we want to clear for all
-	jd.markClearEmptyResult(ds, []string{}, []string{}, []string{}, false)
+	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, false)
 	// fmt.Println("Bursting CACHE")
 
 	return
 }
 
 func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (errorMessage string) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (uuid, custom_val, parameters, event_payload, created_at, expire_at)
-	                                   VALUES ($1, $2, $3, (regexp_replace($4::text, '\\u0000', '', 'g'))::json, $5, $6) RETURNING job_id`, ds.JobTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (uuid, custom_val, parameters, event_payload)
+	                                   VALUES ($1, $2, $3, (regexp_replace($4::text, '\\u0000', '', 'g'))::json) RETURNING job_id`, ds.JobTable)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
-	_, err = stmt.Exec(job.UUID, job.CustomVal, string(job.Parameters), string(job.EventPayload),
-		job.CreatedAt, job.ExpireAt)
+	_, err = stmt.Exec(job.UUID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 	if err == nil {
 		return
 	}
 	pqErr := err.(*pq.Error)
 	errCode := string(pqErr.Code)
-	if errCode == dbErrorMap["Invalid JSON"] || errCode == dbErrorMap["Invalid Unicode"] {
+	if errCode == dbErrorMap["Invalid JSON"] || errCode == dbErrorMap["Invalid Unicode"] || errCode == dbErrorMap["Invalid Escape Sequence"] {
 		return "Invalid JSON"
 	}
 	jd.assertError(err)
@@ -953,14 +1050,22 @@ func (jd *HandleT) constructQuery(paramKey string, paramList []string, queryType
 	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
 }
 
-func (jd *HandleT) constructJSONQuery(paramKey string, jsonKey string, paramList []string, queryType string) string {
-	jd.assert(queryType == "OR" || queryType == "AND")
-	var queryList []string
-	for _, p := range paramList {
-		queryList = append(queryList, "("+paramKey+"@>'{"+fmt.Sprintf(`"%s"`, jsonKey)+":"+fmt.Sprintf(`"%s"`, p)+"}')")
-
+func (jd *HandleT) constructParameterJSONQuery(table string, parameterFilters []ParameterFilterT) string {
+	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
+	var allKeyValues, mandatoryKeyValues, opNullConditions []string
+	for _, parameter := range parameterFilters {
+		allKeyValues = append(allKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
+		if parameter.Optional {
+			opNullConditions = append(opNullConditions, fmt.Sprintf(`%s.parameters -> '%s' IS NULL`, table, parameter.Name))
+		} else {
+			mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
+		}
 	}
-	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
+	opQuery := ""
+	if len(opNullConditions) > 0 {
+		opQuery += fmt.Sprintf(` OR (%s.parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
+	}
+	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
 }
 
 /*
@@ -970,7 +1075,7 @@ func (jd *HandleT) constructJSONQuery(paramKey string, jsonKey string, paramList
 * markClearEmptyResult() when mark=False clears a previous empty mark
  */
 
-func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, sourceIDFilters []string, mark bool) {
+func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT, mark bool) {
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
@@ -996,34 +1101,30 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 		if !ok {
 			jd.dsEmptyResultCache[ds][cVal] = map[string]map[string]bool{}
 		}
-		index := 0
-		for {
-			sid := ""
-			if len(sourceIDFilters) > 0 {
-				sid = sourceIDFilters[index]
-			}
 
-			_, ok := jd.dsEmptyResultCache[ds][cVal][sid]
-			if !ok {
-				jd.dsEmptyResultCache[ds][cVal][sid] = map[string]bool{}
-			}
+		pVals := []string{}
+		for _, parameterFilter := range parameterFilters {
+			pVals = append(pVals, fmt.Sprintf(`%s_%s`, parameterFilter.Name, parameterFilter.Value))
+		}
+		sort.Strings(pVals)
+		pVal := strings.Join(pVals, "_")
 
-			for _, st := range stateFilters {
-				if mark {
-					jd.dsEmptyResultCache[ds][cVal][sid][st] = true
-				} else {
-					jd.dsEmptyResultCache[ds][cVal][sid][st] = false
-				}
-			}
-			index++
-			if len(sourceIDFilters) == 0 || index >= len(sourceIDFilters) {
-				break
+		_, ok = jd.dsEmptyResultCache[ds][cVal][pVal]
+		if !ok {
+			jd.dsEmptyResultCache[ds][cVal][pVal] = map[string]bool{}
+		}
+
+		for _, st := range stateFilters {
+			if mark {
+				jd.dsEmptyResultCache[ds][cVal][pVal][st] = true
+			} else {
+				jd.dsEmptyResultCache[ds][cVal][pVal][st] = false
 			}
 		}
 	}
 }
 
-func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, sourceIDFilters []string) bool {
+func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
@@ -1039,25 +1140,27 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 	}
 
 	for _, cVal := range customValFilters {
-		index := 0
-		for {
-			sid := ""
-			if len(sourceIDFilters) > 0 {
-				sid = sourceIDFilters[index]
-			}
-			_, ok := jd.dsEmptyResultCache[ds][cVal][sid]
-			if !ok {
+		_, ok := jd.dsEmptyResultCache[ds][cVal]
+		if !ok {
+			return false
+		}
+
+		pVals := []string{}
+		for _, parameterFilter := range parameterFilters {
+			pVals = append(pVals, fmt.Sprintf(`%s_%s`, parameterFilter.Name, parameterFilter.Value))
+		}
+		sort.Strings(pVals)
+		pVal := strings.Join(pVals, "_")
+
+		_, ok = jd.dsEmptyResultCache[ds][cVal][pVal]
+		if !ok {
+			return false
+		}
+
+		for _, st := range stateFilters {
+			mark, ok := jd.dsEmptyResultCache[ds][cVal][pVal][st]
+			if !ok || mark == false {
 				return false
-			}
-			for _, st := range stateFilters {
-				mark, ok := jd.dsEmptyResultCache[ds][cVal][sid][st]
-				if !ok || mark == false {
-					return false
-				}
-			}
-			index++
-			if len(sourceIDFilters) == 0 || index >= len(sourceIDFilters) {
-				break
 			}
 		}
 	}
@@ -1066,15 +1169,30 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 	return true
 }
 
-//limitCount == 0 means return all
+/*
+limitCount == 0 means return all
+stateFilters and customValFilters do a OR query on values passed in array
+parameterFilters do a AND query on values included in the map
+*/
 func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []string,
-	customValFilters []string, limitCount int, sourceIDFilters ...string) ([]*JobT, error) {
+	customValFilters []string, limitCount int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
+	var queryStat *stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	if len(stateFilters) > 0 {
+		statName = statName + stateFilters[0] + "_"
+	}
+	queryStat = stats.NewJobsDBStat(statName+"processed_jobs", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
 	jd.checkValidJobState(stateFilters)
 
-	if jd.isEmptyResult(ds, stateFilters, customValFilters, sourceIDFilters) {
+	if jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
 		return []*JobT{}, nil
 	}
 
@@ -1092,10 +1210,9 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 		customValQuery = ""
 	}
 
-	if len(sourceIDFilters) > 0 {
+	if len(parameterFilters) > 0 {
 		jd.assert(!getAll)
-		sourceQuery += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
-			sourceIDFilters, "OR")
+		sourceQuery += " AND " + jd.constructParameterJSONQuery(ds.JobTable, parameterFilters)
 	} else {
 		sourceQuery = ""
 	}
@@ -1125,8 +1242,8 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 			ds.JobTable, ds.JobStatusTable, stateQuery)
 		var err error
 		rows, err = jd.dbHandle.Query(sqlStatement)
-		defer rows.Close()
 		jd.assertError(err)
+		defer rows.Close()
 	} else {
 		sqlStatement := fmt.Sprintf(`SELECT
                                                %[1]s.job_id, %[1]s.uuid,  %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload,
@@ -1144,15 +1261,13 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
                                              %[4]s %[5]s
                                              AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[6]s`,
 			ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
-		// fmt.Println(sqlStatement)
 
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
-
 		jd.assertError(err)
 		defer stmt.Close()
 		rows, err = stmt.Query(time.Now())
-		defer rows.Close()
 		jd.assertError(err)
+		defer rows.Close()
 	}
 
 	var jobList []*JobT
@@ -1168,20 +1283,32 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	}
 
 	if len(jobList) == 0 {
-		jd.markClearEmptyResult(ds, stateFilters, customValFilters, sourceIDFilters, true)
+		jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, true)
 	}
 
 	return jobList, nil
 }
 
-//count == 0 means return all
+/*
+count == 0 means return all
+stateFilters and customValFilters do a OR query on values passed in array
+parameterFilters do a AND query on values included in the map
+*/
 func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
-	order bool, count int, sourceIDFilters ...string) ([]*JobT, error) {
+	order bool, count int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
+	var queryStat *stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	queryStat = stats.NewJobsDBStat(statName+"unprocessed_jobs", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 
 	var rows *sql.Rows
 	var err error
 
-	if jd.isEmptyResult(ds, []string{"NP"}, customValFilters, sourceIDFilters) {
+	if jd.isEmptyResult(ds, []string{"NP"}, customValFilters, parameterFilters) {
 		return []*JobT{}, nil
 	}
 
@@ -1206,9 +1333,8 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 			customValFilters, "OR")
 	}
 
-	if len(sourceIDFilters) > 0 {
-		sqlStatement += " AND " + jd.constructJSONQuery(fmt.Sprintf("%s.parameters", ds.JobTable), "source_id",
-			sourceIDFilters, "OR")
+	if len(parameterFilters) > 0 {
+		sqlStatement += " AND " + jd.constructParameterJSONQuery(ds.JobTable, parameterFilters)
 	}
 
 	if order {
@@ -1219,8 +1345,8 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	}
 
 	rows, err = jd.dbHandle.Query(sqlStatement)
-	defer rows.Close()
 	jd.assertError(err)
+	defer rows.Close()
 
 	var jobList []*JobT
 	for rows.Next() {
@@ -1232,13 +1358,13 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	}
 
 	if len(jobList) == 0 {
-		jd.markClearEmptyResult(ds, []string{"NP"}, customValFilters, sourceIDFilters, true)
+		jd.markClearEmptyResult(ds, []string{"NP"}, customValFilters, parameterFilters, true)
 	}
 
 	return jobList, nil
 }
 
-func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, sourceIDFilters ...string) (err error) {
+func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
 
 	if len(statusList) == 0 {
 		return nil
@@ -1277,7 +1403,7 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 		stateFilters = append(stateFilters, k)
 	}
 
-	jd.markClearEmptyResult(ds, stateFilters, customValFilters, sourceIDFilters, false)
+	jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, false)
 
 	return nil
 }
@@ -1346,6 +1472,8 @@ func (jd *HandleT) mainCheckLoop() {
 				break
 			}
 		}
+		migrationLoopStat := stats.NewJobsDBStat("migration_loop", stats.TimerType, jd.tablePrefix)
+		migrationLoopStat.Start()
 		//Add a temp DS to append to
 		if len(migrateFrom) > 0 {
 			if liveCount > 0 {
@@ -1384,7 +1512,7 @@ func (jd *HandleT) mainCheckLoop() {
 
 			jd.JournalMarkDone(opID)
 		}
-
+		migrationLoopStat.End()
 		jd.dsMigrationLock.Unlock()
 
 	}
@@ -1394,28 +1522,29 @@ func (jd *HandleT) backupDSLoop() {
 	for {
 		time.Sleep(backupCheckSleepDuration)
 		logger.Info("BackupDS check:Start")
-		backupDS := jd.getBackupDS()
+		backupDSRange := jd.getBackupDSRange()
 		// check if non empty dataset is present to backup
 		// else continue
-		if (dataSetT{} == backupDS) {
+		if (dataSetRangeT{} == backupDSRange) {
 			// sleep for more duration if no dataset is found
 			time.Sleep(5 * backupCheckSleepDuration)
 			continue
 		}
 
-		startTime := time.Now().Unix()
+		backupDS := backupDSRange.ds
+
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
 		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
 		// write jobs table to s3
-		_, err = jd.backupTable(backupDS.JobTable, startTime)
+		_, err = jd.backupTable(backupDSRange, false)
 		if err != nil {
 			logger.Errorf("Failed to backup table %v", backupDS.JobTable)
 			continue
 		}
 
 		// write job_status table to s3
-		_, err = jd.backupTable(backupDS.JobStatusTable, startTime)
+		_, err = jd.backupTable(backupDSRange, true)
 		jd.assertError(err)
 		if err != nil {
 			logger.Errorf("Failed to backup table %v", backupDS.JobStatusTable)
@@ -1443,13 +1572,30 @@ func (jd *HandleT) removeTableJSONDumps() {
 	}
 }
 
-func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool, err error) {
+func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable bool) (success bool, err error) {
 	tableFileDumpTimeStat.Start()
 	totalTableDumpTimeStat.Start()
-	pathPrefix := strings.TrimPrefix(tableName, "pre_drop_")
+	var tableName, path, pathPrefix string
 	backupPathDirName := "/rudder-s3-dumps/"
 	tmpDirPath := misc.CreateTMPDIR()
-	path := fmt.Sprintf(`%v%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, startTime)
+
+	if isJobStatusTable {
+		tableName = backupDSRange.ds.JobStatusTable
+		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
+		path = fmt.Sprintf(`%v%v.gz`, tmpDirPath+backupPathDirName, pathPrefix)
+	} else {
+		tableName = backupDSRange.ds.JobTable
+		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
+		path = fmt.Sprintf(`%v%v.%v.%v.%v.%v.gz`,
+			tmpDirPath+backupPathDirName,
+			pathPrefix,
+			backupDSRange.minJobID,
+			backupDSRange.maxJobID,
+			backupDSRange.startTime,
+			backupDSRange.endTime,
+		)
+	}
+
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	misc.AssertError(err)
 
@@ -1491,7 +1637,7 @@ func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool,
 	}
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
-		logger.Errorf("Failed to upload table %v dump to %s\n", tableName, storageProvider)
+		logger.Errorf("Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
 	} else {
 		// Do not record stat in error case as error case time might be low and skew stats
 		fileUploadTimeStat.End()
@@ -1504,8 +1650,9 @@ func (jd *HandleT) backupTable(tableName string, startTime int64) (success bool,
 	return true, err
 }
 
-func (jd *HandleT) getBackupDS() dataSetT {
+func (jd *HandleT) getBackupDSRange() dataSetRangeT {
 	var backupDS dataSetT
+	var backupDSRange dataSetRangeT
 
 	//Read the table names from PG
 	tableNames := jd.getAllTableNames()
@@ -1520,7 +1667,7 @@ func (jd *HandleT) getBackupDS() dataSetT {
 		}
 	}
 	if len(dnumList) == 0 {
-		return backupDS
+		return backupDSRange
 	}
 
 	jd.sortDnumList(dnumList)
@@ -1530,7 +1677,27 @@ func (jd *HandleT) getBackupDS() dataSetT {
 		JobStatusTable: fmt.Sprintf("pre_drop_%s_job_status_%s", jd.tablePrefix, dnumList[0]),
 		Index:          dnumList[0],
 	}
-	return backupDS
+
+	var minID, maxID sql.NullInt64
+	jobIDSQLStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, backupDS.JobTable)
+	row := jd.dbHandle.QueryRow(jobIDSQLStatement)
+	err := row.Scan(&minID, &maxID)
+	jd.assertError(err)
+
+	var minCreatedAt, maxCreatedAt time.Time
+	jobTimeSQLStatement := fmt.Sprintf(`SELECT MIN(created_at), MAX(created_at) FROM %s`, backupDS.JobTable)
+	row = jd.dbHandle.QueryRow(jobTimeSQLStatement)
+	err = row.Scan(&minCreatedAt, &maxCreatedAt)
+	jd.assertError(err)
+
+	backupDSRange = dataSetRangeT{
+		minJobID:  minID.Int64,
+		maxJobID:  maxID.Int64,
+		startTime: minCreatedAt.UnixNano() / int64(time.Millisecond),
+		endTime:   maxCreatedAt.UnixNano() / int64(time.Millisecond),
+		ds:        backupDS,
+	}
+	return backupDSRange
 }
 
 /*
@@ -1551,6 +1718,21 @@ type JournalEntryT struct {
 	OpType    string
 	OpDone    bool
 	OpPayload json.RawMessage
+}
+
+// Remove this after a release
+func (jd *HandleT) setDefaultNowColumns(dsIndex string) {
+
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s_jobs_%s ALTER COLUMN created_at set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
+
+	_, err := jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s_jobs_%s ALTER COLUMN expire_at set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
+
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
 }
 
 func (jd *HandleT) setupJournal() {
@@ -1581,6 +1763,7 @@ func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) in
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
                                        VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
+	jd.assertError(err)
 	defer stmt.Close()
 
 	var opID int64
@@ -1612,8 +1795,8 @@ func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 									operation = '%s'
 									ORDER BY id`, jd.tablePrefix, opType)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
-	defer stmt.Close()
 	jd.assertError(err)
+	defer stmt.Close()
 
 	rows, err := stmt.Query()
 	jd.assertError(err)
@@ -1648,8 +1831,8 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
                                 	ORDER BY id`, jd.tablePrefix)
 
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
-	defer stmt.Close()
 	jd.assertError(err)
+	defer stmt.Close()
 
 	rows, err := stmt.Query(pq.Array(opTypes))
 	jd.assertError(err)
@@ -1746,7 +1929,7 @@ UpdateJobStatus updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, sourceIDFilters ...string) {
+func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) {
 
 	if len(statusList) == 0 {
 		return
@@ -1783,7 +1966,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 					logger.Debug("Range:", ds, statusList[lastPos].JobID,
 						statusList[i-1].JobID, lastPos, i-1)
 				}
-				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, sourceIDFilters...)
+				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
 				jd.assertError(err)
 				lastPos = i
 				break
@@ -1792,7 +1975,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		//Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
 			logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
-			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, sourceIDFilters...)
+			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
 			jd.assertError(err)
 			lastPos = i
 			break
@@ -1806,7 +1989,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		jd.assert(len(dsRangeList) == len(dsList)-1)
 		//Update status in the last element
 		logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
-		err := jd.updateJobStatusDS(dsList[len(dsList)-1], statusList[lastPos:], customValFilters)
+		err := jd.updateJobStatusDS(dsList[len(dsList)-1], statusList[lastPos:], customValFilters, parameterFilters)
 		jd.assertError(err)
 	}
 
@@ -1845,11 +2028,19 @@ func (jd *HandleT) printLists(console bool) {
 GetUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, sourceIDFilters ...string) []*JobT {
+func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
+	var queryStat *stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	queryStat = stats.NewJobsDBStat(statName+"unprocessed", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
@@ -1863,7 +2054,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, sourceID
 	}
 	for _, ds := range dsList {
 		jd.assert(count > 0)
-		jobs, err := jd.getUnprocessedJobsDS(ds, customValFilters, true, count, sourceIDFilters...)
+		jobs, err := jd.getUnprocessedJobsDS(ds, customValFilters, true, count, parameterFilters)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
@@ -1883,11 +2074,22 @@ relises on the caller to update it. That means that successive calls to GetProce
 can return the same set of events. It is the responsibility of the caller to call it from
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
-func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, sourceIDFilters ...string) []*JobT {
+func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
+	var queryStat *stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	if len(stateFilter) > 0 {
+		statName = statName + stateFilter[0] + "_"
+	}
+	queryStat = stats.NewJobsDBStat(statName+"processed", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
@@ -1904,7 +2106,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	for _, ds := range dsList {
 		//count==0 means return all which we don't want
 		jd.assert(count > 0)
-		jobs, err := jd.getProcessedJobsDS(ds, false, stateFilter, customValFilters, count, sourceIDFilters...)
+		jobs, err := jd.getProcessedJobsDS(ds, false, stateFilter, customValFilters, count, parameterFilters)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
@@ -1921,23 +2123,23 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 GetToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) GetToRetry(customValFilters []string, count int, sourceIDFilters ...string) []*JobT {
-	return jd.GetProcessed([]string{FailedState}, customValFilters, count, sourceIDFilters...)
+func (jd *HandleT) GetToRetry(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
+	return jd.GetProcessed([]string{FailedState}, customValFilters, count, parameterFilters)
 }
 
 /*
 GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) GetWaiting(customValFilters []string, count int, sourceIDFilters ...string) []*JobT {
-	return jd.GetProcessed([]string{WaitingState}, customValFilters, count, sourceIDFilters...)
+func (jd *HandleT) GetWaiting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
+	return jd.GetProcessed([]string{WaitingState}, customValFilters, count, parameterFilters)
 }
 
 /*
 GetExecuting returns events which  in executing state
 */
-func (jd *HandleT) GetExecuting(customValFilters []string, count int, sourceIDFilters ...string) []*JobT {
-	return jd.GetProcessed([]string{ExecutingState}, customValFilters, count, sourceIDFilters...)
+func (jd *HandleT) GetExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
+	return jd.GetProcessed([]string{ExecutingState}, customValFilters, count, parameterFilters)
 }
 
 /*
@@ -1945,11 +2147,11 @@ CheckPGHealth returns health check for pg database
 */
 func (jd *HandleT) CheckPGHealth() bool {
 	rows, err := jd.dbHandle.Query(fmt.Sprintf(`SELECT 'Rudder DB Health Check'::text as message`))
-	defer rows.Close()
 	if err != nil {
 		fmt.Println(err)
 		return false
 	}
+	defer rows.Close()
 	return true
 }
 
@@ -1978,8 +2180,8 @@ func (jd *HandleT) setupEnumTypes() {
 		host, port, user, password, dbname)
 
 	dbHandle, err := sql.Open("postgres", psqlInfo)
-	defer dbHandle.Close()
 	jd.assertError(err)
+	defer dbHandle.Close()
 
 	sqlStatement := `DO $$ BEGIN
                                 CREATE TYPE job_state_type
@@ -2005,8 +2207,8 @@ func (jd *HandleT) createTables() error {
 							 parameters JSONB NOT NULL,
                              custom_val INT NOT NULL,
                              event_payload JSONB NOT NULL,
-                             created_at TIMESTAMP NOT NULL,
-                             expire_at TIMESTAMP NOT NULL);`
+                             created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                             expire_at TIMESTAMP NOT NULL DEFAULT NOW());`
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
@@ -2062,11 +2264,11 @@ func (jd *HandleT) staticDSTest() {
 		fmt.Println("Checking DS", elapsed)
 
 		start = time.Now()
-		unprocessedList, _ := jd.getUnprocessedJobsDS(testDS, []string{testEndPoint}, true, testNumQuery)
+		unprocessedList, _ := jd.getUnprocessedJobsDS(testDS, []string{testEndPoint}, true, testNumQuery, nil)
 		fmt.Println("Got unprocessed events:", len(unprocessedList))
 
 		retryList, _ := jd.getProcessedJobsDS(testDS, false, []string{"failed"},
-			[]string{testEndPoint}, testNumQuery)
+			[]string{testEndPoint}, testNumQuery, nil)
 		fmt.Println("Got retry events:", len(retryList))
 		if len(unprocessedList)+len(retryList) == 0 {
 			break
@@ -2089,7 +2291,7 @@ func (jd *HandleT) staticDSTest() {
 			statusList = append(statusList, &newStatus)
 		}
 
-		jd.updateJobStatusDS(testDS, statusList, []string{testEndPoint})
+		jd.updateJobStatusDS(testDS, statusList, []string{testEndPoint}, nil)
 
 		//Mark call as failed
 		statusList = nil
@@ -2114,7 +2316,7 @@ func (jd *HandleT) staticDSTest() {
 			statusList = append(statusList, &newStatus)
 		}
 		fmt.Println("Max attempt", maxAttempt)
-		jd.updateJobStatusDS(testDS, statusList, []string{testEndPoint})
+		jd.updateJobStatusDS(testDS, statusList, []string{testEndPoint}, nil)
 	}
 
 }
@@ -2184,10 +2386,10 @@ func (jd *HandleT) dynamicTest() {
 		jd.printLists(false)
 
 		start := time.Now()
-		unprocessedList := jd.GetUnprocessed([]string{testEndPoint}, testNumQuery)
+		unprocessedList := jd.GetUnprocessed([]string{testEndPoint}, testNumQuery, nil)
 		fmt.Println("Got unprocessed events:", len(unprocessedList))
 
-		retryList := jd.GetToRetry([]string{testEndPoint}, testNumQuery)
+		retryList := jd.GetToRetry([]string{testEndPoint}, testNumQuery, nil)
 		fmt.Println("Got retry events:", len(retryList))
 		if len(unprocessedList)+len(retryList) == 0 {
 			break
@@ -2221,7 +2423,7 @@ func (jd *HandleT) dynamicTest() {
 			}
 			statusList = append(statusList, &newStatus)
 		}
-		jd.UpdateJobStatus(statusList, []string{testEndPoint})
+		jd.UpdateJobStatus(statusList, []string{testEndPoint}, nil)
 	}
 }
 

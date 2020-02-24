@@ -3,6 +3,7 @@ package misc
 import (
 	"archive/zip"
 	"bufio"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"strings"
 
 	//"runtime/debug"
@@ -37,38 +39,54 @@ type ErrorStoreT struct {
 
 //RudderError : to store rudder error
 type RudderError struct {
-	StartTime  int64
-	Message    string
-	StackTrace string
-	Code       int
+	StartTime         int64
+	ReadableStartTime string
+	Message           string
+	StackTrace        string
+	Code              int
 }
 
-func getErrorStore() ErrorStoreT {
+func getErrorStore() (ErrorStoreT, error) {
+	var errorStore ErrorStoreT
 	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
 	data, err := ioutil.ReadFile(errorStorePath)
 	if os.IsNotExist(err) {
 		defaultErrorStoreJSON := "{\"Errors\":[]}"
 		data = []byte(defaultErrorStoreJSON)
-	} else {
-		AssertError(err)
+	} else if err != nil {
+		logger.Fatal("Failed to get ErrorStore", err)
+		return errorStore, err
 	}
 
-	var errorStore ErrorStoreT
 	err = json.Unmarshal(data, &errorStore)
-	AssertError(err)
 
-	return errorStore
+	if err != nil {
+		logger.Fatal("Failed to unmarshall ErrorStore to json", err)
+		return errorStore, err
+	}
+
+	return errorStore, nil
 }
 
 func saveErrorStore(errorStore ErrorStoreT) {
 	errorStoreJSON, err := json.MarshalIndent(&errorStore, "", " ")
+	if err != nil {
+		logger.Fatal("failed to marshal errorStore", errorStore)
+		return
+	}
 	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
 	err = ioutil.WriteFile(errorStorePath, errorStoreJSON, 0644)
-	AssertError(err)
+	if err != nil {
+		logger.Fatal("failed to write to errorStore")
+	}
 }
 
 //RecordAppError appends the error occured to error_store.json
 func RecordAppError(err error) {
+	if err == nil {
+		return
+	}
+
 	if AppStartTime == 0 {
 		return
 	}
@@ -77,9 +95,20 @@ func RecordAppError(err error) {
 	n := runtime.Stack(byteArr, false)
 	stackTrace := string(byteArr[:n])
 
-	errorStore := getErrorStore()
+	errorStore, localErr := getErrorStore()
+	if localErr != nil || errorStore.Errors == nil {
+		return
+	}
+
 	//TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
-	errorStore.Errors = append(errorStore.Errors, RudderError{StartTime: AppStartTime, Message: err.Error(), StackTrace: stackTrace, Code: 101})
+	errorStore.Errors = append(errorStore.Errors,
+		RudderError{
+			StartTime:         AppStartTime,
+			ReadableStartTime: fmt.Sprint(time.Unix(AppStartTime, 0)),
+			Message:           err.Error(),
+			StackTrace:        stackTrace,
+			Code:              101,
+		})
 	saveErrorStore(errorStore)
 }
 
@@ -90,6 +119,7 @@ func AssertError(err error) {
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		RecordAppError(err)
+		logger.Fatal(err)
 		panic(err)
 	}
 }
@@ -98,6 +128,7 @@ func AssertErrorIfDev(err error) {
 
 	goEnv := os.Getenv("GO_ENV")
 	if goEnv == "production" {
+		logger.Error(err.Error())
 		return
 	}
 
@@ -106,6 +137,7 @@ func AssertErrorIfDev(err error) {
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		RecordAppError(err)
+		logger.Fatal(err)
 		panic(err)
 	}
 }
@@ -117,6 +149,7 @@ func Assert(cond bool) {
 		debug.PrintStack()
 		defer bugsnag.AutoNotify()
 		RecordAppError(errors.New("Assertion failed"))
+		logger.Fatal("Assertion failed")
 		panic("Assertion failed")
 	}
 }
@@ -147,7 +180,6 @@ func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) 
 
 //ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
-	logger.Debug("[Misc: ParseRudderEventBatch] in ParseRudderEventBatch ")
 	var eventListJSON map[string]interface{}
 	err := json.Unmarshal(eventPayload, &eventListJSON)
 	if err != nil {
@@ -248,7 +280,9 @@ func UnZipSingleFile(outputfile string, filename string) {
 func RemoveFilePaths(filepaths ...string) {
 	for _, filepath := range filepaths {
 		err := os.Remove(filepath)
-		logger.Error(err)
+		if err != nil {
+			logger.Error(err)
+		}
 	}
 }
 
@@ -318,7 +352,7 @@ func (stats *PerfStats) Print() {
 	if time.Since(stats.lastPrintTime) > time.Duration(stats.printThres)*time.Second {
 		overallRate := float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime)
 		instantRate := float64(stats.eventCount-stats.lastPrintEventCount) * float64(time.Second) / float64(stats.elapsedTime-stats.lastPrintElapsedTime)
-		logger.Infof("%s: Total: %d Overall:%f, Instant(print):%f, Instant(call):%f\n",
+		logger.Infof("%s: Total: %d Overall:%f, Instant(print):%f, Instant(call):%f",
 			stats.compStr, stats.eventCount, overallRate, instantRate, stats.instantRateCall)
 		stats.lastPrintEventCount = stats.eventCount
 		stats.lastPrintElapsedTime = stats.elapsedTime
@@ -388,9 +422,7 @@ func equal(expected, actual interface{}) bool {
 	if expected == nil || actual == nil {
 		return expected == actual
 	}
-
 	return reflect.DeepEqual(expected, actual)
-
 }
 
 // Contains returns true if an element is present in a iteratee.
@@ -442,4 +474,92 @@ func StringKeys(input interface{}) []string {
 	keys := funk.Keys(input)
 	stringKeys := keys.([]string)
 	return stringKeys
+}
+
+func TruncateStr(str string, limit int) string {
+	if len(str) > limit {
+		str = str[:limit]
+	}
+	return str
+}
+
+func SortedMapKeys(input interface{}) []string {
+	inValue := reflect.ValueOf(input)
+	mapKeys := inValue.MapKeys()
+	keys := make([]string, 0, len(mapKeys))
+	for _, key := range mapKeys {
+		keys = append(keys, key.String())
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func SortedStructSliceValues(input interface{}, filedName string) []string {
+	items := reflect.ValueOf(input)
+	var keys []string
+	if items.Kind() == reflect.Slice {
+		for i := 0; i < items.Len(); i++ {
+			item := items.Index(i)
+			if item.Kind() == reflect.Struct {
+				v := reflect.Indirect(item)
+				for j := 0; j < v.NumField(); j++ {
+					if v.Type().Field(j).Name == "Name" {
+						keys = append(keys, v.Field(j).String())
+					}
+				}
+			}
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
+}
+
+// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
+// of garage collection cycles completed.
+func PrintMemUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+	logger.Debug("#########")
+	logger.Debugf("Alloc = %v MiB\n", bToMb(m.Alloc))
+	logger.Debugf("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
+	logger.Debugf("\tSys = %v MiB\n", bToMb(m.Sys))
+	logger.Debugf("\tNumGC = %v\n", m.NumGC)
+	logger.Debug("#########")
+}
+
+type GZipWriter struct {
+	File      *os.File
+	GzWriter  *gzip.Writer
+	BufWriter *bufio.Writer
+}
+
+func CreateGZ(s string) (w GZipWriter, err error) {
+
+	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	if err != nil {
+		return
+	}
+	gzWriter := gzip.NewWriter(file)
+	bufWriter := bufio.NewWriter(gzWriter)
+	w = GZipWriter{
+		File:      file,
+		GzWriter:  gzWriter,
+		BufWriter: bufWriter,
+	}
+	return
+}
+
+func (w GZipWriter) WriteGZ(s string) {
+	w.BufWriter.WriteString(s)
+}
+
+func (w GZipWriter) CloseGZ() {
+	w.BufWriter.Flush()
+	w.GzWriter.Close()
+	w.File.Close()
 }

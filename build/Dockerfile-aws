@@ -1,0 +1,9 @@
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates postgresql-client
+ADD rudder-server /
+RUN mkdir /app
+ADD . /app
+ADD build/wait-for /
+ADD build/docker-entrypoint.sh /
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["/rudder-server"]
