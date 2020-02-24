@@ -16,7 +16,6 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"golang.org/x/time/rate"
 )
 
@@ -201,7 +200,9 @@ func redisLoop() {
 			userID := data[0]
 			messageID := data[1]
 			eventTime, err := strconv.Atoi(data[2])
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 
 			pipe.RPush(testName+":"+userID+":dst_list", messageID)
 			pipe.SAdd(redisUserSet, userID)
@@ -213,7 +214,9 @@ func redisLoop() {
 		case <-time.After(batchTimeout):
 			if eventAdded {
 				_, err := pipe.Exec()
-				misc.AssertError(err)
+				if err != nil {
+					panic(err)
+				}
 				atomic.StoreInt32(&isInactive, 0)
 				inactiveBatchCount = 0
 			} else {
@@ -232,7 +235,7 @@ func redisLoop() {
 func main() {
 	fmt.Println("Starting server")
 
-	stats.CreateStatsClient()
+	stats.Setup()
 
 	countStat = stats.NewStat("sink.request_count", stats.CountType)
 	successStat = stats.NewStat("sink.success_count", stats.CountType)
@@ -249,7 +252,7 @@ func main() {
 
 	if enableTestStats {
 		if len(redisServer) == 0 || len(testName) == 0 {
-			misc.AssertError(errors.New("REDIS_URL or TEST_NAME variables can't be empty"))
+			panic(errors.New("REDIS_URL or TEST_NAME variables can't be empty"))
 		}
 
 		go redisLoop()

@@ -109,13 +109,6 @@ func RecordAppError(err error) {
 	saveErrorStore(errorStore)
 }
 
-//AssertError panics if error
-func AssertError(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
 func AssertErrorIfDev(err error) {
 
 	goEnv := os.Getenv("GO_ENV")
@@ -126,13 +119,6 @@ func AssertErrorIfDev(err error) {
 
 	if err != nil {
 		panic(err)
-	}
-}
-
-//Assert panics if false
-func Assert(cond bool) {
-	if !cond {
-		panic("Assertion failed")
 	}
 }
 
@@ -223,10 +209,14 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 
 	// Get the file information
 	info, err := fileToZip.Stat()
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	header, err := zip.FileInfoHeader(info)
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	// Using FileInfoHeader() above only uses the basename of the file. If we want
 	// to preserve the folder structure we can overwrite this with the full path.
@@ -238,7 +228,9 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	header.Method = zip.Deflate
 
 	writer, err := zipWriter.CreateHeader(header)
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	_, err = io.Copy(writer, fileToZip)
 	return err
 }
@@ -246,13 +238,17 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 // UnZipSingleFile unzips zip containing single file into ouputfile path passed
 func UnZipSingleFile(outputfile string, filename string) {
 	r, err := zip.OpenReader(filename)
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer r.Close()
 	inputfile := r.File[0]
 	// Make File
 	err = os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
 	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	rc, err := inputfile.Open()
 	_, err = io.Copy(outFile, rc)
 	outFile.Close()
@@ -291,7 +287,9 @@ func CreateTMPDIR() string {
 	if tmpdirPath == "" {
 		var err error
 		tmpdirPath, err = os.UserHomeDir()
-		AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	}
 	return tmpdirPath
 }
@@ -430,7 +428,7 @@ func Contains(in interface{}, elem interface{}) bool {
 			}
 		}
 	default:
-		AssertError(fmt.Errorf("Type %s is not supported by Contains, supported types are String, Map, Slice, Array", inType.String()))
+		panic(fmt.Errorf("Type %s is not supported by Contains, supported types are String, Map, Slice, Array", inType.String()))
 	}
 
 	return false

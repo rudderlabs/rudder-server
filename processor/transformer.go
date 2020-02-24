@@ -49,7 +49,9 @@ func (trans *transformerHandleT) transformWorker() {
 	for job := range trans.requestQ {
 		//Call remote transformation
 		rawJSON, err := json.Marshal(job.data)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		retryCount := 0
 		var resp *http.Response
 		//We should rarely have error communicating with our JS
@@ -64,7 +66,7 @@ func (trans *transformerHandleT) transformWorker() {
 				reqFailed = true
 				logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
 				if retryCount > maxRetry {
-					misc.Assert(false)
+					panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err))
 				}
 				retryCount++
 				time.Sleep(retrySleep)
@@ -84,17 +86,20 @@ func (trans *transformerHandleT) transformWorker() {
 			resp.StatusCode == http.StatusNotFound ||
 			resp.StatusCode == http.StatusRequestEntityTooLarge) {
 			logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
-			misc.Assert(true)
 		}
 
 		var toSendData interface{}
 		if resp.StatusCode == http.StatusOK {
 			respData, err := ioutil.ReadAll(resp.Body)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 			err = json.Unmarshal(respData, &toSendData)
 			//This is returned by our JS engine so should  be parsable
 			//but still handling it
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 		} else {
 			io.Copy(ioutil.Discard, resp.Body)
 		}
@@ -168,9 +173,13 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 						break
 					}
 					prevUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx-1].(map[string]interface{})["message"])
-					misc.Assert(ok)
+					if !ok {
+						panic(fmt.Errorf("GetAnonymousID failed"))
+					}
 					currentUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx].(map[string]interface{})["message"])
-					misc.Assert(ok)
+					if !ok {
+						panic(fmt.Errorf("GetAnonymousID failed"))
+					}
 					if currentUserID != prevUserID {
 						logger.Debug("Breaking batch at", inputIdx, prevUserID, currentUserID)
 						break
@@ -207,7 +216,9 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 			break
 		}
 	}
-	misc.Assert(inputIdx == len(clientEvents) && outputIdx == totalSent)
+	if !(inputIdx == len(clientEvents) && outputIdx == totalSent) {
+		panic(fmt.Errorf("inputIdx:%d != len(clientEvents):%d or outputIdx:%d != totalSent:%d", inputIdx, len(clientEvents), outputIdx, totalSent))
+	}
 
 	//Sort the responses in the same order as input
 	sort.Slice(transformResponse, func(i, j int) bool {
@@ -215,8 +226,12 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	})
 
 	//Some sanity checks
-	misc.Assert(batchSize > 0 || transformResponse[0].index == 1)
-	misc.Assert(transformResponse[len(transformResponse)-1].index == len(clientEvents))
+	if !(batchSize > 0 || transformResponse[0].index == 1) {
+		panic(fmt.Errorf("batchSize:%d <= 0 and transformResponse[0].index:%d != 1", batchSize, transformResponse[0].index))
+	}
+	if transformResponse[len(transformResponse)-1].index != len(clientEvents) {
+		panic(fmt.Errorf("transformResponse[len(transformResponse)-1].index:%d != len(clientEvents):%d", transformResponse[len(transformResponse)-1].index, len(clientEvents)))
+	}
 
 	outClientEvents := make([]interface{}, 0)
 
@@ -225,7 +240,9 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 			continue
 		}
 		respArray, ok := resp.data.([]interface{})
-		misc.Assert(ok)
+		if !ok {
+			panic(fmt.Errorf("typecast of resp.data to []interface{} failed"))
+		}
 		//Transform is one to many mapping so returned
 		//response for each is an array. We flatten it out
 		for _, respElem := range respArray {

@@ -65,7 +65,9 @@ func GetResponseVersion(response json.RawMessage) string {
 		return "0"
 	}
 	version, ok := parsedResponse.Get("version").Value().(string)
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf(""))
+	}
 	return version
 }
 
@@ -78,21 +80,37 @@ func GetPostInfoNew(transformRaw json.RawMessage) PostParameterNewT {
 		parsedJSON = parsedJSON.Get("output")
 	}
 	postInfo.Type, ok = parsedJSON.Get("type").Value().(string)
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"type\") to string failed"))
+	}
 	postInfo.URL, ok = parsedJSON.Get("endpoint").Value().(string)
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"endpoint\") to string failed"))
+	}
 	postInfo.RequestMethod, ok = parsedJSON.Get("method").Value().(string)
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"method\") to string failed"))
+	}
 	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"userId\") to string failed"))
+	}
 	postInfo.Body, ok = parsedJSON.Get("body").Value().(interface{})
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"body\") to interface{} failed"))
+	}
 	postInfo.Headers, ok = parsedJSON.Get("headers").Value().(interface{})
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"headers\") to interface{} failed"))
+	}
 	postInfo.QueryParams, ok = parsedJSON.Get("params").Value().(interface{})
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"params\") to interface{} failed"))
+	}
 	postInfo.Files, ok = parsedJSON.Get("files").Value().(interface{})
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"files\") to interface{} failed"))
+	}
 	return postInfo
 }
 
@@ -102,15 +120,25 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	var ok bool
 	parsedJSON := gjson.ParseBytes(transformRaw)
 	postInfo.URL, ok = parsedJSON.Get("endpoint").Value().(string)
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"endpoint\") to string failed"))
+	}
 	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"userId\") to string failed"))
+	}
 	postInfo.Payload, ok = parsedJSON.Get("payload").Value().(interface{})
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"payload\") to interface{} failed"))
+	}
 	postInfo.Header, ok = parsedJSON.Get("header").Value().(interface{})
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"header\") to interface{} failed"))
+	}
 	postInfo.RequestConfig, ok = parsedJSON.Get("requestConfig").Value().(interface{})
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of parsedJSON.Get(\"requestConfig\") to interface{} failed"))
+	}
 	return postInfo
 }
 
@@ -127,7 +155,7 @@ func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) string {
 		response := GetPostInfoNew(transformRaw)
 		userID = response.UserID
 	default:
-		misc.Assert(false)
+		panic(fmt.Errorf("version: %s is not supported", version))
 	}
 	return userID
 }

@@ -257,7 +257,10 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 		gateway.writeToBadger(allMessageIds)
 
-		misc.Assert(preDbStoreCount+len(errorMessagesMap) == len(breq.batchRequest))
+		if preDbStoreCount+len(errorMessagesMap) != len(breq.batchRequest) {
+			panic(fmt.Errorf("preDbStoreCount:%d+len(errorMessagesMap):%d != len(breq.batchRequest):%d",
+				preDbStoreCount, len(errorMessagesMap), len(breq.batchRequest)))
+		}
 		for uuid, err := range errorMessagesMap {
 			if err != "" {
 				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[uuid], 1)
@@ -304,14 +307,18 @@ func (gateway *HandleT) dedupWithBadger(body *[]byte, messageIDs [][]byte, write
 		}
 		return nil
 	})
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	count := 0
 	for _, idx := range toRemoveMessageIndexes {
 		logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
 		misc.IncrementMapByKey(writeKeyDupStats, writeKey, 1)
 		*body, err = sjson.DeleteBytes(*body, fmt.Sprintf(`batch.%v`, idx-count))
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		count++
 	}
 }
@@ -330,7 +337,9 @@ func (gateway *HandleT) writeToBadger(messageIDs [][]byte) {
 			}
 			return nil
 		})
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -506,10 +515,14 @@ func (gateway *HandleT) openBadger(clearDB *bool) {
 	tmpDirPath := misc.CreateTMPDIR()
 	path := fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 	gateway.badgerDB, err = badger.Open(badger.DefaultOptions(path))
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	if *clearDB {
 		err = gateway.badgerDB.DropAll()
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	}
 	rruntime.Go(func() {
 		gateway.gcBadgerDB()

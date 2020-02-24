@@ -118,7 +118,9 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
 	err := os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	gzWriter, err := misc.CreateGZ(gzipFilePath)
 
 	eventsFound := false
@@ -150,10 +152,14 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		Provider: provider,
 		Config:   batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
 	})
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	outputFile, err := os.Open(gzipFilePath)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	logger.Debugf("BRT: Starting upload to %s", provider)
 
@@ -202,7 +208,9 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 	for _, job := range batchJobs.Jobs {
 		var payload map[string]interface{}
 		err := json.Unmarshal(job.EventPayload, &payload)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		tableName := payload["metadata"].(map[string]interface{})["table"].(string)
 		var ok bool
 		if _, ok = schemaMap[tableName]; !ok {
@@ -220,11 +228,15 @@ func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location strin
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at, updated_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $6)`, warehouseStagingFilesTable)
 	stmt, err := brt.jobsDBHandle.Prepare(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer stmt.Close()
 
 	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, batchJobs.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, time.Now())
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	return err
 }
 
@@ -455,7 +467,9 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 	for _, entry := range entries {
 		var object ObjectStorageT
 		err := json.Unmarshal(entry.OpPayload, &object)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		if len(object.Config) == 0 {
 			//Backward compatibility. If old entries dont have config, just delete journal entry
 			brt.jobsDB.JournalDeleteEntry(entry.OpID)
@@ -465,7 +479,9 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 			Provider: object.Provider,
 			Config:   object.Config,
 		})
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 
 		localTmpDirName := "/rudder-raw-data-dest-upload-crash-recovery/"
 		tmpDirPath := misc.CreateTMPDIR()
@@ -473,7 +489,9 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		jsonFile, err := os.Create(jsonPath)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 
 		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s at key: %s\n", object.Provider, object.Key)
 		err = downloader.Download(jsonFile, object.Key)
@@ -486,9 +504,13 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		defer os.Remove(jsonPath)
 
 		rawf, err := os.Open(jsonPath)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		reader, err := gzip.NewReader(rawf)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 
 		sc := bufio.NewScanner(reader)
 
@@ -550,7 +572,9 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
                             END $$;`
 
 	_, err := brt.jobsDBHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
                                       id BIGSERIAL PRIMARY KEY,
@@ -564,12 +588,16 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
 									  updated_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
 
 	_, err = brt.jobsDBHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	// index on source_id, destination_id combination
 	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_id_index ON %[1]s (source_id, destination_id);`, warehouseStagingFilesTable)
 	_, err = brt.jobsDBHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func loadConfig() {

@@ -209,7 +209,7 @@ func main() {
 	logger.Info("Main starting")
 
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
-	stats.CreateStatsClient()
+	stats.Setup()
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
@@ -221,10 +221,14 @@ func main() {
 	if *cpuprofile != "" {
 		var err error
 		f, err = os.Create(*cpuprofile)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		runtime.SetBlockProfileRate(1)
 		err = pprof.StartCPUProfile(f)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	c := make(chan os.Signal)
@@ -238,11 +242,15 @@ func main() {
 		}
 		if *memprofile != "" {
 			f, err := os.Create(*memprofile)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 			defer f.Close()
 			runtime.GC() // get up-to-date statistics
 			err = pprof.WriteHeapProfile(f)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 		}
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {

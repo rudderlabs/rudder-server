@@ -1,13 +1,13 @@
 package stats
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"gopkg.in/alexcesaro/statsd.v2"
 )
 
@@ -49,8 +49,8 @@ func init() {
 	enableGCStats = config.GetBool("RuntimeStats.enableGCStats", true)
 }
 
-//CreateStatsClient creates a new statsd client
-func CreateStatsClient() {
+//Setup creates a new statsd client
+func Setup() {
 	var err error
 	conn = statsd.Address(statsdServerURL)
 	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID))
@@ -156,7 +156,9 @@ func (rStats *RudderStats) Count(n int) {
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
-	misc.Assert(rStats.StatType == CountType)
+	if rStats.StatType != CountType {
+		panic(fmt.Errorf("rStats.StatType:%s is not count", rStats.StatType))
+	}
 	rStats.Client.Count(rStats.Name, n)
 }
 
@@ -164,7 +166,9 @@ func (rStats *RudderStats) Increment() {
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
-	misc.Assert(rStats.StatType == CountType)
+	if rStats.StatType != CountType {
+		panic(fmt.Errorf("rStats.StatType:%s is not count", rStats.StatType))
+	}
 	rStats.Client.Increment(rStats.Name)
 }
 
@@ -172,7 +176,9 @@ func (rStats *RudderStats) Gauge(value interface{}) {
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
-	misc.Assert(rStats.StatType == GaugeType)
+	if rStats.StatType != GaugeType {
+		panic(fmt.Errorf("rStats.StatType:%s is not gauge", rStats.StatType))
+	}
 	rStats.Client.Gauge(rStats.Name, value)
 }
 
@@ -180,7 +186,9 @@ func (rStats *RudderStats) Start() {
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
-	misc.Assert(rStats.StatType == TimerType)
+	if rStats.StatType != TimerType {
+		panic(fmt.Errorf("rStats.StatType:%s is not timer", rStats.StatType))
+	}
 	rStats.Timing = rStats.Client.NewTiming()
 }
 
@@ -188,7 +196,9 @@ func (rStats *RudderStats) End() {
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
-	misc.Assert(rStats.StatType == TimerType)
+	if rStats.StatType != TimerType {
+		panic(fmt.Errorf("rStats.StatType:%s is not timer", rStats.StatType))
+	}
 	rStats.Timing.Send(rStats.Name)
 }
 

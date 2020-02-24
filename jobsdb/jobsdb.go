@@ -151,21 +151,11 @@ func (jd *HandleT) assertError(err error) {
 	}
 }
 
-func (jd *HandleT) assertErrorIfDev(err error) {
-	goEnv := os.Getenv("GO_ENV")
-	if goEnv == "production" {
-		logger.Error(err.Error())
-		return
-	}
-
-	jd.assertError(err)
-}
-
-func (jd *HandleT) assert(cond bool) {
+func (jd *HandleT) assert(cond bool, errorString string) {
 	if !cond {
 		jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
-		panic("Assertion failed")
+		panic(errorString)
 	}
 }
 
@@ -193,7 +183,7 @@ var validJobStates = map[string]bool{
 func (jd *HandleT) checkValidJobState(stateFilters []string) {
 	for _, st := range stateFilters {
 		_, ok := validJobStates[st]
-		jd.assert(ok)
+		jd.assert(ok, fmt.Sprintf("key %s is not found in validJobStates map", st))
 	}
 }
 
@@ -267,7 +257,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	var err error
 	psqlInfo := GetConnectionString()
-	jd.assert(tablePrefix != "")
+	jd.assert(tablePrefix != "", "tablePrefix received is empty")
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
 	jd.toBackup = toBackup
@@ -356,14 +346,14 @@ func (jd *HandleT) sortDnumList(dnumList []string) {
 			if k >= len(src) {
 				//src has same prefix but is shorter
 				//For example, src=1.1 while dest=1.1.1
-				jd.assert(k < len(dst))
-				jd.assert(k > 0)
+				jd.assert(k < len(dst), fmt.Sprintf("k:%d >= len(dst):%d", k, len(dst)))
+				jd.assert(k > 0, fmt.Sprintf("k:%d <= 0", k))
 				return true
 			}
 			if k >= len(dst) {
 				//Opposite of case above
-				jd.assert(k > 0)
-				jd.assert(k < len(src))
+				jd.assert(k > 0, fmt.Sprintf("k:%d <= 0", k))
+				jd.assert(k < len(src), fmt.Sprintf("k:%d >= len(src):%d", k, len(src)))
 				return false
 			}
 			if src[k] == dst[k] {
@@ -457,9 +447,9 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 	//Create the structure
 	for _, dnum := range dnumList {
 		jobName, ok := jobNameMap[dnum]
-		jd.assert(ok)
+		jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobNameMap", dnum))
 		jobStatusName, ok := jobStatusNameMap[dnum]
-		jd.assert(ok)
+		jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobStatusNameMap", dnum))
 		jd.datasetList = append(jd.datasetList,
 			dataSetT{JobTable: jobName,
 				JobStatusTable: jobStatusName, Index: dnum})
@@ -483,7 +473,7 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 	jd.datasetRangeList = nil
 
 	for idx, ds := range dsList {
-		jd.assert(ds.Index != "")
+		jd.assert(ds.Index != "", "ds.Index is empty")
 		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)
 		row := jd.dbHandle.QueryRow(sqlStatement)
 		err := row.Scan(&minID, &maxID)
@@ -492,8 +482,8 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 		//We store ranges EXCEPT for the last element
 		//which is being actively written to.
 		if idx < len(dsList)-1 {
-			jd.assert(minID.Valid && maxID.Valid)
-			jd.assert(idx == 0 || prevMax < minID.Int64)
+			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false", minID.Valid, maxID.Valid))
+			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v", idx, prevMax, minID.Int64))
 			jd.datasetRangeList = append(jd.datasetRangeList,
 				dataSetRangeT{minJobID: int64(minID.Int64),
 					maxJobID: int64(maxID.Int64), ds: ds})
@@ -537,7 +527,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	jd.assertError(err)
 
 	if totalCount == 0 {
-		jd.assert(delCount == 0 && statusCount == 0)
+		jd.assert(delCount == 0 && statusCount == 0, fmt.Sprintf("delCount: %d, statusCount: %d. Either of them is not 0", delCount, statusCount))
 		return false, 0
 	}
 
@@ -620,7 +610,7 @@ func (jd *HandleT) mapDSToLevel(ds dataSetT) (int, []int) {
 		jd.assertError(err)
 		return 1, []int{indexLevel0}
 	}
-	jd.assert(len(indexStr) == 2)
+	jd.assert(len(indexStr) == 2, fmt.Sprintf("len(indexStr): %d != 2", len(indexStr)))
 	indexLevel0, err := strconv.Atoi(indexStr[0])
 	jd.assertError(err)
 	indexLevel1, err := strconv.Atoi(indexStr[1])
@@ -647,33 +637,33 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 		} else {
 			//Last one can only be Level0
 			levels, levelVals := jd.mapDSToLevel(dList[len(dList)-1])
-			jd.assert(levels == 1)
+			jd.assert(levels == 1, fmt.Sprintf("levels:%d != 1", levels))
 			newDSIdx = fmt.Sprintf("%d", levelVals[0]+1)
 		}
 	} else {
-		jd.assert(len(dList) > 0)
+		jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
 		for idx, ds := range dList {
 			if ds.Index == insertBeforeDS.Index {
 				//We never insert before the first element
-				jd.assert(idx > 0)
+				jd.assert(idx > 0, fmt.Sprintf("idx: %d <= 0", idx))
 				levels, levelVals := jd.mapDSToLevel(ds)
 				levelsPre, levelPreVals := jd.mapDSToLevel(dList[idx-1])
 				//Some sanity checks (see comment above)
 				//Insert before is never required on level2.
 				//The level0 must be different by one
-				jd.assert(levels == 1)
-				jd.assert(levelVals[0] == levelPreVals[0]+1)
+				jd.assert(levels == 1, fmt.Sprintf("levels:%d != 1", levels))
+				jd.assert(levelVals[0] == levelPreVals[0]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
 				if levelsPre == 1 {
 					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], 1)
 				} else {
-					jd.assert(levelsPre == 2)
+					jd.assert(levelsPre == 2, fmt.Sprintf("levelsPre:%d != 2", levelsPre))
 					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
 				}
 			}
 
 		}
 	}
-	jd.assert(newDSIdx != "")
+	jd.assert(newDSIdx != "", fmt.Sprintf("newDSIdx is empty"))
 
 	var newDS dataSetT
 	newDS.JobTable, newDS.JobStatusTable = jd.createTableNames(newDSIdx)
@@ -730,12 +720,12 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 		dRangeList := jd.getDSRangeList(true)
 
 		//We should not have range values for the last element (the new DS)
-		jd.assert(len(dList) == len(dRangeList)+1)
+		jd.assert(len(dList) == len(dRangeList)+1, fmt.Sprintf("len(dList):%d != len(dRangeList):%d+1", len(dList), len(dRangeList)))
 
 		//Now set the min JobID for the new DS just added to be 1 more than previous max
 		if len(dRangeList) > 0 {
 			newDSMin := dRangeList[len(dRangeList)-1].maxJobID
-			jd.assert(newDSMin > 0)
+			jd.assert(newDSMin > 0, fmt.Sprintf("newDSMin:%d <= 0", newDSMin))
 			sqlStatement = fmt.Sprintf(`SELECT setval('%s_jobs_%s_job_id_seq', %d)`,
 				jd.tablePrefix, newDSIdx, newDSMin)
 			_, err = jd.dbHandle.Exec(sqlStatement)
@@ -760,7 +750,9 @@ func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
 	dList := jd.getDSList(false)
 	ds := dList[len(dList)-1]
 	maxDSIndex, err := strconv.ParseInt(ds.Index, 10, 64)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	return maxDSIndex
 }
@@ -1032,7 +1024,7 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (errorMessage string) {
 }
 
 func (jd *HandleT) constructQuery(paramKey string, paramList []string, queryType string) string {
-	jd.assert(queryType == "OR" || queryType == "AND")
+	jd.assert(queryType == "OR" || queryType == "AND", fmt.Sprintf("queryType:%s is neither OR nor AND", queryType))
 	var queryList []string
 	for _, p := range paramList {
 		queryList = append(queryList, "("+paramKey+"='"+p+"')")
@@ -1192,7 +1184,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 		stateQuery = ""
 	}
 	if len(customValFilters) > 0 {
-		jd.assert(!getAll)
+		jd.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
 			jd.constructQuery(fmt.Sprintf("%s.custom_val", ds.JobTable),
 				customValFilters, "OR")
@@ -1201,14 +1193,14 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	}
 
 	if len(parameterFilters) > 0 {
-		jd.assert(!getAll)
+		jd.assert(!getAll, "getAll is true")
 		sourceQuery += " AND " + jd.constructParameterJSONQuery(ds.JobTable, parameterFilters)
 	} else {
 		sourceQuery = ""
 	}
 
 	if limitCount > 0 {
-		jd.assert(!getAll)
+		jd.assert(!getAll, "getAll is true")
 		limitQuery = fmt.Sprintf(" LIMIT %d ", limitCount)
 	} else {
 		limitQuery = ""
@@ -1587,20 +1579,28 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	}
 
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	stmt := fmt.Sprintf(`SELECT json_agg(%[1]s order by job_id asc) FROM %[1]s`, tableName)
 	var rawJSONRows json.RawMessage
 	err = jd.dbHandle.QueryRow(stmt).Scan(&rawJSONRows)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	var rows []interface{}
 	err = json.Unmarshal(rawJSONRows, &rows)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	contentSlice := make([][]byte, len(rows))
 	for idx, row := range rows {
 		rowBytes, err := json.Marshal(row)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		contentSlice[idx] = rowBytes
 	}
 	content := bytes.Join(contentSlice[:], []byte("\n"))
@@ -1608,7 +1608,9 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	gzipFile, err := os.Create(path)
 	gzipWriter := gzip.NewWriter(gzipFile)
 	_, err = gzipWriter.Write(content)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	gzipWriter.Close()
 	jd.tableFileDumpTimeStat.End()
 
@@ -1748,7 +1750,13 @@ func (jd *HandleT) delJournal() {
 
 func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) int64 {
 
-	jd.assert(opType == addDSOperation || opType == migrateCopyOperation || opType == postMigrateDSOperation || opType == backupDSOperation || opType == backupDropDSOperation || opType == dropDSOperation || opType == RawDataDestUploadOperation)
+	jd.assert(opType == addDSOperation ||
+		opType == migrateCopyOperation ||
+		opType == postMigrateDSOperation ||
+		opType == backupDSOperation ||
+		opType == backupDropDSOperation ||
+		opType == dropDSOperation ||
+		opType == RawDataDestUploadOperation, fmt.Sprintf("opType: %s is not a supported op", opType))
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
                                        VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
@@ -1839,10 +1847,10 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 	for rows.Next() {
 		err = rows.Scan(&opID, &opType, &opDone, &opPayload)
 		jd.assertError(err)
-		jd.assert(opDone == false)
+		jd.assert(opDone == false, "opDone is true")
 		count++
 	}
-	jd.assert(count <= 1)
+	jd.assert(count <= 1, fmt.Sprintf("count:%d > 1", count))
 
 	if count == 0 {
 		//Nothing to recoer
@@ -1947,7 +1955,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		//We have processed upto (but excluding) lastPos on statusList.
 		//Hence that element must lie in this or subsequent dataset's
 		//range
-		jd.assert(statusList[lastPos].JobID >= minID)
+		jd.assert(statusList[lastPos].JobID >= minID, fmt.Sprintf("statusList[lastPos].JobID: %d < minID:%d", statusList[lastPos].JobID, minID))
 		var i int
 		for i = lastPos; i < len(statusList); i++ {
 			//The JobID is outside this DS's range
@@ -1976,7 +1984,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 	if lastPos < len(statusList) {
 		//Make sure the last range is missing
 		dsList := jd.getDSList(false)
-		jd.assert(len(dsRangeList) == len(dsList)-1)
+		jd.assert(len(dsRangeList) == len(dsList)-1, fmt.Sprintf("len(dsRangeList):%d != len(dsList):%d-1", len(dsRangeList), len(dsList)))
 		//Update status in the last element
 		logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
 		err := jd.updateJobStatusDS(dsList[len(dsList)-1], statusList[lastPos:], customValFilters, parameterFilters)
@@ -2038,17 +2046,17 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 
 	dsList := jd.getDSList(false)
 	outJobs := make([]*JobT, 0)
-	jd.assert(count >= 0)
+	jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
 	if count == 0 {
 		return outJobs
 	}
 	for _, ds := range dsList {
-		jd.assert(count > 0)
+		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 		jobs, err := jd.getUnprocessedJobsDS(ds, customValFilters, true, count, parameterFilters)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
-		jd.assert(count >= 0)
+		jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
 		if count == 0 {
 			break
 		}
@@ -2088,19 +2096,19 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	dsList := jd.getDSList(false)
 	outJobs := make([]*JobT, 0)
 
-	jd.assert(count >= 0)
+	jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
 	if count == 0 {
 		return outJobs
 	}
 
 	for _, ds := range dsList {
 		//count==0 means return all which we don't want
-		jd.assert(count > 0)
+		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 		jobs, err := jd.getProcessedJobsDS(ds, false, stateFilter, customValFilters, count, parameterFilters)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
-		jd.assert(count >= 0)
+		jd.assert(count >= 0, fmt.Sprintf("count:%d after subtracting len(jobs):%d is less than 0", count, len(jobs)))
 		if count == 0 {
 			break
 		}

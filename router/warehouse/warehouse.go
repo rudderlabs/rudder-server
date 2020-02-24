@@ -140,7 +140,7 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
 		warehouseStagingFilesTable, startID, endID, warehouse.Source.ID, warehouse.Destination.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		misc.AssertError(err)
+		panic(err)
 	}
 	defer rows.Close()
 
@@ -149,7 +149,9 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
 		var jsonUpload StagingFileT
 		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.SourceID, &jsonUpload.Schema,
 			&jsonUpload.Status, &jsonUpload.CreatedAt)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		stagingFilesList = append(stagingFilesList, &jsonUpload)
 	}
 
@@ -161,7 +163,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	sqlStatement := fmt.Sprintf(`SELECT end_staging_file_id FROM %[1]s WHERE %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND (%[1]s.status= '%[4]s' OR %[1]s.status = '%[5]s') ORDER BY %[1]s.id DESC`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileID)
 	if err != nil && err != sql.ErrNoRows {
-		misc.AssertError(err)
+		panic(err)
 	}
 
 	sqlStatement = fmt.Sprintf(`SELECT id, location, source_id, schema, status, created_at
@@ -171,7 +173,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		warehouseStagingFilesTable, lastStagingFileID, warehouse.Source.ID, warehouse.Destination.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		misc.AssertError(err)
+		panic(err)
 	}
 	defer rows.Close()
 
@@ -180,7 +182,9 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		var jsonUpload StagingFileT
 		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.SourceID, &jsonUpload.Schema,
 			&jsonUpload.Status, &jsonUpload.CreatedAt)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		stagingFilesList = append(stagingFilesList, &jsonUpload)
 	}
 
@@ -189,12 +193,16 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 
 func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) map[string]map[string]string {
 	schemaInDB, err := warehouseutils.GetCurrentSchema(wh.dbHandle, warehouse)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	schemaMap := make(map[string]map[string]string)
 	for _, upload := range jsonUploadsList {
 		var schema map[string]map[string]string
 		err := json.Unmarshal(upload.Schema, &schema)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		for tableName, columnMap := range schema {
 			if schemaMap[tableName] == nil {
 				schemaMap[tableName] = make(map[string]string)
@@ -224,7 +232,9 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13) RETURNING id`, warehouseUploadsTable)
 	logger.Infof("WH: %s: Creating record in wh_load_files id: %v", wh.destType, sqlStatement)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer stmt.Close()
 
 	startJSONID := jsonUploadsList[0].ID
@@ -235,7 +245,9 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	return warehouseutils.UploadT{
 		ID:                 uploadID,
@@ -256,7 +268,7 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		misc.AssertError(err)
+		panic(err)
 	}
 	if err == sql.ErrNoRows {
 		return []warehouseutils.UploadT{}, false
@@ -269,7 +281,9 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 		var schema json.RawMessage
 		err := rows.Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
 		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		uploads = append(uploads, upload)
 	}
 
@@ -350,7 +364,9 @@ func (wh *HandleT) mainLoop() {
 			_, ok := inRecoveryMap[warehouse.Destination.ID]
 			if ok {
 				whManager, err := NewWhManager(wh.destType)
-				misc.AssertError(err)
+				if err != nil {
+					panic(err)
+				}
 				logger.Infof("WH: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
 				err = whManager.CrashRecover(warehouseutils.ConfigT{
 					DbHandle:  wh.dbHandle,
@@ -370,7 +386,9 @@ func (wh *HandleT) mainLoop() {
 				jobs := []ProcessStagingFilesJobT{}
 				for _, pendingUpload := range pendingUploads {
 					stagingFilesList, err := wh.getStagingFiles(warehouse, pendingUpload.StartStagingFileID, pendingUpload.EndStagingFileID)
-					misc.AssertError(err)
+					if err != nil {
+						panic(err)
+					}
 					jobs = append(jobs, ProcessStagingFilesJobT{
 						List:      stagingFilesList,
 						Warehouse: warehouse,
@@ -381,7 +399,9 @@ func (wh *HandleT) mainLoop() {
 			} else {
 				// fetch staging files that are not processed yet
 				stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
-				misc.AssertError(err)
+				if err != nil {
+					panic(err)
+				}
 				if len(stagingFilesList) == 0 {
 					logger.Debugf("WH: Found no pending staging files for %s:%s", wh.destType, warehouse.Destination.ID)
 					setDestInProgress(warehouse, false)
@@ -495,7 +515,9 @@ waitForLoadFiles:
 	// update wh_uploads records with end_load_file_id
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, start_load_file_id=$2, end_load_file_id=$3, updated_at=$4 WHERE id=$5`, warehouseUploadsTable)
 	_, err = wh.dbHandle.Exec(sqlStatement, warehouseutils.GeneratedLoadFileState, startLoadFileID, endLoadFileID, time.Now(), job.Upload.ID)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	job.Upload.StartLoadFileID = startLoadFileID
 	job.Upload.EndLoadFileID = endLoadFileID
@@ -506,7 +528,9 @@ waitForLoadFiles:
 func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err error) {
 	logger.Infof("WH: Starting load flow for %s:%s", wh.destType, job.Warehouse.Destination.ID)
 	whManager, err := NewWhManager(wh.destType)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	err = whManager.Process(warehouseutils.ConfigT{
 		DbHandle:  wh.dbHandle,
 		Upload:    job.Upload,
@@ -559,7 +583,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	jsonPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, wh.destType, job.Warehouse.Destination.ID) + job.StagingFile.Location
 	err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 	jsonFile, err := os.Create(jsonPath)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
@@ -587,9 +613,13 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	}
 
 	rawf, err := os.Open(jsonPath)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	reader, err := gzip.NewReader(rawf)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	// read from staging file and write a separate load file for each table in warehouse
 	// tableContentMap := make(map[string]string)
@@ -670,7 +700,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
 		Config:   job.Warehouse.Destination.Config.(map[string]interface{}),
 	})
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	for tableName, outputFile := range outputFileMap {
 		outputFile.CloseGZ()
@@ -684,12 +716,16 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		sqlStatement := fmt.Sprintf(`INSERT INTO %s (staging_file_id, location, source_id, destination_id, destination_type, table_name, created_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, warehouseLoadFilesTable)
 		stmt, err := wh.dbHandle.Prepare(sqlStatement)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		defer stmt.Close()
 
 		var fileID int64
 		err = stmt.QueryRow(job.StagingFile.ID, uploadLocation.Location, job.StagingFile.SourceID, job.Warehouse.Destination.ID, wh.destType, tableName, time.Now()).Scan(&fileID)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		loadFileIDs = append(loadFileIDs, fileID)
 	}
 	return
@@ -729,17 +765,23 @@ func (wh *HandleT) setupTables() {
 									  created_at TIMESTAMP NOT NULL);`, warehouseLoadFilesTable)
 
 	_, err := wh.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	// change table_name type to text to support table_names upto length 127
 	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, warehouseLoadFilesTable, "table_name")
 	_, err = wh.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	// index on source_id, destination_id combination
 	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseLoadFilesTable)
 	_, err = wh.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	sqlStatement = `DO $$ BEGIN
                                 CREATE TYPE wh_upload_state_type
@@ -760,14 +802,20 @@ func (wh *HandleT) setupTables() {
                             END $$;`
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'waiting';`
 	_, err = wh.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'aborted';`
 	_, err = wh.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
                                       id BIGSERIAL PRIMARY KEY,
@@ -786,17 +834,23 @@ func (wh *HandleT) setupTables() {
 									  updated_at TIMESTAMP NOT NULL);`, warehouseUploadsTable)
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	// index on status
 	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_index ON %[1]s (status);`, warehouseUploadsTable)
 	_, err = wh.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	// index on source_id, destination_id combination
 	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseUploadsTable)
 	_, err = wh.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 									  id BIGSERIAL PRIMARY KEY,
@@ -810,12 +864,16 @@ func (wh *HandleT) setupTables() {
 									  created_at TIMESTAMP NOT NULL);`, warehouseSchemasTable)
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	// index on source_id, destination_id combination
 	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseSchemasTable)
 	_, err = wh.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 }
 
 //Enable enables a router :)
@@ -834,13 +892,17 @@ func (wh *HandleT) setInterruptedDestinations() (err error) {
 	}
 	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s')`, warehouseUploadsTable, wh.destType, warehouseutils.ExportingDataState, warehouseutils.ExportingDataFailedState)
 	rows, err := wh.dbHandle.Query(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer rows.Close()
 
 	for rows.Next() {
 		var destID string
 		err := rows.Scan(&destID)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		inRecoveryMap[destID] = true
 	}
 	return err
@@ -851,7 +913,9 @@ func (wh *HandleT) Setup(whType string) {
 	var err error
 	psqlInfo := jobsdb.GetConnectionString()
 	wh.dbHandle, err = sql.Open("postgres", psqlInfo)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	wh.setupTables()
 	wh.destType = whType
 	wh.setInterruptedDestinations()
