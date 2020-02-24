@@ -47,8 +47,9 @@ var (
 )
 
 var ObjectStorageMap = map[string]string{
-	"RS": "S3",
-	"BQ": "GCS",
+	"RS":        "S3",
+	"BQ":        "GCS",
+	"SNOWFLAKE": "S3",
 }
 
 func init() {
@@ -248,6 +249,15 @@ func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId strin
 	return
 }
 
+func GetLoadFileLocation(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (location string, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s
+								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v) LIMIT 1`,
+		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
+	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
+	misc.AssertError(err)
+	return
+}
+
 func GetS3Location(location string) (string, string) {
 	r, _ := regexp.Compile("\\.s3.*\\.amazonaws\\.com")
 	subLocation := r.FindString(location)
@@ -259,6 +269,12 @@ func GetS3Location(location string) (string, string) {
 	str1 := r.ReplaceAllString(location, "")
 	str2 := strings.Replace(str1, "https", "s3", 1)
 	return region, str2
+}
+
+func GetS3LocationFolder(location string) string {
+	_, s3Location := GetS3Location(location)
+	lastPos := strings.LastIndex(s3Location, "/")
+	return s3Location[:lastPos]
 }
 
 func GetGCSLocation(location string) string {
@@ -291,4 +307,28 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 
 func DestStat(statType string, statName string, id string) *stats.RudderStats {
 	return stats.NewBatchDestStat(fmt.Sprintf("warehouse.%s", statName), statType, id)
+}
+
+func Datatype(in interface{}) string {
+	if _, ok := in.(bool); ok {
+		return "boolean"
+	}
+
+	if _, ok := in.(int); ok {
+		return "int"
+	}
+
+	if _, ok := in.(float64); ok {
+		return "float"
+	}
+
+	if str, ok := in.(string); ok {
+		isTimestamp, _ := regexp.MatchString(`^([\+-]?\d{4})((-)((0[1-9]|1[0-2])(-([12]\d|0[1-9]|3[01])))([T\s]((([01]\d|2[0-3])((:)[0-5]\d))([\:]\d+)?)?(:[0-5]\d([\.]\d+)?)?([zZ]|([\+-])([01]\d|2[0-3]):?([0-5]\d)?)?)?)$`, str)
+
+		if isTimestamp {
+			return "datetime"
+		}
+	}
+
+	return "string"
 }

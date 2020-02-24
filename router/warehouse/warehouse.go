@@ -2,8 +2,10 @@ package warehouse
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,12 +23,14 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/router/warehouse/redshift"
+	"github.com/rudderlabs/rudder-server/router/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	uuid "github.com/satori/go.uuid"
 )
 
 var (
@@ -42,6 +46,7 @@ var (
 	inRecoveryMap              map[string]bool
 	inProgressMapLock          sync.RWMutex
 	lastExecMap                map[string]int64
+	lastExecMapLock            sync.RWMutex
 	warehouseLoadFilesTable    string
 	warehouseStagingFilesTable string
 	warehouseUploadsTable      string
@@ -180,7 +185,9 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	return stagingFilesList, nil
 }
 
-func consolidateSchema(jsonUploadsList []*StagingFileT) map[string]map[string]string {
+func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) map[string]map[string]string {
+	schemaInDB, err := warehouseutils.GetCurrentSchema(wh.dbHandle, warehouse)
+	misc.AssertError(err)
 	schemaMap := make(map[string]map[string]string)
 	for _, upload := range jsonUploadsList {
 		var schema map[string]map[string]string
@@ -188,9 +195,20 @@ func consolidateSchema(jsonUploadsList []*StagingFileT) map[string]map[string]st
 		misc.AssertError(err)
 		for tableName, columnMap := range schema {
 			if schemaMap[tableName] == nil {
-				schemaMap[tableName] = columnMap
-			} else {
-				for columnName, columnType := range columnMap {
+				schemaMap[tableName] = make(map[string]string)
+			}
+			for columnName, columnType := range columnMap {
+				// if column already has a type in db, use that
+				if len(schemaInDB.Schema) > 0 {
+					if _, ok := schemaInDB.Schema[tableName]; ok {
+						if columnTypeInDB, ok := schemaInDB.Schema[tableName][columnName]; ok {
+							schemaMap[tableName][columnName] = columnTypeInDB
+							continue
+						}
+					}
+				}
+				// check if we already set the columnType in schemaMap
+				if _, ok := schemaMap[tableName][columnName]; !ok {
 					schemaMap[tableName][columnName] = columnType
 				}
 			}
@@ -281,6 +299,8 @@ func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 }
 
 func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT) bool {
+	lastExecMapLock.Lock()
+	defer lastExecMapLock.Unlock()
 	if lastExecTime, ok := lastExecMap[warehouse.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
 		return true
 	}
@@ -301,6 +321,9 @@ func NewWhManager(destType string) (WarehouseManager, error) {
 	case "BQ":
 		var bq bigquery.HandleT
 		return &bq, nil
+	case "SNOWFLAKE":
+		var sf snowflake.HandleT
+		return &sf, nil
 	}
 	return nil, errors.New("No provider configured for WarehouseManager")
 }
@@ -374,7 +397,7 @@ func (wh *HandleT) mainLoop() {
 						lastIndex = len(stagingFilesList)
 					}
 					// merge schemas over all staging files in this batch
-					consolidatedSchema := consolidateSchema(stagingFilesList[count:lastIndex])
+					consolidatedSchema := wh.consolidateSchema(warehouse, stagingFilesList[count:lastIndex])
 					// create record in wh_uploads to mark start of upload to warehouse flow
 					upload := wh.initUpload(warehouse, stagingFilesList[count:lastIndex], consolidatedSchema)
 					jobs = append(jobs, ProcessStagingFilesJobT{
@@ -538,12 +561,16 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		return loadFileIDs, err
 	}
 
+	timer := warehouseutils.DestStat(stats.TimerType, "download_staging_file_time", job.Warehouse.Destination.ID)
+	timer.Start()
+
 	err = downloader.Download(jsonFile, job.StagingFile.Location)
 	if err != nil {
 		return loadFileIDs, err
 	}
 	jsonFile.Close()
 	defer os.Remove(jsonPath)
+	timer.End()
 
 	sortedTableColumnMap := make(map[string][]string)
 	// sort columns per table so as to maintaing same order in load file (needed in case of csv load file)
@@ -567,6 +594,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	sc := bufio.NewScanner(reader)
 	misc.PrintMemUsage()
 
+	timer = warehouseutils.DestStat(stats.TimerType, "process_staging_file_to_csv_time", job.Warehouse.Destination.ID)
+	timer.Start()
+
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
 		var jsonLine map[string]interface{}
@@ -585,8 +615,31 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 			outputFileMap[tableName] = gzWriter
 		}
 		if wh.destType == "BQ" {
-			// add uuid_ts to track when event was processed into load_file
-			columnData["uuid_ts"] = uuidTS.Format("2006-01-02 15:04:05 Z")
+			for _, columnName := range sortedTableColumnMap[tableName] {
+				if columnName == "uuid_ts" {
+					// add uuid_ts to track when event was processed into load_file
+					columnData["uuid_ts"] = uuidTS.Format("2006-01-02 15:04:05 Z")
+					continue
+				}
+				columnVal, ok := columnData[columnName]
+				if !ok {
+					continue
+				}
+				columnType, ok := columns[columnName].(string)
+				// if the current data type doesnt match the one in warehouse, set value as NULL
+				dataTypeInSchema := job.Schema[tableName][columnName]
+				if ok && columnType != dataTypeInSchema {
+					if columnType == "int" && dataTypeInSchema == "float" {
+						// pass it along
+					} else if columnType == "float" && dataTypeInSchema == "int" {
+						columnData[columnName] = int(columnVal.(float64))
+					} else {
+						columnData[columnName] = nil
+						continue
+					}
+				}
+
+			}
 			line, err := json.Marshal(columnData)
 			if err != nil {
 				return loadFileIDs, err
@@ -594,6 +647,8 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 			outputFileMap[tableName].WriteGZ(string(line) + "\n")
 		} else {
 			csvRow := []string{}
+			var buff bytes.Buffer
+			csvWriter := csv.NewWriter(&buff)
 			for _, columnName := range sortedTableColumnMap[tableName] {
 				if columnName == "uuid_ts" {
 					// add uuid_ts to track when event was processed into load_file
@@ -605,33 +660,29 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 					csvRow = append(csvRow, "")
 					continue
 				}
-				if stringVal, ok := columnVal.(string); ok {
-					// handle double quotes in column values for csv
-					if strings.Contains(stringVal, `"`) {
-						columnVal = strings.ReplaceAll(stringVal, `"`, `'`)
+
+				columnType, ok := columns[columnName].(string)
+				// if the current data type doesnt match the one in warehouse, set value as NULL
+				dataTypeInSchema := job.Schema[tableName][columnName]
+				if ok && columnType != dataTypeInSchema {
+					if columnType == "int" && dataTypeInSchema == "float" {
+						// pass it along
+					} else if columnType == "float" && dataTypeInSchema == "int" {
+						columnVal = int(columnVal.(float64))
+					} else {
+						csvRow = append(csvRow, "")
+						continue
 					}
-					// handle commas in column values for csv
-					if strings.Contains(stringVal, ",") {
-						// escape double quotes
-						columnVal = strings.ReplaceAll(stringVal, "\"", "\"\"")
-						// put entire string in double qoutes
-						columnVal = fmt.Sprintf(`"%s"`, columnVal)
-					}
-				}
-				// avoid printing integers like 5000000 as 5e+06
-				columnType, castOk := columns[columnName].(string)
-				if castOk && columnType == "bigint" || columnType == "int" || columnType == "float" {
-					columnVal = columnVal.(float64)
-				}
-				if fmt.Sprintf("%v", columnVal) == "<nil>" {
-					columnVal = ""
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
-			outputFileMap[tableName].WriteGZ(strings.Join(csvRow, ",") + "\n")
+			csvWriter.Write(csvRow)
+			csvWriter.Flush()
+			outputFileMap[tableName].WriteGZ(buff.String())
 		}
 	}
 	reader.Close()
+	timer.End()
 	misc.PrintMemUsage()
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
@@ -640,12 +691,14 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	})
 	misc.AssertError(err)
 
+	timer = warehouseutils.DestStat(stats.TimerType, "upload_load_files_per_staging_file_time", job.Warehouse.Destination.ID)
+	timer.Start()
 	for tableName, outputFile := range outputFileMap {
 		outputFile.CloseGZ()
 		file, err := os.Open(outputFile.File.Name())
 		defer os.Remove(outputFile.File.Name())
 		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v", wh.destType, warehouseutils.ObjectStorageMap[wh.destType], tableName, job.StagingFile.ID)
-		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, strconv.FormatInt(job.Upload.ID, 10))
+		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, fmt.Sprintf(`%v-%v`, strconv.FormatInt(job.Upload.ID, 10), uuid.NewV4().String()))
 		if err != nil {
 			return loadFileIDs, err
 		}
@@ -660,6 +713,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		misc.AssertError(err)
 		loadFileIDs = append(loadFileIDs, fileID)
 	}
+	timer.End()
 	return
 }
 

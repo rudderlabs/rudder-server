@@ -302,6 +302,7 @@ func (brt *HandleT) initWorkers() {
 						if output.Error == nil && output.Key != "" {
 							brt.updateWarehouseMetadata(batchJobs, output.Key)
 							warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
+							warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
 						}
 						brt.setJobStatus(batchJobs, true, output.Error)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
@@ -572,7 +573,7 @@ func loadConfig() {
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
 }
