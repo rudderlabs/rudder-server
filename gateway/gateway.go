@@ -19,6 +19,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -29,8 +30,6 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
-
-var batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
 
 /*
  * The gateway module handles incoming requests from client devices.
@@ -97,20 +96,18 @@ func init() {
 	config.Initialize()
 	loadConfig()
 	loadStatusMap()
-	latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
-	batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
-	batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
 }
 
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
-	webRequestQ   chan *webRequestT
-	batchRequestQ chan *batchWebRequestT
-	jobsDB        *jobsdb.HandleT
-	badgerDB      *badger.DB
-	ackCount      uint64
-	recvCount     uint64
-	rateLimiter   *ratelimiter.HandleT
+	webRequestQ                               chan *webRequestT
+	batchRequestQ                             chan *batchWebRequestT
+	jobsDB                                    *jobsdb.HandleT
+	badgerDB                                  *badger.DB
+	ackCount                                  uint64
+	recvCount                                 uint64
+	rateLimiter                               *ratelimiter.HandleT
+	batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
 }
 
 func updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -140,7 +137,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		//Saving the event data read from req.request.Body to the splice.
 		//Using this to send event schema to the config backend.
 		var eventBatchesToRecord []string
-		batchTimeStat.Start()
+		gateway.batchTimeStat.Start()
 		var allMessageIds [][]byte
 		for _, req := range breq.batchRequest {
 			ipAddr := misc.GetIPFromReq(req.request)
@@ -260,7 +257,10 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 		gateway.writeToBadger(allMessageIds)
 
-		misc.Assert(preDbStoreCount+len(errorMessagesMap) == len(breq.batchRequest))
+		if preDbStoreCount+len(errorMessagesMap) != len(breq.batchRequest) {
+			panic(fmt.Errorf("preDbStoreCount:%d+len(errorMessagesMap):%d != len(breq.batchRequest):%d",
+				preDbStoreCount, len(errorMessagesMap), len(breq.batchRequest)))
+		}
 		for uuid, err := range errorMessagesMap {
 			if err != "" {
 				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[uuid], 1)
@@ -277,8 +277,8 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			sourcedebugger.RecordEvent(gjson.Get(event, "writeKey").Str, event)
 		}
 
-		batchTimeStat.End()
-		batchSizeStat.Count(len(breq.batchRequest))
+		gateway.batchTimeStat.End()
+		gateway.batchSizeStat.Count(len(breq.batchRequest))
 		// update stats request wise
 		updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")
 		updateWriteKeyStats(writeKeySuccessStats, "gateway.write_key_successful_requests")
@@ -307,14 +307,18 @@ func (gateway *HandleT) dedupWithBadger(body *[]byte, messageIDs [][]byte, write
 		}
 		return nil
 	})
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	count := 0
 	for _, idx := range toRemoveMessageIndexes {
 		logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
 		misc.IncrementMapByKey(writeKeyDupStats, writeKey, 1)
 		*body, err = sjson.DeleteBytes(*body, fmt.Sprintf(`batch.%v`, idx-count))
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		count++
 	}
 }
@@ -333,7 +337,9 @@ func (gateway *HandleT) writeToBadger(messageIDs [][]byte) {
 			}
 			return nil
 		})
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -380,11 +386,11 @@ func (gateway *HandleT) printStats() {
 	}
 }
 
-func stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		latencyStat.Start()
+		gateway.latencyStat.Start()
 		wrappedFunc(w, r)
-		latencyStat.End()
+		gateway.latencyStat.End()
 	}
 }
 
@@ -455,16 +461,14 @@ func (gateway *HandleT) startWebHandler() {
 
 	logger.Infof("Starting in %d", webPort)
 
-	http.HandleFunc("/v1/batch", stat(gateway.webBatchHandler))
-	http.HandleFunc("/v1/identify", stat(gateway.webIdentifyHandler))
-	http.HandleFunc("/v1/track", stat(gateway.webTrackHandler))
-	http.HandleFunc("/v1/page", stat(gateway.webPageHandler))
-	http.HandleFunc("/v1/screen", stat(gateway.webScreenHandler))
-	http.HandleFunc("/v1/alias", stat(gateway.webAliasHandler))
-	http.HandleFunc("/v1/group", stat(gateway.webGroupHandler))
+	http.HandleFunc("/v1/batch", gateway.stat(gateway.webBatchHandler))
+	http.HandleFunc("/v1/identify", gateway.stat(gateway.webIdentifyHandler))
+	http.HandleFunc("/v1/track", gateway.stat(gateway.webTrackHandler))
+	http.HandleFunc("/v1/page", gateway.stat(gateway.webPageHandler))
+	http.HandleFunc("/v1/screen", gateway.stat(gateway.webScreenHandler))
+	http.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler))
+	http.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
 	http.HandleFunc("/health", gateway.healthHandler)
-
-	backendconfig.WaitForConfig()
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
@@ -511,16 +515,26 @@ func (gateway *HandleT) openBadger(clearDB *bool) {
 	tmpDirPath := misc.CreateTMPDIR()
 	path := fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 	gateway.badgerDB, err = badger.Open(badger.DefaultOptions(path))
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	if *clearDB {
 		err = gateway.badgerDB.DropAll()
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	}
-	go gateway.gcBadgerDB()
+	rruntime.Go(func() {
+		gateway.gcBadgerDB()
+	})
 }
 
 //Setup initializes this module
 func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.HandleT, clearDB *bool) {
+	gateway.latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
+	gateway.batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
+	gateway.batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
+
 	if enableDedup {
 		gateway.openBadger(clearDB)
 		defer gateway.badgerDB.Close()
@@ -529,11 +543,20 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.H
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB
-	go gateway.webRequestBatcher()
-	go gateway.printStats()
-	go backendConfigSubscriber()
+	rruntime.Go(func() {
+		gateway.webRequestBatcher()
+	})
+	rruntime.Go(func() {
+		backendConfigSubscriber()
+	})
 	for i := 0; i < maxDBWriterProcess; i++ {
-		go gateway.webRequestBatchDBWriter(i)
+		rruntime.Go(func() {
+			gateway.webRequestBatchDBWriter(i)
+		})
 	}
+	backendconfig.WaitForConfig()
+	rruntime.Go(func() {
+		gateway.printStats()
+	})
 	gateway.startWebHandler()
 }
