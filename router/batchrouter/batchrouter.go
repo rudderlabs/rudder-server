@@ -341,9 +341,13 @@ type BatchJobsT struct {
 	BatchDestination DestinationT
 }
 
+func connectionString(batchDestination DestinationT) string {
+	return fmt.Sprintf(`source:%s:destination:%s`, batchDestination.Source.ID, batchDestination.Destination.ID)
+}
+
 func isDestInProgress(batchDestination DestinationT) bool {
 	inProgressMapLock.RLock()
-	if inProgressMap[batchDestination.Source.ID+"_"+batchDestination.Destination.ID] {
+	if inProgressMap[connectionString(batchDestination)] {
 		inProgressMapLock.RUnlock()
 		return true
 	}
@@ -354,9 +358,9 @@ func isDestInProgress(batchDestination DestinationT) bool {
 func setDestInProgress(batchDestination DestinationT, starting bool) {
 	inProgressMapLock.Lock()
 	if starting {
-		inProgressMap[batchDestination.Source.ID+"_"+batchDestination.Destination.ID] = true
+		inProgressMap[connectionString(batchDestination)] = true
 	} else {
-		delete(inProgressMap, batchDestination.Source.ID+"_"+batchDestination.Destination.ID)
+		delete(inProgressMap, connectionString(batchDestination))
 	}
 	inProgressMapLock.Unlock()
 }
@@ -364,10 +368,10 @@ func setDestInProgress(batchDestination DestinationT, starting bool) {
 func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 	lastExecMapLock.Lock()
 	defer lastExecMapLock.Unlock()
-	if lastExecTime, ok := lastExecMap[batchDestination.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
+	if lastExecTime, ok := lastExecMap[connectionString(batchDestination)]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
 		return true
 	}
-	lastExecMap[batchDestination.Destination.ID] = time.Now().Unix()
+	lastExecMap[connectionString(batchDestination)] = time.Now().Unix()
 	return false
 }
 
