@@ -298,13 +298,17 @@ func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 	return false
 }
 
+func connectionString(warehouse warehouseutils.WarehouseT) string {
+	return fmt.Sprintf(`source:%s:destination:%s`, warehouse.Source.ID, warehouse.Destination.ID)
+}
+
 func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT) bool {
 	lastExecMapLock.Lock()
 	defer lastExecMapLock.Unlock()
-	if lastExecTime, ok := lastExecMap[warehouse.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
+	if lastExecTime, ok := lastExecMap[connectionString(warehouse)]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
 		return true
 	}
-	lastExecMap[warehouse.Destination.ID] = time.Now().Unix()
+	lastExecMap[connectionString(warehouse)] = time.Now().Unix()
 	return false
 }
 

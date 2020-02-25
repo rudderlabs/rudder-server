@@ -75,6 +75,9 @@ func (brt *HandleT) backendConfigSubscriber() {
 				}
 			}
 		}
+		fmt.Println("((***************")
+		fmt.Printf("%+v\n", len(brt.batchDestinations))
+		fmt.Println("((***************")
 		configSubscriberLock.Unlock()
 	}
 }
@@ -346,13 +349,17 @@ func setDestInProgress(batchDestination DestinationT, starting bool) {
 	inProgressMapLock.Unlock()
 }
 
+func connectionString(batchDestination DestinationT) string {
+	return fmt.Sprintf(`source:%s:destination:%s`, batchDestination.Source.ID, batchDestination.Destination.ID)
+}
+
 func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 	lastExecMapLock.Lock()
 	defer lastExecMapLock.Unlock()
-	if lastExecTime, ok := lastExecMap[batchDestination.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
+	if lastExecTime, ok := lastExecMap[connectionString(batchDestination)]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
 		return true
 	}
-	lastExecMap[batchDestination.Destination.ID] = time.Now().Unix()
+	lastExecMap[connectionString(batchDestination)] = time.Now().Unix()
 	return false
 }
 
