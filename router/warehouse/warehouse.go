@@ -293,19 +293,23 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 	return uploads, anyPending
 }
 
+func connectionString(warehouse warehouseutils.WarehouseT) string {
+	return fmt.Sprintf(`source:%s:destination:%s`, warehouse.Source.ID, warehouse.Destination.ID)
+}
+
 func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
 	inProgressMapLock.Lock()
 	if starting {
-		inProgressMap[warehouse.Source.ID+"_"+warehouse.Destination.ID] = true
+		inProgressMap[connectionString(warehouse)] = true
 	} else {
-		delete(inProgressMap, warehouse.Source.ID+"_"+warehouse.Destination.ID)
+		delete(inProgressMap, connectionString(warehouse))
 	}
 	inProgressMapLock.Unlock()
 }
 
 func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 	inProgressMapLock.RLock()
-	if inProgressMap[warehouse.Source.ID+"_"+warehouse.Destination.ID] {
+	if inProgressMap[connectionString(warehouse)] {
 		inProgressMapLock.RUnlock()
 		return true
 	}
@@ -316,10 +320,10 @@ func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT) bool {
 	lastExecMapLock.Lock()
 	defer lastExecMapLock.Unlock()
-	if lastExecTime, ok := lastExecMap[warehouse.Destination.ID]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
+	if lastExecTime, ok := lastExecMap[connectionString(warehouse)]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
 		return true
 	}
-	lastExecMap[warehouse.Destination.ID] = time.Now().Unix()
+	lastExecMap[connectionString(warehouse)] = time.Now().Unix()
 	return false
 }
 
