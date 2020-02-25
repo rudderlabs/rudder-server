@@ -1,4 +1,4 @@
-# Contributing to Rudder #
+# Contributing to RudderStack #
 
 :heart: Thanks for taking the time and for your help improving this project!
 
