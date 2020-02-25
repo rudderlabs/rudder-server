@@ -50,7 +50,6 @@ func (workspaceConfig *WorkspaceConfig) Get() (SourcesT, bool) {
 	} else {
 		config, ok = workspaceConfig.getFromAPI()
 	}
-	logger.Debug("Unfiltered complete config ", config)
 	if !ok {
 		return config, false
 	}

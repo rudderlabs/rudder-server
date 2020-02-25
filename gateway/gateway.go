@@ -550,8 +550,9 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.H
 		backendConfigSubscriber()
 	})
 	for i := 0; i < maxDBWriterProcess; i++ {
+		j := i
 		rruntime.Go(func() {
-			gateway.webRequestBatchDBWriter(i)
+			gateway.webRequestBatchDBWriter(j)
 		})
 	}
 	backendconfig.WaitForConfig()
