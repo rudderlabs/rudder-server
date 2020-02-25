@@ -380,10 +380,11 @@ func (brt *HandleT) mainLoop() {
 		time.Sleep(mainLoopSleep)
 		for _, batchDestination := range brt.batchDestinations {
 			if isDestInProgress(batchDestination) {
+				logger.Debugf("BRT: Skipping batch router upload loop since destination %s:%s is in progress", batchDestination.Destination.DestinationDefinition.Name, batchDestination.Destination.ID)
 				continue
 			}
 			if uploadFrequencyExceeded(batchDestination) {
-				logger.Debugf("WH: Skipping batch router upload loop since %s:%s upload freq not exceeded", batchDestination.Destination.DestinationDefinition.Name, batchDestination.Destination.ID)
+				logger.Debugf("BRT: Skipping batch router upload loop since %s:%s upload freq not exceeded", batchDestination.Destination.DestinationDefinition.Name, batchDestination.Destination.ID)
 				continue
 			}
 			setDestInProgress(batchDestination, true)
@@ -412,11 +413,11 @@ func (brt *HandleT) mainLoop() {
 
 			combinedList := append(waitList, append(unprocessedList, retryList...)...)
 			if len(combinedList) == 0 {
-				logger.Debugf("BRT: DB Read Complete. No BRT Jobs to process.")
+				logger.Debugf("BRT: DB Read Complete. No BRT Jobs to process for parameter Filters: %v", parameterFilters)
 				setDestInProgress(batchDestination, false)
 				continue
 			}
-			logger.Debugf("BRT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", brt.destType, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
+			logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, waitList: %v unprocessedList: %v, total: %v", parameterFilters, brt.destType, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
 
 			var statusList []*jobsdb.JobStatusT
 

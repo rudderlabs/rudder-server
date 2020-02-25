@@ -468,7 +468,7 @@ func (rt *HandleT) generatorLoop() {
 		toQuery -= len(waitList)
 		unprocessedList := rt.jobsDB.GetUnprocessed([]string{rt.destID}, toQuery, nil)
 		if len(waitList)+len(unprocessedList)+len(retryList) == 0 {
-			logger.Debugf("RT: DB Read Complete. No RT Jobs to process.")
+			logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destID: %s", rt.destID)
 			time.Sleep(readSleep)
 			continue
 		}
