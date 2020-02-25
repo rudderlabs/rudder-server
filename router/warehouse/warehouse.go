@@ -278,28 +278,28 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 	return uploads, anyPending
 }
 
+func connectionString(warehouse warehouseutils.WarehouseT) string {
+	return fmt.Sprintf(`source:%s:destination:%s`, warehouse.Source.ID, warehouse.Destination.ID)
+}
+
 func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
 	inProgressMapLock.Lock()
 	if starting {
-		inProgressMap[warehouse.Source.ID+"_"+warehouse.Destination.ID] = true
+		inProgressMap[connectionString(warehouse)] = true
 	} else {
-		delete(inProgressMap, warehouse.Source.ID+"_"+warehouse.Destination.ID)
+		delete(inProgressMap, connectionString(warehouse))
 	}
 	inProgressMapLock.Unlock()
 }
 
 func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 	inProgressMapLock.RLock()
-	if inProgressMap[warehouse.Source.ID+"_"+warehouse.Destination.ID] {
+	if inProgressMap[connectionString(warehouse)] {
 		inProgressMapLock.RUnlock()
 		return true
 	}
 	inProgressMapLock.RUnlock()
 	return false
-}
-
-func connectionString(warehouse warehouseutils.WarehouseT) string {
-	return fmt.Sprintf(`source:%s:destination:%s`, warehouse.Source.ID, warehouse.Destination.ID)
 }
 
 func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT) bool {

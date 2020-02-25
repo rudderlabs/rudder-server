@@ -75,9 +75,6 @@ func (brt *HandleT) backendConfigSubscriber() {
 				}
 			}
 		}
-		fmt.Println("((***************")
-		fmt.Printf("%+v\n", len(brt.batchDestinations))
-		fmt.Println("((***************")
 		configSubscriberLock.Unlock()
 	}
 }
@@ -329,9 +326,13 @@ type BatchJobsT struct {
 	BatchDestination DestinationT
 }
 
+func connectionString(batchDestination DestinationT) string {
+	return fmt.Sprintf(`source:%s:destination:%s`, batchDestination.Source.ID, batchDestination.Destination.ID)
+}
+
 func isDestInProgress(batchDestination DestinationT) bool {
 	inProgressMapLock.RLock()
-	if inProgressMap[batchDestination.Source.ID+"_"+batchDestination.Destination.ID] {
+	if inProgressMap[connectionString(batchDestination)] {
 		inProgressMapLock.RUnlock()
 		return true
 	}
@@ -342,15 +343,11 @@ func isDestInProgress(batchDestination DestinationT) bool {
 func setDestInProgress(batchDestination DestinationT, starting bool) {
 	inProgressMapLock.Lock()
 	if starting {
-		inProgressMap[batchDestination.Source.ID+"_"+batchDestination.Destination.ID] = true
+		inProgressMap[connectionString(batchDestination)] = true
 	} else {
-		delete(inProgressMap, batchDestination.Source.ID+"_"+batchDestination.Destination.ID)
+		delete(inProgressMap, connectionString(batchDestination))
 	}
 	inProgressMapLock.Unlock()
-}
-
-func connectionString(batchDestination DestinationT) string {
-	return fmt.Sprintf(`source:%s:destination:%s`, batchDestination.Source.ID, batchDestination.Destination.ID)
 }
 
 func uploadFrequencyExceeded(batchDestination DestinationT) bool {
