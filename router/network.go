@@ -25,11 +25,17 @@ func (network *NetHandleT) processOldResponseType(jsonData []byte) (int, string,
 	postInfo := integrations.GetPostInfo(jsonData)
 
 	requestConfig, ok := postInfo.RequestConfig.(map[string]interface{})
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of postInfo.RequestConfig to map[string]interface{} failed"))
+	}
 	requestMethod, ok := requestConfig["requestMethod"].(string)
-	misc.Assert(ok && (requestMethod == "POST" || requestMethod == "GET"))
+	if !(ok && (requestMethod == "POST" || requestMethod == "GET")) {
+		panic(fmt.Errorf("typecast of requestConfig[\"requestMethod\"] to string failed. or requestMethod:%s is neither POST nor GET", requestMethod))
+	}
 	requestFormat := requestConfig["requestFormat"].(string)
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of requestConfig[\"requestFormat\"] to string failed"))
+	}
 
 	switch requestFormat {
 	case "PARAMS":
@@ -37,41 +43,53 @@ func (network *NetHandleT) processOldResponseType(jsonData []byte) (int, string,
 	case "JSON":
 		postInfo.Type = integrations.PostDataJSON
 	default:
-		misc.Assert(false)
+		panic(fmt.Errorf("requestFormat:%s is neither PARAMS nor JSON", requestFormat))
 	}
 
 	var req *http.Request
 	var err error
 	if useTestSink {
 		req, err = http.NewRequest(requestMethod, testSinkURL, nil)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	} else {
 		req, err = http.NewRequest(requestMethod, postInfo.URL, nil)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	queryParams := req.URL.Query()
 	if postInfo.Type == integrations.PostDataKV {
 		payloadKV, ok := postInfo.Payload.(map[string]interface{})
-		misc.Assert(ok)
+		if !ok {
+			panic(fmt.Errorf("typecast of postInfo.Payload to map[string]interface{} failed"))
+		}
 		for key, val := range payloadKV {
 			queryParams.Add(key, fmt.Sprint(val))
 		}
 	} else if postInfo.Type == integrations.PostDataJSON {
 		payloadJSON, ok := postInfo.Payload.(map[string]interface{})
-		misc.Assert(ok)
+		if !ok {
+			panic(fmt.Errorf("typecast of postInfo.Payload to map[string]interface{} failed"))
+		}
 		jsonValue, err := json.Marshal(payloadJSON)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		req.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
 	} else {
 		//Not implemented yet
-		misc.Assert(false)
+		panic(fmt.Errorf("postInfo.Type : %d is not implemented", postInfo.Type))
 	}
 
 	req.URL.RawQuery = queryParams.Encode()
 
 	headerKV, ok := postInfo.Header.(map[string]interface{})
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of postInfo.Header to map[string]interface{} failed"))
+	}
 	for key, val := range headerKV {
 		req.Header.Add(key, val.(string))
 	}
@@ -128,10 +146,14 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 		var err error
 		if useTestSink {
 			req, err = http.NewRequest(requestMethod, testSinkURL, nil)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 		} else {
 			req, err = http.NewRequest(requestMethod, postInfo.URL, nil)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 		}
 
 		// add queryparams to the url
@@ -153,7 +175,9 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 			switch bodyFormat {
 			case "JSON":
 				jsonValue, err := json.Marshal(bodyValue)
-				misc.AssertError(err)
+				if err != nil {
+					panic(err)
+				}
 				req.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
 
 			case "FORM":
@@ -164,13 +188,15 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 				req.Body = ioutil.NopCloser(strings.NewReader(formValues.Encode()))
 
 			default:
-				misc.Assert(false)
+				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
 
 			}
 		}
 
 		headerKV, ok := postInfo.Headers.(map[string]interface{})
-		misc.Assert(ok)
+		if !ok {
+			panic(fmt.Errorf("typecast of postInfo.Headers to map[string]interface{} failed"))
+		}
 		for key, val := range headerKV {
 			req.Header.Add(key, val.(string))
 		}
@@ -218,7 +244,9 @@ func (network *NetHandleT) Setup(destID string) {
 	//Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
 	defaultRoundTripper := http.DefaultTransport
 	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
-	misc.Assert(ok)
+	if !ok {
+		panic(fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed"))
+	}
 	var defaultTransportCopy http.Transport
 	//Not safe to copy DefaultTransport
 	//https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU

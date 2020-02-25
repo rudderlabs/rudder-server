@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -102,7 +103,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		logger.Debug("Router :: trying to send payload to GA", respBody)
 
 		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
-		misc.Assert(userID != "")
+		if userID == "" {
+			panic(fmt.Errorf("userID is empty"))
+		}
 
 		//If sink is not enabled mark all jobs as waiting
 		if !rt.isEnabled {
@@ -142,7 +145,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		}
 
 		if isPrevFailedUser {
-			misc.Assert(previousFailedJobID == job.JobID)
+			if previousFailedJobID != job.JobID {
+				panic(fmt.Errorf("previousFailedJobID:%d != job.JobID:%d", previousFailedJobID, job.JobID))
+			}
 		}
 
 		//We can execute thoe job
@@ -264,7 +269,9 @@ func (rt *HandleT) initWorkers() {
 			failedJobs:     0,
 			sleepTime:      minSleep}
 		rt.workers[i] = worker
-		go rt.workerProcess(worker)
+		rruntime.Go(func() {
+			rt.workerProcess(worker)
+		})
 	}
 }
 
@@ -286,7 +293,9 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	}
 
 	worker := rt.workers[index]
-	misc.Assert(worker != nil)
+	if worker == nil {
+		panic(fmt.Errorf("worker is nil"))
+	}
 
 	//#JobOrder (see other #JobOrder comment)
 	worker.failedJobIDMutex.RLock()
@@ -297,7 +306,9 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	}
 	//This job can only be higher than blocking
 	//We only let the blocking job pass
-	misc.Assert(job.JobID >= blockJobID)
+	if job.JobID < blockJobID {
+		panic(fmt.Errorf("job.JobID:%d < blockJobID:%d", job.JobID, blockJobID))
+	}
 	if job.JobID == blockJobID {
 		return worker
 	}
@@ -578,7 +589,13 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.perfStats.Setup("StatsUpdate:" + destID)
 
 	rt.initWorkers()
-	go rt.printStatsLoop()
-	go rt.statusInsertLoop()
-	go rt.generatorLoop()
+	rruntime.Go(func() {
+		rt.printStatsLoop()
+	})
+	rruntime.Go(func() {
+		rt.statusInsertLoop()
+	})
+	rruntime.Go(func() {
+		rt.generatorLoop()
+	})
 }
