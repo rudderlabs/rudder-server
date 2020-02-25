@@ -13,7 +13,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -48,12 +47,16 @@ func getRecoveryData() RecoveryDataT {
 		defaultRecoveryJSON := "{\"mode\":\"" + normalMode + "\"}"
 		data = []byte(defaultRecoveryJSON)
 	} else {
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	var recoveryData RecoveryDataT
 	err = json.Unmarshal(data, &recoveryData)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	return recoveryData
 }
@@ -62,7 +65,9 @@ func saveRecoveryData(recoveryData RecoveryDataT) {
 	recoveryDataJSON, err := json.MarshalIndent(&recoveryData, "", " ")
 	storagePath := config.GetString("recovery.storagePath", "/tmp/recovery_data.json")
 	err = ioutil.WriteFile(storagePath, recoveryDataJSON, 0644)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 }
 
 /*

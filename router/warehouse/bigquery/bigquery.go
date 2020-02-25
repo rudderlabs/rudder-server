@@ -10,6 +10,7 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/rudderlabs/rudder-server/config"
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -48,7 +49,9 @@ func (bq *HandleT) setUploadError(err error, state string) {
 	warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataFailedState, bq.DbHandle)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseUploadsTable)
 	_, err = bq.DbHandle.Exec(sqlStatement, state, err.Error(), time.Now(), bq.Upload.ID)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
@@ -166,35 +169,39 @@ func (bq *HandleT) load() (err error) {
 	wg := misc.NewWaitGroup()
 	wg.Add(len(bq.Upload.Schema))
 	for tName := range bq.Upload.Schema {
-		go func(tableName string) {
-			locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
-			misc.AssertError(err)
-			locations, err = warehouseutils.GetGCSLocations(locations)
-			logger.Infof("Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
-			gcsRef := bigquery.NewGCSReference(locations...)
-			gcsRef.SourceFormat = bigquery.JSON
-			gcsRef.MaxBadRecords = 100
-			gcsRef.IgnoreUnknownValues = true
-			// create partitioned table in format tableName$20191221
-			loader := bq.Db.Dataset(bq.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
+		rruntime.Go(func() {
+			func(tableName string) {
+				locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
+				if err != nil {
+					panic(err)
+				}
+				locations, err = warehouseutils.GetGCSLocations(locations)
+				logger.Infof("Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
+				gcsRef := bigquery.NewGCSReference(locations...)
+				gcsRef.SourceFormat = bigquery.JSON
+				gcsRef.MaxBadRecords = 100
+				gcsRef.IgnoreUnknownValues = true
+				// create partitioned table in format tableName$20191221
+				loader := bq.Db.Dataset(bq.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
 
-			job, err := loader.Run(bq.BQContext)
-			if err != nil {
-				wg.Err(err)
-				return
-			}
-			status, err := job.Wait(bq.BQContext)
-			if err != nil {
-				wg.Err(err)
-				return
-			}
+				job, err := loader.Run(bq.BQContext)
+				if err != nil {
+					wg.Err(err)
+					return
+				}
+				status, err := job.Wait(bq.BQContext)
+				if err != nil {
+					wg.Err(err)
+					return
+				}
 
-			if status.Err() != nil {
-				wg.Err(err)
-				return
-			}
-			wg.Done()
-		}(tName)
+				if status.Err() != nil {
+					wg.Err(err)
+					return
+				}
+				wg.Done()
+			}(tName)
+		})
 	}
 	err = wg.Wait()
 	return
@@ -232,7 +239,9 @@ func (bq *HandleT) MigrateSchema() (err error) {
 		return
 	}
 	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatedSchemaState, bq.DbHandle)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	err = warehouseutils.UpdateCurrentSchema(bq.Namespace, bq.Warehouse, bq.Upload.ID, bq.CurrentSchema, updatedSchema, bq.DbHandle)
 	timer.End()
 	if err != nil {
@@ -245,7 +254,9 @@ func (bq *HandleT) MigrateSchema() (err error) {
 func (bq *HandleT) Export() (err error) {
 	logger.Infof("BQ: Starting export to Bigquery for source:%s and wh_upload:%v", bq.Warehouse.Source.ID, bq.Upload.ID)
 	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataState, bq.DbHandle)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", bq.Warehouse.Destination.ID)
 	timer.Start()
 	err = bq.load()
@@ -255,7 +266,9 @@ func (bq *HandleT) Export() (err error) {
 		return err
 	}
 	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportedDataState, bq.DbHandle)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	return
 }
 
@@ -278,7 +291,9 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		return err
 	}
 	currSchema, err := warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	bq.CurrentSchema = currSchema.Schema
 	bq.Namespace = currSchema.Namespace
 	if bq.Namespace == "" {
