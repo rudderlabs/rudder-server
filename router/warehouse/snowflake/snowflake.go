@@ -172,7 +172,7 @@ func (sf *HandleT) load() (errList []error) {
 		sortedColumnNames := strings.Join(strkeys, ",")
 
 		stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
-		sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "RUDDER_EVENTS"."%s"."%s" LIKE "RUDDER_EVENTS"."%s"."%s"`, sf.Namespace, stagingTableName, sf.Namespace, strings.ToUpper(tableName))
+		sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s"."%s" LIKE "%s"."%s"`, sf.Namespace, stagingTableName, sf.Namespace, strings.ToUpper(tableName))
 
 		logger.Infof("SF: Creating staging table for table:%s at %s\n", tableName, sqlStatement)
 		_, err := sf.Db.Exec(sqlStatement)
