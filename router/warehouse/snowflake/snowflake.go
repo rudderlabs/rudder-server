@@ -272,7 +272,14 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 	var err error
 	var db *sql.DB
 	if db, err = sql.Open("snowflake", url); err != nil {
-		return nil, fmt.Errorf("snowflake connect error : (%v)", err)
+		return nil, fmt.Errorf("SF: snowflake connect error : (%v)", err)
+	}
+
+	alterStatement := fmt.Sprintf(`ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`)
+	logger.Infof("SF: Altering session with abort_detached_query for snowflake: %v", alterStatement)
+	_, err = db.Exec(alterStatement)
+	if err != nil {
+		return nil, fmt.Errorf("SF: snowflake alter session error : (%v)", err)
 	}
 	return db, nil
 }
@@ -346,7 +353,7 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	sf.CurrentSchema = currSchema.Schema
 	sf.Namespace = strings.ToUpper(currSchema.Namespace)
 	if sf.Namespace == "" {
-		logger.Infof("Namespace not found in currentschema for SF:%s, setting from upload: %s", sf.Warehouse.Destination.ID, sf.Upload.Namespace)
+		logger.Infof("SF: Namespace not found in currentschema for SF:%s, setting from upload: %s", sf.Warehouse.Destination.ID, sf.Upload.Namespace)
 		sf.Namespace = strings.ToUpper(sf.Upload.Namespace)
 	}
 
