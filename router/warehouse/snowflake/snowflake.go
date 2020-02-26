@@ -370,5 +370,6 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 			err = sf.Export()
 		}
 	}
+	sf.Db.Close()
 	return
 }
