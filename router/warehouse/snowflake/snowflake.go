@@ -12,7 +12,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/router/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
 	snowflake "github.com/snowflakedb/gosnowflake" //blank comment
 )
@@ -173,7 +172,7 @@ func (sf *HandleT) load() (errList []error) {
 		sortedColumnNames := strings.Join(strkeys, ",")
 
 		stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
-		sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "RUDDER_EVENTS"."%s"."%s" LIKE "RUDDER_EVENTS"."%s"."%s"`, sf.Namespace, stagingTableName, sf.Namespace, strings.ToUpper(tableName))
+		sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s"."%s" LIKE "%s"."%s"`, sf.Namespace, stagingTableName, sf.Namespace, strings.ToUpper(tableName))
 
 		logger.Infof("SF: Creating staging table for table:%s at %s\n", tableName, sqlStatement)
 		_, err := sf.Db.Exec(sqlStatement)
@@ -190,7 +189,9 @@ func (sf *HandleT) load() (errList []error) {
 		}
 
 		csvObjectLocation, err := warehouseutils.GetLoadFileLocation(sf.DbHandle, sf.Warehouse.Source.ID, sf.Warehouse.Destination.ID, tableName, sf.Upload.StartLoadFileID, sf.Upload.EndLoadFileID)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		loadFolder := warehouseutils.GetS3LocationFolder(csvObjectLocation)
 
 		sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s') PATTERN = '.*\.csv\.gz'
@@ -292,7 +293,9 @@ func (sf *HandleT) MigrateSchema() (err error) {
 		return
 	}
 	err = warehouseutils.SetUploadStatus(sf.Upload, warehouseutils.UpdatedSchemaState, sf.DbHandle)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	err = warehouseutils.UpdateCurrentSchema(sf.Namespace, sf.Warehouse, sf.Upload.ID, sf.CurrentSchema, updatedSchema, sf.DbHandle)
 	timer.End()
 	if err != nil {
@@ -305,7 +308,9 @@ func (sf *HandleT) MigrateSchema() (err error) {
 func (sf *HandleT) Export() (err error) {
 	logger.Infof("SF: Starting export to snowflake for source:%s and wh_upload:%v", sf.Warehouse.Source.ID, sf.Upload.ID)
 	err = warehouseutils.SetUploadStatus(sf.Upload, warehouseutils.ExportingDataState, sf.DbHandle)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", sf.Warehouse.Destination.ID)
 	timer.Start()
 	errList := sf.load()
@@ -322,7 +327,9 @@ func (sf *HandleT) Export() (err error) {
 		return errors.New(errStr)
 	}
 	err = warehouseutils.SetUploadStatus(sf.Upload, warehouseutils.ExportedDataState, sf.DbHandle)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	return
 }
 
@@ -336,7 +343,9 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	sf.Upload = config.Upload
 
 	currSchema, err := warehouseutils.GetCurrentSchema(sf.DbHandle, sf.Warehouse)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	sf.CurrentSchema = currSchema.Schema
 	sf.Namespace = strings.ToUpper(currSchema.Namespace)
 	if sf.Namespace == "" {

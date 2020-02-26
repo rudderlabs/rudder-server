@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/sjson"
@@ -131,18 +130,24 @@ func GetTableNamesWithPrefix(dbHandle *sql.DB, prefix string) []string {
                                         FROM pg_catalog.pg_tables
                                         WHERE schemaname != 'pg_catalog' AND
                                         schemaname != 'information_schema'`)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer stmt.Close()
 
 	rows, err := stmt.Query()
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer rows.Close()
 
 	tableNames := []string{}
 	for rows.Next() {
 		var tbName string
 		err = rows.Scan(&tbName)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		if strings.HasPrefix(tbName, prefix) {
 			tableNames = append(tableNames, tbName)
 		}

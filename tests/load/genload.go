@@ -20,6 +20,7 @@ import (
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -50,6 +51,8 @@ var loadStat *stats.RudderStats
 var requestTimeStat *stats.RudderStats
 
 func main() {
+	logger.Setup()
+	stats.Setup()
 
 	loadStat = stats.NewStat("genload.num_events", stats.CountType)
 	requestTimeStat = stats.NewStat("genload.event_time", stats.TimerType)
@@ -120,7 +123,9 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 	var rudderEvents []map[string]interface{}
 	var unmarshalleRudderdData map[string]interface{}
 	data, err = ioutil.ReadFile("mapping.json")
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	result := gjson.GetBytes(data, isBatchPath)
 
@@ -130,7 +135,9 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 	events := gjson.GetBytes(data, eventsPath).Array()
 
 	lines, err := misc.ReadLines("badJsonStrings.txt")
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	var duplicateIds []string
 	for index := 0; index < 10; index++ {
 		duplicateIds = append(duplicateIds, uuid.NewV4().String())
@@ -167,7 +174,9 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 
 					// Use this to generate random data for rudder-stack
 					//rudderData, err = sjson.SetBytes(rudderData, k, "abc")
-					//misc.AssertError(err)
+					//if err != nil {
+					//	panic(err)
+					//}
 					rudderData = generateData(&rudderData, k, gjson.Get(rudderJSON.Raw, k).Value())
 				}
 				eventTypes := []string{"track", "page", "screen"}
@@ -188,11 +197,15 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 					messageID = uuid.NewV4().String()
 				}
 				rudderData, err = sjson.SetBytes(rudderData, "messageId", messageID)
-				misc.AssertError(err)
+				if err != nil {
+					panic(err)
+				}
 
 				// Unmarshal
 				err = json.Unmarshal(rudderData, &unmarshalleRudderdData)
-				misc.AssertError(err)
+				if err != nil {
+					panic(err)
+				}
 
 				//append to list to be send to rudder-stack
 				rudderEvents = append(rudderEvents, unmarshalleRudderdData)
@@ -227,7 +240,9 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 	var rudderEvents []map[string]interface{}
 	var unmarshalleRudderdData map[string]interface{}
 	data, err = ioutil.ReadFile("mapping.json")
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	result := gjson.GetBytes(data, isBatchPath)
 
@@ -236,7 +251,9 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 	events := gjson.GetBytes(data, eventsPath).Array()
 
 	lines, err := misc.ReadLines("badJsonStrings.txt")
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	countLoop := 0
 
 	var userIDpath string
@@ -279,10 +296,14 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 
 					}
 					rudderData, err = sjson.SetBytes(rudderData, userIDpath, uid)
-					misc.AssertError(err)
+					if err != nil {
+						panic(err)
+					}
 
 					err = json.Unmarshal(rudderData, &unmarshalleRudderdData)
-					misc.AssertError(err)
+					if err != nil {
+						panic(err)
+					}
 
 					rudderEvents = append(rudderEvents, unmarshalleRudderdData)
 
@@ -319,16 +340,22 @@ func generateRandomDataFromSlice(randomSlice []string, payload *[]byte, path str
 	switch value.(type) {
 	case int:
 		*payload, err = sjson.SetBytes(*payload, path, rand.Intn(100))
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 
 	case float64:
 		*payload, err = sjson.SetBytes(*payload, path, math.Round(rand.Float64()+5))
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 
 	default:
 		i := rand.Intn(len(randomSlice))
 		*payload, err = sjson.SetBytes(*payload, path, randomSlice[i])
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 
 	}
 

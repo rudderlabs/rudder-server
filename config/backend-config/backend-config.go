@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils"
 )
 
@@ -176,7 +177,7 @@ func pollConfigUpdate() {
 		}
 		filteredSourcesJSON := filterOutNativeSDKDestinations(sourceJSON)
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
-			logger.Info("Config changed from ", curSourceJSON, " to : ", sourceJSON)
+			logger.Info("Workspace Config changed")
 			curSourceJSONLock.Lock()
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()
@@ -223,5 +224,8 @@ func Setup() {
 	}
 
 	backendConfig.SetUp()
-	go pollConfigUpdate()
+
+	rruntime.Go(func() {
+		pollConfigUpdate()
+	})
 }

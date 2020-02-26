@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/router/warehouse"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -139,10 +141,12 @@ func versionHandler(w http.ResponseWriter, r *http.Request) {
 func printVersion() {
 	version := versionInfo()
 	versionFormatted, _ := json.MarshalIndent(&version, "", " ")
-	logger.Infof("Version Info %s", versionFormatted)
+	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
 func main() {
+	version := versionInfo()
+
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),
@@ -150,11 +154,23 @@ func main() {
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
 		AppType:      "rudder-server",
+		AppVersion:   version["Version"].(string),
 		PanicHandler: func() {},
 	})
+	ctx := bugsnag.StartSession(context.Background())
+	defer func() {
+		if r := recover(); r != nil {
+			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+				"GoRoutines": {
+					"Number": runtime.NumGoroutine(),
+				}})
 
-	logger.Setup()
-	logger.Info("Main starting")
+			misc.RecordAppError(fmt.Errorf("%v", r))
+			logger.Fatal(r)
+			panic(r)
+		}
+	}()
+
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
@@ -165,12 +181,18 @@ func main() {
 	versionFlag := flag.Bool("v", false, "Print the current version and exit")
 
 	flag.Parse()
-	switch {
-	case *versionFlag:
+	if *versionFlag {
 		printVersion()
 		return
 	}
 	http.HandleFunc("/version", versionHandler)
+
+	//Logger setup is the first thing to be done.
+	logger.Setup()
+	logger.Info("Main starting")
+
+	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
+	stats.Setup()
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
@@ -182,10 +204,14 @@ func main() {
 	if *cpuprofile != "" {
 		var err error
 		f, err = os.Create(*cpuprofile)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		runtime.SetBlockProfileRate(1)
 		err = pprof.StartCPUProfile(f)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	c := make(chan os.Signal)
@@ -199,11 +225,15 @@ func main() {
 		}
 		if *memprofile != "" {
 			f, err := os.Create(*memprofile)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 			defer f.Close()
 			runtime.GC() // get up-to-date statistics
 			err = pprof.WriteHeapProfile(f)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 		}
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
@@ -235,7 +265,9 @@ func main() {
 	//Setup the three modules, the gateway, the router and the processor
 
 	if enableRouter {
-		go monitorDestRouters(&routerDB, &batchRouterDB)
+		rruntime.Go(func() {
+			monitorDestRouters(&routerDB, &batchRouterDB)
+		})
 	}
 
 	if enableProcessor {

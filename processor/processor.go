@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -152,7 +153,9 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 		proc.replayProcessor.Setup()
 	}
 
-	go proc.backendConfigSubscriber()
+	rruntime.Go(func() {
+		proc.backendConfigSubscriber()
+	})
 	proc.transformer.Setup()
 
 	if !isReplayServer {
@@ -161,10 +164,14 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 
 	proc.crashRecover()
 
-	go proc.mainLoop()
+	rruntime.Go(func() {
+		proc.mainLoop()
+	})
 	if processSessions {
 		logger.Info("Starting session processor")
-		go proc.createSessions()
+		rruntime.Go(func() {
+			proc.createSessions()
+		})
 	}
 }
 
@@ -317,7 +324,9 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			proc.userPQItemMap[userID] = pqItem
 			proc.userJobPQ.Add(pqItem)
 		} else {
-			misc.Assert(pqItem.index != -1)
+			if pqItem.index == -1 {
+				panic(fmt.Errorf("pqItem.index is -1"))
+			}
 			proc.userJobPQ.Update(pqItem, timestamp)
 		}
 
@@ -372,7 +381,9 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEve
 		eventListMap[userID] = make([]interface{}, 0)
 		for _, event := range userEvents[userID] {
 			eventMap, ok := event.(map[string]interface{})
-			misc.Assert(ok)
+			if !ok {
+				panic(fmt.Errorf("typecast of event to map[string]interface{} failed"))
+			}
 			if ok {
 				eventMap["session_id"] = userToSessionMap[userID]
 				eventListMap[userID] = append(eventListMap[userID], eventMap)
@@ -384,20 +395,30 @@ func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEve
 		userIDList = append(userIDList, userID)
 	}
 
-	misc.Assert(len(userEventsList) == len(eventListMap))
+	if len(userEventsList) != len(eventListMap) {
+		panic(fmt.Errorf("len(userEventsList):%d != len(eventListMap):%d", len(userEventsList), len(eventListMap)))
+	}
 
 	//Create jobs that can be processed further
 	toProcessJobs, toProcessEvents := createUserTransformedJobsFromEvents(userEventsList, userIDList, userJobs)
 
 	//Some sanity check to make sure we have all the jobs
-	misc.Assert(len(toProcessJobs) == totalJobs)
-	misc.Assert(len(toProcessEvents) == totalJobs)
+	if len(toProcessJobs) != totalJobs {
+		panic(fmt.Errorf("len(toProcessJobs):%d != totalJobs:%d", len(toProcessJobs), totalJobs))
+	}
+	if len(toProcessEvents) != totalJobs {
+		panic(fmt.Errorf("len(toProcessEvents):%d != totalJobs:%d", len(toProcessEvents), totalJobs))
+	}
 	for _, job := range toProcessJobs {
 		_, ok := allJobIDs[job.JobID]
-		misc.Assert(ok)
+		if !ok {
+			panic(fmt.Errorf("key %d not found in map allJobIDs", job.JobID))
+		}
 		delete(allJobIDs, job.JobID)
 	}
-	misc.Assert(len(allJobIDs) == 0)
+	if len(allJobIDs) != 0 {
+		panic(fmt.Errorf("len(allJobIDs):%d != 0", len(allJobIDs)))
+	}
 
 	//Process
 	proc.processJobsForDest(toProcessJobs, toProcessEvents)
@@ -412,11 +433,15 @@ func createUserTransformedJobsFromEvents(transformUserEventList []interface{},
 
 	transJobList := make([]*jobsdb.JobT, 0)
 	transEventList := make([][]interface{}, 0)
-	misc.Assert(len(transformUserEventList) == len(userIDList))
+	if len(transformUserEventList) != len(userIDList) {
+		panic(fmt.Errorf("len(transformUserEventList):%d != len(userIDList):%d", len(transformUserEventList), len(userIDList)))
+	}
 	for idx, userID := range userIDList {
 		userEvents := transformUserEventList[idx]
 		userEventsList, ok := userEvents.([]interface{})
-		misc.Assert(ok)
+		if !ok {
+			panic(fmt.Errorf("typecast of userEvents to []interface{} failed"))
+		}
 		for idx, job := range userJobs[userID] {
 			//We put all the transformed event on the first job
 			//and empty out the remaining payloads
@@ -465,7 +490,9 @@ func (proc *HandleT) createSessions() {
 			if time.Since(oldestItem.lastTS) > time.Duration(sessionInactivityThreshold) {
 				userID := oldestItem.userID
 				pqItem, ok := proc.userPQItemMap[userID]
-				misc.Assert(ok && pqItem == oldestItem)
+				if !(ok && pqItem == oldestItem) {
+					panic(fmt.Errorf("userID is not found in userPQItemMap or pqItem is not oldestItem"))
+				}
 				userJobsToProcess[userID] = proc.userJobListMap[userID]
 				userEventsToProcess[userID] = proc.userEventsMap[userID]
 				// it is guaranteed that user will have a session even if one job is present
@@ -585,7 +612,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var statusList []*jobsdb.JobStatusT
 	var eventsByDestID = make(map[string][]interface{})
 
-	misc.Assert(parsedEventList == nil || len(jobList) == len(parsedEventList))
+	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
+		panic(fmt.Errorf("parsedEventList != nil and len(jobList):%d != len(parsedEventList):%d", len(jobList), len(parsedEventList)))
+	}
 	//Each block we receive from a client has a bunch of
 	//requests. We parse the block and take out individual
 	//requests, call the destination specific transformation
@@ -643,7 +672,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					for _, destination := range enabledDestinationsList {
 						shallowEventCopy := make(map[string]interface{})
 						singularEventMap, ok := singularEvent.(map[string]interface{})
-						misc.Assert(ok)
+						if !ok {
+							panic(fmt.Errorf("typecast of singularEvent to map[string]interface{} failed"))
+						}
 						shallowEventCopy["message"] = singularEventMap
 						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
@@ -767,7 +798,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 
 	proc.destProcessing.End()
-	misc.Assert(len(statusList) == len(jobList))
+	if len(statusList) != len(jobList) {
+		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
+	}
 
 	proc.statDBW.Start()
 	proc.pStatsDBW.Start()
@@ -808,7 +841,9 @@ func (proc *HandleT) handleReplay(combinedList []*jobsdb.JobT) {
 
 	if len(processReplays) > 0 {
 		maxDSIndex := proc.gatewayDB.GetMaxDSIndex()
-		misc.Assert(len(combinedList) > 0)
+		if len(combinedList) <= 0 {
+			panic(fmt.Errorf("len(combinedList):%d <= 0", len(combinedList)))
+		}
 		replayMinJobID := combinedList[0].JobID
 
 		proc.replayProcessor.ProcessNewReplays(processReplays, replayMinJobID, maxDSIndex)
