@@ -282,16 +282,12 @@ func ReadLines(path string) ([]string, error) {
 }
 
 // CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
-func CreateTMPDIR() string {
+func CreateTMPDIR() (string, error) {
 	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
 	if tmpdirPath == "" {
-		var err error
-		tmpdirPath, err = os.UserHomeDir()
-		if err != nil {
-			panic(err)
-		}
+		return os.UserHomeDir()
 	}
-	return tmpdirPath
+	return tmpdirPath, nil
 }
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now

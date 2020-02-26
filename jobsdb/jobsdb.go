@@ -1549,7 +1549,8 @@ func (jd *HandleT) backupDSLoop() {
 
 func (jd *HandleT) removeTableJSONDumps() {
 	backupPathDirName := "/rudder-s3-dumps/"
-	tmpDirPath := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	jd.assertError(err)
 	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", tmpDirPath+backupPathDirName, jd.tablePrefix))
 	jd.assertError(err)
 	for _, f := range files {
@@ -1563,7 +1564,8 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	jd.totalTableDumpTimeStat.Start()
 	var tableName, path, pathPrefix string
 	backupPathDirName := "/rudder-s3-dumps/"
-	tmpDirPath := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	jd.assertError(err)
 
 	if isJobStatusTable {
 		tableName = backupDSRange.ds.JobStatusTable
