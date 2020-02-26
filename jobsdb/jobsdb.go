@@ -1595,6 +1595,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			backupDSRange.endTime,
 		)
 	}
+	logger.Infof("Backing up dataset: %v", tableName)
 
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	misc.AssertError(err)
@@ -1630,6 +1631,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	pathPrefixes := make([]string, 0)
 	pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
 
+	logger.Infof("Uploading backup table to object storage: %v", tableName)
 	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
 		_, err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
 	} else {
@@ -1646,7 +1648,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	err = os.Remove(path)
 	jd.assertError(err)
-
+	logger.Infof("Backed up dataset: %v", tableName)
 	return true, err
 }
 
