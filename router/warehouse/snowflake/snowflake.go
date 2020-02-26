@@ -186,13 +186,6 @@ func (sf *HandleT) load() (errList []error) {
 			continue
 		}
 
-		// BEGIN TRANSACTION
-		tx, err := sf.Db.Begin()
-		if err != nil {
-			errList = append(errList, err)
-			continue
-		}
-
 		csvObjectLocation, err := warehouseutils.GetLoadFileLocation(sf.DbHandle, sf.Warehouse.Source.ID, sf.Warehouse.Destination.ID, tableName, sf.Upload.StartLoadFileID, sf.Upload.EndLoadFileID)
 		misc.AssertError(err)
 		loadFolder := warehouseutils.GetS3LocationFolder(csvObjectLocation)
@@ -201,9 +194,8 @@ func (sf *HandleT) load() (errList []error) {
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s."%s"`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, accessKeyID, accessKey)
 
 		logger.Infof("SF: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
-		_, err = tx.Exec(sqlStatement)
+		_, err = sf.Db.Exec(sqlStatement)
 		if err != nil {
-			tx.Rollback()
 			errList = append(errList, err)
 			continue
 		}
@@ -233,19 +225,12 @@ func (sf *HandleT) load() (errList []error) {
 									WHEN NOT MATCHED THEN
 									INSERT (%[5]s) VALUES (%[6]s)`, sf.Namespace, strings.ToUpper(tableName), stagingTableName, primaryKey, columnNames, stagingColumnNames)
 		logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
-		_, err = tx.Exec(sqlStatement)
+		_, err = sf.Db.Exec(sqlStatement)
 		if err != nil {
-			tx.Rollback()
 			errList = append(errList, err)
 			continue
 		}
 
-		err = tx.Commit()
-		if err != nil {
-			tx.Rollback()
-			errList = append(errList, err)
-			continue
-		}
 		timer.End()
 		logger.Infof("SF: Complete load for table:%s\n", tableName)
 	}
