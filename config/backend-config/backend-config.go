@@ -52,6 +52,8 @@ type DestinationT struct {
 	Config                interface{}
 	Enabled               bool
 	Transformations       []TransformationT
+	Deleted               bool
+	Connected             bool
 }
 
 type SourceT struct {

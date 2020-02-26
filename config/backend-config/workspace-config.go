@@ -28,9 +28,10 @@ func (WorkspaceConfig *WorkspaceConfig) filterOutNativeSDKDestinations(config So
 			isDeviceModeOnly := destination.DestinationDefinition.Config.(map[string]interface{})["deviceModeOnly"]
 			isUsingNativeSDK := destination.Config.(map[string]interface{})["useNativeSDK"]
 			isServerModeDestination := !(isDeviceModeOnly == true || isUsingNativeSDK == true)
+			destinationExists := destination.Deleted != true && destination.Connected != false
 			logger.Debug("Destination Name :", destination.Name, " deviceModeOnly: ", isDeviceModeOnly, " useNativeSDK: ", isUsingNativeSDK, " serverMode: ", isServerModeDestination)
-
-			if isServerModeDestination {
+			logger.Debug("Destination Name :", destination.Name, " deleted: ", destination.Deleted, " connected: ", destination.Connected, " destination exists: ", destinationExists)
+			if isServerModeDestination && destinationExists {
 				destinations = append(destinations, destination)
 			}
 		}
@@ -59,7 +60,7 @@ func (workspaceConfig *WorkspaceConfig) Get() (SourcesT, bool) {
 
 // getFromApi gets the workspace config from api
 func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
-	url := fmt.Sprintf("%s/workspaceConfig", configBackendURL)
+	url := fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		logger.Error("Errored when sending request to the server", err)
