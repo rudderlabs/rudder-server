@@ -273,6 +273,6 @@ func backendConfigSubscriber() {
 	backendconfig.Subscribe(configChannel)
 	for {
 		config := <-configChannel
-		updateConfig(config.Data.(backendconfig.SourcesT))
+		updateConfig(config.Data.(backendconfig.ConfigT).FilteredConfig)
 	}
 }

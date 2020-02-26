@@ -19,43 +19,13 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey strin
 	return ""
 }
 
-func (WorkspaceConfig *WorkspaceConfig) filterOutNativeSDKDestinations(config SourcesT) SourcesT {
-	var modifiedSources SourcesT
-	modifiedSources.Sources = make([]SourceT, 0)
-	for _, source := range config.Sources {
-		destinations := make([]DestinationT, 0)
-		for _, destination := range source.Destinations {
-			isDeviceModeOnly := destination.DestinationDefinition.Config.(map[string]interface{})["deviceModeOnly"]
-			isUsingNativeSDK := destination.Config.(map[string]interface{})["useNativeSDK"]
-			isServerModeDestination := !(isDeviceModeOnly == true || isUsingNativeSDK == true)
-			destinationExists := destination.Deleted != true && destination.Connected != false
-			logger.Debug("Destination Name :", destination.Name, " deviceModeOnly: ", isDeviceModeOnly, " useNativeSDK: ", isUsingNativeSDK, " serverMode: ", isServerModeDestination)
-			logger.Debug("Destination Name :", destination.Name, " deleted: ", destination.Deleted, " connected: ", destination.Connected, " destination exists: ", destinationExists)
-			if isServerModeDestination && destinationExists {
-				destinations = append(destinations, destination)
-			}
-		}
-		source.Destinations = destinations
-		modifiedSources.Sources = append(modifiedSources.Sources, source)
-	}
-	return modifiedSources
-}
-
 //Get returns sources from the workspace
 func (workspaceConfig *WorkspaceConfig) Get() (SourcesT, bool) {
-	var config SourcesT
-	var ok bool
-
 	if configFromFile {
-		config, ok = workspaceConfig.getFromFile()
+		return workspaceConfig.getFromFile()
 	} else {
-		config, ok = workspaceConfig.getFromAPI()
+		return workspaceConfig.getFromAPI()
 	}
-	logger.Debug("Unfiltered complete config ", config)
-	if !ok {
-		return config, false
-	}
-	return workspaceConfig.filterOutNativeSDKDestinations(config), true
 }
 
 // getFromApi gets the workspace config from api

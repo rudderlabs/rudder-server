@@ -81,7 +81,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 
 	for {
 		config := <-ch
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT).FullConfig
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
 			if source.Enabled {

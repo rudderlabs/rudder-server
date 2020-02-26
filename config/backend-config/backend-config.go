@@ -53,7 +53,7 @@ type DestinationT struct {
 	Enabled               bool
 	Transformations       []TransformationT
 	Deleted               bool
-	Connected             bool
+	Disconnected          bool
 }
 
 type SourceT struct {
@@ -68,6 +68,11 @@ type SourceT struct {
 
 type SourcesT struct {
 	Sources []SourceT `json:"sources"`
+}
+
+type ConfigT struct {
+	FullConfig     SourcesT
+	FilteredConfig SourcesT
 }
 
 type TransformationT struct {
@@ -140,6 +145,28 @@ func init() {
 	loadConfig()
 }
 
+func filterOutNativeSDKDestinations(config SourcesT) SourcesT {
+	var modifiedSources SourcesT
+	modifiedSources.Sources = make([]SourceT, 0)
+	for _, source := range config.Sources {
+		destinations := make([]DestinationT, 0)
+		for _, destination := range source.Destinations {
+			isDeviceModeOnly := destination.DestinationDefinition.Config.(map[string]interface{})["deviceModeOnly"]
+			isUsingNativeSDK := destination.Config.(map[string]interface{})["useNativeSDK"]
+			isServerModeDestination := !(isDeviceModeOnly == true || isUsingNativeSDK == true)
+			destinationExists := destination.Deleted != true && destination.Disconnected != true
+			logger.Debug("Destination Name :", destination.Name, " deviceModeOnly: ", isDeviceModeOnly, " useNativeSDK: ", isUsingNativeSDK, " serverMode: ", isServerModeDestination)
+			logger.Debug("Destination Name :", destination.Name, " deleted: ", destination.Deleted, " connected: ", destination.Disconnected, " destination exists: ", destinationExists)
+			if isServerModeDestination && destinationExists {
+				destinations = append(destinations, destination)
+			}
+		}
+		source.Destinations = destinations
+		modifiedSources.Sources = append(modifiedSources.Sources, source)
+	}
+	return modifiedSources
+}
+
 func pollConfigUpdate() {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
@@ -147,13 +174,14 @@ func pollConfigUpdate() {
 		if !ok {
 			statConfigBackendError.Increment()
 		}
+		filteredSourcesJSON := filterOutNativeSDKDestinations(sourceJSON)
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
 			logger.Info("Config changed from ", curSourceJSON, " to : ", sourceJSON)
 			curSourceJSONLock.Lock()
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()
 			initialized = true
-			Eb.Publish("backendconfig", sourceJSON)
+			Eb.Publish("backendconfig", ConfigT{sourceJSON, filteredSourcesJSON})
 		}
 		time.Sleep(time.Duration(pollInterval))
 	}
@@ -170,7 +198,8 @@ func GetWorkspaceIDForWriteKey(writeKey string) string {
 func Subscribe(channel chan utils.DataEvent) {
 	Eb.Subscribe("backendconfig", channel)
 	curSourceJSONLock.RLock()
-	Eb.PublishToChannel(channel, "backendconfig", curSourceJSON)
+	filteredSourcesJSON := filterOutNativeSDKDestinations(curSourceJSON)
+	Eb.PublishToChannel(channel, "backendconfig", ConfigT{curSourceJSON, filteredSourcesJSON})
 	curSourceJSONLock.RUnlock()
 }
 
