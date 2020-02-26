@@ -18,7 +18,6 @@ phases:
       - echo build Docker image on `date`
       - docker build -t rudder-server:$VERSION -f build/Dockerfile-aws .
       - docker tag rudder-server:$VERSION rudderlabs/rudder-server:$VERSION
-      - docker tag rudder-server:$VERSION rudderlabs/rudder-server:$VERSION
   post_build:
     commands:
       - echo build Docker image complete `date`
