@@ -160,7 +160,11 @@ func (sf *HandleT) load() (errList []error) {
 		return []error{err}
 	}
 
+	logger.Infof("SF: Starting load for all %v tables\n", len(sf.Upload.Schema))
+	counter := 0
 	for tableName, columnMap := range sf.Upload.Schema {
+		counter++
+		logger.Infof("SF: Starting load for %v table:%s\n", counter, tableName)
 		timer := warehouseutils.DestStat(stats.TimerType, "single_table_upload_time", sf.Warehouse.Destination.ID)
 		timer.Start()
 		// sort columnnames
@@ -243,7 +247,9 @@ func (sf *HandleT) load() (errList []error) {
 			continue
 		}
 		timer.End()
+		logger.Infof("SF: Complete load for table:%s\n", tableName)
 	}
+	logger.Infof("SF: Complete load for all tables\n")
 	return
 }
 
