@@ -41,7 +41,6 @@ var (
 	configSubscriberLock                        sync.RWMutex
 	objectStorageDestinations                   []string
 	warehouseDestinations                       []string
-	toClearDB                                   bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -57,7 +56,6 @@ func loadConfig() {
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
-	toClearDB = config.GetBool("clearDB", false)
 }
 
 // Test Function
@@ -192,7 +190,7 @@ func main() {
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
 
-	clearDB := flag.Bool("cleardb", toClearDB, "a bool")
+	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
 	versionFlag := flag.Bool("v", false, "Print the current version and exit")

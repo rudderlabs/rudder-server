@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -578,7 +577,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		logger.Errorf("WH: Error getting file size of downloaded staging file: ", err)
 	}
 	fileSize := fi.Size()
-	logger.Infof("WH: Downloaded staging file %s size:%v", job.StagingFile.Location, fileSize)
+	logger.Debugf("WH: Downloaded staging file %s size:%v", job.StagingFile.Location, fileSize)
 	warehouseutils.DestStat(stats.CountType, "downloaded_staging_file_size", job.Warehouse.Destination.ID).Count(int(fileSize))
 
 	sortedTableColumnMap := make(map[string][]string)
@@ -591,7 +590,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		sort.Strings(sortedTableColumnMap[tableName])
 	}
 
-	logger.Infof("Starting read from downloaded staging file: %s", job.StagingFile.Location)
+	logger.Debugf("Starting read from downloaded staging file: %s", job.StagingFile.Location)
 	rawf, err := os.Open(jsonPath)
 	misc.AssertError(err)
 	reader, err := gzip.NewReader(rawf)
@@ -606,12 +605,6 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 
 	timer = warehouseutils.DestStat(stats.TimerType, "process_staging_file_to_csv_time", job.Warehouse.Destination.ID)
 	timer.Start()
-
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	warehouseutils.DestStat(stats.GaugeType, "mem_heap_alloc", job.Warehouse.Destination.ID).Gauge(int(m.HeapAlloc))
-	warehouseutils.DestStat(stats.GaugeType, "m_stack_in_use", job.Warehouse.Destination.ID).Gauge(int(m.StackInuse))
-	warehouseutils.DestStat(stats.GaugeType, "m_span_in_use", job.Warehouse.Destination.ID).Gauge(int(m.MSpanInuse))
 
 	lineBytesCounter := 0
 	for sc.Scan() {
@@ -703,7 +696,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	timer.End()
 	misc.PrintMemUsage()
 
-	logger.Infof("Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFile.Location)
+	logger.Debugf("Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFile.Location)
 	warehouseutils.DestStat(stats.CountType, "bytes_processed_in_staging_file", job.Warehouse.Destination.ID).Count(lineBytesCounter)
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{

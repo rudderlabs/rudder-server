@@ -524,12 +524,12 @@ func PrintMemUsage() {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
-	logger.Info("#########")
-	logger.Infof("Alloc = %v MiB\n", bToMb(m.Alloc))
-	logger.Infof("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
-	logger.Infof("\tSys = %v MiB\n", bToMb(m.Sys))
-	logger.Infof("\tNumGC = %v\n", m.NumGC)
-	logger.Info("#########")
+	logger.Debug("#########")
+	logger.Debugf("Alloc = %v MiB\n", bToMb(m.Alloc))
+	logger.Debugf("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
+	logger.Debugf("\tSys = %v MiB\n", bToMb(m.Sys))
+	logger.Debugf("\tNumGC = %v\n", m.NumGC)
+	logger.Debug("#########")
 }
 
 type GZipWriter struct {
