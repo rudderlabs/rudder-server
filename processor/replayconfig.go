@@ -10,8 +10,8 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type ReplayProcessorT struct {
@@ -40,12 +40,16 @@ func (r *ReplayProcessorT) getDBConnectionString() string {
 
 func (r *ReplayProcessorT) Setup() {
 	dbHandle, err := sql.Open("postgres", r.getDBConnectionString())
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	r.dbHandle = dbHandle
 	logger.Info("ReplayConfig: Connected to DB")
 	err = dbHandle.Ping()
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	r.createTableIfNotExists()
 }
@@ -53,19 +57,25 @@ func (r *ReplayProcessorT) Setup() {
 func (r *ReplayProcessorT) CrashRecover() {
 	sqlStatement := fmt.Sprintf("SELECT source_id, destination_id, notify_url, config FROM replay_config WHERE notified=false")
 	rows, err := r.dbHandle.Query(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer rows.Close()
 
 	var replayConfigs []replayConfigT
 	for rows.Next() {
 		var replayConfig replayConfigT
 		err := rows.Scan(&replayConfig.sourceID, &replayConfig.destinationID, &replayConfig.notifyURL, &replayConfig.config)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		replayConfigs = append(replayConfigs, replayConfig)
 	}
 
 	if len(replayConfigs) > 0 {
-		go r.notifyReplayConfigs(replayConfigs)
+		rruntime.Go(func() {
+			r.notifyReplayConfigs(replayConfigs)
+		})
 	}
 
 }
@@ -74,7 +84,9 @@ func (r *ReplayProcessorT) CrashRecover() {
 func (r *ReplayProcessorT) notifyReplayConfigs(replayConfigs []replayConfigT) {
 	for {
 		var replayConfigDataList []map[string]interface{}
-		misc.Assert(len(replayConfigs) > 0)
+		if len(replayConfigs) <= 0 {
+			panic(fmt.Errorf("len(replayConfigs):%d <= 0", len(replayConfigs)))
+		}
 		for _, replayConfig := range replayConfigs {
 			config := map[string]interface{}{
 				"sourceId":      replayConfig.sourceID,
@@ -114,7 +126,9 @@ func (r *ReplayProcessorT) ProcessNewReplays(replays []replayT, minJobID int64, 
 	}
 
 	if len(replayConfigs) > 0 {
-		go r.notifyReplayConfigs(replayConfigs)
+		rruntime.Go(func() {
+			r.notifyReplayConfigs(replayConfigs)
+		})
 	}
 	return nil
 }
@@ -133,7 +147,9 @@ func (r *ReplayProcessorT) createTableIfNotExists() {
 				created_at TIMESTAMP NOT NULL);
 	`
 	_, err := r.dbHandle.Exec(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 }
 
 // Processed => entry present and notified
@@ -148,7 +164,9 @@ func (r *ReplayProcessorT) checkIfReplayExists(sourceID string, destinationID st
 	case err == sql.ErrNoRows:
 		replayExists = false
 	case err != nil:
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	default:
 		replayExists = true
 	}
@@ -169,18 +187,24 @@ func (r *ReplayProcessorT) GetReplaysToProcess(replays []replayT) []replayT {
 func (r *ReplayProcessorT) markReplayConfigNotified(replayConfig replayConfigT) {
 	sqlStatement := fmt.Sprintf("UPDATE replay_config SET notified=$3, notified_at=$4 WHERE source_id=$1 AND destination_id=$2")
 	_, err := r.dbHandle.Exec(sqlStatement, replayConfig.sourceID, replayConfig.destinationID, true, time.Now())
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (r *ReplayProcessorT) CreateReplayConfig(replayConfig replayConfigT) error {
 
 	sqlStatement := fmt.Sprintf("INSERT INTO replay_config (source_id, destination_id, config, notify_url, created_at) VALUES ($1, $2, $3, $4, $5)")
 	stmt, err := r.dbHandle.Prepare(sqlStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer stmt.Close()
 
 	_, err = stmt.Exec(replayConfig.sourceID, replayConfig.destinationID, replayConfig.config, replayConfig.notifyURL, time.Now())
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	return err
 }
 

@@ -8,7 +8,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var (
@@ -34,7 +33,9 @@ func replaceDB() {
 	connInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=disable",
 		host, port, user, password)
 	db, err := sql.Open("postgres", connInfo)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer db.Close()
 
 	renameDBStatement := fmt.Sprintf("ALTER DATABASE %s RENAME TO %s",
@@ -50,7 +51,9 @@ func replaceDB() {
 
 	createDBStatement := fmt.Sprintf("CREATE DATABASE %s", dbname)
 	_, err = db.Exec(createDBStatement)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (handler *MaintenanceModeHandler) RecordAppStart(currTime int64) {
