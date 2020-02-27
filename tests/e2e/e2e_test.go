@@ -97,7 +97,7 @@ var _ = Describe("E2E", func() {
 			}
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			}, 5, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 100))
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 100))
 			// wait for couple of seconds for events to be processed by gateway
 			time.Sleep(2 * time.Second)
 			jobs := helpers.GetJobs(dbHandle, routerDBPrefix, 100)
