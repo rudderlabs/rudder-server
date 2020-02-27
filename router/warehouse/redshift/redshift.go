@@ -168,7 +168,10 @@ func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[
 
 	manifestFolder := "rudder-redshift-manifests"
 	dirName := "/" + manifestFolder + "/"
-	tmpDirPath := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
 	localManifestPath := fmt.Sprintf("%v%v", tmpDirPath+dirName, uuid.NewV4().String())
 	err = os.MkdirAll(filepath.Dir(localManifestPath), os.ModePerm)
 	if err != nil {
