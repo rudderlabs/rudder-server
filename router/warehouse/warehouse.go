@@ -70,12 +70,14 @@ type ProcessStagingFilesJobT struct {
 }
 
 type LoadFileJobT struct {
-	Upload          warehouseutils.UploadT
-	StagingFile     *StagingFileT
-	Schema          map[string]map[string]string
-	Warehouse       warehouseutils.WarehouseT
-	Wg              *misc.WaitGroup
-	LoadFileIDsChan chan []int64
+	Upload                     warehouseutils.UploadT
+	StagingFile                *StagingFileT
+	Schema                     map[string]map[string]string
+	Warehouse                  warehouseutils.WarehouseT
+	Wg                         *misc.WaitGroup
+	LoadFileIDsChan            chan []int64
+	TableToBucketFolderMap     map[string]string
+	TableToBucketFolderMapLock *sync.RWMutex
 }
 
 type StagingFileT struct {
@@ -458,16 +460,20 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	ch := make(chan []int64)
 	// queue the staging files in a go routine so that job.List can be higher than number of workers in createLoadFilesQ and not be blocked
 	logger.Debugf("WH: Starting batch processing %v stage files with %v workers for %s:%s", len(job.List), noOfWorkers, wh.destType, job.Warehouse.Destination.ID)
+	tableToBucketFolderMap := map[string]string{}
+	var tableToBucketFolderMapLock sync.RWMutex
 	rruntime.Go(func() {
 		func() {
 			for _, stagingFile := range job.List {
 				wh.createLoadFilesQ <- LoadFileJobT{
-					Upload:          job.Upload,
-					StagingFile:     stagingFile,
-					Schema:          job.Upload.Schema,
-					Warehouse:       job.Warehouse,
-					Wg:              wg,
-					LoadFileIDsChan: ch,
+					Upload:                     job.Upload,
+					StagingFile:                stagingFile,
+					Schema:                     job.Upload.Schema,
+					Warehouse:                  job.Warehouse,
+					Wg:                         wg,
+					LoadFileIDsChan:            ch,
+					TableToBucketFolderMap:     tableToBucketFolderMap,
+					TableToBucketFolderMapLock: &tableToBucketFolderMapLock,
 				}
 			}
 		}()
@@ -582,7 +588,10 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	logger.Debugf("WH: Starting processing staging file: %v at %v for %s:%s", job.StagingFile.ID, job.StagingFile.Location, wh.destType, job.Warehouse.Destination.ID)
 	// download staging file into a temp dir
 	dirName := "/rudder-warehouse-json-uploads-tmp/"
-	tmpDirPath := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
 	jsonPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, wh.destType, job.Warehouse.Destination.ID) + job.StagingFile.Location
 	err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 	jsonFile, err := os.Create(jsonPath)
@@ -609,6 +618,14 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	defer os.Remove(jsonPath)
 	timer.End()
 
+	fi, err := os.Stat(jsonPath)
+	if err != nil {
+		logger.Errorf("WH: Error getting file size of downloaded staging file: ", err)
+	}
+	fileSize := fi.Size()
+	logger.Debugf("WH: Downloaded staging file %s size:%v", job.StagingFile.Location, fileSize)
+	warehouseutils.DestStat(stats.CountType, "downloaded_staging_file_size", job.Warehouse.Destination.ID).Count(int(fileSize))
+
 	sortedTableColumnMap := make(map[string][]string)
 	// sort columns per table so as to maintaing same order in load file (needed in case of csv load file)
 	for tableName, columnMap := range job.Schema {
@@ -619,6 +636,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		sort.Strings(sortedTableColumnMap[tableName])
 	}
 
+	logger.Debugf("Starting read from downloaded staging file: %s", job.StagingFile.Location)
 	rawf, err := os.Open(jsonPath)
 	if err != nil {
 		panic(err)
@@ -638,8 +656,10 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	timer = warehouseutils.DestStat(stats.TimerType, "process_staging_file_to_csv_time", job.Warehouse.Destination.ID)
 	timer.Start()
 
+	lineBytesCounter := 0
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
+		lineBytesCounter += len(lineBytes)
 		var jsonLine map[string]interface{}
 		json.Unmarshal(lineBytes, &jsonLine)
 		metadata, _ := jsonLine["metadata"]
@@ -726,6 +746,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	timer.End()
 	misc.PrintMemUsage()
 
+	logger.Debugf("Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFile.Location)
+	warehouseutils.DestStat(stats.CountType, "bytes_processed_in_staging_file", job.Warehouse.Destination.ID).Count(lineBytesCounter)
+
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageMap[wh.destType],
 		Config:   job.Warehouse.Destination.Config.(map[string]interface{}),
@@ -741,7 +764,8 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		file, err := os.Open(outputFile.File.Name())
 		defer os.Remove(outputFile.File.Name())
 		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v", wh.destType, warehouseutils.ObjectStorageMap[wh.destType], tableName, job.StagingFile.ID)
-		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, fmt.Sprintf(`%v-%v`, strconv.FormatInt(job.Upload.ID, 10), uuid.NewV4().String()))
+		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, getBucketFolder(job, tableName))
+		// tableName, job.Warehouse.Source.ID, fmt.Sprintf(`%v-%v`, strconv.FormatInt(job.Upload.ID, 10), uuid.NewV4().String()))
 		if err != nil {
 			return loadFileIDs, err
 		}
@@ -762,6 +786,19 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	}
 	timer.End()
 	return
+}
+
+func getBucketFolder(job LoadFileJobT, tableName string) string {
+	job.TableToBucketFolderMapLock.Lock()
+	defer job.TableToBucketFolderMapLock.Unlock()
+
+	folderName, ok := job.TableToBucketFolderMap[tableName]
+	if !ok {
+		folderName = fmt.Sprintf(`%v-%v`, strconv.FormatInt(job.Upload.ID, 10), uuid.NewV4().String())
+		job.TableToBucketFolderMap[tableName] = folderName
+		return folderName
+	}
+	return folderName
 }
 
 func (wh *HandleT) initUploaders() {

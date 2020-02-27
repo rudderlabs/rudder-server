@@ -113,15 +113,21 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	uuid := uuid.NewV4()
 	logger.Debugf("BRT: Starting logging to %s", provider)
 
-	tmpDirPath := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
 	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.BatchDestination.Source.ID, uuid))
 
 	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
-	err := os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
+	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	if err != nil {
 		panic(err)
 	}
 	gzWriter, err := misc.CreateGZ(gzipFilePath)
+	if err != nil {
+		panic(err)
+	}
 
 	eventsFound := false
 	for _, job := range batchJobs.Jobs {
@@ -261,11 +267,10 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 
 	var statusList []*jobsdb.JobStatusT
 
-	//Identify jobs which can be processed
 	for _, job := range batchJobs.Jobs {
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
-			AttemptNum:    job.LastJobStatus.AttemptNum,
+			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 			JobState:      jobState,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
@@ -286,7 +291,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			Optional: true,
 		},
 	}
-	//Mark the jobs as executing
+	//Mark the status of the jobs
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 }
 
@@ -425,7 +430,6 @@ func (brt *HandleT) mainLoop() {
 
 			var statusList []*jobsdb.JobStatusT
 
-			//Identify jobs which can be processed
 			for _, job := range combinedList {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
@@ -490,7 +494,10 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		}
 
 		localTmpDirName := "/rudder-raw-data-dest-upload-crash-recovery/"
-		tmpDirPath := misc.CreateTMPDIR()
+		tmpDirPath, err := misc.CreateTMPDIR()
+		if err != nil {
+			panic(err)
+		}
 		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
 
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
@@ -553,7 +560,7 @@ func (brt *HandleT) crashRecover() {
 				RetryTime:     time.Now(),
 				JobState:      jobsdb.FailedState,
 				ErrorCode:     "",
-				ErrorResponse: []byte(`{}`), // check
+				ErrorResponse: []byte(`{"Error": "Rudder server crashed while copying jobs to storage"}`), // check
 			}
 			statusList = append(statusList, &status)
 		}
