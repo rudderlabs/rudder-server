@@ -70,12 +70,14 @@ type ProcessStagingFilesJobT struct {
 }
 
 type LoadFileJobT struct {
-	Upload          warehouseutils.UploadT
-	StagingFile     *StagingFileT
-	Schema          map[string]map[string]string
-	Warehouse       warehouseutils.WarehouseT
-	Wg              *misc.WaitGroup
-	LoadFileIDsChan chan []int64
+	Upload                     warehouseutils.UploadT
+	StagingFile                *StagingFileT
+	Schema                     map[string]map[string]string
+	Warehouse                  warehouseutils.WarehouseT
+	Wg                         *misc.WaitGroup
+	LoadFileIDsChan            chan []int64
+	TableToBucketFolderMap     map[string]string
+	TableToBucketFolderMapLock *sync.RWMutex
 }
 
 type StagingFileT struct {
@@ -458,16 +460,20 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	ch := make(chan []int64)
 	// queue the staging files in a go routine so that job.List can be higher than number of workers in createLoadFilesQ and not be blocked
 	logger.Debugf("WH: Starting batch processing %v stage files with %v workers for %s:%s", len(job.List), noOfWorkers, wh.destType, job.Warehouse.Destination.ID)
+	tableToBucketFolderMap := map[string]string{}
+	var tableToBucketFolderMapLock sync.RWMutex
 	rruntime.Go(func() {
 		func() {
 			for _, stagingFile := range job.List {
 				wh.createLoadFilesQ <- LoadFileJobT{
-					Upload:          job.Upload,
-					StagingFile:     stagingFile,
-					Schema:          job.Upload.Schema,
-					Warehouse:       job.Warehouse,
-					Wg:              wg,
-					LoadFileIDsChan: ch,
+					Upload:                     job.Upload,
+					StagingFile:                stagingFile,
+					Schema:                     job.Upload.Schema,
+					Warehouse:                  job.Warehouse,
+					Wg:                         wg,
+					LoadFileIDsChan:            ch,
+					TableToBucketFolderMap:     tableToBucketFolderMap,
+					TableToBucketFolderMapLock: &tableToBucketFolderMapLock,
 				}
 			}
 		}()
@@ -755,7 +761,8 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		file, err := os.Open(outputFile.File.Name())
 		defer os.Remove(outputFile.File.Name())
 		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v", wh.destType, warehouseutils.ObjectStorageMap[wh.destType], tableName, job.StagingFile.ID)
-		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, fmt.Sprintf(`%v-%v`, strconv.FormatInt(job.Upload.ID, 10), uuid.NewV4().String()))
+		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.Warehouse.Source.ID, getBucketFolder(job, tableName))
+		// tableName, job.Warehouse.Source.ID, fmt.Sprintf(`%v-%v`, strconv.FormatInt(job.Upload.ID, 10), uuid.NewV4().String()))
 		if err != nil {
 			return loadFileIDs, err
 		}
@@ -776,6 +783,19 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	}
 	timer.End()
 	return
+}
+
+func getBucketFolder(job LoadFileJobT, tableName string) string {
+	job.TableToBucketFolderMapLock.Lock()
+	defer job.TableToBucketFolderMapLock.Unlock()
+
+	folderName, ok := job.TableToBucketFolderMap[tableName]
+	if !ok {
+		folderName = fmt.Sprintf(`%v-%v`, strconv.FormatInt(job.Upload.ID, 10), uuid.NewV4().String())
+		job.TableToBucketFolderMap[tableName] = folderName
+		return folderName
+	}
+	return folderName
 }
 
 func (wh *HandleT) initUploaders() {

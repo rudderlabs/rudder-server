@@ -1597,6 +1597,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	}
 
 	gzWriter, err := misc.CreateGZ(path)
+	defer os.Remove(path)
 
 	var offset int64
 	for {
@@ -1656,8 +1657,6 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 		jd.totalTableDumpTimeStat.End()
 	}
 
-	err = os.Remove(path)
-	jd.assertError(err)
 	logger.Infof("Backed up table: %v at %v", tableName, output.Location)
 	return true, err
 }
