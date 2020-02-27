@@ -16,6 +16,7 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"golang.org/x/time/rate"
 )
 
@@ -233,8 +234,9 @@ func redisLoop() {
 }
 
 func main() {
-	fmt.Println("Starting server")
+	fmt.Println("Starting test sink server")
 
+	logger.Setup()
 	stats.Setup()
 
 	countStat = stats.NewStat("sink.request_count", stats.CountType)
