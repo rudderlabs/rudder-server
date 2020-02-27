@@ -19,7 +19,6 @@ package jobsdb
 
 import (
 	"bytes"
-	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -220,6 +219,7 @@ var (
 	mainCheckSleepDuration                     time.Duration
 	backupCheckSleepDuration                   time.Duration
 	useJoinForUnprocessed                      bool
+	backupRowsBatchSize                        int64
 )
 
 var tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat, jobsdbQueryTimeStat *stats.RudderStats
@@ -246,6 +246,7 @@ func loadConfig() {
 	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	maxTableSize = (config.GetInt64("JobsDB.maxTableSizeInMB", 300) * 1000000)
+	backupRowsBatchSize = config.GetInt64("JobsDB.backupRowsBatchSize", 10000)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
@@ -1595,32 +1596,44 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			backupDSRange.endTime,
 		)
 	}
-	logger.Infof("Backing up dataset: %v", tableName)
+	logger.Infof("Backing up table: %v", tableName)
 
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	misc.AssertError(err)
 
-	stmt := fmt.Sprintf(`SELECT json_agg(%[1]s order by job_id asc) FROM %[1]s`, tableName)
-	var rawJSONRows json.RawMessage
-	err = jd.dbHandle.QueryRow(stmt).Scan(&rawJSONRows)
+	var totalCount int64
+	countStmt := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tableName)
+	err = jd.dbHandle.QueryRow(countStmt).Scan(&totalCount)
 	misc.AssertError(err)
 
-	var rows []interface{}
-	err = json.Unmarshal(rawJSONRows, &rows)
-	misc.AssertError(err)
-	contentSlice := make([][]byte, len(rows))
-	for idx, row := range rows {
-		rowBytes, err := json.Marshal(row)
+	gzWriter, err := misc.CreateGZ(path)
+
+	var offset int64
+	for {
+		stmt := fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s order by job_id asc limit %[2]d offset %[3]d) AS dump_table`, tableName, backupRowsBatchSize, offset)
+		var rawJSONRows json.RawMessage
+		row := jd.dbHandle.QueryRow(stmt)
+		err = row.Scan(&rawJSONRows)
 		misc.AssertError(err)
-		contentSlice[idx] = rowBytes
-	}
-	content := bytes.Join(contentSlice[:], []byte("\n"))
 
-	gzipFile, err := os.Create(path)
-	gzipWriter := gzip.NewWriter(gzipFile)
-	_, err = gzipWriter.Write(content)
-	misc.AssertError(err)
-	gzipWriter.Close()
+		var rows []interface{}
+		err = json.Unmarshal(rawJSONRows, &rows)
+		misc.AssertError(err)
+		contentSlice := make([][]byte, len(rows))
+		for idx, row := range rows {
+			rowBytes, err := json.Marshal(row)
+			misc.AssertError(err)
+			contentSlice[idx] = rowBytes
+		}
+		content := bytes.Join(contentSlice[:], []byte("\n"))
+		gzWriter.Write(content)
+		offset += backupRowsBatchSize
+		if offset >= totalCount {
+			break
+		}
+	}
+
+	gzWriter.CloseGZ()
 	tableFileDumpTimeStat.End()
 
 	fileUploadTimeStat.Start()
@@ -1632,10 +1645,11 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
 
 	logger.Infof("Uploading backup table to object storage: %v", tableName)
+	var output filemanager.UploadOutput
 	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
-		_, err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
+		output, err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
 	} else {
-		_, err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
+		output, err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
 	}
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
@@ -1648,7 +1662,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	err = os.Remove(path)
 	jd.assertError(err)
-	logger.Infof("Backed up dataset: %v", tableName)
+	logger.Infof("Backed up table: %v at %v", tableName, output.Location)
 	return true, err
 }
 

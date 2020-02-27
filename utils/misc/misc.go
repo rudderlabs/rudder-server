@@ -558,6 +558,10 @@ func (w GZipWriter) WriteGZ(s string) {
 	w.BufWriter.WriteString(s)
 }
 
+func (w GZipWriter) Write(b []byte) {
+	w.BufWriter.Write(b)
+}
+
 func (w GZipWriter) CloseGZ() {
 	w.BufWriter.Flush()
 	w.GzWriter.Close()
