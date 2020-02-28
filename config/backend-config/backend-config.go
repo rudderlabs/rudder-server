@@ -53,7 +53,7 @@ type DestinationT struct {
 	Config                interface{}
 	Enabled               bool
 	Transformations       []TransformationT
-	isProcessorEnabled    bool
+	IsProcessorEnabled    bool
 }
 
 type SourceT struct {
@@ -146,7 +146,8 @@ func filterProcessorEnabledDestinations(config SourcesT) SourcesT {
 	for _, source := range config.Sources {
 		destinations := make([]DestinationT, 0)
 		for _, destination := range source.Destinations {
-			if destination.isProcessorEnabled {
+			logger.Debug(destination.Name, " IsProcessorEnabled: ", destination.IsProcessorEnabled)
+			if destination.IsProcessorEnabled {
 				destinations = append(destinations, destination)
 			}
 		}
