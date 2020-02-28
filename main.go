@@ -76,14 +76,14 @@ func readIOforResume(router router.HandleT) {
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch)
+	backendconfig.Subscribe(ch, "backendconfigFull")
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	dstToWhRouter := make(map[string]*warehouse.HandleT)
 
 	for {
 		config := <-ch
-		sources := config.Data.(backendconfig.ConfigT).FullConfig
+		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
 			if source.Enabled {

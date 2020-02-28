@@ -53,8 +53,7 @@ type DestinationT struct {
 	Config                interface{}
 	Enabled               bool
 	Transformations       []TransformationT
-	Deleted               bool
-	Disconnected          bool
+	isProcessorEnabled    bool
 }
 
 type SourceT struct {
@@ -69,11 +68,6 @@ type SourceT struct {
 
 type SourcesT struct {
 	Sources []SourceT `json:"sources"`
-}
-
-type ConfigT struct {
-	FullConfig     SourcesT
-	FilteredConfig SourcesT
 }
 
 type TransformationT struct {
@@ -146,19 +140,13 @@ func init() {
 	loadConfig()
 }
 
-func filterOutNativeSDKDestinations(config SourcesT) SourcesT {
+func filterProcessorEnabledDestinations(config SourcesT) SourcesT {
 	var modifiedSources SourcesT
 	modifiedSources.Sources = make([]SourceT, 0)
 	for _, source := range config.Sources {
 		destinations := make([]DestinationT, 0)
 		for _, destination := range source.Destinations {
-			isDeviceModeOnly := destination.DestinationDefinition.Config.(map[string]interface{})["deviceModeOnly"]
-			isUsingNativeSDK := destination.Config.(map[string]interface{})["useNativeSDK"]
-			isServerModeDestination := !(isDeviceModeOnly == true || isUsingNativeSDK == true)
-			destinationExists := destination.Deleted != true && destination.Disconnected != true
-			logger.Debug("Destination Name :", destination.Name, " deviceModeOnly: ", isDeviceModeOnly, " useNativeSDK: ", isUsingNativeSDK, " serverMode: ", isServerModeDestination)
-			logger.Debug("Destination Name :", destination.Name, " deleted: ", destination.Deleted, " connected: ", destination.Disconnected, " destination exists: ", destinationExists)
-			if isServerModeDestination && destinationExists {
+			if destination.isProcessorEnabled {
 				destinations = append(destinations, destination)
 			}
 		}
@@ -175,14 +163,15 @@ func pollConfigUpdate() {
 		if !ok {
 			statConfigBackendError.Increment()
 		}
-		filteredSourcesJSON := filterOutNativeSDKDestinations(sourceJSON)
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
 			logger.Info("Workspace Config changed")
 			curSourceJSONLock.Lock()
+			filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()
 			initialized = true
-			Eb.Publish("backendconfig", ConfigT{sourceJSON, filteredSourcesJSON})
+			Eb.Publish("backendconfig", filteredSourcesJSON)
+			Eb.Publish("backendconfigFull", sourceJSON)
 		}
 		time.Sleep(time.Duration(pollInterval))
 	}
@@ -196,11 +185,12 @@ func GetWorkspaceIDForWriteKey(writeKey string) string {
 	return backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 }
 
-func Subscribe(channel chan utils.DataEvent) {
-	Eb.Subscribe("backendconfig", channel)
+func Subscribe(channel chan utils.DataEvent, topic string) {
+	Eb.Subscribe(topic, channel)
 	curSourceJSONLock.RLock()
-	filteredSourcesJSON := filterOutNativeSDKDestinations(curSourceJSON)
-	Eb.PublishToChannel(channel, "backendconfig", ConfigT{curSourceJSON, filteredSourcesJSON})
+	filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
+	Eb.PublishToChannel(channel, "backendconfig", filteredSourcesJSON)
+	Eb.PublishToChannel(channel, "backendconfigFull", curSourceJSON)
 	curSourceJSONLock.RUnlock()
 }
 

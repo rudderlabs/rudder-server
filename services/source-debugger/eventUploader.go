@@ -277,9 +277,9 @@ func updateConfig(sources backendconfig.SourcesT) {
 
 func backendConfigSubscriber() {
 	configChannel := make(chan utils.DataEvent)
-	backendconfig.Subscribe(configChannel)
+	backendconfig.Subscribe(configChannel, "backendconfig")
 	for {
 		config := <-configChannel
-		updateConfig(config.Data.(backendconfig.ConfigT).FilteredConfig)
+		updateConfig(config.Data.(backendconfig.SourcesT))
 	}
 }

@@ -220,14 +220,14 @@ type replayT struct {
 
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch)
+	backendconfig.Subscribe(ch, "backendconfig")
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		destinationIDtoTypeMap = make(map[string]string)
 		destinationTransformationEnabledMap = make(map[string]bool)
-		sources := config.Data.(backendconfig.ConfigT).FilteredConfig
+		sources := config.Data.(backendconfig.SourcesT)
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				writeKeyDestinationMap[source.WriteKey] = source.Destinations
