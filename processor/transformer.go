@@ -248,10 +248,17 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		for _, respElem := range respArray {
 			respElemMap, castOk := respElem.(map[string]interface{})
 			if castOk {
-				if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
-					// TODO: Log errored resposnes to file
+				respOutput, ok := respElemMap["output"]
+				if !ok {
 					trans.failedStat.Increment()
 					continue
+				}
+				if output, castOk := respOutput.(map[string]interface{}); castOk {
+					if statusCode, ok := output["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
+						// TODO: Log errored resposnes to file
+						trans.failedStat.Increment()
+						continue
+					}
 				}
 			}
 			outClientEvents = append(outClientEvents, respElem)
