@@ -69,10 +69,6 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 Our helm scripts and instructions are in a separate repo - [Download Here][HelmScriptsGitRepo]
 
-# Setup Instructions (Terraform)
-
-Our terraform scripts and instructions are in a separate repo - [Download Here][TerraformScriptsGitRepo]
-
 
 # Setup Instructions (Native Installation)
 
