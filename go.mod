@@ -3,7 +3,6 @@ module github.com/rudderlabs/rudder-server
 go 1.12
 
 require (
-	cloud.google.com/go v0.53.0
 	cloud.google.com/go/bigquery v1.4.0
 	cloud.google.com/go/storage v1.6.0
 	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
