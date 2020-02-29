@@ -2,8 +2,10 @@ package warehouse
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -594,6 +596,8 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 			outputFileMap[tableName].WriteGZ(string(line) + "\n")
 		} else {
 			csvRow := []string{}
+			var buff bytes.Buffer
+			csvWriter := csv.NewWriter(&buff)
 			for _, columnName := range sortedTableColumnMap[tableName] {
 				if columnName == "uuid_ts" {
 					// add uuid_ts to track when event was processed into load_file
@@ -605,24 +609,26 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 					csvRow = append(csvRow, "")
 					continue
 				}
-				if stringVal, ok := columnVal.(string); ok {
-					// handle commas in column values for csv
-					if strings.Contains(stringVal, ",") {
-						columnVal = strings.ReplaceAll(stringVal, "\"", "\"\"")
-						columnVal = fmt.Sprintf(`"%s"`, columnVal)
+
+				columnType, ok := columns[columnName].(string)
+				// if the current data type doesnt match the one in warehouse, set value as NULL
+				dataTypeInSchema := job.Schema[tableName][columnName]
+				if ok && columnType != dataTypeInSchema {
+					if columnType == "int" && dataTypeInSchema == "float" {
+						// pass it along
+					} else if columnType == "float" && dataTypeInSchema == "int" {
+						columnVal = int(columnVal.(float64))
+					} else {
+						csvRow = append(csvRow, "")
+						continue
 					}
 				}
-				// avoid printing integers like 5000000 as 5e+06
-				columnType, castOk := columns[columnName].(string)
-				if castOk && columnType == "bigint" || columnType == "int" || columnType == "float" {
-					columnVal = columnVal.(float64)
-				}
-				if fmt.Sprintf("%v", columnVal) == "<nil>" {
-					columnVal = ""
-				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
+				fmt.Printf("%+v\n", csvRow)
 			}
-			outputFileMap[tableName].WriteGZ(strings.Join(csvRow, ",") + "\n")
+			csvWriter.Write(csvRow)
+			csvWriter.Flush()
+			outputFileMap[tableName].WriteGZ(buff.String())
 		}
 	}
 	reader.Close()
