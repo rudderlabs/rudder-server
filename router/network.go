@@ -140,7 +140,7 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 		queryParams := req.URL.Query()
 		for key, val := range requestQueryParams {
 			valString := fmt.Sprint(val)
-			list := strings.Split(valString, ",")
+			list := strings.Split(valString, "&&")
 			for _, listItem := range list {
 				queryParams.Add(key, fmt.Sprint(listItem))
 			}
