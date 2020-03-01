@@ -744,7 +744,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, false)
 				destStat.userTransform.End()
 			}
-			eventsToTransform = response.Events
+			for _, userTransformedEvent := range response.Events {
+				eventsToTransform = append(eventsToTransform, userTransformedEvent.(map[string]interface{})["output"])
+			}
 			logger.Debug("Custom Transform output size", len(eventsToTransform))
 		} else {
 			logger.Debug("No custom transformation")
