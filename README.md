@@ -29,7 +29,7 @@ See the [HackerNews][HackerNews] discussion around RudderStack.
 
 # Is RudderStack Production Ready?
 
-Yes, multiple companies are running RudderStack in production. One of our largest installations (Grofers, the largest online grocery in India) is sending a peak of 40K req/sec via RudderStack.
+Yes, multiple companies are running RudderStack in production. One of our largest installations (Grofers, the largest online grocery in India) is sending a peak of 40K req/sec via a multi-node RudderStack setup.
 
 # Contribution
 We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](CONTRIBUTING.md) for more information on contributing to RudderStack.
