@@ -27,9 +27,9 @@ We are building RudderStack because we believe open-source and cloud-prem is imp
 
 See the [HackerNews][HackerNews] discussion around RudderStack.
 
-# Is Anyone Running RudderStack in Production ?
+# Is it Production Ready?
 
-Yes, multiple companies. One of our largest installations (Grofers, the largest online grocery in India) is sending a peak of 40K req/sec via RudderStack.
+Yes, multiple companies are running RudderStack in production. One of our largest installations (Grofers, the largest online grocery in India) is sending a peak of 40K req/sec via RudderStack.
 
 # Contribution
 We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](CONTRIBUTING.md) for more information on contributing to RudderStack.
