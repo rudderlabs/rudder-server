@@ -3,49 +3,64 @@ module github.com/rudderlabs/rudder-server
 go 1.12
 
 require (
-	cloud.google.com/go v0.38.0
+	cloud.google.com/go/bigquery v1.4.0
+	cloud.google.com/go/storage v1.6.0
+	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
+	github.com/Azure/azure-pipeline-go v0.2.2 // indirect
 	github.com/Azure/azure-storage-blob-go v0.8.0
 	github.com/Azure/go-autorest/autorest/adal v0.8.1 // indirect
 	github.com/BurntSushi/toml v0.3.1
 	github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d // indirect
 	github.com/EagleChen/restrictor v0.0.0-20180420073700-9b81bbf8df1d
 	github.com/araddon/dateparse v0.0.0-20190622164848-0fb0a474d195
-	github.com/aws/aws-sdk-go v1.21.7
+	github.com/aws/aws-sdk-go v1.29.11
 	github.com/bitly/go-simplejson v0.5.0 // indirect
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
 	github.com/bugsnag/bugsnag-go v1.5.3
 	github.com/bugsnag/panicwrap v1.2.0 // indirect
 	github.com/dgraph-io/badger v1.6.0
+	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/garyburd/redigo v1.6.0 // indirect
-	github.com/go-redis/redis v6.15.2+incompatible
+	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/gofrs/uuid v3.2.0+incompatible // indirect
-	github.com/golang/protobuf v1.3.2 // indirect
+	github.com/gogo/protobuf v1.3.1 // indirect
+	github.com/golang/protobuf v1.3.4 // indirect
 	github.com/google/uuid v1.1.1 // indirect
-	github.com/iancoleman/strcase v0.0.0-20190422225806-e506e3ef7365
+	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334
 	github.com/joho/godotenv v1.3.0
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
-	github.com/lib/pq v1.2.0
-	github.com/minio/minio-go/v6 v6.0.44
+	github.com/lib/pq v1.3.0
+	github.com/mattn/go-ieproxy v0.0.0-20200203040449-2dbc853185d9 // indirect
+	github.com/minio/minio-go/v6 v6.0.49
 	github.com/onsi/ginkgo v1.10.1
 	github.com/onsi/gomega v1.7.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
+	github.com/pelletier/go-toml v1.6.0 // indirect
 	github.com/pkg/browser v0.0.0-20180916011732-0a3d74bf9ce4 // indirect
 	github.com/rs/cors v1.7.0
 	github.com/satori/go.uuid v1.2.0
 	github.com/segmentio/ksuid v1.0.2
 	github.com/snowflakedb/gosnowflake v1.3.4
-	github.com/spf13/viper v1.4.0
+	github.com/spf13/afero v1.2.2 // indirect
+	github.com/spf13/cast v1.3.1
+	github.com/spf13/jwalterweatherman v1.1.0 // indirect
+	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/spf13/viper v1.6.2
 	github.com/thoas/go-funk v0.5.0
-	github.com/tidwall/gjson v1.3.2
+	github.com/tidwall/gjson v1.5.0
+	github.com/tidwall/pretty v1.0.1 // indirect
 	github.com/tidwall/sjson v1.0.4
-	go.opencensus.io v0.22.2 // indirect
-	go.uber.org/zap v1.10.0
-	golang.org/x/net v0.0.0-20191207000613-e7e4b65ae663 // indirect
-	golang.org/x/sys v0.0.0-20191206220618-eeba5f6aabab // indirect
+	go.uber.org/multierr v1.5.0 // indirect
+	go.uber.org/zap v1.14.0
+	golang.org/x/crypto v0.0.0-20200221231518-2aa609cf4a9d // indirect
+	golang.org/x/net v0.0.0-20200226121028-0de0cce0169b // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
-	google.golang.org/api v0.14.0
+	golang.org/x/tools v0.0.0-20200226224502-204d844ad48d // indirect
+	google.golang.org/api v0.19.0
+	google.golang.org/genproto v0.0.0-20200226201735-46b91f19d98c // indirect
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
+	gopkg.in/ini.v1 v1.52.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
-	gopkg.in/yaml.v2 v2.2.7 // indirect
+	gopkg.in/yaml.v2 v2.2.8 // indirect
 )
