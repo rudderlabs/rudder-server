@@ -565,6 +565,7 @@ func (wh *HandleT) initWorkers() {
 							warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
 							err := wh.createLoadFiles(&job)
 							if err != nil {
+								warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 								warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
 								break
 							}
