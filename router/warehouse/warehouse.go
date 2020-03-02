@@ -571,6 +571,7 @@ func (wh *HandleT) initWorkers() {
 						}
 						err := wh.SyncLoadFilesToWarehouse(&job)
 						if err != nil {
+							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 							break
 						}
 						warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.Warehouse.Destination.ID).Count(len(job.List))
