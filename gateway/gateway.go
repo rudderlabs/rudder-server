@@ -512,7 +512,10 @@ func (gateway *HandleT) gcBadgerDB() {
 func (gateway *HandleT) openBadger(clearDB *bool) {
 	var err error
 	badgerPathName := "/badgerdb"
-	tmpDirPath := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
 	path := fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 	gateway.badgerDB, err = badger.Open(badger.DefaultOptions(path))
 	if err != nil {

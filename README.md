@@ -27,6 +27,10 @@ We are building RudderStack because we believe open-source and cloud-prem is imp
 
 See the [HackerNews][HackerNews] discussion around RudderStack.
 
+# Is RudderStack Production Ready?
+
+Yes, multiple companies are running RudderStack in production. One of our largest installations (Grofers, the largest online grocery in India) is sending a peak of 40K req/sec via a multi-node RudderStack setup.
+
 # Contribution
 We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](CONTRIBUTING.md) for more information on contributing to RudderStack.
 
@@ -69,10 +73,6 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 Our helm scripts and instructions are in a separate repo - [Download Here][HelmScriptsGitRepo]
 
-# Setup Instructions (Terraform)
-
-Our terraform scripts and instructions are in a separate repo - [Download Here][TerraformScriptsGitRepo]
-
 
 # Setup Instructions (Native Installation)
 
@@ -92,7 +92,7 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 4. Go to the [dashboard][Dashboard] and set up your account. Copy your workspace token from top of the home page
 5. Clone this repository. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
  and navigate to the transformer directory `cd rudder-transformer`
-6. Start the destination transformer `node destTransformer.js`
+6. Install dependencies `npm i` and start the destination transformer `node destTransformer.js`
 7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
 8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4
 9. Run the backend server `go run -mod=vendor main.go`

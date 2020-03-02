@@ -18,7 +18,7 @@ var dbHandle *sql.DB
 var gatewayDBPrefix string
 var routerDBPrefix string
 var dbPollFreqInS int = 1
-var gatewayDBCheckBufferInS int = 2
+var gatewayDBCheckBufferInS int = 15
 var jobSuccessStatus string = "succeeded"
 
 var _ = BeforeSuite(func() {
@@ -39,10 +39,15 @@ var _ = Describe("E2E", func() {
 		It("verify event is stored in both gateway and router db", func() {
 			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			initialRouterJobStatusCount := helpers.GetJobStausCount(dbHandle, jobSuccessStatus, routerDBPrefix)
+			initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 
-			helpers.SendEventRequest(helpers.EventOptsT{})
+			//Source with WriteKey: 1YNNaMMvymQfQh72gHiOLQ1zrDM has one S3 and one GA as destinations.
+			helpers.SendEventRequest(helpers.EventOptsT{
+				WriteKey: "1YNNaMMvymQfQh72gHiOLQ1zrDM",
+			})
 
+			// wait for some seconds for events to be processed by gateway
+			time.Sleep(6 * time.Second)
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
@@ -51,22 +56,25 @@ var _ = Describe("E2E", func() {
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 1))
 			// also check jobstatus records are created with 'succeeded' status
 			Eventually(func() int {
-				return helpers.GetJobStausCount(dbHandle, jobSuccessStatus, routerDBPrefix)
+				return helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobStatusCount + 1))
 		})
 
+		//Source with WriteKey: 1YNT7MhrKNIE82bfHwIsWE13uS9 has one GA and one AMPLITUDE as destinations.
 		It("should create router job for both GA and AM for single event request", func() {
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			initialRouterJobStatusCount := helpers.GetJobStausCount(dbHandle, jobSuccessStatus, routerDBPrefix)
+			initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 			helpers.SendEventRequest(helpers.EventOptsT{
-				Integrations: map[string]bool{"All": true},
+				WriteKey: "1YNT7MhrKNIE82bfHwIsWE13uS9",
 			})
+			// wait for some seconds for events to be processed by gateway
+			time.Sleep(6 * time.Second)
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 2))
 			// also check jobstatus records are created with 'succeeded' status
 			Eventually(func() int {
-				return helpers.GetJobStausCount(dbHandle, jobSuccessStatus, routerDBPrefix)
+				return helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobStatusCount + 2))
 			Eventually(func() []string {
 				jobs := helpers.GetJobs(dbHandle, routerDBPrefix, 2)
@@ -90,23 +98,24 @@ var _ = Describe("E2E", func() {
 
 		It("should maintain order of events", func() {
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			for i := 1; i <= 100; i++ {
+			numOfTestEvents := 100
+			for i := 1; i <= numOfTestEvents; i++ {
 				helpers.SendEventRequest(helpers.EventOptsT{
 					GaVal: i,
 				})
 			}
+			// wait for some seconds for events to be processed by gateway
+			time.Sleep(6 * time.Second)
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			}, 5, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 100))
-			// wait for couple of seconds for events to be processed by gateway
-			time.Sleep(2 * time.Second)
-			jobs := helpers.GetJobs(dbHandle, routerDBPrefix, 100)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + numOfTestEvents))
+			jobs := helpers.GetJobs(dbHandle, routerDBPrefix, numOfTestEvents)
 			for index, _ := range jobs {
 				if index == 0 {
 					continue
 				}
-				result1, _ := strconv.Atoi(gjson.Get(string(jobs[index].EventPayload), "payload.ev").String())
-				result2, _ := strconv.Atoi(gjson.Get(string(jobs[index-1].EventPayload), "payload.ev").String())
+				result1, _ := strconv.Atoi(gjson.Get(string(jobs[index].EventPayload), "params.ev").String())
+				result2, _ := strconv.Atoi(gjson.Get(string(jobs[index-1].EventPayload), "params.ev").String())
 				Expect(result1).Should(BeNumerically("<", result2))
 			}
 		})

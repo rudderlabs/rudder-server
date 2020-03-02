@@ -112,7 +112,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debug("Router is disabled")
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
+				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
@@ -133,7 +133,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			resp := fmt.Sprintf(`{"blocking_id":"%v", "user_id":"%s"}`, previousFailedJobID, userID)
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
+				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     respStatus,
@@ -193,7 +193,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			JobID:         job.JobID,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
-			AttemptNum:    job.LastJobStatus.AttemptNum,
+			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 			ErrorCode:     strconv.Itoa(respStatusCode),
 			ErrorResponse: []byte(`{}`),
 		}
@@ -202,7 +202,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			//#JobOrder (see other #JobOrder comment)
 			// failedAttemptsStat.Count(job.LastJobStatus.AttemptNum)
 			eventsDeliveredStat.Increment()
-			status.AttemptNum = job.LastJobStatus.AttemptNum
+			status.AttemptNum = job.LastJobStatus.AttemptNum + 1
 			status.JobState = jobsdb.SucceededState
 			logger.Debugf("[%v Router] :: sending success status to response", rt.destID)
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
@@ -228,7 +228,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				//We still mark the job failed but don't increment the AttemptNum
 				//This is a heuristic. Will fix it with Sayan's idea
 				status.JobState = jobsdb.FailedState
-				status.AttemptNum = job.LastJobStatus.AttemptNum
+				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
 				logger.Debugf("[%v Router] :: Marking job as failed and not incrementing the AttemptNum since jobs from more than 5 users are failing for destination", rt.destID)
 				break
 			case status.AttemptNum >= maxFailedCountForJob:
@@ -241,7 +241,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				//doubling sleep in between. That case will be handled in case above
 				logger.Debugf("[%v Router] :: Aborting the job and deleting from user map", rt.destID)
 				status.JobState = jobsdb.AbortedState
-				status.AttemptNum = job.LastJobStatus.AttemptNum
+				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
 				eventsAbortedStat.Increment()
 				break
 			default:
@@ -496,7 +496,7 @@ func (rt *HandleT) generatorLoop() {
 			if w != nil {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
-					AttemptNum:    job.LastJobStatus.AttemptNum,
+					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 					JobState:      jobsdb.ExecutingState,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),

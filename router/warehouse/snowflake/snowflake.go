@@ -159,7 +159,11 @@ func (sf *HandleT) load() (errList []error) {
 		return []error{err}
 	}
 
+	logger.Infof("SF: Starting load for all %v tables\n", len(sf.Upload.Schema))
+	counter := 0
 	for tableName, columnMap := range sf.Upload.Schema {
+		counter++
+		logger.Infof("SF: Starting load for %v table:%s\n", counter, tableName)
 		timer := warehouseutils.DestStat(stats.TimerType, "single_table_upload_time", sf.Warehouse.Destination.ID)
 		timer.Start()
 		// sort columnnames
@@ -181,13 +185,6 @@ func (sf *HandleT) load() (errList []error) {
 			continue
 		}
 
-		// BEGIN TRANSACTION
-		tx, err := sf.Db.Begin()
-		if err != nil {
-			errList = append(errList, err)
-			continue
-		}
-
 		csvObjectLocation, err := warehouseutils.GetLoadFileLocation(sf.DbHandle, sf.Warehouse.Source.ID, sf.Warehouse.Destination.ID, tableName, sf.Upload.StartLoadFileID, sf.Upload.EndLoadFileID)
 		if err != nil {
 			panic(err)
@@ -198,9 +195,8 @@ func (sf *HandleT) load() (errList []error) {
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s."%s"`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, accessKeyID, accessKey)
 
 		logger.Infof("SF: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
-		_, err = tx.Exec(sqlStatement)
+		_, err = sf.Db.Exec(sqlStatement)
 		if err != nil {
-			tx.Rollback()
 			errList = append(errList, err)
 			continue
 		}
@@ -230,21 +226,16 @@ func (sf *HandleT) load() (errList []error) {
 									WHEN NOT MATCHED THEN
 									INSERT (%[5]s) VALUES (%[6]s)`, sf.Namespace, strings.ToUpper(tableName), stagingTableName, primaryKey, columnNames, stagingColumnNames)
 		logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
-		_, err = tx.Exec(sqlStatement)
+		_, err = sf.Db.Exec(sqlStatement)
 		if err != nil {
-			tx.Rollback()
 			errList = append(errList, err)
 			continue
 		}
 
-		err = tx.Commit()
-		if err != nil {
-			tx.Rollback()
-			errList = append(errList, err)
-			continue
-		}
 		timer.End()
+		logger.Infof("SF: Complete load for table:%s\n", tableName)
 	}
+	logger.Infof("SF: Complete load for all tables\n")
 	return
 }
 
@@ -267,7 +258,14 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 	var err error
 	var db *sql.DB
 	if db, err = sql.Open("snowflake", url); err != nil {
-		return nil, fmt.Errorf("snowflake connect error : (%v)", err)
+		return nil, fmt.Errorf("SF: snowflake connect error : (%v)", err)
+	}
+
+	alterStatement := fmt.Sprintf(`ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`)
+	logger.Infof("SF: Altering session with abort_detached_query for snowflake: %v", alterStatement)
+	_, err = db.Exec(alterStatement)
+	if err != nil {
+		return nil, fmt.Errorf("SF: snowflake alter session error : (%v)", err)
 	}
 	return db, nil
 }
@@ -349,7 +347,7 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	sf.CurrentSchema = currSchema.Schema
 	sf.Namespace = strings.ToUpper(currSchema.Namespace)
 	if sf.Namespace == "" {
-		logger.Infof("Namespace not found in currentschema for SF:%s, setting from upload: %s", sf.Warehouse.Destination.ID, sf.Upload.Namespace)
+		logger.Infof("SF: Namespace not found in currentschema for SF:%s, setting from upload: %s", sf.Warehouse.Destination.ID, sf.Upload.Namespace)
 		sf.Namespace = strings.ToUpper(sf.Upload.Namespace)
 	}
 
@@ -373,5 +371,6 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 			err = sf.Export()
 		}
 	}
+	sf.Db.Close()
 	return
 }

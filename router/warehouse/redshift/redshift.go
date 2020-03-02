@@ -61,6 +61,12 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 
 func (rs *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sortKeyField := "received_at"
+	if _, ok := columns["received_at"]; !ok {
+		sortKeyField = "uuid_ts"
+		if _, ok = columns["uuid_ts"]; !ok {
+			sortKeyField = "id"
+		}
+	}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) SORTKEY(%s)`, name, columnsWithDataTypes(columns, ""), sortKeyField)
 	logger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
@@ -168,7 +174,10 @@ func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[
 
 	manifestFolder := "rudder-redshift-manifests"
 	dirName := "/" + manifestFolder + "/"
-	tmpDirPath := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
 	localManifestPath := fmt.Sprintf("%v%v", tmpDirPath+dirName, uuid.NewV4().String())
 	err = os.MkdirAll(filepath.Dir(localManifestPath), os.ModePerm)
 	if err != nil {

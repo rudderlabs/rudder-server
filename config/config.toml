@@ -42,6 +42,7 @@ maxTableSizeInMB = 300
 mainCheckSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
 enableBackup = true
+backupRowsBatchSize = 10000
 
 [Router]
 jobQueryBatchSize = 10000
