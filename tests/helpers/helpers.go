@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/sjson"
@@ -89,12 +88,13 @@ type EventOptsT struct {
 func SendEventRequest(options EventOptsT) int {
 	if options.Integrations == nil {
 		options.Integrations = map[string]bool{
-			"All":              false,
-			"Google Analytics": true,
+			"All": true,
 		}
 	}
+
+	//Source with WriteKey: 1YNNaMMvymQfQh72gHiOLQ1zrDM has one S3 and one GA as destinations. Using this WriteKey as default.
 	if options.WriteKey == "" {
-		options.WriteKey = "1TEg8hHALRE6iIioOsUTAd3Ejq0"
+		options.WriteKey = "1YNNaMMvymQfQh72gHiOLQ1zrDM"
 	}
 	if options.ID == "" {
 		options.ID = ksuid.New().String()
@@ -131,18 +131,24 @@ func GetTableNamesWithPrefix(dbHandle *sql.DB, prefix string) []string {
                                         FROM pg_catalog.pg_tables
                                         WHERE schemaname != 'pg_catalog' AND
                                         schemaname != 'information_schema'`)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer stmt.Close()
 
 	rows, err := stmt.Query()
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer rows.Close()
 
 	tableNames := []string{}
 	for rows.Next() {
 		var tbName string
 		err = rows.Scan(&tbName)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		if strings.HasPrefix(tbName, prefix) {
 			tableNames = append(tableNames, tbName)
 		}
@@ -163,8 +169,8 @@ func GetJobsCount(dbHandle *sql.DB, prefix string) int {
 	return count
 }
 
-// GetJobStausCount returns count of job status across all tables with specified prefix
-func GetJobStausCount(dbHandle *sql.DB, jobState string, prefix string) int {
+// GetJobStatusCount returns count of job status across all tables with specified prefix
+func GetJobStatusCount(dbHandle *sql.DB, jobState string, prefix string) int {
 	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_job_status_")
 	count := 0
 	for _, tableName := range tableNames {
@@ -181,7 +187,7 @@ func GetJobs(dbHandle *sql.DB, prefix string, limit int) []*jobsdb.JobT {
 	var jobList []*jobsdb.JobT
 	for _, tableName := range tableNames {
 		rows, err := dbHandle.Query(fmt.Sprintf(`select %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
-                                               %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at from %[1]s order by %[1]s.created_at desc limit %v;`, tableName, limit-len(jobList)))
+		%[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at from %[1]s order by %[1]s.created_at desc, %[1]s.job_id desc limit %v;`, tableName, limit-len(jobList)))
 		if err != nil {
 			panic(err)
 		}

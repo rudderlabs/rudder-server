@@ -77,6 +77,8 @@ github.com/dgraph-io/badger/pb
 github.com/dgraph-io/badger/skl
 github.com/dgraph-io/badger/table
 github.com/dgraph-io/badger/y
+# github.com/dgrijalva/jwt-go v3.2.0+incompatible
+github.com/dgrijalva/jwt-go
 # github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2
 github.com/dgryski/go-farm
 # github.com/dustin/go-humanize v1.0.0
@@ -99,6 +101,8 @@ github.com/gofrs/uuid
 # github.com/gogo/protobuf v1.2.1
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/sortkeys
+# github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
+github.com/golang/glog
 # github.com/golang/groupcache v0.0.0-20190702054246-869f871628b6
 github.com/golang/groupcache/lru
 # github.com/golang/protobuf v1.3.2
@@ -108,6 +112,8 @@ github.com/golang/protobuf/ptypes
 github.com/golang/protobuf/ptypes/any
 github.com/golang/protobuf/ptypes/duration
 github.com/golang/protobuf/ptypes/timestamp
+# github.com/google/uuid v1.1.1
+github.com/google/uuid
 # github.com/googleapis/gax-go/v2 v2.0.5
 github.com/googleapis/gax-go/v2
 # github.com/hashicorp/hcl v1.0.0
@@ -139,7 +145,7 @@ github.com/kardianos/osext
 github.com/lib/pq
 github.com/lib/pq/oid
 github.com/lib/pq/scram
-# github.com/magiconair/properties v1.8.0
+# github.com/magiconair/properties v1.8.1
 github.com/magiconair/properties
 # github.com/mattn/go-ieproxy v0.0.0-20190610004146-91bb50d98149
 github.com/mattn/go-ieproxy
@@ -192,6 +198,8 @@ github.com/onsi/gomega/types
 github.com/patrickmn/go-cache
 # github.com/pelletier/go-toml v1.2.0
 github.com/pelletier/go-toml
+# github.com/pkg/browser v0.0.0-20180916011732-0a3d74bf9ce4
+github.com/pkg/browser
 # github.com/pkg/errors v0.8.1
 github.com/pkg/errors
 # github.com/rs/cors v1.7.0
@@ -200,6 +208,8 @@ github.com/rs/cors
 github.com/satori/go.uuid
 # github.com/segmentio/ksuid v1.0.2
 github.com/segmentio/ksuid
+# github.com/snowflakedb/gosnowflake v1.3.4
+github.com/snowflakedb/gosnowflake
 # github.com/spf13/afero v1.1.2
 github.com/spf13/afero
 github.com/spf13/afero/mem
@@ -209,8 +219,10 @@ github.com/spf13/cast
 github.com/spf13/jwalterweatherman
 # github.com/spf13/pflag v1.0.3
 github.com/spf13/pflag
-# github.com/spf13/viper v1.4.0
+# github.com/spf13/viper v1.6.2
 github.com/spf13/viper
+# github.com/subosito/gotenv v1.2.0
+github.com/subosito/gotenv
 # github.com/thoas/go-funk v0.5.0
 github.com/thoas/go-funk
 # github.com/tidwall/gjson v1.3.2
@@ -252,6 +264,7 @@ go.uber.org/zap/zapcore
 # golang.org/x/crypto v0.0.0-20191206172530-e9b2fee46413
 golang.org/x/crypto/argon2
 golang.org/x/crypto/blake2b
+golang.org/x/crypto/ocsp
 # golang.org/x/net v0.0.0-20191207000613-e7e4b65ae663
 golang.org/x/net/context
 golang.org/x/net/context/ctxhttp
@@ -365,7 +378,7 @@ google.golang.org/grpc/tap
 gopkg.in/alexcesaro/statsd.v2
 # gopkg.in/fsnotify.v1 v1.4.7
 gopkg.in/fsnotify.v1
-# gopkg.in/ini.v1 v1.42.0
+# gopkg.in/ini.v1 v1.51.0
 gopkg.in/ini.v1
 # gopkg.in/natefinch/lumberjack.v2 v2.0.0
 gopkg.in/natefinch/lumberjack.v2

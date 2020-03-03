@@ -42,6 +42,7 @@ maxTableSizeInMB = 300
 mainCheckSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
 enableBackup = true
+backupRowsBatchSize = 10000
 
 [Router]
 jobQueryBatchSize = 10000
@@ -90,6 +91,8 @@ maxRetry = 30
 retrySleepInMS = 100
 
 [BackendConfig]
+configFromFile = false
+configJSONPath = "./workspaceConfig.json"
 pollIntervalInS = 5
 
 
@@ -122,7 +125,14 @@ consoleJsonFormat=false
 fileJsonFormat=false
 logFileLocation="/tmp/rudder_log.log"
 logFileSize = 100 # in MB
-enableTimestamp=false
+enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
 
+# runtime stats are collected using go runtime package and published to statsd
+[RuntimeStats]
+enabled=true
+statsCollectionInterval=10
+enableCPUStats=true
+enableMemStats=true
+enableGCStats=true

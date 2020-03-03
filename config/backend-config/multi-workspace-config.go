@@ -26,20 +26,20 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) SetUp() {
 	multiWorkspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
 }
 
-//GetWorkspaceIDForWriteKey return workspaceID for the given writeKey
-func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForWriteKey(givenWriteKey string) string {
+//GetWorkspaceIDForWriteKey returns workspaceID for the given writeKey
+func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
 
-	if workspaceID, ok := multiWorkspaceConfig.writeKeyToWorkspaceIDMap[givenWriteKey]; ok {
+	if workspaceID, ok := multiWorkspaceConfig.writeKeyToWorkspaceIDMap[writeKey]; ok {
 		return workspaceID
 	}
 
 	return ""
 }
 
-//GetBackendConfig returns sources from all hosted workspaces
-func (multiWorkspaceConfig *MultiWorkspaceConfig) GetBackendConfig() (SourcesT, bool) {
+//Get returns sources from all hosted workspaces
+func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaceConfig", configBackendURL)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
