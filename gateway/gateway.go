@@ -482,7 +482,7 @@ func (gateway *HandleT) startWebHandler() {
 // Gets the config from config backend and extracts enabled writekeys
 func backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch)
+	backendconfig.Subscribe(ch, "backendconfig")
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()

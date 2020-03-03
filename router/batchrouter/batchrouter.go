@@ -61,16 +61,16 @@ type ObjectStorageT struct {
 
 func (brt *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch)
+	backendconfig.Subscribe(ch, "backendconfigFull")
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
 		brt.batchDestinations = []DestinationT{}
 		allSources := config.Data.(backendconfig.SourcesT)
 		for _, source := range allSources.Sources {
-			if source.Enabled && len(source.Destinations) > 0 {
+			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if destination.Enabled && destination.DestinationDefinition.Name == brt.destType {
+					if destination.DestinationDefinition.Name == brt.destType {
 						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
 					}
 				}
@@ -382,10 +382,6 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 
 func (brt *HandleT) mainLoop() {
 	for {
-		if !brt.isEnabled {
-			time.Sleep(2 * mainLoopSleep)
-			continue
-		}
 		time.Sleep(mainLoopSleep)
 		for _, batchDestination := range brt.batchDestinations {
 			if isDestInProgress(batchDestination) {

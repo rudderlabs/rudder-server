@@ -220,7 +220,7 @@ type replayT struct {
 
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch)
+	backendconfig.Subscribe(ch, "backendconfig")
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
