@@ -739,15 +739,15 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				// json.Unmarshal returns int as float
 				// convert int's back to int to avoid writing integers like 123456789 as 1.23456789e+08
 				// most warehouses only support scientific notation only for floats and not integers
-				if columnType == "int" {
+				if columnType == "int" || columnType == "bigint" {
 					columnVal = int(columnVal.(float64))
 				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
-					if columnType == "int" && dataTypeInSchema == "float" {
+					if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
-					} else if columnType == "float" && dataTypeInSchema == "int" {
+					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
 						columnVal = int(columnVal.(float64))
 					} else {
 						csvRow = append(csvRow, "")
