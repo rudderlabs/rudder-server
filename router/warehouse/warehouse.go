@@ -725,6 +725,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				}
 
 				columnType, ok := columns[columnName].(string)
+				if columnType == "int" {
+					columnVal = int(columnVal.(float64))
+				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
@@ -738,7 +741,7 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 					}
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
-				fmt.Printf("%+v\n", csvRow)
+
 			}
 			csvWriter.Write(csvRow)
 			csvWriter.Flush()
