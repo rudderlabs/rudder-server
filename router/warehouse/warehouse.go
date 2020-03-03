@@ -639,10 +639,12 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	logger.Debugf("Starting read from downloaded staging file: %s", job.StagingFile.Location)
 	rawf, err := os.Open(jsonPath)
 	if err != nil {
+		logger.Errorf("WH: Error opening file using os.Open at path:%s downloaded from %s", jsonPath, job.StagingFile.Location)
 		panic(err)
 	}
 	reader, err := gzip.NewReader(rawf)
 	if err != nil {
+		logger.Errorf("WH: Error reading file using gzip.NewReader at path:%s downloaded from %s", jsonPath, job.StagingFile.Location)
 		panic(err)
 	}
 
@@ -687,6 +689,12 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 					continue
 				}
 				columnType, ok := columns[columnName].(string)
+				// json.Unmarshal returns int as float
+				// convert int's back to int to avoid writing integers like 123456789 as 1.23456789e+08
+				// most warehouses only support scientific notation only for floats and not integers
+				if columnType == "int" {
+					columnData[columnName] = int(columnVal.(float64))
+				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
@@ -723,6 +731,12 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				}
 
 				columnType, ok := columns[columnName].(string)
+				// json.Unmarshal returns int as float
+				// convert int's back to int to avoid writing integers like 123456789 as 1.23456789e+08
+				// most warehouses only support scientific notation only for floats and not integers
+				if columnType == "int" {
+					columnVal = int(columnVal.(float64))
+				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
