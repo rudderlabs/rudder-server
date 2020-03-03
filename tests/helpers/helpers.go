@@ -92,9 +92,9 @@ func SendEventRequest(options EventOptsT) int {
 		}
 	}
 
-	//Source with WriteKey: 1YNNaMMvymQfQh72gHiOLQ1zrDM has one S3 and one GA as destinations. Using this WriteKey as default.
+	//Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations. Using this WriteKey as default.
 	if options.WriteKey == "" {
-		options.WriteKey = "1YNNaMMvymQfQh72gHiOLQ1zrDM"
+		options.WriteKey = "1Yc6YbOGg6U2E8rlj97ZdOawPyr"
 	}
 	if options.ID == "" {
 		options.ID = ksuid.New().String()

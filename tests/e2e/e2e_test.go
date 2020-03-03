@@ -39,11 +39,11 @@ var _ = Describe("E2E", func() {
 		It("verify event is stored in both gateway and router db", func() {
 			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
+			//initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 
-			//Source with WriteKey: 1YNNaMMvymQfQh72gHiOLQ1zrDM has one S3 and one GA as destinations.
+			//Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations.
 			helpers.SendEventRequest(helpers.EventOptsT{
-				WriteKey: "1YNNaMMvymQfQh72gHiOLQ1zrDM",
+				WriteKey: "1Yc6YbOGg6U2E8rlj97ZdOawPyr",
 			})
 
 			// wait for some seconds for events to be processed by gateway
@@ -54,28 +54,32 @@ var _ = Describe("E2E", func() {
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 1))
-			// also check jobstatus records are created with 'succeeded' status
-			Eventually(func() int {
-				return helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
-			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobStatusCount + 1))
+			/*
+				Commenting checking succeeded job state check to remove dependency on destination.
+				// also check jobstatus records are created with 'succeeded' status
+				Eventually(func() int {
+					return helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
+				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobStatusCount + 1))*/
 		})
 
-		//Source with WriteKey: 1YNT7MhrKNIE82bfHwIsWE13uS9 has one GA and one AMPLITUDE as destinations.
+		//Source with WriteKey: 1YcF00dWZXGjWpSIkfFnbGuI6OI has one GA and one AMPLITUDE as destinations.
 		It("should create router job for both GA and AM for single event request", func() {
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
+			//initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 			helpers.SendEventRequest(helpers.EventOptsT{
-				WriteKey: "1YNT7MhrKNIE82bfHwIsWE13uS9",
+				WriteKey: "1YcF00dWZXGjWpSIkfFnbGuI6OI",
 			})
 			// wait for some seconds for events to be processed by gateway
 			time.Sleep(6 * time.Second)
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 2))
-			// also check jobstatus records are created with 'succeeded' status
-			Eventually(func() int {
-				return helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
-			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobStatusCount + 2))
+			/*
+				Commenting checking succeeded job state check to remove dependency on destination.
+				// also check jobstatus records are created with 'succeeded' status
+				Eventually(func() int {
+					return helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
+				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobStatusCount + 2))*/
 			Eventually(func() []string {
 				jobs := helpers.GetJobs(dbHandle, routerDBPrefix, 2)
 				customVals := []string{}
