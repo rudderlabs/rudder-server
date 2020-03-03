@@ -646,6 +646,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	}
 	reader, err := gzip.NewReader(rawf)
 	if err != nil {
+		if err.Error() == "EOF" {
+			return loadFileIDs, nil
+		}
 		logger.Errorf("WH: Error reading file using gzip.NewReader at path:%s downloaded from %s", jsonPath, job.StagingFile.Location)
 		panic(err)
 	}
