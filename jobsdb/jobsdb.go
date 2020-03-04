@@ -190,7 +190,6 @@ func (jd *HandleT) checkValidJobState(stateFilters []string) {
 var (
 	host, user, password, dbname string
 	port                         int
-	minPostgresVersion           string
 )
 
 var (
@@ -210,7 +209,6 @@ func loadConfig() {
 	dbname = config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
 	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
-	minPostgresVersion = config.GetEnv("JobsDB.minPostgresVersion", "10")
 
 	/*Migration related parameters
 	jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
@@ -1753,6 +1751,8 @@ const (
 	backupDropDSOperation      = "BACKUP_DROP_DS"
 	dropDSOperation            = "DROP_DS"
 	RawDataDestUploadOperation = "S3_DEST_UPLOAD"
+
+	minPostgresVersion = "10"
 )
 
 type JournalEntryT struct {

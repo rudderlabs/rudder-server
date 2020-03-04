@@ -192,7 +192,7 @@ func main() {
 	logger.Info("Main starting")
 
 	if !jobsdb.IsPostgresCompatible() {
-		logger.Errorf("Rudder server needs postgres version > 10. Exiting.")
+		logger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
 		return
 	}
 
