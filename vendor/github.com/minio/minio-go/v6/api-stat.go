@@ -78,7 +78,7 @@ var defaultFilterKeys = []string{
 	"x-amz-id-2",
 	"Content-Security-Policy",
 	"X-Xss-Protection",
-	amzTaggingHeaderCount,
+
 	// Add new headers to be ignored.
 }
 
@@ -91,8 +91,6 @@ func extractObjMetadata(header http.Header) http.Header {
 		"Last-Modified",
 		"Content-Type",
 		"Expires",
-		"X-Cache",
-		"X-Cache-Lookup",
 	}, defaultFilterKeys...)
 	return filterHeader(header, filterKeys)
 }
@@ -143,7 +141,8 @@ func (c Client) statObject(ctx context.Context, bucketName, objectName string, o
 	}
 
 	// Trim off the odd double quotes from ETag in the beginning and end.
-	md5sum := trimEtag(resp.Header.Get("ETag"))
+	md5sum := strings.TrimPrefix(resp.Header.Get("ETag"), "\"")
+	md5sum = strings.TrimSuffix(md5sum, "\"")
 
 	// Parse content length is exists
 	var size int64 = -1

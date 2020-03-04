@@ -183,10 +183,6 @@ func setWithProperType(t reflect.Type, key *Key, field reflect.Value, delim stri
 		if vt.Name() == "Duration" {
 			durationVal, err := key.Duration()
 			if err != nil {
-				if intVal, err := key.Int64(); err == nil {
-					field.SetInt(intVal)
-					return nil
-				}
 				return wrapStrictError(err, isStrict)
 			}
 			if isPtr {
@@ -305,13 +301,14 @@ func (s *Section) mapTo(val reflect.Value, isStrict bool) error {
 
 		if isAnonymous || isStruct || isStructPtr {
 			if sec, err := s.f.GetSection(fieldName); err == nil {
-				// Only set the field to non-nil struct value if we have a section for it.
-				// Otherwise, we end up with a non-nil struct ptr even though there is no data.
+				// Only set the field to non-nil struct value if we have
+				// a section for it. Otherwise, we end up with a non-nil
+				// struct ptr even though there is no data.
 				if isStructPtr && field.IsNil() {
 					field.Set(reflect.New(tpField.Type.Elem()))
 				}
 				if err = sec.mapTo(field, isStrict); err != nil {
-					return fmt.Errorf("error mapping field %q: %v", fieldName, err)
+					return fmt.Errorf("error mapping field(%s): %v", fieldName, err)
 				}
 				continue
 			}
@@ -319,7 +316,7 @@ func (s *Section) mapTo(val reflect.Value, isStrict bool) error {
 		if key, err := s.GetKey(fieldName); err == nil {
 			delim := parseDelim(tpField.Tag.Get("delim"))
 			if err = setWithProperType(tpField.Type, key, field, delim, allowShadow, isStrict); err != nil {
-				return fmt.Errorf("error mapping field %q: %v", fieldName, err)
+				return fmt.Errorf("error mapping field(%s): %v", fieldName, err)
 			}
 		}
 	}
@@ -511,11 +508,6 @@ func isEmptyValue(v reflect.Value) bool {
 	return false
 }
 
-// StructReflector is the interface implemented by struct types that can extract themselves into INI objects.
-type StructReflector interface {
-	ReflectINIStruct(*File) error
-}
-
 func (s *Section) reflectFrom(val reflect.Value) error {
 	if val.Kind() == reflect.Ptr {
 		val = val.Elem()
@@ -534,10 +526,6 @@ func (s *Section) reflectFrom(val reflect.Value) error {
 		rawName, omitEmpty, allowShadow := parseTagOptions(tag)
 		if omitEmpty && isEmptyValue(field) {
 			continue
-		}
-
-		if r, ok := field.Interface().(StructReflector); ok {
-			return r.ReflectINIStruct(s.f)
 		}
 
 		fieldName := s.parseFieldName(tpField.Name, rawName)
@@ -560,11 +548,12 @@ func (s *Section) reflectFrom(val reflect.Value) error {
 			}
 
 			if err = sec.reflectFrom(field); err != nil {
-				return fmt.Errorf("error reflecting field %q: %v", fieldName, err)
+				return fmt.Errorf("error reflecting field (%s): %v", fieldName, err)
 			}
 			continue
 		}
 
+		// Note: Same reason as secion.
 		key, err := s.GetKey(fieldName)
 		if err != nil {
 			key, _ = s.NewKey(fieldName, "")
@@ -575,9 +564,8 @@ func (s *Section) reflectFrom(val reflect.Value) error {
 			key.Comment = tpField.Tag.Get("comment")
 		}
 
-		delim := parseDelim(tpField.Tag.Get("delim"))
-		if err = reflectWithProperType(tpField.Type, key, field, delim, allowShadow); err != nil {
-			return fmt.Errorf("error reflecting field %q: %v", fieldName, err)
+		if err = reflectWithProperType(tpField.Type, key, field, parseDelim(tpField.Tag.Get("delim")), allowShadow); err != nil {
+			return fmt.Errorf("error reflecting field (%s): %v", fieldName, err)
 		}
 
 	}

@@ -218,25 +218,6 @@ func (cmd *Cmd) Uint64() (uint64, error) {
 	}
 }
 
-func (cmd *Cmd) Float32() (float32, error) {
-	if cmd.err != nil {
-		return 0, cmd.err
-	}
-	switch val := cmd.val.(type) {
-	case int64:
-		return float32(val), nil
-	case string:
-		f, err := strconv.ParseFloat(val, 32)
-		if err != nil {
-			return 0, err
-		}
-		return float32(f), nil
-	default:
-		err := fmt.Errorf("redis: unexpected type=%T for Float32", val)
-		return 0, err
-	}
-}
-
 func (cmd *Cmd) Float64() (float64, error) {
 	if cmd.err != nil {
 		return 0, cmd.err
@@ -604,17 +585,6 @@ func (cmd *StringCmd) Uint64() (uint64, error) {
 	return strconv.ParseUint(cmd.Val(), 10, 64)
 }
 
-func (cmd *StringCmd) Float32() (float32, error) {
-	if cmd.err != nil {
-		return 0, cmd.err
-	}
-	f, err := strconv.ParseFloat(cmd.Val(), 32)
-	if err != nil {
-		return 0, err
-	}
-	return float32(f), nil
-}
-
 func (cmd *StringCmd) Float64() (float64, error) {
 	if cmd.err != nil {
 		return 0, cmd.err
@@ -717,12 +687,12 @@ func (cmd *StringSliceCmd) readReply(rd *proto.Reader) error {
 func stringSliceParser(rd *proto.Reader, n int64) (interface{}, error) {
 	ss := make([]string, 0, n)
 	for i := int64(0); i < n; i++ {
-		switch s, err := rd.ReadString(); {
-		case err == Nil:
+		s, err := rd.ReadString()
+		if err == Nil {
 			ss = append(ss, "")
-		case err != nil:
+		} else if err != nil {
 			return nil, err
-		default:
+		} else {
 			ss = append(ss, s)
 		}
 	}
@@ -999,20 +969,14 @@ func xMessageSliceParser(rd *proto.Reader, n int64) (interface{}, error) {
 				return nil, err
 			}
 
-			var values map[string]interface{}
-
 			v, err := rd.ReadArrayReply(stringInterfaceMapParser)
 			if err != nil {
-				if err != proto.Nil {
-					return nil, err
-				}
-			} else {
-				values = v.(map[string]interface{})
+				return nil, err
 			}
 
 			msgs = append(msgs, XMessage{
 				ID:     id,
-				Values: values,
+				Values: v.(map[string]interface{}),
 			})
 			return nil, nil
 		})

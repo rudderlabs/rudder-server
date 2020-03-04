@@ -105,10 +105,6 @@ type QueryConfig struct {
 	// for the destination table.
 	TimePartitioning *TimePartitioning
 
-	// RangePartitioning specifies integer range-based partitioning
-	// for the destination table.
-	RangePartitioning *RangePartitioning
-
 	// Clustering specifies the data clustering configuration for the destination table.
 	Clustering *Clustering
 
@@ -141,7 +137,6 @@ func (qc *QueryConfig) toBQ() (*bq.JobConfiguration, error) {
 		Priority:                           string(qc.Priority),
 		MaximumBytesBilled:                 qc.MaxBytesBilled,
 		TimePartitioning:                   qc.TimePartitioning.toBQ(),
-		RangePartitioning:                  qc.RangePartitioning.toBQ(),
 		Clustering:                         qc.Clustering.toBQ(),
 		DestinationEncryptionConfiguration: qc.DestinationEncryptionConfig.toBQ(),
 		SchemaUpdateOptions:                qc.SchemaUpdateOptions,
@@ -213,7 +208,6 @@ func bqToQueryConfig(q *bq.JobConfiguration, c *Client) (*QueryConfig, error) {
 		MaxBytesBilled:              qq.MaximumBytesBilled,
 		UseLegacySQL:                qq.UseLegacySql == nil || *qq.UseLegacySql,
 		TimePartitioning:            bqToTimePartitioning(qq.TimePartitioning),
-		RangePartitioning:           bqToRangePartitioning(qq.RangePartitioning),
 		Clustering:                  bqToClustering(qq.Clustering),
 		DestinationEncryptionConfig: bqToEncryptionConfig(qq.DestinationEncryptionConfiguration),
 		SchemaUpdateOptions:         qq.SchemaUpdateOptions,
