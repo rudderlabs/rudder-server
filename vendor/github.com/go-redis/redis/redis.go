@@ -51,10 +51,11 @@ func (c *baseClient) newConn() (*pool.Conn, error) {
 		return nil, err
 	}
 
-	err = c.initConn(cn)
-	if err != nil {
-		_ = c.connPool.CloseConn(cn)
-		return nil, err
+	if cn.InitedAt.IsZero() {
+		if err := c.initConn(cn); err != nil {
+			_ = c.connPool.CloseConn(cn)
+			return nil, err
+		}
 	}
 
 	return cn, nil
@@ -84,13 +85,12 @@ func (c *baseClient) _getConn() (*pool.Conn, error) {
 		return nil, err
 	}
 
-	err = c.initConn(cn)
-	if err != nil {
-		c.connPool.Remove(cn, err)
-		if err := internal.Unwrap(err); err != nil {
+	if cn.InitedAt.IsZero() {
+		err := c.initConn(cn)
+		if err != nil {
+			c.connPool.Remove(cn)
 			return nil, err
 		}
-		return nil, err
 	}
 
 	return cn, nil
@@ -102,7 +102,7 @@ func (c *baseClient) releaseConn(cn *pool.Conn, err error) {
 	}
 
 	if internal.IsBadConn(err, false) {
-		c.connPool.Remove(cn, err)
+		c.connPool.Remove(cn)
 	} else {
 		c.connPool.Put(cn)
 	}
@@ -116,15 +116,12 @@ func (c *baseClient) releaseConnStrict(cn *pool.Conn, err error) {
 	if err == nil || internal.IsRedisError(err) {
 		c.connPool.Put(cn)
 	} else {
-		c.connPool.Remove(cn, err)
+		c.connPool.Remove(cn)
 	}
 }
 
 func (c *baseClient) initConn(cn *pool.Conn) error {
-	if cn.Inited {
-		return nil
-	}
-	cn.Inited = true
+	cn.InitedAt = time.Now()
 
 	if c.opt.Password == "" &&
 		c.opt.DB == 0 &&
@@ -204,7 +201,9 @@ func (c *baseClient) defaultProcess(cmd Cmder) error {
 			return err
 		}
 
-		err = cn.WithReader(c.cmdTimeout(cmd), cmd.readReply)
+		err = cn.WithReader(c.cmdTimeout(cmd), func(rd *proto.Reader) error {
+			return cmd.readReply(rd)
+		})
 		c.releaseConn(cn, err)
 		if err != nil && internal.IsRetryableError(err, cmd.readTimeout() == nil) {
 			continue
@@ -238,7 +237,7 @@ func (c *baseClient) cmdTimeout(cmd Cmder) time.Duration {
 func (c *baseClient) Close() error {
 	var firstErr error
 	if c.onClose != nil {
-		if err := c.onClose(); err != nil {
+		if err := c.onClose(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -544,12 +543,10 @@ type Conn struct {
 }
 
 func newConn(opt *Options, cn *pool.Conn) *Conn {
-	connPool := pool.NewSingleConnPool(nil)
-	connPool.SetConn(cn)
 	c := Conn{
 		baseClient: baseClient{
 			opt:      opt,
-			connPool: connPool,
+			connPool: pool.NewSingleConnPool(cn),
 		},
 	}
 	c.baseClient.init()

@@ -36,53 +36,18 @@ import (
 // created via server-side copy requests, using the Compose API.
 type DestinationInfo struct {
 	bucket, object string
-	opts           DestInfoOptions
-}
+	encryption     encrypt.ServerSide
 
-// DestInfoOptions represents options specified by user for NewDestinationInfo call
-type DestInfoOptions struct {
-	// `Encryption` is the key info for server-side-encryption with customer
-	// provided key. If it is nil, no encryption is performed.
-	Encryption encrypt.ServerSide
-
-	// `userMeta` is the user-metadata key-value pairs to be set on the
-	// destination. The keys are automatically prefixed with `x-amz-meta-`
-	// if needed. If nil is passed, and if only a single source (of any
-	// size) is provided in the ComposeObject call, then metadata from the
-	// source is copied to the destination.
 	// if no user-metadata is provided, it is copied from source
 	// (when there is only once source object in the compose
 	// request)
-	UserMeta map[string]string
-
-	// `userTags` is the user defined object tags to be set on destination.
-	// This will be set only if the `replaceTags` field is set to true.
-	// Otherwise this field is ignored
-	UserTags    map[string]string
-	ReplaceTags bool
-}
-
-// Process custom-metadata to remove a `x-amz-meta-` prefix if
-// present and validate that keys are distinct (after this
-// prefix removal).
-func filterCustomMeta(userMeta map[string]string) (map[string]string, error) {
-	m := make(map[string]string)
-	for k, v := range userMeta {
-		if strings.HasPrefix(strings.ToLower(k), "x-amz-meta-") {
-			k = k[len("x-amz-meta-"):]
-		}
-		if _, ok := m[k]; ok {
-			return nil, ErrInvalidArgument(fmt.Sprintf("Cannot add both %s and x-amz-meta-%s keys as custom metadata", k, k))
-		}
-		m[k] = v
-	}
-	return m, nil
+	userMetadata map[string]string
 }
 
 // NewDestinationInfo - creates a compose-object/copy-source
 // destination info object.
 //
-// `sse` is the key info for server-side-encryption with customer
+// `encSSEC` is the key info for server-side-encryption with customer
 // provided key. If it is nil, no encryption is performed.
 //
 // `userMeta` is the user-metadata key-value pairs to be set on the
@@ -98,41 +63,26 @@ func NewDestinationInfo(bucket, object string, sse encrypt.ServerSide, userMeta 
 	if err = s3utils.CheckValidObjectName(object); err != nil {
 		return d, err
 	}
-	m, err := filterCustomMeta(userMeta)
-	if err != nil {
-		return d, err
-	}
-	opts := DestInfoOptions{
-		Encryption:  sse,
-		UserMeta:    m,
-		UserTags:    nil,
-		ReplaceTags: false,
-	}
-	return DestinationInfo{
-		bucket: bucket,
-		object: object,
-		opts:   opts,
-	}, nil
-}
 
-// NewDestinationInfoWithOptions - creates a compose-object/copy-source
-// destination info object.
-func NewDestinationInfoWithOptions(bucket, object string, destOpts DestInfoOptions) (d DestinationInfo, err error) {
-	// Input validation.
-	if err = s3utils.CheckValidBucketName(bucket); err != nil {
-		return d, err
+	// Process custom-metadata to remove a `x-amz-meta-` prefix if
+	// present and validate that keys are distinct (after this
+	// prefix removal).
+	m := make(map[string]string)
+	for k, v := range userMeta {
+		if strings.HasPrefix(strings.ToLower(k), "x-amz-meta-") {
+			k = k[len("x-amz-meta-"):]
+		}
+		if _, ok := m[k]; ok {
+			return d, ErrInvalidArgument(fmt.Sprintf("Cannot add both %s and x-amz-meta-%s keys as custom metadata", k, k))
+		}
+		m[k] = v
 	}
-	if err = s3utils.CheckValidObjectName(object); err != nil {
-		return d, err
-	}
-	destOpts.UserMeta, err = filterCustomMeta(destOpts.UserMeta)
-	if err != nil {
-		return d, err
-	}
+
 	return DestinationInfo{
-		bucket: bucket,
-		object: object,
-		opts:   destOpts,
+		bucket:       bucket,
+		object:       object,
+		encryption:   sse,
+		userMetadata: m,
 	}, nil
 }
 
@@ -143,14 +93,14 @@ func NewDestinationInfoWithOptions(bucket, object string, destOpts DestInfoOptio
 // `REPLACE`, so that metadata headers from the source are not copied
 // over.
 func (d *DestinationInfo) getUserMetaHeadersMap(withCopyDirectiveHeader bool) map[string]string {
-	if len(d.opts.UserMeta) == 0 {
+	if len(d.userMetadata) == 0 {
 		return nil
 	}
 	r := make(map[string]string)
 	if withCopyDirectiveHeader {
 		r["x-amz-metadata-directive"] = "REPLACE"
 	}
-	for k, v := range d.opts.UserMeta {
+	for k, v := range d.userMetadata {
 		if isAmzHeader(k) || isStandardHeader(k) || isStorageClassHeader(k) {
 			r[k] = v
 		} else {
@@ -497,7 +447,7 @@ func (c Client) ComposeObjectWithProgress(dst DestinationInfo, srcs []SourceInfo
 		metaHeaders[k] = v
 	}
 
-	uploadID, err := c.newUploadID(ctx, dst.bucket, dst.object, PutObjectOptions{ServerSideEncryption: dst.opts.Encryption, UserMetadata: metaHeaders})
+	uploadID, err := c.newUploadID(ctx, dst.bucket, dst.object, PutObjectOptions{ServerSideEncryption: dst.encryption, UserMetadata: metaHeaders})
 	if err != nil {
 		return err
 	}
@@ -511,8 +461,8 @@ func (c Client) ComposeObjectWithProgress(dst DestinationInfo, srcs []SourceInfo
 			encrypt.SSECopy(src.encryption).Marshal(h)
 		}
 		// Add destination encryption headers
-		if dst.opts.Encryption != nil {
-			dst.opts.Encryption.Marshal(h)
+		if dst.encryption != nil {
+			dst.encryption.Marshal(h)
 		}
 
 		// calculate start/end indices of parts after

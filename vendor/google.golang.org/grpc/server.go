@@ -42,7 +42,6 @@ import (
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/internal/binarylog"
 	"google.golang.org/grpc/internal/channelz"
-	"google.golang.org/grpc/internal/grpcsync"
 	"google.golang.org/grpc/internal/transport"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
@@ -56,8 +55,6 @@ const (
 	defaultServerMaxReceiveMessageSize = 1024 * 1024 * 4
 	defaultServerMaxSendMessageSize    = math.MaxInt32
 )
-
-var statusOK = status.New(codes.OK, "")
 
 type methodHandler func(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor UnaryServerInterceptor) (interface{}, error)
 
@@ -93,15 +90,17 @@ type Server struct {
 
 	mu     sync.Mutex // guards following
 	lis    map[net.Listener]bool
-	conns  map[transport.ServerTransport]bool
+	conns  map[io.Closer]bool
 	serve  bool
 	drain  bool
 	cv     *sync.Cond          // signaled when connections close for GracefulStop
 	m      map[string]*service // service name -> service info
 	events trace.EventLog
 
-	quit               *grpcsync.Event
-	done               *grpcsync.Event
+	quit               chan struct{}
+	done               chan struct{}
+	quitOnce           sync.Once
+	doneOnce           sync.Once
 	channelzRemoveOnce sync.Once
 	serveWG            sync.WaitGroup // counts active Serve goroutines for GracefulStop
 
@@ -130,7 +129,6 @@ type serverOptions struct {
 	readBufferSize        int
 	connectionTimeout     time.Duration
 	maxHeaderListSize     *uint32
-	headerTableSize       *uint32
 }
 
 var defaultServerOptions = serverOptions{
@@ -344,8 +342,8 @@ func StatsHandler(h stats.Handler) ServerOption {
 // unknown service handler. The provided method is a bidi-streaming RPC service
 // handler that will be invoked instead of returning the "unimplemented" gRPC
 // error whenever a request is received for an unregistered service or method.
-// The handling function and stream interceptor (if set) have full access to
-// the ServerStream, including its Context.
+// The handling function has full access to the Context of the request and the
+// stream, and the invocation bypasses interceptors.
 func UnknownServiceHandler(streamHandler StreamHandler) ServerOption {
 	return newFuncServerOption(func(o *serverOptions) {
 		o.unknownStreamDesc = &StreamDesc{
@@ -378,16 +376,6 @@ func MaxHeaderListSize(s uint32) ServerOption {
 	})
 }
 
-// HeaderTableSize returns a ServerOption that sets the size of dynamic
-// header table for stream.
-//
-// This API is EXPERIMENTAL.
-func HeaderTableSize(s uint32) ServerOption {
-	return newFuncServerOption(func(o *serverOptions) {
-		o.headerTableSize = &s
-	})
-}
-
 // NewServer creates a gRPC server which has no service registered and has not
 // started to accept requests yet.
 func NewServer(opt ...ServerOption) *Server {
@@ -398,10 +386,10 @@ func NewServer(opt ...ServerOption) *Server {
 	s := &Server{
 		lis:    make(map[net.Listener]bool),
 		opts:   opts,
-		conns:  make(map[transport.ServerTransport]bool),
+		conns:  make(map[io.Closer]bool),
 		m:      make(map[string]*service),
-		quit:   grpcsync.NewEvent(),
-		done:   grpcsync.NewEvent(),
+		quit:   make(chan struct{}),
+		done:   make(chan struct{}),
 		czData: new(channelzData),
 	}
 	s.cv = sync.NewCond(&s.mu)
@@ -568,9 +556,11 @@ func (s *Server) Serve(lis net.Listener) error {
 	s.serveWG.Add(1)
 	defer func() {
 		s.serveWG.Done()
-		if s.quit.HasFired() {
-			// Stop or GracefulStop called; block until done and return nil.
-			<-s.done.Done()
+		select {
+		// Stop or GracefulStop called; block until done and return nil.
+		case <-s.quit:
+			<-s.done
+		default:
 		}
 	}()
 
@@ -613,7 +603,7 @@ func (s *Server) Serve(lis net.Listener) error {
 				timer := time.NewTimer(tempDelay)
 				select {
 				case <-timer.C:
-				case <-s.quit.Done():
+				case <-s.quit:
 					timer.Stop()
 					return nil
 				}
@@ -623,8 +613,10 @@ func (s *Server) Serve(lis net.Listener) error {
 			s.printf("done serving; Accept = %v", err)
 			s.mu.Unlock()
 
-			if s.quit.HasFired() {
+			select {
+			case <-s.quit:
 				return nil
+			default:
 			}
 			return err
 		}
@@ -645,10 +637,6 @@ func (s *Server) Serve(lis net.Listener) error {
 // handleRawConn forks a goroutine to handle a just-accepted connection that
 // has not had any I/O performed on it yet.
 func (s *Server) handleRawConn(rawConn net.Conn) {
-	if s.quit.HasFired() {
-		rawConn.Close()
-		return
-	}
 	rawConn.SetDeadline(time.Now().Add(s.opts.connectionTimeout))
 	conn, authInfo, err := s.useTransportAuthenticator(rawConn)
 	if err != nil {
@@ -664,6 +652,14 @@ func (s *Server) handleRawConn(rawConn net.Conn) {
 		rawConn.SetDeadline(time.Time{})
 		return
 	}
+
+	s.mu.Lock()
+	if s.conns == nil {
+		s.mu.Unlock()
+		conn.Close()
+		return
+	}
+	s.mu.Unlock()
 
 	// Finish handshaking (HTTP2)
 	st := s.newHTTP2Transport(conn, authInfo)
@@ -697,7 +693,6 @@ func (s *Server) newHTTP2Transport(c net.Conn, authInfo credentials.AuthInfo) tr
 		ReadBufferSize:        s.opts.readBufferSize,
 		ChannelzParentID:      s.channelzID,
 		MaxHeaderListSize:     s.opts.maxHeaderListSize,
-		HeaderTableSize:       s.opts.headerTableSize,
 	}
 	st, err := transport.NewServerTransport("http2", c, config)
 	if err != nil {
@@ -773,9 +768,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // traceInfo returns a traceInfo and associates it with stream, if tracing is enabled.
 // If tracing is not enabled, it returns nil.
 func (s *Server) traceInfo(st transport.ServerTransport, stream *transport.Stream) (trInfo *traceInfo) {
-	if !EnableTracing {
-		return nil
-	}
 	tr, ok := trace.FromContext(stream.Context())
 	if !ok {
 		return nil
@@ -794,27 +786,27 @@ func (s *Server) traceInfo(st transport.ServerTransport, stream *transport.Strea
 	return trInfo
 }
 
-func (s *Server) addConn(st transport.ServerTransport) bool {
+func (s *Server) addConn(c io.Closer) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.conns == nil {
-		st.Close()
+		c.Close()
 		return false
 	}
 	if s.drain {
 		// Transport added after we drained our existing conns: drain it
 		// immediately.
-		st.Drain()
+		c.(transport.ServerTransport).Drain()
 	}
-	s.conns[st] = true
+	s.conns[c] = true
 	return true
 }
 
-func (s *Server) removeConn(st transport.ServerTransport) {
+func (s *Server) removeConn(c io.Closer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.conns != nil {
-		delete(s.conns, st)
+		delete(s.conns, c)
 		s.cv.Broadcast()
 	}
 }
@@ -865,58 +857,41 @@ func (s *Server) sendResponse(t transport.ServerTransport, stream *transport.Str
 }
 
 func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.Stream, srv *service, md *MethodDesc, trInfo *traceInfo) (err error) {
-	sh := s.opts.statsHandler
-	if sh != nil || trInfo != nil || channelz.IsOn() {
-		if channelz.IsOn() {
-			s.incrCallsStarted()
-		}
-		var statsBegin *stats.Begin
-		if sh != nil {
-			beginTime := time.Now()
-			statsBegin = &stats.Begin{
-				BeginTime: beginTime,
-			}
-			sh.HandleRPC(stream.Context(), statsBegin)
-		}
-		if trInfo != nil {
-			trInfo.tr.LazyLog(&trInfo.firstLine, false)
-		}
-		// The deferred error handling for tracing, stats handler and channelz are
-		// combined into one function to reduce stack usage -- a defer takes ~56-64
-		// bytes on the stack, so overflowing the stack will require a stack
-		// re-allocation, which is expensive.
-		//
-		// To maintain behavior similar to separate deferred statements, statements
-		// should be executed in the reverse order. That is, tracing first, stats
-		// handler second, and channelz last. Note that panics *within* defers will
-		// lead to different behavior, but that's an acceptable compromise; that
-		// would be undefined behavior territory anyway.
+	if channelz.IsOn() {
+		s.incrCallsStarted()
 		defer func() {
-			if trInfo != nil {
-				if err != nil && err != io.EOF {
-					trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
-					trInfo.tr.SetError()
-				}
-				trInfo.tr.Finish()
+			if err != nil && err != io.EOF {
+				s.incrCallsFailed()
+			} else {
+				s.incrCallsSucceeded()
 			}
-
-			if sh != nil {
-				end := &stats.End{
-					BeginTime: statsBegin.BeginTime,
-					EndTime:   time.Now(),
-				}
-				if err != nil && err != io.EOF {
-					end.Error = toRPCErr(err)
-				}
-				sh.HandleRPC(stream.Context(), end)
+		}()
+	}
+	sh := s.opts.statsHandler
+	if sh != nil {
+		beginTime := time.Now()
+		begin := &stats.Begin{
+			BeginTime: beginTime,
+		}
+		sh.HandleRPC(stream.Context(), begin)
+		defer func() {
+			end := &stats.End{
+				BeginTime: beginTime,
+				EndTime:   time.Now(),
 			}
-
-			if channelz.IsOn() {
-				if err != nil && err != io.EOF {
-					s.incrCallsFailed()
-				} else {
-					s.incrCallsSucceeded()
-				}
+			if err != nil && err != io.EOF {
+				end.Error = toRPCErr(err)
+			}
+			sh.HandleRPC(stream.Context(), end)
+		}()
+	}
+	if trInfo != nil {
+		defer trInfo.tr.Finish()
+		trInfo.tr.LazyLog(&trInfo.firstLine, false)
+		defer func() {
+			if err != nil && err != io.EOF {
+				trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
+				trInfo.tr.SetError()
 			}
 		}()
 	}
@@ -1003,11 +978,10 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 		}
 		if sh != nil {
 			sh.HandleRPC(stream.Context(), &stats.InPayload{
-				RecvTime:   time.Now(),
-				Payload:    v,
-				WireLength: payInfo.wireLength,
-				Data:       d,
-				Length:     len(d),
+				RecvTime: time.Now(),
+				Payload:  v,
+				Data:     d,
+				Length:   len(d),
 			})
 		}
 		if binlog != nil {
@@ -1103,7 +1077,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 	// TODO: Should we be logging if writing status failed here, like above?
 	// Should the logging be in WriteStatus?  Should we ignore the WriteStatus
 	// error or allow the stats handler to see it?
-	err = t.WriteStatus(stream, statusOK)
+	err = t.WriteStatus(stream, status.New(codes.OK, ""))
 	if binlog != nil {
 		binlog.Log(&binarylog.ServerTrailer{
 			Trailer: stream.Trailer(),
@@ -1116,15 +1090,31 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 func (s *Server) processStreamingRPC(t transport.ServerTransport, stream *transport.Stream, srv *service, sd *StreamDesc, trInfo *traceInfo) (err error) {
 	if channelz.IsOn() {
 		s.incrCallsStarted()
+		defer func() {
+			if err != nil && err != io.EOF {
+				s.incrCallsFailed()
+			} else {
+				s.incrCallsSucceeded()
+			}
+		}()
 	}
 	sh := s.opts.statsHandler
-	var statsBegin *stats.Begin
 	if sh != nil {
 		beginTime := time.Now()
-		statsBegin = &stats.Begin{
+		begin := &stats.Begin{
 			BeginTime: beginTime,
 		}
-		sh.HandleRPC(stream.Context(), statsBegin)
+		sh.HandleRPC(stream.Context(), begin)
+		defer func() {
+			end := &stats.End{
+				BeginTime: beginTime,
+				EndTime:   time.Now(),
+			}
+			if err != nil && err != io.EOF {
+				end.Error = toRPCErr(err)
+			}
+			sh.HandleRPC(stream.Context(), end)
+		}()
 	}
 	ctx := NewContextWithServerTransportStream(stream.Context(), stream)
 	ss := &serverStream{
@@ -1137,41 +1127,6 @@ func (s *Server) processStreamingRPC(t transport.ServerTransport, stream *transp
 		maxSendMessageSize:    s.opts.maxSendMessageSize,
 		trInfo:                trInfo,
 		statsHandler:          sh,
-	}
-
-	if sh != nil || trInfo != nil || channelz.IsOn() {
-		// See comment in processUnaryRPC on defers.
-		defer func() {
-			if trInfo != nil {
-				ss.mu.Lock()
-				if err != nil && err != io.EOF {
-					ss.trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
-					ss.trInfo.tr.SetError()
-				}
-				ss.trInfo.tr.Finish()
-				ss.trInfo.tr = nil
-				ss.mu.Unlock()
-			}
-
-			if sh != nil {
-				end := &stats.End{
-					BeginTime: statsBegin.BeginTime,
-					EndTime:   time.Now(),
-				}
-				if err != nil && err != io.EOF {
-					end.Error = toRPCErr(err)
-				}
-				sh.HandleRPC(stream.Context(), end)
-			}
-
-			if channelz.IsOn() {
-				if err != nil && err != io.EOF {
-					s.incrCallsFailed()
-				} else {
-					s.incrCallsSucceeded()
-				}
-			}
-		}()
 	}
 
 	ss.binlog = binarylog.GetMethodLogger(stream.Method())
@@ -1227,6 +1182,16 @@ func (s *Server) processStreamingRPC(t transport.ServerTransport, stream *transp
 
 	if trInfo != nil {
 		trInfo.tr.LazyLog(&trInfo.firstLine, false)
+		defer func() {
+			ss.mu.Lock()
+			if err != nil && err != io.EOF {
+				ss.trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
+				ss.trInfo.tr.SetError()
+			}
+			ss.trInfo.tr.Finish()
+			ss.trInfo.tr = nil
+			ss.mu.Unlock()
+		}()
 	}
 	var appErr error
 	var server interface{}
@@ -1270,7 +1235,7 @@ func (s *Server) processStreamingRPC(t transport.ServerTransport, stream *transp
 		ss.trInfo.tr.LazyLog(stringer("OK"), false)
 		ss.mu.Unlock()
 	}
-	err = t.WriteStatus(ss.s, statusOK)
+	err = t.WriteStatus(ss.s, status.New(codes.OK, ""))
 	if ss.binlog != nil {
 		ss.binlog.Log(&binarylog.ServerTrailer{
 			Trailer: ss.s.Trailer(),
@@ -1387,11 +1352,15 @@ func ServerTransportStreamFromContext(ctx context.Context) ServerTransportStream
 // pending RPCs on the client side will get notified by connection
 // errors.
 func (s *Server) Stop() {
-	s.quit.Fire()
+	s.quitOnce.Do(func() {
+		close(s.quit)
+	})
 
 	defer func() {
 		s.serveWG.Wait()
-		s.done.Fire()
+		s.doneOnce.Do(func() {
+			close(s.done)
+		})
 	}()
 
 	s.channelzRemoveOnce.Do(func() {
@@ -1428,8 +1397,15 @@ func (s *Server) Stop() {
 // accepting new connections and RPCs and blocks until all the pending RPCs are
 // finished.
 func (s *Server) GracefulStop() {
-	s.quit.Fire()
-	defer s.done.Fire()
+	s.quitOnce.Do(func() {
+		close(s.quit)
+	})
+
+	defer func() {
+		s.doneOnce.Do(func() {
+			close(s.done)
+		})
+	}()
 
 	s.channelzRemoveOnce.Do(func() {
 		if channelz.IsOn() {
@@ -1447,8 +1423,8 @@ func (s *Server) GracefulStop() {
 	}
 	s.lis = nil
 	if !s.drain {
-		for st := range s.conns {
-			st.Drain()
+		for c := range s.conns {
+			c.(transport.ServerTransport).Drain()
 		}
 		s.drain = true
 	}

@@ -45,9 +45,6 @@ type TableMetadata struct {
 	// The user-friendly name for the table.
 	Name string
 
-	// Output-only location of the table, based on the encapsulating dataset.
-	Location string
-
 	// The user-friendly description of the table.
 	Description string
 
@@ -61,24 +58,13 @@ type TableMetadata struct {
 	// At most one of UseLegacySQL and UseStandardSQL can be true.
 	UseLegacySQL bool
 
-	// Use Standard SQL for the view query. The default.
+	// Use Legacy SQL for the view query. The default.
 	// At most one of UseLegacySQL and UseStandardSQL can be true.
 	// Deprecated: use UseLegacySQL.
 	UseStandardSQL bool
 
-	// If non-nil, the table is partitioned by time. Only one of
-	// time partitioning or range partitioning can be specified.
+	// If non-nil, the table is partitioned by time.
 	TimePartitioning *TimePartitioning
-
-	// It non-nil, the table is partitioned by integer range.  Only one of
-	// time partitioning or range partitioning can be specified.
-	RangePartitioning *RangePartitioning
-
-	// If set to true, queries that reference this table must specify a
-	// partition filter (e.g. a WHERE clause) that can be used to eliminate
-	// partitions. Used to prevent unintentional full data scans on large
-	// partitioned tables.
-	RequirePartitionFilter bool
 
 	// Clustering specifies the data clustering configuration for the table.
 	Clustering *Clustering
@@ -185,11 +171,8 @@ type TimePartitioning struct {
 	// DATE field. Its mode must be NULLABLE or REQUIRED.
 	Field string
 
-	// If set to true, queries that reference this table must specify a
-	// partition filter (e.g. a WHERE clause) that can be used to eliminate
-	// partitions. Used to prevent unintentional full data scans on large
-	// partitioned tables.
-	// DEPRECATED: use the top-level RequirePartitionFilter in TableMetadata.
+	// If true, queries that reference this table must include a filter (e.g. a WHERE predicate)
+	// that can be used for partition elimination.
 	RequirePartitionFilter bool
 }
 
@@ -213,68 +196,6 @@ func bqToTimePartitioning(q *bq.TimePartitioning) *TimePartitioning {
 		Expiration:             time.Duration(q.ExpirationMs) * time.Millisecond,
 		Field:                  q.Field,
 		RequirePartitionFilter: q.RequirePartitionFilter,
-	}
-}
-
-// RangePartitioning indicates an integer-range based storage organization strategy.
-type RangePartitioning struct {
-	// The field by which the table is partitioned.
-	// This field must be a top-level field, and must be typed as an
-	// INTEGER/INT64.
-	Field string
-	// The details of how partitions are mapped onto the integer range.
-	Range *RangePartitioningRange
-}
-
-// RangePartitioningRange defines the boundaries and width of partitioned values.
-type RangePartitioningRange struct {
-	// The start value of defined range of values, inclusive of the specified value.
-	Start int64
-	// The end of the defined range of values, exclusive of the defined value.
-	End int64
-	// The width of each interval range.
-	Interval int64
-}
-
-func (rp *RangePartitioning) toBQ() *bq.RangePartitioning {
-	if rp == nil {
-		return nil
-	}
-	return &bq.RangePartitioning{
-		Field: rp.Field,
-		Range: rp.Range.toBQ(),
-	}
-}
-
-func bqToRangePartitioning(q *bq.RangePartitioning) *RangePartitioning {
-	if q == nil {
-		return nil
-	}
-	return &RangePartitioning{
-		Field: q.Field,
-		Range: bqToRangePartitioningRange(q.Range),
-	}
-}
-
-func bqToRangePartitioningRange(br *bq.RangePartitioningRange) *RangePartitioningRange {
-	if br == nil {
-		return nil
-	}
-	return &RangePartitioningRange{
-		Start:    br.Start,
-		End:      br.End,
-		Interval: br.Interval,
-	}
-}
-
-func (rpr *RangePartitioningRange) toBQ() *bq.RangePartitioningRange {
-	if rpr == nil {
-		return nil
-	}
-	return &bq.RangePartitioningRange{
-		Start:    rpr.Start,
-		End:      rpr.End,
-		Interval: rpr.Interval,
 	}
 }
 
@@ -302,7 +223,7 @@ func bqToClustering(q *bq.Clustering) *Clustering {
 	}
 }
 
-// EncryptionConfig configures customer-managed encryption on tables and ML models.
+// EncryptionConfig configures customer-managed encryption on tables.
 type EncryptionConfig struct {
 	// Describes the Cloud KMS encryption key that will be used to protect
 	// destination BigQuery table. The BigQuery Service Account associated with your
@@ -414,9 +335,7 @@ func (tm *TableMetadata) toBQ() (*bq.Table, error) {
 		return nil, errors.New("bigquery: UseLegacy/StandardSQL requires ViewQuery")
 	}
 	t.TimePartitioning = tm.TimePartitioning.toBQ()
-	t.RangePartitioning = tm.RangePartitioning.toBQ()
 	t.Clustering = tm.Clustering.toBQ()
-	t.RequirePartitionFilter = tm.RequirePartitionFilter
 
 	if !validExpiration(tm.ExpirationTime) {
 		return nil, fmt.Errorf("invalid expiration time: %v.\n"+
@@ -480,21 +399,19 @@ func (t *Table) Metadata(ctx context.Context) (md *TableMetadata, err error) {
 
 func bqToTableMetadata(t *bq.Table) (*TableMetadata, error) {
 	md := &TableMetadata{
-		Description:            t.Description,
-		Name:                   t.FriendlyName,
-		Location:               t.Location,
-		Type:                   TableType(t.Type),
-		FullID:                 t.Id,
-		Labels:                 t.Labels,
-		NumBytes:               t.NumBytes,
-		NumLongTermBytes:       t.NumLongTermBytes,
-		NumRows:                t.NumRows,
-		ExpirationTime:         unixMillisToTime(t.ExpirationTime),
-		CreationTime:           unixMillisToTime(t.CreationTime),
-		LastModifiedTime:       unixMillisToTime(int64(t.LastModifiedTime)),
-		ETag:                   t.Etag,
-		EncryptionConfig:       bqToEncryptionConfig(t.EncryptionConfiguration),
-		RequirePartitionFilter: t.RequirePartitionFilter,
+		Description:      t.Description,
+		Name:             t.FriendlyName,
+		Type:             TableType(t.Type),
+		FullID:           t.Id,
+		Labels:           t.Labels,
+		NumBytes:         t.NumBytes,
+		NumLongTermBytes: t.NumLongTermBytes,
+		NumRows:          t.NumRows,
+		ExpirationTime:   unixMillisToTime(t.ExpirationTime),
+		CreationTime:     unixMillisToTime(t.CreationTime),
+		LastModifiedTime: unixMillisToTime(int64(t.LastModifiedTime)),
+		ETag:             t.Etag,
+		EncryptionConfig: bqToEncryptionConfig(t.EncryptionConfiguration),
 	}
 	if t.Schema != nil {
 		md.Schema = bqToSchema(t.Schema)
@@ -504,7 +421,6 @@ func bqToTableMetadata(t *bq.Table) (*TableMetadata, error) {
 		md.UseLegacySQL = t.View.UseLegacySql
 	}
 	md.TimePartitioning = bqToTimePartitioning(t.TimePartitioning)
-	md.RangePartitioning = bqToRangePartitioning(t.RangePartitioning)
 	md.Clustering = bqToClustering(t.Clustering)
 	if t.StreamingBuffer != nil {
 		md.StreamingBuffer = &StreamingBuffer{
@@ -592,7 +508,8 @@ func (tm *TableMetadataToUpdate) toBQ() (*bq.Table, error) {
 	}
 
 	if !validExpiration(tm.ExpirationTime) {
-		return nil, invalidTimeError(tm.ExpirationTime)
+		return nil, fmt.Errorf("invalid expiration time: %v.\n"+
+			"Valid expiration times are after 1678 and before 2262", tm.ExpirationTime)
 	}
 	if tm.ExpirationTime == NeverExpire {
 		t.NullFields = append(t.NullFields, "ExpirationTime")
@@ -606,10 +523,6 @@ func (tm *TableMetadataToUpdate) toBQ() (*bq.Table, error) {
 		if tm.TimePartitioning.Expiration == 0 {
 			t.TimePartitioning.NullFields = []string{"ExpirationMs"}
 		}
-	}
-	if tm.RequirePartitionFilter != nil {
-		t.RequirePartitionFilter = optional.ToBool(tm.RequirePartitionFilter)
-		forceSend("RequirePartitionFilter")
 	}
 	if tm.ViewQuery != nil {
 		t.View = &bq.ViewDefinition{
@@ -640,13 +553,6 @@ func validExpiration(t time.Time) bool {
 	return t == NeverExpire || t.IsZero() || time.Unix(0, t.UnixNano()).Equal(t)
 }
 
-// invalidTimeError emits a consistent error message for failures of the
-// validExpiration function.
-func invalidTimeError(t time.Time) error {
-	return fmt.Errorf("invalid expiration time %v. "+
-		"Valid expiration times are after 1678 and before 2262", t)
-}
-
 // TableMetadataToUpdate is used when updating a table's metadata.
 // Only non-nil fields will be updated.
 type TableMetadataToUpdate struct {
@@ -660,7 +566,8 @@ type TableMetadataToUpdate struct {
 	// When updating a schema, you can add columns but not remove them.
 	Schema Schema
 
-	// The table's encryption configuration.
+	// The table's encryption configuration.  When calling Update, ensure that
+	// all mutable fields of EncryptionConfig are populated.
 	EncryptionConfig *EncryptionConfig
 
 	// The time when this table expires. To remove a table's expiration,
@@ -678,10 +585,6 @@ type TableMetadataToUpdate struct {
 	// filtration is required at query time.  When calling Update, ensure
 	// that all mutable fields of TimePartitioning are populated.
 	TimePartitioning *TimePartitioning
-
-	// RequirePartitionFilter governs whether the table enforces partition
-	// elimination when referenced in a query.
-	RequirePartitionFilter optional.Bool
 
 	labelUpdater
 }

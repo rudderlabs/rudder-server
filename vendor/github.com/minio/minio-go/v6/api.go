@@ -104,7 +104,7 @@ type Options struct {
 // Global constants.
 const (
 	libraryName    = "minio-go"
-	libraryVersion = "v6.0.49"
+	libraryVersion = "v6.0.44"
 )
 
 // User Agent should always following the below style.
@@ -560,13 +560,6 @@ func (c Client) executeMethod(ctx context.Context, method string, metadata reque
 	var bodySeeker io.Seeker // Extracted seeker from io.Reader.
 	var reqRetry = MaxRetry  // Indicates how many times we can retry the request
 
-	defer func() {
-		if err != nil {
-			// close idle connections before returning, upon error.
-			c.httpClient.CloseIdleConnections()
-		}
-	}()
-
 	if metadata.contentBody != nil {
 		// Check if body is seekable then it is retryable.
 		bodySeeker, isRetryable = metadata.contentBody.(io.Seeker)
@@ -627,7 +620,12 @@ func (c Client) executeMethod(ctx context.Context, method string, metadata reque
 		// Initiate the request.
 		res, err = c.do(req)
 		if err != nil {
-			continue
+			// For supported http requests errors verify.
+			if isHTTPReqErrorRetryable(err) {
+				continue // Retry.
+			}
+			// For other errors, return here no need to retry.
+			return nil, err
 		}
 
 		// For any known successful http status, return quickly.
@@ -669,23 +667,20 @@ func (c Client) executeMethod(ctx context.Context, method string, metadata reque
 			case "InvalidRegion":
 				fallthrough
 			case "AccessDenied":
-				if errResponse.Region == "" {
-					// Region is empty we simply return the error.
-					return res, err
-				}
-				// Region is not empty figure out a way to
-				// handle this appropriately.
-				if metadata.bucketName != "" {
+				if metadata.bucketName != "" && errResponse.Region != "" {
 					// Gather Cached location only if bucketName is present.
 					if _, cachedOk := c.bucketLocCache.Get(metadata.bucketName); cachedOk {
 						c.bucketLocCache.Set(metadata.bucketName, errResponse.Region)
 						continue // Retry.
 					}
 				} else {
-					// This is for ListBuckets() fallback.
+					// Most probably for ListBuckets()
 					if errResponse.Region != metadata.bucketLocation {
-						// Retry if the error response has a different region
-						// than the request we just made.
+						// Retry if the error
+						// response has a
+						// different region
+						// than the request we
+						// just made.
 						metadata.bucketLocation = errResponse.Region
 						continue // Retry
 					}
@@ -827,7 +822,7 @@ func (c Client) newRequest(method string, metadata requestMetadata) (req *http.R
 	case signerType.IsV2():
 		// Add signature version '2' authorization header.
 		req = s3signer.SignV2(*req, accessKeyID, secretAccessKey, isVirtualHost)
-	case metadata.objectName != "" && metadata.queryValues == nil && method == "PUT" && metadata.customHeader.Get("X-Amz-Copy-Source") == "" && !c.secure:
+	case metadata.objectName != "" && method == "PUT" && metadata.customHeader.Get("X-Amz-Copy-Source") == "" && !c.secure:
 		// Streaming signature is used by default for a PUT object request. Additionally we also
 		// look if the initialized client is secure, if yes then we don't need to perform
 		// streaming signature.

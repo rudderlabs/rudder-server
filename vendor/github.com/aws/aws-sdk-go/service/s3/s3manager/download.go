@@ -25,25 +25,13 @@ const DefaultDownloadPartSize = 1024 * 1024 * 5
 // when using Download().
 const DefaultDownloadConcurrency = 5
 
-type errReadingBody struct {
-	err error
-}
-
-func (e *errReadingBody) Error() string {
-	return fmt.Sprintf("failed to read part body: %v", e.err)
-}
-
-func (e *errReadingBody) Unwrap() error {
-	return e.err
-}
-
 // The Downloader structure that calls Download(). It is safe to call Download()
 // on this structure for multiple objects and across concurrent goroutines.
 // Mutating the Downloader's properties is not safe to be done concurrently.
 type Downloader struct {
-	// The size (in bytes) to request from S3 for each part.
-	// The minimum allowed part size is 5MB, and  if this value is set to zero,
-	// the DefaultDownloadPartSize value will be used.
+	// The buffer size (in bytes) to use when buffering data into chunks and
+	// sending them as parts to S3. The minimum allowed part size is 5MB, and
+	// if this value is set to zero, the DefaultDownloadPartSize value will be used.
 	//
 	// PartSize is ignored if the Range input parameter is provided.
 	PartSize int64
@@ -62,14 +50,6 @@ type Downloader struct {
 	// List of request options that will be passed down to individual API
 	// operation requests made by the downloader.
 	RequestOptions []request.Option
-
-	// Defines the buffer strategy used when downloading a part.
-	//
-	// If a WriterReadFromProvider is given the Download manager
-	// will pass the io.WriterAt of the Download request to the provider
-	// and will use the returned WriterReadFrom from the provider as the
-	// destination writer when copying from http response body.
-	BufferProvider WriterReadFromProvider
 }
 
 // WithDownloaderRequestOptions appends to the Downloader's API request options.
@@ -97,15 +77,10 @@ func WithDownloaderRequestOptions(opts ...request.Option) func(*Downloader) {
 //          d.PartSize = 64 * 1024 * 1024 // 64MB per part
 //     })
 func NewDownloader(c client.ConfigProvider, options ...func(*Downloader)) *Downloader {
-	return newDownloader(s3.New(c), options...)
-}
-
-func newDownloader(client s3iface.S3API, options ...func(*Downloader)) *Downloader {
 	d := &Downloader{
-		S3:             client,
-		PartSize:       DefaultDownloadPartSize,
-		Concurrency:    DefaultDownloadConcurrency,
-		BufferProvider: defaultDownloadBufferProvider(),
+		S3:          s3.New(c),
+		PartSize:    DefaultDownloadPartSize,
+		Concurrency: DefaultDownloadConcurrency,
 	}
 	for _, option := range options {
 		option(d)
@@ -124,7 +99,7 @@ func newDownloader(client s3iface.S3API, options ...func(*Downloader)) *Download
 //     sess := session.Must(session.NewSession())
 //
 //     // The S3 client the S3 Downloader will use
-//     s3Svc := s3.New(sess)
+//     s3Svc := s3.new(sess)
 //
 //     // Create a downloader with the s3 client and default options
 //     downloader := s3manager.NewDownloaderWithClient(s3Svc)
@@ -134,7 +109,16 @@ func newDownloader(client s3iface.S3API, options ...func(*Downloader)) *Download
 //          d.PartSize = 64 * 1024 * 1024 // 64MB per part
 //     })
 func NewDownloaderWithClient(svc s3iface.S3API, options ...func(*Downloader)) *Downloader {
-	return newDownloader(svc, options...)
+	d := &Downloader{
+		S3:          svc,
+		PartSize:    DefaultDownloadPartSize,
+		Concurrency: DefaultDownloadConcurrency,
+	}
+	for _, option := range options {
+		option(d)
+	}
+
+	return d
 }
 
 type maxRetrier interface {
@@ -421,19 +405,17 @@ func (d *downloader) downloadChunk(chunk dlchunk) error {
 	var n int64
 	var err error
 	for retry := 0; retry <= d.partBodyMaxRetries; retry++ {
-		n, err = d.tryDownloadChunk(in, &chunk)
+		var resp *s3.GetObjectOutput
+		resp, err = d.cfg.S3.GetObjectWithContext(d.ctx, in, d.cfg.RequestOptions...)
+		if err != nil {
+			return err
+		}
+		d.setTotalBytes(resp) // Set total if not yet set.
+
+		n, err = io.Copy(&chunk, resp.Body)
+		resp.Body.Close()
 		if err == nil {
 			break
-		}
-		// Check if the returned error is an errReadingBody.
-		// If err is errReadingBody this indicates that an error
-		// occurred while copying the http response body.
-		// If this occurs we unwrap the err to set the underlying error
-		// and attempt any remaining retries.
-		if bodyErr, ok := err.(*errReadingBody); ok {
-			err = bodyErr.Unwrap()
-		} else {
-			return err
 		}
 
 		chunk.cur = 0
@@ -445,28 +427,6 @@ func (d *downloader) downloadChunk(chunk dlchunk) error {
 	d.incrWritten(n)
 
 	return err
-}
-
-func (d *downloader) tryDownloadChunk(in *s3.GetObjectInput, w io.Writer) (int64, error) {
-	cleanup := func() {}
-	if d.cfg.BufferProvider != nil {
-		w, cleanup = d.cfg.BufferProvider.GetReadFrom(w)
-	}
-	defer cleanup()
-
-	resp, err := d.cfg.S3.GetObjectWithContext(d.ctx, in, d.cfg.RequestOptions...)
-	if err != nil {
-		return 0, err
-	}
-	d.setTotalBytes(resp) // Set total if not yet set.
-
-	n, err := io.Copy(w, resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		return n, &errReadingBody{err: err}
-	}
-
-	return n, nil
 }
 
 func logMessage(svc s3iface.S3API, level aws.LogLevelType, msg string) {

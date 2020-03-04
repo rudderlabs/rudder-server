@@ -24,7 +24,6 @@ import (
 	"net/http"
 
 	"github.com/minio/minio-go/v6/pkg/encrypt"
-	"github.com/minio/minio-go/v6/pkg/s3utils"
 )
 
 // CopyObject - copy a source object into a new object
@@ -38,11 +37,6 @@ func (c Client) CopyObjectWithProgress(dst DestinationInfo, src SourceInfo, prog
 	header := make(http.Header)
 	for k, v := range src.Headers {
 		header[k] = v
-	}
-
-	if dst.opts.ReplaceTags && len(dst.opts.UserTags) != 0 {
-		header.Set(amzTaggingHeaderDirective, "REPLACE")
-		header.Set(amzTaggingHeader, s3utils.TagEncode(dst.opts.UserTags))
 	}
 
 	var err error
@@ -59,8 +53,8 @@ func (c Client) CopyObjectWithProgress(dst DestinationInfo, src SourceInfo, prog
 		encrypt.SSECopy(src.encryption).Marshal(header)
 	}
 
-	if dst.opts.Encryption != nil {
-		dst.opts.Encryption.Marshal(header)
+	if dst.encryption != nil {
+		dst.encryption.Marshal(header)
 	}
 	for k, v := range dst.getUserMetaHeadersMap(true) {
 		header.Set(k, v)

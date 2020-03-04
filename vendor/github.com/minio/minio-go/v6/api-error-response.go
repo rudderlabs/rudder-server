@@ -51,9 +51,6 @@ type ErrorResponse struct {
 	// only in HEAD bucket and ListObjects response.
 	Region string
 
-	// Captures the server string returned in response header.
-	Server string
-
 	// Underlying HTTP status code for the returned error
 	StatusCode int `xml:"-" json:"-"`
 }
@@ -108,7 +105,6 @@ func httpRespToErrorResponse(resp *http.Response, bucketName, objectName string)
 
 	errResp := ErrorResponse{
 		StatusCode: resp.StatusCode,
-		Server:     resp.Header.Get("Server"),
 	}
 
 	err := xmlDecoder(resp.Body, &errResp)

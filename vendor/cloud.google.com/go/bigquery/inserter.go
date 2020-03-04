@@ -24,11 +24,6 @@ import (
 	bq "google.golang.org/api/bigquery/v2"
 )
 
-// NoDedupeID indicates a streaming insert row wants to opt out of best-effort
-// deduplication.
-// It is EXPERIMENTAL and subject to change or removal without notice.
-const NoDedupeID = "NoDedupeID"
-
 // An Inserter does streaming inserts into a BigQuery table.
 // It is safe for concurrent use.
 type Inserter struct {
@@ -47,9 +42,7 @@ type Inserter struct {
 	// A TableTemplateSuffix allows Inserters to create tables automatically.
 	//
 	// Experimental: this option is experimental and may be modified or removed in future versions,
-	// regardless of any other documented package stability guarantees. In general,
-	// the BigQuery team recommends the use of partitioned tables over sharding
-	// tables by suffix.
+	// regardless of any other documented package stability guarantees.
 	//
 	// When you specify a suffix, the table you upload data to
 	// will be used as a template for creating a new table, with the same schema,
@@ -205,9 +198,7 @@ func (u *Inserter) newInsertRequest(savers []ValueSaver) (*bq.TableDataInsertAll
 		if err != nil {
 			return nil, err
 		}
-		if insertID == NoDedupeID {
-			insertID = ""
-		} else if insertID == "" {
+		if insertID == "" {
 			insertID = randomIDFn()
 		}
 		m := make(map[string]bq.JsonValue)

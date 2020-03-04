@@ -191,11 +191,6 @@ func main() {
 	logger.Setup()
 	logger.Info("Main starting")
 
-	if !jobsdb.IsPostgresCompatible() {
-		logger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
-		return
-	}
-
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 

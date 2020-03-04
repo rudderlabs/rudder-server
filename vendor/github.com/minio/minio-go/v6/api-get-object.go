@@ -45,14 +45,6 @@ func (c Client) getObjectWithContext(ctx context.Context, bucketName, objectName
 		return nil, err
 	}
 
-	// Detect if snowball is server location we are talking to.
-	var snowball bool
-	if location, ok := c.bucketLocCache.Get(bucketName); ok {
-		if location == "snowball" {
-			snowball = true
-		}
-	}
-
 	var httpReader io.ReadCloser
 	var objectInfo ObjectInfo
 	var err error
@@ -144,10 +136,7 @@ func (c Client) getObjectWithContext(ctx context.Context, bucketName, objectName
 				} else if req.settingObjectInfo { // Request is just to get objectInfo.
 					// Remove range header if already set, for stat Operations to get original file size.
 					delete(opts.headers, "Range")
-					// Check whether this is snowball
-					// if yes do not use If-Match feature
-					// it doesn't work.
-					if etag != "" && !snowball {
+					if etag != "" {
 						opts.SetMatchETag(etag)
 					}
 					objectInfo, err := c.statObject(ctx, bucketName, objectName, StatObjectOptions{opts})
@@ -170,10 +159,7 @@ func (c Client) getObjectWithContext(ctx context.Context, bucketName, objectName
 					// new ones when they haven't been already.
 					// All readAt requests are new requests.
 					if req.DidOffsetChange || !req.beenRead {
-						// Check whether this is snowball
-						// if yes do not use If-Match feature
-						// it doesn't work.
-						if etag != "" && !snowball {
+						if etag != "" {
 							opts.SetMatchETag(etag)
 						}
 						if httpReader != nil {
@@ -636,7 +622,8 @@ func (c Client) getObject(ctx context.Context, bucketName, objectName string, op
 	}
 
 	// Trim off the odd double quotes from ETag in the beginning and end.
-	md5sum := trimEtag(resp.Header.Get("ETag"))
+	md5sum := strings.TrimPrefix(resp.Header.Get("ETag"), "\"")
+	md5sum = strings.TrimSuffix(md5sum, "\"")
 
 	// Parse the date.
 	date, err := time.Parse(http.TimeFormat, resp.Header.Get("Last-Modified"))

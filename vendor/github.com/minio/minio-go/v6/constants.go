@@ -60,8 +60,3 @@ const amzStorageClass = "X-Amz-Storage-Class"
 
 // Website redirect location header constant
 const amzWebsiteRedirectLocation = "X-Amz-Website-Redirect-Location"
-
-// Tagging header constants
-const amzTaggingHeader = "X-Amz-Tagging"
-const amzTaggingHeaderDirective = "X-Amz-Tagging-Directive"
-const amzTaggingHeaderCount = "X-Amz-Tagging-Count"

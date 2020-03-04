@@ -193,15 +193,11 @@ we'll get `children` array and reverse the order:
 "children|@reverse|0"         >> "Jack"
 ```
 
-There are currently the following built-in modifiers:
+There are currently three built-in modifiers:
 
 - `@reverse`: Reverse an array or the members of an object.
 - `@ugly`: Remove all whitespace from a json document.
 - `@pretty`: Make the json document more human readable.
-- `@this`: Returns the current element. It can be used to retrieve the root element.
-- `@valid`: Ensure the json document is valid.
-- `@flatten`: Flattens an array.
-- `@join`: Joins multiple objects into a single object.
 
 ### Modifier arguments
 

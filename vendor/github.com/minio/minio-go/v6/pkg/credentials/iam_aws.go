@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -55,9 +54,40 @@ type IAM struct {
 const (
 	defaultIAMRoleEndpoint      = "http://169.254.169.254"
 	defaultECSRoleEndpoint      = "http://169.254.170.2"
-	defaultSTSRoleEndpoint      = "https://sts.amazonaws.com"
 	defaultIAMSecurityCredsPath = "/latest/meta-data/iam/security-credentials/"
 )
+
+// https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html
+func getEndpoint(endpoint string) (string, bool, error) {
+	ecsFullURI := os.Getenv("AWS_CONTAINER_CREDENTIALS_FULL_URI")
+	ecsURI := os.Getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI")
+
+	if endpoint != "" {
+		return endpoint, ecsURI != "" || ecsFullURI != "", nil
+	}
+	if ecsFullURI != "" {
+		u, err := url.Parse(ecsFullURI)
+		if err != nil {
+			return "", false, err
+		}
+		host := u.Hostname()
+		if host == "" {
+			return "", false, fmt.Errorf("can't parse host from uri: %s", ecsFullURI)
+		}
+
+		if loopback, err := isLoopback(host); loopback {
+			return ecsFullURI, true, nil
+		} else if err != nil {
+			return "", false, err
+		} else {
+			return "", false, fmt.Errorf("host is not on a loopback address: %s", host)
+		}
+	}
+	if ecsURI != "" {
+		return fmt.Sprintf("%s%s", defaultECSRoleEndpoint, ecsURI), true, nil
+	}
+	return defaultIAMRoleEndpoint, false, nil
+}
 
 // NewIAM returns a pointer to a new Credentials object wrapping the IAM.
 func NewIAM(endpoint string) *Credentials {
@@ -77,61 +107,16 @@ func (m *IAM) Retrieve() (Value, error) {
 	var roleCreds ec2RoleCredRespBody
 	var err error
 
-	endpoint := m.endpoint
-	switch {
-	case len(os.Getenv("AWS_WEB_IDENTITY_TOKEN_FILE")) > 0:
-		if len(endpoint) == 0 {
-			if len(os.Getenv("AWS_REGION")) > 0 {
-				endpoint = "sts." + os.Getenv("AWS_REGION") + ".amazonaws.com"
-			} else {
-				endpoint = defaultSTSRoleEndpoint
-			}
-		}
-
-		creds := &STSWebIdentity{
-			Client:          m.Client,
-			stsEndpoint:     endpoint,
-			roleARN:         os.Getenv("AWS_ROLE_ARN"),
-			roleSessionName: os.Getenv("AWS_ROLE_SESSION_NAME"),
-			getWebIDTokenExpiry: func() (*WebIdentityToken, error) {
-				token, err := ioutil.ReadFile(os.Getenv("AWS_WEB_IDENTITY_TOKEN_FILE"))
-				if err != nil {
-					return nil, err
-				}
-
-				return &WebIdentityToken{Token: string(token)}, nil
-			},
-		}
-
-		return creds.Retrieve()
-
-	case len(os.Getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI")) > 0:
-		if len(endpoint) == 0 {
-			endpoint = fmt.Sprintf("%s%s", defaultECSRoleEndpoint,
-				os.Getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"))
-		}
-
-		roleCreds, err = getEcsTaskCredentials(m.Client, endpoint)
-
-	case len(os.Getenv("AWS_CONTAINER_CREDENTIALS_FULL_URI")) > 0:
-		if len(endpoint) == 0 {
-			endpoint = os.Getenv("AWS_CONTAINER_CREDENTIALS_FULL_URI")
-
-			var ok bool
-			if ok, err = isLoopback(endpoint); !ok {
-				if err == nil {
-					err = fmt.Errorf("uri host is not a loopback address: %s", endpoint)
-				}
-				break
-			}
-		}
-
-		roleCreds, err = getEcsTaskCredentials(m.Client, endpoint)
-
-	default:
-		roleCreds, err = getCredentials(m.Client, endpoint)
+	endpoint, isEcsTask, err := getEndpoint(m.endpoint)
+	if err != nil {
+		return Value{}, err
 	}
 
+	if isEcsTask {
+		roleCreds, err = getEcsTaskCredentials(m.Client, endpoint)
+	} else {
+		roleCreds, err = getCredentials(m.Client, endpoint)
+	}
 	if err != nil {
 		return Value{}, err
 	}
@@ -168,10 +153,6 @@ type ec2RoleCredRespBody struct {
 // be sent to fetch the rolling access credentials.
 // http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html
 func getIAMRoleURL(endpoint string) (*url.URL, error) {
-	if endpoint == "" {
-		endpoint = defaultIAMRoleEndpoint
-	}
-
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
@@ -295,18 +276,8 @@ func getCredentials(client *http.Client, endpoint string) (ec2RoleCredRespBody, 
 	return respCreds, nil
 }
 
-// isLoopback identifies if a uri's host is on a loopback address
-func isLoopback(uri string) (bool, error) {
-	u, err := url.Parse(uri)
-	if err != nil {
-		return false, err
-	}
-
-	host := u.Hostname()
-	if len(host) == 0 {
-		return false, fmt.Errorf("can't parse host from uri: %s", uri)
-	}
-
+// isLoopback identifies if a host is on a loopback address
+func isLoopback(host string) (bool, error) {
 	ips, err := net.LookupHost(host)
 	if err != nil {
 		return false, err
