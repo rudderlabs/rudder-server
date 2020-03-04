@@ -669,10 +669,22 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		lineBytesCounter += len(lineBytes)
 		var jsonLine map[string]interface{}
 		json.Unmarshal(lineBytes, &jsonLine)
-		metadata, _ := jsonLine["metadata"]
-		columnData := jsonLine["data"].(map[string]interface{})
-		tableName, _ := metadata.(map[string]interface{})["table"].(string)
-		columns, _ := metadata.(map[string]interface{})["columns"].(map[string]interface{})
+		metadata, ok := jsonLine["metadata"]
+		if !ok {
+			continue
+		}
+		columnData, ok := jsonLine["data"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		tableName, ok := metadata.(map[string]interface{})["table"].(string)
+		if !ok {
+			continue
+		}
+		columns, ok := metadata.(map[string]interface{})["columns"].(map[string]interface{})
+		if !ok {
+			continue
+		}
 		if _, ok := outputFileMap[tableName]; !ok {
 			outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + ".csv.gz"
 			gzWriter, err := misc.CreateGZ(outputFilePath)
