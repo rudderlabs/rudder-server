@@ -28,6 +28,7 @@ import (
 	"sort"
 	"unicode/utf8"
 
+	"github.com/hashicorp/go-version"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"strconv"
@@ -244,6 +245,32 @@ func GetConnectionString() string {
 
 func (jd *HandleT) GetDBHandle() *sql.DB {
 	return jd.dbHandle
+}
+
+//IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
+func IsPostgresCompatible() bool {
+	psqlInfo := GetConnectionString()
+	dbHandle, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+
+	var versionStr string
+	err = dbHandle.QueryRow("SHOW server_version;").Scan(&versionStr)
+	if err != nil {
+		panic(err)
+	}
+
+	minVersion, err := version.NewVersion(minPostgresVersion)
+	if err != nil {
+		panic(err)
+	}
+	postgresVersion, err := version.NewVersion(versionStr)
+	if err != nil {
+		panic(err)
+	}
+
+	return postgresVersion.GreaterThanOrEqual(minVersion)
 }
 
 /*
@@ -1724,6 +1751,8 @@ const (
 	backupDropDSOperation      = "BACKUP_DROP_DS"
 	dropDSOperation            = "DROP_DS"
 	RawDataDestUploadOperation = "S3_DEST_UPLOAD"
+
+	minPostgresVersion = "10"
 )
 
 type JournalEntryT struct {
