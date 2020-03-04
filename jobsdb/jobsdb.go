@@ -28,6 +28,7 @@ import (
 	"sort"
 	"unicode/utf8"
 
+	"github.com/hashicorp/go-version"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"strconv"
@@ -189,6 +190,7 @@ func (jd *HandleT) checkValidJobState(stateFilters []string) {
 var (
 	host, user, password, dbname string
 	port                         int
+	minPostgresVersion           string
 )
 
 var (
@@ -208,6 +210,7 @@ func loadConfig() {
 	dbname = config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
 	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+	minPostgresVersion = config.GetEnv("JobsDB.minPostgresVersion", "10")
 
 	/*Migration related parameters
 	jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
@@ -244,6 +247,32 @@ func GetConnectionString() string {
 
 func (jd *HandleT) GetDBHandle() *sql.DB {
 	return jd.dbHandle
+}
+
+//IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
+func IsPostgresCompatible() bool {
+	psqlInfo := GetConnectionString()
+	dbHandle, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+
+	var versionStr string
+	err = dbHandle.QueryRow("SHOW server_version;").Scan(&versionStr)
+	if err != nil {
+		panic(err)
+	}
+
+	minVersion, err := version.NewVersion(minPostgresVersion)
+	if err != nil {
+		panic(err)
+	}
+	postgresVersion, err := version.NewVersion(versionStr)
+	if err != nil {
+		panic(err)
+	}
+
+	return postgresVersion.GreaterThanOrEqual(minVersion)
 }
 
 /*

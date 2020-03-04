@@ -33,6 +33,7 @@ retrySleepInMS = 100
 disableEventUploads = false
 
 [JobsDB]
+minPostgresVersion = 10
 # Migration related parameters
 jobDoneMigrateThres = 0.8
 jobStatusMigrateThres = 5
