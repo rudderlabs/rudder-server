@@ -185,3 +185,4 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 [RudderSdkJsGitRepo]: https://github.com/rudderlabs/rudder-sdk-js
 [RudderSdkAndroidGitRepo]: https://github.com/rudderlabs/rudder-sdk-android
 [RudderSdkIOSGitRepo]: https://github.com/rudderlabs/rudder-sdk-ios
+[ConfigGenerator]: https://github.com/rudderlabs/config-generator
