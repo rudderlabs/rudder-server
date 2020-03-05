@@ -60,7 +60,8 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 The docker setup is the easiest & fastest way to try out RudderStack.
 
 1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page. 
- - Alternatively, you can use our open-source config generator to generate the config,
+ - Alternatively, you can use our open-source config generator to generate the config. Follow these [instructions][ConfigGeneratorSection]
+
 2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
 
       (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
@@ -73,7 +74,7 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 # Setup Instructions (Kubernetes)
 
 1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page. 
- - Alternatively, you can use our open-source config generator to generate the config. 
+- Alternatively, you can use our open-source config generator to generate the config. Follow these [instructions][ConfigGeneratorSection]
 
 2. Our helm scripts and instructions are in a separate repo - [Download Here][HelmScriptsGitRepo]
 
@@ -194,3 +195,5 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 [RudderSdkAndroidGitRepo]: https://github.com/rudderlabs/rudder-sdk-android
 [RudderSdkIOSGitRepo]: https://github.com/rudderlabs/rudder-sdk-ios
 [ConfigGenerator]: https://github.com/rudderlabs/config-generator
+[ConfigGeneratorSection]: https://github.com/rudderlabs/rudder-server/blob/master/README.md#open-source-config-generator
+
