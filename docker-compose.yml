@@ -21,6 +21,9 @@ services:
       - build/docker.env
     environment:
       - JOBS_DB_HOST=db
+    # Uncomment the following lines to mount workspaceConfig file
+    # volumes:
+    #   - ./workspaceConfig.json:/data/rudderstack/workspaceConfig.json
   d-transformer:
     build:
       context: ./rudder-transformer/

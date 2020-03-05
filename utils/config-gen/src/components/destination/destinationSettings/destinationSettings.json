@@ -1,0 +1,1380 @@
+{
+  "GA": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Tracking ID",
+          "value": "trackingID",
+          "regex": "^(UA|YT|MO)-\\d+-\\d+$",
+          "required": true,
+          "placeholder": "e.g: UA-125934xxx-1"
+        }
+      ]
+    },
+    {
+      "title": "2. Pages and Screens",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Track all pages to Google Analytics",
+          "value": "trackAllPages",
+          "default": true
+        },
+        {
+          "type": "checkbox",
+          "label": "Track all screens",
+          "value": "trackAllScreens"
+        },
+        {
+          "type": "checkbox",
+          "label": "Track categorized pages to Google Analytics",
+          "value": "trackCategorizedPages",
+          "default": true
+        }
+      ]
+    },
+    {
+      "title": "3. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "4. Configure Custom Dimension",
+      "fields": [
+        {
+          "type": "dynamicForm",
+          "labelLeft": "Event Type",
+          "labelRight": "Custom Dimension",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "placeholderLeft": "e.g: product_purchased",
+          "placeholderRight": "e.g: product_price",
+          "value": "customMappings"
+        }
+      ]
+    }
+  ],
+  "AM": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "API Key",
+          "value": "apiKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: bSjsdGYsOo9sjw23Shj"
+        }
+      ]
+    },
+    {
+      "title": "2. Pages and Screens",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Track all pages to Amplitude",
+          "value": "trackAllPages",
+          "default": true
+        },
+        {
+          "type": "checkbox",
+          "label": "Track all screens",
+          "value": "trackAllScreens"
+        },
+        {
+          "type": "checkbox",
+          "label": "Track categorized pages to Amplitude",
+          "value": "trackCategorizedPages",
+          "default": true
+        }
+      ]
+    },
+    {
+      "title": "3. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "MP": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Token",
+          "value": "token",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: bSjsdGYsOo9sjw23Shj"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "3. Configure Custom Dimension",
+      "fields": [
+        {
+          "type": "dynamicForm",
+          "labelLeft": "Event Type",
+          "labelRight": "Custom Dimension",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "placeholderLeft": "e.g: product_purchased",
+          "placeholderRight": "e.g: product_price",
+          "value": "customMappings"
+        }
+      ]
+    }
+  ],
+  "FB": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "APP ID",
+          "value": "appID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: bSjsdGYsOo9sjw23Shj"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "3. Configure Custom Dimension",
+      "fields": [
+        {
+          "type": "dynamicForm",
+          "labelLeft": "Event Type",
+          "labelRight": "Custom Dimension",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "placeholderLeft": "e.g: product_purchased",
+          "placeholderRight": "e.g: product_price",
+          "value": "customMappings"
+        }
+      ]
+    }
+  ],
+  "ADJ": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "APP Token",
+          "value": "appToken",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: bSjsdGYsOo9sasdjw23Shj"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "3. Map Events to Adjust Event Tokens",
+      "fields": [
+        {
+          "type": "dynamicForm",
+          "labelLeft": "Event Name",
+          "labelRight": "Event Token",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "placeholderLeft": "e.g: product_purchased",
+          "placeholderRight": "Token from adjust.com",
+          "value": "customMappings"
+        }
+      ]
+    },
+    {
+      "title": "4. Delay Time before SDK initialization",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Delay Time (in seconds)",
+          "value": "delay",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "7"
+        }
+      ]
+    }
+  ],
+  "HS": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "API Key",
+          "value": "apiKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: bSjsdGYsOo9sasdjw23Shj"
+        },
+        {
+          "type": "textInput",
+          "label": "Hub ID",
+          "value": "hubID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: 748991"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "S3": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "S3 Bucket Name",
+          "value": "bucketName",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: s3-event-logs"
+        },
+        {
+          "type": "textInput",
+          "label": "Prefix",
+          "value": "prefix",
+          "regex": ".*",
+          "required": false,
+          "placeholder": ""
+        },
+        {
+          "type": "textInput",
+          "label": "AWS Access Key ID",
+          "value": "accessKeyID",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "e.g: access-key-id"
+        },
+        {
+          "type": "textInput",
+          "label": "AWS Secret Access Key",
+          "value": "accessKey",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "e.g: secret-access-key"
+        }
+      ]
+    }
+  ],
+  "GCS": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Google Cloud Storage Bucket Name",
+          "value": "bucketName",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: gcs-event-logs"
+        },
+        {
+          "type": "textInput",
+          "label": "Prefix",
+          "value": "prefix",
+          "regex": ".*",
+          "required": false,
+          "placeholder": ""
+        },
+        {
+          "type": "textareaInput",
+          "label": "Credentials",
+          "labelNote": "GCP Service Account credentials JSON for Rudder to use in loading data into your Google Cloud Storage",
+          "value": "credentials",
+          "regex": ".*",
+          "required": false,
+          "footerNote": "Create a service account in your GCP Project for Rudder with roles of 'storage.objectCreator'"
+        }
+      ]
+    }
+  ],
+  "AZURE_BLOB": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Azure Blob Storage Container Name",
+          "value": "containerName",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: azure-blob-event-logs"
+        },
+        {
+          "type": "textInput",
+          "label": "Prefix",
+          "value": "prefix",
+          "regex": ".*",
+          "required": false,
+          "placeholder": ""
+        },
+        {
+          "type": "textInput",
+          "label": "Azure Blob Storage Account Name",
+          "value": "accountName",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: account-name"
+        },
+        {
+          "type": "textInput",
+          "label": "Azure Blob Storage Account Key",
+          "value": "accountKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: account-key"
+        }
+      ]
+    }
+  ],
+  "MINIO": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "MinIO Endpoint",
+          "value": "endPoint",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: play.min.io:9000"
+        },
+        {
+          "type": "textInput",
+          "label": "MinIO Access Key ID",
+          "value": "accessKeyID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: Q3AM3UQ867SPQQA43P2F"
+        },
+        {
+          "type": "textInput",
+          "label": "MinIO Secret Access Key",
+          "value": "secretAccessKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG"
+        },
+        {
+          "type": "textInput",
+          "label": "MINIO Bucket Name",
+          "value": "bucketName",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: minio-event-logs"
+        },
+        {
+          "type": "textInput",
+          "label": "Prefix",
+          "value": "prefix",
+          "regex": ".*",
+          "required": false,
+          "placeholder": ""
+        },
+        {
+          "type": "checkbox",
+          "label": "Use SSL for connection",
+          "value": "useSSL",
+          "default": true
+        }
+      ]
+    }
+  ],
+  "RS": [
+    {
+      "title": "1. Connection Credentials",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Host",
+          "value": "host",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Port",
+          "value": "port",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Database",
+          "value": "database",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "User",
+          "value": "user",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Password",
+          "value": "password",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Staging S3 Storage Bucket Name",
+          "labelNote": "S3 Bucket to storage data before loading into Redshift",
+          "value": "bucketName",
+          "regex": ".*",
+          "required": true,
+          "footerNote": "Please make sure the bucket exists in your S3"
+        },
+        {
+          "type": "textInput",
+          "label": "AWS Access Key ID",
+          "value": "accessKeyID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: access-key-id"
+        },
+        {
+          "type": "textInput",
+          "label": "AWS Secret Access Key",
+          "value": "accessKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: secret-access-key"
+        }
+      ]
+    }
+  ],
+  "BQ": [
+    {
+      "title": "1. Connection Credentials",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Project",
+          "labelNote": "GCP Project ID where your BigQuery database is located",
+          "value": "project",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Location",
+          "labelNote": "GCP region for your BigQuery datasets",
+          "value": "location",
+          "regex": ".*",
+          "placeholder": "US, EU, asia-southeast1",
+          "required": false,
+          "footerNote": "Examples: US, EU, asia-south1"
+        },
+        {
+          "type": "textInput",
+          "label": "Staging GCS Storage Bucket Name",
+          "labelNote": "GCS Bucket to storage data before loading into BigQuery",
+          "value": "bucketName",
+          "regex": ".*",
+          "required": true,
+          "footerNote": "Please make sure the bucket exists in your GCP Project in the same region as bigquery dataset"
+        },
+        {
+          "type": "textareaInput",
+          "label": "Credentials",
+          "labelNote": "GCP Service Account credentials JSON for Rudder to use in loading data into your BigQuery database",
+          "value": "credentials",
+          "regex": ".*",
+          "required": true,
+          "footerNote": "Create a service account in your GCP Project for Rudder with roles of 'BigQuery User'"
+        }
+      ]
+    }
+  ],
+  "SNOWFLAKE": [
+    {
+      "title": "1. Connection Credentials",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Account",
+          "value": "account",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Database",
+          "value": "database",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Warehouse",
+          "value": "warehouse",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "User",
+          "value": "user",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Password",
+          "value": "password",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Staging S3 Storage Bucket Name",
+          "labelNote": "S3 Bucket to storage data before loading into Redshift",
+          "value": "bucketName",
+          "regex": ".*",
+          "required": true,
+          "footerNote": "Please make sure the bucket exists in your S3"
+        },
+        {
+          "type": "textInput",
+          "label": "AWS Access Key ID",
+          "value": "accessKeyID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: access-key-id"
+        },
+        {
+          "type": "textInput",
+          "label": "AWS Secret Access Key",
+          "value": "accessKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: secret-access-key"
+        }
+      ]
+    }
+  ],
+  "AF": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "AppsFlyer Dev Key",
+          "value": "devKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: bSjsdGYsOo9sjw23Shj"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "MAILCHIMP": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Mailchimp Api Key",
+          "value": "apiKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: 94f71917dald93kf897449b0c90caa4c-us20"
+        },
+        {
+          "type": "textInput",
+          "label": "Mailchimp Audience Id",
+          "value": "audienceId",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: dn42a32d30"
+        },
+        {
+          "type": "textInput",
+          "label": "Mailchimp DataCenter Id",
+          "value": "datacenterId",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: us20"
+        }
+      ]
+    }
+  ],
+  "HOTJAR": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Site ID",
+          "value": "siteID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: dd412940"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "SALESFORCE": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "User Name",
+          "value": "userName",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "User name for salesforce login"
+        },
+        {
+          "type": "textInput",
+          "label": "Password",
+          "value": "password",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "Password for salesforce login"
+        },
+        {
+          "type": "textInput",
+          "label": "Initial Access Token",
+          "value": "initialAccessToken",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "Initial access token from salesforce"
+        }
+      ]
+    }
+  ],
+  "GOOGLEADS": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Conversion ID",
+          "value": "conversionID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: dd412940"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "3. Configure Page Load Conversion",
+      "fields": [
+        {
+          "type": "dynamicForm",
+          "labelLeft": "Conversion Label",
+          "labelRight": "Name",
+          "keyLeft": "conversionLabel",
+          "keyRight": "name",
+          "placeholderLeft": "bpg3CMiIjLMBELXBp8wC",
+          "placeholderRight": "name",
+          "value": "pageLoadConversions"
+        }
+      ]
+    },
+    {
+      "title": "4. Click Event Conversion",
+      "fields": [
+        {
+          "type": "dynamicForm",
+          "labelLeft": "Conversion Label",
+          "labelRight": "Name",
+          "keyLeft": "conversionLabel",
+          "keyRight": "name",
+          "placeholderLeft": "bpg3CMiIjLMBELXBp8wC",
+          "placeholderRight": "name",
+          "value": "clickEventConversions"
+        }
+      ]
+    }
+  ],
+  "SEGMENT": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Segment Write Key",
+          "value": "writeKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: bSjsdGYsOo9sjw23Shj"
+        }
+      ]
+    }
+  ],
+  "AUTOPILOT": [
+    {
+      "title": "Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "API Key",
+          "value": "apiKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: 1d6583b196d34de28a3g19ahadde4b0z"
+        },
+        {
+          "type": "textInput",
+          "label": "Trigger Id",
+          "value": "triggerId",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: 00XX"
+        }
+      ]
+    },
+    {
+      "title": "Configure Custom Journey Mappings",
+      "fields": [
+        {
+          "type": "dynamicForm",
+          "labelLeft": "Trigger Id",
+          "labelsRight": "Event Name",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "placeholderLeft": "e.g: 0001",
+          "placeholderRight": "e.g: Signup",
+          "value": "customMappings"
+        }
+      ]
+    }
+  ],
+  "INTERCOM": [
+    {
+      "title": "Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Api Key",
+          "value": "apiKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: dd412940"
+        },
+        {
+          "type": "textInput",
+          "label": "App Id",
+          "value": "appId",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: dd412940"
+        },
+        {
+          "type": "textInput",
+          "label": "Mobile Api Key",
+          "value": "mobileApiKey",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "e.g: dd412940"
+        }
+      ]
+    },
+    {
+      "title": "Other Setttings",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Include Context with Identify Calls",
+          "value": "collectContext",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "HEAP": [
+    {
+      "title": "Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "App Id",
+          "value": "appId",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: 3138654182"
+        }
+      ]
+    }
+  ],
+  "BRANCH": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Branch Key",
+          "value": "branchKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: key_live_mfMJCn7WLNeXte2aZIDOeobdrvmbZpgD"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "BRAZE": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "App Key",
+          "value": "appKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: f2c7c97a-48d1-11ea-8e07-faffc22c7c7f"
+        },
+        {
+          "type": "textInput",
+          "label": "Rest Api Key",
+          "value": "restApiKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: 06c19c59-48d2-11ea-b27a-faffc22c7c7f"
+        },
+        {
+          "type": "textInput",
+          "label": "Data Center",
+          "value": "dataCenter",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: EU-01"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": true
+        }
+      ]
+    }
+  ],
+  "VWO": [
+    {
+      "title": "Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Account Id",
+          "value": "accountId",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: 410057"
+        },
+        {
+          "type": "checkbox",
+          "label": "Single Page Application (SPA)?",
+          "value": "isSPA",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "Send experiment viewed as track",
+          "value": "sendExperimentTrack",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "Send experiment viewed as identify traits",
+          "value": "sendExperimentIdentify",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "Use Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": true
+        }
+      ]
+    },
+    {
+      "title": "Other Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Library Tolerance",
+          "value": "libraryTolerance",
+          "regex": ".*",
+          "placeholder": "e.g: 2000",
+          "default": "2500"
+        },
+        {
+          "type": "textInput",
+          "label": "Setting Tolerance",
+          "value": "settingsTolerance",
+          "regex": ".*",
+          "placeholder": "e.g: 2000",
+          "default": "2000"
+        },
+        {
+          "type": "checkbox",
+          "label": "Use Existing jquery",
+          "value": "useExistingJquery",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "GTM": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Container ID",
+          "value": "containerID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: GTM-ABCDEFG"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "KEEN": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Project ID",
+          "value": "projectID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: 4a1d51eab8e77c0000c521ab"
+        },
+        {
+          "type": "textInput",
+          "label": "Write Key",
+          "value": "writeKey",
+          "regex": ".*",
+          "required": true
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "3. Add On",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Geo IP Add On",
+          "value": "ipAddon",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "User Agent Add On",
+          "value": "uaAddon",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "URL Parsing Add On",
+          "value": "urlAddon",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "Referrer Parsing Add On",
+          "value": "referrerAddon",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "KOCHAVA": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Kochava Api Key",
+          "value": "apiKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: kotestapplication-xxxxxxxx"
+        }
+      ]
+    }
+  ],
+  "KISSMETRICS": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "API Key",
+          "value": "apiKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: ABCDEFG"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "3. Prefix Properties",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Prefix the properties with page or event name",
+          "value": "prefixProperties",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "CUSTOMERIO": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "API Key",
+          "value": "apiKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: ABCDEFG"
+        },
+        {
+          "type": "textInput",
+          "label": "Site ID",
+          "value": "siteID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: ABCDEFG"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "CHARTBEAT": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Domain",
+          "value": "domain",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: ABCDEFG"
+        },
+        {
+          "type": "textInput",
+          "label": "UID",
+          "value": "uid",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: ABCDEFG"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "3. Other Settings",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Send Name and Category as Title",
+          "value": "sendNameAndCategoryAsTitle",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "Use Chartbeat video script",
+          "value": "video",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "COMSCORE": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "c2 ID",
+          "value": "c2ID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: ABCDEFG"
+        },
+        {
+          "type": "textInput",
+          "label": "Publisher Secret",
+          "value": "publisherSecret",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: ABCDEFG"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "3. Configure Beacon Param Map",
+      "fields": [
+        {
+          "type": "dynamicForm",
+          "labelLeft": "Event Property",
+          "labelRight": "Beacon Parameter",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "placeholderLeft": "event prop",
+          "placeholderRight": "c0",
+          "value": "comScoreBeaconParam"
+        }
+      ]
+    }
+  ],
+  "LEANPLUM": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Application ID",
+          "value": "applicationId",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: ABCDEFG"
+        },
+        {
+          "type": "textInput",
+          "label": "Client Key",
+          "value": "clientKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: ABCDEFG"
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Initialize Native SDK to send automated events",
+          "value": "useNativeSDK",
+          "default": true
+        },
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send user generated events",
+          "value": "sendEvents",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "3. Development Mode",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use in Development Environment",
+          "value": "isDevelop",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "FIREBASE": [
+    {
+      "title": "1. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": true
+        }
+      ]
+    }
+  ]
+}

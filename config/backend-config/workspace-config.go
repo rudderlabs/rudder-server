@@ -67,13 +67,13 @@ func (workspaceConfig *WorkspaceConfig) getFromFile() (SourcesT, bool) {
 	logger.Info("Reading workspace config from JSON file")
 	data, err := ioutil.ReadFile(configJSONPath)
 	if err != nil {
-		logger.Error("Unable to read backend config from file.")
+		logger.Errorf("Unable to read backend config from file: %s", configJSONPath)
 		return SourcesT{}, false
 	}
 	var configJSON SourcesT
 	error := json.Unmarshal(data, &configJSON)
 	if error != nil {
-		logger.Error("Unable to parse backend config from file.")
+		logger.Errorf("Unable to parse backend config from file: %s", configJSONPath)
 		return SourcesT{}, false
 	}
 	return configJSON, true
