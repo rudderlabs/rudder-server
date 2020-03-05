@@ -1,8 +1,10 @@
 package e2e_test
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -275,6 +277,22 @@ var _ = Describe("E2E", func() {
 				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
 
+		})
+		It("should send correct response headers to support CORS", func() {
+			originURL := "http://example.com/"
+			serverIP := "http://localhost:8080/v1/track"
+			req, _ := http.NewRequest("POST", serverIP, bytes.NewBuffer([]byte("{}")))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Add("Origin", originURL)
+			req.SetBasicAuth("1Yc6YbOGg6U2E8rlj97ZdOawPyr", "")
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				panic(err)
+			}
+			defer resp.Body.Close()
+			Expect(resp.Header.Get("Access-Control-Allow-Credentials")).To(Equal("true"))
+			Expect(resp.Header.Get("Access-Control-Allow-Origin")).To(Equal(originURL))
 		})
 
 	})
