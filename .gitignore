@@ -4,3 +4,5 @@ rudder-server
 .vscode
 runtime.log
 dist/*
+workspaceConfig.json
+**/node_modules
