@@ -19,7 +19,14 @@ On a successful setup, you should see the following
 
 # Export workspace config
 
-After adding the required sources and destinations , export your workspace config. This workspace-config is required by the RudderStack Server.
+After adding the required sources and destinations, export your workspace config. This workspace-config is required by the RudderStack Server.
 To learn more about adding sources and destinations in RudderStack, refer [Adding a Source and Destination in RudderStack](https://docs.rudderstack.com/getting-started/adding-source-and-destination-rudderstack)
 
 Update the [config](https://docs.rudderstack.com/administrators-guide/config-parameters) variables `configFromFile` and `configJSONPath` in rudder-server to read workspace config from the exported JSON file. 
+
+# Start RudderStack with the workspace config file
+
+* Download the workspace config file on your machine. 
+* In `docker-compose.yml`, uncomment `volumes` section under `backend` service. Specify the path to your workspace config.
+* In `build/docker.env`, set the environment variable `RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true` 
+* Start RudderStack with `docker-compose up`
