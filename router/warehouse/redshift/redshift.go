@@ -159,7 +159,7 @@ type S3ManifestT struct {
 	Entries []S3ManifestEntryT `json:"entries"`
 }
 
-func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[string]string) (string, error) {
+func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[string]string, accessKeyID, accessKey string) (string, error) {
 	csvObjectLocations, err := warehouseutils.GetLoadFileLocations(rs.DbHandle, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, tableName, rs.Upload.StartLoadFileID, rs.Upload.EndLoadFileID)
 	if err != nil {
 		panic(err)
@@ -193,7 +193,7 @@ func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
-		Config:   map[string]interface{}{"bucketName": bucketName},
+		Config:   map[string]interface{}{"bucketName": bucketName, "accessKeyID": accessKeyID, "accessKey": accessKey},
 	})
 
 	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
@@ -233,7 +233,7 @@ func (rs *HandleT) load() (errList []error) {
 	for tableName, columnMap := range rs.Upload.Schema {
 		timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
 		timer.Start()
-		manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap)
+		manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap, accessKeyID, accessKey)
 		timer.End()
 		if err != nil {
 			errList = append(errList, err)
