@@ -28,7 +28,6 @@ import (
 	"sort"
 	"unicode/utf8"
 
-	"github.com/hashicorp/go-version"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"strconv"
@@ -255,22 +254,18 @@ func IsPostgresCompatible() bool {
 		panic(err)
 	}
 
-	var versionStr string
-	err = dbHandle.QueryRow("SHOW server_version;").Scan(&versionStr)
+	err = dbHandle.Ping()
 	if err != nil {
 		panic(err)
 	}
 
-	minVersion, err := version.NewVersion(minPostgresVersion)
+	var versionNum int
+	err = dbHandle.QueryRow("SHOW server_version_num;").Scan(&versionNum)
 	if err != nil {
-		panic(err)
-	}
-	postgresVersion, err := version.NewVersion(versionStr)
-	if err != nil {
-		panic(err)
+		return false
 	}
 
-	return postgresVersion.GreaterThanOrEqual(minVersion)
+	return versionNum >= minPostgresVersion
 }
 
 /*
@@ -1752,7 +1747,10 @@ const (
 	dropDSOperation            = "DROP_DS"
 	RawDataDestUploadOperation = "S3_DEST_UPLOAD"
 
-	minPostgresVersion = "10"
+	//This is integer representation of Postgres version.
+	//For ex, integer representation of version 9.6.3 is 90603
+	//Minimum postgres version needed for rudder server is 10
+	minPostgresVersion = 100000
 )
 
 type JournalEntryT struct {
