@@ -10,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -90,9 +91,15 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 func Setup() {
 	// TODO: Fix the buffer size
 	eventBatchChannel = make(chan *GatewayEventBatchT)
-	go backendConfigSubscriber()
-	go handleEvents()
-	go flushEvents()
+	rruntime.Go(func() {
+		backendConfigSubscriber()
+	})
+	rruntime.Go(func() {
+		handleEvents()
+	})
+	rruntime.Go(func() {
+		flushEvents()
+	})
 }
 
 func uploadEvents(eventBuffer []*GatewayEventBatchT) {
@@ -270,7 +277,7 @@ func updateConfig(sources backendconfig.SourcesT) {
 
 func backendConfigSubscriber() {
 	configChannel := make(chan utils.DataEvent)
-	backendconfig.Subscribe(configChannel)
+	backendconfig.Subscribe(configChannel, "backendconfig")
 	for {
 		config := <-configChannel
 		updateConfig(config.Data.(backendconfig.SourcesT))

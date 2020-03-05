@@ -3,7 +3,7 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      golang: 1.12
+      golang: 1.13
   pre_build:
     commands:
       - docker login --username rudderlabs --password $DOCKERHUB_PASSWORD
@@ -17,7 +17,6 @@ phases:
 
       - echo build Docker image on `date`
       - docker build -t rudder-server:$VERSION -f build/Dockerfile-aws .
-      - docker tag rudder-server:$VERSION rudderlabs/rudder-server:$VERSION
       - docker tag rudder-server:$VERSION rudderlabs/rudder-server:$VERSION
   post_build:
     commands:

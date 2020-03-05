@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,7 +16,6 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
-
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -25,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -54,7 +56,7 @@ func loadConfig() {
 	enableBackup = config.GetBool("JobsDB.enableBackup", true)
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 }
 
 // Test Function
@@ -73,9 +75,10 @@ func readIOforResume(router router.HandleT) {
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch)
+	backendconfig.Subscribe(ch, "backendconfigFull")
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
+	dstToWhRouter := make(map[string]*warehouse.HandleT)
 
 	for {
 		config := <-ch
@@ -84,49 +87,35 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				for _, destination := range source.Destinations {
-					if destination.Enabled {
-						enabledDestinations[destination.DestinationDefinition.Name] = true
-						if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-							brt, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+					enabledDestinations[destination.DestinationDefinition.Name] = true
+					//For batch router destinations
+					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
+							var brt batchrouter.HandleT
+							brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
+							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
+						}
+						if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+							_, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 							if !ok {
-								logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
-								var brt batchrouter.HandleT
-								brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
-								dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
-							} else {
-								logger.Debug("Enabling existing Destination", destination.DestinationDefinition.Name)
-								brt.Enable()
-							}
-						} else {
-							rt, ok := dstToRouter[destination.DestinationDefinition.Name]
-							if !ok {
-								logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
-								var router router.HandleT
-								router.Setup(routerDB, destination.DestinationDefinition.Name)
-								dstToRouter[destination.DestinationDefinition.Name] = &router
-							} else {
-								logger.Debug("Enabling existing Destination", destination.DestinationDefinition.Name)
-								rt.Enable()
+								logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+								var wh warehouse.HandleT
+								wh.Setup(destination.DestinationDefinition.Name)
+								dstToWhRouter[destination.DestinationDefinition.Name] = &wh
 							}
 						}
-
+					} else {
+						_, ok := dstToRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
+							var router router.HandleT
+							router.Setup(routerDB, destination.DestinationDefinition.Name)
+							dstToRouter[destination.DestinationDefinition.Name] = &router
+						}
 					}
-				}
-			}
-		}
 
-		keys := misc.StringKeys(dstToRouter)
-		keys = append(keys, misc.StringKeys(dstToBatchRouter)...)
-		for _, key := range keys {
-			if _, ok := enabledDestinations[key]; !ok {
-				if rtHandle, ok := dstToRouter[key]; ok {
-					logger.Info("Disabling a existing destination: ", key)
-					rtHandle.Disable()
-					continue
-				}
-				if brtHandle, ok := dstToBatchRouter[key]; ok {
-					logger.Info("Disabling a existing batch destination: ", key)
-					brtHandle.Disable()
 				}
 			}
 		}
@@ -151,7 +140,7 @@ func versionHandler(w http.ResponseWriter, r *http.Request) {
 func printVersion() {
 	version := versionInfo()
 	versionFormatted, _ := json.MarshalIndent(&version, "", " ")
-	logger.Infof("Version Info %s", versionFormatted)
+	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
 func startWarehouseService() {
@@ -206,6 +195,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 }
 
 func main() {
+	version := versionInfo()
+
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),
@@ -213,10 +204,27 @@ func main() {
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
 		AppType:      "rudder-server",
+		AppVersion:   version["Version"].(string),
 		PanicHandler: func() {},
 	})
+	ctx := bugsnag.StartSession(context.Background())
+	defer func() {
+		if r := recover(); r != nil {
+			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+				"GoRoutines": {
+					"Number": runtime.NumGoroutine(),
+				}})
+
+			misc.RecordAppError(fmt.Errorf("%v", r))
+			logger.Fatal(r)
+			panic(r)
+		}
+	}()
 
 	logger.Setup()
+
+	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
+	stats.Setup()
 
 	isWarehouseService := flag.Bool("warehouse", false, "Indicates to start it as a warehouse service")
 
@@ -230,8 +238,7 @@ func main() {
 	versionFlag := flag.Bool("v", false, "Print the current version and exit")
 
 	flag.Parse()
-	switch {
-	case *versionFlag:
+	if *versionFlag {
 		printVersion()
 		return
 	}
@@ -241,10 +248,14 @@ func main() {
 	if *cpuprofile != "" {
 		var err error
 		f, err = os.Create(*cpuprofile)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		runtime.SetBlockProfileRate(1)
 		err = pprof.StartCPUProfile(f)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	c := make(chan os.Signal)
@@ -258,16 +269,21 @@ func main() {
 		}
 		if *memprofile != "" {
 			f, err := os.Create(*memprofile)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 			defer f.Close()
 			runtime.GC() // get up-to-date statistics
 			err = pprof.WriteHeapProfile(f)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 		}
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
 			logger.Fatal("SIGTERM called. Process exiting")
 		}
+		stats.StopRuntimeStats()
 		os.Exit(1)
 	}()
 
@@ -277,5 +293,4 @@ func main() {
 	} else {
 		startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
 	}
-
 }

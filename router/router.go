@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -102,14 +103,16 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		logger.Debug("Router :: trying to send payload to GA", respBody)
 
 		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
-		misc.Assert(userID != "")
+		if userID == "" {
+			panic(fmt.Errorf("userID is empty"))
+		}
 
 		//If sink is not enabled mark all jobs as waiting
 		if !rt.isEnabled {
 			logger.Debug("Router is disabled")
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
+				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
@@ -130,7 +133,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			resp := fmt.Sprintf(`{"blocking_id":"%v", "user_id":"%s"}`, previousFailedJobID, userID)
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
+				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     respStatus,
@@ -142,7 +145,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		}
 
 		if isPrevFailedUser {
-			misc.Assert(previousFailedJobID == job.JobID)
+			if previousFailedJobID != job.JobID {
+				panic(fmt.Errorf("previousFailedJobID:%d != job.JobID:%d", previousFailedJobID, job.JobID))
+			}
 		}
 
 		//We can execute thoe job
@@ -188,7 +193,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			JobID:         job.JobID,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
-			AttemptNum:    job.LastJobStatus.AttemptNum,
+			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 			ErrorCode:     strconv.Itoa(respStatusCode),
 			ErrorResponse: []byte(`{}`),
 		}
@@ -197,7 +202,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			//#JobOrder (see other #JobOrder comment)
 			// failedAttemptsStat.Count(job.LastJobStatus.AttemptNum)
 			eventsDeliveredStat.Increment()
-			status.AttemptNum = job.LastJobStatus.AttemptNum
+			status.AttemptNum = job.LastJobStatus.AttemptNum + 1
 			status.JobState = jobsdb.SucceededState
 			logger.Debugf("[%v Router] :: sending success status to response", rt.destID)
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
@@ -223,7 +228,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				//We still mark the job failed but don't increment the AttemptNum
 				//This is a heuristic. Will fix it with Sayan's idea
 				status.JobState = jobsdb.FailedState
-				status.AttemptNum = job.LastJobStatus.AttemptNum
+				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
 				logger.Debugf("[%v Router] :: Marking job as failed and not incrementing the AttemptNum since jobs from more than 5 users are failing for destination", rt.destID)
 				break
 			case status.AttemptNum >= maxFailedCountForJob:
@@ -236,7 +241,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				//doubling sleep in between. That case will be handled in case above
 				logger.Debugf("[%v Router] :: Aborting the job and deleting from user map", rt.destID)
 				status.JobState = jobsdb.AbortedState
-				status.AttemptNum = job.LastJobStatus.AttemptNum
+				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
 				eventsAbortedStat.Increment()
 				break
 			default:
@@ -264,7 +269,9 @@ func (rt *HandleT) initWorkers() {
 			failedJobs:     0,
 			sleepTime:      minSleep}
 		rt.workers[i] = worker
-		go rt.workerProcess(worker)
+		rruntime.Go(func() {
+			rt.workerProcess(worker)
+		})
 	}
 }
 
@@ -286,7 +293,9 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	}
 
 	worker := rt.workers[index]
-	misc.Assert(worker != nil)
+	if worker == nil {
+		panic(fmt.Errorf("worker is nil"))
+	}
 
 	//#JobOrder (see other #JobOrder comment)
 	worker.failedJobIDMutex.RLock()
@@ -297,7 +306,9 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	}
 	//This job can only be higher than blocking
 	//We only let the blocking job pass
-	misc.Assert(job.JobID >= blockJobID)
+	if job.JobID < blockJobID {
+		panic(fmt.Errorf("job.JobID:%d < blockJobID:%d", job.JobID, blockJobID))
+	}
 	if job.JobID == blockJobID {
 		return worker
 	}
@@ -430,10 +441,6 @@ func (rt *HandleT) generatorLoop() {
 	countStat := stats.NewStat("router.generator_events", stats.CountType)
 
 	for {
-		if !rt.isEnabled {
-			time.Sleep(1000)
-			continue
-		}
 		generatorStat.Start()
 
 		//#JobOrder (See comment marked #JobOrder
@@ -457,7 +464,7 @@ func (rt *HandleT) generatorLoop() {
 		toQuery -= len(waitList)
 		unprocessedList := rt.jobsDB.GetUnprocessed([]string{rt.destID}, toQuery, nil)
 		if len(waitList)+len(unprocessedList)+len(retryList) == 0 {
-			logger.Debugf("RT: DB Read Complete. No RT Jobs to process.")
+			logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destID: %s", rt.destID)
 			time.Sleep(readSleep)
 			continue
 		}
@@ -489,7 +496,7 @@ func (rt *HandleT) generatorLoop() {
 			if w != nil {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
-					AttemptNum:    job.LastJobStatus.AttemptNum,
+					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 					JobState:      jobsdb.ExecutingState,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
@@ -578,7 +585,13 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.perfStats.Setup("StatsUpdate:" + destID)
 
 	rt.initWorkers()
-	go rt.printStatsLoop()
-	go rt.statusInsertLoop()
-	go rt.generatorLoop()
+	rruntime.Go(func() {
+		rt.printStatsLoop()
+	})
+	rruntime.Go(func() {
+		rt.statusInsertLoop()
+	})
+	rruntime.Go(func() {
+		rt.generatorLoop()
+	})
 }

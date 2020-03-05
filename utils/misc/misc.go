@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -14,14 +13,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 	"sort"
 	"strings"
 
 	//"runtime/debug"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/thoas/go-funk"
@@ -112,18 +109,6 @@ func RecordAppError(err error) {
 	saveErrorStore(errorStore)
 }
 
-//AssertError panics if error
-func AssertError(err error) {
-	if err != nil {
-		// debug.SetTraceback("all")
-		debug.PrintStack()
-		defer bugsnag.AutoNotify()
-		RecordAppError(err)
-		logger.Fatal(err)
-		panic(err)
-	}
-}
-
 func AssertErrorIfDev(err error) {
 
 	goEnv := os.Getenv("GO_ENV")
@@ -133,24 +118,7 @@ func AssertErrorIfDev(err error) {
 	}
 
 	if err != nil {
-		// debug.SetTraceback("all")
-		debug.PrintStack()
-		defer bugsnag.AutoNotify()
-		RecordAppError(err)
-		logger.Fatal(err)
 		panic(err)
-	}
-}
-
-//Assert panics if false
-func Assert(cond bool) {
-	if !cond {
-		//debug.SetTraceback("all")
-		debug.PrintStack()
-		defer bugsnag.AutoNotify()
-		RecordAppError(errors.New("Assertion failed"))
-		logger.Fatal("Assertion failed")
-		panic("Assertion failed")
 	}
 }
 
@@ -241,10 +209,14 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 
 	// Get the file information
 	info, err := fileToZip.Stat()
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	header, err := zip.FileInfoHeader(info)
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	// Using FileInfoHeader() above only uses the basename of the file. If we want
 	// to preserve the folder structure we can overwrite this with the full path.
@@ -256,7 +228,9 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	header.Method = zip.Deflate
 
 	writer, err := zipWriter.CreateHeader(header)
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	_, err = io.Copy(writer, fileToZip)
 	return err
 }
@@ -264,13 +238,17 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 // UnZipSingleFile unzips zip containing single file into ouputfile path passed
 func UnZipSingleFile(outputfile string, filename string) {
 	r, err := zip.OpenReader(filename)
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer r.Close()
 	inputfile := r.File[0]
 	// Make File
 	err = os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
 	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	rc, err := inputfile.Open()
 	_, err = io.Copy(outFile, rc)
 	outFile.Close()
@@ -304,14 +282,21 @@ func ReadLines(path string) ([]string, error) {
 }
 
 // CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
-func CreateTMPDIR() string {
+func CreateTMPDIR() (string, error) {
 	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	// second chance: fallback to /tmp if this folder exists
 	if tmpdirPath == "" {
-		var err error
-		tmpdirPath, err = os.UserHomeDir()
-		AssertError(err)
+		fallbackPath := "/tmp"
+		_, err := os.Stat(fallbackPath)
+		if err == nil {
+			tmpdirPath = fallbackPath
+			logger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
+		}
 	}
-	return tmpdirPath
+	if tmpdirPath == "" {
+		return os.UserHomeDir()
+	}
+	return tmpdirPath, nil
 }
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
@@ -448,7 +433,7 @@ func Contains(in interface{}, elem interface{}) bool {
 			}
 		}
 	default:
-		AssertError(fmt.Errorf("Type %s is not supported by Contains, supported types are String, Map, Slice, Array", inType.String()))
+		panic(fmt.Errorf("Type %s is not supported by Contains, supported types are String, Map, Slice, Array", inType.String()))
 	}
 
 	return false
@@ -556,6 +541,10 @@ func CreateGZ(s string) (w GZipWriter, err error) {
 
 func (w GZipWriter) WriteGZ(s string) {
 	w.BufWriter.WriteString(s)
+}
+
+func (w GZipWriter) Write(b []byte) {
+	w.BufWriter.Write(b)
 }
 
 func (w GZipWriter) CloseGZ() {
