@@ -28,6 +28,7 @@ type EventOptsT struct {
 	ID           string
 	MessageID    string
 	GaVal        int
+	ValString    string
 }
 
 type QueryTrackPayload struct{
@@ -82,6 +83,7 @@ func SendEventRequest(options EventOptsT) int {
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.anonymousId", options.ID)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.messageId", options.MessageID)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.properties.value", options.GaVal)
+	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.properties.strvalue", options.ValString)
 
 	return SendBatchRequest(options.WriteKey, jsonPayload)
 }
@@ -303,6 +305,7 @@ func GetJobStatus(dbHandle *sql.DB, prefix string, limit int, jobState string) [
 	return jobStatusList
 }
 
+<<<<<<< HEAD
 // GetLoadFileTableName queries table column form the warehouseLoadFilesTable provided
 func GetLoadFileTableName(dbHandle *sql.DB, warehouseLoadFilesTable string, sourceId string, destinationId string, destinationType string) []string {
 	rows, err := dbHandle.Query(fmt.Sprintf(`SELECT table_name FROM %s where source_id='%s' and destination_id='%s' and destination_type='%s'`, warehouseLoadFilesTable, sourceId, destinationId, destinationType))
@@ -437,4 +440,17 @@ func QueryWarehouseWithAnonymusID(anonymousId string, eventName string, namespac
 		return queryRS(anonymousId, eventName, namespace, destConfig)
 	}
 	return QueryTrackPayload{}
+}
+
+// GetTableSize returns the size of table in MB
+func GetTableSize(dbHandle *sql.DB, jobTable string) int64 {
+	var tableSize int64
+	fmt.Println(jobTable)
+	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, jobTable)
+	row := dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&tableSize)
+	if err != nil {
+		panic(err)
+	}
+	return tableSize
 }
