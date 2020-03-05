@@ -171,8 +171,8 @@ func pollConfigUpdate() {
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()
 			initialized = true
-			Eb.Publish("backendconfig", filteredSourcesJSON)
-			Eb.Publish("backendconfigFull", sourceJSON)
+			Eb.Publish("processConfig", filteredSourcesJSON)
+			Eb.Publish("backendConfig", sourceJSON)
 		}
 		time.Sleep(time.Duration(pollInterval))
 	}
@@ -190,8 +190,8 @@ func Subscribe(channel chan utils.DataEvent, topic string) {
 	Eb.Subscribe(topic, channel)
 	curSourceJSONLock.RLock()
 	filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
-	Eb.PublishToChannel(channel, "backendconfig", filteredSourcesJSON)
-	Eb.PublishToChannel(channel, "backendconfigFull", curSourceJSON)
+
+	Eb.PublishToChannel(channel, topic, filteredSourcesJSON)
 	curSourceJSONLock.RUnlock()
 }
 
