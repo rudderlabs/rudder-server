@@ -159,7 +159,7 @@ type S3ManifestT struct {
 	Entries []S3ManifestEntryT `json:"entries"`
 }
 
-func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[string]string) (string, error) {
+func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[string]string, accessKeyID, accessKey string) (string, error) {
 	csvObjectLocations, err := warehouseutils.GetLoadFileLocations(rs.DbHandle, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, tableName, rs.Upload.StartLoadFileID, rs.Upload.EndLoadFileID)
 	if err != nil {
 		panic(err)
@@ -193,7 +193,7 @@ func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
-		Config:   map[string]interface{}{"bucketName": bucketName},
+		Config:   map[string]interface{}{"bucketName": bucketName, "accessKeyID": accessKeyID, "accessKey": accessKey},
 	})
 
 	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
@@ -233,7 +233,7 @@ func (rs *HandleT) load() (errList []error) {
 	for tableName, columnMap := range rs.Upload.Schema {
 		timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
 		timer.Start()
-		manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap)
+		manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap, accessKeyID, accessKey)
 		timer.End()
 		if err != nil {
 			errList = append(errList, err)
@@ -277,6 +277,7 @@ func (rs *HandleT) load() (errList []error) {
 		logger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
+			logger.Errorf("RS: Error running COPY command: %v\n", err)
 			tx.Rollback()
 			errList = append(errList, err)
 			continue
@@ -291,6 +292,7 @@ func (rs *HandleT) load() (errList []error) {
 		logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 		_, err = tx.Exec(sqlStatement)
 		if err != nil {
+			logger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
 			tx.Rollback()
 			errList = append(errList, err)
 			continue
@@ -309,6 +311,7 @@ func (rs *HandleT) load() (errList []error) {
 		_, err = tx.Exec(sqlStatement)
 
 		if err != nil {
+			logger.Errorf("RS: Error inserting into original table: %v\n", err)
 			tx.Rollback()
 			errList = append(errList, err)
 			continue
@@ -316,6 +319,7 @@ func (rs *HandleT) load() (errList []error) {
 
 		err = tx.Commit()
 		if err != nil {
+			logger.Errorf("RS: Error in transaction commit: %v\n", err)
 			tx.Rollback()
 			errList = append(errList, err)
 			continue
@@ -437,7 +441,7 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 	for _, stagingTableName := range stagingTableNames {
 		_, err := rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
-			logger.Errorf("WH: RS:  Error dropping dangling staging tables in redshift: %v", err)
+			logger.Errorf("WH: RS:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
 			delSuccess = false
 		}
 	}

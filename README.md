@@ -59,7 +59,8 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 
 The docker setup is the easiest & fastest way to try out RudderStack.
 
-1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
+1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page. 
+
 2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
 
       (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
@@ -71,7 +72,9 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 # Setup Instructions (Kubernetes)
 
-Our helm scripts and instructions are in a separate repo - [Download Here][HelmScriptsGitRepo]
+1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page. 
+
+2. Our helm scripts and instructions are in a separate repo - [Download Here][HelmScriptsGitRepo]
 
 
 # Setup Instructions (Native Installation)
@@ -105,6 +108,10 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 3. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `cd scripts; ./generate-event <writeKeyHere> http://localhost:8080/v1/batch`. NOTE: `writeKey` is different from the `your_workspace_token` in step 2. Former is associated with the source while the latter is for your account.
 4. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
 5. You can use our [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkIOSGitRepo] SDKs for sending events from your app.
+
+# Open-Source Config Generator
+
+Instead of our hosted UI, you can also use the open-source [Config Generator][ConfigGenerator] to generate the source & destination configs and pass it to RudderStack. 
 
 ## Features
 
@@ -185,3 +192,6 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 [RudderSdkJsGitRepo]: https://github.com/rudderlabs/rudder-sdk-js
 [RudderSdkAndroidGitRepo]: https://github.com/rudderlabs/rudder-sdk-android
 [RudderSdkIOSGitRepo]: https://github.com/rudderlabs/rudder-sdk-ios
+[ConfigGenerator]: https://github.com/rudderlabs/config-generator
+[ConfigGeneratorSection]: https://github.com/rudderlabs/rudder-server/blob/master/README.md#open-source-config-generator
+

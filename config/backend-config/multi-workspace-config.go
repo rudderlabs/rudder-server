@@ -40,7 +40,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForWriteKey(writ
 
 //Get returns sources from all hosted workspaces
 func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
-	url := fmt.Sprintf("%s/hostedWorkspaceConfig", configBackendURL)
+	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		logger.Error("Errored when sending request to the server", err)

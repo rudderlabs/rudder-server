@@ -186,11 +186,13 @@ func (bq *HandleT) load() (err error) {
 
 				job, err := loader.Run(bq.BQContext)
 				if err != nil {
+					logger.Errorf("BQ: Error initiating load job: %v\n", err)
 					wg.Err(err)
 					return
 				}
 				status, err := job.Wait(bq.BQContext)
 				if err != nil {
+					logger.Errorf("BQ: Error running load job: %v\n", err)
 					wg.Err(err)
 					return
 				}
