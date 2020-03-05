@@ -646,6 +646,9 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 	}
 	reader, err := gzip.NewReader(rawf)
 	if err != nil {
+		if err.Error() == "EOF" {
+			return loadFileIDs, nil
+		}
 		logger.Errorf("WH: Error reading file using gzip.NewReader at path:%s downloaded from %s", jsonPath, job.StagingFile.Location)
 		panic(err)
 	}
@@ -666,10 +669,22 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 		lineBytesCounter += len(lineBytes)
 		var jsonLine map[string]interface{}
 		json.Unmarshal(lineBytes, &jsonLine)
-		metadata, _ := jsonLine["metadata"]
-		columnData := jsonLine["data"].(map[string]interface{})
-		tableName, _ := metadata.(map[string]interface{})["table"].(string)
-		columns, _ := metadata.(map[string]interface{})["columns"].(map[string]interface{})
+		metadata, ok := jsonLine["metadata"]
+		if !ok {
+			continue
+		}
+		columnData, ok := jsonLine["data"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		tableName, ok := metadata.(map[string]interface{})["table"].(string)
+		if !ok {
+			continue
+		}
+		columns, ok := metadata.(map[string]interface{})["columns"].(map[string]interface{})
+		if !ok {
+			continue
+		}
 		if _, ok := outputFileMap[tableName]; !ok {
 			outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + ".csv.gz"
 			gzWriter, err := misc.CreateGZ(outputFilePath)
@@ -694,15 +709,15 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				// json.Unmarshal returns int as float
 				// convert int's back to int to avoid writing integers like 123456789 as 1.23456789e+08
 				// most warehouses only support scientific notation only for floats and not integers
-				if columnType == "int" {
+				if columnType == "int" || columnType == "bigint" {
 					columnData[columnName] = int(columnVal.(float64))
 				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
-					if columnType == "int" && dataTypeInSchema == "float" {
+					if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
-					} else if columnType == "float" && dataTypeInSchema == "int" {
+					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
 						columnData[columnName] = int(columnVal.(float64))
 					} else {
 						columnData[columnName] = nil
@@ -736,15 +751,15 @@ func (wh *HandleT) processStagingFile(job LoadFileJobT) (loadFileIDs []int64, er
 				// json.Unmarshal returns int as float
 				// convert int's back to int to avoid writing integers like 123456789 as 1.23456789e+08
 				// most warehouses only support scientific notation only for floats and not integers
-				if columnType == "int" {
+				if columnType == "int" || columnType == "bigint" {
 					columnVal = int(columnVal.(float64))
 				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
-					if columnType == "int" && dataTypeInSchema == "float" {
+					if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
-					} else if columnType == "float" && dataTypeInSchema == "int" {
+					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
 						columnVal = int(columnVal.(float64))
 					} else {
 						csvRow = append(csvRow, "")
