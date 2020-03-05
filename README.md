@@ -110,6 +110,10 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 4. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
 5. You can use our [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkIOSGitRepo] SDKs for sending events from your app.
 
+# Open-Source Config Generator
+
+Instead of our hosted UI, you can also use the open-source [Config Generator][ConfigGenerator] to generate the source & destination configs and pass it to RudderStack. 
+
 ## Features
 
 1. Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer & Facebook destinations. Lot more coming soon.
