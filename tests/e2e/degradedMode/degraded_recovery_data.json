@@ -1,0 +1,12 @@
+{
+  "StartTimes": null,
+  "ReadableStartTimes": null,
+  "DegradedModeStartTimes": [1583411790, 1583414116],
+  "ReadableDegradedModeStartTimes": [
+    "2020-03-05 12:36:30 +0000 UTC",
+    "2020-03-05 13:15:16 +0000 UTC"
+  ],
+  "MaintenanceModeStartTimes": null,
+  "ReadableMaintenanceModeStartTimes": null,
+  "Mode": "degraded"
+}
