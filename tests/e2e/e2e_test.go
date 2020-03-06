@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/tests/helpers"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -276,6 +277,34 @@ var _ = Describe("E2E", func() {
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
+
+		})
+		It("should enhance events with time related fields and metadata", func() {
+			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			// initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
+			eventWriteKey := "1Yc6YbOGg6U2E8rlj97ZdOawPyr"
+			//Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations.
+			helpers.SendEventRequest(helpers.EventOptsT{
+				WriteKey: eventWriteKey,
+			})
+
+			// wait for some seconds for events to be processed by gateway
+			time.Sleep(6 * time.Second)
+			Eventually(func() int {
+				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
+			jobs := helpers.GetJobs(dbHandle, gatewayDBPrefix, 1)
+			if len(jobs) != 1 {
+				panic("Jobs count mismatch")
+			}
+			job := jobs[0]
+			requestIP := gjson.Get(string(job.EventPayload), "requestIP").String()
+			writeKey := gjson.Get(string(job.EventPayload), "writeKey").String()
+			receivedAt := gjson.Get(string(job.EventPayload), "receivedAt").String()
+
+			Expect(writeKey).To(Equal(eventWriteKey))
+			Expect(requestIP).NotTo(BeNil()) //TODO: Figure out a way to test requestIP
+			Expect(time.Parse(misc.RFC3339Milli, receivedAt)).Should(BeTemporally("~", time.Now(), 10*time.Second))
 
 		})
 		It("should send correct response headers to support CORS", func() {

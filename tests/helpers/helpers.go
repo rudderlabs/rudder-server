@@ -483,7 +483,7 @@ func GetListOfMaintenanceModeOriginalDBs(dbHandle *sql.DB, jobsdb string) []stri
 func GetRecoveryData(storagePath string) db.RecoveryDataT {
 	data, err := ioutil.ReadFile(storagePath)
 	if os.IsNotExist(err) {
-		defaultRecoveryJSON := "{\"mode\":\"" + "normalMode" + "\"}"
+		defaultRecoveryJSON := "{\"mode\":\"" + "normal" + "\"}"
 		data = []byte(defaultRecoveryJSON)
 	} else {
 		if err != nil {
