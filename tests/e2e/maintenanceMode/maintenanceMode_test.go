@@ -2,7 +2,7 @@ package maintenanceMode_test
 
 import (
 	"database/sql"
-	"fmt"
+	"strconv"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -14,7 +14,7 @@ import (
 
 var (
 	dbHandle            *sql.DB
-	dbname              string
+	jobsDBName          string
 	gatewayDBPrefix     string
 	routerDBPrefix      string
 	batchRouterDBPrefix string
@@ -27,7 +27,6 @@ var batchRouterDBCheckBufferInS int = 2
 var _ = BeforeSuite(func() {
 	var err error
 	psqlInfo := jobsdb.GetConnectionString()
-	fmt.Println("psqlInfo", psqlInfo)
 	dbHandle, err = sql.Open("postgres", psqlInfo)
 	if err != nil {
 		panic(err)
@@ -35,7 +34,7 @@ var _ = BeforeSuite(func() {
 	gatewayDBPrefix = config.GetString("Gateway.CustomVal", "GW")
 	routerDBPrefix = config.GetString("Router.CustomVal", "RT")
 	batchRouterDBPrefix = config.GetString("BatchRouter.CustomVal", "BRT")
-	dbname = config.GetEnv("JOBS_DB_DB_NAME", "jobsdb")
+	jobsDBName = config.GetEnv("JOBS_DB_DB_NAME", "jobsdb")
 })
 
 var _ = Describe("Validate maintenance mode", func() {
@@ -69,9 +68,12 @@ var _ = Describe("Validate maintenance mode", func() {
 	It("should backup the original jobsdb", func() {
 		storagePath := "./maintenance_recovery_data.json"
 		recoveryData := helpers.GetRecoveryData(storagePath)
-		appStartTime := recoveryData.MaintenanceModeStartTimes[len(recoveryData.MaintenanceModeStartTimes)-1]
+		maintenanceModeStartTimes := recoveryData.MaintenanceModeStartTimes
 
-		originalJobsdbs := helpers.GetListOfMaintenanceModeOriginalDBs(dbHandle, dbname, appStartTime)
-		Expect(len(originalJobsdbs)).To(Equal(1))
+		originalJobsdbs := helpers.GetListOfMaintenanceModeOriginalDBs(dbHandle, jobsDBName)
+		Expect(len(originalJobsdbs)).To(Equal(len(maintenanceModeStartTimes)))
+		for index, db := range originalJobsdbs {
+			Expect(db).To(Equal("original_" + jobsDBName + "_" + strconv.FormatInt(maintenanceModeStartTimes[index], 10)))
+		}
 	})
 })

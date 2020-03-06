@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"sort"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -462,9 +461,9 @@ func GetTableSize(dbHandle *sql.DB, jobTable string) int64 {
 }
 
 // GetListOfMaintenanceModeOriginalDBs returns the list of databases in the format of original_jobsdb*
-func GetListOfMaintenanceModeOriginalDBs(dbHandle *sql.DB, jobsdb string, timestamp int64) []string {
+func GetListOfMaintenanceModeOriginalDBs(dbHandle *sql.DB, jobsdb string) []string {
 	var dbNames []string
-	sqlStatement := "SELECT datname FROM pg_database where datname like 'original_" + jobsdb + "_%'" + strconv.FormatInt(timestamp, 10) + "'"
+	sqlStatement := "SELECT datname FROM pg_database where datname like 'original_" + jobsdb + "_%'"
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -482,7 +481,6 @@ func GetListOfMaintenanceModeOriginalDBs(dbHandle *sql.DB, jobsdb string, timest
 
 // GetRecoveryData gets the recovery data from json file
 func GetRecoveryData(storagePath string) db.RecoveryDataT {
-	fmt.Println("storage path", storagePath)
 	data, err := ioutil.ReadFile(storagePath)
 	if os.IsNotExist(err) {
 		defaultRecoveryJSON := "{\"mode\":\"" + "normalMode" + "\"}"
