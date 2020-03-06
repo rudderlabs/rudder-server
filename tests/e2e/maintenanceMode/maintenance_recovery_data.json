@@ -1,0 +1,9 @@
+{
+  "StartTimes": null,
+  "ReadableStartTimes": null,
+  "DegradedModeStartTimes": [],
+  "ReadableDegradedModeStartTimes": [],
+  "MaintenanceModeStartTimes": [],
+  "ReadableMaintenanceModeStartTimes": [],
+  "Mode": "maintenance"
+}

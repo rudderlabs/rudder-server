@@ -1,0 +1,9 @@
+[JobsDB]
+enableBackup = false
+
+[Processor]
+processSessions = false
+
+[recovery]
+enabled = true
+storagePath = "/app/tests/e2e/maintenanceMode/maintenance_recovery_data.json"

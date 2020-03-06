@@ -30,3 +30,8 @@ phases:
       - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/degradedMode\/config.toml/' build/docker.env
       - docker-compose -f build/docker-compose.codebuild.yml up -d
       - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e/degradedMode"
+      # For maintenance mode ginkgo tests
+      - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/maintenanceMode/config_overrides.toml > tests/e2e/maintenanceMode/config.toml
+      - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/maintenanceMode\/config.toml/' build/docker.env
+      - docker-compose -f build/docker-compose.codebuild.yml up -d
+      - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e/maintenanceMode"

@@ -8,10 +8,13 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sort"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/db"
 	uuid "github.com/satori/go.uuid"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/sjson"
@@ -57,6 +60,10 @@ func RemoveKeyFromJSON(json string, keys ...string) string {
 func AddKeyToJSON(json string, key string, value interface{}) string {
 	json, _ = sjson.Set(json, key, value)
 	return json
+}
+
+type DatabasesT struct {
+	Datname string
 }
 
 // SendEventRequest sends sample event.json with EventOptionsT overrides to gateway server
@@ -445,7 +452,6 @@ func QueryWarehouseWithAnonymusID(anonymousId string, eventName string, namespac
 // GetTableSize returns the size of table in MB
 func GetTableSize(dbHandle *sql.DB, jobTable string) int64 {
 	var tableSize int64
-	fmt.Println(jobTable)
 	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, jobTable)
 	row := dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&tableSize)
@@ -453,4 +459,45 @@ func GetTableSize(dbHandle *sql.DB, jobTable string) int64 {
 		panic(err)
 	}
 	return tableSize
+}
+
+// GetListOfMaintenanceModeOriginalDBs returns the list of databases in the format of original_jobsdb*
+func GetListOfMaintenanceModeOriginalDBs(dbHandle *sql.DB, jobsdb string, timestamp int64) []string {
+	var dbNames []string
+	sqlStatement := "SELECT datname FROM pg_database where datname like 'original_" + jobsdb + "_%'" + strconv.FormatInt(timestamp, 10) + "'"
+	rows, err := dbHandle.Query(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+	for rows.Next() {
+		var dbName string
+		err = rows.Scan(&dbName)
+		if err != nil {
+			panic(err)
+		}
+		dbNames = append(dbNames, dbName)
+	}
+	return dbNames
+}
+
+// GetRecoveryData gets the recovery data from json file
+func GetRecoveryData(storagePath string) db.RecoveryDataT {
+	fmt.Println("storage path", storagePath)
+	data, err := ioutil.ReadFile(storagePath)
+	if os.IsNotExist(err) {
+		defaultRecoveryJSON := "{\"mode\":\"" + "normalMode" + "\"}"
+		data = []byte(defaultRecoveryJSON)
+	} else {
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	var recoveryData db.RecoveryDataT
+	err = json.Unmarshal(data, &recoveryData)
+	if err != nil {
+		panic(err)
+	}
+
+	return recoveryData
 }
