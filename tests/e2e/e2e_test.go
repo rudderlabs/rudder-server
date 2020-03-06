@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"database/sql"
+	"encoding/json"
 	"strconv"
 	"time"
 
@@ -36,6 +37,106 @@ var _ = Describe("E2E", func() {
 
 	Context("Without user sessions processing", func() {
 
+		It("verify event stored in gateway 1. has right sourceId and writeKey, 2. enhanced with messageId, anonymousId, requestIP and receivedAt fields", func() {
+
+			eventTypeMap := []string{"BATCH", "IDENTIFY", "GROUP", "TRACK", "SCREEN", "PAGE", "ALIAS"}
+			for _, eventType := range eventTypeMap {
+				time.Sleep(time.Second)
+				initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+
+				//Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations.
+				//Source id for the above writekey is 1Yc6YceKLOcUYk8je9B0GQ65mmL
+				switch eventType {
+				case "BATCH":
+					helpers.SendRequestToBatch("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.BatchWithoutMessageIdAndWithoutAnonymousId)
+				case "IDENTIFY":
+					helpers.SendRequestToIdentify("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.IdentifyWithoutMessageIdAndWithoutAnonymousId)
+				case "GROUP":
+					helpers.SendRequestToGroup("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.GroupWithoutMessageIdAndWithoutAnonymousId)
+				case "TRACK":
+					helpers.SendRequestToTrack("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.TrackWithoutMessageIdAndWithoutAnonymousId)
+				case "SCREEN":
+					helpers.SendRequestToScreen("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.ScreenWithoutMessageIdAndWithoutAnonymousId)
+				case "PAGE":
+					helpers.SendRequestToPage("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.PageWithoutMessageIdAndWithoutAnonymousId)
+				case "ALIAS":
+					helpers.SendRequestToAlias("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.AliasWithoutMessageIdAndWithoutAnonymousId)
+
+				}
+
+				Eventually(func() int {
+					return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
+				Eventually(func() map[string]bool {
+					jobs := helpers.GetJobs(dbHandle, gatewayDBPrefix, 1)
+					var sourceId, messageId, anonymousId, writeKey, requestIP, receivedAt string
+					for _, job := range jobs {
+						sourceId = gjson.GetBytes(job.Parameters, "source_id").String()
+						messageId = gjson.GetBytes(job.EventPayload, "batch.0.messageId").String()
+						anonymousId = gjson.GetBytes(job.EventPayload, "batch.0.anonymousId").String()
+						writeKey = gjson.GetBytes(job.EventPayload, "writeKey").String()
+						requestIP = gjson.GetBytes(job.EventPayload, "requestIP").String()
+						receivedAt = gjson.GetBytes(job.EventPayload, "receivedAt").String()
+					}
+					return map[string]bool{sourceId: true,
+						"messageId":   len(messageId) > 0,
+						"anonymousId": len(anonymousId) > 0,
+						writeKey:      true,
+						"requestIP":   len(requestIP) > 0,
+						"receivedAt":  len(receivedAt) > 0}
+				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(map[string]bool{"1Yc6YceKLOcUYk8je9B0GQ65mmL": true,
+					"messageId":                   true,
+					"anonymousId":                 true,
+					"1Yc6YbOGg6U2E8rlj97ZdOawPyr": true,
+					"requestIP":                   true,
+					"receivedAt":                  true}))
+			}
+		})
+
+		It("verify health, version endpoint", func() {
+
+			endPoints := []string{"HEALTH", "VERSION"}
+			for _, endPoint := range endPoints {
+				Eventually(func() bool {
+					var resp []byte
+					switch endPoint {
+					case "HEALTH":
+						resp = helpers.SendHealthRequest()
+					case "VERSION":
+						resp = helpers.SendVersionRequest()
+					}
+
+					// a map container to decode the JSON structure into
+					c := make(map[string]interface{})
+
+					// unmarschal JSON
+					e := json.Unmarshal(resp, &c)
+					if e != nil {
+						panic(e)
+					}
+
+					// a string slice to hold the keys
+					k := make([]string, len(c))
+
+					i := 0
+					// copy c's keys into k
+					for s, _ := range c {
+						k[i] = s
+						i++
+					}
+
+					switch endPoint {
+					case "HEALTH":
+						return helpers.SameStringSlice([]string{"server", "db", "acceptingEvents", "routingEvents", "mode", "goroutines"}, k)
+					case "VERSION":
+						return helpers.SameStringSlice([]string{"BuildDate", "BuiltBy", "Commit", "GitUrl", "Major", "Minor", "Patch", "Version"}, k)
+					}
+
+					return false
+				}, 2, dbPollFreqInS).Should(Equal(true))
+			}
+		})
+
 		It("verify event is stored in both gateway and router db", func() {
 			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
@@ -54,12 +155,6 @@ var _ = Describe("E2E", func() {
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 1))
-			/*
-				Commenting checking succeeded job state check to remove dependency on destination.
-				// also check jobstatus records are created with 'succeeded' status
-				Eventually(func() int {
-					return helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
-				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobStatusCount + 1))*/
 		})
 
 		//Source with WriteKey: 1YcF00dWZXGjWpSIkfFnbGuI6OI has one GA and one AMPLITUDE as destinations.
@@ -74,12 +169,6 @@ var _ = Describe("E2E", func() {
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 2))
-			/*
-				Commenting checking succeeded job state check to remove dependency on destination.
-				// also check jobstatus records are created with 'succeeded' status
-				Eventually(func() int {
-					return helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
-				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobStatusCount + 2))*/
 			Eventually(func() []string {
 				jobs := helpers.GetJobs(dbHandle, routerDBPrefix, 2)
 				customVals := []string{}
