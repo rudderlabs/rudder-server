@@ -66,6 +66,7 @@ type HandleT struct {
 	warehouses         []warehouseutils.WarehouseT
 	dbHandle           *sql.DB
 	uploadToWarehouseQ chan []ProcessStagingFilesJobT
+	jobQueueHandle     *JobQueueHandleT
 	createLoadFilesQ   chan LoadFileJobT
 	isEnabled          bool
 }
@@ -365,6 +366,10 @@ func (wh *HandleT) mainLoop() {
 			time.Sleep(mainLoopSleep)
 			continue
 		}
+		//TO TEST: disabling other warehouse logic
+		time.Sleep(mainLoopSleep)
+		continue
+
 		for _, warehouse := range wh.warehouses {
 			if isDestInProgress(warehouse) {
 				logger.Debugf("WH: Skipping upload loop since %s:%s upload in progess", wh.destType, warehouse.Destination.ID)
@@ -1033,6 +1038,10 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
+
+	//Setup postgres trigger mechanism for job distribution across etl workers
+	wh.initJobQueue()
+
 	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
 	})
@@ -1045,6 +1054,20 @@ func (wh *HandleT) Setup(whType string) {
 	rruntime.Go(func() {
 		wh.mainLoop()
 	})
+}
+
+/*
+TearDown releases all the resources
+*/
+func (wh *HandleT) TearDown() {
+	wh.jobQueueHandle.TearDown()
+	wh.dbHandle.Close()
+}
+
+func (wh *HandleT) initJobQueue() {
+	var jobQueueHandle JobQueueHandleT
+	wh.jobQueueHandle = &jobQueueHandle
+	wh.jobQueueHandle.Setup(wh)
 }
 
 // Gets the config from config backend and extracts enabled writekeys

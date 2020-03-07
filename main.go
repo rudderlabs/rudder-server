@@ -101,6 +101,14 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 							_, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 							if !ok {
 								logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+								//TODO:
+								//SERVER Initialisation Modes - WAREHOUSE [MASTER_SLAVE | SLAVE].
+								//DEFAULT Configuration - WAREHOUSE [MASTER_SLAVE] - if none specified.
+								//MASTER_SLAVE & SLAVE are WAREHOUSE Sub Modes.
+								//IGNORE ALL other initialisation except below if SLAVE mode is enabled--
+								//that is - server stops functioning as ROUTER.
+								//SPECIFY A DB URL if started in SLAVE mode
+								//IN MASTER_SLAVE mode-the same router postgres db will be used for warehousing.
 								var wh warehouse.HandleT
 								wh.Setup(destination.DestinationDefinition.Name)
 								dstToWhRouter[destination.DestinationDefinition.Name] = &wh

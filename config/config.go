@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"regexp"
 	"strconv"
@@ -35,6 +36,13 @@ func Initialize() {
 	if err != nil {
 		fmt.Println("Config toml file not found. Using the default values")
 	}
+
+	//FOR TESTING
+	port := rand.Intn(45555-8080) + 8080
+	viper.Set("Gateway.webPort", port)
+	port = rand.Intn(65555-45555) + 45555
+	viper.Set("Warehouse.webPort", port)
+
 }
 
 //GetBool is a wrapper for viper's GetBool
