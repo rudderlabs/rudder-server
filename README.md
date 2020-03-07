@@ -69,7 +69,7 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page. 
 
-    (Note) Instead of our full feature hosted UI, you can also use the config generator UI to create the source & destination configs and pass it to RudderStack).
+    (Note) Instead of our full feature hosted UI, you can also use the [config-generator-UI][ConfigGeneratorSection] to create the source & destination configs and pass it to RudderStack.
 
 2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
 
@@ -150,7 +150,7 @@ Update the [config](https://docs.rudderstack.com/administrators-guide/config-par
 * Download the workspace config file on your machine. 
 * In `docker-compose.yml`, uncomment `volumes` section under `backend` service. Specify the path to your workspace config.
 * In `build/docker.env`, set the environment variable `RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true` 
-* Start RudderStack with `docker-compose up`
+* Run the command `docker-compose up --build` to bring up all the services.
 
 
 # Architecture
