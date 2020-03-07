@@ -155,7 +155,8 @@ Update the [config](https://docs.rudderstack.com/administrators-guide/config-par
 * Run the command `docker-compose up --build` to bring up all the services.
 
 
-# Architecture
+
+# RudderStack Architecture
 
 The following is a brief overview of the major components of RudderStack.
 ![image](https://user-images.githubusercontent.com/52487451/64673994-471beb00-d48d-11e9-854f-2c3fbc021e63.jpg)
