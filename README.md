@@ -119,7 +119,7 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 4. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
 5. You can use our [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkIOSGitRepo] SDKs for sending events from your app.
 
-# Rudder Config Generator
+# RudderStack Config Generator
 
 Rudderstack has two components _control plane_ and _data plane_.
 Data plane reliably delivers your event data. Control plane manages the configuration of your sources and destinations.
