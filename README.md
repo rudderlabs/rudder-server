@@ -67,6 +67,7 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 The docker setup is the easiest & fastest way to try out RudderStack.
 
 1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page. 
+ (Note:  Instead of our full feature hosted UI, you can also use the config generator UI to create the source & destination configs and pass it to RudderStack).
 
 2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
 
@@ -116,10 +117,38 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 4. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
 5. You can use our [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkIOSGitRepo] SDKs for sending events from your app.
 
-# Open-Source Config Generator
+# Rudder Config Generator
 
-Instead of our hosted UI, you can also use the open-source [Config Generator][ConfigGenerator] to generate the source & destination configs and pass it to RudderStack. 
+Rudderstack has two components _control plane_ and _data plane_.
+Data plane reliably delivers your event data. Control plane manages the configuration of your sources and destinations.
+This configuration can also be read from a file instead of from Control plane, if you don't want to use our hosted control plane. 
 
+Config-generator provides the UI to manage the source and destination configurations without needing to signup, etc.
+All the source and destination configuration stays on your local storage. You can export/import config to a JSON file.
+
+## Setup
+
+1. `npm install`
+2. `npm start`
+
+RudderStack config generator starts on the default port i.e., http://localhost:3000.
+On a successful setup, you should see the following
+
+![image](https://blobscdn.gitbook.com/v0/b/gitbook-28427.appspot.com/o/assets%2F-Lq586FOQtfjJPKbd01W%2F-M0LidOVklHOkLYEulS4%2F-M0M3fzyrb-UHiNBG7j0%2FScreenshot%202020-02-18%20at%2012.20.57%20PM.png?alt=media&token=a3f24ad8-fe72-4fed-8953-8e4c790f6cfd)
+
+## Export workspace config
+
+After adding the required sources and destinations, export your workspace config. This workspace-config is required by the RudderStack Server.
+To learn more about adding sources and destinations in RudderStack, refer [Adding a Source and Destination in RudderStack](https://docs.rudderstack.com/getting-started/adding-source-and-destination-rudderstack)
+
+Update the [config](https://docs.rudderstack.com/administrators-guide/config-parameters) variables `configFromFile` and `configJSONPath` in rudder-server to read workspace config from the exported JSON file. 
+
+## Start RudderStack with the workspace config file
+
+* Download the workspace config file on your machine. 
+* In `docker-compose.yml`, uncomment `volumes` section under `backend` service. Specify the path to your workspace config.
+* In `build/docker.env`, set the environment variable `RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true` 
+* Start RudderStack with `docker-compose up`
 
 
 # Architecture
