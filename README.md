@@ -29,7 +29,7 @@ See the [HackerNews][HackerNews] discussion around RudderStack.
 
 # Features
 
-1. Production Ready: Multiple companies are running RudderStack in production. 
+1. Production Ready: Multiple companies are running RudderStack. 
 2. Extreme Scale: One of our largest installations (the largest online grocery in India) is sending a peak of 40K req/sec via a multi-node RudderStack setup.
 3. Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations. 
 4. S3, Minio, Redshift, Snowflake, Google BigQuery.
