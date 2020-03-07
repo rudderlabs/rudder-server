@@ -31,11 +31,12 @@ See the [HackerNews][HackerNews] discussion around RudderStack.
 
 1. Production Ready: Multiple companies from startups to large engerprieses are running RudderStack for collecting events. 
 2. Extreme Scale: One of our largest installations (the largest online grocery in India) is sending a peak of 40K req/sec via a multi-node RudderStack setup.
-3. Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations. 
-4. S3, Minio, Redshift, Snowflake, Google BigQuery support.
-5. User-specified transformation to filter/transform events.
-6. Rich UI written in react.
-7. [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkAndroidGitRepo] and server-side SDKs.
+3. Segment API and library compatible.
+4. Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations. 
+5. S3, Minio, Redshift, Snowflake, Google BigQuery support.
+6. User-specified transformation to filter/transform events.
+7. Rich UI written in react.
+8. [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkAndroidGitRepo] and server-side SDKs.
 
 
 # Contribution
@@ -67,7 +68,8 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 The docker setup is the easiest & fastest way to try out RudderStack.
 
 1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page. 
- (Note:  Instead of our full feature hosted UI, you can also use the config generator UI to create the source & destination configs and pass it to RudderStack).
+
+    (Note) Instead of our full feature hosted UI, you can also use the config generator UI to create the source & destination configs and pass it to RudderStack).
 
 2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
 
