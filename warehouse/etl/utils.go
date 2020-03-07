@@ -8,13 +8,13 @@ import (
 
 func AssertError(iface interface{}, err error) {
 	if err != nil {
-		logger.Fatal(iface)
+		logger.Fatal(err, iface)
 		panic(err)
 	}
 }
 
 func AssertString(iface interface{}, errorString string) {
-	logger.Fatal(iface)
+	logger.Fatal(errorString, iface)
 	panic(errorString)
 }
 

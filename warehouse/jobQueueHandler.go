@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	etl "github.com/rudderlabs/rudder-server/warehouse/etl"
+	. "github.com/rudderlabs/rudder-server/warehouse/etl/jobqueueinterface"
 	. "github.com/rudderlabs/rudder-server/warehouse/etl/transform"
 )
 
@@ -71,16 +72,15 @@ func (jq *JobQueueHandleT) TearDown() {
 }
 
 //Worker saying it is free - Runs in worker thread - just write to channel, nothing else
-func (jq *JobQueueHandleT) SetTransformWorkerFree(workerIdx int) {
-	jq.jobQueueNotificationChannel <- StatusMsg{
-		Status: FREE, WorkerIdx: workerIdx,
-	}
+func (jq *JobQueueHandleT) SetTransformWorker(status StatusMsg) {
+	jq.jobQueueNotificationChannel <- status
 }
 
-func (jq *JobQueueHandleT) assignJobToWorker(prettyJSON bytes.Buffer) {
+func (jq *JobQueueHandleT) assignJobToWorker(prettyJSON *bytes.Buffer) {
 	for i := 0; i < NUM_WORKERS; i++ {
 		if jq.workerStatuses[i] == FREE {
-			logger.Debugf("WH-JQ: Job Request will be made by worker %v", i)
+			jq.workerStatuses[i] = BUSY
+			logger.Infof("WH-JQ: Job Request will be made by worker %v", i)
 			jq.workers[i].WorkerNotificationChannel <- prettyJSON
 			return
 		}
@@ -98,27 +98,29 @@ func (jq *JobQueueHandleT) mainLoop() {
 		10*time.Second,
 		time.Minute,
 		func(ev pq.ListenerEventType, err error) {
-			etl.AssertError(jq, err)
+			logger.Infof("WH-JQ: event received %v", ev)
+			//etl.AssertError(jq, err)
 		})
 	err := listener.Listen(jq.jobQueueNotifyChannel)
 	etl.AssertError(jq, err)
 
-	logger.Debugf("WH-JQ: Wait for Status Notifications")
+	logger.Infof("WH-JQ: Wait for Status Notifications")
 	for {
 		select {
 		case notif := <-listener.Notify:
-			logger.Debugf("WH-JQ: Received data from channel [", notif.Channel, "] :")
+			if notif != nil {
+				logger.Infof("WH-JQ: Received data from channel [", notif.Channel, "] :")
 
-			//Pass the Json to a free worker if available
-			var prettyJSON bytes.Buffer
-			err = json.Indent(&prettyJSON, []byte(notif.Extra), "", "\t")
-			etl.AssertError(jq, err)
-			logger.Debugf("WH-JQ: %v", string([]byte(notif.Extra)))
+				//Pass the Json to a free worker if available
+				var prettyJSON bytes.Buffer
+				err = json.Indent(&prettyJSON, []byte(notif.Extra), "", "\t")
+				etl.AssertError(jq, err)
 
-			jq.assignJobToWorker(prettyJSON)
+				jq.assignJobToWorker(&prettyJSON)
+			}
 
 		case <-time.After(90 * time.Second):
-			logger.Debugf("WH-JQ: Received no events for 90 seconds, checking connection")
+			logger.Infof("WH-JQ: Received no events for 90 seconds, checking connection")
 			go func() {
 				listener.Ping()
 			}()
@@ -143,38 +145,42 @@ func (jq *JobQueueHandleT) setupWorkers() {
 //Setup Postgres Trigger & Wait for notifications on the channel
 func (jq *JobQueueHandleT) setupTriggerAndChannel() {
 	//create a postgres function that notifies on the specified channel
-	sqlStmt := fmt.Sprintf(`CREATE OR REPLACE FUNCTION wh_job_queue_status_notify() RETURNS TRIGGER AS $$
-
-							DECLARE 
-								data json;
-								notification json;
-							
-							BEGIN
-							
-								-- Convert the old or new row to JSON, based on the kind of action.
-								-- Action = DELETE?             -> OLD row
-								-- Action = INSERT or UPDATE?   -> NEW row
-								IF (TG_OP = 'DELETE') THEN
-									data = row_to_json(OLD);
-								ELSE
-									data = row_to_json(NEW);
-								END IF;
+	sqlStmt := fmt.Sprintf(`DO $$ 
+							BEGIN  
+							IF  NOT EXISTS (select  from pg_proc where proname = 'wh_job_queue_status_notify') THEN
+								CREATE FUNCTION wh_job_queue_status_notify() RETURNS TRIGGER AS '
+								DECLARE 
+									data json;
+									notification json;
 								
-								-- Contruct the notification as a JSON string.
-								notification = json_build_object(
-												'table',TG_TABLE_NAME,
-												'action', TG_OP,
-												'data', data);
+								BEGIN
 								
-												
-								-- Execute pg_notify(channel, notification)
-								PERFORM pg_notify('%s',notification::text);
-								
-								-- Result is ignored since this is an AFTER trigger
-								RETURN NULL; 
-							END;
+									-- Convert the old or new row to JSON, based on the kind of action.
+									-- Action = DELETE?             -> OLD row
+									-- Action = INSERT or UPDATE?   -> NEW row
+									IF (TG_OP = ''DELETE'') THEN
+										data = row_to_json(OLD);
+									ELSE
+										data = row_to_json(NEW);
+									END IF;
+									
+									-- Contruct the notification as a JSON string.
+									notification = json_build_object(
+													''table'',TG_TABLE_NAME,
+													''action'', TG_OP,
+													''data'', data);
+									
+													
+									-- Execute pg_notify(channel, notification)
+									PERFORM pg_notify(''%s'',notification::text);
+									
+									-- Result is ignored since this is an AFTER trigger
+									RETURN NULL; 
+								END;' LANGUAGE plpgsql;
 							
-						$$ LANGUAGE plpgsql;`, jq.jobQueueNotifyChannel)
+							END IF;
+							
+							END $$  `, jq.jobQueueNotifyChannel)
 
 	_, err := jq.wh.dbHandle.Exec(sqlStmt)
 	etl.AssertError(jq, err)
@@ -197,7 +203,7 @@ func (jq *JobQueueHandleT) setupTriggerAndChannel() {
 //Create the required tables
 //TODO: In SLAVE mode , do not setup tables
 func (jq *JobQueueHandleT) setupTables() {
-	logger.Debugf("WH-JQ: Creating Job Queue Tables ")
+	logger.Infof("WH-JQ: Creating Job Queue Tables ")
 
 	//create status type
 	sqlStmt := `DO $$ BEGIN
