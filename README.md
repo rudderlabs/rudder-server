@@ -130,8 +130,10 @@ All the source and destination configuration stays on your local storage. You ca
 
 ## Setup
 
-1. `npm install`
-2. `npm start`
+1. Checkout the config-gen `git checkout -b config-gen`
+2. `cd utils/config-gen`
+3. `npm install`
+4. `npm start`
 
 RudderStack config generator starts on the default port i.e., http://localhost:3000.
 On a successful setup, you should see the following
