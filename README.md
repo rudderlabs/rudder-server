@@ -32,11 +32,10 @@ See the [HackerNews][HackerNews] discussion around RudderStack.
 1. Production Ready: Multiple companies are running RudderStack. 
 2. Extreme Scale: One of our largest installations (the largest online grocery in India) is sending a peak of 40K req/sec via a multi-node RudderStack setup.
 3. Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations. 
-4. S3, Minio, Redshift, Snowflake, Google BigQuery.
+4. S3, Minio, Redshift, Snowflake, Google BigQuery support.
 5. User-specified transformation to filter/transform events.
-6. Stand-alone system. The only dependency is on Postgres.
-7. Rich UI written in react.
-8. [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkAndroidGitRepo] and server-side SDKs.
+6. Rich UI written in react.
+7. [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkAndroidGitRepo] and server-side SDKs.
 
 
 # Contribution
