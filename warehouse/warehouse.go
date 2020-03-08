@@ -32,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/clusterman"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -66,7 +67,7 @@ type HandleT struct {
 	warehouses         []warehouseutils.WarehouseT
 	dbHandle           *sql.DB
 	uploadToWarehouseQ chan []ProcessStagingFilesJobT
-	jobQueueHandle     *JobQueueHandleT
+	clusterHandle      clusterman.ClusterNodeI
 	createLoadFilesQ   chan LoadFileJobT
 	isEnabled          bool
 }
@@ -1040,7 +1041,8 @@ func (wh *HandleT) Setup(whType string) {
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
 
 	//Setup postgres trigger mechanism for job distribution across etl workers
-	wh.initJobQueue()
+	//TODO: rename
+	wh.initClusterMode()
 
 	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
@@ -1060,14 +1062,24 @@ func (wh *HandleT) Setup(whType string) {
 TearDown releases all the resources
 */
 func (wh *HandleT) TearDown() {
-	wh.jobQueueHandle.TearDown()
+	wh.clusterHandle.TearDown()
 	wh.dbHandle.Close()
 }
 
-func (wh *HandleT) initJobQueue() {
-	var jobQueueHandle JobQueueHandleT
-	wh.jobQueueHandle = &jobQueueHandle
-	wh.jobQueueHandle.Setup(wh)
+func (wh *HandleT) isMaster(clusterConfig *clusterman.ClusterConfig) bool {
+	return true
+}
+
+func (wh *HandleT) initClusterMode() {
+	clusterConfig := clusterman.LoadConfig()
+
+	if wh.isMaster(clusterConfig) {
+		wh.clusterHandle = &clusterman.MasterNodeT{}
+	} else {
+		wh.clusterHandle = &clusterman.SlaveNodeT{}
+	}
+
+	wh.clusterHandle.Setup(wh.dbHandle, clusterConfig)
 }
 
 // Gets the config from config backend and extracts enabled writekeys

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net"
 	"regexp"
 	"strings"
 	"time"
@@ -365,4 +366,35 @@ func Datatype(in interface{}) string {
 	}
 
 	return "string"
+}
+
+//AssertError to log and panice error object
+func AssertError(iface interface{}, err error) {
+	if err != nil {
+		logger.Fatal(err, iface)
+		panic(err)
+	}
+}
+
+//AssertString to log and panice error string
+func AssertString(iface interface{}, errorString string) {
+	logger.Fatal(errorString, iface)
+	panic(errorString)
+}
+
+//GetMyIP to get ip of this instance
+func GetMyIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "Ip Empty"
+	}
+
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return "Ip Empty"
 }

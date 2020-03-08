@@ -7,25 +7,26 @@ import (
 
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/etl"
-	. "github.com/rudderlabs/rudder-server/warehouse/etl/jobqueueinterface"
+	ci "github.com/rudderlabs/rudder-server/warehouse/clusterinterface"
+	utils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 )
 
-type ETLTransformWorkerT struct {
-	jobQueue                  TransformWorkerJobQueueIface
-	WorkerNotificationChannel chan *bytes.Buffer //JobQueue notifies workers on these channels
-	interrupt                 bool
-	workerId                  string
-	workerIdx                 int
+//WorkerT is the worker state along with its behavior
+type WorkerT struct {
+	jobQueue            ci.JobQueueI
+	WorkerNotificationQ chan *bytes.Buffer //JobQueue notifies workers on these channels
+	interrupt           bool
+	uuidIP              string
+	workerIdx           int
 }
 
-//initialise the worker
-func (tw *ETLTransformWorkerT) Init(jobQueue TransformWorkerJobQueueIface, workerIdx int) {
+//Init to initialise the worker
+func (tw *WorkerT) Init(jobQueue ci.JobQueueI, workerIdx int) {
 	tw.jobQueue = jobQueue
-	tw.workerId = fmt.Sprintf("%v-%v", etl.GetMyIp(), uuid.NewV4().String())
+	tw.uuidIP = fmt.Sprintf("%v-%v", utils.GetMyIP(), uuid.NewV4().String())
 	tw.workerIdx = workerIdx
-	tw.WorkerNotificationChannel = make(chan *bytes.Buffer)
+	tw.WorkerNotificationQ = make(chan *bytes.Buffer)
 
 	//Waits for notification from jobQueue and processes it
 	rruntime.Go(func() {
@@ -33,19 +34,19 @@ func (tw *ETLTransformWorkerT) Init(jobQueue TransformWorkerJobQueueIface, worke
 	})
 }
 
-//Release any resources held
-func (tw *ETLTransformWorkerT) TearDown() {
+//TearDown to release any resources held
+func (tw *WorkerT) TearDown() {
 	tw.jobQueue = nil
 	tw.interrupt = true
 }
 
 //Waits for notification from jobQueue, process it & communicate back that it is free once done.
-func (tw *ETLTransformWorkerT) process() {
+func (tw *WorkerT) process() {
 
 	for {
 		logger.Infof("WH-JQ: Setting transfom worker free")
 		//First set itself free & then wait on the channel
-		tw.jobQueue.SetTransformWorker(StatusMsg{Status: FREE, WorkerIdx: tw.workerIdx})
+		tw.jobQueue.SetTransformWorker(ci.StatusMsg{Status: ci.FREE, WorkerIdx: tw.workerIdx})
 
 		//Kill worker routine on interrupt
 		if tw.interrupt {
@@ -55,7 +56,7 @@ func (tw *ETLTransformWorkerT) process() {
 		// Wait for notifications from Master
 		select {
 		// Also listen for worker queue channel
-		case jsonMsg := <-tw.WorkerNotificationChannel:
+		case jsonMsg := <-tw.WorkerNotificationQ:
 			//TODO: claim job with SKIP LOCK and update status
 			logger.Infof("WH-JQ: worker-%v trying to claim job %v", tw.workerIdx, string(jsonMsg.Bytes()))
 

@@ -1,4 +1,4 @@
-package warehouse
+package clusterman
 
 import (
 	"bytes"
@@ -7,46 +7,42 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	etl "github.com/rudderlabs/rudder-server/warehouse/etl"
-	. "github.com/rudderlabs/rudder-server/warehouse/etl/jobqueueinterface"
-	. "github.com/rudderlabs/rudder-server/warehouse/etl/transform"
+	ci "github.com/rudderlabs/rudder-server/warehouse/clusterinterface"
+	etl "github.com/rudderlabs/rudder-server/warehouse/etl/transform"
+	"github.com/rudderlabs/rudder-server/warehouse/strings"
+	utils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const NUM_WORKERS = 4
+//NUMWORKERS for each node - to be obtained from config
+const NUMWORKERS = 4
 
+//JobQueueHandleT will be shared among master and worker nodes to handle pub/sub comms
 type JobQueueHandleT struct {
-	wh                          *HandleT
-	workers                     [NUM_WORKERS]*ETLTransformWorkerT
-	workerStatuses              [NUM_WORKERS]WorkerStatus //If not busy, JobQueue will assign work
-	jobQueueNotificationChannel chan StatusMsg            //Workers notify jobQueue on this channel
-
-	jobQueueTable         string //DB Table Name - loaded from config
-	jobQueueNotifyChannel string //DB Channel Name - to get notifications
+	//wh                          *HandleT
+	cn                    *clusterNodeT
+	workers               [NUMWORKERS]*etl.WorkerT
+	workerStatuses        [NUMWORKERS]ci.WorkerStatus //If not busy, JobQueue will assign work
+	jobQueueNotificationQ chan ci.StatusMsg           //Workers notify jobQueue on this channel
 
 	isSetup bool
 }
 
 //Setup JobQueue Tables & Triggers - Must be called once during server initialisation
-func (jq *JobQueueHandleT) Setup(whHandle *HandleT) {
+func (jq *JobQueueHandleT) Setup(cn *clusterNodeT) {
 	logger.Infof("WH-JQ: Setting up Job Queue ")
 
 	if jq.isSetup {
-		etl.AssertString(jq, etl.STR_JOBQUEUE_ALREADY_SETUP)
+		utils.AssertString(jq, strings.STR_JOBQUEUE_ALREADY_SETUP)
 	}
 	defer func() { jq.isSetup = true }()
 
-	jq.wh = whHandle
+	jq.cn = cn
 
 	//create channel to receive from workers
-	jq.jobQueueNotificationChannel = make(chan StatusMsg)
-
-	jq.loadConfig()
-
-	jq.setupTables()
+	jq.jobQueueNotificationQ = make(chan ci.StatusMsg)
 
 	jq.setupTriggerAndChannel()
 
@@ -58,30 +54,25 @@ func (jq *JobQueueHandleT) Setup(whHandle *HandleT) {
 	})
 }
 
-func (jq *JobQueueHandleT) loadConfig() {
-	jq.jobQueueTable = config.GetString("Warehouse.jobQueueTable", "wh_job_queue")
-	jq.jobQueueNotifyChannel = config.GetString("Warehouse.jobQueueNotifyChannel", "wh_job_queue_status_channel")
-}
-
-//Release any resources held
+//TearDown to release any resources held
 func (jq *JobQueueHandleT) TearDown() {
-	jq.wh = nil
-	for i := 0; i < NUM_WORKERS; i++ {
+	for i := 0; i < NUMWORKERS; i++ {
 		jq.workers[i].TearDown()
 	}
+	jq.cn = nil
 }
 
-//Worker saying it is free - Runs in worker thread - just write to channel, nothing else
-func (jq *JobQueueHandleT) SetTransformWorker(status StatusMsg) {
-	jq.jobQueueNotificationChannel <- status
+//SetTransformWorker to set its status - Runs in worker thread - just write to channel, nothing else
+func (jq *JobQueueHandleT) SetTransformWorker(status ci.StatusMsg) {
+	jq.jobQueueNotificationQ <- status
 }
 
 func (jq *JobQueueHandleT) assignJobToWorker(prettyJSON *bytes.Buffer) {
-	for i := 0; i < NUM_WORKERS; i++ {
-		if jq.workerStatuses[i] == FREE {
-			jq.workerStatuses[i] = BUSY
+	for i := 0; i < NUMWORKERS; i++ {
+		if jq.workerStatuses[i] == ci.FREE {
+			jq.workerStatuses[i] = ci.BUSY
 			logger.Infof("WH-JQ: Job Request will be made by worker %v", i)
-			jq.workers[i].WorkerNotificationChannel <- prettyJSON
+			jq.workers[i].WorkerNotificationQ <- prettyJSON
 			return
 		}
 	}
@@ -99,10 +90,10 @@ func (jq *JobQueueHandleT) mainLoop() {
 		time.Minute,
 		func(ev pq.ListenerEventType, err error) {
 			logger.Infof("WH-JQ: event received %v", ev)
-			//etl.AssertError(jq, err)
+			//utils.AssertError(jq, err)
 		})
-	err := listener.Listen(jq.jobQueueNotifyChannel)
-	etl.AssertError(jq, err)
+	err := listener.Listen(jq.cn.config.jobQueueNotifyChannel)
+	utils.AssertError(jq, err)
 
 	logger.Infof("WH-JQ: Wait for Status Notifications")
 	for {
@@ -114,7 +105,7 @@ func (jq *JobQueueHandleT) mainLoop() {
 				//Pass the Json to a free worker if available
 				var prettyJSON bytes.Buffer
 				err = json.Indent(&prettyJSON, []byte(notif.Extra), "", "\t")
-				etl.AssertError(jq, err)
+				utils.AssertError(jq, err)
 
 				jq.assignJobToWorker(&prettyJSON)
 			}
@@ -126,7 +117,7 @@ func (jq *JobQueueHandleT) mainLoop() {
 			}()
 
 		// Also listen for worker queue channel
-		case statusMsg := <-jq.jobQueueNotificationChannel:
+		case statusMsg := <-jq.jobQueueNotificationQ:
 			jq.workerStatuses[statusMsg.WorkerIdx] = statusMsg.Status
 		}
 	}
@@ -134,9 +125,9 @@ func (jq *JobQueueHandleT) mainLoop() {
 
 //Setup Workers & Comms channels
 func (jq *JobQueueHandleT) setupWorkers() {
-	for i := 0; i < NUM_WORKERS; i++ {
-		var tw ETLTransformWorkerT
-		jq.workerStatuses[i] = BUSY
+	for i := 0; i < NUMWORKERS; i++ {
+		var tw etl.WorkerT
+		jq.workerStatuses[i] = ci.BUSY
 		jq.workers[i] = &tw
 		jq.workers[i].Init(jq, i)
 	}
@@ -180,10 +171,10 @@ func (jq *JobQueueHandleT) setupTriggerAndChannel() {
 							
 							END IF;
 							
-							END $$  `, jq.jobQueueNotifyChannel)
+							END $$  `, jq.cn.config.jobQueueNotifyChannel)
 
-	_, err := jq.wh.dbHandle.Exec(sqlStmt)
-	etl.AssertError(jq, err)
+	_, err := jq.cn.dbHandle.Exec(sqlStmt)
+	utils.AssertError(jq, err)
 
 	//create the trigger
 	sqlStmt = fmt.Sprintf(`DO $$ BEGIN
@@ -194,48 +185,8 @@ func (jq *JobQueueHandleT) setupTriggerAndChannel() {
 										EXECUTE PROCEDURE wh_job_queue_status_notify();
 									EXCEPTION
 										WHEN others THEN null;
-								END $$`, jq.jobQueueTable)
+								END $$`, jq.cn.config.jobQueueTable)
 
-	_, err = jq.wh.dbHandle.Exec(sqlStmt)
-	etl.AssertError(jq, err)
-}
-
-//Create the required tables
-//TODO: In SLAVE mode , do not setup tables
-func (jq *JobQueueHandleT) setupTables() {
-	logger.Infof("WH-JQ: Creating Job Queue Tables ")
-
-	//create status type
-	sqlStmt := `DO $$ BEGIN
-						CREATE TYPE wh_job_queue_status_type
-							AS ENUM(
-								'new', 
-								'running',
-								'success', 
-								'error'
-									);
-							EXCEPTION
-								WHEN duplicate_object THEN null;
-					END $$;`
-
-	_, err := jq.wh.dbHandle.Exec(sqlStmt)
-	etl.AssertError(jq, err)
-
-	//create the table
-	sqlStmt = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-										  id BIGSERIAL PRIMARY KEY,
-										  staging_file_id BIGINT, 
-										  status wh_job_queue_status_type NOT NULL, 
-										  worker_id VARCHAR(64) NOT NULL,
-										  job_create_time TIMESTAMP NOT NULL,
-										  status_update_time TIMESTAMP NOT NULL,
-										  last_error VARCHAR(512));`, jq.jobQueueTable)
-
-	_, err = jq.wh.dbHandle.Exec(sqlStmt)
-	etl.AssertError(jq, err)
-
-	// create index on status
-	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_idx ON %[1]s (status);`, jq.jobQueueTable)
-	_, err = jq.wh.dbHandle.Exec(sqlStmt)
-	etl.AssertError(jq, err)
+	_, err = jq.cn.dbHandle.Exec(sqlStmt)
+	utils.AssertError(jq, err)
 }
