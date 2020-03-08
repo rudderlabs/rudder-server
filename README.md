@@ -56,12 +56,15 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 ## Events Page
 ![image](https://user-images.githubusercontent.com/52487451/65647230-e2937c80-dfb2-11e9-88bd-3b015c4b576f.png)
 
+***
 
 # Setup Instructions (Hosted Demo Account)
 
 1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account.
 2. Select `RudderStack Hosted Service` from the top right corner after you login.
 3. Follow (Send Test Events) instructions below to send test event.
+
+***
 
 # Setup Instructions (Docker)
 
@@ -80,12 +83,15 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 5. Run the command `docker-compose up --build` to bring up all the services.
 6. Follow (Send Test Events) instructions below to send test event.
 
+***
+
 # Setup Instructions (Kubernetes)
 
 1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page. 
 
 2. Our helm scripts and instructions are in a separate repo - [Download Here][HelmScriptsGitRepo]
 
+***
 
 # Setup Instructions (Native Installation)
 
@@ -111,6 +117,8 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 9. Run the backend server `go run -mod=vendor main.go`
 10. Follow (Send Test Events) instructions below to send test event.
 
+***
+
 # Send Test Events
 
 1. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID. The Google Analytics account needs to have a **Web** Property (**Web+App** does't seem to work)
@@ -118,6 +126,8 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 3. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `cd scripts; ./generate-event <writeKeyHere> http://localhost:8080/v1/batch`. NOTE: `writeKey` is different from the `your_workspace_token` in step 2. Former is associated with the source while the latter is for your account.
 4. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
 5. You can use our [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkIOSGitRepo] SDKs for sending events from your app.
+
+***
 
 # RudderStack Config Generator
 
@@ -154,7 +164,6 @@ Update the [config](https://docs.rudderstack.com/administrators-guide/config-par
 * In `build/docker.env`, set the environment variable `RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true` 
 * Run the command `docker-compose up --build` to bring up all the services.
 
-***
 ***
 
 # RudderStack Architecture
