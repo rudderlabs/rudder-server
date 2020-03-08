@@ -398,3 +398,30 @@ func GetMyIP() string {
 	}
 	return "Ip Empty"
 }
+
+// customError is an implementation of error.
+type customError struct {
+	s string
+}
+
+func (e *customError) Error() string {
+	return e.s
+}
+
+//CreateError gives error interface with the given message string
+func CreateError(msg string) error {
+	return &customError{msg}
+}
+
+//GetCurrentSQLTimestamp to get sql complaint current datetime string
+func GetCurrentSQLTimestamp() string {
+	const SQLTimeFormat = "2006-01-02 15:04:05"
+	return time.Now().Format(SQLTimeFormat)
+}
+
+//GetSQLTimestamp to get sql complaint current datetime string from the given duration
+func GetSQLTimestamp(t time.Time) string {
+
+	const SQLTimeFormat = "2006-01-02 15:04:05"
+	return t.Format(SQLTimeFormat)
+}

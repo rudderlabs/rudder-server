@@ -3,6 +3,7 @@ package transform
 import (
 	"bytes"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -16,16 +17,18 @@ import (
 type WorkerT struct {
 	jobQueue            ci.JobQueueI
 	WorkerNotificationQ chan *bytes.Buffer //JobQueue notifies workers on these channels
-	interrupt           bool
-	uuidIP              string
-	workerIdx           int
+
+	IP_UUID string
+	ID      int
+
+	interrupt bool
 }
 
 //Init to initialise the worker
 func (tw *WorkerT) Init(jobQueue ci.JobQueueI, workerIdx int) {
 	tw.jobQueue = jobQueue
-	tw.uuidIP = fmt.Sprintf("%v-%v", utils.GetMyIP(), uuid.NewV4().String())
-	tw.workerIdx = workerIdx
+	tw.IP_UUID = fmt.Sprintf("%v-%v", utils.GetMyIP(), uuid.NewV4().String())
+	tw.ID = workerIdx
 	tw.WorkerNotificationQ = make(chan *bytes.Buffer)
 
 	//Waits for notification from jobQueue and processes it
@@ -44,9 +47,9 @@ func (tw *WorkerT) TearDown() {
 func (tw *WorkerT) process() {
 
 	for {
-		logger.Infof("WH-JQ: Setting transfom worker free")
+		logger.Infof("WH-JQ: Setting transfom worker-%v free", tw.ID)
 		//First set itself free & then wait on the channel
-		tw.jobQueue.SetTransformWorker(ci.StatusMsg{Status: ci.FREE, WorkerIdx: tw.workerIdx})
+		tw.jobQueue.SetTransformWorker(ci.StatusMsg{Status: ci.FREE, WorkerIdx: tw.ID})
 
 		//Kill worker routine on interrupt
 		if tw.interrupt {
@@ -57,13 +60,25 @@ func (tw *WorkerT) process() {
 		select {
 		// Also listen for worker queue channel
 		case jsonMsg := <-tw.WorkerNotificationQ:
-			//TODO: claim job with SKIP LOCK and update status
-			logger.Infof("WH-JQ: worker-%v trying to claim job %v", tw.workerIdx, string(jsonMsg.Bytes()))
-
+			if tw.jobQueue != nil {
+				tw.jobQueue.ClaimJob(jsonMsg, tw.ID)
+			}
 		}
 
-		time.Sleep(5 * time.Second)
-
 	}
+}
 
+//HandleJob runs on worker thread to act on the job received from job queue
+func (tw *WorkerT) HandleJob(staging_file_id string) error {
+	logger.Infof("WH-JQ: Handling job id %v by worker-%v", staging_file_id, tw.ID)
+	time.Sleep(5 * time.Second)
+	if rand.Intn(2) == 1 {
+		return nil
+	}
+	return utils.CreateError("because FAKE FAILURE")
+}
+
+//CleanUp the worker's footprint
+func (tw *WorkerT) CleanUp(jobFailed bool, staging_file_id string) {
+	logger.Infof("WH-JQ: Cleaning job id %v by worker-%v failed-%v", staging_file_id, tw.ID, jobFailed)
 }

@@ -71,6 +71,7 @@ loadFilesTable = "wh_load_files"
 uploadsTable = "wh_uploads"
 schemasTable = "wh_schemas"
 jobQueueTable = "wh_job_queue"
+workerInfoTable = "wh_workers"
 jobQueueNotifyChannel = "wh_job_queue_status_channel"
 uploadFreqInS = 1800
 noOfWorkers = 8
