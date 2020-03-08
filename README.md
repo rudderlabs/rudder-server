@@ -11,7 +11,7 @@
 RudderStack runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation code which are node scripts. This repo contains the core backend and the transformation modules of Rudder.
 The client SDKs are in a separate repo (link below).
 
-Rudder server is released under [SSPL License][SSPL_License]
+Rudder server is released under [AGPLv3 License][AGPLv3_License]
 
 Questions? Join our [Discord][Discord] channel. Or please email soumyadeb at rudderlabs.com.
 
@@ -215,6 +215,7 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 [GoReportCardBadge]: https://goreportcard.com/badge/github.com/rudderlabs/rudder-server
 [SSH]: https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls
 [Dashboard]: https://app.rudderlabs.com
+[AGPLv3_License]: https://www.gnu.org/licenses/agpl-3.0-standalone.html
 [SSPL_License]: https://www.mongodb.com/licensing/server-side-public-license
 [HackerNews]: https://news.ycombinator.com/item?id=21081756
 [HelmScriptsGitRepo]: https://github.com/rudderlabs/rudderstack-helm
