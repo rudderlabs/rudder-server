@@ -154,7 +154,8 @@ Update the [config](https://docs.rudderstack.com/administrators-guide/config-par
 * In `build/docker.env`, set the environment variable `RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true` 
 * Run the command `docker-compose up --build` to bring up all the services.
 
-
+***
+***
 
 # RudderStack Architecture
 
