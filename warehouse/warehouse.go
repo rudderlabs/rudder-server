@@ -33,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clusterman"
+	"github.com/rudderlabs/rudder-server/warehouse/etl/ingest"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -70,6 +71,7 @@ type HandleT struct {
 	clusterHandle      clusterman.ClusterNodeI
 	createLoadFilesQ   chan LoadFileJobT
 	isEnabled          bool
+	master             clusterman.ClusterNodeI
 }
 
 type ProcessStagingFilesJobT struct {
@@ -1033,16 +1035,16 @@ func (wh *HandleT) Setup(whType string) {
 	if err != nil {
 		panic(err)
 	}
-	wh.setupTables()
+	// wh.setupTables()
 	wh.destType = whType
-	wh.setInterruptedDestinations()
+	// wh.setInterruptedDestinations()
 	wh.Enable()
-	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
-	wh.createLoadFilesQ = make(chan LoadFileJobT)
+	// wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
+	// wh.createLoadFilesQ = make(chan LoadFileJobT)
 
 	//Setup postgres trigger mechanism for job distribution across etl workers
 	//TODO: rename
-	wh.initClusterMode()
+	// wh.initClusterMode()
 
 	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
@@ -1056,6 +1058,9 @@ func (wh *HandleT) Setup(whType string) {
 	rruntime.Go(func() {
 		wh.mainLoop()
 	})
+
+	var ingester ingest.HandleT
+	ingester.Start(wh.dbHandle)
 }
 
 /*
@@ -1066,14 +1071,14 @@ func (wh *HandleT) TearDown() {
 	wh.dbHandle.Close()
 }
 
-func (wh *HandleT) isMaster(clusterConfig *clusterman.ClusterConfig) bool {
-	return true
-}
+// func (wh *HandleT) isMaster(clusterConfig *clusterman.ClusterConfig) bool {
+// 	return true
+// }
 
-func (wh *HandleT) initClusterMode() {
+func (wh *HandleT) initClusterMode(mode string) {
 	clusterConfig := clusterman.LoadConfig()
 
-	if wh.isMaster(clusterConfig) {
+	if mode == "master" {
 		wh.clusterHandle = &clusterman.MasterNodeT{}
 	} else {
 		wh.clusterHandle = &clusterman.SlaveNodeT{}
@@ -1362,7 +1367,7 @@ func startWebHandler() {
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(8082), bugsnag.Handler(nil)))
 }
 
-func Start() {
+func Start(mode string) {
 	logger.Infof("WH: Starting Warehouse service...")
 	var err error
 	psqlInfo := jobsdb.GetConnectionString()
@@ -1371,8 +1376,19 @@ func Start() {
 		panic(err)
 	}
 	setupTables(dbHandle)
-	go monitorDestRouters()
-	startWebHandler()
+	var wh HandleT
+	wh.dbHandle = dbHandle
+	wh.initClusterMode(mode)
+	// if mode == "master" {
+	// 	var ingester ingest.HandleT
+	// 	ingester.Start(dbHandle)
+
+	// }
+	// monitorDestRouters()
+	// wh.Setup("SF")
+	// wh.initClusterMode()
+	// ingest.Start(dbHandle)
+	// startWebHandler()
 	// wh.destType = whType
 	// wh.setInterruptedDestinations()
 	// wh.Enable()

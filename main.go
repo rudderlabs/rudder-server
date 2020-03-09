@@ -100,7 +100,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 						if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
 							_, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 							if !ok {
-								logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+								// logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 								//TODO:
 								//SERVER Initialisation Modes - WAREHOUSE [MASTER_SLAVE | SLAVE].
 								//DEFAULT Configuration - WAREHOUSE [MASTER_SLAVE] - if none specified.
@@ -109,9 +109,9 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 								//that is - server stops functioning as ROUTER.
 								//SPECIFY A DB URL if started in SLAVE mode
 								//IN MASTER_SLAVE mode-the same router postgres db will be used for warehousing.
-								var wh warehouse.HandleT
-								wh.Setup(destination.DestinationDefinition.Name)
-								dstToWhRouter[destination.DestinationDefinition.Name] = &wh
+								// var wh warehouse.HandleT
+								// wh.Setup(destination.DestinationDefinition.Name)
+								// dstToWhRouter[destination.DestinationDefinition.Name] = &wh
 							}
 						}
 					} else {
@@ -151,9 +151,9 @@ func printVersion() {
 	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
-func startWarehouseService() {
+func startWarehouseService(mode string) {
 	backendconfig.Setup()
-	warehouse.Start()
+	warehouse.Start(mode)
 }
 
 func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintenanceMode bool) {
@@ -234,8 +234,6 @@ func main() {
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 
-	isWarehouseService := flag.Bool("warehouse", false, "Indicates to start it as a warehouse service")
-
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
@@ -244,13 +242,22 @@ func main() {
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
 	versionFlag := flag.Bool("v", false, "Print the current version and exit")
-
+	warehouseMode := flag.String("warehouse", "", "Indicates to start it as a warehouse service")
 	flag.Parse()
+
 	if *versionFlag {
 		printVersion()
 		return
 	}
 	http.HandleFunc("/version", versionHandler)
+
+	var isWarehouseService bool
+	fmt.Println("&&&&&&&&&")
+	fmt.Println(*warehouseMode)
+	fmt.Println("&&&&&&&&&")
+	if *warehouseMode == "master" || *warehouseMode == "slave" {
+		isWarehouseService = true
+	}
 
 	var f *os.File
 	if *cpuprofile != "" {
@@ -295,9 +302,10 @@ func main() {
 		os.Exit(1)
 	}()
 
-	if *isWarehouseService {
+	if isWarehouseService {
 		fmt.Println("Starting as Warehouse Service...")
-		startWarehouseService()
+		fmt.Println(warehouseMode)
+		startWarehouseService(*warehouseMode)
 	} else {
 		startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
 	}
