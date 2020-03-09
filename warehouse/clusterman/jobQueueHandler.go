@@ -263,7 +263,11 @@ func (jq *JobQueueHandleT) commitJobStatus(tx *sql.Tx, workerIdx int, outerErr e
 	//Set job status to success when it is completed
 	var err error
 	if outerErr != nil {
-		_, err = tx.Exec(fmt.Sprintf(`UPDATE %[1]s SET status='new',
+		_, err = tx.Exec(fmt.Sprintf(`UPDATE %[1]s SET status= 
+				(CASE 
+					WHEN	error_count >= 2 THEN CAST ( 'error' AS wh_job_queue_status_type)
+				ELSE  CAST( 'new' AS wh_job_queue_status_type)
+				END),
 				status_updated_at = '%[2]s',
 				error_count = error_count + 1,
 				last_error = LEFT('%[3]s',512)
@@ -273,8 +277,8 @@ func (jq *JobQueueHandleT) commitJobStatus(tx *sql.Tx, workerIdx int, outerErr e
 		_, err = tx.Exec(fmt.Sprintf(`UPDATE %[1]s SET status='success',
 		status_updated_at = '%[2]s' 
 		WHERE id =  %[3]v;`, jq.bc.config.jobQueueTable, utils.GetCurrentSQLTimestamp(), id))
-
 	}
+
 	if rolledback := jq.gracefulDBfailureInTx(tx, err); rolledback {
 		jq.workers[workerIdx].CleanUp(true, staging_file_id)
 		return
