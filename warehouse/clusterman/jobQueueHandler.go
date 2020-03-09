@@ -230,7 +230,7 @@ func (jq *JobQueueHandleT) ClaimJob(jsonMsg *bytes.Buffer, workerIdx int) {
 
 	//Read the returned row
 	var (
-		id              int64
+		id              int
 		staging_file_id string
 	)
 	for rows.Next() {
@@ -247,15 +247,34 @@ func (jq *JobQueueHandleT) ClaimJob(jsonMsg *bytes.Buffer, workerIdx int) {
 
 	//Start job handling by worker - presumably takes a long time
 	err = jq.workers[workerIdx].HandleJob(staging_file_id)
-	if rolledback := jq.gracefulDBfailureInTx(tx, err); rolledback {
+	if err != nil {
+		//failed handling job - set error & set job as new & commit
+		jq.commitJobStatus(tx, workerIdx, err, id, staging_file_id)
 		jq.workers[workerIdx].CleanUp(true, staging_file_id)
 		return
 	}
 
+	//set job handling as success
+	jq.commitJobStatus(tx, workerIdx, nil, id, staging_file_id)
+}
+
+func (jq *JobQueueHandleT) commitJobStatus(tx *sql.Tx, workerIdx int, outerErr error, id int, staging_file_id string) {
+
 	//Set job status to success when it is completed
-	_, err = tx.Exec(fmt.Sprintf(`UPDATE %[1]s SET status='success',
-				status_updated_at = '%[2]s'
-				WHERE id =  %[3]v;`, jq.bc.config.jobQueueTable, utils.GetCurrentSQLTimestamp(), id))
+	var err error
+	if outerErr != nil {
+		_, err = tx.Exec(fmt.Sprintf(`UPDATE %[1]s SET status='new',
+				status_updated_at = '%[2]s',
+				error_count = error_count + 1,
+				last_error = LEFT('%[3]s',512)
+				WHERE id =  %[4]v;`, jq.bc.config.jobQueueTable, utils.GetCurrentSQLTimestamp(),
+			outerErr.Error(), id))
+	} else {
+		_, err = tx.Exec(fmt.Sprintf(`UPDATE %[1]s SET status='success',
+		status_updated_at = '%[2]s' 
+		WHERE id =  %[3]v;`, jq.bc.config.jobQueueTable, utils.GetCurrentSQLTimestamp(), id))
+
+	}
 	if rolledback := jq.gracefulDBfailureInTx(tx, err); rolledback {
 		jq.workers[workerIdx].CleanUp(true, staging_file_id)
 		return
