@@ -16,16 +16,8 @@ type SlaveNodeT struct {
 
 //Setup to initialise
 func (sn *SlaveNodeT) Setup(dbHandle *sql.DB, config *ClusterConfig) {
-	sn.internalSetup(dbHandle, config, false, nil)
-}
-func (sn *SlaveNodeT) internalSetup(dbHandle *sql.DB, config *ClusterConfig, masterMode bool, mn *MasterNodeT) {
-
-	if masterMode {
-		sn.bc = mn.bc
-	} else {
-		sn.bc = &baseComponentT{}
-		sn.bc.Setup(sn, dbHandle, config)
-	}
+	sn.bc = &baseComponentT{}
+	sn.bc.Setup(sn, dbHandle, config)
 
 	//Main Loop  - Slave Loop updates workers Info & others
 	rruntime.Go(func() {

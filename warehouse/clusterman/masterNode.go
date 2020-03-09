@@ -29,12 +29,14 @@ func (mn *MasterNodeT) Setup(dbHandle *sql.DB, config *ClusterConfig) {
 
 	mn.setupTables(dbHandle, config)
 
-	mn.bc = &baseComponentT{}
-	mn.bc.Setup(mn, dbHandle, config)
-
 	//Also init a slave because master is  also a slave
 	mn.sn = &SlaveNodeT{}
-	mn.sn.internalSetup(dbHandle, config, true, mn)
+	mn.sn.Setup(dbHandle, config)
+
+	//Slave will take care of this
+	/*mn.bc = &baseComponentT{}
+	mn.bc.Setup(mn, dbHandle, config)*/
+	mn.bc = mn.sn.bc
 
 	//Main Loop  - Master Node  periodically polls job queue
 	// & force updates a few jobs so that notifications are regenerated
