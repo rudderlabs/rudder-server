@@ -224,7 +224,7 @@ func (jq *JobQueueHandleT) ClaimJob(jsonMsg *bytes.Buffer, workerIdx int) {
 	if rows != nil {
 		defer rows.Close()
 	}
-	if jq.gracefulDBfailureInTx(tx, err) {
+	if rolledback := jq.gracefulDBfailureInTx(tx, err); rolledback {
 		return
 	}
 
@@ -235,7 +235,7 @@ func (jq *JobQueueHandleT) ClaimJob(jsonMsg *bytes.Buffer, workerIdx int) {
 	)
 	for rows.Next() {
 		err = rows.Scan(&id, &staging_file_id)
-		if jq.gracefulDBfailureInTx(tx, err) {
+		if rolledback := jq.gracefulDBfailureInTx(tx, err); rolledback {
 			return
 		}
 	}
@@ -247,7 +247,7 @@ func (jq *JobQueueHandleT) ClaimJob(jsonMsg *bytes.Buffer, workerIdx int) {
 
 	//Start job handling by worker - presumably takes a long time
 	err = jq.workers[workerIdx].HandleJob(staging_file_id)
-	if jq.gracefulDBfailureInTx(tx, err) {
+	if rolledback := jq.gracefulDBfailureInTx(tx, err); rolledback {
 		jq.workers[workerIdx].CleanUp(true, staging_file_id)
 		return
 	}
@@ -256,7 +256,7 @@ func (jq *JobQueueHandleT) ClaimJob(jsonMsg *bytes.Buffer, workerIdx int) {
 	_, err = tx.Exec(fmt.Sprintf(`UPDATE %[1]s SET status='success',
 				status_updated_at = '%[2]s'
 				WHERE id =  %[3]v;`, jq.bc.config.jobQueueTable, utils.GetCurrentSQLTimestamp(), id))
-	if jq.gracefulDBfailureInTx(tx, err) {
+	if rolledback := jq.gracefulDBfailureInTx(tx, err); rolledback {
 		jq.workers[workerIdx].CleanUp(true, staging_file_id)
 		return
 	}
