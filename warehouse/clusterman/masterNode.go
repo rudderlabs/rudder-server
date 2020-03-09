@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	ci "github.com/rudderlabs/rudder-server/warehouse/clusterinterface"
 	"github.com/rudderlabs/rudder-server/warehouse/etl/ingest"
 	whStrings "github.com/rudderlabs/rudder-server/warehouse/strings"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -37,7 +38,7 @@ type MasterNodeT struct {
 }
 
 //Setup to initialise
-func (mn *MasterNodeT) Setup(dbHandle *sql.DB, config *ClusterConfig) {
+func (mn *MasterNodeT) Setup(dbHandle *sql.DB, config *ci.ClusterConfig) {
 
 	if mn.isSetup {
 		warehouseutils.AssertString(mn, whStrings.STR_WH_MASTER_ALREADY_SETUP)
@@ -59,7 +60,7 @@ func (mn *MasterNodeT) Setup(dbHandle *sql.DB, config *ClusterConfig) {
 	//start ingester
 	rruntime.Go(func() {
 		mn.ingester = &ingest.HandleT{}
-		mn.ingester.Start(dbHandle)
+		mn.ingester.Start(dbHandle, config)
 	})
 
 	//subscribe to updates from backend config
@@ -131,7 +132,7 @@ func (mn *MasterNodeT) updatePendingJobs() {
 
 	//Check if jobs to be handled are finished
 	row := mn.bc.dbHandle.QueryRow(
-		fmt.Sprintf(`SELECT id FROM %[1]s WHERE status = 'new' LIMIT 1;`, mn.bc.config.jobQueueTable))
+		fmt.Sprintf(`SELECT id FROM %[1]s WHERE status = 'new' LIMIT 1;`, mn.bc.config.JobQueueTable))
 	var id int
 	err := row.Scan(&id)
 	if err == sql.ErrNoRows {
@@ -143,7 +144,7 @@ func (mn *MasterNodeT) updatePendingJobs() {
 	//Get number of workers available
 	row = mn.bc.dbHandle.QueryRow(
 		fmt.Sprintf(`SELECT count(*) AS wc FROM %[1]s WHERE updated_at < '%[2]s' LIMIT 1;`,
-			mn.bc.config.workerInfoTable,
+			mn.bc.config.WorkerInfoTable,
 			warehouseutils.GetSQLTimestamp(time.Now().Add(-1*time.Minute))))
 	var workerCount int
 	err = row.Scan(&workerCount)
@@ -165,7 +166,7 @@ func (mn *MasterNodeT) updatePendingJobs() {
 							FOR UPDATE SKIP LOCKED
 							LIMIT %[4]v
 							);`,
-			mn.bc.config.jobQueueTable,
+			mn.bc.config.JobQueueTable,
 			warehouseutils.GetCurrentSQLTimestamp(),
 			warehouseutils.GetSQLTimestamp(time.Now().Add(-5*time.Second)),
 			workerCount))
@@ -173,7 +174,7 @@ func (mn *MasterNodeT) updatePendingJobs() {
 }
 
 //Create the required tables
-func (mn *MasterNodeT) setupTables(dbHandle *sql.DB, config *ClusterConfig) {
+func (mn *MasterNodeT) setupTables(dbHandle *sql.DB, config *ci.ClusterConfig) {
 	logger.Infof("WH-JQ: Creating Job Queue Tables ")
 
 	//create status type
@@ -201,13 +202,13 @@ func (mn *MasterNodeT) setupTables(dbHandle *sql.DB, config *ClusterConfig) {
 										  error_count INT DEFAULT 0,
 										  job_created_at TIMESTAMP NOT NULL,
 										  status_updated_at TIMESTAMP NOT NULL,
-										  last_error VARCHAR(512));`, config.jobQueueTable)
+										  last_error VARCHAR(512));`, config.JobQueueTable)
 
 	_, err = dbHandle.Exec(sqlStmt)
 	warehouseutils.AssertError(mn, err)
 
 	// create index on status
-	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_idx ON %[1]s (status);`, config.jobQueueTable)
+	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_idx ON %[1]s (status);`, config.JobQueueTable)
 	_, err = dbHandle.Exec(sqlStmt)
 	warehouseutils.AssertError(mn, err)
 
@@ -230,7 +231,7 @@ func (mn *MasterNodeT) setupTables(dbHandle *sql.DB, config *ClusterConfig) {
 			worker_id VARCHAR(64)  NOT NULL UNIQUE,
 			status wh_worker_status NOT NULL,
 			created_at TIMESTAMP NOT NULL,
-			updated_at TIMESTAMP NOT NULL);`, config.workerInfoTable)
+			updated_at TIMESTAMP NOT NULL);`, config.WorkerInfoTable)
 	_, err = dbHandle.Exec(sqlStmt)
 	warehouseutils.AssertError(mn, err)
 }

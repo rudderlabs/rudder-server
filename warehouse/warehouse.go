@@ -33,7 +33,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clusterman"
-	"github.com/rudderlabs/rudder-server/warehouse/etl/ingest"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -1059,8 +1058,8 @@ func (wh *HandleT) Setup(whType string) {
 		wh.mainLoop()
 	})
 
-	var ingester ingest.HandleT
-	ingester.Start(wh.dbHandle)
+	// var ingester ingest.HandleT
+	// ingester.Start(wh.dbHandle)
 }
 
 /*

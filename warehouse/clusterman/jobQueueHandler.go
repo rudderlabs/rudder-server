@@ -91,7 +91,7 @@ func (jq *JobQueueHandleT) jobQueueLoop() {
 			logger.Debugf("WH-JQ: event received %v", ev)
 			//utils.AssertError(jq, err)
 		})
-	err := listener.Listen(jq.bc.config.jobQueueNotifyChannel)
+	err := listener.Listen(jq.bc.config.JobQueueNotifyChannel)
 	utils.AssertError(jq, err)
 
 	logger.Infof("WH-JQ: Wait for Status Notifications")
@@ -135,16 +135,16 @@ func (jq *JobQueueHandleT) setupWorkers() {
 //Setup Postgres Trigger & Wait for notifications on the channel
 func (jq *JobQueueHandleT) setupTriggerAndChannel() {
 	//create a postgres function that notifies on the specified channel
-	sqlStmt := fmt.Sprintf(`DO $$ 
-							BEGIN  
+	sqlStmt := fmt.Sprintf(`DO $$
+							BEGIN
 							IF  NOT EXISTS (select  from pg_proc where proname = 'wh_job_queue_status_notify') THEN
 								CREATE FUNCTION wh_job_queue_status_notify() RETURNS TRIGGER AS '
-								DECLARE 
+								DECLARE
 									data json;
 									notification json;
-								
+
 								BEGIN
-								
+
 									-- Convert the old or new row to JSON, based on the kind of action.
 									-- Action = DELETE?             -> OLD row
 									-- Action = INSERT or UPDATE?   -> NEW row
@@ -153,24 +153,24 @@ func (jq *JobQueueHandleT) setupTriggerAndChannel() {
 									ELSE
 										data = row_to_json(NEW);
 									END IF;
-									
+
 									-- Contruct the notification as a JSON string.
 									notification = json_build_object(
 													''table'',TG_TABLE_NAME,
 													''action'', TG_OP,
 													''data'', data);
-									
-													
+
+
 									-- Execute pg_notify(channel, notification)
 									PERFORM pg_notify(''%s'',notification::text);
-									
+
 									-- Result is ignored since this is an AFTER trigger
-									RETURN NULL; 
+									RETURN NULL;
 								END;' LANGUAGE plpgsql;
-							
+
 							END IF;
-							
-							END $$  `, jq.bc.config.jobQueueNotifyChannel)
+
+							END $$  `, jq.bc.config.JobQueueNotifyChannel)
 
 	_, err := jq.bc.dbHandle.Exec(sqlStmt)
 	utils.AssertError(jq, err)
@@ -184,7 +184,7 @@ func (jq *JobQueueHandleT) setupTriggerAndChannel() {
 										EXECUTE PROCEDURE wh_job_queue_status_notify();
 									EXCEPTION
 										WHEN others THEN null;
-								END $$`, jq.bc.config.jobQueueTable)
+								END $$`, jq.bc.config.JobQueueTable)
 
 	_, err = jq.bc.dbHandle.Exec(sqlStmt)
 	utils.AssertError(jq, err)
@@ -207,7 +207,7 @@ func (jq *JobQueueHandleT) ClaimJob(jsonMsg *bytes.Buffer, workerIdx int) {
 	utils.AssertError(jq, err)
 
 	// Dont panic if acquire fails -- Just rollback & return the worker to free state again
-	rows, err := tx.Query(fmt.Sprintf(`UPDATE %[1]s SET status='running', 
+	rows, err := tx.Query(fmt.Sprintf(`UPDATE %[1]s SET status='running',
 						worker_id= '%[2]s',
 						status_updated_at = '%[3]s'
 						WHERE id = (
@@ -218,7 +218,7 @@ func (jq *JobQueueHandleT) ClaimJob(jsonMsg *bytes.Buffer, workerIdx int) {
 						FOR UPDATE SKIP LOCKED
 						LIMIT 1
 						)
-						RETURNING id,staging_file_id ;`, jq.bc.config.jobQueueTable,
+						RETURNING id,staging_file_id ;`, jq.bc.config.JobQueueTable,
 		jq.workers[workerIdx].IP_UUID, utils.GetCurrentSQLTimestamp()))
 
 	if rows != nil {
@@ -263,20 +263,20 @@ func (jq *JobQueueHandleT) commitJobStatus(tx *sql.Tx, workerIdx int, outerErr e
 	//Set job status to success when it is completed
 	var err error
 	if outerErr != nil {
-		_, err = tx.Exec(fmt.Sprintf(`UPDATE %[1]s SET status= 
-				(CASE 
+		_, err = tx.Exec(fmt.Sprintf(`UPDATE %[1]s SET status=
+				(CASE
 					WHEN	error_count >= 2 THEN CAST ( 'error' AS wh_job_queue_status_type)
 				ELSE  CAST( 'new' AS wh_job_queue_status_type)
 				END),
 				status_updated_at = '%[2]s',
 				error_count = error_count + 1,
 				last_error = LEFT('%[3]s',512)
-				WHERE id =  %[4]v;`, jq.bc.config.jobQueueTable, utils.GetCurrentSQLTimestamp(),
+				WHERE id =  %[4]v;`, jq.bc.config.JobQueueTable, utils.GetCurrentSQLTimestamp(),
 			outerErr.Error(), id))
 	} else {
 		_, err = tx.Exec(fmt.Sprintf(`UPDATE %[1]s SET status='success',
-		status_updated_at = '%[2]s' 
-		WHERE id =  %[3]v;`, jq.bc.config.jobQueueTable, utils.GetCurrentSQLTimestamp(), id))
+		status_updated_at = '%[2]s'
+		WHERE id =  %[3]v;`, jq.bc.config.JobQueueTable, utils.GetCurrentSQLTimestamp(), id))
 	}
 
 	if rolledback := jq.gracefulDBfailureInTx(tx, err); rolledback {

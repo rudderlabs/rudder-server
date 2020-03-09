@@ -17,6 +17,13 @@ type StatusMsg struct {
 	WorkerIdx int
 }
 
+//ClusterConfig parameters
+type ClusterConfig struct {
+	JobQueueTable         string
+	JobQueueNotifyChannel string
+	WorkerInfoTable       string
+}
+
 //JobQueueI is the interface to jobqueue from its dependants
 type JobQueueI interface {
 	SetTransformWorker(status StatusMsg)

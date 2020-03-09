@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/rruntime"
+	ci "github.com/rudderlabs/rudder-server/warehouse/clusterinterface"
 	utils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -18,7 +19,7 @@ type SlaveNodeT struct {
 }
 
 //Setup to initialise
-func (sn *SlaveNodeT) Setup(dbHandle *sql.DB, config *ClusterConfig) {
+func (sn *SlaveNodeT) Setup(dbHandle *sql.DB, config *ci.ClusterConfig) {
 	sn.bc = &baseComponentT{}
 	sn.bc.Setup(sn, dbHandle, config)
 
@@ -52,13 +53,13 @@ func (sn *SlaveNodeT) updateWorkerInfo() {
 	//TODO: do one upsert query
 	for i := 0; i < len(sn.bc.Jq.workers); i++ {
 		_, err := sn.bc.dbHandle.Exec(
-			fmt.Sprintf(`INSERT INTO  %[1]s (worker_id, status, created_at, updated_at) 
+			fmt.Sprintf(`INSERT INTO  %[1]s (worker_id, status, created_at, updated_at)
 							VALUES ('%[2]s', '%[3]s','%[4]s','%[4]s')
-							ON 
+							ON
 								CONFLICT (worker_id)
-							DO 
+							DO
 								UPDATE SET status = '%[3]s', updated_at = '%[4]s';`,
-				sn.bc.config.workerInfoTable,
+				sn.bc.config.WorkerInfoTable,
 				sn.bc.Jq.workers[i].IP_UUID,
 				sn.bc.Jq.workerStatuses[i], //concurrent access- should not be a problem
 				utils.GetCurrentSQLTimestamp()))

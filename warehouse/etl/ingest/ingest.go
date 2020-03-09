@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	ci "github.com/rudderlabs/rudder-server/warehouse/clusterinterface"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -26,6 +27,7 @@ var (
 
 type HandleT struct {
 	dbHandle *sql.DB
+	config   *ci.ClusterConfig
 }
 
 func (ig *HandleT) processHandler(w http.ResponseWriter, r *http.Request) {
@@ -132,8 +134,9 @@ func loadConfig() {
 }
 
 // Start inits ingester service
-func (ig *HandleT) Start(dbHandle *sql.DB) {
+func (ig *HandleT) Start(dbHandle *sql.DB, config *ci.ClusterConfig) {
 	ig.dbHandle = dbHandle
+	ig.config = config
 
 	ig.setupTables()
 
@@ -149,5 +152,12 @@ func (ig *HandleT) Start(dbHandle *sql.DB) {
 
 //UpdateJobQueue updates job queue from Warehouse.stagingFilesTable
 func (ig *HandleT) UpdateJobQueue(jobs []ProcessStagingFilesJobT) {
-
+	for _, job := range jobs {
+		for _, sFile := range job.List {
+			stmt := fmt.Sprintf(`INSERT INTO %[1]s (staging_file_id ,  status ,worker_id, job_created_at  , status_updated_at )
+												 VALUES ( %[2]d,'new','%[3]s','%[4]s','%[4]s')`, ig.config.JobQueueTable, sFile.ID, "", warehouseutils.GetCurrentSQLTimestamp(), warehouseutils.GetCurrentSQLTimestamp())
+			_, err := ig.dbHandle.Exec(stmt)
+			warehouseutils.AssertError(ig, err)
+		}
+	}
 }
