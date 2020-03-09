@@ -98,7 +98,7 @@ func (jq *JobQueueHandleT) jobQueueLoop() {
 	for {
 		select {
 		case notif := <-listener.Notify:
-			if notif != nil {
+			if notif != nil && jq.cn.isEtlInProgress() {
 				logger.Debugf("WH-JQ: Received data from channel [", notif.Channel, "] :")
 
 				//Pass the Json to a free worker if available

@@ -16,6 +16,8 @@ type MasterNodeT struct {
 	bc *baseComponentT
 	sn *SlaveNodeT //A Master Node is also a Worker
 
+	etlInProgress bool // will be set if the etl batch is in progress
+
 	isSetup bool
 }
 
@@ -37,6 +39,7 @@ func (mn *MasterNodeT) Setup(dbHandle *sql.DB, config *ClusterConfig) {
 	/*mn.bc = &baseComponentT{}
 	mn.bc.Setup(mn, dbHandle, config)*/
 	mn.bc = mn.sn.bc
+	mn.sn.mn = mn
 
 	//Main Loop  - Master Node  periodically polls job queue
 	// & force updates a few jobs so that notifications are regenerated
@@ -51,12 +54,26 @@ func (mn *MasterNodeT) TearDown() {
 	mn.bc.TearDown()
 }
 
+const ETLBATCHTIME = 2 * time.Minute
+
+var nextETLBatchTime = ETLBATCHTIME
+
 func (mn *MasterNodeT) masterLoop() {
 
 	for {
 		select {
 		case <-time.After(5 * time.Second):
-			mn.updatePendingJobs()
+			if mn.etlInProgress {
+				mn.updatePendingJobs()
+			}
+		case <-time.After(nextETLBatchTime):
+			if !mn.etlInProgress {
+				nextETLBatchTime = ETLBATCHTIME
+				mn.beginETLbatch()
+			} else {
+				nextETLBatchTime = 10 * time.Second
+			}
+
 		}
 	}
 }
@@ -65,10 +82,54 @@ func (mn *MasterNodeT) getBaseComponent() *baseComponentT {
 	return mn.bc
 }
 
+func (mn *MasterNodeT) isEtlInProgress() bool {
+	return mn.etlInProgress
+}
+
+//Periodic ETL batch begin
+func (mn *MasterNodeT) beginETLbatch() {
+	mn.etlInProgress = true
+	logger.Infof("WH-JQ: ETL Batch Begin")
+
+	//TO TEST: for now placeholder code
+	mn.updatePendingJobs()
+}
+
+//ETL batch has ended
+func (mn *MasterNodeT) didEndETLbatch() {
+	mn.etlInProgress = false
+	logger.Infof("WH-JQ: ETL Batch End")
+}
+
 //force update a few jobs so that notifications are generated for workers
 func (mn *MasterNodeT) updatePendingJobs() {
-	//TODO: limit by available number of workers from worker info table
-	_, err := mn.bc.dbHandle.Exec(
+
+	//Check if jobs to be handled are finished
+	row := mn.bc.dbHandle.QueryRow(
+		fmt.Sprintf(`SELECT id FROM %[1]s WHERE status = 'new' LIMIT 1;`, mn.bc.config.jobQueueTable))
+	var id int
+	err := row.Scan(&id)
+	if err == sql.ErrNoRows {
+		mn.didEndETLbatch()
+		return
+	}
+	utils.AssertError(mn, err)
+
+	//Get number of workers available
+	row = mn.bc.dbHandle.QueryRow(
+		fmt.Sprintf(`SELECT count(*) AS wc FROM %[1]s WHERE updated_at < '%[2]s' LIMIT 1;`,
+			mn.bc.config.workerInfoTable,
+			utils.GetSQLTimestamp(time.Now().Add(-1*time.Minute))))
+	var workerCount int
+	err = row.Scan(&workerCount)
+	utils.AssertError(mn, err)
+	if workerCount < 1 {
+		workerCount = 1
+	}
+
+	logger.Infof("WH-JQ: Notifying pending jobs after the end of poll time period")
+	//notify as many jobs as number of workers available
+	_, err = mn.bc.dbHandle.Exec(
 		fmt.Sprintf(`UPDATE %[1]s SET status='new',  
 							status_updated_at = '%[2]s'
 							WHERE id IN  (
@@ -77,11 +138,12 @@ func (mn *MasterNodeT) updatePendingJobs() {
 							WHERE status='new' AND status_updated_at < '%[3]s'
 							ORDER BY id
 							FOR UPDATE SKIP LOCKED
-							LIMIT 10
+							LIMIT %[4]v
 							);`,
 			mn.bc.config.jobQueueTable,
 			utils.GetCurrentSQLTimestamp(),
-			utils.GetSQLTimestamp(time.Now().Add(5*time.Second))))
+			utils.GetSQLTimestamp(time.Now().Add(-5*time.Second)),
+			workerCount))
 	utils.AssertError(mn, err)
 }
 

@@ -12,6 +12,9 @@ import (
 //SlaveNodeT will be used on warehouse workers
 type SlaveNodeT struct {
 	bc *baseComponentT
+
+	//only available if started in master mode
+	mn *MasterNodeT
 }
 
 //Setup to initialise
@@ -61,4 +64,12 @@ func (sn *SlaveNodeT) updateWorkerInfo() {
 				utils.GetCurrentSQLTimestamp()))
 		utils.AssertError(sn, err)
 	}
+}
+
+//Always true for slave
+func (sn *SlaveNodeT) isEtlInProgress() bool {
+	if sn.mn != nil {
+		return sn.mn.isEtlInProgress()
+	}
+	return true
 }

@@ -11,6 +11,7 @@ type ClusterNodeI interface {
 	Setup(dbHandle *sql.DB, config *ClusterConfig)
 	TearDown()
 	getBaseComponent() *baseComponentT
+	isEtlInProgress() bool
 }
 
 //base component held by both master and slave node structures
