@@ -11,7 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/etl/ingest"
-	"github.com/rudderlabs/rudder-server/warehouse/strings"
+	whStrings "github.com/rudderlabs/rudder-server/warehouse/strings"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -40,7 +40,7 @@ type MasterNodeT struct {
 func (mn *MasterNodeT) Setup(dbHandle *sql.DB, config *ClusterConfig) {
 
 	if mn.isSetup {
-		warehouseutils.AssertString(mn, strings.STR_WH_MASTER_ALREADY_SETUP)
+		warehouseutils.AssertString(mn, whStrings.STR_WH_MASTER_ALREADY_SETUP)
 	}
 	defer func() { mn.isSetup = true }()
 
@@ -62,6 +62,7 @@ func (mn *MasterNodeT) Setup(dbHandle *sql.DB, config *ClusterConfig) {
 		mn.ingester.Start(dbHandle)
 	})
 
+	//subscribe to updates from backend config
 	rruntime.Go(func() {
 		mn.backendConfigSubscriber()
 	})
@@ -79,9 +80,9 @@ func (mn *MasterNodeT) TearDown() {
 	mn.bc.TearDown()
 }
 
-const ETLBATCHTIME = 2 * time.Second
+// const ETLBATCHTIME = 2 * time.Second
 
-var nextETLBatchTime = ETLBATCHTIME
+// var nextETLBatchTime = ETLBATCHTIME
 
 func (mn *MasterNodeT) masterLoop() {
 
@@ -91,153 +92,17 @@ func (mn *MasterNodeT) masterLoop() {
 			if mn.etlInProgress {
 				mn.updatePendingJobs()
 			}
-		case <-time.After(nextETLBatchTime):
-			if !mn.etlInProgress {
-				nextETLBatchTime = ETLBATCHTIME
-				mn.beginETLbatch()
-			} else {
-				nextETLBatchTime = 10 * time.Second
-			}
+		/*case <-time.After(nextETLBatchTime):
+		if !mn.etlInProgress {
+			nextETLBatchTime = ETLBATCHTIME
+			mn.beginETLbatch()
+		} else {
+			nextETLBatchTime = 10 * time.Second
+		}*/
 		case <-time.After(2 * time.Second): // Run warehouse logic every period
-			mn.warehouseLogic()
-
+			mn.beginETLbatch()
 		}
 	}
-}
-
-func connectionString(warehouse warehouseutils.WarehouseT) string {
-	return fmt.Sprintf(`source:%s:destination:%s`, warehouse.Source.ID, warehouse.Destination.ID)
-}
-
-func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
-	inProgressMapLock.Lock()
-	if starting {
-		inProgressMap[connectionString(warehouse)] = true
-	} else {
-		delete(inProgressMap, connectionString(warehouse))
-	}
-	inProgressMapLock.Unlock()
-}
-
-func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
-	inProgressMapLock.RLock()
-	if inProgressMap[connectionString(warehouse)] {
-		inProgressMapLock.RUnlock()
-		return true
-	}
-	inProgressMapLock.RUnlock()
-	return false
-}
-
-func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT) bool {
-	lastExecMapLock.Lock()
-	defer lastExecMapLock.Unlock()
-	// TODO: remove hardcoded value
-	var uploadFreqInS int64
-	uploadFreqInS = 10
-	if lastExecTime, ok := lastExecMap[connectionString(warehouse)]; ok && time.Now().Unix()-lastExecTime < uploadFreqInS {
-		return true
-	}
-	lastExecMap[connectionString(warehouse)] = time.Now().Unix()
-	return false
-}
-
-func (mn *MasterNodeT) warehouseLogic() {
-	// for {
-	// 	// if !wh.isEnabled {
-	// 	// 	time.Sleep(mainLoopSleep)
-	// 	// 	continue
-	// 	// }
-
-	for _, warehouse := range mn.warehouses {
-		fmt.Printf("%+v\n", warehouse)
-		destType := warehouse.Destination.DestinationDefinition.Name
-		if isDestInProgress(warehouse) {
-			logger.Debugf("WH: Skipping upload loop since %s:%s upload in progess", destType, warehouse.Destination.ID)
-			continue
-		}
-		if uploadFrequencyExceeded(warehouse) {
-			logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", destType, warehouse.Destination.ID)
-			continue
-		}
-		setDestInProgress(warehouse, true)
-
-		// _, ok := inRecoveryMap[warehouse.Destination.ID]
-		// if ok {
-		// 	whManager, err := NewWhManager(destType)
-		// 	if err != nil {
-		// 		panic(err)
-		// 	}
-		// 	logger.Infof("WH: Crash recovering for %s:%s", destType, warehouse.Destination.ID)
-		// 	err = whManager.CrashRecover(warehouseutils.ConfigT{
-		// 		DbHandle:  wh.dbHandle,
-		// 		Warehouse: warehouse,
-		// 	})
-		// 	if err != nil {
-		// 		setDestInProgress(warehouse, false)
-		// 		continue
-		// 	}
-		// 	delete(inRecoveryMap, warehouse.Destination.ID)
-		// }
-
-		// fetch any pending wh_uploads records (query for not successful/aborted uploads)
-		// pendingUploads, ok := wh.getPendingUploads(warehouse)
-		// if ok {
-		// 	logger.Infof("WH: Found pending uploads: %v for %s:%s", len(pendingUploads), destType, warehouse.Destination.ID)
-		// 	jobs := []ProcessStagingFilesJobT{}
-		// 	for _, pendingUpload := range pendingUploads {
-		// 		stagingFilesList, err := wh.getStagingFiles(warehouse, pendingUpload.StartStagingFileID, pendingUpload.EndStagingFileID)
-		// 		if err != nil {
-		// 			panic(err)
-		// 		}
-		// 		jobs = append(jobs, ProcessStagingFilesJobT{
-		// 			List:      stagingFilesList,
-		// 			Warehouse: warehouse,
-		// 			Upload:    pendingUpload,
-		// 		})
-		// 	}
-		// 	wh.uploadToWarehouseQ <- jobs
-		// } else {
-		// 	// fetch staging files that are not processed yet
-		// 	stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
-		// 	if err != nil {
-		// 		panic(err)
-		// 	}
-		// 	if len(stagingFilesList) == 0 {
-		// 		logger.Debugf("WH: Found no pending staging files for %s:%s", destType, warehouse.Destination.ID)
-		// 		setDestInProgress(warehouse, false)
-		// 		continue
-		// 	}
-		// 	logger.Infof("WH: Found %v pending staging files for %s:%s", len(stagingFilesList), destType, warehouse.Destination.ID)
-
-		// 	count := 0
-		// 	jobs := []ProcessStagingFilesJobT{}
-		// 	// process staging files in batches of stagingFilesBatchSize
-		// 	for {
-
-		// 		lastIndex := count + stagingFilesBatchSize
-		// 		if lastIndex >= len(stagingFilesList) {
-		// 			lastIndex = len(stagingFilesList)
-		// 		}
-		// 		// merge schemas over all staging files in this batch
-		// 		consolidatedSchema := wh.consolidateSchema(warehouse, stagingFilesList[count:lastIndex])
-		// 		// create record in wh_uploads to mark start of upload to warehouse flow
-		// 		upload := wh.initUpload(warehouse, stagingFilesList[count:lastIndex], consolidatedSchema)
-		// 		jobs = append(jobs, ProcessStagingFilesJobT{
-		// 			List:      stagingFilesList[count:lastIndex],
-		// 			Warehouse: warehouse,
-		// 			Upload:    upload,
-		// 		})
-		// 		count += stagingFilesBatchSize
-		// 		if count >= len(stagingFilesList) {
-		// 			break
-		// 		}
-		// 	}
-		// 	wh.uploadToWarehouseQ <- jobs
-		// }
-	}
-	// 	time.Sleep(2)
-	// }
 }
 
 func (mn *MasterNodeT) getBaseComponent() *baseComponentT {
@@ -252,10 +117,7 @@ func (mn *MasterNodeT) isEtlInProgress() bool {
 func (mn *MasterNodeT) beginETLbatch() {
 	mn.etlInProgress = true
 	logger.Infof("WH-JQ: ETL Batch Begin")
-
-	mn.ingester.UpdateJobQueue()
-	//TO TEST: for now placeholder code
-	// mn.updatePendingJobs()
+	mn.ingester.BeginETLbatch(mn.warehouses)
 }
 
 //ETL batch has ended

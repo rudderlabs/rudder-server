@@ -19,6 +19,9 @@ import (
 
 var (
 	warehouseStagingFilesTable string
+	warehouseLoadFilesTable    string
+	warehouseUploadsTable      string
+	stagingFilesBatchSize      int
 )
 
 type HandleT struct {
@@ -120,6 +123,12 @@ func init() {
 func loadConfig() {
 	//Port where WH is running
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
+	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
+	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
+	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
+	inProgressMap = map[string]bool{}
+	inRecoveryMap = map[string]bool{}
+	lastExecMap = map[string]int64{}
 }
 
 // Start inits ingester service
@@ -139,6 +148,6 @@ func (ig *HandleT) Start(dbHandle *sql.DB) {
 }
 
 //UpdateJobQueue updates job queue from Warehouse.stagingFilesTable
-func (ig *HandleT) UpdateJobQueue() {
+func (ig *HandleT) UpdateJobQueue(jobs []ProcessStagingFilesJobT) {
 
 }
