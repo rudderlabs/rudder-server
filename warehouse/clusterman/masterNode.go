@@ -90,9 +90,10 @@ func (mn *MasterNodeT) masterLoop() {
 	for {
 		select {
 		case <-time.After(5 * time.Second):
-			if mn.etlInProgress {
-				mn.updatePendingJobs()
-			}
+			//TODO: find proper way to find when etl batch is stopped
+			//if mn.etlInProgress {
+			mn.updatePendingJobs()
+			//}
 		/*case <-time.After(nextETLBatchTime):
 		if !mn.etlInProgress {
 			nextETLBatchTime = ETLBATCHTIME
