@@ -144,12 +144,14 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			if req.request.Body == nil {
 				req.done <- getStatus(RequestBodyNil)
 				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyStats, "nil-body", 1)
 				continue
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
 
 			writeKey, _, ok := req.request.BasicAuth()
+			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 
 			if enableRateLimit {
 				//If ratelimiter returns true for LimitReached, Just drop the event batch and continue.
@@ -168,7 +170,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
 				continue
 			}
-			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if err != nil {
 				req.done <- getStatus(RequestBodyReadFailed)
 				preDbStoreCount++
