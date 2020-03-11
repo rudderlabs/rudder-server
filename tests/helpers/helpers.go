@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,61 +26,6 @@ const (
 	serverIP = "http://localhost:8080"
 )
 
-var sampleEvent = `
-	{
-		"batch": [
-			{
-			"anonymousId": "49e4bdd1c280bc00",
-			"channel": "android-sdk",
-			"destination_props": {
-				"AF": {
-				"af_uid": "1566363489499-3377330514807116178"
-				}
-			},
-			"context": {
-				"app": {
-				"build": "1",
-				"name": "RudderAndroidClient",
-				"namespace": "com.rudderlabs.android.sdk",
-				"version": "1.0"
-				},
-				"device": {
-				"id": "49e4bdd1c280bc00",
-				"manufacturer": "Google",
-				"model": "Android SDK built for x86",
-				"name": "generic_x86"
-				},
-				"locale": "en-US",
-				"network": {
-				"carrier": "Android"
-				},
-				"screen": {
-				"density": 420,
-				"height": 1794,
-				"width": 1080
-				},
-				"traits": {
-				"anonymousId": "49e4bdd1c280bc00"
-				},
-				"user_agent": "Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"
-			},
-			"event": "Demo Track",
-			"integrations": {
-				"All": true
-			},
-			"properties": {
-				"label": "Demo Label",
-				"category": "Demo Category",
-				"value": 5
-			},
-			"type": "track",
-			"originalTimestamp": "2019-08-12T05:08:30.909Z",
-			"sentAt": "2019-08-12T05:08:30.909Z"
-			}
-		]
-	}
-`
-
 // EventOptsT is the type specifying override options over sample event.json
 type EventOptsT struct {
 	Integrations map[string]bool
@@ -87,6 +33,18 @@ type EventOptsT struct {
 	ID           string
 	MessageID    string
 	GaVal        int
+}
+
+//RemoveKeyFromJSON returns the json with keys removed from the input json
+func RemoveKeyFromJSON(json string, keys ...string) string {
+	for _, key := range keys {
+		var err error
+		json, err = sjson.Delete(json, key)
+		if err != nil {
+			panic(err)
+		}
+	}
+	return json
 }
 
 // SendEventRequest sends sample event.json with EventOptionsT overrides to gateway server
@@ -108,47 +66,47 @@ func SendEventRequest(options EventOptsT) int {
 		options.MessageID = uuid.NewV4().String()
 	}
 
-	jsonPayload, _ := sjson.Set(sampleEvent, "batch.0.sentAt", time.Now())
+	jsonPayload, _ := sjson.Set(BatchPayload, "batch.0.sentAt", time.Now())
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.integrations", options.Integrations)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.anonymousId", options.ID)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.messageId", options.MessageID)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.properties.value", options.GaVal)
 
-	return SendRequestToBatch(options.WriteKey, jsonPayload)
+	return SendBatchRequest(options.WriteKey, jsonPayload)
 }
 
-// SendRequestToBatch sends request to /v1/batch
-func SendRequestToBatch(userNameForBasicAuth, jsonPayload string) int {
+// SendBatchRequest sends request to /v1/batch
+func SendBatchRequest(userNameForBasicAuth, jsonPayload string) int {
 	return SendRequest("/v1/batch", userNameForBasicAuth, jsonPayload)
 }
 
-// SendRequestToIdentify sends request to /v1/identify
-func SendRequestToIdentify(userNameForBasicAuth, jsonPayload string) int {
+// SendIdentifyRequest sends request to /v1/identify
+func SendIdentifyRequest(userNameForBasicAuth, jsonPayload string) int {
 	return SendRequest("/v1/identify", userNameForBasicAuth, jsonPayload)
 }
 
-// SendRequestToTrack sends request to /v1/track
-func SendRequestToTrack(userNameForBasicAuth, jsonPayload string) int {
+// SendTrackRequest sends request to /v1/track
+func SendTrackRequest(userNameForBasicAuth, jsonPayload string) int {
 	return SendRequest("/v1/track", userNameForBasicAuth, jsonPayload)
 }
 
-// SendRequestToPage sends request to /v1/page
-func SendRequestToPage(userNameForBasicAuth, jsonPayload string) int {
+// SendPageRequest sends request to /v1/page
+func SendPageRequest(userNameForBasicAuth, jsonPayload string) int {
 	return SendRequest("/v1/page", userNameForBasicAuth, jsonPayload)
 }
 
-// SendRequestToScreen sends request to /v1/screen
-func SendRequestToScreen(userNameForBasicAuth, jsonPayload string) int {
+// SendScreenRequest sends request to /v1/screen
+func SendScreenRequest(userNameForBasicAuth, jsonPayload string) int {
 	return SendRequest("/v1/screen", userNameForBasicAuth, jsonPayload)
 }
 
-// SendRequestToAlias sends request to /v1/alias
-func SendRequestToAlias(userNameForBasicAuth, jsonPayload string) int {
+// SendAliasRequest sends request to /v1/alias
+func SendAliasRequest(userNameForBasicAuth, jsonPayload string) int {
 	return SendRequest("/v1/alias", userNameForBasicAuth, jsonPayload)
 }
 
-// SendRequestToGroup sends request to /v1/group
-func SendRequestToGroup(userNameForBasicAuth, jsonPayload string) int {
+// SendGroupRequest sends request to /v1/group
+func SendGroupRequest(userNameForBasicAuth, jsonPayload string) int {
 	return SendRequest("/v1/group", userNameForBasicAuth, jsonPayload)
 }
 
@@ -197,26 +155,25 @@ func SendVersionRequest() []byte {
 
 // SameStringSlice checks if two slices have same strings in any order
 func SameStringSlice(x, y []string) bool {
+	// If x is nil, then y must also be nil.
+	if (x == nil) != (y == nil) {
+		return false
+	}
+
 	if len(x) != len(y) {
 		return false
 	}
-	diff := make(map[string]int, len(x))
-	for _, _x := range x {
-		diff[_x]++
-	}
-	for _, _y := range y {
-		if _, ok := diff[_y]; !ok {
+
+	sort.Strings(x)
+	sort.Strings(y)
+
+	for i := range x {
+		if x[i] != y[i] {
 			return false
 		}
-		diff[_y] -= 1
-		if diff[_y] == 0 {
-			delete(diff, _y)
-		}
 	}
-	if len(diff) == 0 {
-		return true
-	}
-	return false
+
+	return true
 }
 
 // GetTableNamesWithPrefix returns all table names with specified prefix
@@ -276,8 +233,8 @@ func GetJobStatusCount(dbHandle *sql.DB, jobState string, prefix string) int {
 	return count
 }
 
-// GetJobs returns jobs (with a limit) across all tables with specified prefix
-func GetJobs(dbHandle *sql.DB, prefix string, limit int) []*jobsdb.JobT {
+// GetLatestJobs returns jobs (with a limit) across all tables with specified prefix
+func GetLatestJobs(dbHandle *sql.DB, prefix string, limit int) []*jobsdb.JobT {
 	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_jobs_")
 	var jobList []*jobsdb.JobT
 	for _, tableName := range tableNames {

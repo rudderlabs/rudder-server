@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"database/sql"
 	"encoding/json"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/tests/helpers"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 var dbHandle *sql.DB
@@ -38,7 +40,6 @@ var _ = Describe("E2E", func() {
 	Context("Without user sessions processing", func() {
 
 		It("verify event stored in gateway 1. has right sourceId and writeKey, 2. enhanced with messageId, anonymousId, requestIP and receivedAt fields", func() {
-
 			eventTypeMap := []string{"BATCH", "IDENTIFY", "GROUP", "TRACK", "SCREEN", "PAGE", "ALIAS"}
 			for _, eventType := range eventTypeMap {
 				time.Sleep(time.Second)
@@ -48,19 +49,19 @@ var _ = Describe("E2E", func() {
 				//Source id for the above writekey is 1Yc6YceKLOcUYk8je9B0GQ65mmL
 				switch eventType {
 				case "BATCH":
-					helpers.SendRequestToBatch("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.BatchWithoutMessageIdAndWithoutAnonymousId)
+					helpers.SendBatchRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.BatchPayload, "batch.0.messageId", "batch.0.anonymousId"))
 				case "IDENTIFY":
-					helpers.SendRequestToIdentify("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.IdentifyWithoutMessageIdAndWithoutAnonymousId)
+					helpers.SendIdentifyRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.IdentifyPayload, "messageId", "anonymousId"))
 				case "GROUP":
-					helpers.SendRequestToGroup("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.GroupWithoutMessageIdAndWithoutAnonymousId)
+					helpers.SendGroupRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.GroupPayload, "messageId", "anonymousId"))
 				case "TRACK":
-					helpers.SendRequestToTrack("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.TrackWithoutMessageIdAndWithoutAnonymousId)
+					helpers.SendTrackRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.TrackPayload, "messageId", "anonymousId"))
 				case "SCREEN":
-					helpers.SendRequestToScreen("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.ScreenWithoutMessageIdAndWithoutAnonymousId)
+					helpers.SendScreenRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.ScreenPayload, "messageId", "anonymousId"))
 				case "PAGE":
-					helpers.SendRequestToPage("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.PageWithoutMessageIdAndWithoutAnonymousId)
+					helpers.SendPageRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.PagePayload, "messageId", "anonymousId"))
 				case "ALIAS":
-					helpers.SendRequestToAlias("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.AliasWithoutMessageIdAndWithoutAnonymousId)
+					helpers.SendAliasRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.AliasPayload, "messageId", "anonymousId"))
 
 				}
 
@@ -68,7 +69,7 @@ var _ = Describe("E2E", func() {
 					return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
 				Eventually(func() map[string]bool {
-					jobs := helpers.GetJobs(dbHandle, gatewayDBPrefix, 1)
+					jobs := helpers.GetLatestJobs(dbHandle, gatewayDBPrefix, 1)
 					var sourceId, messageId, anonymousId, writeKey, requestIP, receivedAt string
 					for _, job := range jobs {
 						sourceId = gjson.GetBytes(job.Parameters, "source_id").String()
@@ -93,48 +94,58 @@ var _ = Describe("E2E", func() {
 			}
 		})
 
-		It("verify health, version endpoint", func() {
+		It("verify health endpoint", func() {
+			Eventually(func() bool {
+				resp := helpers.SendHealthRequest()
+				var err error
+				res := gjson.GetBytes(resp, "goroutines")
+				numOfGoroutines, err := strconv.Atoi(res.Str)
+				if err != nil {
+					panic(err)
+				}
 
-			endPoints := []string{"HEALTH", "VERSION"}
-			for _, endPoint := range endPoints {
-				Eventually(func() bool {
-					var resp []byte
-					switch endPoint {
-					case "HEALTH":
-						resp = helpers.SendHealthRequest()
-					case "VERSION":
-						resp = helpers.SendVersionRequest()
-					}
+				if numOfGoroutines > 0 {
+					resp, err = sjson.SetBytes(resp, "goroutines", true)
+				} else {
+					resp, err = sjson.SetBytes(resp, "goroutines", false)
+				}
+				if err != nil {
+					panic(err)
+				}
 
-					// a map container to decode the JSON structure into
-					c := make(map[string]interface{})
+				// a map container to decode the JSON structure into
+				c := make(map[string]interface{})
 
-					// unmarschal JSON
-					e := json.Unmarshal(resp, &c)
-					if e != nil {
-						panic(e)
-					}
+				// unmarschal JSON
+				err = json.Unmarshal(resp, &c)
+				if err != nil {
+					panic(err)
+				}
 
-					// a string slice to hold the keys
-					k := make([]string, len(c))
+				return reflect.DeepEqual(map[string]interface{}{"server": "UP", "db": "UP", "acceptingEvents": "TRUE", "routingEvents": "TRUE", "mode": "NORMAL", "goroutines": true}, c)
+			}, 2, dbPollFreqInS).Should(Equal(true))
+		})
 
-					i := 0
-					// copy c's keys into k
-					for s, _ := range c {
-						k[i] = s
-						i++
-					}
+		It("verify version endpoint", func() {
+			Eventually(func() bool {
+				resp := helpers.SendVersionRequest()
 
-					switch endPoint {
-					case "HEALTH":
-						return helpers.SameStringSlice([]string{"server", "db", "acceptingEvents", "routingEvents", "mode", "goroutines"}, k)
-					case "VERSION":
-						return helpers.SameStringSlice([]string{"BuildDate", "BuiltBy", "Commit", "GitUrl", "Major", "Minor", "Patch", "Version"}, k)
-					}
+				c := make(map[string]interface{})
+				err := json.Unmarshal(resp, &c)
+				if err != nil {
+					panic(err)
+				}
 
-					return false
-				}, 2, dbPollFreqInS).Should(Equal(true))
-			}
+				keys := make([]string, len(c))
+
+				i := 0
+				// copy c's keys into k
+				for s, _ := range c {
+					keys[i] = s
+					i++
+				}
+				return helpers.SameStringSlice([]string{"BuildDate", "BuiltBy", "Commit", "GitUrl", "Major", "Minor", "Patch", "Version"}, keys)
+			}, 2, dbPollFreqInS).Should(Equal(true))
 		})
 
 		It("verify event is stored in both gateway and router db", func() {
@@ -170,7 +181,7 @@ var _ = Describe("E2E", func() {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 2))
 			Eventually(func() []string {
-				jobs := helpers.GetJobs(dbHandle, routerDBPrefix, 2)
+				jobs := helpers.GetLatestJobs(dbHandle, routerDBPrefix, 2)
 				customVals := []string{}
 				for _, job := range jobs {
 					customVals = append(customVals, job.CustomVal)
@@ -202,7 +213,7 @@ var _ = Describe("E2E", func() {
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + numOfTestEvents))
-			jobs := helpers.GetJobs(dbHandle, routerDBPrefix, numOfTestEvents)
+			jobs := helpers.GetLatestJobs(dbHandle, routerDBPrefix, numOfTestEvents)
 			for index, _ := range jobs {
 				if index == 0 {
 					continue
