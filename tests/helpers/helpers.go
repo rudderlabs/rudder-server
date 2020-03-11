@@ -249,6 +249,18 @@ func GetJobsCount(dbHandle *sql.DB, prefix string) int {
 	return count
 }
 
+// GetJobsCountForSourceAndDestination returns count of jobs across all tables with specified prefix
+func GetJobsCountForSourceAndDestination(dbHandle *sql.DB, prefix string, sourceID string, destinationID string) int {
+	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_jobs_")
+	count := 0
+	for _, tableName := range tableNames {
+		var jobsCount int
+		dbHandle.QueryRow(fmt.Sprintf(`select count(*) as count from %s where ("parameters"::TEXT = '{"source_id": "%s", "destination_id": "%s"}');`, tableName, sourceID, destinationID)).Scan(&jobsCount)
+		count += jobsCount
+	}
+	return count
+}
+
 // GetJobStatusCount returns count of job status across all tables with specified prefix
 func GetJobStatusCount(dbHandle *sql.DB, jobState string, prefix string) int {
 	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_job_status_")

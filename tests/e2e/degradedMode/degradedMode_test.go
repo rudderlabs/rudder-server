@@ -31,7 +31,7 @@ var _ = BeforeSuite(func() {
 	}
 	gatewayDBPrefix = config.GetString("Gateway.CustomVal", "GW")
 	routerDBPrefix = config.GetString("Router.CustomVal", "RT")
-	batchRouterDBPrefix = config.GetString("BatchRouter.CustomVal", "BRT")
+	batchRouterDBPrefix = config.GetString("BatchRouter.CustomVal", "BATCH_RT")
 })
 
 var _ = Describe("Validate degraded mode", func() {

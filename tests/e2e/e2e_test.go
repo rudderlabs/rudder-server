@@ -22,6 +22,7 @@ import (
 var dbHandle *sql.DB
 var gatewayDBPrefix string
 var routerDBPrefix string
+var batchRouterDBPrefix string
 var dbPollFreqInS int = 1
 var gatewayDBCheckBufferInS int = 15
 var jobSuccessStatus string = "succeeded"
@@ -35,6 +36,7 @@ var _ = BeforeSuite(func() {
 	}
 	gatewayDBPrefix = config.GetString("Gateway.CustomVal", "GW")
 	routerDBPrefix = config.GetString("Router.CustomVal", "RT")
+	batchRouterDBPrefix = config.GetString("Router.CustomVal", "BATCH_RT")
 })
 
 var _ = Describe("E2E", func() {
@@ -324,6 +326,35 @@ var _ = Describe("E2E", func() {
 			Expect(resp.Header.Get("Access-Control-Allow-Origin")).To(Equal(originURL))
 		})
 
+		It("should handle different cases in user transformation functions", func() {
+			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
+			initialBatchRouterJobsCount := helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, "1YyeVLcPH3rKK3ehTjTUfQyxiRS", "1Yytj13urVx2WmDjOcWBHdZCRGA")
+			//Source with WriteKey: 1YyeVOLDReXPNYORjDlvE7PM1Jw has multiple destinations with diffent user-transformation for differnet destiantions.
+			helpers.SendEventRequest(helpers.EventOptsT{
+				WriteKey: "1YyeVOLDReXPNYORjDlvE7PM1Jw",
+			})
+
+			// wait for some seconds for events to be processed by gateway
+			time.Sleep(6 * time.Second)
+			Eventually(func() int {
+				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
+			Eventually(func() int {
+				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 1))
+			Consistently(func() int {
+				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 1))
+
+			// For the destination with API call UT
+			Eventually(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, "1YyeVLcPH3rKK3ehTjTUfQyxiRS", "1Yytj13urVx2WmDjOcWBHdZCRGA")
+			}, 30, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount + 1))
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, "1YyeVLcPH3rKK3ehTjTUfQyxiRS", "1Yytj13urVx2WmDjOcWBHdZCRGA")
+			}, 30, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount + 1))
+		})
 	})
 
 })
