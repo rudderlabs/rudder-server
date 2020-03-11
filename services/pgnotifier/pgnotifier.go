@@ -15,6 +15,7 @@ import (
 var (
 	queueName               string
 	subscriberInfoTableName string
+	maxAttempt              int
 )
 
 const (
@@ -22,11 +23,13 @@ const (
 	ExecutingState = "executing"
 	SucceededState = "succeeded"
 	FailedState    = "failed"
+	AbortedState   = "aborted"
 )
 
 func init() {
 	queueName = "pg_notifier_queue"
 	subscriberInfoTableName = "pg_notifier_subscriber_info"
+	maxAttempt = 3
 }
 
 type PgNotifierT struct {
@@ -45,6 +48,7 @@ type NotificationT struct {
 }
 
 type ResponseT struct {
+	Status  string
 	Payload json.RawMessage
 }
 
@@ -88,14 +92,15 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 								WHERE id IN  (
 								SELECT id
 								FROM %[1]s
-								WHERE status='%[3]s'
+								WHERE status='%[3]s' OR status='%[4]s'
 								ORDER BY id
 								FOR UPDATE SKIP LOCKED
-								LIMIT %[4]v
+								LIMIT %[5]v
 								);`,
 			queueName,
 			GetCurrentSQLTimestamp(),
 			WaitingState,
+			FailedState,
 			10)
 		_, err := notifier.dbHandle.Exec(stmt)
 		if err != nil {
@@ -111,14 +116,14 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				time.Sleep(2 * time.Second)
 				// keep polling db for batch status
 				// or subscribe to triggers
-				stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND (status='%s' OR status='%s')`, queueName, batchID, WaitingState, ExecutingState)
+				stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND (status='%s' OR status='%s' OR status='%s')`, queueName, batchID, WaitingState, FailedState, ExecutingState)
 				var count int
 				err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
 				if err != nil {
 					panic(err)
 				}
 				if count == 0 {
-					stmt = fmt.Sprintf(`SELECT payload FROM %s WHERE batch_id = '%s'`, queueName, batchID)
+					stmt = fmt.Sprintf(`SELECT payload, status FROM %s WHERE batch_id = '%s'`, queueName, batchID)
 					rows, err := notifier.dbHandle.Query(stmt)
 					if err != nil {
 						panic(err)
@@ -127,8 +132,10 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 					responses := []ResponseT{}
 					for rows.Next() {
 						var payload json.RawMessage
-						err = rows.Scan(&payload)
+						var status string
+						err = rows.Scan(&payload, &status)
 						responses = append(responses, ResponseT{
+							Status:  status,
 							Payload: payload,
 						})
 					}
@@ -146,15 +153,21 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 			response := <-ch
 			var err error
 			if response.Err != nil {
-				stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', error = '%[4]s' WHERE id = %[5]v`, queueName, FailedState, GetCurrentSQLTimestamp(), response.Err.Error(), id)
+				stmt := fmt.Sprintf(`UPDATE %[1]s SET status=(CASE
+					WHEN	attempt > %[2]d THEN CAST ( '%[3]s' AS pg_notifier_status_type)
+				ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
+				END), updated_at = '%[5]s', error = '%[6]s' WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), response.Err.Error(), id)
+				_, err = tx.Exec(stmt)
+			} else {
+				stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
 				_, err = tx.Exec(stmt)
 			}
-			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
-			_, err = tx.Exec(stmt)
 
 			if err == nil {
 				tx.Commit()
 			} else {
+				// TODO: verify rollback is necessary on error
+				tx.Rollback()
 				logger.Errorf("Failed to update claimed event: %v", err)
 			}
 
@@ -186,6 +199,8 @@ func (notifier *PgNotifierT) Claim(id int64) (ch chan ClaimResponseT, claimed bo
 	err = tx.QueryRow(stmt).Scan(&claimedID)
 
 	if err != nil {
+		// TODO: verify rollback is necessary on error
+		tx.Rollback()
 		return
 	}
 
@@ -347,6 +362,7 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 										  created_at TIMESTAMP NOT NULL,
 										  updated_at TIMESTAMP NOT NULL,
 										  last_exec_time TIMESTAMP,
+										  attempt SMALLINT DEFAULT 0,
 										  error VARCHAR(64));`, queueName)
 
 	_, err = notifier.dbHandle.Exec(sqlStmt)

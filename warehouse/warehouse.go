@@ -535,6 +535,9 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 
 	responses := <-ch
 	for _, resp := range responses {
+		if resp.Status == "failed" {
+			continue
+		}
 		var payload map[string]interface{}
 		err = json.Unmarshal(resp.Payload, &payload)
 		if err != nil {
