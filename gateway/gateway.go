@@ -142,6 +142,12 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		for _, req := range breq.batchRequest {
 			writeKey, _, ok := req.request.BasicAuth()
 			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
+			if !ok || writeKey == "" {
+				req.done <- getStatus(NoWriteKeyInBasicAuth)
+				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
+				continue
+			}
 
 			ipAddr := misc.GetIPFromReq(req.request)
 			if req.request.Body == nil {
@@ -163,12 +169,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				}
 			}
 
-			if !ok || writeKey == "" {
-				req.done <- getStatus(NoWriteKeyInBasicAuth)
-				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
-				continue
-			}
 			if err != nil {
 				req.done <- getStatus(RequestBodyReadFailed)
 				preDbStoreCount++
