@@ -78,7 +78,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	backendconfig.Subscribe(ch, "backendconfigFull")
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
-	dstToWhRouter := make(map[string]*warehouse.HandleT)
+	// dstToWhRouter := make(map[string]*warehouse.HandleT)
 
 	for {
 		config := <-ch
@@ -97,15 +97,15 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 							brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
 							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 						}
-						if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-							_, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-							if !ok {
-								logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-								var wh warehouse.HandleT
-								wh.Setup(destination.DestinationDefinition.Name)
-								dstToWhRouter[destination.DestinationDefinition.Name] = &wh
-							}
-						}
+						// if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+						// 	_, ok := dstToWhRouter[destination.DestinationDefinition.Name]
+						// 	if !ok {
+						// 		logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+						// 		var wh warehouse.HandleT
+						// 		wh.Setup(destination.DestinationDefinition.Name)
+						// 		dstToWhRouter[destination.DestinationDefinition.Name] = &wh
+						// 	}
+						// }
 					} else {
 						_, ok := dstToRouter[destination.DestinationDefinition.Name]
 						if !ok {
