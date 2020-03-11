@@ -104,7 +104,7 @@ Disclaimer: This is not the easiest way of installing RudderStack.  Please use t
 ```
 psql -c "CREATE DATABASE jobsdb"
 psql -c "CREATE USER rudder SUPERUSER"
-psql "jobsdb" -c "ALTER USER rudder with ENCRYPTED PASSWORD 'rudder'";
+psql "jobsdb" -c "ALTER USER rudder WITH ENCRYPTED PASSWORD 'rudder'";
 psql "jobsdb" -c "GRANT ALL PRIVILEGES ON DATABASE jobsdb to rudder";
 ```
 
