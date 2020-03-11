@@ -507,7 +507,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	var messages []pgnotifier.MessageT
 	for _, stagingFile := range job.List {
 
-		x := PayloadT{
+		payload := PayloadT{
 			UploadID:            job.Upload.ID,
 			StagingFileID:       stagingFile.ID,
 			StagingFileLocation: stagingFile.Location,
@@ -517,73 +517,39 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 			DestinationConfig:   job.Warehouse.Destination.Config,
 		}
 
-		payload, err := json.Marshal(x)
-
+		payloadJSON, err := json.Marshal(payload)
 		if err != nil {
 			panic(err)
 		}
-		y := pgnotifier.MessageT{
-			Payload: payload,
+		message := pgnotifier.MessageT{
+			Payload: payloadJSON,
 		}
-		messages = append(messages, y)
+		messages = append(messages, message)
 	}
-	// _, err = wh.notifier.Subscribe("process_staging_file")
-	// if err != nil {
-	// 	panic(err)
-	// }
-
-	// rruntime.Go(func() {
-	// 	func() {
-	// 		_, err := wh.notifier.Subscribe("process_staging_file")
-	// 		if err != nil {
-	// 			panic(err)
-	// 		}
-	// 	}()
-	// })
 
 	var loadFileIDs []int64
-
 	ch, err := wh.notifier.Publish("process_staging_file", messages)
 	if err != nil {
 		panic(err)
 	}
 
 	responses := <-ch
-	fmt.Println("!!!!!!!!!! trackbatch")
-	fmt.Printf("%+v\n", responses)
 	for _, resp := range responses {
-		// ids.Payload["output"]
 		var payload map[string]interface{}
-		fmt.Printf("%+v\n", string(resp.Payload))
 		err = json.Unmarshal(resp.Payload, &payload)
 		if err != nil {
-			fmt.Printf("%+v\n", err)
 			panic(err)
 		}
-		fmt.Printf("%+v\n", payload["LoadFileIDs"])
-		//x, ok :=(([]interface) payload["LoadFileIDs"]).([]int64)
-		arr, ok := payload["LoadFileIDs"].([]interface{})
+		respIDs, ok := payload["LoadFileIDs"].([]interface{})
 		if !ok {
 			panic(err)
 		}
-		x := make([]int64, len(arr))
-		for i := range arr {
-			fmt.Printf("%T\n", arr[i])
-			x[i] = int64(arr[i].(float64))
-			// x[i], ok := int(y)
-			// if !ok {
-			// 	panic(err)
-			// }
+		ids := make([]int64, len(respIDs))
+		for i := range respIDs {
+			ids[i] = int64(respIDs[i].(float64))
 		}
-
-		loadFileIDs = append(loadFileIDs, x...)
-		fmt.Printf("%+v\n", loadFileIDs)
-		// for _, id := range payload["LoadFileIDs"] {
-		// 	castedID, _ := id.(int64)
-		// 	loadFileIDs = append(loadFileIDs, castedID)
-		// }
+		loadFileIDs = append(loadFileIDs, ids...)
 	}
-	fmt.Println("!!!!!!!!!!")
 
 	// waitChan := make(chan error)
 	// rruntime.Go(func() {
@@ -1149,25 +1115,20 @@ func (wh *HandleT) Setup(whType string) {
 			panic(err)
 		}
 		for {
-			y := <-ch
-			fmt.Println("%%%%%%%%%%%%%got subscrived event")
-			ch, claimed := wh.notifier.Claim(y.ID)
+			event := <-ch
+			ch, claimed := wh.notifier.Claim(event.ID)
 			if claimed {
-				fmt.Println("^^^^^^^^")
-				var z PayloadT
-				json.Unmarshal(y.Data, &z)
-				z.BatchID = y.BatchID
-				fmt.Printf("%+v\n", z)
-				fmt.Println("^^^^^^^^")
-				ids, err := wh.processStagingFile2(z)
-				z.LoadFileIDs = ids
-				fmt.Printf("%+v\n", ids)
-				output, err := json.Marshal(z)
-				x := pgnotifier.ClaimResponseT{
+				var payload PayloadT
+				json.Unmarshal(event.Data, &payload)
+				payload.BatchID = event.BatchID
+				ids, err := wh.processStagingFile2(payload)
+				payload.LoadFileIDs = ids
+				output, err := json.Marshal(payload)
+				response := pgnotifier.ClaimResponseT{
 					Err:     err,
 					Payload: output,
 				}
-				ch <- x
+				ch <- response
 			}
 		}
 

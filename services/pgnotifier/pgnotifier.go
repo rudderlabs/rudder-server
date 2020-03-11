@@ -40,7 +40,7 @@ type MessageT struct {
 
 type NotificationT struct {
 	ID      int64
-	BatchID string
+	BatchID string `json:"batch_id"`
 	Data    json.RawMessage
 }
 
@@ -97,7 +97,6 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 			GetCurrentSQLTimestamp(),
 			WaitingState,
 			10)
-		fmt.Printf("%+v\n", stmt)
 		_, err := notifier.dbHandle.Exec(stmt)
 		if err != nil {
 			panic(err)
@@ -261,20 +260,16 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 		func() {
 			for {
 				select {
-				case n := <-listener.Notify:
-					fmt.Println("Received data from channel [", n.Channel, "] :")
-					var c NotificationT
-					err = json.Unmarshal([]byte(n.Extra), &c)
+				case notification := <-listener.Notify:
+					var event NotificationT
+					err = json.Unmarshal([]byte(notification.Extra), &event)
 					if err != nil {
 						panic(err)
 					}
-					fmt.Printf("%+v\n", c)
-					// fmt.Println(string(prettyJSON.Bytes()))
-					ch <- c
-					// return
-
+					logger.Infof("Received data from channel: %s, data: %v", notification.Channel, event)
+					ch <- event
 				case <-time.After(90 * time.Second):
-					logger.Infof("WH-JQ: Received no events for 90 seconds, checking connection")
+					logger.Infof("WH: Received no events for 90 seconds, checking connection")
 					go func() {
 						listener.Ping()
 					}()
@@ -356,18 +351,14 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 	//create the job queue table
 	sqlStmt = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 										  id BIGSERIAL PRIMARY KEY,
-										  staging_file_id BIGINT,
 										  batch_id VARCHAR(64) NOT NULL,
 										  status pg_notifier_status_type NOT NULL,
 										  topic VARCHAR(64) NOT NULL,
-										  worker_id VARCHAR(64),
 										  payload JSONB NOT NULL,
-										  error_count INT DEFAULT 0,
 										  created_at TIMESTAMP NOT NULL,
 										  updated_at TIMESTAMP NOT NULL,
 										  last_exec_time TIMESTAMP,
-										  error VARCHAR(64),
-										  last_error VARCHAR(512));`, queueName)
+										  error VARCHAR(64));`, queueName)
 
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
