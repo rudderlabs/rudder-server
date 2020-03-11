@@ -102,10 +102,10 @@ Disclaimer: This is not the easiest way of installing RudderStack.  Please use t
 3. Install PostgreSQL 10 or above and set up the DB
 
 ```
-createdb jobsdb
-createuser --superuser rudder
-psql "jobsdb" -c "alter user rudder with encrypted password 'rudder'";
-psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
+psql -c "CREATE DATABASE jobsdb"
+psql -c "CREATE USER rudder SUPERUSER"
+psql "jobsdb" -c "ALTER USER rudder WITH ENCRYPTED PASSWORD 'rudder'";
+psql "jobsdb" -c "GRANT ALL PRIVILEGES ON DATABASE jobsdb to rudder";
 ```
 
 4. Go to the [dashboard][Dashboard] and set up your account. Copy your workspace token from top of the home page
