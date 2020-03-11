@@ -140,18 +140,17 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		gateway.batchTimeStat.Start()
 		var allMessageIds [][]byte
 		for _, req := range breq.batchRequest {
+			writeKey, _, ok := req.request.BasicAuth()
+			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
+
 			ipAddr := misc.GetIPFromReq(req.request)
 			if req.request.Body == nil {
 				req.done <- getStatus(RequestBodyNil)
 				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyStats, "nil-body", 1)
 				continue
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
-
-			writeKey, _, ok := req.request.BasicAuth()
-			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 
 			if enableRateLimit {
 				//If ratelimiter returns true for LimitReached, Just drop the event batch and continue.
