@@ -1387,10 +1387,6 @@ func monitorDestRouters() {
 			if source.Enabled {
 				for _, destination := range source.Destinations {
 					if destination.Enabled {
-						fmt.Println("%%%%%%%%")
-						fmt.Println(destination.DestinationDefinition.Name)
-						fmt.Println(warehouseDestinations)
-						fmt.Println("%%%%%%%%")
 						enabledDestinations[destination.DestinationDefinition.Name] = true
 						if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
 							wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
@@ -1665,8 +1661,6 @@ func Start() {
 		panic(err)
 	}
 	setupTables(dbHandle)
-	fmt.Println("**********")
-	fmt.Println("**********")
 	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {
 		panic(err)
@@ -1675,8 +1669,6 @@ func Start() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("**********")
-	fmt.Println("**********")
 	go monitorDestRouters()
 	startWebHandler()
 	// wh.destType = whType

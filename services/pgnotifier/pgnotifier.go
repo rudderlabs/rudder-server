@@ -113,7 +113,6 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				// or subscribe to triggers
 				stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND (status='%s' OR status='%s')`, queueName, batchID, WaitingState, ExecutingState)
 				var count int
-				fmt.Printf("%+v\n", stmt)
 				err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
 				if err != nil {
 					panic(err)
@@ -144,21 +143,21 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan ClaimResponseT) {
 	rruntime.Go(func() {
 		func() {
-			x := <-ch
-			fmt.Println("*******updating claimed event")
-			// fmt.Printf("%+v\n", x)
+			response := <-ch
 			var err error
-			if x.Err != nil {
-				stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', error = '%[4]s' WHERE id = %[5]v`, queueName, FailedState, GetCurrentSQLTimestamp(), x.Err.Error(), id)
+			if response.Err != nil {
+				stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', error = '%[4]s' WHERE id = %[5]v`, queueName, FailedState, GetCurrentSQLTimestamp(), response.Err.Error(), id)
 				_, err = tx.Exec(stmt)
 			}
-			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), x.Payload, id)
+			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
 			_, err = tx.Exec(stmt)
 
 			if err == nil {
 				tx.Commit()
+			} else {
+				logger.Errorf("Failed to update claimed event: %v", err)
 			}
-			fmt.Printf("%+v\n", err)
+
 		}()
 	})
 }
@@ -184,18 +183,12 @@ func (notifier *PgNotifierT) Claim(id int64) (ch chan ClaimResponseT, claimed bo
 						LIMIT 1
 						)
 						RETURNING id;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), WaitingState, id)
-	fmt.Println(stmt)
 	err = tx.QueryRow(stmt).Scan(&claimedID)
 
 	if err != nil {
-		fmt.Printf("%+v\n", err)
-		fmt.Println("^^^^^^^^^^ not claimed")
 		return
 	}
 
-	fmt.Println("%%%%%%%")
-	fmt.Println("claimedId: ", claimedID)
-	fmt.Println("%%%%%%%")
 	ch = make(chan ClaimResponseT, 1)
 	notifier.updateClaimedEvent(id, tx, ch)
 	return ch, true
@@ -212,7 +205,6 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 
 	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "topic", "payload", "created_at", "updated_at"))
 	if err != nil {
-		fmt.Println("%%%%%%%%%%1")
 		return
 	}
 	defer stmt.Close()
@@ -221,18 +213,15 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 	for _, message := range messages {
 		_, err = stmt.Exec(batchID, WaitingState, topic, message.Payload, time.Now(), time.Now())
 		if err != nil {
-			fmt.Println("%%%%%%%%%%2")
 			return
 		}
 	}
 	_, err = stmt.Exec()
 	if err != nil {
-		fmt.Println("%%%%%%%%%%3")
 		return
 	}
 	err = txn.Commit()
 	if err != nil {
-		fmt.Println("%%%%%%%%%%4")
 		return
 	}
 	notifier.trackBatch(batchID, &ch)
