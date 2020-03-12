@@ -327,9 +327,22 @@ var _ = Describe("E2E", func() {
 		})
 
 		It("should handle different cases in user transformation functions", func() {
+			gatewayDBCheckBufferInS = 10
+			sourceID := "1YyeVLcPH3rKK3ehTjTUfQyxiRS"
 			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
-			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			initialBatchRouterJobsCount := helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, "1YyeVLcPH3rKK3ehTjTUfQyxiRS", "1Yytj13urVx2WmDjOcWBHdZCRGA")
+			initialRouterJobsCount := map[string]int{
+				"1YyedMM9RCUJrUUywWXkJWKzQiW": helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, "1YyedMM9RCUJrUUywWXkJWKzQiW"), // Empty array
+				"1YysQJV2ZXgp8wgXRhU3mmwHNti": helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, "1YysQJV2ZXgp8wgXRhU3mmwHNti"), // Access element outside array
+				"1YytOBIeLOdPCxrXWF8DytawB9Z": helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, "1YytOBIeLOdPCxrXWF8DytawB9Z"), // Events in wrong format
+				"1Yytf8vs6vxp5TsLW58D44QPKeT": helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, "1Yytf8vs6vxp5TsLW58D44QPKeT"), // Memory Eater
+				"1YyuocAqn8Q78fqwvBSDks7BVxO": helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, "1YyuocAqn8Q78fqwvBSDks7BVxO"), // Api call
+			}
+			initialBatchRouterJobsCount := map[string]int{
+				"1YyrxAh3Q7FMktGV5GWPDAsldKw": helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, "1YyrxAh3Q7FMktGV5GWPDAsldKw"), // Infinite loop
+				"1YysY9LMizekwLHwM06lmT7Oo47": helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, "1YysY9LMizekwLHwM06lmT7Oo47"), // Syntax error
+				"1YytSagaEVPTK1DLXJ46A9RQBXA": helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, "1YytSagaEVPTK1DLXJ46A9RQBXA"), // Single event outside array
+				"1Yytj13urVx2WmDjOcWBHdZCRGA": helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, "1Yytj13urVx2WmDjOcWBHdZCRGA"), // Api call
+			}
 			//Source with WriteKey: 1YyeVOLDReXPNYORjDlvE7PM1Jw has multiple destinations with diffent user-transformation for differnet destiantions.
 			helpers.SendEventRequest(helpers.EventOptsT{
 				WriteKey: "1YyeVOLDReXPNYORjDlvE7PM1Jw",
@@ -340,20 +353,64 @@ var _ = Describe("E2E", func() {
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
-			Eventually(func() int {
-				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 1))
+
+			routerDBCheckBufferInS := 10
+
+			destinationID := "1YyedMM9RCUJrUUywWXkJWKzQiW"
 			Consistently(func() int {
-				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 1))
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, destinationID)
+			}, routerDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount[destinationID]))
+
+			destinationID = "1YysQJV2ZXgp8wgXRhU3mmwHNti"
+
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, destinationID)
+			}, routerDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount[destinationID]))
+
+			destinationID = "1YytOBIeLOdPCxrXWF8DytawB9Z"
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, destinationID)
+			}, routerDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount[destinationID]))
+
+			destinationID = "1Yytf8vs6vxp5TsLW58D44QPKeT"
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, destinationID)
+			}, routerDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount[destinationID]))
+
+			destinationID = "1YyuocAqn8Q78fqwvBSDks7BVxO"
+			Eventually(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, destinationID)
+			}, routerDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount[destinationID] + 1))
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, destinationID)
+			}, routerDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount[destinationID] + 1))
+
+			batchRouterDBCheckBufferInS := 10
+
+			// For the destination with infinite loop
+			destinationID = "1YyrxAh3Q7FMktGV5GWPDAsldKw"
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, destinationID)
+			}, batchRouterDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount[destinationID]), "User transformation has an Infinite Loop")
+
+			destinationID = "1YysY9LMizekwLHwM06lmT7Oo47"
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, destinationID)
+			}, batchRouterDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount[destinationID]), "User transformation has syntax error")
+
+			destinationID = "1YytSagaEVPTK1DLXJ46A9RQBXA"
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, destinationID)
+			}, batchRouterDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount[destinationID]), "User transformation returns a single event outside array")
 
 			// For the destination with API call UT
+			destinationID = "1Yytj13urVx2WmDjOcWBHdZCRGA"
 			Eventually(func() int {
-				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, "1YyeVLcPH3rKK3ehTjTUfQyxiRS", "1Yytj13urVx2WmDjOcWBHdZCRGA")
-			}, 30, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount + 1))
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, "1YyeVLcPH3rKK3ehTjTUfQyxiRS", destinationID)
+			}, batchRouterDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount[destinationID]+1), "User transformation with API call")
 			Consistently(func() int {
-				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, "1YyeVLcPH3rKK3ehTjTUfQyxiRS", "1Yytj13urVx2WmDjOcWBHdZCRGA")
-			}, 30, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount + 1))
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, "1YyeVLcPH3rKK3ehTjTUfQyxiRS", destinationID)
+			}, batchRouterDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount[destinationID]+1), "User transformation with API call")
 		})
 	})
 

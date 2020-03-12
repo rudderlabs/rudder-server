@@ -12,5 +12,8 @@ processSessions = false
 maxStatusUpdateWaitInS = 1
 useTestSink = true
 
+[BatchRouter]
+uploadFreqInS = 5
+
 [recovery]
 enabled = false
