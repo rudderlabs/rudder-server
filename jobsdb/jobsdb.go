@@ -698,7 +698,6 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	jd.assertError(err)
 	opID := jd.JournalMarkStart(addDSOperation, opPayload)
 	defer func() {
-		jd.JournalMarkDone(opID)
 		if appendLast {
 			// Tracking time interval between new ds creations. Hence calling end before start
 			if jd.isStatNewDSPeriodInitialized {
@@ -733,6 +732,8 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
                                      error_response JSONB);`, newDS.JobStatusTable, newDS.JobTable)
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
+
+	jd.JournalMarkDone(opID)
 
 	if appendLast {
 		//Refresh the in-memory list. We only need to refresh the
