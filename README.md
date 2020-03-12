@@ -31,7 +31,7 @@ See the [HackerNews][HackerNews] discussion around RudderStack.
 
 1. **Production Ready:** Multiple companies from startups to large engerprieses are running RudderStack for collecting events. 
 2. **Extreme Scale:** One of our largest installations (the largest online grocery in India) is sending a peak of 40K req/sec via a multi-node RudderStack setup.
-3. **API Compatibility:** RudderStack is Segment API and library compatible.
+3. **Segment API Compatibile:** RudderStack is Segment API and library compatible so don't need to change your app if you are using Segment.
 4. **Cloud Destinations:** Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations. 
 5. **Warehouse Destinations:** S3, Minio, Redshift, Snowflake, Google BigQuery support.
 6. **Transformations:** User-specified transformation to filter/transform events.
