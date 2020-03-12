@@ -141,7 +141,6 @@ All the source and destination configuration stays on your local storage. You ca
 ## Setup
 
 1. Checkout the config-gen `git checkout -b config-gen; git fetch origin config-gen`
-2. 
 2. `cd utils/config-gen`
 3. `npm install`
 4. `npm start`
