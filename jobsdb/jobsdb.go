@@ -1544,34 +1544,47 @@ func (jd *HandleT) backupDSLoop() {
 
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
-		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
-		// write jobs table to s3
-		_, err = jd.backupTable(backupDSRange, false)
-		if err != nil {
-			logger.Errorf("Failed to backup table %v. Err: %v", backupDS.JobTable, err)
-			jd.removeTableJSONDumps()
-			jd.JournalMarkDone(opID)
-			continue
-		}
 
-		// write job_status table to s3
-		_, err = jd.backupTable(backupDSRange, true)
-		jd.assertError(err)
-		if err != nil {
-			logger.Errorf("Failed to backup table %v. Err: %v", backupDS.JobStatusTable, err)
-			jd.removeTableJSONDumps()
-			jd.JournalMarkDone(opID)
+		// backup DS
+		success := jd.backupDS(backupDSRange, opPayload)
+		if !success {
 			continue
 		}
-		jd.JournalMarkDone(opID)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
-		opPayload, err = json.Marshal(&backupDS)
-		jd.assertError(err)
-		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
-		jd.dropDS(backupDS, false)
-		jd.JournalMarkDone(opID)
+		jd.dropDSAfterBackup(backupDS, opPayload)
 	}
+}
+
+func (jd *HandleT) backupDS(backupDSRange dataSetRangeT, opPayload []byte) bool {
+	backupDS := backupDSRange.ds
+	opID := jd.JournalMarkStart(backupDSOperation, opPayload)
+
+	//stacking defers. First jd.removeTableJSONDumps() is called and then jd.JournalMarkDone(opID) is called
+	defer jd.JournalMarkDone(opID)
+	defer jd.removeTableJSONDumps()
+
+	// write jobs table to s3
+	_, err := jd.backupTable(backupDSRange, false)
+	if err != nil {
+		logger.Errorf("Failed to backup table %v. Err: %v", backupDS.JobTable, err)
+		return false
+	}
+
+	// write job_status table to s3
+	_, err = jd.backupTable(backupDSRange, true)
+	if err != nil {
+		logger.Errorf("Failed to backup table %v. Err: %v", backupDS.JobStatusTable, err)
+		return false
+	}
+
+	return true
+}
+
+func (jd *HandleT) dropDSAfterBackup(backupDS dataSetT, opPayload []byte) {
+	opID := jd.JournalMarkStart(backupDropDSOperation, opPayload)
+	defer jd.JournalMarkDone(opID)
+	jd.dropDS(backupDS, false)
 }
 
 func (jd *HandleT) removeTableJSONDumps() {
