@@ -15,6 +15,11 @@ import (
 
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
+const (
+	IsRouter      = "isRouter"
+	WarehouseMode = "warehouseMode"
+)
+
 func transformKey(s string) string {
 	snake := matchAllCap.ReplaceAllString(s, "${1}_${2}")
 	snake = strings.ReplaceAll(snake, ".", "_")
@@ -145,5 +150,9 @@ func GetRequiredEnv(key string) string {
 
 // SetBool override existing config
 func SetBool(key string, value bool) {
+	viper.Set(key, value)
+}
+
+func SetString(key string, value string) {
 	viper.Set(key, value)
 }
