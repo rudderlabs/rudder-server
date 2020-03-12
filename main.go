@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/rruntime"
 
 	"net/http"
 	"os"
@@ -227,6 +228,8 @@ func main() {
 	stats.Setup()
 
 	isWarehouseService := flag.Bool("warehouse", false, "Indicates to start it as a warehouse service")
+	warehouseMode := flag.String("warehouse-mode", "master_slave", "Indicates to start it as a warehouse service")
+	isRouter := flag.Bool("router", true, "value")
 
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
@@ -238,6 +241,8 @@ func main() {
 	versionFlag := flag.Bool("v", false, "Print the current version and exit")
 
 	flag.Parse()
+	config.SetString(config.WarehouseMode, *warehouseMode)
+	config.SetBool(config.IsRouter, *isRouter)
 	if *versionFlag {
 		printVersion()
 		return
@@ -286,6 +291,12 @@ func main() {
 		stats.StopRuntimeStats()
 		os.Exit(1)
 	}()
+
+	if *isRouter {
+		rruntime.Go(func() {
+			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+		})
+	}
 
 	if *isWarehouseService {
 		fmt.Println("Starting as Warehouse Service...")
