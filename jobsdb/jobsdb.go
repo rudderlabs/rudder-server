@@ -1548,7 +1548,9 @@ func (jd *HandleT) backupDSLoop() {
 		// write jobs table to s3
 		_, err = jd.backupTable(backupDSRange, false)
 		if err != nil {
-			logger.Errorf("Failed to backup table %v", backupDS.JobTable)
+			logger.Errorf("Failed to backup table %v. Err: %v", backupDS.JobTable, err)
+			jd.removeTableJSONDumps()
+			jd.JournalMarkDone(opID)
 			continue
 		}
 
@@ -1556,7 +1558,9 @@ func (jd *HandleT) backupDSLoop() {
 		_, err = jd.backupTable(backupDSRange, true)
 		jd.assertError(err)
 		if err != nil {
-			logger.Errorf("Failed to backup table %v", backupDS.JobStatusTable)
+			logger.Errorf("Failed to backup table %v. Err: %v", backupDS.JobStatusTable, err)
+			jd.removeTableJSONDumps()
+			jd.JournalMarkDone(opID)
 			continue
 		}
 		jd.JournalMarkDone(opID)
@@ -1672,17 +1676,18 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	} else {
 		output, err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
 	}
+
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 		logger.Errorf("Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
-	} else {
-		// Do not record stat in error case as error case time might be low and skew stats
-		jd.fileUploadTimeStat.End()
-		jd.totalTableDumpTimeStat.End()
+		return false, err
 	}
 
+	// Do not record stat in error case as error case time might be low and skew stats
+	jd.fileUploadTimeStat.End()
+	jd.totalTableDumpTimeStat.End()
 	logger.Infof("Backed up table: %v at %v", tableName, output.Location)
-	return true, err
+	return true, nil
 }
 
 func (jd *HandleT) getBackupDSRange() dataSetRangeT {

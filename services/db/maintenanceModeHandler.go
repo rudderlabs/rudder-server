@@ -46,7 +46,7 @@ func replaceDB() {
 	// If we crashed earlier, after ALTER but before CREATE, we can create again
 	// So just logging the error instead of assert
 	if err != nil {
-		logger.Error(err.Error())
+		panic(err)
 	}
 
 	createDBStatement := fmt.Sprintf("CREATE DATABASE %s", dbname)
