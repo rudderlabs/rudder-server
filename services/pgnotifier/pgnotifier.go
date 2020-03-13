@@ -44,6 +44,7 @@ type MessageT struct {
 type NotificationT struct {
 	ID      int64
 	BatchID string `json:"batch_id"`
+	Status  string
 	Data    json.RawMessage
 }
 
@@ -58,7 +59,7 @@ type ClaimResponseT struct {
 }
 
 func New(connectionInfo string) (notifier PgNotifierT, err error) {
-	logger.Infof("Initializaing PgNotifier...")
+	logger.Infof("PgNotifier: Initializaing PgNotifier...")
 	dbHandle, err := sql.Open("postgres", connectionInfo)
 	if err != nil {
 		return
@@ -163,7 +164,7 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 		} else {
 			// TODO: verify rollback is necessary on error
 			tx.Rollback()
-			logger.Errorf("Failed to update claimed event: %v", err)
+			logger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
 		}
 	})
 }
@@ -242,9 +243,9 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 		10*time.Second,
 		time.Minute,
 		func(ev pq.ListenerEventType, err error) {
-			logger.Infof("Event received in pq listener %v", ev)
+			logger.Infof("PgNotifier: Event received in pq listener %v", ev)
 			if err != nil {
-				logger.Errorf("Error in pq listener for event type: %v %v ", ev, err)
+				logger.Errorf("PgNotifier: Error in pq listener for event type: %v %v ", ev, err)
 			}
 		})
 	err = listener.Listen(topic)
@@ -253,7 +254,6 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 	}
 
 	ch = make(chan NotificationT)
-
 	rruntime.Go(func() {
 		for {
 			select {
@@ -264,11 +264,14 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 					if err != nil {
 						panic(err)
 					}
-					logger.Infof("Received data from channel: %s, data: %v", notification.Channel, event)
-					ch <- event
+					logger.Debugf("PgNotifier: Received data from channel: %s, data: %v", notification.Channel, event)
+					if event.Status == WaitingState || event.Status == FailedState {
+						ch <- event
+					}
+					logger.Debugf("PgNotifier: Not notifying subsriver for event with id: %d type: %s", event.ID, event.Status)
 				}
 			case <-time.After(90 * time.Second):
-				logger.Infof("WH: Received no events for 90 seconds, checking connection")
+				logger.Debugf("PgNotifier: Received no events for 90 seconds, checking connection")
 				go func() {
 					listener.Ping()
 				}()
@@ -292,6 +295,7 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 									notification = json_build_object(
 													''id'', NEW.id,
 													''batch_id'', NEW.batch_id,
+													''status'', NEW.status,
 													''data'', NEW.payload);
 
 									-- Execute pg_notify(channel, notification)
@@ -326,7 +330,7 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 }
 
 func (notifier *PgNotifierT) setupQueue() (err error) {
-	logger.Infof("WH-JQ: Creating Job Queue Tables ")
+	logger.Infof("PgNotifier: Creating Job Queue Tables ")
 
 	//create status type
 	sqlStmt := `DO $$ BEGIN
