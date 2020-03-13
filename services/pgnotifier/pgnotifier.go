@@ -77,9 +77,7 @@ func (notifier PgNotifierT) AddTopic(topic string) (err error) {
 		return
 	}
 	rruntime.Go(func() {
-		func() {
-			notifier.triggerPending(topic)
-		}()
+		notifier.triggerPending(topic)
 	})
 	return
 }
@@ -111,67 +109,62 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 
 func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.Go(func() {
-		func() {
-			for {
-				time.Sleep(2 * time.Second)
-				// keep polling db for batch status
-				// or subscribe to triggers
-				stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND (status='%s' OR status='%s' OR status='%s')`, queueName, batchID, WaitingState, FailedState, ExecutingState)
-				var count int
-				err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
+		for {
+			time.Sleep(2 * time.Second)
+			// keep polling db for batch status
+			// or subscribe to triggers
+			stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND (status='%s' OR status='%s' OR status='%s')`, queueName, batchID, WaitingState, FailedState, ExecutingState)
+			var count int
+			err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
+			if err != nil {
+				panic(err)
+			}
+			if count == 0 {
+				stmt = fmt.Sprintf(`SELECT payload, status FROM %s WHERE batch_id = '%s'`, queueName, batchID)
+				rows, err := notifier.dbHandle.Query(stmt)
 				if err != nil {
 					panic(err)
 				}
-				if count == 0 {
-					stmt = fmt.Sprintf(`SELECT payload, status FROM %s WHERE batch_id = '%s'`, queueName, batchID)
-					rows, err := notifier.dbHandle.Query(stmt)
-					if err != nil {
-						panic(err)
-					}
-					defer rows.Close()
-					responses := []ResponseT{}
-					for rows.Next() {
-						var payload json.RawMessage
-						var status string
-						err = rows.Scan(&payload, &status)
-						responses = append(responses, ResponseT{
-							Status:  status,
-							Payload: payload,
-						})
-					}
-					*ch <- responses
-					break
+				defer rows.Close()
+				responses := []ResponseT{}
+				for rows.Next() {
+					var payload json.RawMessage
+					var status string
+					err = rows.Scan(&payload, &status)
+					responses = append(responses, ResponseT{
+						Status:  status,
+						Payload: payload,
+					})
 				}
+				*ch <- responses
+				break
 			}
-		}()
+		}
 	})
 }
 
 func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan ClaimResponseT) {
 	rruntime.Go(func() {
-		func() {
-			response := <-ch
-			var err error
-			if response.Err != nil {
-				stmt := fmt.Sprintf(`UPDATE %[1]s SET status=(CASE
+		response := <-ch
+		var err error
+		if response.Err != nil {
+			stmt := fmt.Sprintf(`UPDATE %[1]s SET status=(CASE
 					WHEN	attempt > %[2]d THEN CAST ( '%[3]s' AS pg_notifier_status_type)
 				ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
 				END), updated_at = '%[5]s', error = '%[6]s' WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), response.Err.Error(), id)
-				_, err = tx.Exec(stmt)
-			} else {
-				stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
-				_, err = tx.Exec(stmt)
-			}
+			_, err = tx.Exec(stmt)
+		} else {
+			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
+			_, err = tx.Exec(stmt)
+		}
 
-			if err == nil {
-				tx.Commit()
-			} else {
-				// TODO: verify rollback is necessary on error
-				tx.Rollback()
-				logger.Errorf("Failed to update claimed event: %v", err)
-			}
-
-		}()
+		if err == nil {
+			tx.Commit()
+		} else {
+			// TODO: verify rollback is necessary on error
+			tx.Rollback()
+			logger.Errorf("Failed to update claimed event: %v", err)
+		}
 	})
 }
 
@@ -261,10 +254,10 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 	ch = make(chan NotificationT)
 
 	rruntime.Go(func() {
-		func() {
-			for {
-				select {
-				case notification := <-listener.Notify:
+		for {
+			select {
+			case notification := <-listener.Notify:
+				if notification != nil {
 					var event NotificationT
 					err = json.Unmarshal([]byte(notification.Extra), &event)
 					if err != nil {
@@ -272,14 +265,14 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 					}
 					logger.Infof("Received data from channel: %s, data: %v", notification.Channel, event)
 					ch <- event
-				case <-time.After(90 * time.Second):
-					logger.Infof("WH: Received no events for 90 seconds, checking connection")
-					go func() {
-						listener.Ping()
-					}()
 				}
+			case <-time.After(90 * time.Second):
+				logger.Infof("WH: Received no events for 90 seconds, checking connection")
+				go func() {
+					listener.Ping()
+				}()
 			}
-		}()
+		}
 	})
 	return
 }
