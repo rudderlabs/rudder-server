@@ -1617,9 +1617,9 @@ func startWebHandler() {
 	// 	AllowedHeaders:   []string{"*"},
 	// })
 
-	logger.Infof("Starting in %d", 8082)
+	logger.Infof("Starting in %d", webPort)
 
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(8082), bugsnag.Handler(nil)))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
 func Start() {

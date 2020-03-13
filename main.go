@@ -230,7 +230,7 @@ func main() {
 
 	//isWarehouseService := flag.Bool("warehouse", false, "Indicates to start it as a warehouse service")
 	warehouseMode := flag.String("warehouse-mode", "", "Indicates to start it as a warehouse service")
-	startCore := flag.String("start-core", "", "value")
+	startCoreWithWarehouse := flag.Bool("start-core", false, "value")
 
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
@@ -243,7 +243,7 @@ func main() {
 
 	flag.Parse()
 	config.SetString(config.WarehouseMode, *warehouseMode)
-	config.SetString(config.StartCore, *startCore)
+	config.SetBool(config.StartCore, *startCoreWithWarehouse)
 	if *versionFlag {
 		printVersion()
 		return
@@ -293,8 +293,8 @@ func main() {
 		os.Exit(1)
 	}()
 
-	// default mode, starts only rudderCore
-	if *startCore == "" && *warehouseMode == "" {
+	// default mode, starts rudderCore and warehouse
+	if *warehouseMode == "" {
 		config.SetString(config.WarehouseMode, warehouse.MasterSlaveMode)
 		fmt.Println("Starting as Warehouse Service...")
 		rruntime.Go(func() {
@@ -302,19 +302,16 @@ func main() {
 		})
 		startWarehouseService()
 	}
-	if *startCore != "true" && *warehouseMode != "" {
-		fmt.Println("Starting as Warehouse Service...")
-		startWarehouseService()
-	}
-	if *startCore == "true" && *warehouseMode != "" {
-		fmt.Println("Starting as Warehouse Service...")
-		rruntime.Go(func() {
-			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
-		})
-		startWarehouseService()
-	}
-	if *startCore == "true" && *warehouseMode == "" {
-		startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+	if *warehouseMode != "" {
+		if *startCoreWithWarehouse {
+			fmt.Println("Starting as Warehouse Service...")
+			rruntime.Go(func() {
+				startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+			})
+			startWarehouseService()
+		} else {
+			startWarehouseService()
+		}
 	}
 
 }
