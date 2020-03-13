@@ -68,6 +68,7 @@ uploadFreqInS = 30
 [Warehouse]
 mode = ""
 startRouter=false
+webPort = 8082
 stagingFilesTable = "wh_staging_files"
 loadFilesTable = "wh_load_files"
 uploadsTable = "wh_uploads"
