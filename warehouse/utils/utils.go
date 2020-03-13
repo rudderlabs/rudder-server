@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -378,4 +380,23 @@ func Datatype(in interface{}) string {
 	}
 
 	return "string"
+}
+
+//ToSafeDBString to remove special characters
+func ToSafeDBString(str string) string {
+	res := ""
+	if str != "" {
+		r := []rune(str)
+		_, err := strconv.ParseInt(string(r[0]), 10, 64)
+		if err == nil {
+			str = "_" + str
+		}
+		regexForNotAlphaNumeric := regexp.MustCompile("[^a-zA-Z0-9_]+")
+		res = regexForNotAlphaNumeric.ReplaceAllString(str, "")
+
+	}
+	if res == "" {
+		res = fmt.Sprintf("STRINGEMPTY_%v", rand.Intn(100000))
+	}
+	return res
 }
