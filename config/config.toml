@@ -64,6 +64,7 @@ mainLoopSleepInS = 2
 noOfWorkers = 8
 jobQueryBatchSize = 100000
 uploadFreqInS = 30
+maxFailedCountForJob = 128
 
 [Warehouse]
 stagingFilesTable = "wh_staging_files"
