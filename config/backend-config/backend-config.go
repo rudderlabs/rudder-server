@@ -92,7 +92,7 @@ func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	configBackendToken = config.GetEnv("CONFIG_BACKEND_TOKEN", "1P2tfQQKarhlsG6S3JGLdXptyZY")
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
-	configJSONPath = config.GetString("BackendConfig.configJSONPath", "./workspaceConfig.json")
+	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
 }
 
@@ -171,8 +171,8 @@ func pollConfigUpdate() {
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()
 			initialized = true
-			Eb.Publish("backendconfig", filteredSourcesJSON)
-			Eb.Publish("backendconfigFull", sourceJSON)
+			Eb.Publish("processConfig", filteredSourcesJSON)
+			Eb.Publish("backendConfig", sourceJSON)
 		}
 		time.Sleep(time.Duration(pollInterval))
 	}
@@ -190,8 +190,12 @@ func Subscribe(channel chan utils.DataEvent, topic string) {
 	Eb.Subscribe(topic, channel)
 	curSourceJSONLock.RLock()
 	filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
-	Eb.PublishToChannel(channel, "backendconfig", filteredSourcesJSON)
-	Eb.PublishToChannel(channel, "backendconfigFull", curSourceJSON)
+
+	if topic == "processConfig" {
+		Eb.PublishToChannel(channel, topic, filteredSourcesJSON)
+	} else if topic == "backendConfig" {
+		Eb.PublishToChannel(channel, topic, curSourceJSON)
+	}
 	curSourceJSONLock.RUnlock()
 }
 
