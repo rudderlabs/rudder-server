@@ -163,7 +163,6 @@ Update the [config](https://docs.rudderstack.com/administrators-guide/config-par
 - Download the workspace config file on your machine.
 - In `docker-compose.yml`, uncomment `volumes` section under `backend` service. Specify the path to your workspace config.
 - In `build/docker.env`, set the environment variable `RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true`
-- Run the command `docker-compose up --build` to bring up all the services.
 
 ---
 
