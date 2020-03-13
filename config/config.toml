@@ -31,7 +31,7 @@
 # [JobsDB]
 # enableBackup=false
 #
-# RSERVER_JOBS_DBENABLE_BACKUP=true
+# RSERVER_JOBS_DB_ENABLE_BACKUP=true
 #
 
 
