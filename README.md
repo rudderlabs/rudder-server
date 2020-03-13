@@ -37,6 +37,7 @@ See the [HackerNews][HackerNews] discussion around RudderStack.
 6. **Transformations:** User-specified transformation to filter/transform events.
 7. **Rich UI:** Written in react
 8. **SDKs:** [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkAndroidGitRepo] and server-side SDKs.
+9. **Detailed Docs:** [Docs][Docs]
 
 
 # Contribution
