@@ -294,7 +294,12 @@ func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId strin
 			AND id >= %[5]v 
 			AND id <= %[6]v) 		 
 		GROUP BY staging_file_id ) uniqueStagingFiles 
+<<<<<<< HEAD
 		ON  wh_load_files.id = uniqueStagingFiles.id `,
+=======
+		ON  wh_load_files.staging_file_id = uniqueStagingFiles.staging_file_id
+		AND wh_load_files.id = uniqueStagingFiles.id `,
+>>>>>>> pick unique load files
 		warehouseLoadFilesTable,
 		sourceId,
 		destinationId,
