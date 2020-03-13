@@ -23,7 +23,7 @@ services:
       - JOBS_DB_HOST=db
     # Uncomment the following lines to mount workspaceConfig file
     # volumes:
-    #   - <path_to_workspace_config>:/etc/rudderstack/workspaceConfig.json
+    #   - <absolute_path_to_workspace_config>:/etc/rudderstack/workspaceConfig.json
   d-transformer:
     build:
       context: ./rudder-transformer/
