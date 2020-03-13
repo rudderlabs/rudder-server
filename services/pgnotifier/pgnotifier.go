@@ -44,6 +44,7 @@ type MessageT struct {
 type NotificationT struct {
 	ID      int64
 	BatchID string `json:"batch_id"`
+	Status  string
 	Data    json.RawMessage
 }
 
@@ -58,7 +59,7 @@ type ClaimResponseT struct {
 }
 
 func New(connectionInfo string) (notifier PgNotifierT, err error) {
-	logger.Infof("Initializaing PgNotifier...")
+	logger.Infof("PgNotifier: Initializaing PgNotifier...")
 	dbHandle, err := sql.Open("postgres", connectionInfo)
 	if err != nil {
 		return
@@ -77,9 +78,7 @@ func (notifier PgNotifierT) AddTopic(topic string) (err error) {
 		return
 	}
 	rruntime.Go(func() {
-		func() {
-			notifier.triggerPending(topic)
-		}()
+		notifier.triggerPending(topic)
 	})
 	return
 }
@@ -111,67 +110,62 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 
 func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.Go(func() {
-		func() {
-			for {
-				time.Sleep(2 * time.Second)
-				// keep polling db for batch status
-				// or subscribe to triggers
-				stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND (status='%s' OR status='%s' OR status='%s')`, queueName, batchID, WaitingState, FailedState, ExecutingState)
-				var count int
-				err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
+		for {
+			time.Sleep(2 * time.Second)
+			// keep polling db for batch status
+			// or subscribe to triggers
+			stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND (status='%s' OR status='%s' OR status='%s')`, queueName, batchID, WaitingState, FailedState, ExecutingState)
+			var count int
+			err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
+			if err != nil {
+				panic(err)
+			}
+			if count == 0 {
+				stmt = fmt.Sprintf(`SELECT payload, status FROM %s WHERE batch_id = '%s'`, queueName, batchID)
+				rows, err := notifier.dbHandle.Query(stmt)
 				if err != nil {
 					panic(err)
 				}
-				if count == 0 {
-					stmt = fmt.Sprintf(`SELECT payload, status FROM %s WHERE batch_id = '%s'`, queueName, batchID)
-					rows, err := notifier.dbHandle.Query(stmt)
-					if err != nil {
-						panic(err)
-					}
-					defer rows.Close()
-					responses := []ResponseT{}
-					for rows.Next() {
-						var payload json.RawMessage
-						var status string
-						err = rows.Scan(&payload, &status)
-						responses = append(responses, ResponseT{
-							Status:  status,
-							Payload: payload,
-						})
-					}
-					*ch <- responses
-					break
+				defer rows.Close()
+				responses := []ResponseT{}
+				for rows.Next() {
+					var payload json.RawMessage
+					var status string
+					err = rows.Scan(&payload, &status)
+					responses = append(responses, ResponseT{
+						Status:  status,
+						Payload: payload,
+					})
 				}
+				*ch <- responses
+				break
 			}
-		}()
+		}
 	})
 }
 
 func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan ClaimResponseT) {
 	rruntime.Go(func() {
-		func() {
-			response := <-ch
-			var err error
-			if response.Err != nil {
-				stmt := fmt.Sprintf(`UPDATE %[1]s SET status=(CASE
+		response := <-ch
+		var err error
+		if response.Err != nil {
+			stmt := fmt.Sprintf(`UPDATE %[1]s SET status=(CASE
 					WHEN	attempt > %[2]d THEN CAST ( '%[3]s' AS pg_notifier_status_type)
 				ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
 				END), updated_at = '%[5]s', error = '%[6]s' WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), response.Err.Error(), id)
-				_, err = tx.Exec(stmt)
-			} else {
-				stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
-				_, err = tx.Exec(stmt)
-			}
+			_, err = tx.Exec(stmt)
+		} else {
+			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
+			_, err = tx.Exec(stmt)
+		}
 
-			if err == nil {
-				tx.Commit()
-			} else {
-				// TODO: verify rollback is necessary on error
-				tx.Rollback()
-				logger.Errorf("Failed to update claimed event: %v", err)
-			}
-
-		}()
+		if err == nil {
+			tx.Commit()
+		} else {
+			// TODO: verify rollback is necessary on error
+			tx.Rollback()
+			logger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
+		}
 	})
 }
 
@@ -249,8 +243,9 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 		10*time.Second,
 		time.Minute,
 		func(ev pq.ListenerEventType, err error) {
+			logger.Infof("PgNotifier: Event received in pq listener %v", ev)
 			if err != nil {
-				logger.Errorf("Error in pq listener for event type: %v %v ", ev, err)
+				logger.Errorf("PgNotifier: Error in pq listener for event type: %v %v ", ev, err)
 			}
 		})
 	err = listener.Listen(topic)
@@ -259,27 +254,29 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 	}
 
 	ch = make(chan NotificationT)
-
 	rruntime.Go(func() {
-		func() {
-			for {
-				select {
-				case notification := <-listener.Notify:
+		for {
+			select {
+			case notification := <-listener.Notify:
+				if notification != nil {
 					var event NotificationT
 					err = json.Unmarshal([]byte(notification.Extra), &event)
 					if err != nil {
 						panic(err)
 					}
-					logger.Infof("Received data from channel: %s, data: %v", notification.Channel, event)
-					ch <- event
-				case <-time.After(90 * time.Second):
-					logger.Infof("WH: Received no events for 90 seconds, checking connection")
-					go func() {
-						listener.Ping()
-					}()
+					logger.Debugf("PgNotifier: Received data from channel: %s, data: %v", notification.Channel, event)
+					if event.Status == WaitingState || event.Status == FailedState {
+						ch <- event
+					}
+					logger.Debugf("PgNotifier: Not notifying subsriver for event with id: %d type: %s", event.ID, event.Status)
 				}
+			case <-time.After(90 * time.Second):
+				logger.Debugf("PgNotifier: Received no events for 90 seconds, checking connection")
+				go func() {
+					listener.Ping()
+				}()
 			}
-		}()
+		}
 	})
 	return
 }
@@ -298,6 +295,7 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 									notification = json_build_object(
 													''id'', NEW.id,
 													''batch_id'', NEW.batch_id,
+													''status'', NEW.status,
 													''data'', NEW.payload);
 
 									-- Execute pg_notify(channel, notification)
@@ -332,7 +330,7 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 }
 
 func (notifier *PgNotifierT) setupQueue() (err error) {
-	logger.Infof("WH-JQ: Creating Job Queue Tables ")
+	logger.Infof("PgNotifier: Creating Job Queue Tables ")
 
 	//create status type
 	sqlStmt := `DO $$ BEGIN

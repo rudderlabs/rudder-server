@@ -22,6 +22,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/iancoleman/strcase"
+	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -60,6 +61,7 @@ var (
 	warehouseLoadFilesTable    string
 	warehouseStagingFilesTable string
 	warehouseUploadsTable      string
+	warehouseTableUploadsTable string
 	warehouseSchemasTable      string
 )
 
@@ -122,6 +124,7 @@ func loadConfig() {
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
 	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
+	warehouseTableUploadsTable = config.GetString("Warehouse.tableUploadsTable", "wh_table_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
 	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 60) * time.Second
 	availableWarehouses = []string{"RS", "BQ", "SNOWFLAKE"}
@@ -248,6 +251,47 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 	return schemaMap
 }
 
+func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[string]map[string]string) (err error) {
+	//Using transactions for bulk copying
+	txn, err := wh.dbHandle.Begin()
+	if err != nil {
+		return
+	}
+
+	stmt, err := txn.Prepare(pq.CopyIn(warehouseTableUploadsTable, "wh_upload_id", "table_name", "status", "error", "created_at", "updated_at"))
+	if err != nil {
+		return
+	}
+
+	tables := make([]string, 0, len(schema))
+	for t := range schema {
+		tables = append(tables, t)
+	}
+
+	for _, table := range tables {
+		_, err = stmt.Exec(upload.ID, table, "waiting", "{}", time.Now(), time.Now())
+		if err != nil {
+			return
+		}
+	}
+
+	_, err = stmt.Exec()
+	if err != nil {
+		return
+	}
+
+	err = stmt.Close()
+	if err != nil {
+		return
+	}
+
+	err = txn.Commit()
+	if err != nil {
+		return
+	}
+	return
+}
+
 func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT, schema map[string]map[string]string) warehouseutils.UploadT {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, created_at, updated_at)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13) RETURNING id`, warehouseUploadsTable)
@@ -261,7 +305,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	startJSONID := jsonUploadsList[0].ID
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
 	currentSchema, err := json.Marshal(schema)
-	namespace := misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouse.Source.Name)), 127)
+	namespace := misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(warehouse.Source.Name))), 127)
 	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, currentSchema, "{}", time.Now(), time.Now())
 
 	var uploadID int64
@@ -270,7 +314,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		panic(err)
 	}
 
-	return warehouseutils.UploadT{
+	upload := warehouseutils.UploadT{
 		ID:                 uploadID,
 		Namespace:          namespace,
 		SourceID:           warehouse.Source.ID,
@@ -281,6 +325,14 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		Status:             warehouseutils.WaitingState,
 		Schema:             schema,
 	}
+
+	err = wh.initTableUploads(upload, schema)
+	if err != nil {
+		// TODO: Handle error / Retry
+		logger.Error("WH: Error creating records in wh_table_uploads", err)
+	}
+
+	return upload
 }
 
 func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]warehouseutils.UploadT, bool) {
@@ -1062,7 +1114,6 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
-
 	if config.GetString(config.WarehouseMode, "") == MasterMode || config.GetString(config.WarehouseMode, "") == MasterSlaveMode {
 
 		rruntime.Go(func() {
@@ -1079,7 +1130,6 @@ func (wh *HandleT) Setup(whType string) {
 			wh.mainLoop()
 		})
 	}
-
 	if config.GetString(config.WarehouseMode, "") == SlaveMode || config.GetString(config.WarehouseMode, "") == MasterSlaveMode {
 		for index := 0; index < 3; index++ {
 			rruntime.Go(func() {
@@ -1095,6 +1145,12 @@ func (wh *HandleT) Setup(whType string) {
 						json.Unmarshal(event.Data, &payload)
 						payload.BatchID = event.BatchID
 						ids, err := wh.processStagingFile2(payload)
+						if err != nil {
+							response := pgnotifier.ClaimResponseT{
+								Err: err,
+							}
+							claimChan <- response
+						}
 						payload.LoadFileIDs = ids
 						output, err := json.Marshal(payload)
 						response := pgnotifier.ClaimResponseT{
@@ -1104,7 +1160,6 @@ func (wh *HandleT) Setup(whType string) {
 						claimChan <- response
 					}
 				}
-
 			})
 		}
 	}
@@ -1527,6 +1582,38 @@ func setupTables(dbHandle *sql.DB) {
 		panic(err)
 	}
 
+	sqlStatement = `DO $$ BEGIN
+                                CREATE TYPE wh_table_upload_state_type
+                                     AS ENUM(
+										 	  'waiting',
+											  'exporting_data',
+											  'exporting_data_failed',
+											  'exported_data',
+											  'aborted');
+                                     EXCEPTION
+                                        WHEN duplicate_object THEN null;
+                            END $$;`
+
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+                                      id BIGSERIAL PRIMARY KEY,
+									  wh_upload_id BIGSERIAL NOT NULL,
+									  table_name VARCHAR(64),
+									  status wh_upload_state_type NOT NULL,
+									  error VARCHAR(64),
+									  last_exec_time TIMESTAMP,
+									  created_at TIMESTAMP NOT NULL,
+									  updated_at TIMESTAMP NOT NULL);`, warehouseTableUploadsTable)
+
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+
 	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 									  id BIGSERIAL PRIMARY KEY,
 									  wh_upload_id BIGSERIAL,
@@ -1598,11 +1685,9 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func startWebHandler() {
-
 	http.HandleFunc("/v1/process", processHandler)
 	backendconfig.WaitForConfig()
 	logger.Infof("Starting in %d", webPort)
-
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
