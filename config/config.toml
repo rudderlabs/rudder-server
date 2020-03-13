@@ -127,7 +127,7 @@ retrySleepInMS = 100
 
 [BackendConfig]
 configFromFile = false
-configJSONPath = "/data/rudderstack/workspaceConfig.json"
+configJSONPath = "/etc/rudderstack/workspaceConfig.json"
 pollIntervalInS = 5
 
 
