@@ -399,7 +399,6 @@ func (wh *HandleT) mainLoop() {
 
 			// fetch any pending wh_uploads records (query for not successful/aborted uploads)
 			pendingUploads, ok := wh.getPendingUploads(warehouse)
-			ok = false
 			if ok {
 				logger.Infof("WH: Found pending uploads: %v for %s:%s", len(pendingUploads), wh.destType, warehouse.Destination.ID)
 				jobs := []ProcessStagingFilesJobT{}
@@ -483,30 +482,9 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 
 	wg := misc.NewWaitGroup()
 	wg.Add(len(job.List))
-	// ch := make(chan []int64)
-	// queue the staging files in a go routine so that job.List can be higher than number of workers in createLoadFilesQ and not be blocked
 	logger.Debugf("WH: Starting batch processing %v stage files with %v workers for %s:%s", len(job.List), noOfWorkers, wh.destType, job.Warehouse.Destination.ID)
-	// tableToBucketFolderMap := map[string]string{}
-	// var tableToBucketFolderMapLock sync.RWMutex
-	// rruntime.Go(func() {
-	// 	func() {
-	// 		for _, stagingFile := range job.List {
-	// 			wh.createLoadFilesQ <- LoadFileJobT{
-	// 				Upload:                     job.Upload,
-	// 				StagingFile:                stagingFile,
-	// 				Schema:                     job.Upload.Schema,
-	// 				Warehouse:                  job.Warehouse,
-	// 				Wg:                         wg,
-	// 				LoadFileIDsChan:            ch,
-	// 				TableToBucketFolderMap:     tableToBucketFolderMap,
-	// 				TableToBucketFolderMapLock: &tableToBucketFolderMapLock,
-	// 			}
-	// 		}
-	// 	}()
-	// })
 	var messages []pgnotifier.MessageT
 	for _, stagingFile := range job.List {
-
 		payload := PayloadT{
 			UploadID:            job.Upload.ID,
 			StagingFileID:       stagingFile.ID,
@@ -535,7 +513,8 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 
 	responses := <-ch
 	for _, resp := range responses {
-		if resp.Status == "failed" {
+		// TODO: make it aborted
+		if resp.Status == "aborted" {
 			continue
 		}
 		var payload map[string]interface{}
@@ -554,33 +533,6 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 		loadFileIDs = append(loadFileIDs, ids...)
 	}
 
-	// waitChan := make(chan error)
-	// rruntime.Go(func() {
-	// 	func() {
-	// 		err = wg.Wait()
-	// 		waitChan <- err
-	// 	}()
-	// })
-	// count := 0
-	// waitForLoadFiles:
-	// 	for {
-	// 		select {
-	// 		case ids := <-ch:
-	// 			loadFileIDs = append(loadFileIDs, ids...)
-	// 			count++
-	// 			logger.Debugf("WH: Processed %v staging files in batch of %v for %s:%s", count, len(job.List), wh.destType, job.Warehouse.Destination.ID)
-	// 			logger.Debugf("WH: Received load files with ids: %v for %s:%s", loadFileIDs, wh.destType, job.Warehouse.Destination.ID)
-	// 			if count == len(job.List) {
-	// 				break waitForLoadFiles
-	// 			}
-	// 		case err = <-waitChan:
-	// 			if err != nil {
-	// 				logger.Errorf("WH: Discontinuing processing of staging files for %s:%s due to error: %v", wh.destType, job.Warehouse.Destination.ID, err)
-	// 				break waitForLoadFiles
-	// 			}
-	// 		}
-	// 	}
-	// 	close(ch)
 	timer.End()
 	if err != nil {
 		warehouseutils.SetStagingFilesError(jsonIDs, warehouseutils.StagingFileFailedState, wh.dbHandle, err)
@@ -1097,7 +1049,7 @@ func (wh *HandleT) Setup(whType string) {
 	// }
 	wh.dbHandle = dbHandle
 	wh.notifier = notifier
-	wh.setupTables()
+	// wh.setupTables()
 	wh.destType = whType
 	wh.setInterruptedDestinations()
 	wh.Enable()
@@ -1112,30 +1064,32 @@ func (wh *HandleT) Setup(whType string) {
 	rruntime.Go(func() {
 		wh.initWorkers()
 	})
-	rruntime.Go(func() {
-		ch, err := wh.notifier.Subscribe("process_staging_file")
-		if err != nil {
-			panic(err)
-		}
-		for {
-			event := <-ch
-			ch, claimed := wh.notifier.Claim(event.ID)
-			if claimed {
-				var payload PayloadT
-				json.Unmarshal(event.Data, &payload)
-				payload.BatchID = event.BatchID
-				ids, err := wh.processStagingFile2(payload)
-				payload.LoadFileIDs = ids
-				output, err := json.Marshal(payload)
-				response := pgnotifier.ClaimResponseT{
-					Err:     err,
-					Payload: output,
-				}
-				ch <- response
+	for index := 0; index < 3; index++ {
+		rruntime.Go(func() {
+			ch, err := wh.notifier.Subscribe("process_staging_file")
+			if err != nil {
+				panic(err)
 			}
-		}
+			for {
+				event := <-ch
+				claimChan, claimed := wh.notifier.Claim(event.ID)
+				if claimed {
+					var payload PayloadT
+					json.Unmarshal(event.Data, &payload)
+					payload.BatchID = event.BatchID
+					ids, err := wh.processStagingFile2(payload)
+					payload.LoadFileIDs = ids
+					output, err := json.Marshal(payload)
+					response := pgnotifier.ClaimResponseT{
+						Err:     err,
+						Payload: output,
+					}
+					claimChan <- response
+				}
+			}
 
-	})
+		})
+	}
 	rruntime.Go(func() {
 		wh.mainLoop()
 	})
