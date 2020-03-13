@@ -13,7 +13,7 @@ The client SDKs are in a separate repo (link below).
 
 Rudder server is released under [AGPLv3 License][AGPLv3_License]
 
-Questions? Read our [Docs[[Docs] Join our [Discord][Discord] channel. Or please email soumyadeb at rudderlabs.com.
+Questions? Read our [Docs][Docs] OR join our [Discord][Discord] channel. Or please email soumyadeb at rudderlabs.com.
 
 # Why RudderStack ?
 
