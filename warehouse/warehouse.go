@@ -1064,6 +1064,7 @@ func (wh *HandleT) Setup(whType string) {
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
 
 	if config.GetString(config.WarehouseMode, "") == MasterMode || config.GetString(config.WarehouseMode, "") == MasterSlaveMode {
+
 		rruntime.Go(func() {
 			wh.backendConfigSubscriber()
 		})
@@ -1553,6 +1554,9 @@ func setupTables(dbHandle *sql.DB) {
 func processHandler(w http.ResponseWriter, r *http.Request) {
 	logger.LogRequest(r)
 
+	// body, err := ioutil.ReadAll(r.Body)
+	// r.Body.Close()
+
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		log.Printf("Error reading body: %v", err)
@@ -1578,6 +1582,19 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
+
+	// req := webRequestT{request: r, writer: &w, done: done, reqType: reqType}
+	// gateway.webRequestQ <- &req
+	// //Wait for batcher process to be done
+	// errorMessage := <-done
+	// atomic.AddUint64(&gateway.ackCount, 1)
+	// if errorMessage != "" {
+	// 	logger.Debug(errorMessage)
+	// 	http.Error(w, errorMessage, 400)
+	// } else {
+	// 	logger.Debug(getStatus(Ok))
+	// 	w.Write([]byte(getStatus(Ok)))
+	// }
 }
 
 func startWebHandler() {
@@ -1585,6 +1602,7 @@ func startWebHandler() {
 	http.HandleFunc("/v1/process", processHandler)
 	backendconfig.WaitForConfig()
 	logger.Infof("Starting in %d", webPort)
+
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
