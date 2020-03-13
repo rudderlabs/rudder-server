@@ -13,7 +13,7 @@ The client SDKs are in a separate repo (link below).
 
 Rudder server is released under [AGPLv3 License][AGPLv3_License]
 
-Questions? Join our [Discord][Discord] channel. Or please email soumyadeb at rudderlabs.com.
+Questions? Read our [Docs[[Docs] Join our [Discord][Discord] channel. Or please email soumyadeb at rudderlabs.com.
 
 # Why RudderStack ?
 
@@ -220,6 +220,7 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 [Build Status]: https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master
 [Release]: https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver
 [Discord]: https://discordapp.com/invite/xNEdEGw
+[Docs]: https://docs.rudderstack.com/
 [Twitter]: https://twitter.com/rudderstack
 [GoReportCard]: https://goreportcard.com/report/github.com/rudderlabs/rudder-server
 [GoReportCardBadge]: https://goreportcard.com/badge/github.com/rudderlabs/rudder-server
