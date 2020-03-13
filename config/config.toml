@@ -28,10 +28,10 @@
 # RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH="./workspaceConfig.json"
 #
 # Eg 5:
-# [Logger]
-# consoleJsonFormat=false
+# [JobsDB]
+# enableBackup=false
 #
-# RSERVER_LOGGER_CONSOLE_JSON_FORMAT=false
+# RSERVER_JOBS_DBENABLE_BACKUP=true
 #
 
 
