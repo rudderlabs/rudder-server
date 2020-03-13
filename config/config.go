@@ -16,8 +16,7 @@ import (
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
 const (
-	IsRouter      = "isRouter"
-	WarehouseMode = "warehouseMode"
+	WarehouseMode = "Warehouse.mode"
 )
 
 func transformKey(s string) string {

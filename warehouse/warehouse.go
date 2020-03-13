@@ -65,6 +65,13 @@ var (
 	warehouseSchemasTable      string
 )
 
+// warehouses worker modes
+const (
+	MasterMode      = "master"
+	SlaveMode       = "slave"
+	MasterSlaveMode = "master_slave"
+)
+
 type HandleT struct {
 	destType           string
 	warehouses         []warehouseutils.WarehouseT
@@ -1107,51 +1114,55 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
-	rruntime.Go(func() {
-		wh.backendConfigSubscriber()
-	})
-	rruntime.Go(func() {
-		wh.initUploaders()
-	})
-	rruntime.Go(func() {
-		wh.initWorkers()
-	})
-	for index := 0; index < 3; index++ {
+	if config.GetString(config.WarehouseMode, "") == MasterMode || config.GetString(config.WarehouseMode, "") == MasterSlaveMode {
+
 		rruntime.Go(func() {
-			ch, err := wh.notifier.Subscribe("process_staging_file")
-			if err != nil {
-				panic(err)
-			}
-			for {
-				event := <-ch
-				claimChan, claimed := wh.notifier.Claim(event.ID)
-				if claimed {
-					var payload PayloadT
-					json.Unmarshal(event.Data, &payload)
-					payload.BatchID = event.BatchID
-					ids, err := wh.processStagingFile2(payload)
-					if err != nil {
+			wh.backendConfigSubscriber()
+		})
+		rruntime.Go(func() {
+			wh.initUploaders()
+		})
+
+		rruntime.Go(func() {
+			wh.initWorkers()
+		})
+		rruntime.Go(func() {
+			wh.mainLoop()
+		})
+	}
+	if config.GetString(config.WarehouseMode, "") == SlaveMode || config.GetString(config.WarehouseMode, "") == MasterSlaveMode {
+		for index := 0; index < 3; index++ {
+			rruntime.Go(func() {
+				ch, err := wh.notifier.Subscribe("process_staging_file")
+				if err != nil {
+					panic(err)
+				}
+				for {
+					event := <-ch
+					claimChan, claimed := wh.notifier.Claim(event.ID)
+					if claimed {
+						var payload PayloadT
+						json.Unmarshal(event.Data, &payload)
+						payload.BatchID = event.BatchID
+						ids, err := wh.processStagingFile2(payload)
+						if err != nil {
+							response := pgnotifier.ClaimResponseT{
+								Err: err,
+							}
+							claimChan <- response
+						}
+						payload.LoadFileIDs = ids
+						output, err := json.Marshal(payload)
 						response := pgnotifier.ClaimResponseT{
-							Err: err,
+							Err:     err,
+							Payload: output,
 						}
 						claimChan <- response
 					}
-					payload.LoadFileIDs = ids
-					output, err := json.Marshal(payload)
-					response := pgnotifier.ClaimResponseT{
-						Err:     err,
-						Payload: output,
-					}
-					claimChan <- response
 				}
-			}
-
-		})
+			})
+		}
 	}
-	rruntime.Go(func() {
-		wh.mainLoop()
-	})
-
 }
 
 func (wh *HandleT) processStagingFile2(job PayloadT) (loadFileIDs []int64, err error) {
@@ -1674,29 +1685,10 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func startWebHandler() {
-
-	// http.HandleFunc("/v1/batch", stat(gateway.webBatchHandler))
-	// http.HandleFunc("/v1/identify", stat(gateway.webIdentifyHandler))
-	// http.HandleFunc("/v1/track", stat(gateway.webTrackHandler))
-	// http.HandleFunc("/v1/page", stat(gateway.webPageHandler))
-	// http.HandleFunc("/v1/screen", stat(gateway.webScreenHandler))
-	// http.HandleFunc("/v1/alias", stat(gateway.webAliasHandler))
-	// http.HandleFunc("/v1/group", stat(gateway.webGroupHandler))
-	// http.HandleFunc("/health", gateway.healthHandler)
-
 	http.HandleFunc("/v1/process", processHandler)
-
 	backendconfig.WaitForConfig()
-
-	// c := cors.New(cors.Options{
-	// 	AllowOriginFunc:  reflectOrigin,
-	// 	AllowCredentials: true,
-	// 	AllowedHeaders:   []string{"*"},
-	// })
-
-	logger.Infof("Starting in %d", 8082)
-
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(8082), bugsnag.Handler(nil)))
+	logger.Infof("Starting in %d", webPort)
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
 func Start() {
@@ -1712,19 +1704,15 @@ func Start() {
 	if err != nil {
 		panic(err)
 	}
-	err = notifier.AddTopic("process_staging_file")
-	if err != nil {
-		panic(err)
+	if config.GetString(config.WarehouseMode, "") == MasterMode || config.GetString(config.WarehouseMode, "") == MasterSlaveMode {
+		err = notifier.AddTopic("process_staging_file")
+		if err != nil {
+			panic(err)
+		}
+		go monitorDestRouters()
+		startWebHandler()
 	}
-	go monitorDestRouters()
-	startWebHandler()
-	// wh.destType = whType
-	// wh.setInterruptedDestinations()
-	// wh.Enable()
-	// wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
-	// wh.createLoadFilesQ = make(chan LoadFileJobT)
-	// go wh.backendConfigSubscriber()
-	// go wh.initUploaders()
-	// go wh.initWorkers()
-	// go wh.mainLoop()
+	if config.GetString(config.WarehouseMode, "") == SlaveMode || config.GetString(config.WarehouseMode, "") == MasterSlaveMode {
+		monitorDestRouters()
+	}
 }

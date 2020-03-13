@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/rruntime"
+
 	"net/http"
 	"os"
 	"os/signal"
@@ -42,6 +44,8 @@ var (
 	configSubscriberLock                        sync.RWMutex
 	objectStorageDestinations                   []string
 	warehouseDestinations                       []string
+	warehouseMode                               string
+	startRouterWithWarehouse                    bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -57,6 +61,9 @@ func loadConfig() {
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
+	warehouseMode = config.GetString("Warehouse.mode", "")
+	startRouterWithWarehouse = config.GetBool("Warehouse.startRouter", false)
+
 }
 
 // Test Function
@@ -226,10 +233,6 @@ func main() {
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 
-	isWarehouseService := flag.Bool("warehouse", false, "Indicates to start it as a warehouse service")
-	warehouseMode := flag.String("warehouse-mode", "master_slave", "Indicates to start it as a warehouse service")
-	isRouter := flag.Bool("router", true, "value")
-
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
@@ -240,8 +243,6 @@ func main() {
 	versionFlag := flag.Bool("v", false, "Print the current version and exit")
 
 	flag.Parse()
-	config.SetString(config.WarehouseMode, *warehouseMode)
-	config.SetBool(config.IsRouter, *isRouter)
 	if *versionFlag {
 		printVersion()
 		return
@@ -291,16 +292,25 @@ func main() {
 		os.Exit(1)
 	}()
 
-	// if *isRouter {
-	// 	rruntime.Go(func() {
-	// 		startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
-	// 	})
-	// }
-
-	if *isWarehouseService {
+	// default mode, starts rudderCore and warehouse
+	if warehouseMode == "" {
+		config.SetString(config.WarehouseMode, warehouse.MasterSlaveMode)
 		fmt.Println("Starting as Warehouse Service...")
+		rruntime.Go(func() {
+			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+		})
 		startWarehouseService()
-	} else {
-		startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
 	}
+	if warehouseMode != "" {
+		if startRouterWithWarehouse {
+			fmt.Println("Starting as Warehouse Service...")
+			rruntime.Go(func() {
+				startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+			})
+			startWarehouseService()
+		} else {
+			startWarehouseService()
+		}
+	}
+
 }
