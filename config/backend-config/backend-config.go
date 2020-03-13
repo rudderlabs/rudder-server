@@ -191,7 +191,11 @@ func Subscribe(channel chan utils.DataEvent, topic string) {
 	curSourceJSONLock.RLock()
 	filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
 
-	Eb.PublishToChannel(channel, topic, filteredSourcesJSON)
+	if topic == "processConfig" {
+		Eb.PublishToChannel(channel, topic, filteredSourcesJSON)
+	} else if topic == "backendConfig" {
+		Eb.PublishToChannel(channel, topic, curSourceJSON)
+	}
 	curSourceJSONLock.RUnlock()
 }
 
