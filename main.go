@@ -228,9 +228,9 @@ func main() {
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 
-	isWarehouseService := flag.Bool("warehouse", false, "Indicates to start it as a warehouse service")
-	warehouseMode := flag.String("warehouse-mode", "master_slave", "Indicates to start it as a warehouse service")
-	isRouter := flag.Bool("router", true, "value")
+	//isWarehouseService := flag.Bool("warehouse", false, "Indicates to start it as a warehouse service")
+	warehouseMode := flag.String("warehouse-mode", "", "Indicates to start it as a warehouse service")
+	startCore := flag.String("start-core", "", "value")
 
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
@@ -243,7 +243,7 @@ func main() {
 
 	flag.Parse()
 	config.SetString(config.WarehouseMode, *warehouseMode)
-	config.SetBool(config.IsRouter, *isRouter)
+	config.SetString(config.StartCore, *startCore)
 	if *versionFlag {
 		printVersion()
 		return
@@ -293,16 +293,28 @@ func main() {
 		os.Exit(1)
 	}()
 
-	if *isRouter {
+	// default mode, starts only rudderCore
+	if *startCore == "" && *warehouseMode == "" {
+		config.SetString(config.WarehouseMode, warehouse.MasterSlaveMode)
+		fmt.Println("Starting as Warehouse Service...")
 		rruntime.Go(func() {
 			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
 		})
+		startWarehouseService()
 	}
-
-	if *isWarehouseService {
+	if *startCore != "true" && *warehouseMode != "" {
 		fmt.Println("Starting as Warehouse Service...")
 		startWarehouseService()
-	} else {
+	}
+	if *startCore == "true" && *warehouseMode != "" {
+		fmt.Println("Starting as Warehouse Service...")
+		rruntime.Go(func() {
+			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+		})
+		startWarehouseService()
+	}
+	if *startCore == "true" && *warehouseMode == "" {
 		startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
 	}
+
 }

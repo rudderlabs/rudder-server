@@ -63,6 +63,13 @@ var (
 	warehouseSchemasTable      string
 )
 
+// warehouses worker modes
+const (
+	MasterMode      = "master"
+	SlaveMode       = "slave"
+	MasterSlaveMode = "master_slave"
+)
+
 type HandleT struct {
 	destType           string
 	warehouses         []warehouseutils.WarehouseT
@@ -1055,45 +1062,51 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
-	rruntime.Go(func() {
-		wh.backendConfigSubscriber()
-	})
-	rruntime.Go(func() {
-		wh.initUploaders()
-	})
-	rruntime.Go(func() {
-		wh.initWorkers()
-	})
-	for index := 0; index < 3; index++ {
-		rruntime.Go(func() {
-			ch, err := wh.notifier.Subscribe("process_staging_file")
-			if err != nil {
-				panic(err)
-			}
-			for {
-				event := <-ch
-				claimChan, claimed := wh.notifier.Claim(event.ID)
-				if claimed {
-					var payload PayloadT
-					json.Unmarshal(event.Data, &payload)
-					payload.BatchID = event.BatchID
-					ids, err := wh.processStagingFile2(payload)
-					payload.LoadFileIDs = ids
-					output, err := json.Marshal(payload)
-					response := pgnotifier.ClaimResponseT{
-						Err:     err,
-						Payload: output,
-					}
-					claimChan <- response
-				}
-			}
 
+	if config.GetString(config.WarehouseMode, "") == MasterMode || config.GetString(config.WarehouseMode, "") == MasterSlaveMode {
+		rruntime.Go(func() {
+			wh.backendConfigSubscriber()
+		})
+		rruntime.Go(func() {
+			wh.initUploaders()
+		})
+
+		rruntime.Go(func() {
+			wh.initWorkers()
+		})
+		rruntime.Go(func() {
+			wh.mainLoop()
 		})
 	}
-	rruntime.Go(func() {
-		wh.mainLoop()
-	})
 
+	if config.GetString(config.WarehouseMode, "") == SlaveMode || config.GetString(config.WarehouseMode, "") == MasterSlaveMode {
+		for index := 0; index < 3; index++ {
+			rruntime.Go(func() {
+				ch, err := wh.notifier.Subscribe("process_staging_file")
+				if err != nil {
+					panic(err)
+				}
+				for {
+					event := <-ch
+					claimChan, claimed := wh.notifier.Claim(event.ID)
+					if claimed {
+						var payload PayloadT
+						json.Unmarshal(event.Data, &payload)
+						payload.BatchID = event.BatchID
+						ids, err := wh.processStagingFile2(payload)
+						payload.LoadFileIDs = ids
+						output, err := json.Marshal(payload)
+						response := pgnotifier.ClaimResponseT{
+							Err:     err,
+							Payload: output,
+						}
+						claimChan <- response
+					}
+				}
+
+			})
+		}
+	}
 }
 
 func (wh *HandleT) processStagingFile2(job PayloadT) (loadFileIDs []int64, err error) {
@@ -1626,8 +1639,13 @@ func Start() {
 	if err != nil {
 		panic(err)
 	}
-	go monitorDestRouters()
-	startWebHandler()
+	if config.GetString(config.WarehouseMode, "") == MasterMode || config.GetString(config.WarehouseMode, "") == MasterSlaveMode {
+		go monitorDestRouters()
+		startWebHandler()
+	}
+	if config.GetString(config.WarehouseMode, "") == SlaveMode || config.GetString(config.WarehouseMode, "") == MasterSlaveMode {
+		monitorDestRouters()
+	}
 	// wh.destType = whType
 	// wh.setInterruptedDestinations()
 	// wh.Enable()

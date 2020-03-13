@@ -16,7 +16,7 @@ import (
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
 const (
-	IsRouter      = "isRouter"
+	StartCore     = "startCore"
 	WarehouseMode = "warehouseMode"
 )
 
