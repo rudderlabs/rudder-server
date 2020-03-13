@@ -11,7 +11,7 @@
 RudderStack runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation code which are node scripts. This repo contains the core backend and the transformation modules of Rudder.
 The client SDKs are in a separate repo (link below).
 
-Rudder server is released under [SSPL License][SSPL_License]
+Rudder server is released under [AGPLv3 License][AGPLv3_License]
 
 Questions? Join our [Discord][Discord] channel. Or please email soumyadeb at rudderlabs.com.
 
@@ -27,9 +27,17 @@ We are building RudderStack because we believe open-source and cloud-prem is imp
 
 See the [HackerNews][HackerNews] discussion around RudderStack.
 
-# Is RudderStack Production Ready?
+# Features
 
-Yes, multiple companies are running RudderStack in production. One of our largest installations (Grofers, the largest online grocery in India) is sending a peak of 40K req/sec via a multi-node RudderStack setup.
+1. Production Ready: Multiple companies from startups to large engerprieses are running RudderStack for collecting events. 
+2. Extreme Scale: One of our largest installations (the largest online grocery in India) is sending a peak of 40K req/sec via a multi-node RudderStack setup.
+3. Segment API and library compatible.
+4. Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations. 
+5. S3, Minio, Redshift, Snowflake, Google BigQuery support.
+6. User-specified transformation to filter/transform events.
+7. Rich UI written in react.
+8. [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkAndroidGitRepo] and server-side SDKs.
+
 
 # Contribution
 We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](CONTRIBUTING.md) for more information on contributing to RudderStack.
@@ -48,6 +56,7 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 ## Events Page
 ![image](https://user-images.githubusercontent.com/52487451/65647230-e2937c80-dfb2-11e9-88bd-3b015c4b576f.png)
 
+***
 
 # Setup Instructions (Hosted Demo Account)
 
@@ -55,11 +64,15 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 2. Select `RudderStack Hosted Service` from the top right corner after you login.
 3. Follow (Send Test Events) instructions below to send test event.
 
+***
+
 # Setup Instructions (Docker)
 
 The docker setup is the easiest & fastest way to try out RudderStack.
 
 1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page. 
+
+    (Note) Instead of our full featured hosted UI, you can also use the open-source [config-generator-UI][ConfigGeneratorSection] to create the source & destination configs and pass it to RudderStack.
 
 2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
 
@@ -70,12 +83,15 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 5. Run the command `docker-compose up --build` to bring up all the services.
 6. Follow (Send Test Events) instructions below to send test event.
 
+***
+
 # Setup Instructions (Kubernetes)
 
 1. Go to the [dashboard][Dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page. 
 
 2. Our helm scripts and instructions are in a separate repo - [Download Here][HelmScriptsGitRepo]
 
+***
 
 # Setup Instructions (Native Installation)
 
@@ -86,10 +102,10 @@ Disclaimer: This is not the easiest way of installing RudderStack.  Please use t
 3. Install PostgreSQL 10 or above and set up the DB
 
 ```
-createdb jobsdb
-createuser --superuser rudder
-psql "jobsdb" -c "alter user rudder with encrypted password 'rudder'";
-psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
+psql -c "CREATE DATABASE jobsdb"
+psql -c "CREATE USER rudder SUPERUSER"
+psql "jobsdb" -c "ALTER USER rudder WITH ENCRYPTED PASSWORD 'rudder'";
+psql "jobsdb" -c "GRANT ALL PRIVILEGES ON DATABASE jobsdb to rudder";
 ```
 
 4. Go to the [dashboard][Dashboard] and set up your account. Copy your workspace token from top of the home page
@@ -101,6 +117,8 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 9. Run the backend server `go run -mod=vendor main.go`
 10. Follow (Send Test Events) instructions below to send test event.
 
+***
+
 # Send Test Events
 
 1. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID. The Google Analytics account needs to have a **Web** Property (**Web+App** does't seem to work)
@@ -109,22 +127,46 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 4. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
 5. You can use our [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkIOSGitRepo] SDKs for sending events from your app.
 
-# Open-Source Config Generator
+***
 
-Instead of our hosted UI, you can also use the open-source [Config Generator][ConfigGenerator] to generate the source & destination configs and pass it to RudderStack. 
+# RudderStack Config Generator
 
-## Features
+Rudderstack has two components _control plane_ and _data plane_.
+Data plane reliably delivers your event data. Control plane manages the configuration of your sources and destinations.
+This configuration can also be read from a file instead of from Control plane, if you don't want to use our hosted control plane. 
 
-1. Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer & Facebook destinations. Lot more coming soon.
-2. S3 dump. Redshift and other data warehouses coming soon.
-3. User-specified transformation to filter/transform events.
-4. Stand-alone system. The only dependency is on Postgres.
-5. High performance. On a single m4.2xlarge, RudderStack can process ~3K events/sec. Performance numbers on other instance types soon.
-6. Rich UI written in react.
-7. [Javascript][RudderSdkJsGitRepo], [Android][RudderSdkAndroidGitRepo] or [iOS][RudderSdkAndroidGitRepo]. Server-side SDKs coming soon.
+Config-generator provides the UI to manage the source and destination configurations without needing to signup, etc.
+All the source and destination configuration stays on your local storage. You can export/import config to a JSON file.
 
+## Setup
 
-# Architecture
+1. Checkout the config-gen `git checkout -b config-gen`
+2. `cd utils/config-gen`
+3. `npm install`
+4. `npm start`
+
+RudderStack config generator starts on the default port i.e., http://localhost:3000.
+On a successful setup, you should see the following
+
+![image](https://blobscdn.gitbook.com/v0/b/gitbook-28427.appspot.com/o/assets%2F-Lq586FOQtfjJPKbd01W%2F-M0LidOVklHOkLYEulS4%2F-M0M3fzyrb-UHiNBG7j0%2FScreenshot%202020-02-18%20at%2012.20.57%20PM.png?alt=media&token=a3f24ad8-fe72-4fed-8953-8e4c790f6cfd)
+
+## Export workspace config
+
+After adding the required sources and destinations, export your workspace config. This workspace-config is required by the RudderStack Server.
+To learn more about adding sources and destinations in RudderStack, refer [Adding a Source and Destination in RudderStack](https://docs.rudderstack.com/getting-started/adding-source-and-destination-rudderstack)
+
+Update the [config](https://docs.rudderstack.com/administrators-guide/config-parameters) variables `configFromFile` and `configJSONPath` in rudder-server to read workspace config from the exported JSON file. 
+
+## Start RudderStack with the workspace config file
+
+* Download the workspace config file on your machine. 
+* In `docker-compose.yml`, uncomment `volumes` section under `backend` service. Specify the path to your workspace config.
+* In `build/docker.env`, set the environment variable `RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true` 
+* Run the command `docker-compose up --build` to bring up all the services.
+
+***
+
+# RudderStack Architecture
 
 The following is a brief overview of the major components of RudderStack.
 ![image](https://user-images.githubusercontent.com/52487451/64673994-471beb00-d48d-11e9-854f-2c3fbc021e63.jpg)
@@ -183,6 +225,7 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 [GoReportCardBadge]: https://goreportcard.com/badge/github.com/rudderlabs/rudder-server
 [SSH]: https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls
 [Dashboard]: https://app.rudderlabs.com
+[AGPLv3_License]: https://www.gnu.org/licenses/agpl-3.0-standalone.html
 [SSPL_License]: https://www.mongodb.com/licensing/server-side-public-license
 [HackerNews]: https://news.ycombinator.com/item?id=21081756
 [HelmScriptsGitRepo]: https://github.com/rudderlabs/rudderstack-helm
@@ -193,5 +236,4 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 [RudderSdkAndroidGitRepo]: https://github.com/rudderlabs/rudder-sdk-android
 [RudderSdkIOSGitRepo]: https://github.com/rudderlabs/rudder-sdk-ios
 [ConfigGenerator]: https://github.com/rudderlabs/config-generator
-[ConfigGeneratorSection]: https://github.com/rudderlabs/rudder-server/blob/master/README.md#open-source-config-generator
-
+[ConfigGeneratorSection]: https://github.com/rudderlabs/rudder-server/blob/master/README.md#rudderstack-config-generator
