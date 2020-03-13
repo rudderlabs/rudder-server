@@ -726,11 +726,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		configSubscriberLock.RUnlock()
 
 		url := integrations.GetDestinationURL(destType)
-		logger.Debug("Transform input size", len(destEventList))
 		var response ResponseT
 		var eventsToTransform []interface{}
 		// Send to custom transformer only if the destination has a transformer enabled
 		if transformationEnabled {
+			logger.Debug("Custom Transform input size", len(destEventList))
 			if processSessions {
 				// If processSessions is true, Transform should break into a new batch only when user changes.
 				// This way all the events of a user session are never broken into separate batches
@@ -752,6 +752,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			logger.Debug("No custom transformation")
 			eventsToTransform = destEventList
 		}
+		logger.Debug("Dest Transform input size", len(eventsToTransform))
 		destStat.destTransform.Start()
 		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 		destStat.destTransform.End()

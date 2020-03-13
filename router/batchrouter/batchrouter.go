@@ -86,7 +86,6 @@ type StorageUploadOutput struct {
 	Key            string
 	LocalFilePaths []string
 	Error          error
-	JournalOpID    int64
 }
 
 type ErrorResponseT struct {
@@ -191,14 +190,14 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 			DestinationType: batchJobs.BatchDestination.Destination.DestinationDefinition.Name,
 		})
 		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
+		defer brt.jobsDB.JournalDeleteEntry(opID)
 	}
 	_, err = uploader.Upload(outputFile, keyPrefixes...)
 
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to %s: Error: %v", provider, err)
 		return StorageUploadOutput{
-			Error:       err,
-			JournalOpID: opID,
+			Error: err,
 		}
 	}
 
@@ -206,7 +205,6 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		Config:         batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
 		Key:            strings.Join(keyPrefixes, "/") + "/" + fileName,
 		LocalFilePaths: []string{gzipFilePath},
-		JournalOpID:    opID,
 	}
 }
 
@@ -313,9 +311,6 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
 							brt.setJobStatus(batchJobs, false, output.Error)
-							if output.JournalOpID != 0 {
-								brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
-							}
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 							destUploadStat.End()
 							setDestInProgress(batchJobs.BatchDestination, false)
