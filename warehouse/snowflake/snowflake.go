@@ -163,6 +163,11 @@ func (sf *HandleT) load() (errList []error) {
 	counter := 0
 	for tableName, columnMap := range sf.Upload.Schema {
 		counter++
+		status, err := warehouseutils.GetTableUploadStatus(sf.Upload.ID, tableName, sf.DbHandle)
+		if status == warehouseutils.ExportedDataState {
+			logger.Infof("SF: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
+			continue
+		}
 		logger.Infof("SF: Starting load for %v table:%s\n", counter, tableName)
 		timer := warehouseutils.DestStat(stats.TimerType, "single_table_upload_time", sf.Warehouse.Destination.ID)
 		timer.Start()
@@ -179,10 +184,11 @@ func (sf *HandleT) load() (errList []error) {
 		sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s"."%s" LIKE "%s"."%s"`, sf.Namespace, stagingTableName, sf.Namespace, strings.ToUpper(tableName))
 
 		logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
-		_, err := sf.Db.Exec(sqlStatement)
+		_, err = sf.Db.Exec(sqlStatement)
 		if err != nil {
 			logger.Errorf("SF: Error creating temporary table: %v\n", err)
 			errList = append(errList, err)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
 			continue
 		}
 
@@ -200,6 +206,7 @@ func (sf *HandleT) load() (errList []error) {
 		if err != nil {
 			logger.Errorf("SF: Error running COPY command: %v\n", err)
 			errList = append(errList, err)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
 			continue
 		}
 
@@ -232,10 +239,12 @@ func (sf *HandleT) load() (errList []error) {
 		if err != nil {
 			logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
 			errList = append(errList, err)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
 			continue
 		}
 
 		timer.End()
+		warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, sf.Upload.ID, tableName, sf.DbHandle)
 		logger.Infof("SF: Complete load for table:%s\n", tableName)
 	}
 	logger.Infof("SF: Complete load for all tables\n")

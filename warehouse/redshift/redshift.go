@@ -231,12 +231,18 @@ func (rs *HandleT) load() (errList []error) {
 	stagingTableNames := []string{}
 
 	for tableName, columnMap := range rs.Upload.Schema {
+		status, err := warehouseutils.GetTableUploadStatus(rs.Upload.ID, tableName, rs.DbHandle)
+		if status == warehouseutils.ExportedDataState {
+			logger.Infof("RS: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
+			continue
+		}
 		timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
 		timer.Start()
 		manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap, accessKeyID, accessKey)
 		timer.End()
 		if err != nil {
 			errList = append(errList, err)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 			continue
 		}
 		logger.Infof("RS: Generated and stored manifest for table:%s at %s\n", tableName, manifestLocation)
@@ -254,6 +260,7 @@ func (rs *HandleT) load() (errList []error) {
 		err = rs.createTable(fmt.Sprintf(`%s."%s"`, rs.Namespace, stagingTableName), rs.Upload.Schema[tableName])
 		if err != nil {
 			errList = append(errList, err)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 			continue
 		}
 		defer rs.dropStagingTables([]string{stagingTableName})
@@ -269,6 +276,7 @@ func (rs *HandleT) load() (errList []error) {
 		tx, err := rs.Db.Begin()
 		if err != nil {
 			errList = append(errList, err)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 			continue
 		}
 
@@ -280,6 +288,7 @@ func (rs *HandleT) load() (errList []error) {
 			logger.Errorf("RS: Error running COPY command: %v\n", err)
 			tx.Rollback()
 			errList = append(errList, err)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 			continue
 		}
 
@@ -295,6 +304,7 @@ func (rs *HandleT) load() (errList []error) {
 			logger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
 			tx.Rollback()
 			errList = append(errList, err)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 			continue
 		}
 
@@ -314,6 +324,7 @@ func (rs *HandleT) load() (errList []error) {
 			logger.Errorf("RS: Error inserting into original table: %v\n", err)
 			tx.Rollback()
 			errList = append(errList, err)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 			continue
 		}
 
@@ -322,8 +333,10 @@ func (rs *HandleT) load() (errList []error) {
 			logger.Errorf("RS: Error in transaction commit: %v\n", err)
 			tx.Rollback()
 			errList = append(errList, err)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 			continue
 		}
+		warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, rs.Upload.ID, tableName, rs.DbHandle)
 	}
 	return
 }

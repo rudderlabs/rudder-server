@@ -461,6 +461,14 @@ func StringKeys(input interface{}) []string {
 	return stringKeys
 }
 
+func MapStringKeys(input map[string]interface{}) []string {
+	keys := make([]string, 0, len(input))
+	for k := range input {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func TruncateStr(str string, limit int) string {
 	if len(str) > limit {
 		str = str[:limit]

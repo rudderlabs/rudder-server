@@ -6,8 +6,6 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/rruntime"
-
 	"net/http"
 	"os"
 	"os/signal"
@@ -293,11 +291,11 @@ func main() {
 		os.Exit(1)
 	}()
 
-	if *isRouter {
-		rruntime.Go(func() {
-			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
-		})
-	}
+	// if *isRouter {
+	// 	rruntime.Go(func() {
+	// 		startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+	// 	})
+	// }
 
 	if *isWarehouseService {
 		fmt.Println("Starting as Warehouse Service...")

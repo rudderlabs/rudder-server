@@ -39,6 +39,7 @@ const (
 
 var (
 	warehouseUploadsTable      string
+	warehouseTableUploadsTable string
 	warehouseSchemasTable      string
 	warehouseLoadFilesTable    string
 	warehouseStagingFilesTable string
@@ -58,6 +59,7 @@ func init() {
 
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
+	warehouseTableUploadsTable = config.GetString("Warehouse.tableUploadsTable", "wh_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
 	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
@@ -233,6 +235,31 @@ func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusEr
 	if err != nil {
 		panic(err)
 	}
+	return
+}
+
+func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHandle *sql.DB) (err error) {
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, last_exec_time=$2 WHERE wh_upload_id=$3 AND table_name=$4`, warehouseTableUploadsTable)
+	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), uploadID, tableName)
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+func SetTableUploadError(status string, uploadID int64, tableName string, statusError error, dbHandle *sql.DB) (err error) {
+	logger.Errorf("WH: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, error=$3 WHERE wh_upload_id=$4 AND table_name=$5`, warehouseTableUploadsTable)
+	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), statusError.Error(), uploadID, tableName)
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+func GetTableUploadStatus(uploadID int64, tableName string, dbHandle *sql.DB) (status string, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseTableUploadsTable, uploadID, tableName)
+	err = dbHandle.QueryRow(sqlStatement).Scan(&status)
 	return
 }
 

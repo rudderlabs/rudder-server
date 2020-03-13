@@ -171,6 +171,12 @@ func (bq *HandleT) load() (err error) {
 	for tName := range bq.Upload.Schema {
 		rruntime.Go(func() {
 			func(tableName string) {
+				uploadStatus, err := warehouseutils.GetTableUploadStatus(bq.Upload.ID, tableName, bq.DbHandle)
+				if uploadStatus == warehouseutils.ExportedDataState {
+					logger.Infof("SF: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
+					wg.Done()
+					return
+				}
 				locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
 				if err != nil {
 					panic(err)
@@ -187,21 +193,25 @@ func (bq *HandleT) load() (err error) {
 				job, err := loader.Run(bq.BQContext)
 				if err != nil {
 					logger.Errorf("BQ: Error initiating load job: %v\n", err)
+					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
 					wg.Err(err)
 					return
 				}
 				status, err := job.Wait(bq.BQContext)
 				if err != nil {
 					logger.Errorf("BQ: Error running load job: %v\n", err)
+					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
 					wg.Err(err)
 					return
 				}
 
 				if status.Err() != nil {
+					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
 					wg.Err(err)
 					return
 				}
 				wg.Done()
+				warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, bq.Upload.ID, tableName, bq.DbHandle)
 			}(tName)
 		})
 	}
