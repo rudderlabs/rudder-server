@@ -64,6 +64,10 @@ var (
 	warehouseSchemasTable      string
 	warehouseMode              string
 )
+var (
+	host, user, password, dbname string
+	port                         int
+)
 
 // warehouses worker modes
 const (
@@ -134,6 +138,11 @@ func loadConfig() {
 	inRecoveryMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
+	host = config.GetEnv("WAREHOUSE_JOBS_DB_HOST", "localhost")
+	user = config.GetEnv("WAREHOUSE_JOBS_DB_USER", "ubuntu")
+	dbname = config.GetEnv("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
+	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
+	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
@@ -1355,6 +1364,15 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func getConnectionString() string {
+	if warehouseMode == config.EmbeddedMode {
+		return jobsdb.GetConnectionString()
+	}
+	return fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+}
+
 func startWebHandler() {
 	http.HandleFunc("/v1/process", processHandler)
 	backendconfig.WaitForConfig()
@@ -1395,17 +1413,17 @@ func setupSlave() {
 }
 
 func isMaster() bool {
-	return warehouseMode == MasterMode || warehouseMode == MasterSlaveMode || warehouseMode == EmbeddedMode
+	return warehouseMode == config.MasteMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
 }
 
 func isSlave() bool {
-	return warehouseMode == SlaveMode || warehouseMode == MasterSlaveMode || warehouseMode == EmbeddedMode
+	return warehouseMode == config.SlaveMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
 }
 
 func Start() {
 	logger.Infof("WH: Starting Warehouse service...")
 	var err error
-	psqlInfo := jobsdb.GetConnectionString()
+	psqlInfo := getConnectionString()
 	dbHandle, err = sql.Open("postgres", psqlInfo)
 	if err != nil {
 		panic(err)

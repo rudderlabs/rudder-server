@@ -201,11 +201,11 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 }
 
 func canStartServer() bool {
-	return warehouseMode == "embedded" || warehouseMode == "off"
+	return warehouseMode == config.EmbeddedMode || warehouseMode == config.OffMode
 }
 
 func canStartWarehouse() bool {
-	return warehouseMode != "off"
+	return warehouseMode != config.OffMode
 }
 
 func main() {
