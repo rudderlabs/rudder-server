@@ -243,7 +243,7 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 		10*time.Second,
 		time.Minute,
 		func(ev pq.ListenerEventType, err error) {
-			logger.Infof("PgNotifier: Event received in pq listener %v", ev)
+			logger.Debugf("PgNotifier: Event received in pq listener %v", ev)
 			if err != nil {
 				logger.Errorf("PgNotifier: Error in pq listener for event type: %v %v ", ev, err)
 			}

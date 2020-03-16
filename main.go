@@ -6,8 +6,6 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/rruntime"
-
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,6 +24,7 @@ import (
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -61,7 +60,7 @@ func loadConfig() {
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
-	warehouseMode = config.GetString("Warehouse.mode", "")
+	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	startRouterWithWarehouse = config.GetBool("Warehouse.startRouter", false)
 
 }
@@ -201,6 +200,14 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
+func canStartServer() bool {
+	return warehouseMode == "embedded" || warehouseMode == "off"
+}
+
+func canStartWarehouse() bool {
+	return warehouseMode != "off"
+}
+
 func main() {
 	version := versionInfo()
 
@@ -292,25 +299,16 @@ func main() {
 		os.Exit(1)
 	}()
 
-	// default mode, starts rudderCore and warehouse
-	if warehouseMode == "" {
-		config.SetString(config.WarehouseMode, warehouse.MasterSlaveMode)
-		fmt.Println("Starting as Warehouse Service...")
+	if canStartWarehouse() {
+		rruntime.Go(func() {
+			startWarehouseService()
+		})
+	}
+
+	if canStartServer() {
 		rruntime.Go(func() {
 			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
 		})
-		startWarehouseService()
 	}
-	if warehouseMode != "" {
-		if startRouterWithWarehouse {
-			fmt.Println("Starting as Warehouse Service...")
-			rruntime.Go(func() {
-				startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
-			})
-			startWarehouseService()
-		} else {
-			startWarehouseService()
-		}
-	}
-
+	misc.KeepProcessAlive()
 }

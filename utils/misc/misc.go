@@ -560,3 +560,8 @@ func (w GZipWriter) CloseGZ() {
 	w.GzWriter.Close()
 	w.File.Close()
 }
+
+func KeepProcessAlive() {
+	var ch chan int
+	_ = <-ch
+}
