@@ -220,7 +220,7 @@ type replayT struct {
 
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch)
+	backendconfig.Subscribe(ch, "processConfig")
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -726,11 +726,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		configSubscriberLock.RUnlock()
 
 		url := integrations.GetDestinationURL(destType)
-		logger.Debug("Transform input size", len(destEventList))
 		var response ResponseT
 		var eventsToTransform []interface{}
 		// Send to custom transformer only if the destination has a transformer enabled
 		if transformationEnabled {
+			logger.Debug("Custom Transform input size", len(destEventList))
 			if processSessions {
 				// If processSessions is true, Transform should break into a new batch only when user changes.
 				// This way all the events of a user session are never broken into separate batches
@@ -744,12 +744,15 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, false)
 				destStat.userTransform.End()
 			}
-			eventsToTransform = response.Events
+			for _, userTransformedEvent := range response.Events {
+				eventsToTransform = append(eventsToTransform, userTransformedEvent.(map[string]interface{})["output"])
+			}
 			logger.Debug("Custom Transform output size", len(eventsToTransform))
 		} else {
 			logger.Debug("No custom transformation")
 			eventsToTransform = destEventList
 		}
+		logger.Debug("Dest Transform input size", len(eventsToTransform))
 		destStat.destTransform.Start()
 		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 		destStat.destTransform.End()

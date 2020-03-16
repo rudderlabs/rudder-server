@@ -1,0 +1,38 @@
+version: "3.7"
+
+services:
+  db:
+    image: postgres:11-alpine
+    environment:
+      - POSTGRES_USER=rudder
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=jobsdb
+    ports:
+      - "6432:5432"
+  backend:
+    depends_on:
+      - db
+      - d-transformer
+    image: rudderlabs/rudder-server:v0.1.9-rc.2
+    entrypoint: sh -c '/wait-for db:5432 -- /rudder-server'
+    ports:
+      - "8080:8080"
+    environment:
+      - JOBS_DB_HOST=db
+      - JOBS_DB_USER=rudder
+      - JOBS_DB_PORT=5432
+      - JOBS_DB_DB_NAME=jobsdb
+      - JOBS_DB_PASSWORD=password
+      - DEST_TRANSFORM_URL=http://d-transformer:9090
+      - CONFIG_BACKEND_URL=https://api.rudderlabs.com
+      - CONFIG_BACKEND_TOKEN=<your_workspace_token>
+      - CONFIG_PATH=/app/config/config.toml
+  d-transformer:
+    image: rudderlabs/rudder-transformer:v0.1.4
+    ports:
+      - "9090:9090"
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+    command: server /data

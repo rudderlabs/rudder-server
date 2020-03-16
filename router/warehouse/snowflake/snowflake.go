@@ -178,9 +178,10 @@ func (sf *HandleT) load() (errList []error) {
 		stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
 		sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s"."%s" LIKE "%s"."%s"`, sf.Namespace, stagingTableName, sf.Namespace, strings.ToUpper(tableName))
 
-		logger.Infof("SF: Creating staging table for table:%s at %s\n", tableName, sqlStatement)
+		logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 		_, err := sf.Db.Exec(sqlStatement)
 		if err != nil {
+			logger.Errorf("SF: Error creating temporary table: %v\n", err)
 			errList = append(errList, err)
 			continue
 		}
@@ -197,6 +198,7 @@ func (sf *HandleT) load() (errList []error) {
 		logger.Infof("SF: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
 		_, err = sf.Db.Exec(sqlStatement)
 		if err != nil {
+			logger.Errorf("SF: Error running COPY command: %v\n", err)
 			errList = append(errList, err)
 			continue
 		}
@@ -228,6 +230,7 @@ func (sf *HandleT) load() (errList []error) {
 		logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 		_, err = sf.Db.Exec(sqlStatement)
 		if err != nil {
+			logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
 			errList = append(errList, err)
 			continue
 		}

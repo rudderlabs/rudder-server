@@ -169,6 +169,7 @@ func (bq *HandleT) load() (err error) {
 	wg := misc.NewWaitGroup()
 	wg.Add(len(bq.Upload.Schema))
 	for tName := range bq.Upload.Schema {
+		t := tName
 		rruntime.Go(func() {
 			func(tableName string) {
 				locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
@@ -186,11 +187,13 @@ func (bq *HandleT) load() (err error) {
 
 				job, err := loader.Run(bq.BQContext)
 				if err != nil {
+					logger.Errorf("BQ: Error initiating load job: %v\n", err)
 					wg.Err(err)
 					return
 				}
 				status, err := job.Wait(bq.BQContext)
 				if err != nil {
+					logger.Errorf("BQ: Error running load job: %v\n", err)
 					wg.Err(err)
 					return
 				}
@@ -200,7 +203,7 @@ func (bq *HandleT) load() (err error) {
 					return
 				}
 				wg.Done()
-			}(tName)
+			}(t)
 		})
 	}
 	err = wg.Wait()
