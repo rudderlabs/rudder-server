@@ -293,7 +293,7 @@ func main() {
 	}()
 
 	// default mode, starts rudderCore and warehouse
-	if warehouseMode == "" {
+	if warehouseMode == config.AllMode {
 		config.SetString(config.WarehouseMode, warehouse.MasterSlaveMode)
 		fmt.Println("Starting as Warehouse Service...")
 		rruntime.Go(func() {
@@ -301,7 +301,10 @@ func main() {
 		})
 		startWarehouseService()
 	}
-	if warehouseMode != "" {
+	if warehouseMode == config.OffMode {
+		startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+	}
+	if warehouseMode != config.AllMode && warehouseMode != config.OffMode && warehouseMode != "" {
 		if startRouterWithWarehouse {
 			fmt.Println("Starting as Warehouse Service...")
 			rruntime.Go(func() {

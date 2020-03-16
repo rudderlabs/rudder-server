@@ -64,6 +64,10 @@ var (
 	warehouseTableUploadsTable string
 	warehouseSchemasTable      string
 )
+var (
+	host, user, password, dbname string
+	port                         int
+)
 
 // warehouses worker modes
 const (
@@ -132,6 +136,11 @@ func loadConfig() {
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
+	host = config.GetEnv("WAREHOUSE_JOBS_DB_HOST", "localhost")
+	user = config.GetEnv("WAREHOUSE_JOBS_DB_USER", "ubuntu")
+	dbname = config.GetEnv("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
+	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
+	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
@@ -1683,6 +1692,19 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	// 	w.Write([]byte(getStatus(Ok)))
 	// }
 }
+func getWarehouseMode() string {
+	return config.GetString(config.WarehouseMode, "")
+}
+
+func getConnectionString() string {
+	mode := getWarehouseMode()
+	if mode == config.AllMode {
+		return jobsdb.GetConnectionString()
+	}
+	return fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+}
 
 func startWebHandler() {
 	http.HandleFunc("/v1/process", processHandler)
@@ -1694,7 +1716,7 @@ func startWebHandler() {
 func Start() {
 	logger.Infof("WH: Starting Warehouse service...")
 	var err error
-	psqlInfo := jobsdb.GetConnectionString()
+	psqlInfo := getConnectionString()
 	dbHandle, err = sql.Open("postgres", psqlInfo)
 	if err != nil {
 		panic(err)
