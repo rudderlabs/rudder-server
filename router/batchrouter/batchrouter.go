@@ -29,20 +29,19 @@ import (
 )
 
 var (
-	jobQueryBatchSize          int
-	noOfWorkers                int
-	mainLoopSleep              time.Duration
-	uploadFreqInS              int64
-	configSubscriberLock       sync.RWMutex
-	objectStorageDestinations  []string
-	warehouseDestinations      []string
-	inProgressMap              map[string]bool
-	inProgressMapLock          sync.RWMutex
-	lastExecMap                map[string]int64
-	lastExecMapLock            sync.RWMutex
-	uploadedRawDataJobsCache   map[string]map[string]bool
-	warehouseStagingFilesTable string
-	warehouseURL               string
+	jobQueryBatchSize         int
+	noOfWorkers               int
+	mainLoopSleep             time.Duration
+	uploadFreqInS             int64
+	configSubscriberLock      sync.RWMutex
+	objectStorageDestinations []string
+	warehouseDestinations     []string
+	inProgressMap             map[string]bool
+	inProgressMapLock         sync.RWMutex
+	lastExecMap               map[string]int64
+	lastExecMapLock           sync.RWMutex
+	uploadedRawDataJobsCache  map[string]map[string]bool
+	warehouseURL              string
 )
 
 type HandleT struct {
@@ -213,43 +212,6 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 }
 
-func (brt *HandleT) updateWarehouseMetadata(batchJobs BatchJobsT, location string) (err error) {
-	schemaMap := make(map[string]map[string]interface{})
-	for _, job := range batchJobs.Jobs {
-		var payload map[string]interface{}
-		err := json.Unmarshal(job.EventPayload, &payload)
-		if err != nil {
-			panic(err)
-		}
-		tableName := payload["metadata"].(map[string]interface{})["table"].(string)
-		var ok bool
-		if _, ok = schemaMap[tableName]; !ok {
-			schemaMap[tableName] = make(map[string]interface{})
-		}
-		columns := payload["metadata"].(map[string]interface{})["columns"].(map[string]interface{})
-		for columnName, columnType := range columns {
-			if _, ok := schemaMap[tableName][columnName]; !ok {
-				schemaMap[tableName][columnName] = columnType
-			}
-		}
-	}
-	logger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseStagingFilesTable, schemaMap)
-	schemaPayload, err := json.Marshal(schemaMap)
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, created_at, updated_at)
-									   VALUES ($1, $2, $3, $4, $5, $6, $6)`, warehouseStagingFilesTable)
-	stmt, err := brt.jobsDBHandle.Prepare(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-	defer stmt.Close()
-
-	_, err = stmt.Exec(location, schemaPayload, batchJobs.BatchDestination.Source.ID, batchJobs.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, time.Now())
-	if err != nil {
-		panic(err)
-	}
-	return err
-}
-
 func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, location string) (err error) {
 	schemaMap := make(map[string]map[string]interface{})
 	for _, job := range batchJobs.Jobs {
@@ -359,8 +321,7 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
 							if output.Error == nil && output.Key != "" {
-								// brt.updateWarehouseMetadata(batchJobs, output.Key)
-								brt.postToWarehouse(batchJobs, output.Key)
+								output.Error = brt.postToWarehouse(batchJobs, output.Key)
 								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
 								warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
 							}
@@ -605,48 +566,6 @@ func (brt *HandleT) crashRecover() {
 	}
 	if misc.Contains(objectStorageDestinations, brt.destType) {
 		brt.dedupRawDataDestJobsOnCrash()
-	}
-}
-
-func (brt *HandleT) setupWarehouseStagingFilesTable() {
-
-	sqlStatement := `DO $$ BEGIN
-                                CREATE TYPE wh_staging_state_type
-                                     AS ENUM(
-                                              'waiting',
-                                              'executing',
-											  'failed',
-											  'succeeded');
-                                     EXCEPTION
-                                        WHEN duplicate_object THEN null;
-                            END $$;`
-
-	_, err := brt.jobsDBHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-                                      id BIGSERIAL PRIMARY KEY,
-									  location TEXT NOT NULL,
-									  source_id VARCHAR(64) NOT NULL,
-									  destination_id VARCHAR(64) NOT NULL,
-									  schema JSONB NOT NULL,
-									  error TEXT,
-									  status wh_staging_state_type,
-									  created_at TIMESTAMP NOT NULL,
-									  updated_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
-
-	_, err = brt.jobsDBHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on source_id, destination_id combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_id_index ON %[1]s (source_id, destination_id);`, warehouseStagingFilesTable)
-	_, err = brt.jobsDBHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
 	}
 }
 

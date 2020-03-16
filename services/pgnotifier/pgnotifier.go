@@ -13,9 +13,8 @@ import (
 )
 
 var (
-	queueName               string
-	subscriberInfoTableName string
-	maxAttempt              int
+	queueName  string
+	maxAttempt int
 )
 
 const (
@@ -28,7 +27,6 @@ const (
 
 func init() {
 	queueName = "pg_notifier_queue"
-	subscriberInfoTableName = "pg_notifier_subscriber_info"
 	maxAttempt = 3
 }
 
@@ -375,6 +373,13 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 		return
 	}
 
+	// create index on status
+	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_batch_id_idx ON %[1]s (batch_id);`, queueName)
+	_, err = notifier.dbHandle.Exec(sqlStmt)
+	if err != nil {
+		return
+	}
+
 	//create status type for worker
 	sqlStmt = `DO $$ BEGIN
 						CREATE TYPE pg_notifier_subscriber_status
@@ -385,18 +390,6 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 								WHEN duplicate_object THEN null;
 					END $$;`
 
-	_, err = notifier.dbHandle.Exec(sqlStmt)
-	if err != nil {
-		return
-	}
-
-	//create the worker info table
-	sqlStmt = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			id BIGSERIAL PRIMARY KEY,
-			subscriber_id VARCHAR(64)  NOT NULL UNIQUE,
-			status pg_notifier_subscriber_status NOT NULL,
-			created_at TIMESTAMP NOT NULL,
-			updated_at TIMESTAMP NOT NULL);`, subscriberInfoTableName)
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
 		return
@@ -413,7 +406,6 @@ func GetCurrentSQLTimestamp() string {
 
 //GetSQLTimestamp to get sql complaint current datetime string from the given duration
 func GetSQLTimestamp(t time.Time) string {
-
 	const SQLTimeFormat = "2006-01-02 15:04:05"
 	return t.Format(SQLTimeFormat)
 }

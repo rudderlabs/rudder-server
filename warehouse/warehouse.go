@@ -1202,8 +1202,8 @@ func setupTables(dbHandle *sql.DB) {
 		panic(err)
 	}
 
-	// index on source_id, destination_id combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseLoadFilesTable)
+	// index on source_id, destination_id, table_name combination
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_table_name_index ON %[1]s (source_id, destination_id, table_name);`, warehouseLoadFilesTable)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		panic(err)
