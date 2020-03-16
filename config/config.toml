@@ -66,12 +66,13 @@ jobQueryBatchSize = 100000
 uploadFreqInS = 30
 
 [Warehouse]
-mode = "off" # modes - master, slave, master_slave, off, all
+mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
 startRouter=false
 webPort = 8082
 stagingFilesTable = "wh_staging_files"
 loadFilesTable = "wh_load_files"
 uploadsTable = "wh_uploads"
+tableUploadsTable = "wh_table_uploads"
 schemasTable = "wh_schemas"
 uploadFreqInS = 1800
 noOfWorkers = 8
