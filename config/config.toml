@@ -66,7 +66,7 @@ jobQueryBatchSize = 100000
 uploadFreqInS = 30
 
 [Warehouse]
-mode = ""
+mode = "off" # modes - master, slave, master_slave, off, all
 startRouter=false
 webPort = 8082
 stagingFilesTable = "wh_staging_files"
