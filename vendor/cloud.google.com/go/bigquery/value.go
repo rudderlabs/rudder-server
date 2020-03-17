@@ -544,7 +544,7 @@ func valuesToMap(vs []Value, schema Schema) (map[string]Value, error) {
 			continue
 		}
 		// A repeated nested field is converted into a slice of maps.
-		var maps []Value
+		maps := []Value{}
 		for _, v := range vals {
 			sv, ok := v.([]Value)
 			if !ok {
@@ -870,8 +870,10 @@ func convertBasicType(val string, typ FieldType) (Value, error) {
 			return nil, err
 		}
 		secs := math.Trunc(f)
-		nanos := (f - secs) * 1e9
-		return Value(time.Unix(int64(secs), int64(nanos)).UTC()), nil
+		// Timestamps in BigQuery have microsecond precision, so we must
+		// return a round number of microseconds.
+		micros := math.Trunc((f-secs)*1e6 + 0.5)
+		return Value(time.Unix(int64(secs), int64(micros)*1000).UTC()), nil
 	case DateFieldType:
 		return civil.ParseDate(val)
 	case TimeFieldType:

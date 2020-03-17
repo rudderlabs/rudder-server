@@ -147,7 +147,7 @@ func loadConfig() {
 
 func (wh *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendconfigFull")
+	backendconfig.Subscribe(ch, "backendConfig")
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()

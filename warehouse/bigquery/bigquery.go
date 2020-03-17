@@ -169,6 +169,7 @@ func (bq *HandleT) load() (err error) {
 	wg := misc.NewWaitGroup()
 	wg.Add(len(bq.Upload.Schema))
 	for tName := range bq.Upload.Schema {
+		t := tName
 		rruntime.Go(func() {
 			func(tableName string) {
 				uploadStatus, err := warehouseutils.GetTableUploadStatus(bq.Upload.ID, tableName, bq.DbHandle)
@@ -211,8 +212,12 @@ func (bq *HandleT) load() (err error) {
 					return
 				}
 				wg.Done()
+<<<<<<< HEAD:warehouse/bigquery/bigquery.go
 				warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, bq.Upload.ID, tableName, bq.DbHandle)
 			}(tName)
+=======
+			}(t)
+>>>>>>> origin/master:router/warehouse/bigquery/bigquery.go
 		})
 	}
 	err = wg.Wait()

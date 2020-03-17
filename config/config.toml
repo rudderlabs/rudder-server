@@ -1,5 +1,40 @@
 # Contains the configuration for the whole server
-# Dont set secrets, passwords, api_keys etc. in this file. Use '.env' file for that
+# Dont set secrets, passwords, api_keys etc. in this file. Use '.env' file or environment variables for that
+
+# These values can be overriden through environment variables. The regex for these is present in config/config.go
+# Please look at the following examples to override the config
+#
+# Eg 1:
+# maxProcess = 12
+#
+# RSERVER_MAX_PROCESS=12
+#
+# Eg 2:
+# [RateLimit]
+# eventLimit=1000
+#
+# RSERVER_RATE_LIMIT_EVENT_LIMIT=1000
+#
+# Eg 3:
+# [Gateway]
+# maxDBWriterProcess = 64
+#
+# RSERVER_GATEWAY_MAX_DBWRITER_PROCESS=64
+#
+# Eg 4:
+# [BackendConfig]
+# configJSONPath = "./workspaceConfig.json"
+#
+# RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH="./workspaceConfig.json"
+#
+# Eg 5:
+# [JobsDB]
+# enableBackup=false
+#
+# RSERVER_JOBS_DB_ENABLE_BACKUP=true
+#
+
+
 
 maxProcess = 12 # Max number of cpu process to be used by go runtime
 gwDBRetentionInHr = 0
@@ -64,6 +99,7 @@ mainLoopSleepInS = 2
 noOfWorkers = 8
 jobQueryBatchSize = 100000
 uploadFreqInS = 30
+maxFailedCountForJob = 128
 
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
@@ -96,7 +132,7 @@ retrySleepInMS = 100
 
 [BackendConfig]
 configFromFile = false
-configJSONPath = "./workspaceConfig.json"
+configJSONPath = "/etc/rudderstack/workspaceConfig.json"
 pollIntervalInS = 5
 
 

@@ -31,6 +31,7 @@ import (
 var (
 	jobQueryBatchSize         int
 	noOfWorkers               int
+	maxFailedCountForJob      int
 	mainLoopSleep             time.Duration
 	uploadFreqInS             int64
 	configSubscriberLock      sync.RWMutex
@@ -64,7 +65,7 @@ type ObjectStorageT struct {
 
 func (brt *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendconfigFull")
+	backendconfig.Subscribe(ch, "backendConfig")
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -88,7 +89,6 @@ type StorageUploadOutput struct {
 	Key            string
 	LocalFilePaths []string
 	Error          error
-	JournalOpID    int64
 }
 
 type ErrorResponseT struct {
@@ -193,14 +193,14 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 			DestinationType: batchJobs.BatchDestination.Destination.DestinationDefinition.Name,
 		})
 		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
+		defer brt.jobsDB.JournalDeleteEntry(opID)
 	}
 	_, err = uploader.Upload(outputFile, keyPrefixes...)
 
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to %s: Error: %v", provider, err)
 		return StorageUploadOutput{
-			Error:       err,
-			JournalOpID: opID,
+			Error: err,
 		}
 	}
 
@@ -208,7 +208,6 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		Config:         batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
 		Key:            strings.Join(keyPrefixes, "/") + "/" + fileName,
 		LocalFilePaths: []string{gzipFilePath},
-		JournalOpID:    opID,
 	}
 }
 
@@ -250,19 +249,19 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, location string) (err 
 
 func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err error) {
 	var (
-		jobState  string
-		errorResp []byte
+		batchJobState string
+		errorResp     []byte
 	)
 
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to object storage: %v %v", err, batchJobs.BatchDestination.Source.ID)
-		jobState = jobsdb.FailedState
+		batchJobState = jobsdb.FailedState
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
 	} else {
 		logger.Debugf("BRT: Uploaded to object storage : %v at %v", batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
-		jobState = jobsdb.SucceededState
+		batchJobState = jobsdb.SucceededState
 		errorResp = []byte(`{"success":"OK"}`)
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
 	}
@@ -270,6 +269,10 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	var statusList []*jobsdb.JobStatusT
 
 	for _, job := range batchJobs.Jobs {
+		jobState := batchJobState
+		if jobState == jobsdb.FailedState && job.LastJobStatus.AttemptNum >= maxFailedCountForJob {
+			jobState = jobsdb.AbortedState
+		}
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -310,9 +313,6 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
 							brt.setJobStatus(batchJobs, false, output.Error)
-							if output.JournalOpID != 0 {
-								brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
-							}
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 							destUploadStat.End()
 							setDestInProgress(batchJobs.BatchDestination, false)
@@ -572,6 +572,7 @@ func (brt *HandleT) crashRecover() {
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
+	maxFailedCountForJob = config.GetInt("BatchRouter.maxFailedCountForJob", 128)
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
 	// TODO: change this
