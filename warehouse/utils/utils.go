@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	uuid "github.com/satori/go.uuid"
 )
 
 const (
@@ -46,6 +48,7 @@ var (
 	warehouseLoadFilesTable    string
 	warehouseStagingFilesTable string
 	maxRetry                   int
+	serverID                   string
 )
 
 var ObjectStorageMap = map[string]string{
@@ -425,4 +428,24 @@ func ToSafeDBString(str string) string {
 		res = fmt.Sprintf("STRINGEMPTY_%v", rand.Intn(100000))
 	}
 	return res
+}
+
+func GetServerInstanceId() string {
+	if serverID != "" {
+		return serverID
+	}
+
+	tmpID := ""
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	defer conn.Close()
+	if err == nil {
+		localAddr := conn.LocalAddr().(*net.UDPAddr)
+		tmpID = localAddr.IP.String()
+	}
+	serverID = fmt.Sprintf("%v-%v", tmpID, uuid.NewV4().String())
+	return serverID
+}
+
+func GetSlaveWorkerId(workerIdx int) string {
+	return fmt.Sprintf("%v-%v", GetServerInstanceId(), workerIdx)
 }

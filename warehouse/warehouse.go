@@ -1398,7 +1398,7 @@ func setupSlave() {
 					slaveRoutine := func(workerIdx int) func() {
 						return func() {
 							logger.Infof("Job being claimed by slave worker-%v", workerIdx)
-							claimChan, claimed := notifier.Claim(event.ID)
+							claimChan, claimed := notifier.Claim(event.ID, warehouseutils.GetSlaveWorkerId(workerIdx))
 							if claimed {
 								var payload PayloadT
 								json.Unmarshal(event.Data, &payload)
@@ -1413,8 +1413,9 @@ func setupSlave() {
 								payload.LoadFileIDs = ids
 								output, err := json.Marshal(payload)
 								response := pgnotifier.ClaimResponseT{
-									Err:     err,
-									Payload: output,
+									Err:      err,
+									Payload:  output,
+									WorkerId: warehouseutils.GetSlaveWorkerId(workerIdx),
 								}
 								claimChan <- response
 							}

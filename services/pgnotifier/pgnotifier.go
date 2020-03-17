@@ -52,8 +52,9 @@ type ResponseT struct {
 }
 
 type ClaimResponseT struct {
-	Payload json.RawMessage
-	Err     error
+	Payload  json.RawMessage
+	WorkerId string
+	Err      error
 }
 
 func New(connectionInfo string) (notifier PgNotifierT, err error) {
@@ -150,10 +151,10 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 			stmt := fmt.Sprintf(`UPDATE %[1]s SET status=(CASE
 					WHEN	attempt > %[2]d THEN CAST ( '%[3]s' AS pg_notifier_status_type)
 				ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
-				END), updated_at = '%[5]s', error = '%[6]s' WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), response.Err.Error(), id)
+				END), updated_at = '%[5]s', error = '%[6]s', worker_id='%[7]v' WHERE id = %[8]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), response.Err.Error(), response.WorkerId, id)
 			_, err = tx.Exec(stmt)
 		} else {
-			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
+			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s', worker_id='%[5]v' WHERE id = %[6]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, response.WorkerId, id)
 			_, err = tx.Exec(stmt)
 		}
 
@@ -167,7 +168,7 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 	})
 }
 
-func (notifier *PgNotifierT) Claim(id int64) (ch chan ClaimResponseT, claimed bool) {
+func (notifier *PgNotifierT) Claim(id int64, workerId string) (ch chan ClaimResponseT, claimed bool) {
 	//Begin Transaction
 	tx, err := notifier.dbHandle.Begin()
 	if err != nil {
@@ -178,7 +179,8 @@ func (notifier *PgNotifierT) Claim(id int64) (ch chan ClaimResponseT, claimed bo
 	// Dont panic if acquire fails -- Just rollback & return the worker to free state again
 	stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s',
 						updated_at = '%[3]s',
-						last_exec_time = '%[3]s'
+						last_exec_time = '%[3]s',
+						worker_id='%[6]v'
 						WHERE id = (
 						SELECT id
 						FROM %[1]s
@@ -187,7 +189,7 @@ func (notifier *PgNotifierT) Claim(id int64) (ch chan ClaimResponseT, claimed bo
 						FOR UPDATE SKIP LOCKED
 						LIMIT 1
 						)
-						RETURNING id;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), WaitingState, id)
+						RETURNING id;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), WaitingState, id, workerId)
 	err = tx.QueryRow(stmt).Scan(&claimedID)
 
 	if err != nil {
@@ -359,7 +361,8 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 										  updated_at TIMESTAMP NOT NULL,
 										  last_exec_time TIMESTAMP,
 										  attempt SMALLINT DEFAULT 0,
-										  error VARCHAR(64));`, queueName)
+										  error VARCHAR(64),
+										  worker_id VARCHAR(64));`, queueName)
 
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
