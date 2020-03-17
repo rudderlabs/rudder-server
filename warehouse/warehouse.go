@@ -37,6 +37,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	uuid "github.com/satori/go.uuid"
 )
 
 var (
@@ -1383,9 +1384,10 @@ func startWebHandler() {
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
-func claimAndProcess(workerIdx int) {
+func claimAndProcess(workerIdx int, slaveID string) {
 	logger.Infof("Job claim attempt by by slave worker-%v", workerIdx)
-	claim, claimed := notifier.Claim()
+	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
+	claim, claimed := notifier.Claim(workerID)
 	if claimed {
 		var payload PayloadT
 		json.Unmarshal(claim.Payload, &payload)
@@ -1410,6 +1412,7 @@ func claimAndProcess(workerIdx int) {
 
 func setupSlave() {
 	slaveWorkerRoutineStatus = make([]bool, noOfSlaveWorkerRoutines)
+	slaveID := uuid.NewV4().String()
 	rruntime.Go(func() {
 		jobNotificationChannel, err := notifier.Subscribe("process_staging_file")
 		if err != nil {
@@ -1417,13 +1420,13 @@ func setupSlave() {
 		}
 		for {
 			_ = <-jobNotificationChannel
-			for workerIdx := 0; workerIdx < noOfSlaveWorkerRoutines; workerIdx++ {
+			for workerIdx := 1; workerIdx <= noOfSlaveWorkerRoutines; workerIdx++ {
 				if !slaveWorkerRoutineStatus[workerIdx] {
 					slaveWorkerRoutineStatus[workerIdx] = true
 					idx := workerIdx
 					rruntime.Go(func() {
 						func(index int) {
-							claimAndProcess(index)
+							claimAndProcess(index, slaveID)
 						}(idx)
 					})
 					break

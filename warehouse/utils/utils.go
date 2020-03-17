@@ -15,6 +15,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -46,6 +47,7 @@ var (
 	warehouseLoadFilesTable    string
 	warehouseStagingFilesTable string
 	maxRetry                   int
+	serverIP                   string
 )
 
 var ObjectStorageMap = map[string]string{
@@ -290,12 +292,12 @@ func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, curren
 func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (locations []string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
 		SELECT  staging_file_id, MAX(id) AS id FROM wh_load_files
-		WHERE ( source_id='%[2]s' 
-			AND destination_id='%[3]s' 
+		WHERE ( source_id='%[2]s'
+			AND destination_id='%[3]s'
 			AND table_name='%[4]s'
-			AND id >= %[5]v 
-			AND id <= %[6]v) 		 
-		GROUP BY staging_file_id ) uniqueStagingFiles 
+			AND id >= %[5]v
+			AND id <= %[6]v)
+		GROUP BY staging_file_id ) uniqueStagingFiles
 		ON  wh_load_files.id = uniqueStagingFiles.id `,
 		warehouseLoadFilesTable,
 		sourceId,
@@ -425,4 +427,21 @@ func ToSafeDBString(str string) string {
 		res = fmt.Sprintf("STRINGEMPTY_%v", rand.Intn(100000))
 	}
 	return res
+}
+
+func GetIP() string {
+	if serverIP != "" {
+		return serverIP
+	}
+
+	serverIP := ""
+	ip, err := misc.GetOutboundIP()
+	if err == nil {
+		serverIP = ip.String()
+	}
+	return serverIP
+}
+
+func GetSlaveWorkerId(workerIdx int, slaveID string) string {
+	return fmt.Sprintf("%v-%v-%v", GetIP(), workerIdx, slaveID)
 }

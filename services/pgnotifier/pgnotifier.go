@@ -175,7 +175,7 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 	})
 }
 
-func (notifier *PgNotifierT) Claim() (claim ClaimT, claimed bool) {
+func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool) {
 	//Begin Transaction
 	tx, err := notifier.dbHandle.Begin()
 	if err != nil {
@@ -188,19 +188,22 @@ func (notifier *PgNotifierT) Claim() (claim ClaimT, claimed bool) {
 	// Dont panic if acquire fails -- Just rollback & return the worker to free state again
 	stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s',
 						updated_at = '%[3]s',
-						last_exec_time = '%[3]s'
+						last_exec_time = '%[3]s',
+						worker_id = '%[4]v'
 						WHERE id = (
 						SELECT id
 						FROM %[1]s
-						WHERE status='%[4]s'
+						WHERE status='%[5]s' OR status='%[6]s'
 						ORDER BY id
 						FOR UPDATE SKIP LOCKED
 						LIMIT 1
 						)
-						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), WaitingState)
+						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState)
+	fmt.Println(stmt)
 	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 
 	if err != nil {
+		fmt.Println(err)
 		// TODO: verify rollback is necessary on error
 		tx.Rollback()
 		return
@@ -376,7 +379,8 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 										  updated_at TIMESTAMP NOT NULL,
 										  last_exec_time TIMESTAMP,
 										  attempt SMALLINT DEFAULT 0,
-										  error VARCHAR(64));`, queueName)
+										  error VARCHAR(64),
+										  worker_id VARCHAR(64));`, queueName)
 
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
