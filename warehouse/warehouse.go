@@ -1395,8 +1395,8 @@ func setupSlave() {
 			for workerIdx := 0; workerIdx < noOfSlaveWorkerRoutines; workerIdx++ {
 				if !slaveWorkerRoutineStatus[workerIdx] {
 					slaveWorkerRoutineStatus[workerIdx] = true
-					rruntime.Go(func() {
-						func(workerIdx int) {
+					slaveRoutine := func(workerIdx int) func() {
+						return func() {
 							logger.Infof("Job being claimed by slave worker-%v", workerIdx)
 							claimChan, claimed := notifier.Claim(event.ID)
 							if claimed {
@@ -1419,9 +1419,10 @@ func setupSlave() {
 								claimChan <- response
 							}
 							slaveWorkerRoutineStatus[workerIdx] = false
-						}(workerIdx)
+						}
 
-					})
+					}(workerIdx)
+					rruntime.Go(slaveRoutine)
 				}
 			}
 		}
