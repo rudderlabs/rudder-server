@@ -249,18 +249,18 @@ func (sf *HandleT) load() (errList []error) {
 	logger.Infof("SF: Starting load for all %v tables\n", len(sf.Upload.Schema))
 	var wg sync.WaitGroup
 	wg.Add(len(sf.Upload.Schema))
-	guard := make(chan struct{}, maxParallelLoads)
+	loadChan := make(chan struct{}, maxParallelLoads)
 	for tableName, columnMap := range sf.Upload.Schema {
 		tName := tableName
 		cMap := columnMap
-		guard <- struct{}{}
+		loadChan <- struct{}{}
 		rruntime.Go(func() {
 			loadError := sf.loadTable(tName, cMap, accessKeyID, accessKey)
 			if loadError != nil {
 				errList = append(errList, loadError)
 			}
 			wg.Done()
-			<-guard
+			<-loadChan
 		})
 	}
 	wg.Wait()
@@ -302,7 +302,7 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder-staging-"
-	maxParallelLoads = config.GetInt("Warehouse.snowflake.maxParallelLoads", 3)
+	maxParallelLoads = config.GetInt("Warehouse.snowflake.maxParallelLoads", 1)
 }
 
 func init() {

@@ -210,17 +210,17 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 func (bq *HandleT) load() (errList []error) {
 	var wg sync.WaitGroup
 	wg.Add(len(bq.Upload.Schema))
-	guard := make(chan struct{}, maxParallelLoads)
+	loadChan := make(chan struct{}, maxParallelLoads)
 	for tableName := range bq.Upload.Schema {
 		tName := tableName
-		guard <- struct{}{}
+		loadChan <- struct{}{}
 		rruntime.Go(func() {
 			err := bq.loadTable(tName)
 			if err != nil {
 				errList = append(errList, err)
 			}
 			wg.Done()
-			<-guard
+			<-loadChan
 		})
 	}
 	wg.Wait()

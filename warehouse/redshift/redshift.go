@@ -334,18 +334,18 @@ func (rs *HandleT) load() (errList []error) {
 
 	var wg sync.WaitGroup
 	wg.Add(len(rs.Upload.Schema))
-	guard := make(chan struct{}, maxParallelLoads)
+	loadChan := make(chan struct{}, maxParallelLoads)
 	for tableName, columnMap := range rs.Upload.Schema {
 		tName := tableName
 		cMap := columnMap
-		guard <- struct{}{}
+		loadChan <- struct{}{}
 		rruntime.Go(func() {
 			err := rs.loadTable(tName, cMap, bucketName, accessKeyID, accessKey)
 			if err != nil {
 				errList = append(errList, err)
 			}
 			wg.Done()
-			<-guard
+			<-loadChan
 		})
 	}
 	wg.Wait()
