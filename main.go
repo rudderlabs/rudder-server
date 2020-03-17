@@ -150,7 +150,6 @@ func printVersion() {
 }
 
 func startWarehouseService() {
-	backendconfig.Setup()
 	warehouse.Start()
 }
 

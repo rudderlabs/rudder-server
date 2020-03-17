@@ -3,8 +3,10 @@ package bigquery
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -12,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -20,6 +21,7 @@ import (
 
 var (
 	warehouseUploadsTable string
+	maxParallelLoads      int
 )
 
 type HandleT struct {
@@ -165,62 +167,64 @@ func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	return updatedSchema, nil
 }
 
-func (bq *HandleT) load() (err error) {
-	wg := misc.NewWaitGroup()
+func (bq *HandleT) loadTable(tableName string) (err error) {
+	uploadStatus, err := warehouseutils.GetTableUploadStatus(bq.Upload.ID, tableName, bq.DbHandle)
+	if uploadStatus == warehouseutils.ExportedDataState {
+		logger.Infof("BQ: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
+		return
+	}
+	locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
+	if err != nil {
+		panic(err)
+	}
+	locations, err = warehouseutils.GetGCSLocations(locations)
+	logger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
+	gcsRef := bigquery.NewGCSReference(locations...)
+	gcsRef.SourceFormat = bigquery.JSON
+	gcsRef.MaxBadRecords = 100
+	gcsRef.IgnoreUnknownValues = true
+	// create partitioned table in format tableName$20191221
+	loader := bq.Db.Dataset(bq.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
+
+	job, err := loader.Run(bq.BQContext)
+	if err != nil {
+		logger.Errorf("BQ: Error initiating load job: %v\n", err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
+		return
+	}
+	status, err := job.Wait(bq.BQContext)
+	if err != nil {
+		logger.Errorf("BQ: Error running load job: %v\n", err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
+		return
+	}
+
+	if status.Err() != nil {
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
+		return
+	}
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, bq.Upload.ID, tableName, bq.DbHandle)
+	return
+}
+
+func (bq *HandleT) load() (errList []error) {
+	var wg sync.WaitGroup
 	wg.Add(len(bq.Upload.Schema))
-	for tName := range bq.Upload.Schema {
-		t := tName
+	guard := make(chan struct{}, maxParallelLoads)
+	for tableName := range bq.Upload.Schema {
+		tName := tableName
+		guard <- struct{}{}
 		rruntime.Go(func() {
-			func(tableName string) {
-				uploadStatus, err := warehouseutils.GetTableUploadStatus(bq.Upload.ID, tableName, bq.DbHandle)
-				if uploadStatus == warehouseutils.ExportedDataState {
-					logger.Infof("SF: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
-					wg.Done()
-					return
-				}
-				locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
-				if err != nil {
-					panic(err)
-				}
-				locations, err = warehouseutils.GetGCSLocations(locations)
-				logger.Infof("Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
-				gcsRef := bigquery.NewGCSReference(locations...)
-				gcsRef.SourceFormat = bigquery.JSON
-				gcsRef.MaxBadRecords = 100
-				gcsRef.IgnoreUnknownValues = true
-				// create partitioned table in format tableName$20191221
-				loader := bq.Db.Dataset(bq.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
-
-				job, err := loader.Run(bq.BQContext)
-				if err != nil {
-					logger.Errorf("BQ: Error initiating load job: %v\n", err)
-					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
-					wg.Err(err)
-					return
-				}
-				status, err := job.Wait(bq.BQContext)
-				if err != nil {
-					logger.Errorf("BQ: Error running load job: %v\n", err)
-					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
-					wg.Err(err)
-					return
-				}
-
-				if status.Err() != nil {
-					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
-					wg.Err(err)
-					return
-				}
-				wg.Done()
-<<<<<<< HEAD:warehouse/bigquery/bigquery.go
-				warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, bq.Upload.ID, tableName, bq.DbHandle)
-			}(tName)
-=======
-			}(t)
->>>>>>> origin/master:router/warehouse/bigquery/bigquery.go
+			err := bq.loadTable(tName)
+			if err != nil {
+				errList = append(errList, err)
+			}
+			wg.Done()
+			<-guard
 		})
 	}
-	err = wg.Wait()
+	wg.Wait()
+	logger.Infof("BQ: Completed load for all tables\n")
 	return
 }
 
@@ -238,6 +242,7 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
+	maxParallelLoads = config.GetInt("Warehose.bigquery.maxParallelLoads", 20)
 }
 
 func init() {
@@ -276,11 +281,18 @@ func (bq *HandleT) Export() (err error) {
 	}
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", bq.Warehouse.Destination.ID)
 	timer.Start()
-	err = bq.load()
+	errList := bq.load()
 	timer.End()
-	if err != nil {
-		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.ExportingDataFailedState, bq.DbHandle)
-		return err
+	if len(errList) > 0 {
+		errStr := ""
+		for idx, err := range errList {
+			errStr += err.Error()
+			if idx < len(errList)-1 {
+				errStr += ", "
+			}
+		}
+		warehouseutils.SetUploadError(bq.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, bq.DbHandle)
+		return errors.New(errStr)
 	}
 	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportedDataState, bq.DbHandle)
 	if err != nil {

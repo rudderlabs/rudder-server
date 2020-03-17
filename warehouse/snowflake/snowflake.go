@@ -7,8 +7,10 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -19,6 +21,7 @@ import (
 var (
 	warehouseUploadsTable string
 	stagingTablePrefix    string
+	maxParallelLoads      int
 )
 
 type HandleT struct {
@@ -143,6 +146,90 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
+func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, accessKeyID, accessKey string) (err error) {
+	status, err := warehouseutils.GetTableUploadStatus(sf.Upload.ID, tableName, sf.DbHandle)
+	if status == warehouseutils.ExportedDataState {
+		logger.Infof("SF: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
+		return
+	}
+	logger.Infof("SF: Starting load for table:%s\n", tableName)
+	timer := warehouseutils.DestStat(stats.TimerType, "single_table_upload_time", sf.Warehouse.Destination.ID)
+	timer.Start()
+	// sort columnnames
+	keys := reflect.ValueOf(columnMap).MapKeys()
+	strkeys := make([]string, len(keys))
+	for i := 0; i < len(keys); i++ {
+		strkeys[i] = keys[i].String()
+	}
+	sort.Strings(strkeys)
+	sortedColumnNames := strings.Join(strkeys, ",")
+
+	stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s"."%s" LIKE "%s"."%s"`, sf.Namespace, stagingTableName, sf.Namespace, strings.ToUpper(tableName))
+
+	logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
+	_, err = sf.Db.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("SF: Error creating temporary table for table:%s: %v\n", tableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		return
+	}
+
+	csvObjectLocation, err := warehouseutils.GetLoadFileLocation(sf.DbHandle, sf.Warehouse.Source.ID, sf.Warehouse.Destination.ID, tableName, sf.Upload.StartLoadFileID, sf.Upload.EndLoadFileID)
+	if err != nil {
+		panic(err)
+	}
+	loadFolder := warehouseutils.GetS3LocationFolder(csvObjectLocation)
+
+	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s') PATTERN = '.*\.csv\.gz'
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s."%s"`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, accessKeyID, accessKey)
+
+	logger.Infof("SF: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
+	_, err = sf.Db.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("SF: Error running COPY command: %v\n", err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		return
+	}
+
+	primaryKey := "id"
+	if column, ok := primaryKeyMap[tableName]; ok {
+		primaryKey = column
+	}
+
+	var columnNames, stagingColumnNames string
+	for idx, str := range strkeys {
+		columnNames += str
+		stagingColumnNames += fmt.Sprintf(`staging.%s`, str)
+		if idx != len(strkeys)-1 {
+			columnNames += ","
+			stagingColumnNames += ","
+		}
+	}
+
+	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s"."%[2]s" AS original
+									USING (
+										SELECT * FROM (
+											SELECT *, row_number() OVER (PARTITION BY %[4]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[3]s"
+										) AS q WHERE _rudder_staging_row_number = 1
+									) AS staging
+									ON original.%[4]s = staging.%[4]s
+									WHEN NOT MATCHED THEN
+									INSERT (%[5]s) VALUES (%[6]s)`, sf.Namespace, strings.ToUpper(tableName), stagingTableName, primaryKey, columnNames, stagingColumnNames)
+	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	_, err = sf.Db.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		return
+	}
+
+	timer.End()
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, sf.Upload.ID, tableName, sf.DbHandle)
+	logger.Infof("SF: Complete load for table:%s\n", tableName)
+	return
+}
+
 func (sf *HandleT) load() (errList []error) {
 	var accessKeyID, accessKey string
 	config := sf.Warehouse.Destination.Config.(map[string]interface{})
@@ -160,94 +247,24 @@ func (sf *HandleT) load() (errList []error) {
 	}
 
 	logger.Infof("SF: Starting load for all %v tables\n", len(sf.Upload.Schema))
-	counter := 0
+	var wg sync.WaitGroup
+	wg.Add(len(sf.Upload.Schema))
+	guard := make(chan struct{}, maxParallelLoads)
 	for tableName, columnMap := range sf.Upload.Schema {
-		counter++
-		status, err := warehouseutils.GetTableUploadStatus(sf.Upload.ID, tableName, sf.DbHandle)
-		if status == warehouseutils.ExportedDataState {
-			logger.Infof("SF: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
-			continue
-		}
-		logger.Infof("SF: Starting load for %v table:%s\n", counter, tableName)
-		timer := warehouseutils.DestStat(stats.TimerType, "single_table_upload_time", sf.Warehouse.Destination.ID)
-		timer.Start()
-		// sort columnnames
-		keys := reflect.ValueOf(columnMap).MapKeys()
-		strkeys := make([]string, len(keys))
-		for i := 0; i < len(keys); i++ {
-			strkeys[i] = keys[i].String()
-		}
-		sort.Strings(strkeys)
-		sortedColumnNames := strings.Join(strkeys, ",")
-
-		stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
-		sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s"."%s" LIKE "%s"."%s"`, sf.Namespace, stagingTableName, sf.Namespace, strings.ToUpper(tableName))
-
-		logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
-		_, err = sf.Db.Exec(sqlStatement)
-		if err != nil {
-			logger.Errorf("SF: Error creating temporary table: %v\n", err)
-			errList = append(errList, err)
-			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
-			continue
-		}
-
-		csvObjectLocation, err := warehouseutils.GetLoadFileLocation(sf.DbHandle, sf.Warehouse.Source.ID, sf.Warehouse.Destination.ID, tableName, sf.Upload.StartLoadFileID, sf.Upload.EndLoadFileID)
-		if err != nil {
-			panic(err)
-		}
-		loadFolder := warehouseutils.GetS3LocationFolder(csvObjectLocation)
-
-		sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s') PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s."%s"`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, accessKeyID, accessKey)
-
-		logger.Infof("SF: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
-		_, err = sf.Db.Exec(sqlStatement)
-		if err != nil {
-			logger.Errorf("SF: Error running COPY command: %v\n", err)
-			errList = append(errList, err)
-			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
-			continue
-		}
-
-		primaryKey := "id"
-		if column, ok := primaryKeyMap[tableName]; ok {
-			primaryKey = column
-		}
-
-		var columnNames, stagingColumnNames string
-		for idx, str := range strkeys {
-			columnNames += str
-			stagingColumnNames += fmt.Sprintf(`staging.%s`, str)
-			if idx != len(strkeys)-1 {
-				columnNames += ","
-				stagingColumnNames += ","
+		tName := tableName
+		cMap := columnMap
+		guard <- struct{}{}
+		rruntime.Go(func() {
+			loadError := sf.loadTable(tName, cMap, accessKeyID, accessKey)
+			if loadError != nil {
+				errList = append(errList, loadError)
 			}
-		}
-
-		sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s"."%[2]s" AS original
-									USING (
-										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY %[4]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[3]s"
-										) AS q WHERE _rudder_staging_row_number = 1
-									) AS staging
-									ON original.%[4]s = staging.%[4]s
-									WHEN NOT MATCHED THEN
-									INSERT (%[5]s) VALUES (%[6]s)`, sf.Namespace, strings.ToUpper(tableName), stagingTableName, primaryKey, columnNames, stagingColumnNames)
-		logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
-		_, err = sf.Db.Exec(sqlStatement)
-		if err != nil {
-			logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
-			errList = append(errList, err)
-			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
-			continue
-		}
-
-		timer.End()
-		warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, sf.Upload.ID, tableName, sf.DbHandle)
-		logger.Infof("SF: Complete load for table:%s\n", tableName)
+			wg.Done()
+			<-guard
+		})
 	}
-	logger.Infof("SF: Complete load for all tables\n")
+	wg.Wait()
+	logger.Infof("SF: Completed load for all tables\n")
 	return
 }
 
@@ -285,6 +302,7 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder-staging-"
+	maxParallelLoads = config.GetInt("Warehouse.snowflake.maxParallelLoads", 3)
 }
 
 func init() {

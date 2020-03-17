@@ -1097,7 +1097,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendconfigFull")
+	backendconfig.Subscribe(ch, "backendConfig")
 	dstToWhRouter := make(map[string]*HandleT)
 
 	for {
@@ -1300,7 +1300,7 @@ func setupTables(dbHandle *sql.DB) {
 									  wh_upload_id BIGSERIAL NOT NULL,
 									  table_name VARCHAR(64),
 									  status wh_upload_state_type NOT NULL,
-									  error VARCHAR(64),
+									  error VARCHAR(512),
 									  last_exec_time TIMESTAMP,
 									  created_at TIMESTAMP NOT NULL,
 									  updated_at TIMESTAMP NOT NULL);`, warehouseTableUploadsTable)
@@ -1440,6 +1440,7 @@ func Start() {
 	}
 
 	if isMaster() {
+		backendconfig.Setup()
 		logger.Infof("WH: Starting warehouse master...")
 		err = notifier.AddTopic("process_staging_file")
 		if err != nil {

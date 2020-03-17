@@ -103,7 +103,6 @@ maxFailedCountForJob = 128
 
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
-startRouter=false
 webPort = 8082
 stagingFilesTable = "wh_staging_files"
 loadFilesTable = "wh_load_files"
@@ -115,6 +114,12 @@ noOfWorkers = 8
 mainLoopSleepInS = 60
 maxRetry = 3
 stagingFilesBatchSize = 240
+    [Warehouse.redshift]
+    maxParallelLoads = 3
+    [Warehouse.snowflake]
+    maxParallelLoads = 1
+    [Warehouse.bigquery]
+    maxParallelLoads = 20
 
 [Processor]
 loopSleepInMS = 10
