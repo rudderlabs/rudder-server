@@ -1423,6 +1423,7 @@ func setupSlave() {
 
 					}(workerIdx)
 					rruntime.Go(slaveRoutine)
+					break
 				}
 			}
 		}
