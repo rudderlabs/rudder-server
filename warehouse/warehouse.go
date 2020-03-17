@@ -46,6 +46,8 @@ var (
 	warehouseDestinations      []string
 	jobQueryBatchSize          int
 	noOfWorkers                int
+	noOfSlaveWorkerRoutines    int
+	slaveWorkerRoutineStatus   []bool //Busy-true
 	uploadFreqInS              int64
 	mainLoopSleep              time.Duration
 	stagingFilesBatchSize      int
@@ -124,6 +126,7 @@ func loadConfig() {
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
+	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
 	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
 	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
@@ -1381,32 +1384,46 @@ func startWebHandler() {
 }
 
 func setupSlave() {
+	slaveWorkerRoutineStatus = make([]bool, noOfSlaveWorkerRoutines)
 	rruntime.Go(func() {
-		ch, err := notifier.Subscribe("process_staging_file")
+		jobNotificationChannel, err := notifier.Subscribe("process_staging_file")
 		if err != nil {
 			panic(err)
 		}
 		for {
-			event := <-ch
-			claimChan, claimed := notifier.Claim(event.ID)
-			if claimed {
-				var payload PayloadT
-				json.Unmarshal(event.Data, &payload)
-				payload.BatchID = event.BatchID
-				ids, err := processStagingFile(payload)
-				if err != nil {
-					response := pgnotifier.ClaimResponseT{
-						Err: err,
-					}
-					claimChan <- response
+			event := <-jobNotificationChannel
+			for workerIdx := 0; workerIdx < noOfSlaveWorkerRoutines; workerIdx++ {
+				if !slaveWorkerRoutineStatus[workerIdx] {
+					slaveWorkerRoutineStatus[workerIdx] = true
+					slaveRoutine := func(workerIdx int) func() {
+						return func() {
+							logger.Infof("Job being claimed by slave worker-%v", workerIdx)
+							claimChan, claimed := notifier.Claim(event.ID)
+							if claimed {
+								var payload PayloadT
+								json.Unmarshal(event.Data, &payload)
+								payload.BatchID = event.BatchID
+								ids, err := processStagingFile(payload)
+								if err != nil {
+									response := pgnotifier.ClaimResponseT{
+										Err: err,
+									}
+									claimChan <- response
+								}
+								payload.LoadFileIDs = ids
+								output, err := json.Marshal(payload)
+								response := pgnotifier.ClaimResponseT{
+									Err:     err,
+									Payload: output,
+								}
+								claimChan <- response
+							}
+							slaveWorkerRoutineStatus[workerIdx] = false
+						}
+
+					}(workerIdx)
+					rruntime.Go(slaveRoutine)
 				}
-				payload.LoadFileIDs = ids
-				output, err := json.Marshal(payload)
-				response := pgnotifier.ClaimResponseT{
-					Err:     err,
-					Payload: output,
-				}
-				claimChan <- response
 			}
 		}
 	})
