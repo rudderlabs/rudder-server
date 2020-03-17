@@ -796,7 +796,7 @@ func (wh *HandleT) setupTables() {
 									  destination_id VARCHAR(64) NOT NULL,
 									  destination_type VARCHAR(64) NOT NULL,
 									  schema JSONB NOT NULL,
-									  error VARCHAR(512),
+									  error TEXT,
 									  created_at TIMESTAMP NOT NULL);`, warehouseSchemasTable)
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
@@ -1383,6 +1383,31 @@ func startWebHandler() {
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
+func claimAndProcess(workerIdx int) {
+	logger.Infof("Job claim attempt by by slave worker-%v", workerIdx)
+	claim, claimed := notifier.Claim()
+	if claimed {
+		var payload PayloadT
+		json.Unmarshal(claim.Payload, &payload)
+		payload.BatchID = claim.BatchID
+		ids, err := processStagingFile(payload)
+		if err != nil {
+			response := pgnotifier.ClaimResponseT{
+				Err: err,
+			}
+			claim.ClaimResponseChan <- response
+		}
+		payload.LoadFileIDs = ids
+		output, err := json.Marshal(payload)
+		response := pgnotifier.ClaimResponseT{
+			Err:     err,
+			Payload: output,
+		}
+		claim.ClaimResponseChan <- response
+	}
+	slaveWorkerRoutineStatus[workerIdx] = false
+}
+
 func setupSlave() {
 	slaveWorkerRoutineStatus = make([]bool, noOfSlaveWorkerRoutines)
 	rruntime.Go(func() {
@@ -1391,38 +1416,17 @@ func setupSlave() {
 			panic(err)
 		}
 		for {
-			event := <-jobNotificationChannel
+			_ = <-jobNotificationChannel
 			for workerIdx := 0; workerIdx < noOfSlaveWorkerRoutines; workerIdx++ {
 				if !slaveWorkerRoutineStatus[workerIdx] {
 					slaveWorkerRoutineStatus[workerIdx] = true
-					slaveRoutine := func(workerIdx int) func() {
-						return func() {
-							logger.Infof("Job being claimed by slave worker-%v", workerIdx)
-							claimChan, claimed := notifier.Claim(event.ID)
-							if claimed {
-								var payload PayloadT
-								json.Unmarshal(event.Data, &payload)
-								payload.BatchID = event.BatchID
-								ids, err := processStagingFile(payload)
-								if err != nil {
-									response := pgnotifier.ClaimResponseT{
-										Err: err,
-									}
-									claimChan <- response
-								}
-								payload.LoadFileIDs = ids
-								output, err := json.Marshal(payload)
-								response := pgnotifier.ClaimResponseT{
-									Err:     err,
-									Payload: output,
-								}
-								claimChan <- response
-							}
-							slaveWorkerRoutineStatus[workerIdx] = false
-						}
-
-					}(workerIdx)
-					rruntime.Go(slaveRoutine)
+					idx := workerIdx
+					rruntime.Go(func() {
+						func(index int) {
+							claimAndProcess(index)
+						}(idx)
+					})
+					break
 				}
 			}
 		}

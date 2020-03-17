@@ -51,6 +51,14 @@ type ResponseT struct {
 	Payload json.RawMessage
 }
 
+type ClaimT struct {
+	ID                int64
+	BatchID           string
+	Status            string
+	Payload           json.RawMessage
+	ClaimResponseChan chan ClaimResponseT
+}
+
 type ClaimResponseT struct {
 	Payload json.RawMessage
 	Err     error
@@ -167,7 +175,7 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 	})
 }
 
-func (notifier *PgNotifierT) Claim(id int64) (ch chan ClaimResponseT, claimed bool) {
+func (notifier *PgNotifierT) Claim() (claim ClaimT, claimed bool) {
 	//Begin Transaction
 	tx, err := notifier.dbHandle.Begin()
 	if err != nil {
@@ -175,6 +183,8 @@ func (notifier *PgNotifierT) Claim(id int64) (ch chan ClaimResponseT, claimed bo
 	}
 
 	var claimedID int64
+	var batchID, status string
+	var payload json.RawMessage
 	// Dont panic if acquire fails -- Just rollback & return the worker to free state again
 	stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s',
 						updated_at = '%[3]s',
@@ -182,13 +192,13 @@ func (notifier *PgNotifierT) Claim(id int64) (ch chan ClaimResponseT, claimed bo
 						WHERE id = (
 						SELECT id
 						FROM %[1]s
-						WHERE status='%[4]s' AND id = %[5]d
+						WHERE status='%[4]s'
 						ORDER BY id
 						FOR UPDATE SKIP LOCKED
 						LIMIT 1
 						)
-						RETURNING id;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), WaitingState, id)
-	err = tx.QueryRow(stmt).Scan(&claimedID)
+						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), WaitingState)
+	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 
 	if err != nil {
 		// TODO: verify rollback is necessary on error
@@ -196,9 +206,16 @@ func (notifier *PgNotifierT) Claim(id int64) (ch chan ClaimResponseT, claimed bo
 		return
 	}
 
-	ch = make(chan ClaimResponseT, 1)
-	notifier.updateClaimedEvent(id, tx, ch)
-	return ch, true
+	responseChan := make(chan ClaimResponseT, 1)
+	claim = ClaimT{
+		ID:                claimedID,
+		BatchID:           batchID,
+		Status:            status,
+		Payload:           payload,
+		ClaimResponseChan: responseChan,
+	}
+	notifier.updateClaimedEvent(claimedID, tx, responseChan)
+	return claim, true
 }
 
 func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan []ResponseT, err error) {
