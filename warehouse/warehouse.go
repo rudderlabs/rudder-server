@@ -853,7 +853,6 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
-	slaveWorkerRoutineStatus = make([]bool, noOfSlaveWorkerRoutines)
 	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
 	})
@@ -1385,6 +1384,7 @@ func startWebHandler() {
 }
 
 func setupSlave() {
+	slaveWorkerRoutineStatus = make([]bool, noOfSlaveWorkerRoutines)
 	rruntime.Go(func() {
 		jobNotificationChannel, err := notifier.Subscribe("process_staging_file")
 		if err != nil {
