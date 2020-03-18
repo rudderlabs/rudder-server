@@ -47,7 +47,7 @@ var primaryKeyMap = map[string]string{
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	arr := []string{}
 	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, dataTypesMap[dataType]))
+		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, strings.ToUpper(name), dataTypesMap[dataType]))
 	}
 	return strings.Join(arr[:], ",")
 }
@@ -70,7 +70,7 @@ func (sf *HandleT) tableExists(tableName string) (exists bool, err error) {
 }
 
 func (sf *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, tableName, strings.ToUpper(columnName), dataTypesMap[columnType])
 	logger.Infof("Adding column in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -173,7 +173,13 @@ func (sf *HandleT) load() (errList []error) {
 			strkeys[i] = keys[i].String()
 		}
 		sort.Strings(strkeys)
-		sortedColumnNames := strings.Join(strkeys, ",")
+		var sortedColumnNames string
+		for index, key := range strkeys {
+			if index > 0 {
+				sortedColumnNames += fmt.Sprintf(`, `)
+			}
+			sortedColumnNames += fmt.Sprintf(`"%s"`, strings.ToUpper(key))
+		}
 
 		stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
 		sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s"."%s" LIKE "%s"."%s"`, sf.Namespace, stagingTableName, sf.Namespace, strings.ToUpper(tableName))
@@ -210,18 +216,18 @@ func (sf *HandleT) load() (errList []error) {
 
 		var columnNames, stagingColumnNames string
 		for idx, str := range strkeys {
-			columnNames += str
-			stagingColumnNames += fmt.Sprintf(`staging.%s`, str)
+			columnNames += fmt.Sprintf(`"%s"`, strings.ToUpper(str))
+			stagingColumnNames += fmt.Sprintf(`staging."%s"`, strings.ToUpper(str))
 			if idx != len(strkeys)-1 {
-				columnNames += ","
-				stagingColumnNames += ","
+				columnNames += fmt.Sprintf(`,`)
+				stagingColumnNames += fmt.Sprintf(`,`)
 			}
 		}
 
 		sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s"."%[2]s" AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY %[4]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[3]s"
+											SELECT *, row_number() OVER (PARTITION BY ID ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[3]s"
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
 									ON original.%[4]s = staging.%[4]s
