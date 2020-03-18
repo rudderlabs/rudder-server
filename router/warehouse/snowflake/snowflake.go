@@ -70,7 +70,7 @@ func (sf *HandleT) tableExists(tableName string) (exists bool, err error) {
 }
 
 func (sf *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, tableName, strings.ToUpper(columnName), dataTypesMap[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN "%s" %s`, tableName, strings.ToUpper(columnName), dataTypesMap[columnType])
 	logger.Infof("Adding column in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
