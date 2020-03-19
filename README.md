@@ -1,5 +1,4 @@
 ![Build Status][build status]
-[![Go Report Card][go-report-card-badge]][go-report-card]
 [![Release]][release]
 
 # What is RudderStack?
