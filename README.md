@@ -13,7 +13,22 @@ The client SDKs are in a separate repo (link below).
 
 Rudder server is released under [AGPLv3 License][agplv3_license]
 
+See the [HackerNews][hackernews] discussion around RudderStack.
+
 Questions? Read our [Docs][docs] OR join our [Discord][discord] channel. Or please email soumyadeb at rudderlabs.com.
+
+# Features
+
+1. **Production Ready:** Multiple companies from startups to large engerprieses are running RudderStack for collecting events.
+2. **Extreme Scale:** One of our largest installations is sending 300M events/DAY peak of 40K req/sec via a multi-node RudderStack setup.
+3. **Segment API Compatibile:** RudderStack is Segment API and library compatible so don't need to change your app if you are using Segment.
+4. **Cloud Destinations:** Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations.
+5. **Warehouse Destinations:** S3, Minio, Redshift, Snowflake, Google BigQuery support.
+6. **Transformations:** User-specified transformation to filter/transform events.
+7. **Rich UI:** Written in react
+8. **SDKs:** [Javascript][rudder-sdk-js-git-repo], [Android][rudder-sdk-android-git-repo] or [iOS][rudder-sdk-android-git-repo] and server-side SDKs.
+9. **Detailed Docs:** [Docs][docs]
+
 
 # Why RudderStack ?
 
@@ -25,19 +40,6 @@ We are building RudderStack because we believe open-source and cloud-prem is imp
 
 3. **Unlimited Events:** Event volume-based pricing of most commercial systems is broken. You should be able to collect as much data as possible without worrying about overrunning event budgets. RudderStack's core BE is open-source and free to use.
 
-See the [HackerNews][hackernews] discussion around RudderStack.
-
-# Features
-
-1. **Production Ready:** Multiple companies from startups to large engerprieses are running RudderStack for collecting events.
-2. **Extreme Scale:** One of our largest installations (the largest online grocery in India) is sending a peak of 40K req/sec via a multi-node RudderStack setup.
-3. **Segment API Compatibile:** RudderStack is Segment API and library compatible so don't need to change your app if you are using Segment.
-4. **Cloud Destinations:** Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations.
-5. **Warehouse Destinations:** S3, Minio, Redshift, Snowflake, Google BigQuery support.
-6. **Transformations:** User-specified transformation to filter/transform events.
-7. **Rich UI:** Written in react
-8. **SDKs:** [Javascript][rudder-sdk-js-git-repo], [Android][rudder-sdk-android-git-repo] or [iOS][rudder-sdk-android-git-repo] and server-side SDKs.
-9. **Detailed Docs:** [Docs][docs]
 
 # Contribution
 
