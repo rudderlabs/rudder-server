@@ -199,7 +199,6 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 						LIMIT 1
 						)
 						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState)
-	fmt.Println(stmt)
 	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 
 	if err != nil {
@@ -238,7 +237,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 
 	batchID := uuid.NewV4().String()
 	for _, message := range messages {
-		_, err = stmt.Exec(batchID, WaitingState, topic, message.Payload, time.Now(), time.Now())
+		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload), time.Now(), time.Now())
 		if err != nil {
 			return
 		}

@@ -1385,10 +1385,11 @@ func startWebHandler() {
 }
 
 func claimAndProcess(workerIdx int, slaveID string) {
-	logger.Infof("Job claim attempt by by slave worker-%v", workerIdx)
+	logger.Infof("WH: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
 	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
 	claim, claimed := notifier.Claim(workerID)
 	if claimed {
+		logger.Infof("WH: Successfully claimed job:%v by slave worker-%v-%v", claim.ID, workerIdx, slaveID)
 		var payload PayloadT
 		json.Unmarshal(claim.Payload, &payload)
 		payload.BatchID = claim.BatchID
