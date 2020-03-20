@@ -244,6 +244,11 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, location string) (err 
 
 	_, err = brt.netHandle.Post(warehouseURL+"/v1/process", "application/json; charset=utf-8",
 		bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		logger.Errorf("Posting ERROR s3 batch url to %v - %v", warehouseURL+"/v1/process", err)
+	} else {
+		logger.Infof("Posted successfully s3 batch url to %v", warehouseURL+"/v1/process")
+	}
 	return
 }
 
