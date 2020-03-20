@@ -325,8 +325,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	}
 
 	// Schema Migration: Created_at column should have a default now()
-	dList := jd.getDSList(false)
-	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
+	jd.setDefaultNowColumns(jd.getDSList(false))
 
 	if jd.toBackup {
 		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
@@ -1785,8 +1784,10 @@ type JournalEntryT struct {
 }
 
 // Remove this after a release
-func (jd *HandleT) setDefaultNowColumns(dsIndex string) {
+func (jd *HandleT) setDefaultNowColumns(dList []dataSetT) {
 
+	//Altering only the last jobs table, since new entries will be added only to the last jobs table
+	dsIndex := dList[len(dList)-1].Index
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %s_jobs_%s ALTER COLUMN created_at set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
 
 	_, err := jd.dbHandle.Exec(sqlStatement)
@@ -1797,16 +1798,18 @@ func (jd *HandleT) setDefaultNowColumns(dsIndex string) {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
-	//TODO alter migrated status tables also
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s_job_status_%s ALTER COLUMN exec_time set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
+	//Altering all the job status tables, since we might be writing to intermediate status tables also
+	for _, ds := range dList {
+		sqlStatement = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN exec_time set DEFAULT NOW()`, ds.JobStatusTable)
 
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
+		_, err = jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
 
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s_job_status_%s ALTER COLUMN retry_time set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
+		sqlStatement = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN retry_time set DEFAULT NOW()`, ds.JobStatusTable)
 
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
+		_, err = jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
+	}
 }
 
 func (jd *HandleT) setupJournal() {
