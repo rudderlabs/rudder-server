@@ -53,7 +53,7 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 }
 
 func (sf *HandleT) createTable(name string, columns map[string]string) (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v )`, name, columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, strings.ToUpper(name), columnsWithDataTypes(columns, ""))
 	logger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -70,7 +70,7 @@ func (sf *HandleT) tableExists(tableName string) (exists bool, err error) {
 }
 
 func (sf *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN "%s" %s`, tableName, strings.ToUpper(columnName), dataTypesMap[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN "%s" %s`, strings.ToUpper(tableName), strings.ToUpper(columnName), dataTypesMap[columnType])
 	logger.Infof("Adding column in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -181,7 +181,7 @@ func (sf *HandleT) load() (errList []error) {
 			sortedColumnNames += fmt.Sprintf(`"%s"`, strings.ToUpper(key))
 		}
 
-		stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
+		stagingTableName := strings.ToUpper(fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String()))
 		sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s"."%s" LIKE "%s"."%s"`, sf.Namespace, stagingTableName, sf.Namespace, strings.ToUpper(tableName))
 
 		logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
