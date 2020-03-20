@@ -305,7 +305,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	//This job can only be higher than blocking
 	//We only let the blocking job pass
 	if job.JobID < blockJobID {
-		panic(fmt.Errorf("job.JobID:%d < blockJobID:%d", job.JobID, blockJobID))
+		panic(fmt.Errorf("Blocking job id should be minimum. job.JobID:%d < blockJobID:%d", job.JobID, blockJobID))
 	}
 	if job.JobID == blockJobID {
 		return worker

@@ -1935,7 +1935,7 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		jd.assert(opDone == false, "opDone is true")
 		count++
 	}
-	jd.assert(count <= 1, fmt.Sprintf("count:%d > 1", count))
+	jd.assert(count <= 1, fmt.Sprintf("Journal table count validation failed. count:%d > 1", count))
 
 	if count == 0 {
 		//Nothing to recoer
