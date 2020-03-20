@@ -275,8 +275,6 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			JobID:         job.JobID,
 			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 			JobState:      jobState,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
 			ErrorCode:     "",
 			ErrorResponse: errorResp,
 		}
@@ -431,8 +429,6 @@ func (brt *HandleT) mainLoop() {
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 					JobState:      jobsdb.ExecutingState,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
 					ErrorCode:     "",
 					ErrorResponse: []byte(`{}`), // check
 				}
@@ -552,8 +548,6 @@ func (brt *HandleT) crashRecover() {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
 				JobState:      jobsdb.FailedState,
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{"Error": "Rudder server crashed while copying jobs to storage"}`), // check

@@ -726,8 +726,8 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
                                      job_id INT REFERENCES %s(job_id),
                                      job_state job_state_type,
                                      attempt SMALLINT,
-                                     exec_time TIMESTAMP,
-                                     retry_time TIMESTAMP,
+                                     exec_time TIMESTAMP NOT NULL DEFAULT NOW(),
+                                     retry_time TIMESTAMP NOT NULL DEFAULT NOW(),
                                      error_code VARCHAR(32),
                                      error_response JSONB);`, newDS.JobStatusTable, newDS.JobTable)
 	_, err = jd.dbHandle.Exec(sqlStatement)
@@ -944,7 +944,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
 		}
 		statusList = append(statusList, &newStatus)
 	}
-	jd.updateJobStatusDS(destDS, statusList, []string{}, nil)
+	jd.updateJobStatusDS(destDS, true, statusList, []string{}, nil)
 
 	return nil
 }
@@ -1374,18 +1374,25 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	return jobList, nil
 }
 
-func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
+func (jd *HandleT) updateJobStatusDS(ds dataSetT, copyID bool, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
 
 	if len(statusList) == 0 {
 		return nil
 	}
 
+	var stmt *sql.Stmt
+
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
-	stmt, err := txn.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
-		"retry_time", "error_code", "error_response"))
-	jd.assertError(err)
+	if copyID {
+		stmt, err = txn.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
+			"retry_time", "error_code", "error_response"))
+		jd.assertError(err)
+	} else {
+		stmt, err = txn.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "error_code", "error_response"))
+		jd.assertError(err)
+	}
 
 	defer stmt.Close()
 	for _, status := range statusList {
@@ -1393,9 +1400,14 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 		if !utf8.ValidString(string(status.ErrorResponse)) {
 			status.ErrorResponse, _ = json.Marshal("{}")
 		}
-		_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
-			status.RetryTime, status.ErrorCode, string(status.ErrorResponse))
-		jd.assertError(err)
+		if copyID {
+			_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
+				status.RetryTime, status.ErrorCode, string(status.ErrorResponse))
+			jd.assertError(err)
+		} else {
+			_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ErrorCode, string(status.ErrorResponse))
+			jd.assertError(err)
+		}
 	}
 	_, err = stmt.Exec()
 	jd.assertError(err)
@@ -1785,6 +1797,16 @@ func (jd *HandleT) setDefaultNowColumns(dsIndex string) {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
+	//TODO alter migrated status tables also
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s_job_status_%s ALTER COLUMN exec_time set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
+
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s_job_status_%s ALTER COLUMN retry_time set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
+
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
 }
 
 func (jd *HandleT) setupJournal() {
@@ -2024,7 +2046,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 					logger.Debug("Range:", ds, statusList[lastPos].JobID,
 						statusList[i-1].JobID, lastPos, i-1)
 				}
-				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
+				err := jd.updateJobStatusDS(ds.ds, false, statusList[lastPos:i], customValFilters, parameterFilters)
 				jd.assertError(err)
 				lastPos = i
 				break
@@ -2033,7 +2055,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		//Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
 			logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
-			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
+			err := jd.updateJobStatusDS(ds.ds, false, statusList[lastPos:i], customValFilters, parameterFilters)
 			jd.assertError(err)
 			lastPos = i
 			break
@@ -2047,7 +2069,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		jd.assert(len(dsRangeList) == len(dsList)-1, fmt.Sprintf("len(dsRangeList):%d != len(dsList):%d-1", len(dsRangeList), len(dsList)))
 		//Update status in the last element
 		logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
-		err := jd.updateJobStatusDS(dsList[len(dsList)-1], statusList[lastPos:], customValFilters, parameterFilters)
+		err := jd.updateJobStatusDS(dsList[len(dsList)-1], false, statusList[lastPos:], customValFilters, parameterFilters)
 		jd.assertError(err)
 	}
 
@@ -2275,8 +2297,8 @@ func (jd *HandleT) createTables() error {
                             job_id INT REFERENCES jobs(job_id),
                             job_state job_state_type,
                             attempt SMALLINT,
-                            exec_time TIMESTAMP,
-                            retry_time TIMESTAMP,
+                            exec_time TIMESTAMP NOT NULL DEFAULT NOW(),
+                            retry_time TIMESTAMP NOT NULL DEFAULT NOW(),
                             error_code VARCHAR(32),
                             error_response JSONB);`
 	_, err = jd.dbHandle.Exec(sqlStatement)
@@ -2300,8 +2322,6 @@ func (jd *HandleT) staticDSTest() {
 		id := uuid.NewV4()
 		newJob := JobT{
 			UUID:         id,
-			CreatedAt:    time.Now(),
-			ExpireAt:     time.Now(),
 			CustomVal:    testEndPoint,
 			EventPayload: []byte(`{"event_type":"click"}`),
 		}
@@ -2341,15 +2361,13 @@ func (jd *HandleT) staticDSTest() {
 				JobID:         job.JobID,
 				JobState:      ExecutingState,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
 				ErrorCode:     "202",
 				ErrorResponse: []byte(`{"success":"OK"}`),
 			}
 			statusList = append(statusList, &newStatus)
 		}
 
-		jd.updateJobStatusDS(testDS, statusList, []string{testEndPoint}, nil)
+		jd.updateJobStatusDS(testDS, false, statusList, []string{testEndPoint}, nil)
 
 		//Mark call as failed
 		statusList = nil
@@ -2366,15 +2384,13 @@ func (jd *HandleT) staticDSTest() {
 				JobID:         job.JobID,
 				JobState:      stat,
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
 				ErrorCode:     "202",
 				ErrorResponse: []byte(`{"success":"OK"}`),
 			}
 			statusList = append(statusList, &newStatus)
 		}
 		fmt.Println("Max attempt", maxAttempt)
-		jd.updateJobStatusDS(testDS, statusList, []string{testEndPoint}, nil)
+		jd.updateJobStatusDS(testDS, false, statusList, []string{testEndPoint}, nil)
 	}
 
 }
@@ -2392,8 +2408,6 @@ func (jd *HandleT) dynamicDSTestMigrate() {
 			id := uuid.NewV4()
 			newJob := JobT{
 				UUID:         id,
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
 				CustomVal:    testEndPoint,
 				EventPayload: []byte(`{"event_type":"click"}`),
 			}
@@ -2427,8 +2441,6 @@ func (jd *HandleT) dynamicTest() {
 			id := uuid.NewV4()
 			newJob := JobT{
 				UUID:         id,
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
 				CustomVal:    testEndPoint,
 				EventPayload: []byte(`{"event_type":"click"}`),
 			}
@@ -2474,8 +2486,6 @@ func (jd *HandleT) dynamicTest() {
 				JobID:         job.JobID,
 				JobState:      state,
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
 				ErrorCode:     "202",
 				ErrorResponse: []byte(`{"success":"OK"}`),
 			}

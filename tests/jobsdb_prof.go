@@ -86,8 +86,6 @@ func storeProcess(jd *jobsdb.HandleT) {
 			uuidWriteMap[id] = true
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
 				CustomVal:    endPoint,
 				EventPayload: []byte(sampleEvent),
 			}
@@ -159,8 +157,6 @@ func readProcess(jd *jobsdb.HandleT) {
 				JobID:         job.JobID,
 				JobState:      stat,
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
 				ErrorCode:     "202",
 				ErrorResponse: []byte(`{"success":"OK"}`),
 			}

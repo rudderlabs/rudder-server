@@ -699,8 +699,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			JobID:         batchEvent.JobID,
 			JobState:      jobsdb.SucceededState,
 			AttemptNum:    1,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 		}
@@ -787,8 +785,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
 				CustomVal:    destType,
 				EventPayload: destEventJSON,
 			}
@@ -914,8 +910,6 @@ func (proc *HandleT) mainLoop() {
 					JobID:         batchEvent.JobID,
 					JobState:      jobsdb.ExecutingState,
 					AttemptNum:    1,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
 					ErrorCode:     "200",
 					ErrorResponse: []byte(`{"success":"OK"}`),
 				}
@@ -946,8 +940,6 @@ func (proc *HandleT) crashRecover() {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
 				JobState:      jobsdb.FailedState,
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check

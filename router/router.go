@@ -113,8 +113,6 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
 				ErrorCode:     "",
 				JobState:      jobsdb.WaitingState,
 				ErrorResponse: []byte(`{"reason":"Router Disabled"}`), // check
@@ -498,8 +496,6 @@ func (rt *HandleT) generatorLoop() {
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 					JobState:      jobsdb.ExecutingState,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
 					ErrorCode:     "",
 					ErrorResponse: []byte(`{}`), // check
 				}
@@ -537,8 +533,6 @@ func (rt *HandleT) crashRecover() {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
 				JobState:      jobsdb.FailedState,
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check
