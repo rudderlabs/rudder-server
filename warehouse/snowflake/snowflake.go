@@ -219,7 +219,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 											SELECT *, row_number() OVER (PARTITION BY %[4]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[3]s"
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
-									ON original."%[4]s" = staging."%[4]s"
+									ON original.%[4]s = staging.%[4]s
 									WHEN NOT MATCHED THEN
 									INSERT (%[5]s) VALUES (%[6]s)`, sf.Namespace, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames)
 	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
