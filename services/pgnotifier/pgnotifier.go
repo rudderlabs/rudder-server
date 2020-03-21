@@ -43,7 +43,6 @@ type NotificationT struct {
 	ID      int64
 	BatchID string `json:"batch_id"`
 	Status  string
-	Data    json.RawMessage
 }
 
 type ResponseT struct {
@@ -305,8 +304,7 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 	// TODO: Use `REPLACE FUNCTION`
 	sqlStmt := fmt.Sprintf(`DO $$
 							BEGIN
-							IF  NOT EXISTS (select  from pg_proc where proname = 'pgnotifier_notify') THEN
-								CREATE FUNCTION pgnotifier_notify() RETURNS TRIGGER AS '
+							CREATE OR REPLACE FUNCTION pgnotifier_notify() RETURNS TRIGGER AS '
 								DECLARE
 									notification json;
 								BEGIN
@@ -322,9 +320,6 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 									-- Result is ignored since this is an AFTER trigger
 									RETURN NULL;
 								END;' LANGUAGE plpgsql;
-
-							END IF;
-
 							END $$  `, topic)
 
 	_, err = notifier.dbHandle.Exec(sqlStmt)
