@@ -1408,7 +1408,7 @@ func claimAndProcess(workerIdx int, slaveID string) {
 		}
 		claim.ClaimResponseChan <- response
 	}
-	slaveWorkerRoutineStatus[workerIdx] = false
+	slaveWorkerRoutineStatus[workerIdx-1] = false
 }
 
 func setupSlave() {
@@ -1422,8 +1422,8 @@ func setupSlave() {
 		for {
 			_ = <-jobNotificationChannel
 			for workerIdx := 1; workerIdx <= noOfSlaveWorkerRoutines; workerIdx++ {
-				if !slaveWorkerRoutineStatus[workerIdx] {
-					slaveWorkerRoutineStatus[workerIdx] = true
+				if !slaveWorkerRoutineStatus[workerIdx-1] {
+					slaveWorkerRoutineStatus[workerIdx-1] = true
 					idx := workerIdx
 					rruntime.Go(func() {
 						func(index int) {
