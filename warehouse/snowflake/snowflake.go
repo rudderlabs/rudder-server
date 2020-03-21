@@ -198,7 +198,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 		return
 	}
 
-	primaryKey := "ID"
+	primaryKey := "id"
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
 	}
