@@ -244,10 +244,12 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 	}
 	_, err = stmt.Exec()
 	if err != nil {
+		logger.Errorf("PgNotifier: Error publishing messages: %v", err)
 		return
 	}
 	err = txn.Commit()
 	if err != nil {
+		logger.Errorf("PgNotifier: Error in publishing messages: %v", err)
 		return
 	}
 	notifier.trackBatch(batchID, &ch)
@@ -327,6 +329,7 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
+		logger.Errorf("PgNotifier: Error creatin trigger func: %v", err)
 		return
 	}
 
