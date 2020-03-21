@@ -216,7 +216,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s"."%[2]s" AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY %[4]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[3]s"
+											SELECT *, row_number() OVER (PARTITION BY ID ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[3]s"
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
 									ON original.%[4]s = staging.%[4]s
