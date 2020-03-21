@@ -208,6 +208,7 @@ func loadConfig() {
 	dbname = config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
 	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+	sslmode = config.GetEnv("JOBS_DB_SSLMODE", "disable")
 
 	/*Migration related parameters
 	jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
@@ -237,8 +238,8 @@ func init() {
 
 func GetConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+		"password=%s dbname=%s sslmode=%s",
+		host, port, user, password, sslmode)
 
 }
 
@@ -2234,8 +2235,8 @@ func (jd *HandleT) dropTables() error {
 
 func (jd *HandleT) setupEnumTypes() {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+		"password=%s dbname=%s sslmode=%s",
+		host, port, user, password, sslmode)
 
 	dbHandle, err := sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
