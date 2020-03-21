@@ -317,6 +317,8 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
+							logger.Infof("COPIED TO STORAGE s3 - case 1 ")
+
 							brt.setJobStatus(batchJobs, false, output.Error)
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 							destUploadStat.End()
@@ -325,6 +327,8 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType)
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
+							logger.Infof("COPIED TO STORAGE s3 - case 2 ")
+
 							if output.Error == nil && output.Key != "" {
 								output.Error = brt.postToWarehouse(batchJobs, output.Key)
 								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
