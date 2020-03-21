@@ -312,8 +312,7 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 									notification = json_build_object(
 													''id'', NEW.id,
 													''batch_id'', NEW.batch_id,
-													''status'', NEW.status,
-													''data'', NEW.payload);
+													''status'', NEW.status);
 
 									-- Execute pg_notify(channel, notification)
 									PERFORM pg_notify(''%s'',notification::text);
