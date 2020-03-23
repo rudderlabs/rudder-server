@@ -43,8 +43,8 @@ var dataTypesMap = map[string]string{
 }
 
 var primaryKeyMap = map[string]string{
-	"users": "ID",
-	"id	entifies": "ID",
+	"users":      "ID",
+	"identifies": "ID",
 }
 
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
