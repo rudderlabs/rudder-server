@@ -23,20 +23,23 @@ const (
 
 func createWorkspaceTable() {
 	//Create table to store workspace token
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS workspace (
 		token TEXT PRIMARY KEY,
-		created_at TIMESTAMP NOT NULL);`, "workspace")
+		created_at TIMESTAMP NOT NULL,
+		parameters JSONB);`)
 
 	_, err := dbHandle.Exec(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
+}
 
-	//Read entries, if there are no entries insert current workspace token
+func insertTokenIfNotExists() {
+	//Read entries, if there are no entries insert hashed current workspace token
 	var totalCount int
-	sqlStatement = fmt.Sprintf(`SELECT COUNT(*) FROM %s`, "workspace")
+	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM workspace`)
 	row := dbHandle.QueryRow(sqlStatement)
-	err = row.Scan(&totalCount)
+	err := row.Scan(&totalCount)
 	if err != nil {
 		panic(err)
 	}
@@ -45,20 +48,16 @@ func createWorkspaceTable() {
 		return
 	}
 
-	//There are no entries in the table, insert current workspace token
-	insertTokenIntoWorkspace(config.GetEnv("CONFIG_BACKEND_TOKEN", ""))
-}
-
-func insertTokenIntoWorkspace(token string) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (token, created_at)
-									   VALUES ($1, $2)`, "workspace")
+	//There are no entries in the table, hash current workspace token and insert
+	sqlStatement = fmt.Sprintf(`INSERT INTO workspace (token, created_at)
+									   VALUES ($1, $2)`)
 	stmt, err := dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(token, time.Now())
+	_, err = stmt.Exec(misc.GetHash(misc.GetWorkspaceToken()), time.Now())
 	if err != nil {
 		panic(err)
 	}
@@ -75,8 +74,8 @@ func IsPostgresCompatible() bool {
 	return versionNum >= minPostgresVersion
 }
 
-func didWorkspaceTokenChange() bool {
-	sqlStatement := fmt.Sprintf(`SELECT token FROM %s order by created_at desc limit 1`, "workspace")
+func getWorkspaceFromDB() string {
+	sqlStatement := fmt.Sprintf(`SELECT token FROM workspace order by created_at desc limit 1`)
 	var token string
 	row := dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&token)
@@ -84,11 +83,7 @@ func didWorkspaceTokenChange() bool {
 		panic(err)
 	}
 
-	if token == config.GetEnv("CONFIG_BACKEND_TOKEN", "") {
-		return false
-	}
-
-	return true
+	return token
 }
 
 func createDBConnection() {
@@ -114,9 +109,12 @@ func ValidateEnv() bool {
 		return false
 	}
 
+	//create workspace table and insert token
 	createWorkspaceTable()
+	insertTokenIfNotExists()
 
-	if !didWorkspaceTokenChange() {
+	workspaceTokenHashInDB := getWorkspaceFromDB()
+	if workspaceTokenHashInDB == misc.GetHash(misc.GetWorkspaceToken()) {
 		dbHandle.Close()
 		return true
 	}
@@ -127,12 +125,14 @@ func ValidateEnv() bool {
 	logger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
 
 	dbName := config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
-	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+config.GetEnv("CONFIG_BACKEND_TOKEN", ""))
+	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB[:32])
 
 	//New db created. Creating connection to the new db
 	createDBConnection()
-	//create workspace table
+
+	//create workspace table and insert hashed token
 	createWorkspaceTable()
+	insertTokenIfNotExists()
 
 	dbHandle.Close()
 

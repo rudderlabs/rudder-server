@@ -37,7 +37,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 		return SourcesT{}, false
 	}
 
-	req.SetBasicAuth(configBackendToken, "")
+	req.SetBasicAuth(workspaceToken, "")
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
