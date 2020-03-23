@@ -244,6 +244,7 @@ func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusEr
 
 func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHandle *sql.DB) (err error) {
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, last_exec_time=$2 WHERE wh_upload_id=$3 AND table_name=$4`, warehouseTableUploadsTable)
+	logger.Infof("WH: Setting table upload status: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), uploadID, tableName)
 	if err != nil {
 		panic(err)
