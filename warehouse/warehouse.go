@@ -1459,6 +1459,7 @@ func claimAndProcess(workerIdx int, slaveID string) {
 		}
 		claim.ClaimResponseChan <- response
 	}
+	logger.Infof("WH: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineStatus)
 	slaveWorkerRoutineStatus[workerIdx-1] = false
 }
 
@@ -1471,7 +1472,8 @@ func setupSlave() {
 			panic(err)
 		}
 		for {
-			_ = <-jobNotificationChannel
+			ev := <-jobNotificationChannel
+			logger.Infof("WH: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineStatus)
 			for workerIdx := 1; workerIdx <= noOfSlaveWorkerRoutines; workerIdx++ {
 				if !slaveWorkerRoutineStatus[workerIdx-1] {
 					slaveWorkerRoutineStatus[workerIdx-1] = true
