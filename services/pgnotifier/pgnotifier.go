@@ -253,6 +253,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 		logger.Errorf("PgNotifier: Error in publishing messages: %v", err)
 		return
 	}
+	logger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(messages), queueName, batchID)
 	notifier.trackBatch(batchID, &ch)
 	return
 }
