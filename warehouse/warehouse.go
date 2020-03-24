@@ -448,10 +448,6 @@ func (wh *HandleT) mainLoop() {
 				logger.Debugf("WH: Skipping upload loop since %s:%s upload in progess", wh.destType, warehouse.Destination.ID)
 				continue
 			}
-			if uploadFrequencyExceeded(warehouse) {
-				logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
-				continue
-			}
 			setDestInProgress(warehouse, true)
 
 			_, ok := inRecoveryMap[warehouse.Destination.ID]
@@ -490,6 +486,11 @@ func (wh *HandleT) mainLoop() {
 				}
 				wh.uploadToWarehouseQ <- jobs
 			} else {
+				if uploadFrequencyExceeded(warehouse) {
+					logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
+					setDestInProgress(warehouse, false)
+					continue
+				}
 				// fetch staging files that are not processed yet
 				stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
 				if err != nil {
@@ -582,6 +583,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 		messages = append(messages, message)
 	}
 
+	logger.Infof("WH: Publishing %d staging files to PgNotifier", len(messages))
 	var loadFileIDs []int64
 	ch, err := wh.notifier.Publish("process_staging_file", messages)
 	if err != nil {
@@ -589,6 +591,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	}
 
 	responses := <-ch
+	logger.Infof("WH: Received responses from PgNotifier")
 	for _, resp := range responses {
 		// TODO: make it aborted
 		if resp.Status == "aborted" {
@@ -671,7 +674,7 @@ func (wh *HandleT) initWorkers() {
 						// generate load files only if not done before
 						// upload records have start_load_file_id and end_load_file_id set to 0 on creation
 						// and are updated on creation of load files
-						logger.Infof("WH: Processing staging files in upload job:%v with staging files from %v to %v for %s:%s", len(job.List), job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
+						logger.Infof("WH: Processing %d staging files in upload job:%v with staging files from %v to %v for %s:%s", len(job.List), job.List[0].ID, job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
 						if job.Upload.StartLoadFileID == 0 {
 							warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
 							err := wh.createLoadFiles(&job)
@@ -1320,11 +1323,18 @@ func setupTables(dbHandle *sql.DB) {
 									  wh_upload_id BIGSERIAL NOT NULL,
 									  table_name VARCHAR(64),
 									  status wh_upload_state_type NOT NULL,
-									  error VARCHAR(512),
+									  error TEXT,
 									  last_exec_time TIMESTAMP,
 									  created_at TIMESTAMP NOT NULL,
 									  updated_at TIMESTAMP NOT NULL);`, warehouseTableUploadsTable)
 
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+
+	// change error type to text
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, warehouseTableUploadsTable, "error")
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -1338,7 +1348,7 @@ func setupTables(dbHandle *sql.DB) {
 									  destination_id VARCHAR(64) NOT NULL,
 									  destination_type VARCHAR(64) NOT NULL,
 									  schema JSONB NOT NULL,
-									  error VARCHAR(512),
+									  error TEXT,
 									  created_at TIMESTAMP NOT NULL);`, warehouseSchemasTable)
 
 	_, err = dbHandle.Exec(sqlStatement)
@@ -1524,6 +1534,14 @@ func Start() {
 	}
 
 	if isMaster() {
+		rruntime.Go(func() {
+			for {
+				logger.Infof("uploading failed_uploads stat")
+				warehouseutils.DestStat(stats.CountType, "failed_uploads", "testid").Count(1)
+				time.Sleep(time.Minute)
+			}
+		})
+
 		backendconfig.Setup()
 		logger.Infof("WH: Starting warehouse master...")
 		err = notifier.AddTopic("process_staging_file")
