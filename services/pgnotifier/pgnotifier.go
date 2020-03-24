@@ -294,7 +294,7 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 					if err != nil {
 						panic(err)
 					}
-					logger.Infof("PgNotifier: Received data from channel: %s, data: %v", notification.Channel, event)
+					logger.Debugf("PgNotifier: Received data from channel: %s, data: %v", notification.Channel, event)
 					if event.Status == WaitingState || event.Status == FailedState {
 						ch <- event
 					} else {
