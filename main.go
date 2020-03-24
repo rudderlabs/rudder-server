@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 
@@ -103,15 +104,6 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 							brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
 							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 						}
-						// if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-						// 	_, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-						// 	if !ok {
-						// 		logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-						// 		var wh warehouse.HandleT
-						// 		wh.Setup(destination.DestinationDefinition.Name)
-						// 		dstToWhRouter[destination.DestinationDefinition.Name] = &wh
-						// 	}
-						// }
 					} else {
 						_, ok := dstToRouter[destination.DestinationDefinition.Name]
 						if !ok {
@@ -155,6 +147,12 @@ func startWarehouseService() {
 
 func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintenanceMode bool) {
 	logger.Info("Main starting")
+
+	if !misc.IsPostgresCompatible(jobsdb.GetConnectionString()) {
+		err := errors.New("Rudder server needs postgres version >= 10. Exiting")
+		logger.Error(err)
+		panic(err)
+	}
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
@@ -236,11 +234,6 @@ func main() {
 
 	logger.Setup()
 
-	if !jobsdb.IsPostgresCompatible() {
-		logger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
-		return
-	}
-
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 
@@ -303,16 +296,18 @@ func main() {
 		os.Exit(1)
 	}()
 
+	if canStartServer() {
+		rruntime.Go(func() {
+			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+		})
+	}
+
+	// initialize warehouse service after core to handle non-normal recovery modes
 	if canStartWarehouse() {
 		rruntime.Go(func() {
 			startWarehouseService()
 		})
 	}
 
-	if canStartServer() {
-		rruntime.Go(func() {
-			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
-		})
-	}
 	misc.KeepProcessAlive()
 }

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"compress/gzip"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,10 +26,16 @@ import (
 	"github.com/thoas/go-funk"
 )
 
-// RFC3339 with milli sec precision
-var RFC3339Milli = "2006-01-02T15:04:05.999Z07:00"
-
 var AppStartTime int64
+
+const (
+	// RFC3339 with milli sec precision
+	RFC3339Milli = "2006-01-02T15:04:05.999Z07:00"
+	//This is integer representation of Postgres version.
+	//For ex, integer representation of version 9.6.3 is 90603
+	//Minimum postgres version needed for rudder server is 10
+	minPostgresVersion = 100000
+)
 
 // ErrorStoreT : DS to store the app errors
 type ErrorStoreT struct {
@@ -579,4 +586,25 @@ func GetOutboundIP() (net.IP, error) {
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 
 	return localAddr.IP, nil
+}
+
+//IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
+func IsPostgresCompatible(connInfo string) bool {
+	dbHandle, err := sql.Open("postgres", connInfo)
+	if err != nil {
+		panic(err)
+	}
+
+	err = dbHandle.Ping()
+	if err != nil {
+		panic(err)
+	}
+
+	var versionNum int
+	err = dbHandle.QueryRow("SHOW server_version_num;").Scan(&versionNum)
+	if err != nil {
+		return false
+	}
+
+	return versionNum >= minPostgresVersion
 }

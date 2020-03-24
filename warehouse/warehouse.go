@@ -28,6 +28,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -1475,9 +1476,22 @@ func isSlave() bool {
 }
 
 func Start() {
+	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
+	if !isStandAlone() && !db.IsNormalMode() {
+		logger.Infof("Skipping start of warehouse service...")
+		return
+	}
+
 	logger.Infof("WH: Starting Warehouse service...")
 	var err error
 	psqlInfo := getConnectionString()
+
+	if !misc.IsPostgresCompatible(psqlInfo) {
+		err := errors.New("Rudder Warehouse Service needs postgres version >= 10. Exiting")
+		logger.Error(err)
+		panic(err)
+	}
+
 	dbHandle, err = sql.Open("postgres", psqlInfo)
 	if err != nil {
 		panic(err)
