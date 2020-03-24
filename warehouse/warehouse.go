@@ -582,6 +582,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 		messages = append(messages, message)
 	}
 
+	logger.Infof("WH: Publishing staging files to PgNotifier")
 	var loadFileIDs []int64
 	ch, err := wh.notifier.Publish("process_staging_file", messages)
 	if err != nil {
@@ -589,6 +590,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	}
 
 	responses := <-ch
+	logger.Infof("WH: Received responses from PgNotifier")
 	for _, resp := range responses {
 		// TODO: make it aborted
 		if resp.Status == "aborted" {

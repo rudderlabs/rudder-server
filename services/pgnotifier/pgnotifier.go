@@ -123,6 +123,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 			var count int
 			err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
 			if err != nil {
+				logger.Errorf("PgNotifier: Failed to query for tracking jobs by batch_id: %s, connInfo: %s", stmt, notifier.URI)
 				panic(err)
 			}
 			if count == 0 {
@@ -201,7 +202,7 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 
 	if err != nil {
-		fmt.Println(err)
+		logger.Errorf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
 		// TODO: verify rollback is necessary on error
 		tx.Rollback()
 		return
