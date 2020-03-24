@@ -658,8 +658,12 @@ func (wh *HandleT) initWorkers() {
 				for {
 					// handle job to process staging files and convert them into load files
 					processStagingFilesJobList := <-wh.uploadToWarehouseQ
-
-					for _, job := range processStagingFilesJobList {
+					var whOneFullPassTimer *stats.RudderStats
+					for i, job := range processStagingFilesJobList {
+						if i == 0 {
+							whOneFullPassTimer = warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", job.Warehouse.Destination.ID)
+							whOneFullPassTimer.Start()
+						}
 						// generate load files only if not done before
 						// upload records have start_load_file_id and end_load_file_id set to 0 on creation
 						// and are updated on creation of load files
@@ -668,6 +672,7 @@ func (wh *HandleT) initWorkers() {
 							warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
 							err := wh.createLoadFiles(&job)
 							if err != nil {
+								//Unreachable code. So not modifying the stat 'failed_uploads', which is reused later for copying.
 								warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 								warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
 								break
@@ -679,6 +684,9 @@ func (wh *HandleT) initWorkers() {
 							break
 						}
 						warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.Warehouse.Destination.ID).Count(len(job.List))
+					}
+					if whOneFullPassTimer != nil {
+						whOneFullPassTimer.End()
 					}
 					setDestInProgress(processStagingFilesJobList[0].Warehouse, false)
 				}
