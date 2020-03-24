@@ -1526,6 +1526,7 @@ func Start() {
 	if isMaster() {
 		rruntime.Go(func() {
 			for {
+				logger.Infof("uploading failed_uploads stat")
 				warehouseutils.DestStat(stats.CountType, "failed_uploads", "testid").Count(1)
 				time.Sleep(time.Minute)
 			}
