@@ -1534,5 +1534,12 @@ func Start() {
 			monitorDestRouters()
 		})
 		startWebHandler()
+		rruntime.Go(func() {
+			for {
+				warehouseutils.DestStat(stats.CountType, "failed_uploads", "testid").Count(1)
+				time.Sleep(time.Minute)
+			}
+		})
+
 	}
 }
