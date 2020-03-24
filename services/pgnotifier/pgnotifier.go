@@ -106,6 +106,7 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 			WaitingState,
 			FailedState,
 			10)
+		logger.Infof("PgNotifier: triggering pedning jobs")
 		_, err := notifier.dbHandle.Exec(stmt)
 		if err != nil {
 			panic(err)
@@ -145,6 +146,8 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				}
 				*ch <- responses
 				break
+			} else {
+				logger.Infof("PgNotifier: Pending %d files to process in batch: %s", count, batchID)
 			}
 		}
 	})
