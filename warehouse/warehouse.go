@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -162,7 +163,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.Enabled && destination.DestinationDefinition.Name == wh.destType {
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
-						break
 					}
 				}
 			}
@@ -1338,6 +1338,16 @@ func setupTables(dbHandle *sql.DB) {
 	}
 }
 
+func CheckPGHealth() bool {
+	rows, err := dbHandle.Query(fmt.Sprintf(`SELECT 'Rudder Warehouse DB Health Check'::text as message`))
+	if err != nil {
+		logger.Error(err)
+		return false
+	}
+	defer rows.Close()
+	return true
+}
+
 func processHandler(w http.ResponseWriter, r *http.Request) {
 	logger.LogRequest(r)
 
@@ -1368,6 +1378,15 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	var dbService string = "UP"
+	if !CheckPGHealth() {
+		dbService = "DOWN"
+	}
+	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","warehouseMode":"%s","goroutines":"%d"}`, dbService, strings.ToUpper(warehouseMode), runtime.NumGoroutine())
+	w.Write([]byte(healthVal))
+}
+
 func getConnectionString() string {
 	if warehouseMode == config.EmbeddedMode {
 		return jobsdb.GetConnectionString()
@@ -1378,8 +1397,14 @@ func getConnectionString() string {
 }
 
 func startWebHandler() {
-	http.HandleFunc("/v1/process", processHandler)
-	backendconfig.WaitForConfig()
+	// do not register same endpoint when running embedded in rudder backend
+	if isStandAlone() {
+		http.HandleFunc("/health", healthHandler)
+	}
+	if isMaster() {
+		backendconfig.WaitForConfig()
+		http.HandleFunc("/v1/process", processHandler)
+	}
 	logger.Infof("WH: Starting warehouse master service in %d", webPort)
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
@@ -1437,6 +1462,10 @@ func setupSlave() {
 	})
 }
 
+func isStandAlone() bool {
+	return warehouseMode != EmbeddedMode
+}
+
 func isMaster() bool {
 	return warehouseMode == config.MasteMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
 }
@@ -1462,6 +1491,7 @@ func Start() {
 	if isSlave() {
 		logger.Infof("WH: Starting warehouse slave...")
 		setupSlave()
+		startWebHandler()
 	}
 
 	if isMaster() {
