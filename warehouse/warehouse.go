@@ -448,10 +448,6 @@ func (wh *HandleT) mainLoop() {
 				logger.Debugf("WH: Skipping upload loop since %s:%s upload in progess", wh.destType, warehouse.Destination.ID)
 				continue
 			}
-			if uploadFrequencyExceeded(warehouse) {
-				logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
-				continue
-			}
 			setDestInProgress(warehouse, true)
 
 			_, ok := inRecoveryMap[warehouse.Destination.ID]
@@ -490,6 +486,11 @@ func (wh *HandleT) mainLoop() {
 				}
 				wh.uploadToWarehouseQ <- jobs
 			} else {
+				if uploadFrequencyExceeded(warehouse) {
+					logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
+					setDestInProgress(warehouse, false)
+					continue
+				}
 				// fetch staging files that are not processed yet
 				stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
 				if err != nil {
