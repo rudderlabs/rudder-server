@@ -112,7 +112,7 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 			WaitingState,
 			FailedState,
 			10)
-		logger.Infof("PgNotifier: triggering pending jobs")
+		logger.Debugf("PgNotifier: triggering pending jobs")
 		_, err := notifier.dbHandle.Exec(stmt)
 		if err != nil {
 			panic(err)
@@ -273,7 +273,7 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 		10*time.Second,
 		time.Minute,
 		func(ev pq.ListenerEventType, err error) {
-			logger.Infof("PgNotifier: Event received in pq listener %v", ev)
+			logger.Debugf("PgNotifier: Event received in pq listener %v", ev)
 			if err != nil {
 				logger.Errorf("PgNotifier: Error in pq listener for event type: %v %v ", ev, err)
 			}
@@ -298,11 +298,11 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 					if event.Status == WaitingState || event.Status == FailedState {
 						ch <- event
 					} else {
-						logger.Infof("PgNotifier: Not notifying subsriber for event with id: %d type: %s", event.ID, event.Status)
+						logger.Debugf("PgNotifier: Not notifying subsriber for event with id: %d type: %s", event.ID, event.Status)
 					}
 				}
 			case <-time.After(90 * time.Second):
-				logger.Infof("PgNotifier: Received no events for 90 seconds, checking connection")
+				logger.Debugf("PgNotifier: Received no events for 90 seconds, checking connection")
 				go func() {
 					listener.Ping()
 				}()
