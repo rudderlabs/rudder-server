@@ -664,6 +664,10 @@ func (wh *HandleT) initWorkers() {
 							whOneFullPassTimer = warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", job.Warehouse.Destination.ID)
 							whOneFullPassTimer.Start()
 						}
+
+						createPlusUploadTimer := warehouseutils.DestStat(stats.TimerType, "stagingfileset_total_handling_time", job.Warehouse.Destination.ID)
+						createPlusUploadTimer.Start()
+
 						// generate load files only if not done before
 						// upload records have start_load_file_id and end_load_file_id set to 0 on creation
 						// and are updated on creation of load files
@@ -679,6 +683,9 @@ func (wh *HandleT) initWorkers() {
 							}
 						}
 						err := wh.SyncLoadFilesToWarehouse(&job)
+
+						createPlusUploadTimer.End()
+
 						if err != nil {
 							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 							break
