@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -91,7 +90,7 @@ func loadConfig() {
 	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
 
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-	workspaceToken = misc.GetWorkspaceToken()
+	workspaceToken = config.GetWorkspaceToken()
 
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
 	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")

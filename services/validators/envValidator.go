@@ -57,7 +57,7 @@ func insertTokenIfNotExists() {
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(misc.GetHash(misc.GetWorkspaceToken()), time.Now())
+	_, err = stmt.Exec(misc.GetMD5Hash(config.GetWorkspaceToken()), time.Now())
 	if err != nil {
 		panic(err)
 	}
@@ -114,7 +114,7 @@ func ValidateEnv() bool {
 	insertTokenIfNotExists()
 
 	workspaceTokenHashInDB := getWorkspaceFromDB()
-	if workspaceTokenHashInDB == misc.GetHash(misc.GetWorkspaceToken()) {
+	if workspaceTokenHashInDB == misc.GetMD5Hash(config.GetWorkspaceToken()) {
 		dbHandle.Close()
 		return true
 	}
@@ -125,7 +125,7 @@ func ValidateEnv() bool {
 	logger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
 
 	dbName := config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
-	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB[:32])
+	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB)
 
 	//New db created. Creating connection to the new db
 	createDBConnection()

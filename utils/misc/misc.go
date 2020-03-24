@@ -4,7 +4,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"compress/gzip"
-	"crypto/sha256"
+	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -124,22 +124,10 @@ func AssertErrorIfDev(err error) {
 	}
 }
 
-//GetWorkspaceToken returns the workspace token provided in the *.env file.
-//Env variable CONFIG_BACKEND_TOKEN is deprecating soon
-//WORKSPACE_TOKEN is newly introduced. This will override CONFIG_BACKEND_TOKEN
-func GetWorkspaceToken() string {
-	token := config.GetEnv("WORKSPACE_TOKEN", "")
-	if token != "" && token != "<your_token_here>" {
-		return token
-	}
-
-	return config.GetEnv("CONFIG_BACKEND_TOKEN", "")
-}
-
-//GetHash returns EncodeToString(sha256 hash of the input string)
-func GetHash(input string) string {
-	byteArr := sha256.Sum256([]byte(input))
-	return hex.EncodeToString(byteArr[:])
+//GetMD5Hash returns EncodeToString(md5 hash of the input string)
+func GetMD5Hash(input string) string {
+	hash := md5.Sum([]byte(input))
+	return hex.EncodeToString(hash[:])
 }
 
 //GetRudderEventMap returns the event structure from the client payload
