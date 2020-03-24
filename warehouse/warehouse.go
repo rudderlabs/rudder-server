@@ -355,6 +355,7 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 
 	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s' AND %[1]s.status!='%[5]s') ORDER BY id asc`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
 
+	logger.Infof(sqlStatement)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
@@ -478,11 +479,13 @@ func (wh *HandleT) mainLoop() {
 					if err != nil {
 						panic(err)
 					}
-					jobs = append(jobs, ProcessStagingFilesJobT{
+					job := ProcessStagingFilesJobT{
 						List:      stagingFilesList,
 						Warehouse: warehouse,
 						Upload:    pendingUpload,
-					})
+					}
+					logger.Infof("WH: Adding job %+v", job)
+					jobs = append(jobs, job)
 				}
 				wh.uploadToWarehouseQ <- jobs
 			} else {
@@ -507,7 +510,6 @@ func (wh *HandleT) mainLoop() {
 				jobs := []ProcessStagingFilesJobT{}
 				// process staging files in batches of stagingFilesBatchSize
 				for {
-
 					lastIndex := count + stagingFilesBatchSize
 					if lastIndex >= len(stagingFilesList) {
 						lastIndex = len(stagingFilesList)
@@ -516,11 +518,13 @@ func (wh *HandleT) mainLoop() {
 					consolidatedSchema := wh.consolidateSchema(warehouse, stagingFilesList[count:lastIndex])
 					// create record in wh_uploads to mark start of upload to warehouse flow
 					upload := wh.initUpload(warehouse, stagingFilesList[count:lastIndex], consolidatedSchema)
-					jobs = append(jobs, ProcessStagingFilesJobT{
+					job := ProcessStagingFilesJobT{
 						List:      stagingFilesList[count:lastIndex],
 						Warehouse: warehouse,
 						Upload:    upload,
-					})
+					}
+					logger.Infof("WH: Adding job %+v", job)
+					jobs = append(jobs, job)
 					count += stagingFilesBatchSize
 					if count >= len(stagingFilesList) {
 						break
@@ -663,6 +667,7 @@ func (wh *HandleT) initWorkers() {
 					processStagingFilesJobList := <-wh.uploadToWarehouseQ
 					var whOneFullPassTimer *stats.RudderStats
 					for i, job := range processStagingFilesJobList {
+						logger.Infof("%+v\n", job)
 						if i == 0 {
 							whOneFullPassTimer = warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", job.Warehouse.Destination.ID)
 							whOneFullPassTimer.Start()
