@@ -1533,6 +1533,14 @@ func Start() {
 	}
 
 	if isMaster() {
+		rruntime.Go(func() {
+			for {
+				logger.Infof("uploading failed_uploads stat")
+				warehouseutils.DestStat(stats.CountType, "failed_uploads", "testid").Count(1)
+				time.Sleep(time.Minute)
+			}
+		})
+
 		backendconfig.Setup()
 		logger.Infof("WH: Starting warehouse master...")
 		err = notifier.AddTopic("process_staging_file")
@@ -1543,5 +1551,6 @@ func Start() {
 			monitorDestRouters()
 		})
 		startWebHandler()
+
 	}
 }
