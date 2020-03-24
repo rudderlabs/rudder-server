@@ -582,7 +582,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 		messages = append(messages, message)
 	}
 
-	logger.Infof("WH: Publishing staging files to PgNotifier")
+	logger.Infof("WH: Publishing %d staging files to PgNotifier", len(messages))
 	var loadFileIDs []int64
 	ch, err := wh.notifier.Publish("process_staging_file", messages)
 	if err != nil {

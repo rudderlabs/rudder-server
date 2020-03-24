@@ -236,6 +236,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 	defer stmt.Close()
 
 	batchID := uuid.NewV4().String()
+	logger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(messages), queueName, batchID)
 	for _, message := range messages {
 		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload), time.Now(), time.Now())
 		if err != nil {
