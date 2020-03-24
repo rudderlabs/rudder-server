@@ -148,7 +148,7 @@ func SetBool(key string, value bool) {
 	viper.Set(key, value)
 }
 
-//GetWorkspaceToken returns the workspace token provided in the *.env file.
+//GetWorkspaceToken returns the workspace token provided in the environment variables
 //Env variable CONFIG_BACKEND_TOKEN is deprecating soon
 //WORKSPACE_TOKEN is newly introduced. This will override CONFIG_BACKEND_TOKEN
 func GetWorkspaceToken() string {
