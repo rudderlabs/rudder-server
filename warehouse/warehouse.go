@@ -1307,11 +1307,18 @@ func setupTables(dbHandle *sql.DB) {
 									  wh_upload_id BIGSERIAL NOT NULL,
 									  table_name VARCHAR(64),
 									  status wh_upload_state_type NOT NULL,
-									  error VARCHAR(512),
+									  error TEXT,
 									  last_exec_time TIMESTAMP,
 									  created_at TIMESTAMP NOT NULL,
 									  updated_at TIMESTAMP NOT NULL);`, warehouseTableUploadsTable)
 
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+
+	// change error type to text
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, warehouseTableUploadsTable, "error")
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -1325,7 +1332,7 @@ func setupTables(dbHandle *sql.DB) {
 									  destination_id VARCHAR(64) NOT NULL,
 									  destination_type VARCHAR(64) NOT NULL,
 									  schema JSONB NOT NULL,
-									  error VARCHAR(512),
+									  error TEXT,
 									  created_at TIMESTAMP NOT NULL);`, warehouseSchemasTable)
 
 	_, err = dbHandle.Exec(sqlStatement)
