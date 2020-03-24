@@ -78,6 +78,12 @@ func New(connectionInfo string) (notifier PgNotifierT, err error) {
 }
 
 func (notifier PgNotifierT) AddTopic(topic string) (err error) {
+	stmt := fmt.Sprintf("DELETE FROM %s WHERE topic ='%s'", queueName, topic)
+	logger.Infof("PgNotifier: Deleting all jobs on topic: %s", topic)
+	_, err = notifier.dbHandle.Exec(stmt)
+	if err != nil {
+		return
+	}
 	err = notifier.createTrigger(topic)
 	if err != nil {
 		return

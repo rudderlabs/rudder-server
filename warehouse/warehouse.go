@@ -1546,6 +1546,5 @@ func Start() {
 			monitorDestRouters()
 		})
 		startWebHandler()
-
 	}
 }
