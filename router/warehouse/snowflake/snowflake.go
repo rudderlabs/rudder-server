@@ -214,13 +214,15 @@ func (sf *HandleT) load() (errList []error) {
 			primaryKey = column
 		}
 
-		var columnNames, stagingColumnNames string
+		var columnNames, stagingColumnNames, columnsWithValues string
 		for idx, str := range strkeys {
 			columnNames += fmt.Sprintf(`"%s"`, strings.ToUpper(str))
 			stagingColumnNames += fmt.Sprintf(`staging."%s"`, strings.ToUpper(str))
+			columnsWithValues += fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, strings.ToUpper(str))
 			if idx != len(strkeys)-1 {
 				columnNames += fmt.Sprintf(`,`)
 				stagingColumnNames += fmt.Sprintf(`,`)
+				columnsWithValues += fmt.Sprintf(`,`)
 			}
 		}
 
@@ -231,8 +233,10 @@ func (sf *HandleT) load() (errList []error) {
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
 									ON original.%[4]s = staging.%[4]s
+									WHEN MATCHED THEN
+									UPDATE SET %[7]s
 									WHEN NOT MATCHED THEN
-									INSERT (%[5]s) VALUES (%[6]s)`, sf.Namespace, strings.ToUpper(tableName), stagingTableName, primaryKey, columnNames, stagingColumnNames)
+									INSERT (%[5]s) VALUES (%[6]s)`, sf.Namespace, strings.ToUpper(tableName), stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues)
 		logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 		_, err = sf.Db.Exec(sqlStatement)
 		if err != nil {
