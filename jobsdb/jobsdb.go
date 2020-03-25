@@ -221,9 +221,9 @@ func loadConfig() {
 	mainCheckSleepDuration: How often is the loop (which checks for adding/migrating DS) run
 	maxTableSizeInMB: Maximum Table size in MB
 	*/
-	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres", 0.1)
-	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres", 2)
-	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100)
+	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres", 0.8)
+	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres", 5)
+	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	maxTableSize = (config.GetInt64("JobsDB.maxTableSizeInMB", 300) * 1000000)
 	backupRowsBatchSize = config.GetInt64("JobsDB.backupRowsBatchSize", 10000)
