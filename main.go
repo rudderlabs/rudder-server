@@ -35,14 +35,15 @@ import (
 )
 
 var (
-	maxProcess                                  int
-	gwDBRetention, routerDBRetention            time.Duration
-	enableProcessor, enableRouter, enableBackup bool
-	isReplayServer                              bool
-	enabledDestinations                         []backendconfig.DestinationT
-	configSubscriberLock                        sync.RWMutex
-	objectStorageDestinations                   []string
-	warehouseDestinations                       []string
+	maxProcess                                                     int
+	gwDBRetention, routerDBRetention                               time.Duration
+	enableProcessor, enableRouter, enableBackup, backupOnlyAborted bool
+	isReplayServer                                                 bool
+	enabledDestinations                                            []backendconfig.DestinationT
+	configSubscriberLock                                           sync.RWMutex
+	objectStorageDestinations                                      []string
+	warehouseDestinations                                          []string
+	backupMux                                                      sync.Mutex
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -55,6 +56,7 @@ func loadConfig() {
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
 	enableBackup = config.GetBool("JobsDB.enableBackup", true)
+	backupOnlyAborted = config.GetBool("JobsDB.enableBackup", true)
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
@@ -263,9 +265,9 @@ func main() {
 		enableBackup = false
 	}
 
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, false)
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup, false, &backupMux)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention, enableBackup, backupOnlyAborted, &backupMux)
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, enableBackup, backupOnlyAborted, &backupMux)
 
 	//Setup the three modules, the gateway, the router and the processor
 
