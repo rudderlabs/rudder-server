@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	diagnostics "github.com/rudderlabs/rudder-server/services/diagnostics"
 	"io/ioutil"
 	"net/http"
 	"reflect"
 	"sync"
 	"time"
+
+	diagnostics "github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 

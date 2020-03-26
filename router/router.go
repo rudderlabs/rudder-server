@@ -2,7 +2,6 @@ package router
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"hash/fnv"
 	"math"
 	"math/rand"
@@ -12,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -93,7 +94,7 @@ func loadConfig() {
 	useTestSink = config.GetBool("Router.useTestSink", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
-	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.routerTimePeriod", 60) * time.Second)
+	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.routerTimePeriodInS", 60) * time.Second)
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {

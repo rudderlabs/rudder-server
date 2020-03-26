@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
 
@@ -175,14 +176,6 @@ func printVersion() {
 }
 
 func main() {
-	defer func() {
-		if r := recover(); r != nil {
-			if logger.Log != nil {
-				logger.Log.Sync()
-			}
-			panic(r) // panicing in recover, so bugsnag can handle panics
-		}
-	}()
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),

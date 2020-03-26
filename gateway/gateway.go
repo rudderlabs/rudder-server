@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -12,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/dgraph-io/badger"
@@ -96,7 +97,7 @@ func loadConfig() {
 	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 	// Enable rate limit on incoming events. false by default
 	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
-	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.gatewayTimePeriod", 60) * time.Second)
+	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.gatewayTimePeriodInS", 60) * time.Second)
 }
 
 func init() {
@@ -447,6 +448,7 @@ func trackRequestMetrics(errorMessage string) {
 		}
 	}
 }
+
 func collectMetrics() {
 	if diagnostics.EnableGatewayMetric {
 		for {

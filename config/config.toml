@@ -126,10 +126,10 @@ enableStackTrace=false
 [Diagnosis]
 enableDiagnosis = true
 endpoint = "https://hosted.rudderlabs.com"
-writekey = "1X4O9r7F9ElwYn0V8vgFdL8o2vy"
-gatewayTimePeriod = 60 # in seconds
-routerTimePeriod = 60 # in seconds
-batchRouterTimePeriod = 600 # in seconds
+writekey = "1ZZZrtV9D9esebor6vE64vFff5K"
+gatewayTimePeriodInS = 60
+routerTimePeriodInS = 60
+batchRouterTimePeriodInS = 600
 enableServerStartMetric = true
 enableConfigIdentifyMetric = true
 enableServerStartedMetric = true

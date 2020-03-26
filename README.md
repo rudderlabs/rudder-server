@@ -32,18 +32,17 @@ See the [HackerNews](https://news.ycombinator.com/item?id=21081756) discussion a
 
 # UI Pages
 
-
-
-
 ## Connections Page
+
 ![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
 
 ## Events Page
+
 ![image](https://user-images.githubusercontent.com/52487451/65647230-e2937c80-dfb2-11e9-88bd-3b015c4b576f.png)
 
 ## Stats Page
-![image](https://user-images.githubusercontent.com/52487451/65647158-a2cc9500-dfb2-11e9-8397-d2642f0b8801.png)
 
+![image](https://user-images.githubusercontent.com/52487451/65647158-a2cc9500-dfb2-11e9-8397-d2642f0b8801.png)
 
 # Setup Instructions (Hosted Demo Account)
 
@@ -59,7 +58,7 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
 
    (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
-`sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule init && git submodule update`
+   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule init && git submodule update`
 
 3. Replace `<your_workspace_token>` in `build/docker.env` with the above token.
 4. (Optional) Uncomment and set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `build/docker.env` if you want to add S3 as a destination on the UI.
@@ -74,10 +73,9 @@ Our helm scripts and instructions are in a separate repo - [Download Here](https
 
 Our terraform scripts and instructions are in a separate repo - [Download Here](https://github.com/rudderlabs/rudder-terraform)
 
-
 # Setup Instructions (Native Installation)
 
-Disclaimer: This is not the easiest way of installing RudderStack.  Please use this if you want to know more about the internals.
+Disclaimer: This is not the easiest way of installing RudderStack. Please use this if you want to know more about the internals.
 
 1. Install Golang 1.12 or above. [Download Here](https://golang.org/dl/)
 2. Install NodeJS 10.6 or above. [Download Here](https://nodejs.org/en/download/)
@@ -92,7 +90,7 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 
 4. Go to the [dashboard](https://app.rudderlabs.com/signup) and set up your account. Copy your workspace token from top of the home page
 5. Clone this repository. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
- and navigate to the transformer directory `cd rudder-transformer`
+   and navigate to the transformer directory `cd rudder-transformer`
 6. Start the destination transformer `node destTransformer.js`
 7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
 8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4
@@ -116,7 +114,6 @@ psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 5. High performance. On a single m4.2xlarge, RudderStack can process ~3K events/sec. Performance numbers on other instance types soon.
 6. Rich UI written in react.
 7. [Javascript](https://github.com/rudderlabs/rudder-sdk-js), [Android](https://github.com/rudderlabs/rudder-sdk-android) or [iOS](https://github.com/rudderlabs/rudder-sdk-ios). Server-side SDKs coming soon.
-
 
 # Architecture
 
@@ -160,11 +157,13 @@ https://rudderlabs.com/customer-case-study-casino-game/
 The client SDKs provide APIs collecting events and sending it to the RudderStack Backend.
 
 ## Telemetry
+
 To help us improve Rudderstack, we collect performance and diagnostic metrics about how you use it and how it's working. No customer data is present in the metrics.
-The metrics collection can be disabled by setting the variable_name to false in config/config.toml
+The metrics collection can be disabled by setting the variable `enableDiagnosis` to false in config/config.toml
 
 All the collected metrics are listed in config/config.toml under the Diagnostics section
 As of now these are the metrics which are being tracked
+
 1. enableServerStartMetric: Tracks every time when server starts
 2. enableConfigIdentifyMetric: Tracks when the config is fetched for the first time from control-plane
 3. enableServerStartedMetric: Tracks when the server is ready to accept requests
@@ -181,4 +180,3 @@ As of now these are the metrics which are being tracked
 4. HA support
 5. More SDKs (or Segment compatibility)
 6. Transformations from UI
-

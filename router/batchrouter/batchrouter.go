@@ -6,12 +6,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -539,6 +540,7 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
 	_, err = brt.jobsDBHandle.Exec(sqlStatement)
 	misc.AssertError(err)
 }
+
 func collectMetrics() {
 	if diagnostics.EnableBatchRouterMetric {
 		for {
@@ -586,7 +588,7 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ"}
 	inProgressMap = map[string]bool{}
-	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.batchRouterTimePeriod", 600) * time.Second)
+	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.batchRouterTimePeriodInS", 600) * time.Second)
 }
 
 func init() {
