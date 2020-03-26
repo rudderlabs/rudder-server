@@ -242,12 +242,13 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, location string) (err 
 
 	jsonPayload, err := json.Marshal(&payload)
 
-	_, err = brt.netHandle.Post(warehouseURL+"/v1/process", "application/json; charset=utf-8",
+	uri := fmt.Sprintf(`%s/v1/process`, warehouseURL)
+	_, err = brt.netHandle.Post(uri, "application/json; charset=utf-8",
 		bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		logger.Errorf("Posting ERROR s3 batch url to %v - %v", warehouseURL+"/v1/process", err)
+		logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
 	} else {
-		logger.Infof("Posted successfully s3 batch url to %v", warehouseURL+"/v1/process")
+		logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
 	}
 	return
 }
@@ -275,7 +276,8 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
-		if jobState == jobsdb.FailedState && job.LastJobStatus.AttemptNum >= maxFailedCountForJob {
+		// do not abort if job is meant for warehouse
+		if jobState == jobsdb.FailedState && job.LastJobStatus.AttemptNum >= maxFailedCountForJob && !isWarehouse {
 			jobState = jobsdb.AbortedState
 		}
 		status := jobsdb.JobStatusT{
