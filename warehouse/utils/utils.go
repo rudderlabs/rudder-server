@@ -20,6 +20,7 @@ import (
 
 const (
 	WaitingState                  = "waiting"
+	ExecutingState                = "executing"
 	GeneratingLoadFileState       = "generating_load_file"
 	GeneratingLoadFileFailedState = "generating_load_file_failed"
 	GeneratedLoadFileState        = "generated_load_file"

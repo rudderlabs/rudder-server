@@ -153,6 +153,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 		return
 	}
 	logger.Infof("SF: Starting load for table:%s\n", tableName)
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, sf.Upload.ID, tableName, sf.DbHandle)
 	timer := warehouseutils.DestStat(stats.TimerType, "single_table_upload_time", sf.Warehouse.Destination.ID)
 	timer.Start()
 	// sort columnnames

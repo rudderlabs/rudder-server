@@ -173,6 +173,10 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 		logger.Infof("BQ: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
 		return
 	}
+
+	logger.Infof("BQ: Starting load for table:%s\n", tableName)
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, bq.Upload.ID, tableName, bq.DbHandle)
+
 	locations, err := warehouseutils.GetLoadFileLocations(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
 	if err != nil {
 		panic(err)
@@ -208,6 +212,7 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 }
 
 func (bq *HandleT) load() (errList []error) {
+	logger.Infof("BQ: Starting load for all %v tables\n", len(bq.Upload.Schema))
 	var wg sync.WaitGroup
 	wg.Add(len(bq.Upload.Schema))
 	loadChan := make(chan struct{}, maxParallelLoads)

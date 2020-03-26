@@ -224,6 +224,10 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, buck
 		logger.Infof("RS: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
 		return
 	}
+
+	logger.Infof("RS: Starting load for table:%s\n", tableName)
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, rs.Upload.ID, tableName, rs.DbHandle)
+
 	timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
 	timer.Start()
 	manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap, accessKeyID, accessKey)
@@ -322,6 +326,7 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, buck
 		return
 	}
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, rs.Upload.ID, tableName, rs.DbHandle)
+	logger.Infof("RS: Complete load for table:%s\n", tableName)
 	return
 }
 
@@ -338,6 +343,7 @@ func (rs *HandleT) load() (errList []error) {
 		bucketName = config["bucketName"].(string)
 	}
 
+	logger.Infof("RS: Starting load for all %v tables\n", len(rs.Upload.Schema))
 	var wg sync.WaitGroup
 	wg.Add(len(rs.Upload.Schema))
 	loadChan := make(chan struct{}, maxParallelLoads)

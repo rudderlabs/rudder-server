@@ -889,6 +889,12 @@ func (wh *HandleT) Setup(whType string) {
 	})
 }
 
+var loadFileFormatMap = map[string]string{
+	"BQ":        "json",
+	"RS":        "csv",
+	"SNOWFLAKE": "csv",
+}
+
 func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	logger.Debugf("WH: Starting processing staging file: %v at %v for %s:%s", job.StagingFileID, job.StagingFileLocation, job.DestinationType, job.DestinationID)
 	// download staging file into a temp dir
@@ -989,7 +995,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 			continue
 		}
 		if _, ok := outputFileMap[tableName]; !ok {
-			outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + ".csv.gz"
+			outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 			gzWriter, err := misc.CreateGZ(outputFilePath)
 			defer gzWriter.CloseGZ()
 			if err != nil {
@@ -1309,7 +1315,8 @@ func setupTables(dbHandle *sql.DB) {
 	sqlStatement = `DO $$ BEGIN
                                 CREATE TYPE wh_table_upload_state_type
                                      AS ENUM(
-										 	  'waiting',
+											  'waiting',
+											  'executing'
 											  'exporting_data',
 											  'exporting_data_failed',
 											  'exported_data',
