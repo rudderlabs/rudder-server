@@ -145,9 +145,10 @@ func NewJobsDBStat(Name string, StatType string, customVal string) *RudderStats 
 		}
 	}
 	return &RudderStats{
-		Name:     Name,
-		StatType: StatType,
-		Client:   jobsdbClientsMap[customVal],
+		Name:        Name,
+		StatType:    StatType,
+		Client:      jobsdbClientsMap[customVal],
+		dontProcess: true,
 	}
 
 }
