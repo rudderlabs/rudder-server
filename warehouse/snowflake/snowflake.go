@@ -171,8 +171,8 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 		sortedColumnNames += fmt.Sprintf(`%s`, key)
 	}
 
-	stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s"."%s" LIKE "%s"."%s"`, sf.Namespace, stagingTableName, sf.Namespace, tableName)
+	stagingTableName := fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, tableName)
 
 	logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
@@ -189,7 +189,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 	loadFolder := warehouseutils.GetS3LocationFolder(csvObjectLocation)
 
 	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s') PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s."%s"`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, accessKeyID, accessKey)
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, accessKeyID, accessKey)
 
 	logger.Infof("SF: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
@@ -204,25 +204,29 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 		primaryKey = column
 	}
 
-	var columnNames, stagingColumnNames string
+	var columnNames, stagingColumnNames, columnsWithValues string
 	for idx, str := range strkeys {
 		columnNames += fmt.Sprintf(`%s`, str)
 		stagingColumnNames += fmt.Sprintf(`staging.%s`, str)
+		columnsWithValues += fmt.Sprintf(`original.%[1]s = staging.%[1]s`, str)
 		if idx != len(strkeys)-1 {
 			columnNames += fmt.Sprintf(`,`)
 			stagingColumnNames += fmt.Sprintf(`,`)
+			columnsWithValues += fmt.Sprintf(`,`)
 		}
 	}
 
-	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s"."%[2]s" AS original
+	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY %[4]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[3]s"
+											SELECT *, row_number() OVER (PARTITION BY %[3]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
-									ON original.%[4]s = staging.%[4]s
+									ON original.%[3]s = staging.%[3]s
+									WHEN MATCHED THEN
+									UPDATE SET %[6]s
 									WHEN NOT MATCHED THEN
-									INSERT (%[5]s) VALUES (%[6]s)`, sf.Namespace, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames)
+									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues)
 	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	if err != nil {
@@ -308,7 +312,7 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
-	stagingTablePrefix = "RUDDER_STAGING_"
+	stagingTablePrefix = "rudder_staging_"
 	maxParallelLoads = config.GetInt("Warehouse.snowflake.maxParallelLoads", 1)
 }
 
@@ -321,7 +325,7 @@ func (sf *HandleT) MigrateSchema() (err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", sf.Warehouse.Destination.ID)
 	timer.Start()
 	warehouseutils.SetUploadStatus(sf.Upload, warehouseutils.UpdatingSchemaState, sf.DbHandle)
-	logger.Infof("SF: Updaing schema for snowflake schemaname: %s", sf.Namespace)
+	logger.Infof("SF: Updating schema for snowflake schemaname: %s", sf.Namespace)
 	updatedSchema, err := sf.updateSchema()
 	if err != nil {
 		warehouseutils.SetUploadError(sf.Upload, err, warehouseutils.UpdatingSchemaFailedState, sf.DbHandle)

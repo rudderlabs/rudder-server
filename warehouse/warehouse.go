@@ -355,7 +355,6 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 
 	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s' AND %[1]s.status!='%[5]s') ORDER BY id asc`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
 
-	logger.Infof(sqlStatement)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
@@ -484,7 +483,7 @@ func (wh *HandleT) mainLoop() {
 						Warehouse: warehouse,
 						Upload:    pendingUpload,
 					}
-					logger.Infof("WH: Adding job %+v", job)
+					logger.Debugf("WH: Adding job %+v", job)
 					jobs = append(jobs, job)
 				}
 				wh.uploadToWarehouseQ <- jobs
@@ -523,7 +522,7 @@ func (wh *HandleT) mainLoop() {
 						Warehouse: warehouse,
 						Upload:    upload,
 					}
-					logger.Infof("WH: Adding job %+v", job)
+					logger.Debugf("WH: Adding job %+v", job)
 					jobs = append(jobs, job)
 					count += stagingFilesBatchSize
 					if count >= len(stagingFilesList) {
@@ -667,7 +666,6 @@ func (wh *HandleT) initWorkers() {
 					processStagingFilesJobList := <-wh.uploadToWarehouseQ
 					var whOneFullPassTimer *stats.RudderStats
 					for i, job := range processStagingFilesJobList {
-						logger.Infof("%+v\n", job)
 						if i == 0 {
 							whOneFullPassTimer = warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", job.Warehouse.Destination.ID)
 							whOneFullPassTimer.Start()
@@ -1316,7 +1314,7 @@ func setupTables(dbHandle *sql.DB) {
                                 CREATE TYPE wh_table_upload_state_type
                                      AS ENUM(
 											  'waiting',
-											  'executing'
+											  'executing',
 											  'exporting_data',
 											  'exporting_data_failed',
 											  'exported_data',
@@ -1334,7 +1332,7 @@ func setupTables(dbHandle *sql.DB) {
                                       id BIGSERIAL PRIMARY KEY,
 									  wh_upload_id BIGSERIAL NOT NULL,
 									  table_name VARCHAR(64),
-									  status wh_upload_state_type NOT NULL,
+									  status wh_table_upload_state_type NOT NULL,
 									  error TEXT,
 									  last_exec_time TIMESTAMP,
 									  created_at TIMESTAMP NOT NULL,
@@ -1442,8 +1440,8 @@ func startWebHandler() {
 	if isMaster() {
 		backendconfig.WaitForConfig()
 		http.HandleFunc("/v1/process", processHandler)
+		logger.Infof("WH: Starting warehouse master service in %d", webPort)
 	}
-	logger.Infof("WH: Starting warehouse master service in %d", webPort)
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
@@ -1544,7 +1542,6 @@ func Start() {
 	if isSlave() {
 		logger.Infof("WH: Starting warehouse slave...")
 		setupSlave()
-		startWebHandler()
 	}
 
 	if isMaster() {
@@ -1557,6 +1554,11 @@ func Start() {
 		rruntime.Go(func() {
 			monitorDestRouters()
 		})
-		startWebHandler()
 	}
+
+	rruntime.Go(func() {
+		startWebHandler()
+	})
+
+	misc.KeepProcessAlive()
 }
