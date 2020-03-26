@@ -29,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -191,8 +192,7 @@ func main() {
 	logger.Setup()
 	logger.Info("Main starting")
 
-	if !jobsdb.IsPostgresCompatible() {
-		logger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
+	if !validators.ValidateEnv() {
 		return
 	}
 

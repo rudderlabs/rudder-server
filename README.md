@@ -117,7 +117,7 @@ psql "jobsdb" -c "GRANT ALL PRIVILEGES ON DATABASE jobsdb to rudder";
    and navigate to the transformer directory `cd rudder-transformer`
 6. Install dependencies `npm i` and start the destination transformer `node destTransformer.js`
 7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
-8. Update the `CONFIG_BACKEND_TOKEN` environment variable with the token fetched in step 4
+8. Update the `WORKSPACE_TOKEN` environment variable with the token fetched in step 4
 9. Run the backend server `go run -mod=vendor main.go`
 10. Follow (Send Test Events) instructions below to send test event.
 
