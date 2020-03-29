@@ -59,11 +59,7 @@ var (
 	maxReqSize                                int
 	enableDedup                               bool
 	enableRateLimit                           bool
-	dedupWindow                               time.Duration
-	trackSuccessCount                         int
-	trackFailureCount                         int
-	gatewayRequestMetricLock                  sync.Mutex
-	diagnosisTicker                           *time.Ticker
+	dedupWindow, diagnosisTickerTime          time.Duration
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -96,7 +92,8 @@ func loadConfig() {
 	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 	// Enable rate limit on incoming events. false by default
 	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
-	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.gatewayTimePeriodInS", 60) * time.Second)
+	// Time period for diagnosis ticker
+	diagnosisTickerTime = config.GetDuration("Diagnosis.gatewayTimePeriodInS", 60) * time.Second
 }
 
 func init() {
@@ -115,6 +112,10 @@ type HandleT struct {
 	recvCount                                 uint64
 	rateLimiter                               *ratelimiter.HandleT
 	batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
+	trackSuccessCount                         int
+	trackFailureCount                         int
+	requestMetricLock                         sync.RWMutex
+	diagnosisTicker                           *time.Ticker
 }
 
 func updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -437,7 +438,7 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	//Wait for batcher process to be done
 	errorMessage := <-done
 	atomic.AddUint64(&gateway.ackCount, 1)
-	trackRequestMetrics(errorMessage)
+	gateway.trackRequestMetrics(errorMessage)
 	if errorMessage != "" {
 		logger.Debug(errorMessage)
 		http.Error(w, errorMessage, 400)
@@ -447,31 +448,33 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	}
 }
 
-func trackRequestMetrics(errorMessage string) {
+func (gateway *HandleT) trackRequestMetrics(errorMessage string) {
 	if diagnostics.EnableGatewayMetric {
-		gatewayRequestMetricLock.Lock()
-		defer gatewayRequestMetricLock.Unlock()
+		gateway.requestMetricLock.Lock()
+		defer gateway.requestMetricLock.Unlock()
 		if errorMessage != "" {
-			trackFailureCount = trackFailureCount + 1
+			gateway.trackFailureCount = gateway.trackFailureCount + 1
 		} else {
-			trackSuccessCount = trackSuccessCount + 1
+			gateway.trackSuccessCount = gateway.trackSuccessCount + 1
 		}
 	}
 }
 
-func collectMetrics() {
+func (gateway *HandleT) collectMetrics() {
 	if diagnostics.EnableGatewayMetric {
 		for {
 			select {
-			case _ = <-diagnosisTicker.C:
-				gatewayRequestMetricLock.Lock()
-				diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
-					diagnostics.GatewaySuccess: trackSuccessCount,
-					diagnostics.GatewayFailure: trackFailureCount,
-				})
-				trackSuccessCount = 0
-				trackFailureCount = 0
-				gatewayRequestMetricLock.Unlock()
+			case _ = <-gateway.diagnosisTicker.C:
+				gateway.requestMetricLock.RLock()
+				if gateway.trackSuccessCount > 0 || gateway.trackFailureCount > 0 {
+					diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
+						diagnostics.GatewaySuccess: gateway.trackSuccessCount,
+						diagnostics.GatewayFailure: gateway.trackFailureCount,
+					})
+					gateway.trackSuccessCount = 0
+					gateway.trackFailureCount = 0
+				}
+				gateway.requestMetricLock.RUnlock()
 			}
 		}
 	}
@@ -575,6 +578,8 @@ func (gateway *HandleT) openBadger(clearDB *bool) {
 
 //Setup initializes this module
 func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.HandleT, clearDB *bool) {
+	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
+
 	gateway.latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
 	gateway.batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
 	gateway.batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
@@ -604,7 +609,7 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.H
 		gateway.printStats()
 	})
 	rruntime.Go(func() {
-		collectMetrics()
+		gateway.collectMetrics()
 	})
 	gateway.startWebHandler()
 }

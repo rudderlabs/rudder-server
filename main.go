@@ -96,7 +96,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
 						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 						if !ok {
-							logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
+							logger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
 							var brt batchrouter.HandleT
 							brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
 							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
@@ -113,7 +113,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 					} else {
 						_, ok := dstToRouter[destination.DestinationDefinition.Name]
 						if !ok {
-							logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
+							logger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
 							var router router.HandleT
 							router.Setup(routerDB, destination.DestinationDefinition.Name)
 							dstToRouter[destination.DestinationDefinition.Name] = &router

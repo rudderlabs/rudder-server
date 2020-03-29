@@ -29,29 +29,32 @@ import (
 )
 
 var (
-	jobQueryBatchSize          int
-	noOfWorkers                int
-	maxFailedCountForJob       int
-	mainLoopSleep              time.Duration
-	uploadFreqInS              int64
-	configSubscriberLock       sync.RWMutex
-	objectStorageDestinations  []string
-	warehouseDestinations      []string
-	inProgressMap              map[string]bool
-	inProgressMapLock          sync.RWMutex
-	lastExecMap                map[string]int64
-	lastExecMapLock            sync.RWMutex
-	uploadedRawDataJobsCache   map[string]map[string]bool
-	warehouseStagingFilesTable string
+	jobQueryBatchSize                  int
+	noOfWorkers                        int
+	maxFailedCountForJob               int
+	mainLoopSleep, diagnosisTickerTime time.Duration
+	uploadFreqInS                      int64
+	configSubscriberLock               sync.RWMutex
+	objectStorageDestinations          []string
+	warehouseDestinations              []string
+	inProgressMap                      map[string]bool
+	inProgressMapLock                  sync.RWMutex
+	lastExecMap                        map[string]int64
+	lastExecMapLock                    sync.RWMutex
+	uploadedRawDataJobsCache           map[string]map[string]bool
+	warehouseStagingFilesTable         string
 )
 
 type HandleT struct {
-	destType          string
-	batchDestinations []DestinationT
-	processQ          chan BatchJobsT
-	jobsDB            *jobsdb.HandleT
-	jobsDBHandle      *sql.DB
-	isEnabled         bool
+	destType                string
+	batchDestinations       []DestinationT
+	processQ                chan BatchJobsT
+	jobsDB                  *jobsdb.HandleT
+	jobsDBHandle            *sql.DB
+	isEnabled               bool
+	batchRequestsMetricLock sync.RWMutex
+	diagnosisTicker         *time.Ticker
+	batchRequestsMetric     []batchRequestMetric
 }
 
 type ObjectStorageT struct {
@@ -87,12 +90,6 @@ type batchRequestMetric struct {
 	batchRequestSuccess int
 	batchRequestFailed  int
 }
-
-var (
-	batchRequestsMetricLock sync.Mutex
-	diagnosisTicker         *time.Ticker
-	batchRequestsMetric     map[string][]batchRequestMetric
-)
 
 type StorageUploadOutput struct {
 	Config         map[string]interface{}
@@ -279,7 +276,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		batchReqMetric.batchRequestSuccess = 1
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
 	}
-	brt.trackRequestMetric(batchReqMetric)
+	brt.trackRequestMetrics(batchReqMetric)
 	var statusList []*jobsdb.JobStatusT
 
 	for _, job := range batchJobs.Jobs {
@@ -315,17 +312,16 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 }
 
-func (brt *HandleT) trackRequestMetric(batchReqDiagnosis batchRequestMetric) {
+func (brt *HandleT) trackRequestMetrics(batchReqDiagnosis batchRequestMetric) {
 	if diagnostics.EnableBatchRouterMetric {
-		batchRequestsMetricLock.Lock()
-		if _, ok := batchRequestsMetric[brt.destType]; ok {
-			batchRequestsMetric[brt.destType] = append(batchRequestsMetric[brt.destType], batchReqDiagnosis)
+		brt.batchRequestsMetricLock.Lock()
+		if brt.batchRequestsMetric == nil {
+			var batchRequestsMetric []batchRequestMetric
+			brt.batchRequestsMetric = append(batchRequestsMetric, batchReqDiagnosis)
 		} else {
-			batchRequestsMetric = map[string][]batchRequestMetric{
-				brt.destType: {batchReqDiagnosis},
-			}
+			brt.batchRequestsMetric = append(brt.batchRequestsMetric, batchReqDiagnosis)
 		}
-		batchRequestsMetricLock.Unlock()
+		brt.batchRequestsMetricLock.Unlock()
 	}
 }
 
@@ -640,41 +636,32 @@ func (brt *HandleT) setupWarehouseStagingFilesTable() {
 	}
 }
 
-func collectMetrics() {
+func (brt *HandleT) collectMetrics() {
 	if diagnostics.EnableBatchRouterMetric {
 		for {
 			select {
-			case _ = <-diagnosisTicker.C:
-				batchRequestsMetricLock.Lock()
+			case _ = <-brt.diagnosisTicker.C:
+				brt.batchRequestsMetricLock.RLock()
 				var diagnosisProperties map[string]interface{}
-				for destName, batchReqsMetric := range batchRequestsMetric {
-					success := 0
-					failed := 0
-					for _, batchReqMetric := range batchReqsMetric {
-						success = success + batchReqMetric.batchRequestSuccess
-						failed = failed + batchReqMetric.batchRequestFailed
-					}
-					if diagnosisProperties == nil {
-						diagnosisProperties = map[string]interface{}{
-							destName: map[string]interface{}{
-								diagnostics.BatchRouterSuccess: success,
-								diagnostics.BatchRouterFailed:  failed,
-							},
-						}
-
-					} else {
-						diagnosisProperties[destName] = map[string]interface{}{
+				success := 0
+				failed := 0
+				for _, batchReqMetric := range brt.batchRequestsMetric {
+					success = success + batchReqMetric.batchRequestSuccess
+					failed = failed + batchReqMetric.batchRequestFailed
+				}
+				if len(brt.batchRequestsMetric) > 0 {
+					diagnosisProperties = map[string]interface{}{
+						brt.destType: map[string]interface{}{
 							diagnostics.BatchRouterSuccess: success,
 							diagnostics.BatchRouterFailed:  failed,
-						}
+						},
 					}
-				}
-				if diagnosisProperties != nil {
+
 					diagnostics.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
 				}
 
-				batchRequestsMetric = nil
-				batchRequestsMetricLock.Unlock()
+				brt.batchRequestsMetric = nil
+				brt.batchRequestsMetricLock.RUnlock()
 			}
 		}
 	}
@@ -689,8 +676,9 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	inProgressMap = map[string]bool{}
-	diagnosisTicker = time.NewTicker(config.GetDuration("Diagnosis.batchRouterTimePeriodInS", 600) * time.Second)
 	lastExecMap = map[string]int64{}
+	// Time period for diagnosis ticker
+	diagnosisTickerTime = config.GetDuration("Diagnosis.batchRouterTimePeriodInS", 600) * time.Second
 }
 
 func init() {
@@ -702,6 +690,7 @@ func init() {
 //Setup initializes this module
 func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	logger.Infof("BRT: Batch Router started: %s", destType)
+	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.destType = destType
 	brt.jobsDB = jobsDB
 	brt.jobsDBHandle = brt.jobsDB.GetDBHandle()
@@ -711,7 +700,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.crashRecover()
 
 	rruntime.Go(func() {
-		collectMetrics()
+		brt.collectMetrics()
 	})
 	rruntime.Go(func() {
 		brt.initWorkers()
