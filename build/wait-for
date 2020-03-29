@@ -2,6 +2,7 @@
 
 TIMEOUT=15
 QUIET=0
+UDP=0
 
 echoerr() {
   if [ "$QUIET" -ne 1 ]; then printf "%s\n" "$*" 1>&2; fi
@@ -12,6 +13,7 @@ usage() {
   cat << USAGE >&2
 Usage:
   $cmdname host:port [-t timeout] [-- command args]
+  -u | --udp                          Check for UDP port
   -q | --quiet                        Do not output any status messages
   -t TIMEOUT | --timeout=timeout      Timeout in seconds, zero for no timeout
   -- COMMAND ARGS                     Execute command with args after the test finishes
@@ -20,8 +22,10 @@ USAGE
 }
 
 wait_for() {
+  CMD="nc -z"
+  if [ "$UDP" -eq 1 ]; then CMD="$CMD -u"; fi
   for i in `seq $TIMEOUT` ; do
-    nc -z "$HOST" "$PORT" > /dev/null 2>&1
+    $CMD "$HOST" "$PORT" > /dev/null 2>&1
     
     result=$?
     if [ $result -eq 0 ] ; then
@@ -46,6 +50,10 @@ do
     ;;
     -q | --quiet)
     QUIET=1
+    shift 1
+    ;;
+    -u | --udp)
+    UDP=1
     shift 1
     ;;
     -t)

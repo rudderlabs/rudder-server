@@ -53,8 +53,7 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 		Key:    aws.String(fileName),
 		Body:   file,
 	})
-	// do not panic if upload has failed for customer s3 bucket
-	// misc.AssertError(err)
+
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -62,6 +61,10 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 }
 
 func (manager *S3Manager) Download(output *os.File, key string) error {
+	if manager.Config.Bucket == "" {
+		return errors.New("no storage bucket configured to downloader")
+	}
+
 	getRegionSession := session.Must(session.NewSession())
 	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
 
@@ -83,8 +86,7 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
 		})
-	// do not panic if download has failed for customer s3 bucket
-	// misc.AssertError(err)
+
 	return err
 }
 

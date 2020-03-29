@@ -3,6 +3,7 @@ package redshift
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -38,8 +39,8 @@ type HandleT struct {
 
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
-	"int":      "double precision",
-	"bigint":   "double precision",
+	"int":      "bigint",
+	"bigint":   "bigint",
 	"float":    "double precision",
 	"string":   "varchar(512)",
 	"datetime": "timestamp",
@@ -60,6 +61,12 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 
 func (rs *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sortKeyField := "received_at"
+	if _, ok := columns["received_at"]; !ok {
+		sortKeyField = "uuid_ts"
+		if _, ok = columns["uuid_ts"]; !ok {
+			sortKeyField = "id"
+		}
+	}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) SORTKEY(%s)`, name, columnsWithDataTypes(columns, ""), sortKeyField)
 	logger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
@@ -152,32 +159,41 @@ type S3ManifestT struct {
 	Entries []S3ManifestEntryT `json:"entries"`
 }
 
-func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[string]string) (string, error) {
+func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[string]string, accessKeyID, accessKey string) (string, error) {
 	csvObjectLocations, err := warehouseutils.GetLoadFileLocations(rs.DbHandle, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, tableName, rs.Upload.StartLoadFileID, rs.Upload.EndLoadFileID)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	csvS3Locations, err := warehouseutils.GetS3Locations(csvObjectLocations)
 	var manifest S3ManifestT
 	for _, location := range csvS3Locations {
 		manifest.Entries = append(manifest.Entries, S3ManifestEntryT{Url: location, Mandatory: true})
 	}
-	logger.Infof("RS: Generated manifest for table:%s %+v", tableName, manifest)
+	logger.Infof("RS: Generated manifest for table:%s", tableName)
 	manifestJSON, err := json.Marshal(&manifest)
 
 	manifestFolder := "rudder-redshift-manifests"
 	dirName := "/" + manifestFolder + "/"
-	tmpDirPath := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
 	localManifestPath := fmt.Sprintf("%v%v", tmpDirPath+dirName, uuid.NewV4().String())
 	err = os.MkdirAll(filepath.Dir(localManifestPath), os.ModePerm)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	_ = ioutil.WriteFile(localManifestPath, manifestJSON, 0644)
 
 	file, err := os.Open(localManifestPath)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer file.Close()
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
-		Config:   map[string]interface{}{"bucketName": bucketName},
+		Config:   map[string]interface{}{"bucketName": bucketName, "accessKeyID": accessKeyID, "accessKey": accessKey},
 	})
 
 	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
@@ -191,6 +207,7 @@ func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[
 
 func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
 	for _, stagingTableName := range stagingTableNames {
+		logger.Infof("WH: dropping table %+v\n", stagingTableName)
 		_, err := rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
 			logger.Errorf("WH: RS:  Error dropping staging tables in redshift: %v", err)
@@ -198,7 +215,7 @@ func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
-func (rs *HandleT) load() (err error) {
+func (rs *HandleT) load() (errList []error) {
 	var accessKeyID, accessKey, bucketName string
 	config := rs.Warehouse.Destination.Config.(map[string]interface{})
 	if config["accessKeyID"] != nil {
@@ -211,106 +228,103 @@ func (rs *HandleT) load() (err error) {
 		bucketName = config["bucketName"].(string)
 	}
 
-	wg := misc.NewWaitGroup()
-	wg.Add(len(rs.Upload.Schema))
 	stagingTableNames := []string{}
 
-	for tName, cMap := range rs.Upload.Schema {
-		go func(tableName string, columnMap map[string]string) {
-			timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
-			timer.Start()
-			manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap)
-			timer.End()
-			if err != nil {
-				wg.Err(err)
-				return
+	for tableName, columnMap := range rs.Upload.Schema {
+		timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
+		timer.Start()
+		manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap, accessKeyID, accessKey)
+		timer.End()
+		if err != nil {
+			errList = append(errList, err)
+			continue
+		}
+		logger.Infof("RS: Generated and stored manifest for table:%s at %s\n", tableName, manifestLocation)
+
+		// sort columnnames
+		keys := reflect.ValueOf(columnMap).MapKeys()
+		strkeys := make([]string, len(keys))
+		for i := 0; i < len(keys); i++ {
+			strkeys[i] = keys[i].String()
+		}
+		sort.Strings(strkeys)
+		sortedColumnNames := strings.Join(strkeys, ",")
+
+		stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
+		err = rs.createTable(fmt.Sprintf(`%s."%s"`, rs.Namespace, stagingTableName), rs.Upload.Schema[tableName])
+		if err != nil {
+			errList = append(errList, err)
+			continue
+		}
+		defer rs.dropStagingTables([]string{stagingTableName})
+
+		stagingTableNames = append(stagingTableNames, stagingTableName)
+
+		region, manifestS3Location := warehouseutils.GetS3Location(manifestLocation)
+		if region == "" {
+			region = "us-east-1"
+		}
+
+		// BEGIN TRANSACTION
+		tx, err := rs.Db.Begin()
+		if err != nil {
+			errList = append(errList, err)
+			continue
+		}
+
+		sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`, fmt.Sprintf(`%s."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, accessKeyID, accessKey, region)
+
+		logger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
+		_, err = tx.Exec(sqlStatement)
+		if err != nil {
+			logger.Errorf("RS: Error running COPY command: %v\n", err)
+			tx.Rollback()
+			errList = append(errList, err)
+			continue
+		}
+
+		primaryKey := "id"
+		if column, ok := primaryKeyMap[tableName]; ok {
+			primaryKey = column
+		}
+
+		sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Namespace, tableName, stagingTableName, primaryKey)
+		logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+		_, err = tx.Exec(sqlStatement)
+		if err != nil {
+			logger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
+			tx.Rollback()
+			errList = append(errList, err)
+			continue
+		}
+
+		var quotedColumnNames string
+		for idx, str := range strkeys {
+			quotedColumnNames += "\"" + str + "\""
+			if idx != len(strkeys)-1 {
+				quotedColumnNames += ","
 			}
-			logger.Infof("RS: Generated and stored manifest for table:%s at %s", tableName, manifestLocation)
+		}
 
-			// sort columnnames
-			keys := reflect.ValueOf(columnMap).MapKeys()
-			strkeys := make([]string, len(keys))
-			for i := 0; i < len(keys); i++ {
-				strkeys[i] = keys[i].String()
-			}
-			sort.Strings(strkeys)
-			sortedColumnNames := strings.Join(strkeys, ",")
+		sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, primaryKey)
+		logger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
+		_, err = tx.Exec(sqlStatement)
 
-			stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
-			err = rs.createTable(fmt.Sprintf(`%s."%s"`, rs.Namespace, stagingTableName), rs.Upload.Schema[tableName])
-			if err != nil {
-				wg.Err(err)
-				return
-			}
-			defer rs.dropStagingTables([]string{stagingTableName})
+		if err != nil {
+			logger.Errorf("RS: Error inserting into original table: %v\n", err)
+			tx.Rollback()
+			errList = append(errList, err)
+			continue
+		}
 
-			stagingTableNames = append(stagingTableNames, stagingTableName)
-
-			region, manifestS3Location := warehouseutils.GetS3Location(manifestLocation)
-			if region == "" {
-				region = "us-east-1"
-			}
-
-			// BEGIN TRANSACTION
-			tx, err := rs.Db.Begin()
-			if err != nil {
-				wg.Err(err)
-				return
-			}
-
-			sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF `, fmt.Sprintf(`%s."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, accessKeyID, accessKey, region)
-
-			logger.Infof("RS: Running COPY command for table:%s at %s", tableName, sqlStatement)
-			_, err = tx.Exec(sqlStatement)
-			if err != nil {
-				tx.Rollback()
-				wg.Err(err)
-				return
-			}
-
-			primaryKey := "id"
-			if column, ok := primaryKeyMap[tableName]; ok {
-				primaryKey = column
-			}
-
-			sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Namespace, tableName, stagingTableName, primaryKey)
-			logger.Infof("RS: Dedup records for table:%s using staging table: %s", tableName, sqlStatement)
-			_, err = tx.Exec(sqlStatement)
-			if err != nil {
-				tx.Rollback()
-				wg.Err(err)
-				return
-			}
-
-			var quotedColumnNames string
-			for idx, str := range strkeys {
-				quotedColumnNames += "\"" + str + "\""
-				if idx != len(strkeys)-1 {
-					quotedColumnNames += ","
-				}
-			}
-
-			sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM %[1]s."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, primaryKey)
-			logger.Infof("RS: Inserting records for table:%s using staging table: %s", tableName, sqlStatement)
-			_, err = tx.Exec(sqlStatement)
-
-			if err != nil {
-				tx.Rollback()
-				wg.Err(err)
-				return
-			}
-
-			err = tx.Commit()
-			if err != nil {
-				tx.Rollback()
-				wg.Err(err)
-				return
-			}
-
-			wg.Done()
-		}(tName, cMap)
+		err = tx.Commit()
+		if err != nil {
+			logger.Errorf("RS: Error in transaction commit: %v\n", err)
+			tx.Rollback()
+			errList = append(errList, err)
+			continue
+		}
 	}
-	err = wg.Wait()
 	return
 }
 
@@ -360,7 +374,9 @@ func (rs *HandleT) MigrateSchema() (err error) {
 		return
 	}
 	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatedSchemaState, rs.DbHandle)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	err = warehouseutils.UpdateCurrentSchema(rs.Namespace, rs.Warehouse, rs.Upload.ID, rs.CurrentSchema, updatedSchema, rs.DbHandle)
 	timer.End()
 	if err != nil {
@@ -373,17 +389,29 @@ func (rs *HandleT) MigrateSchema() (err error) {
 func (rs *HandleT) Export() (err error) {
 	logger.Infof("RS: Starting export to redshift for source:%s and wh_upload:%v", rs.Warehouse.Source.ID, rs.Upload.ID)
 	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportingDataState, rs.DbHandle)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", rs.Warehouse.Destination.ID)
 	timer.Start()
-	err = rs.load()
+	errList := rs.load()
 	timer.End()
-	if err != nil {
-		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.ExportingDataFailedState, rs.DbHandle)
-		return err
+	if len(errList) > 0 {
+		rs.dropDanglingStagingTables()
+		errStr := ""
+		for idx, err := range errList {
+			errStr += err.Error()
+			if idx < len(errList)-1 {
+				errStr += ", "
+			}
+		}
+		warehouseutils.SetUploadError(rs.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, rs.DbHandle)
+		return errors.New(errStr)
 	}
 	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportedDataState, rs.DbHandle)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	return
 }
 
@@ -393,22 +421,27 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 								 from information_schema.tables
 								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
 	rows, err := rs.Db.Query(sqlStatement)
+	if err != nil {
+		logger.Errorf("WH: RS:  Error dropping dangling staging tables in redshift: %v\n", err)
+		return false
+	}
 	defer rows.Close()
-	misc.AssertError(err)
 
 	var stagingTableNames []string
 	for rows.Next() {
 		var tableName string
 		err := rows.Scan(&tableName)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
-
+	logger.Infof("WH: RS: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
 		_, err := rs.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
-			logger.Errorf("WH: RS:  Error dropping dangling staging tables in redshift: %v", err)
+			logger.Errorf("WH: RS:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
 			delSuccess = false
 		}
 	}
@@ -428,10 +461,12 @@ func (rs *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	if err != nil {
 		return err
 	}
-	curreSchema, err := warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
-	misc.AssertError(err)
-	rs.CurrentSchema = curreSchema.Schema
-	rs.Namespace = curreSchema.Namespace
+	currSchema, err := warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
+	if err != nil {
+		panic(err)
+	}
+	rs.CurrentSchema = currSchema.Schema
+	rs.Namespace = currSchema.Namespace
 	rs.dropDanglingStagingTables()
 	return
 }
@@ -451,10 +486,12 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
 		return err
 	}
-	curreSchema, err := warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
-	misc.AssertError(err)
-	rs.CurrentSchema = curreSchema.Schema
-	rs.Namespace = curreSchema.Namespace
+	currSchema, err := warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
+	if err != nil {
+		panic(err)
+	}
+	rs.CurrentSchema = currSchema.Schema
+	rs.Namespace = currSchema.Namespace
 	if rs.Namespace == "" {
 		logger.Infof("Namespace not found in currentschema for RS:%s, setting from upload: %s", rs.Warehouse.Destination.ID, rs.Upload.Namespace)
 		rs.Namespace = rs.Upload.Namespace

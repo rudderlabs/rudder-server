@@ -43,3 +43,20 @@ func (wg *WaitGroup) Wait() error {
 		return nil
 	}
 }
+
+func (wg *WaitGroup) WaitForAll() []error {
+	var errList []error
+	go func() {
+		wg.wg.Wait()
+		wg.doneChan <- true
+	}()
+	for {
+		select {
+		case err := <-wg.errChan:
+			errList = append(errList, err)
+			break
+		case <-wg.doneChan:
+			return errList
+		}
+	}
+}

@@ -164,7 +164,9 @@ func computeTestResults(testDuration int) {
 func getS3DestData() {
 	// TODO: Handle Pagination for ListFilesWithPrefix
 	s3Objects, err := s3Manager.ListFilesWithPrefix(fmt.Sprintf("rudder-logs/%s", *sourceID))
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	sort.Slice(s3Objects, func(i, j int) bool {
 		return s3Objects[i].LastModifiedTime.Before(s3Objects[j].LastModifiedTime)
@@ -182,10 +184,14 @@ func getS3DestData() {
 		jsonPath := "/Users/srikanth/" + "s3-correctness/" + uuid.NewV4().String()
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		jsonFile, err := os.Create(jsonPath)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 
 		err = s3Manager.Download(jsonFile, s3Object.Key)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		jsonFile.Close()
 		defer os.Remove(jsonPath)
 
@@ -232,7 +238,9 @@ func generateRandomData(payload *[]byte, path string, value interface{}) ([]byte
 
 func generateEvents(userID string, eventDelay int) {
 	var fileData, err = ioutil.ReadFile("batchEvent.json")
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	events := gjson.GetBytes(fileData, "batch")
 
 	for {
@@ -302,7 +310,7 @@ func redisLoop() {
 	_, err := redisClient.Ping().Result()
 	fmt.Println(err)
 	if err != nil {
-		misc.AssertError(errors.New("Failed to connect to redis server"))
+		panic(err)
 	}
 
 	pipe := redisClient.Pipeline()
@@ -312,13 +320,15 @@ func redisLoop() {
 		case events := <-redisChan:
 			var batchEvent BatchEvent
 			err := json.Unmarshal(events, &batchEvent)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 			for _, event := range batchEvent.Batch {
 				eventID, ok := event.(map[string]interface{})["messageId"].(string)
 				userID, ok := event.(map[string]interface{})["anonymousId"].(string)
 				timeStamp, ok := event.(map[string]interface{})["sentAt"].(string)
 				if !ok {
-					misc.AssertError(errors.New("Invalid event ID"))
+					panic(errors.New("Invalid event ID"))
 				}
 
 				pipe.RPush(testName+":"+userID+":src_list", eventID)

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -25,13 +26,14 @@ type transformMessageT struct {
 
 //HandleT is the handle for this class
 type transformerHandleT struct {
-	requestQ     chan *transformMessageT
-	responseQ    chan *transformMessageT
-	accessLock   sync.Mutex
-	perfStats    *misc.PerfStats
-	sentStat     *stats.RudderStats
-	receivedStat *stats.RudderStats
-	failedStat   *stats.RudderStats
+	requestQ           chan *transformMessageT
+	responseQ          chan *transformMessageT
+	accessLock         sync.Mutex
+	perfStats          *misc.PerfStats
+	sentStat           *stats.RudderStats
+	receivedStat       *stats.RudderStats
+	failedStat         *stats.RudderStats
+	transformTimerStat *stats.RudderStats
 }
 
 var (
@@ -42,26 +44,39 @@ var (
 func (trans *transformerHandleT) transformWorker() {
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
+	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
+
 	for job := range trans.requestQ {
 		//Call remote transformation
 		rawJSON, err := json.Marshal(job.data)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		retryCount := 0
 		var resp *http.Response
 		//We should rarely have error communicating with our JS
+		reqFailed := false
+
 		for {
+			transformRequestTimerStat.Start()
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
 			if err != nil {
-				logger.Error("JS HTTP connection error", err)
+				transformRequestTimerStat.End()
+				reqFailed = true
+				logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
 				if retryCount > maxRetry {
-					misc.Assert(false)
+					panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err))
 				}
 				retryCount++
 				time.Sleep(retrySleep)
 				//Refresh the connection
 				continue
 			}
+			if reqFailed {
+				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
+			}
+			transformRequestTimerStat.End()
 			break
 		}
 
@@ -71,17 +86,20 @@ func (trans *transformerHandleT) transformWorker() {
 			resp.StatusCode == http.StatusNotFound ||
 			resp.StatusCode == http.StatusRequestEntityTooLarge) {
 			logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
-			misc.Assert(true)
 		}
 
 		var toSendData interface{}
 		if resp.StatusCode == http.StatusOK {
 			respData, err := ioutil.ReadAll(resp.Body)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 			err = json.Unmarshal(respData, &toSendData)
 			//This is returned by our JS engine so should  be parsable
 			//but still handling it
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 		} else {
 			io.Copy(ioutil.Discard, resp.Body)
 		}
@@ -98,11 +116,14 @@ func (trans *transformerHandleT) Setup() {
 	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
 	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
 	trans.failedStat = stats.NewStat("processor.transformer_failed", stats.CountType)
+	trans.transformTimerStat = stats.NewStat("processor.transformation_time", stats.TimerType)
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 	for i := 0; i < numTransformWorker; i++ {
 		logger.Info("Starting transformer worker", i)
-		go trans.transformWorker()
+		rruntime.Go(func() {
+			trans.transformWorker()
+		})
 	}
 }
 
@@ -124,6 +145,8 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
+
+	trans.transformTimerStat.Start()
 
 	var transformResponse = make([]*transformMessageT, 0)
 	//Enqueue all the jobs
@@ -150,9 +173,13 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 						break
 					}
 					prevUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx-1].(map[string]interface{})["message"])
-					misc.Assert(ok)
+					if !ok {
+						panic(fmt.Errorf("GetAnonymousID failed"))
+					}
 					currentUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx].(map[string]interface{})["message"])
-					misc.Assert(ok)
+					if !ok {
+						panic(fmt.Errorf("GetAnonymousID failed"))
+					}
 					if currentUserID != prevUserID {
 						logger.Debug("Breaking batch at", inputIdx, prevUserID, currentUserID)
 						break
@@ -189,7 +216,9 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 			break
 		}
 	}
-	misc.Assert(inputIdx == len(clientEvents) && outputIdx == totalSent)
+	if !(inputIdx == len(clientEvents) && outputIdx == totalSent) {
+		panic(fmt.Errorf("inputIdx:%d != len(clientEvents):%d or outputIdx:%d != totalSent:%d", inputIdx, len(clientEvents), outputIdx, totalSent))
+	}
 
 	//Sort the responses in the same order as input
 	sort.Slice(transformResponse, func(i, j int) bool {
@@ -197,8 +226,12 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	})
 
 	//Some sanity checks
-	misc.Assert(batchSize > 0 || transformResponse[0].index == 1)
-	misc.Assert(transformResponse[len(transformResponse)-1].index == len(clientEvents))
+	if !(batchSize > 0 || transformResponse[0].index == 1) {
+		panic(fmt.Errorf("batchSize:%d <= 0 and transformResponse[0].index:%d != 1", batchSize, transformResponse[0].index))
+	}
+	if transformResponse[len(transformResponse)-1].index != len(clientEvents) {
+		panic(fmt.Errorf("transformResponse[len(transformResponse)-1].index:%d != len(clientEvents):%d", transformResponse[len(transformResponse)-1].index, len(clientEvents)))
+	}
 
 	outClientEvents := make([]interface{}, 0)
 
@@ -207,16 +240,25 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 			continue
 		}
 		respArray, ok := resp.data.([]interface{})
-		misc.Assert(ok)
+		if !ok {
+			panic(fmt.Errorf("typecast of resp.data to []interface{} failed"))
+		}
 		//Transform is one to many mapping so returned
 		//response for each is an array. We flatten it out
 		for _, respElem := range respArray {
 			respElemMap, castOk := respElem.(map[string]interface{})
 			if castOk {
-				if statusCode, ok := respElemMap["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
-					// TODO: Log errored resposnes to file
+				respOutput, ok := respElemMap["output"]
+				if !ok {
 					trans.failedStat.Increment()
 					continue
+				}
+				if output, castOk := respOutput.(map[string]interface{}); castOk {
+					if statusCode, ok := output["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
+						// TODO: Log errored resposnes to file
+						trans.failedStat.Increment()
+						continue
+					}
 				}
 			}
 			outClientEvents = append(outClientEvents, respElem)
@@ -227,6 +269,8 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	trans.receivedStat.Count(len(outClientEvents))
 	trans.perfStats.End(len(clientEvents))
 	trans.perfStats.Print()
+
+	trans.transformTimerStat.End()
 
 	return ResponseT{
 		Events:  outClientEvents,

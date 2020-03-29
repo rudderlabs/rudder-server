@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,7 +18,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
-
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -26,8 +27,11 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/router/warehouse"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
+	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -49,14 +53,14 @@ var major, minor, commit, buildDate, builtBy, gitURL, patch string
 
 func loadConfig() {
 	maxProcess = config.GetInt("maxProcess", 12)
-	gwDBRetention = config.GetDuration("gwDBRetention", time.Duration(1)) * time.Hour
+	gwDBRetention = config.GetDuration("gwDBRetentionInHr", 0) * time.Hour
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
 	enableBackup = config.GetBool("JobsDB.enableBackup", true)
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 }
 
 // Test Function
@@ -75,79 +79,47 @@ func readIOforResume(router router.HandleT) {
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch)
+	backendconfig.Subscribe(ch, "backendConfig")
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	dstToWhRouter := make(map[string]*warehouse.HandleT)
 
 	for {
 		config := <-ch
-		logger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				for _, destination := range source.Destinations {
-					if destination.Enabled {
-						enabledDestinations[destination.DestinationDefinition.Name] = true
-						if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-							brt, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+					enabledDestinations[destination.DestinationDefinition.Name] = true
+					//For batch router destinations
+					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
+							var brt batchrouter.HandleT
+							brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
+							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
+						}
+						if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+							_, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 							if !ok {
-								logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
-								var brt batchrouter.HandleT
-								brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
-								dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
-							} else {
-								logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
-								brt.Enable()
-							}
-							if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-								wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-								if !ok {
-									logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-									var wh warehouse.HandleT
-									wh.Setup(destination.DestinationDefinition.Name)
-									dstToWhRouter[destination.DestinationDefinition.Name] = &wh
-								} else {
-									logger.Info("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-									wh.Enable()
-								}
-							}
-						} else {
-							rt, ok := dstToRouter[destination.DestinationDefinition.Name]
-							if !ok {
-								logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
-								var router router.HandleT
-								router.Setup(routerDB, destination.DestinationDefinition.Name)
-								dstToRouter[destination.DestinationDefinition.Name] = &router
-							} else {
-								logger.Info("Enabling existing Destination", destination.DestinationDefinition.Name)
-								rt.Enable()
+								logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+								var wh warehouse.HandleT
+								wh.Setup(destination.DestinationDefinition.Name)
+								dstToWhRouter[destination.DestinationDefinition.Name] = &wh
 							}
 						}
-
+					} else {
+						_, ok := dstToRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
+							var router router.HandleT
+							router.Setup(routerDB, destination.DestinationDefinition.Name)
+							dstToRouter[destination.DestinationDefinition.Name] = &router
+						}
 					}
-				}
-			}
-		}
 
-		keys := misc.StringKeys(dstToRouter)
-		keys = append(keys, misc.StringKeys(dstToBatchRouter)...)
-		keys = append(keys, misc.StringKeys(dstToWhRouter)...)
-		for _, key := range keys {
-			if _, ok := enabledDestinations[key]; !ok {
-				if rtHandle, ok := dstToRouter[key]; ok {
-					logger.Info("Disabling a existing destination: ", key)
-					rtHandle.Disable()
-					continue
-				}
-				if brtHandle, ok := dstToBatchRouter[key]; ok {
-					logger.Info("Disabling a existing batch destination: ", key)
-					brtHandle.Disable()
-				}
-				if whHandle, ok := dstToWhRouter[key]; ok {
-					logger.Info("Disabling a existing warehouse destination: ", key)
-					whHandle.Disable()
 				}
 			}
 		}
@@ -172,26 +144,36 @@ func versionHandler(w http.ResponseWriter, r *http.Request) {
 func printVersion() {
 	version := versionInfo()
 	versionFormatted, _ := json.MarshalIndent(&version, "", " ")
-	logger.Infof("Version Info %s", versionFormatted)
+	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
 func main() {
+	version := versionInfo()
+
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),
 		// The import paths for the Go packages containing your source files
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
-		AppType: "rudder-server",
+		AppType:      "rudder-server",
+		AppVersion:   version["Version"].(string),
+		PanicHandler: func() {},
 	})
+	ctx := bugsnag.StartSession(context.Background())
+	defer func() {
+		if r := recover(); r != nil {
+			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+				"GoRoutines": {
+					"Number": runtime.NumGoroutine(),
+				}})
 
-	logger.Setup()
-	logger.Info("Main starting")
-	if diagnostics.EnableServerStartMetric {
-		diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
-			diagnostics.ServerStart: time.Now(),
-		})
-	}
+			misc.RecordAppError(fmt.Errorf("%v", r))
+			logger.Fatal(r)
+			panic(r)
+		}
+	}()
+
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
@@ -202,15 +184,30 @@ func main() {
 	versionFlag := flag.Bool("v", false, "Print the current version and exit")
 
 	flag.Parse()
-	switch {
-	case *versionFlag:
+	if *versionFlag {
 		printVersion()
 		return
 	}
 	http.HandleFunc("/version", versionHandler)
 
-	// Check if there is a probable inconsistent state of Data
+	//Logger setup is the first thing to be done.
+	logger.Setup()
+	logger.Info("Main starting")
 	misc.AppStartTime = time.Now().Unix()
+	if diagnostics.EnableServerStartMetric {
+		diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
+			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
+		})
+	}
+
+	if !validators.ValidateEnv() {
+		return
+	}
+
+	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
+	stats.Setup()
+
+	// Check if there is a probable inconsistent state of Data
 	db.HandleRecovery(*normalMode, *degradedMode, *maintenanceMode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
@@ -219,10 +216,14 @@ func main() {
 	if *cpuprofile != "" {
 		var err error
 		f, err = os.Create(*cpuprofile)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 		runtime.SetBlockProfileRate(1)
 		err = pprof.StartCPUProfile(f)
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	c := make(chan os.Signal)
@@ -236,16 +237,21 @@ func main() {
 		}
 		if *memprofile != "" {
 			f, err := os.Create(*memprofile)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 			defer f.Close()
 			runtime.GC() // get up-to-date statistics
 			err = pprof.WriteHeapProfile(f)
-			misc.AssertError(err)
+			if err != nil {
+				panic(err)
+			}
 		}
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
 			logger.Log.Sync()
 		}
+		stats.StopRuntimeStats()
 		os.Exit(1)
 	}()
 
@@ -271,7 +277,9 @@ func main() {
 	//Setup the three modules, the gateway, the router and the processor
 
 	if enableRouter {
-		go monitorDestRouters(&routerDB, &batchRouterDB)
+		rruntime.Go(func() {
+			monitorDestRouters(&routerDB, &batchRouterDB)
+		})
 	}
 
 	if enableProcessor {

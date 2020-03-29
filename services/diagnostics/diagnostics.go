@@ -1,10 +1,11 @@
 package diagnostics
 
 import (
+	"time"
+
 	"github.com/rudderlabs/analytics-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"time"
 )
 
 const (
@@ -62,13 +63,13 @@ func init() {
 	client, _ := analytics.NewWithConfig(writekey, config)
 	diagnostics.Client = client
 	diagnostics.StartTime = time.Now()
-	diagnostics.UniqueId = misc.GetHash(misc.GetMacAddress())
+	diagnostics.UniqueId = misc.GetMD5Hash(misc.GetMacAddress())
 }
 
 func loadConfig() {
 	EnableDiagnostics = config.GetBool("Diagnosis.enableDiagnosis", true)
-	endpoint = config.GetString("Diagnosis.endpoint", "")
-	writekey = config.GetString("Diagnosis.writekey", "")
+	endpoint = config.GetString("Diagnosis.endpoint", "https://hosted.rudderlabs.com")
+	writekey = config.GetString("Diagnosis.writekey", "1Zn529y077Awo0fE7RiRrAVSgvs")
 	EnableServerStartMetric = config.GetBool("Diagnosis.enableServerStartMetric", true)
 	EnableConfigIdentifyMetric = config.GetBool("Diagnosis.enableConfigIdentifyMetric", true)
 	EnableServerStartedMetric = config.GetBool("Diagnosis.enableServerStartedMetric", true)

@@ -17,18 +17,21 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils"
 )
 
 var (
-	backendConfig                        BackendConfig
-	isMultiWorkspace                     bool
-	multiWorkspaceSecret                 string
-	configBackendURL, configBackendToken string
-	pollInterval                         time.Duration
-	curSourceJSON                        SourcesT
-	curSourceJSONLock                    sync.RWMutex
-	initialized                          bool
+	backendConfig                    BackendConfig
+	isMultiWorkspace                 bool
+	multiWorkspaceSecret             string
+	configBackendURL, workspaceToken string
+	pollInterval                     time.Duration
+	configFromFile                   bool
+	configJSONPath                   string
+	curSourceJSON                    SourcesT
+	curSourceJSONLock                sync.RWMutex
+	initialized                      bool
 )
 
 var Eb = new(utils.EventBus)
@@ -37,6 +40,7 @@ type DestinationDefinitionT struct {
 	ID          string
 	Name        string
 	DisplayName string
+	Config      interface{}
 }
 
 type SourceDefinitionT struct {
@@ -51,6 +55,7 @@ type DestinationT struct {
 	Config                interface{}
 	Enabled               bool
 	Transformations       []TransformationT
+	IsProcessorEnabled    bool
 }
 
 type SourceT struct {
@@ -78,7 +83,7 @@ type TransformationT struct {
 
 type BackendConfig interface {
 	SetUp()
-	GetBackendConfig() (SourcesT, bool)
+	Get() (SourcesT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 }
 
@@ -89,12 +94,11 @@ func loadConfig() {
 	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
 
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-	configBackendToken = config.GetEnv("CONFIG_BACKEND_TOKEN", "1P2tfQQKarhlsG6S3JGLdXptyZY")
-	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
-}
+	workspaceToken = config.GetWorkspaceToken()
 
-func GetConfigBackendToken() string {
-	return configBackendToken
+	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
+	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
+	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
 }
 
 func MakePostRequest(url string, endpoint string, data interface{}) (response []byte, ok bool) {
@@ -107,7 +111,7 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 		return []byte{}, false
 	}
 
-	request.SetBasicAuth(configBackendToken, "")
+	request.SetBasicAuth(workspaceToken, "")
 	request.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(request)
@@ -136,6 +140,7 @@ func init() {
 	config.Initialize()
 	loadConfig()
 }
+
 func trackConfig(preConfig SourcesT, curConfig SourcesT) {
 	diagnostics.DisableMetrics(curConfig.EnableMetrics)
 	if diagnostics.EnableConfigIdentifyMetric {
@@ -158,20 +163,42 @@ func trackConfig(preConfig SourcesT, curConfig SourcesT) {
 	}
 }
 
+func filterProcessorEnabledDestinations(config SourcesT) SourcesT {
+	var modifiedSources SourcesT
+	modifiedSources.Sources = make([]SourceT, 0)
+	for _, source := range config.Sources {
+		destinations := make([]DestinationT, 0)
+		for _, destination := range source.Destinations {
+			logger.Debug(destination.Name, " IsProcessorEnabled: ", destination.IsProcessorEnabled)
+			if destination.IsProcessorEnabled {
+				destinations = append(destinations, destination)
+			}
+		}
+		source.Destinations = destinations
+		modifiedSources.Sources = append(modifiedSources.Sources, source)
+	}
+	return modifiedSources
+}
+
 func pollConfigUpdate() {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
-		sourceJSON, ok := backendConfig.GetBackendConfig()
+		sourceJSON, ok := backendConfig.Get()
+		//TODO remove
+		sourceJSON.EnableMetrics = true
 		if !ok {
 			statConfigBackendError.Increment()
 		}
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
+			logger.Info("Workspace Config changed")
 			curSourceJSONLock.Lock()
 			trackConfig(curSourceJSON, sourceJSON)
+			filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()
 			initialized = true
-			Eb.Publish("backendconfig", sourceJSON)
+			Eb.Publish("processConfig", filteredSourcesJSON)
+			Eb.Publish("backendConfig", sourceJSON)
 		}
 		time.Sleep(time.Duration(pollInterval))
 	}
@@ -185,10 +212,16 @@ func GetWorkspaceIDForWriteKey(writeKey string) string {
 	return backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 }
 
-func Subscribe(channel chan utils.DataEvent) {
-	Eb.Subscribe("backendconfig", channel)
+func Subscribe(channel chan utils.DataEvent, topic string) {
+	Eb.Subscribe(topic, channel)
 	curSourceJSONLock.RLock()
-	Eb.PublishToChannel(channel, "backendconfig", curSourceJSON)
+	filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
+
+	if topic == "processConfig" {
+		Eb.PublishToChannel(channel, topic, filteredSourcesJSON)
+	} else if topic == "backendConfig" {
+		Eb.PublishToChannel(channel, topic, curSourceJSON)
+	}
 	curSourceJSONLock.RUnlock()
 }
 
@@ -212,5 +245,8 @@ func Setup() {
 	}
 
 	backendConfig.SetUp()
-	go pollConfigUpdate()
+
+	rruntime.Go(func() {
+		pollConfigUpdate()
+	})
 }

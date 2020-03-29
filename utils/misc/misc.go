@@ -4,10 +4,10 @@ import (
 	"archive/zip"
 	"bufio"
 	"compress/gzip"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"golang.org/x/crypto/bcrypt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -16,14 +16,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 	"sort"
 	"strings"
 
 	//"runtime/debug"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/thoas/go-funk"
@@ -41,10 +39,11 @@ type ErrorStoreT struct {
 
 //RudderError : to store rudder error
 type RudderError struct {
-	StartTime  int64
-	Message    string
-	StackTrace string
-	Code       int
+	StartTime         int64
+	ReadableStartTime string
+	Message           string
+	StackTrace        string
+	Code              int
 }
 
 func getErrorStore() (ErrorStoreT, error) {
@@ -102,49 +101,34 @@ func RecordAppError(err error) {
 	}
 
 	//TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
-	errorStore.Errors = append(errorStore.Errors, RudderError{StartTime: AppStartTime, Message: err.Error(), StackTrace: stackTrace, Code: 101})
+	errorStore.Errors = append(errorStore.Errors,
+		RudderError{
+			StartTime:         AppStartTime,
+			ReadableStartTime: fmt.Sprint(time.Unix(AppStartTime, 0)),
+			Message:           err.Error(),
+			StackTrace:        stackTrace,
+			Code:              101,
+		})
 	saveErrorStore(errorStore)
-}
-
-//AssertError panics if error
-func AssertError(err error) {
-	if err != nil {
-		// debug.SetTraceback("all")
-		debug.PrintStack()
-		defer bugsnag.AutoNotify()
-		RecordAppError(err)
-		logger.Fatal(err)
-		panic(err)
-	}
 }
 
 func AssertErrorIfDev(err error) {
 
 	goEnv := os.Getenv("GO_ENV")
 	if goEnv == "production" {
+		logger.Error(err.Error())
 		return
 	}
 
 	if err != nil {
-		// debug.SetTraceback("all")
-		debug.PrintStack()
-		defer bugsnag.AutoNotify()
-		RecordAppError(err)
-		logger.Fatal(err)
 		panic(err)
 	}
 }
 
-//Assert panics if false
-func Assert(cond bool) {
-	if !cond {
-		//debug.SetTraceback("all")
-		debug.PrintStack()
-		defer bugsnag.AutoNotify()
-		RecordAppError(errors.New("Assertion failed"))
-		logger.Fatal("Assertion failed")
-		panic("Assertion failed")
-	}
+//GetMD5Hash returns EncodeToString(md5 hash of the input string)
+func GetMD5Hash(input string) string {
+	hash := md5.Sum([]byte(input))
+	return hex.EncodeToString(hash[:])
 }
 
 //GetRudderEventMap returns the event structure from the client payload
@@ -173,7 +157,6 @@ func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) 
 
 //ParseRudderEventBatch looks for the batch structure inside event
 func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
-	logger.Debug("[Misc: ParseRudderEventBatch] in ParseRudderEventBatch ")
 	var eventListJSON map[string]interface{}
 	err := json.Unmarshal(eventPayload, &eventListJSON)
 	if err != nil {
@@ -235,10 +218,14 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 
 	// Get the file information
 	info, err := fileToZip.Stat()
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	header, err := zip.FileInfoHeader(info)
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	// Using FileInfoHeader() above only uses the basename of the file. If we want
 	// to preserve the folder structure we can overwrite this with the full path.
@@ -250,7 +237,9 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	header.Method = zip.Deflate
 
 	writer, err := zipWriter.CreateHeader(header)
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	_, err = io.Copy(writer, fileToZip)
 	return err
 }
@@ -258,13 +247,17 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 // UnZipSingleFile unzips zip containing single file into ouputfile path passed
 func UnZipSingleFile(outputfile string, filename string) {
 	r, err := zip.OpenReader(filename)
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	defer r.Close()
 	inputfile := r.File[0]
 	// Make File
 	err = os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
 	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
-	AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 	rc, err := inputfile.Open()
 	_, err = io.Copy(outFile, rc)
 	outFile.Close()
@@ -298,14 +291,21 @@ func ReadLines(path string) ([]string, error) {
 }
 
 // CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
-func CreateTMPDIR() string {
+func CreateTMPDIR() (string, error) {
 	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	// second chance: fallback to /tmp if this folder exists
 	if tmpdirPath == "" {
-		var err error
-		tmpdirPath, err = os.UserHomeDir()
-		AssertError(err)
+		fallbackPath := "/tmp"
+		_, err := os.Stat(fallbackPath)
+		if err == nil {
+			tmpdirPath = fallbackPath
+			logger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
+		}
 	}
-	return tmpdirPath
+	if tmpdirPath == "" {
+		return os.UserHomeDir()
+	}
+	return tmpdirPath, nil
 }
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
@@ -442,7 +442,7 @@ func Contains(in interface{}, elem interface{}) bool {
 			}
 		}
 	default:
-		AssertError(fmt.Errorf("Type %s is not supported by Contains, supported types are String, Map, Slice, Array", inType.String()))
+		panic(fmt.Errorf("Type %s is not supported by Contains, supported types are String, Map, Slice, Array", inType.String()))
 	}
 
 	return false
@@ -483,6 +483,26 @@ func SortedMapKeys(input interface{}) []string {
 	keys := make([]string, 0, len(mapKeys))
 	for _, key := range mapKeys {
 		keys = append(keys, key.String())
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func SortedStructSliceValues(input interface{}, filedName string) []string {
+	items := reflect.ValueOf(input)
+	var keys []string
+	if items.Kind() == reflect.Slice {
+		for i := 0; i < items.Len(); i++ {
+			item := items.Index(i)
+			if item.Kind() == reflect.Struct {
+				v := reflect.Indirect(item)
+				for j := 0; j < v.NumField(); j++ {
+					if v.Type().Field(j).Name == "Name" {
+						keys = append(keys, v.Field(j).String())
+					}
+				}
+			}
+		}
 	}
 	sort.Strings(keys)
 	return keys
@@ -532,37 +552,29 @@ func (w GZipWriter) WriteGZ(s string) {
 	w.BufWriter.WriteString(s)
 }
 
+func (w GZipWriter) Write(b []byte) {
+	w.BufWriter.Write(b)
+}
+
 func (w GZipWriter) CloseGZ() {
 	w.BufWriter.Flush()
 	w.GzWriter.Close()
 	w.File.Close()
 }
 
-func GetHash(word string) string {
-	hash, err := bcrypt.GenerateFromPassword([]byte(word), bcrypt.MinCost)
-	if err != nil {
-		return ""
-	}
-	return string(hash)
-}
-
 func GetMacAddress() string {
-
 	//----------------------
 	// Get the local machine IP address
 	// https://www.socketloop.com/tutorials/golang-how-do-I-get-the-local-ip-non-loopback-address
 	//----------------------
 
 	addrs, err := net.InterfaceAddrs()
-
 	if err != nil {
 		return ""
 	}
 
 	var currentIP, currentNetworkHardwareName string
-
 	for _, address := range addrs {
-
 		// check the address type and if it is not a loopback then that's the current ip
 		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 			if ipnet.IP.To4() != nil {
@@ -593,5 +605,4 @@ func GetMacAddress() string {
 	macAddress := netInterface.HardwareAddr
 
 	return macAddress.String()
-
 }

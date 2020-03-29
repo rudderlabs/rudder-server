@@ -28,7 +28,7 @@ func supressMinorErrors(err error) error {
 
 func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, error) {
 	if manager.Config.Container == "" {
-		return azblob.ContainerURL{}, errors.New("no container configured to downloader")
+		return azblob.ContainerURL{}, errors.New("no container configured")
 	}
 
 	accountName, accountKey := manager.Config.AccountName, manager.Config.AccountKey

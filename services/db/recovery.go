@@ -13,7 +13,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -32,10 +31,13 @@ var CurrentMode string = normalMode // default mode
 
 // RecoveryDataT : DS to store the recovery process data
 type RecoveryDataT struct {
-	StartTimes                []int64
-	DegradedModeStartTimes    []int64
-	MaintenanceModeStartTimes []int64
-	Mode                      string
+	StartTimes                        []int64
+	ReadableStartTimes                []string
+	DegradedModeStartTimes            []int64
+	ReadableDegradedModeStartTimes    []string
+	MaintenanceModeStartTimes         []int64
+	ReadableMaintenanceModeStartTimes []string
+	Mode                              string
 }
 
 func getRecoveryData() RecoveryDataT {
@@ -45,12 +47,16 @@ func getRecoveryData() RecoveryDataT {
 		defaultRecoveryJSON := "{\"mode\":\"" + normalMode + "\"}"
 		data = []byte(defaultRecoveryJSON)
 	} else {
-		misc.AssertError(err)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	var recoveryData RecoveryDataT
 	err = json.Unmarshal(data, &recoveryData)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 
 	return recoveryData
 }
@@ -59,7 +65,9 @@ func saveRecoveryData(recoveryData RecoveryDataT) {
 	recoveryDataJSON, err := json.MarshalIndent(&recoveryData, "", " ")
 	storagePath := config.GetString("recovery.storagePath", "/tmp/recovery_data.json")
 	err = ioutil.WriteFile(storagePath, recoveryDataJSON, 0644)
-	misc.AssertError(err)
+	if err != nil {
+		panic(err)
+	}
 }
 
 /*
@@ -158,6 +166,7 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 		nextMode := getNextMode(recoveryData.Mode)
 		if nextMode == "" {
 			logger.Fatal("Threshold reached for maintenance mode")
+			panic("Not a valid mode")
 		} else {
 			recoveryData.Mode = nextMode
 			recoveryHandler = NewRecoveryHandler(&recoveryData)

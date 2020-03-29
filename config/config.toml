@@ -1,8 +1,43 @@
 # Contains the configuration for the whole server
-# Dont set secrets, passwords, api_keys etc. in this file. Use '.env' file for that
+# Dont set secrets, passwords, api_keys etc. in this file. Use '.env' file or environment variables for that
+
+# These values can be overriden through environment variables. The regex for these is present in config/config.go
+# Please look at the following examples to override the config
+#
+# Eg 1:
+# maxProcess = 12
+#
+# RSERVER_MAX_PROCESS=12
+#
+# Eg 2:
+# [RateLimit]
+# eventLimit=1000
+#
+# RSERVER_RATE_LIMIT_EVENT_LIMIT=1000
+#
+# Eg 3:
+# [Gateway]
+# maxDBWriterProcess = 64
+#
+# RSERVER_GATEWAY_MAX_DBWRITER_PROCESS=64
+#
+# Eg 4:
+# [BackendConfig]
+# configJSONPath = "./workspaceConfig.json"
+#
+# RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH="./workspaceConfig.json"
+#
+# Eg 5:
+# [JobsDB]
+# enableBackup=false
+#
+# RSERVER_JOBS_DB_ENABLE_BACKUP=true
+#
+
+
 
 maxProcess = 12 # Max number of cpu process to be used by go runtime
-gwDBRetention = 0
+gwDBRetentionInHr = 0
 routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
@@ -26,9 +61,11 @@ dedupWindowInS = 86400
 
 [SourceDebugger]
 maxBatchSize = 32
+maxESQueueSize = 1024
 maxRetry = 3
 batchTimeoutInS = 2
 retrySleepInMS = 100
+disableEventUploads = false
 
 [JobsDB]
 # Migration related parameters
@@ -36,15 +73,16 @@ jobDoneMigrateThres = 0.8
 jobStatusMigrateThres = 5
 maxDSSize = 100000
 maxMigrateOnce = 10
-maxTableSizeInMB = 150
-mainCheckSleepDurationInS = 2
+maxTableSizeInMB = 300
+mainCheckSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
 enableBackup = true
+backupRowsBatchSize = 10000
 
 [Router]
 jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
-readSleepInMS = 10
+readSleepInMS = 1000
 noOfWorkers = 64
 noOfJobsPerChannel = 1000
 ser = 3
@@ -57,9 +95,11 @@ maxFailedCountForJob = 8
 keepOrderOnFailure = true
 
 [BatchRouter]
-mainLoopSleepInS = 30
+mainLoopSleepInS = 2
 noOfWorkers = 8
 jobQueryBatchSize = 100000
+uploadFreqInS = 30
+maxFailedCountForJob = 128
 
 [Warehouse]
 stagingFilesTable = "wh_staging_files"
@@ -70,12 +110,13 @@ uploadFreqInS = 1800
 noOfWorkers = 8
 mainLoopSleepInS = 60
 maxRetry = 3
-stagingFilesBatchSize = 100
+stagingFilesBatchSize = 240
 
 [Processor]
 loopSleepInMS = 10
+maxLoopSleepInMS = 5000
 dbReadBatchSize = 10000
-transformBatchSize = 10
+transformBatchSize = 100
 userTransformBatchSize = 200
 sessionThresholdEvents = 100
 sessionInactivityThresholdInS = 120
@@ -86,6 +127,8 @@ maxRetry = 30
 retrySleepInMS = 100
 
 [BackendConfig]
+configFromFile = false
+configJSONPath = "/etc/rudderstack/workspaceConfig.json"
 pollIntervalInS = 5
 
 
@@ -118,18 +161,16 @@ consoleJsonFormat=false
 fileJsonFormat=false
 logFileLocation="/tmp/rudder_log.log"
 logFileSize = 100 # in MB
-enableTimestamp=false
+enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
 
 
 [Diagnosis]
 enableDiagnosis = true
-endpoint = "https://hosted.rudderlabs.com"
-writekey = "1ZZZrtV9D9esebor6vE64vFff5K"
 gatewayTimePeriodInS = 60
 routerTimePeriodInS = 60
-batchRouterTimePeriodInS = 600
+batchRouterTimePeriodInS = 60
 enableServerStartMetric = true
 enableConfigIdentifyMetric = true
 enableServerStartedMetric = true
@@ -137,3 +178,12 @@ enableConfigProcessedMetric = true
 enableGatewayMetric = true
 enableRouterMetric = true
 enableBatchRouterMetric = true
+
+
+# runtime stats are collected using go runtime package and published to statsd
+[RuntimeStats]
+enabled=true
+statsCollectionInterval=10
+enableCPUStats=true
+enableMemStats=true
+enableGCStats=true

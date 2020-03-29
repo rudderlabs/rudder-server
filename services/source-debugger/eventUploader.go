@@ -10,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -90,9 +91,15 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 func Setup() {
 	// TODO: Fix the buffer size
 	eventBatchChannel = make(chan *GatewayEventBatchT)
-	go backendConfigSubscriber()
-	go handleEvents()
-	go flushEvents()
+	rruntime.Go(func() {
+		backendConfigSubscriber()
+	})
+	rruntime.Go(func() {
+		handleEvents()
+	})
+	rruntime.Go(func() {
+		flushEvents()
+	})
 }
 
 func uploadEvents(eventBuffer []*GatewayEventBatchT) {
@@ -164,7 +171,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 			return
 		}
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-		req.SetBasicAuth(backendconfig.GetConfigBackendToken(), "")
+		req.SetBasicAuth(config.GetWorkspaceToken(), "")
 
 		resp, err = client.Do(req)
 		if err != nil {
@@ -205,11 +212,12 @@ func getKeys(dataMap map[string]interface{}) []string {
 }
 
 func handleEvents() {
+	eventBuffer = make([]*GatewayEventBatchT, 0)
+
 	for {
 		select {
 		case eventSchema := <-eventBatchChannel:
 			eventBufferLock.Lock()
-			eventBuffer = make([]*GatewayEventBatchT, 0)
 
 			//If eventBuffer size is more than maxESQueueSize, Delete oldest.
 			if len(eventBuffer) > maxESQueueSize {
@@ -269,7 +277,7 @@ func updateConfig(sources backendconfig.SourcesT) {
 
 func backendConfigSubscriber() {
 	configChannel := make(chan utils.DataEvent)
-	backendconfig.Subscribe(configChannel)
+	backendconfig.Subscribe(configChannel, "processConfig")
 	for {
 		config := <-configChannel
 		updateConfig(config.Data.(backendconfig.SourcesT))

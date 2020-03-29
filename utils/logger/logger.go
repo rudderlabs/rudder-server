@@ -23,6 +23,7 @@ const (
 	levelEvent = iota // Logs Event
 	levelDebug        // Most verbose logging level
 	levelInfo         // Logs about state of the application
+	levelWarn         // Logs about warnings
 	levelError        // Logs about errors which dont immediately halt the application
 	levelFatal        // Logs which crashes the application
 )
@@ -31,6 +32,7 @@ var levelMap = map[string]int{
 	"EVENT": levelEvent,
 	"DEBUG": levelDebug,
 	"INFO":  levelInfo,
+	"WARN":  levelWarn,
 	"ERROR": levelError,
 	"FATAL": levelFatal,
 }
@@ -54,11 +56,11 @@ func loadConfig() {
 	level = levelMap[config.GetEnv("LOG_LEVEL", "INFO")]
 	enableConsole = config.GetBool("Logger.enableConsole", true)
 	enableFile = config.GetBool("Logger.enableFile", false)
-	consoleJsonFormat = config.GetBool("Logger.consoleJsonFormat", true)
+	consoleJsonFormat = config.GetBool("Logger.consoleJsonFormat", false)
 	fileJsonFormat = config.GetBool("Logger.fileJsonFormat", false)
-	logFileLocation = config.GetString("Logger.logFileLocation", "/tmp/rudder_log.txt")
+	logFileLocation = config.GetString("Logger.logFileLocation", "/tmp/rudder_log.log")
 	logFileSize = config.GetInt("Logger.logFileSize", 100)
-	enableTimestamp = config.GetBool("Logger.enableTimestamp", false)
+	enableTimestamp = config.GetBool("Logger.enableTimestamp", true)
 	enableFileNameInLog = config.GetBool("Logger.enableFileNameInLog", false)
 	enableStackTrace = config.GetBool("Logger.enableStackTrace", false)
 }
@@ -85,6 +87,12 @@ func Debug(args ...interface{}) {
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
 func Info(args ...interface{}) {
 	Log.Info(args...)
+}
+
+// Warn level logging.
+// Use this to log warnings
+func Warn(args ...interface{}) {
+	Log.Warn(args...)
 }
 
 // Error level logging.
@@ -114,13 +122,19 @@ func Fatal(args ...interface{}) {
 // Debugf does debug level logging similar to fmt.Printf.
 // Most verbose logging level
 func Debugf(format string, args ...interface{}) {
-	Log.Debug(args...)
+	Log.Debugf(format, args...)
 }
 
 // Infof does info level logging similar to fmt.Printf.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
 func Infof(format string, args ...interface{}) {
 	Log.Infof(format, args...)
+}
+
+// Warnf does warn level logging similar to fmt.Printf.
+// Use this to log warnings
+func Warnf(format string, args ...interface{}) {
+	Log.Warnf(format, args...)
 }
 
 // Errorf does error level logging similar to fmt.Printf.

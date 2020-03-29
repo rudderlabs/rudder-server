@@ -17,7 +17,14 @@ func objectURL(objAttrs *storage.ObjectAttrs) string {
 
 func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
 	ctx := context.Background()
-	client, err := storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+	var client *storage.Client
+	var err error
+	if manager.Config.Credentials == "" {
+		client, err = storage.NewClient(ctx)
+	} else {
+		client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+	}
+
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -45,6 +52,9 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 	}
 
 	attrs, err := obj.Attrs(ctx)
+	if err != nil {
+		return UploadOutput{}, err
+	}
 	return UploadOutput{Location: objectURL(attrs)}, err
 }
 
