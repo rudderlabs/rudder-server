@@ -1662,6 +1662,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	// return without doing anything as no jobs not present in ds
 	if totalCount == 0 {
+		//  Do not record stat for this case?
 		logger.Infof("=======not processiong table dump as no rows match criteria. %v =======", tableName)
 		return true, nil
 	}
