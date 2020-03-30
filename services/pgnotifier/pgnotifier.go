@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	uuid "github.com/satori/go.uuid"
@@ -30,10 +31,10 @@ const (
 
 func init() {
 	queueName = "pg_notifier_queue"
-	maxAttempt = 3
-	trackBatchInterval = 2 * time.Second
-	retriggerInterval = 2 * time.Second
-	retriggerCount = 100
+	maxAttempt = config.GetInt("PgNotifier.maxAttempt", 3)
+	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
+	retriggerInterval = time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
+	retriggerCount = config.GetInt("PgNotifier.retriggerCount", 100)
 }
 
 type PgNotifierT struct {
