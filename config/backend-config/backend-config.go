@@ -184,8 +184,6 @@ func pollConfigUpdate() {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		sourceJSON, ok := backendConfig.Get()
-		//TODO remove
-		sourceJSON.EnableMetrics = true
 		if !ok {
 			statConfigBackendError.Increment()
 		}

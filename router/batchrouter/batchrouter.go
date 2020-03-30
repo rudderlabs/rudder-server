@@ -294,7 +294,16 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			ErrorResponse: errorResp,
 		}
 		statusList = append(statusList, &status)
-		//TODO track errors
+	}
+
+	//tracking batch router errors
+	if diagnostics.EnableServerStartMetric {
+		if batchJobState == jobsdb.FailedState {
+			diagnostics.Track(diagnostics.BatchRouterFailed, map[string]interface{}{
+				diagnostics.BatchRouterDestination: brt.destType,
+				diagnostics.ErrorResponse:          string(errorResp),
+			})
+		}
 	}
 
 	parameterFilters := []jobsdb.ParameterFilterT{

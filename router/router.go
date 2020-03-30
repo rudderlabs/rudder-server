@@ -398,7 +398,25 @@ func (rt *HandleT) statusInsertLoop() {
 			var statusList []*jobsdb.JobStatusT
 			for _, resp := range responseList {
 				statusList = append(statusList, resp.status)
-				//TODO track errors
+
+				//tracking router errors
+				if diagnostics.EnableServerStartMetric {
+					if resp.status.JobState == jobsdb.FailedState || resp.status.JobState == jobsdb.AbortedState {
+						var event string
+						if resp.status.JobState == jobsdb.FailedState {
+							event = diagnostics.RouterFailed
+						} else {
+							event = diagnostics.RouterAborted
+						}
+						diagnostics.Track(event, map[string]interface{}{
+							diagnostics.RouterDestination: rt.destID,
+							diagnostics.UserID:            resp.userID,
+							diagnostics.RouterAttemptNum:  resp.status.AttemptNum,
+							diagnostics.ErrorCode:         resp.status.ErrorCode,
+							diagnostics.ErrorResponse:     resp.status.ErrorResponse,
+						})
+					}
+				}
 			}
 
 			if len(statusList) > 0 {
