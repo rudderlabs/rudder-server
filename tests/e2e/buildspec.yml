@@ -1,7 +1,5 @@
 version: 0.2
 
-#CONFIG_BACKEND_TOKEN=1YNNXBsaqkZv59y85OvoG263gdM
-#Above is the test workspace's token.
 phases:
   install:
     runtime-versions:

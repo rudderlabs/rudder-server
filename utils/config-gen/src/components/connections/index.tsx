@@ -124,7 +124,10 @@ class Connections extends Component<IConnectionsProps, any> {
       };
       workspaceConfig.sources.push(obj);
     });
-    fileDownload(JSON.stringify(workspaceConfig), 'workspaceConfig.json');
+    fileDownload(
+      JSON.stringify(workspaceConfig, null, 2),
+      'workspaceConfig.json',
+    );
   };
 
   handleFileChosen = (event: any) => {

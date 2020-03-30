@@ -37,7 +37,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 		return SourcesT{}, false
 	}
 
-	req.SetBasicAuth(configBackendToken, "")
+	req.SetBasicAuth(workspaceToken, "")
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
@@ -62,7 +62,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 	return sourcesJSON, true
 }
 
-// getFromApi reads the workspace config from JSON file
+// getFromFile reads the workspace config from JSON file
 func (workspaceConfig *WorkspaceConfig) getFromFile() (SourcesT, bool) {
 	logger.Info("Reading workspace config from JSON file")
 	data, err := ioutil.ReadFile(configJSONPath)

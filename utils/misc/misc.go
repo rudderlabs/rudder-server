@@ -4,7 +4,9 @@ import (
 	"archive/zip"
 	"bufio"
 	"compress/gzip"
+	"crypto/md5"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -128,6 +130,12 @@ func AssertErrorIfDev(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+//GetMD5Hash returns EncodeToString(md5 hash of the input string)
+func GetMD5Hash(input string) string {
+	hash := md5.Sum([]byte(input))
+	return hex.EncodeToString(hash[:])
 }
 
 //GetRudderEventMap returns the event structure from the client payload
@@ -594,6 +602,7 @@ func IsPostgresCompatible(connInfo string) bool {
 	if err != nil {
 		panic(err)
 	}
+	defer dbHandle.Close()
 
 	err = dbHandle.Ping()
 	if err != nil {
