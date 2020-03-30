@@ -77,6 +77,8 @@ maxTableSizeInMB = 300
 mainCheckSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
 enableBackup = true
+router.enabledAbortedBackup = false
+batchRouter.enabledAbortedBackup = false
 backupRowsBatchSize = 10000
 
 [Router]
