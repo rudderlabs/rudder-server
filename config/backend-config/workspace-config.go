@@ -62,7 +62,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 	return sourcesJSON, true
 }
 
-// getFromApi reads the workspace config from JSON file
+// getFromFile reads the workspace config from JSON file
 func (workspaceConfig *WorkspaceConfig) getFromFile() (SourcesT, bool) {
 	logger.Info("Reading workspace config from JSON file")
 	data, err := ioutil.ReadFile(configJSONPath)
