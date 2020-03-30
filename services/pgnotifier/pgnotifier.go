@@ -13,8 +13,11 @@ import (
 )
 
 var (
-	queueName  string
-	maxAttempt int
+	queueName          string
+	maxAttempt         int
+	retriggerInterval  time.Duration
+	retriggerCount     int
+	trackBatchInterval time.Duration
 )
 
 const (
@@ -28,6 +31,9 @@ const (
 func init() {
 	queueName = "pg_notifier_queue"
 	maxAttempt = 3
+	trackBatchInterval = 2 * time.Second
+	retriggerInterval = 2 * time.Second
+	retriggerCount = 100
 }
 
 type PgNotifierT struct {
@@ -96,7 +102,7 @@ func (notifier PgNotifierT) AddTopic(topic string) (err error) {
 
 func (notifier *PgNotifierT) triggerPending(topic string) {
 	for {
-		time.Sleep(2 * time.Second)
+		time.Sleep(retriggerInterval)
 		stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[3]s',
 								updated_at = '%[2]s'
 								WHERE id IN  (
@@ -111,7 +117,7 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 			GetCurrentSQLTimestamp(),
 			WaitingState,
 			FailedState,
-			10)
+			retriggerCount)
 		logger.Debugf("PgNotifier: triggering pending jobs")
 		_, err := notifier.dbHandle.Exec(stmt)
 		if err != nil {
@@ -123,7 +129,7 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.Go(func() {
 		for {
-			time.Sleep(2 * time.Second)
+			time.Sleep(trackBatchInterval)
 			// keep polling db for batch status
 			// or subscribe to triggers
 			stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND (status='%s' OR status='%s' OR status='%s')`, queueName, batchID, WaitingState, FailedState, ExecutingState)
@@ -314,7 +320,6 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 
 func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 	//create a postgres function that notifies on the specified channel
-	// TODO: Use `REPLACE FUNCTION`
 	sqlStmt := fmt.Sprintf(`DO $$
 							BEGIN
 							CREATE OR REPLACE FUNCTION pgnotifier_notify() RETURNS TRIGGER AS '
