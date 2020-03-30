@@ -45,6 +45,14 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
+// BackupSettingsT is for capturing the backup
+// configuration from the config/env files to
+// instantiate jobdb correctly
+type BackupSettingsT struct {
+	AbortedOnly   bool
+	BackupEnabled bool
+}
+
 /*
 JobStatusT is used for storing status of the job. It is
 the responsibility of the user of this module to set appropriate
@@ -106,8 +114,7 @@ type HandleT struct {
 	dsRetentionPeriod             time.Duration
 	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]bool
 	dsCacheLock                   sync.Mutex
-	toBackup                      bool
-	backupOnlyAborted             bool
+	BackupSettings                *BackupSettingsT
 	jobsFileUploader              filemanager.FileManager
 	statTableCount                *stats.RudderStats
 	statNewDSPeriod               *stats.RudderStats
@@ -276,7 +283,7 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, toBackup bool) {
+func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, backupSettings *BackupSettingsT) {
 
 	var err error
 	psqlInfo := GetConnectionString()
@@ -285,15 +292,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.dsRetentionPeriod = retentionPeriod
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]bool{}
 
-	// for "gw", always backup entire table
-	// for others only backup aborted
-	if jd.tablePrefix == "gw" {
-		jd.toBackup = toBackup
-		jd.backupOnlyAborted = false
-	} else {
-		jd.toBackup = toBackup
-		jd.backupOnlyAborted = true
-	}
+	jd.BackupSettings = backupSettings
 
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
@@ -335,7 +334,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	dList := jd.getDSList(false)
 	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
 
-	if jd.toBackup {
+	if jd.BackupSettings.BackupEnabled {
 		jd.jobsFileUploader, err = jd.getFileUploader()
 		jd.assertError(err)
 		rruntime.Go(func() {
@@ -952,7 +951,7 @@ func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 
 	//Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
-		if jd.toBackup {
+		if jd.BackupSettings.BackupEnabled {
 			jd.renameDS(ds, false)
 		} else {
 			jd.dropDS(ds, false)
@@ -1564,7 +1563,8 @@ func (jd *HandleT) backupDSLoop() {
 //backupDS writes both jobs and job_staus table to JOBS_BACKUP_STORAGE_PROVIDER
 func (jd *HandleT) backupDS(backupDSRange dataSetRangeT) bool {
 	// return after backing up aboprted jobs if the flag is turned on
-	if jd.backupOnlyAborted {
+	// backupDS is only called when BackupSettings.BackupEnabled is true
+	if jd.BackupSettings.AbortedOnly {
 		logger.Info("==========backing up aborted ===========")
 		_, err := jd.backupTable(backupDSRange, false)
 		if err != nil {
@@ -1606,7 +1606,7 @@ func (jd *HandleT) removeTableJSONDumps() {
 // getBackUpQuery individual queries for getting rows in json
 func (jd *HandleT) getBackUpQuery(backupDSRange dataSetRangeT, isJobStatusTable bool, offset int64) string {
 	var stmt string
-	if jd.backupOnlyAborted {
+	if jd.BackupSettings.AbortedOnly {
 		stmt = fmt.Sprintf(`SELECT coalesce(json_agg(aborted_jobs), '[]'::json) FROM (select * from %[1]s %[2]s INNER JOIN %[3]s %[4]s ON  %[2]s.job_id = %[4]s.job_id
 			where %[2]s.job_state = '%[5]s' order by  %[4]s.custom_val, %[2]s.job_id asc limit %[6]d offset %[7]d) AS aborted_jobs`, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job",
 			AbortedState, backupRowsBatchSize, offset)
@@ -1646,7 +1646,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	// if backupOnlyAborted, process join of aborted rows of jobstatus with jobs table
 	// else upload entire jobstatus and jobs table from pre_drop
-	if jd.backupOnlyAborted {
+	if jd.BackupSettings.AbortedOnly {
 		logger.Info("=======backing up aborted backuptable==========")
 		tableName = backupDSRange.ds.JobStatusTable
 		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
@@ -1739,6 +1739,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	pathPrefixes := make([]string, 0)
 	pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
+	// pathPrefixes = append(pathPrefixes, jd.tablePrefix) Todo: do after replay code modified
 
 	logger.Infof("Uploading backup table to object storage: %v", tableName)
 	var output filemanager.UploadOutput
@@ -2004,7 +2005,7 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		//Some of the source datasets would have been
 		migrateSrc := opPayloadJSON.From
 		for _, ds := range migrateSrc {
-			if jd.toBackup {
+			if jd.BackupSettings.BackupEnabled {
 				jd.renameDS(ds, true)
 			} else {
 				jd.dropDS(ds, true)

@@ -76,10 +76,12 @@ maxMigrateOnce = 10
 maxTableSizeInMB = 300
 mainCheckSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
-enableBackup = true
-router.enabledAbortedBackup = false
-batchRouter.enabledAbortedBackup = false
 backupRowsBatchSize = 10000
+
+[JobsDB.backup]
+enableBackup = true
+routerAborted = false
+batchRouterAborted = false
 
 [Router]
 jobQueryBatchSize = 10000

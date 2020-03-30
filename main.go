@@ -35,14 +35,14 @@ import (
 )
 
 var (
-	maxProcess                                                                                         int
-	gwDBRetention, routerDBRetention                                                                   time.Duration
-	enableProcessor, enableRouter, enableBackup, routerBackupOnlyAborted, batchRouterBackupOnlyAborted bool
-	isReplayServer                                                                                     bool
-	enabledDestinations                                                                                []backendconfig.DestinationT
-	configSubscriberLock                                                                               sync.RWMutex
-	objectStorageDestinations                                                                          []string
-	warehouseDestinations                                                                              []string
+	maxProcess                                                                                                             int
+	gwDBRetention, routerDBRetention                                                                                       time.Duration
+	enableProcessor, enableRouter, enableBackup, replayServerBackup, routerBackupOnlyAborted, batchRouterBackupOnlyAborted bool
+	isReplayServer                                                                                                         bool
+	enabledDestinations                                                                                                    []backendconfig.DestinationT
+	configSubscriberLock                                                                                                   sync.RWMutex
+	objectStorageDestinations                                                                                              []string
+	warehouseDestinations                                                                                                  []string
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -54,9 +54,10 @@ func loadConfig() {
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
-	enableBackup = config.GetBool("JobsDB.enableBackup", true)
-	routerBackupOnlyAborted = config.GetBool("JobsDB.router.enabledAbortedBackup", false)
-	batchRouterBackupOnlyAborted = config.GetBool("JobsDB.batchRouter.enabledAbortedBackup", false)
+	enableBackup = config.GetBool("JobsDB.backup.enableBackup", true)
+	replayServerBackup = config.GetBool("JobsDB.backup.enableBackup", true)
+	routerBackupOnlyAborted = config.GetBool("JobsDB.backup.routerAborted", false)
+	batchRouterBackupOnlyAborted = config.GetBool("JobsDB.backup.batchRouterAborted", false)
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
@@ -260,14 +261,13 @@ func main() {
 	sourcedebugger.Setup()
 	backendconfig.Setup()
 
-	//Forcing enableBackup false if this server is for handling replayed events
-	if isReplayServer {
-		enableBackup = false
-	}
-
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention, routerBackupOnlyAborted)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, batchRouterBackupOnlyAborted)
+	// enableBackup = true => gateway_backup: all, router_backup: false, brt_backup: false
+	// routerBackupOnlyAborted = true => enableBackup ? true => router_backup_aborted: true
+	// batchRouterBackupOnlyAborted = true => enableBackup ? true => brt_backup_aborted: true
+	// Forcing backup false if this server is for handling replayed events
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, &jobsdb.BackupSettingsT{BackupEnabled: enableBackup && !isReplayServer, AbortedOnly: false})
+	routerDB.Setup(*clearDB, "rt", routerDBRetention, &jobsdb.BackupSettingsT{BackupEnabled: routerBackupOnlyAborted && enableBackup, AbortedOnly: routerBackupOnlyAborted})
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, &jobsdb.BackupSettingsT{BackupEnabled: batchRouterBackupOnlyAborted && enableBackup, AbortedOnly: batchRouterBackupOnlyAborted})
 
 	//Setup the three modules, the gateway, the router and the processor
 
