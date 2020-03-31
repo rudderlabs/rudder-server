@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -525,6 +526,18 @@ func SortedStructSliceValues(input interface{}, filedName string) []string {
 
 func bToMb(b uint64) uint64 {
 	return b / 1024 / 1024
+}
+
+func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
+	replacedStr := str
+	for regex, substitute := range expList {
+		exp, err := regexp.Compile(regex)
+		if err != nil {
+			return "", err
+		}
+		replacedStr = exp.ReplaceAllString(replacedStr, substitute)
+	}
+	return replacedStr, nil
 }
 
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number

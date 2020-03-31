@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 	snowflake "github.com/snowflakedb/gosnowflake" //blank comment
@@ -200,7 +201,14 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s') PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, accessKeyID, accessKey)
 
-	logger.Infof("SF: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
+	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
+		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
+		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
+	})
+	if regexErr == nil {
+		logger.Infof("SF: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
+	}
+
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("SF: Error running COPY command: %v\n", err)

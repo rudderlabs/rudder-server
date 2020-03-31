@@ -275,7 +275,14 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, buck
 
 	sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, accessKeyID, accessKey, region)
 
-	logger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
+	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
+		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
+		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+	})
+	if regexErr == nil {
+		logger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
+	}
+
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("RS: Error running COPY command: %v\n", err)
