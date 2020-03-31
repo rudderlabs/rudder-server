@@ -49,8 +49,9 @@ import (
 // configuration from the config/env files to
 // instantiate jobdb correctly
 type BackupSettingsT struct {
-	AbortedOnly   bool
 	BackupEnabled bool
+	AbortedOnly   bool
+	PathPrefix    string
 }
 
 /*
@@ -148,6 +149,26 @@ var dbErrorMap = map[string]string{
 	"Invalid Escape Character": "22019",
 }
 
+// return backup settings depending on jobdb type
+func getBackUpSettings(jd *HandleT) *BackupSettingsT {
+	var pathPrefix string
+	config.Initialize()
+	// for replay server, make the instance (gw/rt/batch_rt) backup accordingly in the config file itself
+	masterBackupEnabled := config.GetBool("JobsDB.backup.enabled", false)
+	instanceBackupEnabled := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix), false)
+	instanceBackupFailedAndAborted := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.abortedOnly", jd.tablePrefix), false)
+	if jd.tablePrefix == "gw" {
+		pathPrefix = ""
+	} else {
+		pathPrefix = jd.tablePrefix
+	}
+
+	backupSettings := BackupSettingsT{BackupEnabled: masterBackupEnabled && instanceBackupEnabled,
+		AbortedOnly: instanceBackupFailedAndAborted, PathPrefix: strings.TrimSpace(pathPrefix)}
+
+	return &backupSettings
+}
+
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
@@ -234,6 +255,7 @@ func loadConfig() {
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
+
 }
 
 func init() {
@@ -283,7 +305,7 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, backupSettings *BackupSettingsT) {
+func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration) {
 
 	var err error
 	psqlInfo := GetConnectionString()
@@ -292,7 +314,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.dsRetentionPeriod = retentionPeriod
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]bool{}
 
-	jd.BackupSettings = backupSettings
+	jd.BackupSettings = getBackUpSettings(jd)
 
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
@@ -1607,9 +1629,10 @@ func (jd *HandleT) removeTableJSONDumps() {
 func (jd *HandleT) getBackUpQuery(backupDSRange dataSetRangeT, isJobStatusTable bool, offset int64) string {
 	var stmt string
 	if jd.BackupSettings.AbortedOnly {
+		// check failed and aborted state, order the output based on destination, job_id, exec_time
 		stmt = fmt.Sprintf(`SELECT coalesce(json_agg(aborted_jobs), '[]'::json) FROM (select * from %[1]s %[2]s INNER JOIN %[3]s %[4]s ON  %[2]s.job_id = %[4]s.job_id
-			where %[2]s.job_state = '%[5]s' order by  %[4]s.custom_val, %[2]s.job_id asc limit %[6]d offset %[7]d) AS aborted_jobs`, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job",
-			AbortedState, backupRowsBatchSize, offset)
+			where %[2]s.job_state in ('%[5]s', '%[6]s') order by  %[4]s.custom_val, %[2]s.job_id, %[2]s.exec_time asc limit %[7]d offset %[8]d) AS aborted_jobs`, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job",
+			FailedState, AbortedState, backupRowsBatchSize, offset)
 	} else {
 		if isJobStatusTable {
 			stmt = fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s order by job_id asc limit %[2]d offset %[3]d) AS dump_table`, backupDSRange.ds.JobStatusTable, backupRowsBatchSize, offset)
@@ -1647,11 +1670,12 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	// if backupOnlyAborted, process join of aborted rows of jobstatus with jobs table
 	// else upload entire jobstatus and jobs table from pre_drop
 	if jd.BackupSettings.AbortedOnly {
-		logger.Info("=======backing up aborted backuptable==========")
+		logger.Info("=======backing up aborted/failed entries==========")
 		tableName = backupDSRange.ds.JobStatusTable
 		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
 		path = fmt.Sprintf(`%v%v_%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, AbortedState)
-		countStmt = fmt.Sprintf(`SELECT COUNT(*) FROM %s where job_state = '%s'`, tableName, AbortedState)
+		// checked failed and aborted state
+		countStmt = fmt.Sprintf(`SELECT COUNT(*) FROM %s where job_state in ('%s', '%s')`, tableName, FailedState, AbortedState)
 	} else {
 		if isJobStatusTable {
 			tableName = backupDSRange.ds.JobStatusTable
@@ -1738,8 +1762,11 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	defer file.Close()
 
 	pathPrefixes := make([]string, 0)
-	pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
-	// pathPrefixes = append(pathPrefixes, jd.tablePrefix) Todo: do after replay code modified
+	if jd.BackupSettings.PathPrefix != "" {
+		pathPrefixes = append(pathPrefixes, jd.BackupSettings.PathPrefix, config.GetEnv("INSTANCE_ID", "1"))
+	} else {
+		pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
+	}
 
 	logger.Infof("Uploading backup table to object storage: %v", tableName)
 	var output filemanager.UploadOutput

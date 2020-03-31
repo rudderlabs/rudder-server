@@ -79,9 +79,18 @@ backupCheckSleepDurationIns = 5
 backupRowsBatchSize = 10000
 
 [JobsDB.backup]
-enableBackup = true
-routerAborted = false
-batchRouterAborted = false
+enabled = true
+
+[JobsDB.backup.gw]
+enabled = true
+
+[JobsDB.backup.rt]
+enabled = false
+abortedOnly = false
+
+[JobsDB.backup.batch_rt]
+enabled = false
+abortedOnly = false
 
 [Router]
 jobQueryBatchSize = 10000
