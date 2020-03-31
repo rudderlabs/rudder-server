@@ -118,7 +118,7 @@ stagingFilesBatchSize = 240
     [Warehouse.redshift]
     maxParallelLoads = 3
     [Warehouse.snowflake]
-    maxParallelLoads = 1
+    maxParallelLoads = 3
     [Warehouse.bigquery]
     maxParallelLoads = 20
 

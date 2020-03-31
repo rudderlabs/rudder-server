@@ -156,6 +156,15 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, sf.Upload.ID, tableName, sf.DbHandle)
 	timer := warehouseutils.DestStat(stats.TimerType, "single_table_upload_time", sf.Warehouse.Destination.ID)
 	timer.Start()
+
+	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
+	if err != nil {
+		logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", tableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		return
+	}
+	defer dbHandle.Close()
+
 	// sort columnnames
 	keys := reflect.ValueOf(columnMap).MapKeys()
 	strkeys := make([]string, len(keys))
@@ -175,7 +184,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, tableName)
 
 	logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
-	_, err = sf.Db.Exec(sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("SF: Error creating temporary table for table:%s: %v\n", tableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
@@ -192,7 +201,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, accessKeyID, accessKey)
 
 	logger.Infof("SF: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
-	_, err = sf.Db.Exec(sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("SF: Error running COPY command: %v\n", err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
@@ -228,7 +237,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 									WHEN NOT MATCHED THEN
 									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues)
 	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = sf.Db.Exec(sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
@@ -249,12 +258,6 @@ func (sf *HandleT) load() (errList []error) {
 	}
 	if config["accessKey"] != nil {
 		accessKey = config["accessKey"].(string)
-	}
-
-	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
-	_, err := sf.Db.Exec(sqlStatement)
-	if err != nil {
-		return []error{err}
 	}
 
 	logger.Infof("SF: Starting load for all %v tables\n", len(sf.Upload.Schema))
@@ -280,11 +283,12 @@ func (sf *HandleT) load() (errList []error) {
 }
 
 type SnowflakeCredentialsT struct {
-	account  string
-	whName   string
-	dbName   string
-	username string
-	password string
+	account    string
+	whName     string
+	dbName     string
+	username   string
+	password   string
+	schemaName string
 }
 
 func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
@@ -294,6 +298,10 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 		cred.account,
 		cred.dbName,
 		cred.whName)
+
+	if cred.schemaName != "" {
+		url += fmt.Sprintf("&schema=%s", cred.schemaName)
+	}
 
 	var err error
 	var db *sql.DB
@@ -376,6 +384,21 @@ func (sf *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	return
 }
 
+type OptionalCredsT struct {
+	schemaName string
+}
+
+func (sf *HandleT) getConnectionCredentials(opts OptionalCredsT) SnowflakeCredentialsT {
+	return SnowflakeCredentialsT{
+		account:    sf.Warehouse.Destination.Config.(map[string]interface{})["account"].(string),
+		whName:     sf.Warehouse.Destination.Config.(map[string]interface{})["warehouse"].(string),
+		dbName:     sf.Warehouse.Destination.Config.(map[string]interface{})["database"].(string),
+		username:   sf.Warehouse.Destination.Config.(map[string]interface{})["user"].(string),
+		password:   sf.Warehouse.Destination.Config.(map[string]interface{})["password"].(string),
+		schemaName: opts.schemaName,
+	}
+}
+
 func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	sf.DbHandle = config.DbHandle
 	sf.Warehouse = config.Warehouse
@@ -392,13 +415,7 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		sf.Namespace = strings.ToUpper(sf.Upload.Namespace)
 	}
 
-	sf.Db, err = connect(SnowflakeCredentialsT{
-		account:  sf.Warehouse.Destination.Config.(map[string]interface{})["account"].(string),
-		whName:   sf.Warehouse.Destination.Config.(map[string]interface{})["warehouse"].(string),
-		dbName:   sf.Warehouse.Destination.Config.(map[string]interface{})["database"].(string),
-		username: sf.Warehouse.Destination.Config.(map[string]interface{})["user"].(string),
-		password: sf.Warehouse.Destination.Config.(map[string]interface{})["password"].(string),
-	})
+	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
 		warehouseutils.SetUploadError(sf.Upload, err, warehouseutils.UpdatingSchemaFailedState, sf.DbHandle)
 		return err
