@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 
@@ -24,14 +25,15 @@ import (
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/router/warehouse"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse"
 )
 
 var (
@@ -43,6 +45,7 @@ var (
 	configSubscriberLock                        sync.RWMutex
 	objectStorageDestinations                   []string
 	warehouseDestinations                       []string
+	warehouseMode                               string
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -58,6 +61,7 @@ func loadConfig() {
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
+	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 }
 
 // Test Function
@@ -79,44 +83,32 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	backendconfig.Subscribe(ch, "backendConfig")
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
-	dstToWhRouter := make(map[string]*warehouse.HandleT)
+	// dstToWhRouter := make(map[string]*warehouse.HandleT)
 
 	for {
 		config := <-ch
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
-			if source.Enabled {
-				for _, destination := range source.Destinations {
-					enabledDestinations[destination.DestinationDefinition.Name] = true
-					//For batch router destinations
-					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
-						if !ok {
-							logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
-							var brt batchrouter.HandleT
-							brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
-							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
-						}
-						if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-							_, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-							if !ok {
-								logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-								var wh warehouse.HandleT
-								wh.Setup(destination.DestinationDefinition.Name)
-								dstToWhRouter[destination.DestinationDefinition.Name] = &wh
-							}
-						}
-					} else {
-						_, ok := dstToRouter[destination.DestinationDefinition.Name]
-						if !ok {
-							logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
-							var router router.HandleT
-							router.Setup(routerDB, destination.DestinationDefinition.Name)
-							dstToRouter[destination.DestinationDefinition.Name] = &router
-						}
+			for _, destination := range source.Destinations {
+				enabledDestinations[destination.DestinationDefinition.Name] = true
+				//For batch router destinations
+				if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+					if !ok {
+						logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
+						var brt batchrouter.HandleT
+						brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
+						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 					}
-
+				} else {
+					_, ok := dstToRouter[destination.DestinationDefinition.Name]
+					if !ok {
+						logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
+						var router router.HandleT
+						router.Setup(routerDB, destination.DestinationDefinition.Name)
+						dstToRouter[destination.DestinationDefinition.Name] = &router
+					}
 				}
 			}
 		}
@@ -142,6 +134,68 @@ func printVersion() {
 	version := versionInfo()
 	versionFormatted, _ := json.MarshalIndent(&version, "", " ")
 	fmt.Printf("Version Info %s\n", versionFormatted)
+}
+
+func startWarehouseService() {
+	warehouse.Start()
+}
+
+func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintenanceMode bool) {
+	logger.Info("Main starting")
+
+	if !validators.ValidateEnv() {
+		panic(errors.New("Failed to start rudder-server"))
+	}
+
+	// Check if there is a probable inconsistent state of Data
+	misc.AppStartTime = time.Now().Unix()
+	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, misc.AppStartTime)
+	//Reload Config
+	loadConfig()
+
+	var gatewayDB jobsdb.HandleT
+	var routerDB jobsdb.HandleT
+	var batchRouterDB jobsdb.HandleT
+
+	runtime.GOMAXPROCS(maxProcess)
+	logger.Info("Clearing DB ", *clearDB)
+
+	sourcedebugger.Setup()
+	backendconfig.Setup()
+
+	//Forcing enableBackup false if this server is for handling replayed events
+	if isReplayServer {
+		enableBackup = false
+	}
+
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, false)
+
+	//Setup the three modules, the gateway, the router and the processor
+
+	if enableRouter {
+		go monitorDestRouters(&routerDB, &batchRouterDB)
+	}
+
+	if enableProcessor {
+		var processor processor.HandleT
+		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+	}
+
+	var gateway gateway.HandleT
+	var rateLimiter ratelimiter.HandleT
+	rateLimiter.SetUp()
+	gateway.Setup(&gatewayDB, &rateLimiter, clearDB)
+	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+}
+
+func canStartServer() bool {
+	return warehouseMode == config.EmbeddedMode || warehouseMode == config.OffMode
+}
+
+func canStartWarehouse() bool {
+	return warehouseMode != config.OffMode
 }
 
 func main() {
@@ -171,6 +225,11 @@ func main() {
 		}
 	}()
 
+	logger.Setup()
+
+	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
+	stats.Setup()
+
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
@@ -186,24 +245,6 @@ func main() {
 		return
 	}
 	http.HandleFunc("/version", versionHandler)
-
-	//Logger setup is the first thing to be done.
-	logger.Setup()
-	logger.Info("Main starting")
-
-	if !jobsdb.IsPostgresCompatible() {
-		logger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
-		return
-	}
-
-	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
-	stats.Setup()
-
-	// Check if there is a probable inconsistent state of Data
-	misc.AppStartTime = time.Now().Unix()
-	db.HandleRecovery(*normalMode, *degradedMode, *maintenanceMode, misc.AppStartTime)
-	//Reload Config
-	loadConfig()
 
 	var f *os.File
 	if *cpuprofile != "" {
@@ -248,41 +289,18 @@ func main() {
 		os.Exit(1)
 	}()
 
-	var gatewayDB jobsdb.HandleT
-	var routerDB jobsdb.HandleT
-	var batchRouterDB jobsdb.HandleT
-
-	runtime.GOMAXPROCS(maxProcess)
-	logger.Info("Clearing DB ", *clearDB)
-
-	sourcedebugger.Setup()
-	backendconfig.Setup()
-
-	//Forcing enableBackup false if this server is for handling replayed events
-	if isReplayServer {
-		enableBackup = false
-	}
-
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, false)
-
-	//Setup the three modules, the gateway, the router and the processor
-
-	if enableRouter {
+	if canStartServer() {
 		rruntime.Go(func() {
-			monitorDestRouters(&routerDB, &batchRouterDB)
+			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
 		})
 	}
 
-	if enableProcessor {
-		var processor processor.HandleT
-		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+	// initialize warehouse service after core to handle non-normal recovery modes
+	if canStartWarehouse() {
+		rruntime.Go(func() {
+			startWarehouseService()
+		})
 	}
 
-	var gateway gateway.HandleT
-	var rateLimiter ratelimiter.HandleT
-	rateLimiter.SetUp()
-	gateway.Setup(&gatewayDB, &rateLimiter, clearDB)
-	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+	misc.KeepProcessAlive()
 }

@@ -2,10 +2,13 @@ package helpers
 
 import (
 	"bytes"
+	"compress/gzip"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -15,12 +18,6 @@ import (
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/sjson"
 )
-
-// Ginkgo tests use the following credentials
-// CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com
-// CONFIG_BACKEND_TOKEN=1TEeQIJJqpviy5uAbWuxjk1XttY
-// USERNAME=srikanth+ginkgo@rudderlabs.com
-// PASSWORD=secret123
 
 const (
 	serverIP = "http://localhost:8080"
@@ -44,6 +41,12 @@ func RemoveKeyFromJSON(json string, keys ...string) string {
 			panic(err)
 		}
 	}
+	return json
+}
+
+// AddKeyToJSON adds a key and its value to the
+func AddKeyToJSON(json string, key string, value interface{}) string {
+	json, _ = sjson.Set(json, key, value)
 	return json
 }
 
@@ -281,4 +284,125 @@ func GetJobStatus(dbHandle *sql.DB, prefix string, limit int, jobState string) [
 		}
 	}
 	return jobStatusList
+}
+
+// GetLoadFileTableName quereis table column form the warehouseLoadFilesTable provided
+func GetLoadFileTableName(dbHandle *sql.DB, warehouseLoadFilesTable string) []string {
+	rows, err := dbHandle.Query(fmt.Sprintf(`SELECT table_name FROM %s`, warehouseLoadFilesTable))
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+	var tableNames []string
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			panic(err)
+		}
+		tableNames = append(tableNames, tableName)
+	}
+	return tableNames
+
+}
+
+func GetWarehouseSchema(dbHandle *sql.DB, warehouseSchemaTable string, sourceID string, destinationID string) map[string]map[string]string {
+	var rawSchema json.RawMessage
+	err := dbHandle.QueryRow(fmt.Sprintf(`SELECT schema FROM %s where source_id='%s'and destination_id='%s'`, warehouseSchemaTable, sourceID, destinationID)).Scan(&rawSchema)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	var schemaMapInterface map[string]interface{}
+	err = json.Unmarshal(rawSchema, &schemaMapInterface)
+	if err != nil {
+		panic(err)
+	}
+	schema := make(map[string]map[string]string)
+	for key, val := range schemaMapInterface {
+		y := make(map[string]string)
+		x := val.(map[string]interface{})
+		for k, v := range x {
+			y[k] = v.(string)
+		}
+		schema[key] = y
+	}
+	return schema
+}
+
+func GetEventLoadFileData(dbHandle *sql.DB, warehouseLoadFilesTable string, eventName string, bucket string) string {
+	rows, err := dbHandle.Query(fmt.Sprintf(` select location from %s where table_name='%s' limit 1`, warehouseLoadFilesTable, eventName))
+	if err != nil {
+		panic(err)
+	}
+	var location string
+	for rows.Next() {
+		if err := rows.Scan(&location); err != nil {
+			panic(err)
+		}
+	}
+	jsonPath := "loadfile.json.gz"
+	jsonFile, err := os.Create(jsonPath)
+	if err != nil {
+		panic(err)
+	}
+	defer jsonFile.Close()
+	defer os.Remove(jsonPath)
+	DownloadObject(location, bucket, jsonFile)
+	rawf, err := os.Open(jsonPath)
+	if err != nil {
+		panic(err)
+	}
+	reader, err := gzip.NewReader(rawf)
+	if err != nil {
+		panic(err)
+	}
+	jsonByte, err := ioutil.ReadAll(reader)
+	if err != nil {
+		panic(err)
+	}
+	return string(jsonByte)
+}
+
+func DeleteRowsInTable(dbHandle *sql.DB, table string) {
+	_, err := dbHandle.Query(fmt.Sprintf(`delete from only %s`, table))
+	if err != nil {
+		panic(err)
+	}
+}
+func GetDestinationIDsFromLoadFileTable(dbHandle *sql.DB, warehouseLoadFilesTable string, sourceID string) []string {
+	rows, err := dbHandle.Query(fmt.Sprintf(`select destination_id from %s where source_id = '%s'`, warehouseLoadFilesTable, sourceID))
+	if err != nil {
+		panic(err)
+	}
+	var destinationIDs []string
+	for rows.Next() {
+		var destinationID string
+		if err := rows.Scan(&destinationID); err != nil {
+			panic(err)
+		}
+		destinationIDs = append(destinationIDs, destinationID)
+	}
+	return destinationIDs
+}
+
+func IsThisInThatSliceString(smallSlice []string, bigSlice []string) bool {
+	if len(bigSlice) < len(smallSlice) {
+		return false
+	}
+	for _, small := range smallSlice {
+		for i, big := range bigSlice {
+			if small == big {
+				break
+			}
+			if small != big && i == len(bigSlice)-1 {
+				return false
+			}
+		}
+	}
+	return true
 }

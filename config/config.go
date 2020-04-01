@@ -15,6 +15,14 @@ import (
 
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
+const (
+	EmbeddedMode    = "embedded"
+	MasterMode      = "master"
+	MasterSlaveMode = "master_and_slave"
+	SlaveMode       = "slave"
+	OffMode         = "off"
+)
+
 func transformKey(s string) string {
 	snake := matchAllCap.ReplaceAllString(s, "${1}_${2}")
 	snake = strings.ReplaceAll(snake, ".", "_")
@@ -146,4 +154,20 @@ func GetRequiredEnv(key string) string {
 // SetBool override existing config
 func SetBool(key string, value bool) {
 	viper.Set(key, value)
+}
+
+func SetString(key string, value string) {
+	viper.Set(key, value)
+}
+
+//GetWorkspaceToken returns the workspace token provided in the environment variables
+//Env variable CONFIG_BACKEND_TOKEN is deprecating soon
+//WORKSPACE_TOKEN is newly introduced. This will override CONFIG_BACKEND_TOKEN
+func GetWorkspaceToken() string {
+	token := GetEnv("WORKSPACE_TOKEN", "")
+	if token != "" && token != "<your_token_here>" {
+		return token
+	}
+
+	return GetEnv("CONFIG_BACKEND_TOKEN", "")
 }
