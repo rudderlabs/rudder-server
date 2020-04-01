@@ -30,6 +30,7 @@ var (
 	curSourceJSON                    SourcesT
 	curSourceJSONLock                sync.RWMutex
 	initialized                      bool
+	LastSync                         string
 )
 
 var Eb = new(utils.EventBus)
@@ -168,6 +169,7 @@ func pollConfigUpdate() {
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()
 			initialized = true
+			LastSync = time.Now().Format(time.RFC3339)
 			Eb.Publish("processConfig", filteredSourcesJSON)
 			Eb.Publish("backendConfig", sourceJSON)
 		}
