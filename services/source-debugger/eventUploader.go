@@ -171,7 +171,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 			return
 		}
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-		req.SetBasicAuth(backendconfig.GetConfigBackendToken(), "")
+		req.SetBasicAuth(config.GetWorkspaceToken(), "")
 
 		resp, err = client.Do(req)
 		if err != nil {

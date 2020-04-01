@@ -23,6 +23,7 @@ const (
 	levelEvent = iota // Logs Event
 	levelDebug        // Most verbose logging level
 	levelInfo         // Logs about state of the application
+	levelWarn         // Logs about warnings
 	levelError        // Logs about errors which dont immediately halt the application
 	levelFatal        // Logs which crashes the application
 )
@@ -31,6 +32,7 @@ var levelMap = map[string]int{
 	"EVENT": levelEvent,
 	"DEBUG": levelDebug,
 	"INFO":  levelInfo,
+	"WARN":  levelWarn,
 	"ERROR": levelError,
 	"FATAL": levelFatal,
 }
@@ -87,6 +89,12 @@ func Info(args ...interface{}) {
 	Log.Info(args...)
 }
 
+// Warn level logging.
+// Use this to log warnings
+func Warn(args ...interface{}) {
+	Log.Warn(args...)
+}
+
 // Error level logging.
 // Use this to log errors which dont immediately halt the application.
 func Error(args ...interface{}) {
@@ -121,6 +129,12 @@ func Debugf(format string, args ...interface{}) {
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
 func Infof(format string, args ...interface{}) {
 	Log.Infof(format, args...)
+}
+
+// Warnf does warn level logging similar to fmt.Printf.
+// Use this to log warnings
+func Warnf(format string, args ...interface{}) {
+	Log.Warnf(format, args...)
 }
 
 // Errorf does error level logging similar to fmt.Printf.

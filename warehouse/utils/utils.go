@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,10 +14,12 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
 	WaitingState                  = "waiting"
+	ExecutingState                = "executing"
 	GeneratingLoadFileState       = "generating_load_file"
 	GeneratingLoadFileFailedState = "generating_load_file_failed"
 	GeneratedLoadFileState        = "generated_load_file"
@@ -39,10 +42,12 @@ const (
 
 var (
 	warehouseUploadsTable      string
+	warehouseTableUploadsTable string
 	warehouseSchemasTable      string
 	warehouseLoadFilesTable    string
 	warehouseStagingFilesTable string
 	maxRetry                   int
+	serverIP                   string
 )
 
 var ObjectStorageMap = map[string]string{
@@ -58,6 +63,7 @@ func init() {
 
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
+	warehouseTableUploadsTable = config.GetString("Warehouse.tableUploadsTable", "wh_table_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
 	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
 	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
@@ -65,6 +71,11 @@ func loadConfig() {
 }
 
 type WarehouseT struct {
+	Source      backendconfig.SourceT
+	Destination backendconfig.DestinationT
+}
+
+type DestinationT struct {
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
 }
@@ -94,6 +105,12 @@ type UploadT struct {
 type CurrentSchemaT struct {
 	Namespace string
 	Schema    map[string]map[string]string
+}
+
+type StagingFileT struct {
+	Schema           map[string]map[string]interface{}
+	BatchDestination DestinationT
+	Location         string
 }
 
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, error) {
@@ -160,7 +177,7 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 }
 
 func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error) {
-	logger.Debugf("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
+	logger.Infof("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=$3`, warehouseUploadsTable)
 	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), upload.ID)
 	if err != nil {
@@ -225,6 +242,33 @@ func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusEr
 	return
 }
 
+func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHandle *sql.DB) (err error) {
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, last_exec_time=$2 WHERE wh_upload_id=$3 AND table_name=$4`, warehouseTableUploadsTable)
+	logger.Infof("WH: Setting table upload status: %v", sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), uploadID, tableName)
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+func SetTableUploadError(status string, uploadID int64, tableName string, statusError error, dbHandle *sql.DB) (err error) {
+	logger.Errorf("WH: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, error=$3 WHERE wh_upload_id=$4 AND table_name=$5`, warehouseTableUploadsTable)
+	logger.Infof("WH: Setting table upload error: %v", sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), statusError.Error(), uploadID, tableName)
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+func GetTableUploadStatus(uploadID int64, tableName string, dbHandle *sql.DB) (status string, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseTableUploadsTable, uploadID, tableName)
+	err = dbHandle.QueryRow(sqlStatement).Scan(&status)
+	return
+}
+
 func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, currentSchema, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
 	marshalledSchema, err := json.Marshal(schema)
 	if len(currentSchema) == 0 {
@@ -248,9 +292,21 @@ func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, curren
 }
 
 func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (locations []string, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s
-								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)`,
-		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
+	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
+		SELECT  staging_file_id, MAX(id) AS id FROM wh_load_files
+		WHERE ( source_id='%[2]s'
+			AND destination_id='%[3]s'
+			AND table_name='%[4]s'
+			AND id >= %[5]v
+			AND id <= %[6]v)
+		GROUP BY staging_file_id ) uniqueStagingFiles
+		ON  wh_load_files.id = uniqueStagingFiles.id `,
+		warehouseLoadFilesTable,
+		sourceId,
+		destinationId,
+		tableName,
+		start,
+		end)
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -354,4 +410,43 @@ func Datatype(in interface{}) string {
 	}
 
 	return "string"
+}
+
+//ToSafeDBString to remove special characters
+func ToSafeDBString(provider string, str string) string {
+	res := ""
+	if str != "" {
+		r := []rune(str)
+		_, err := strconv.ParseInt(string(r[0]), 10, 64)
+		if err == nil {
+			str = "_" + str
+		}
+		regexForNotAlphaNumeric := regexp.MustCompile("[^a-zA-Z0-9_]+")
+		res = regexForNotAlphaNumeric.ReplaceAllString(str, "")
+
+	}
+	if res == "" {
+		res = "STRINGEMPTY"
+	}
+	if _, ok := ReservedKeywords[provider][strings.ToUpper(str)]; ok {
+		res = fmt.Sprintf(`_%s`, res)
+	}
+	return res
+}
+
+func GetIP() string {
+	if serverIP != "" {
+		return serverIP
+	}
+
+	serverIP := ""
+	ip, err := misc.GetOutboundIP()
+	if err == nil {
+		serverIP = ip.String()
+	}
+	return serverIP
+}
+
+func GetSlaveWorkerId(workerIdx int, slaveID string) string {
+	return fmt.Sprintf("%v-%v-%v", GetIP(), workerIdx, slaveID)
 }

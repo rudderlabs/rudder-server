@@ -25,7 +25,7 @@ services:
       - JOBS_DB_PASSWORD=password
       - DEST_TRANSFORM_URL=http://d-transformer:9090
       - CONFIG_BACKEND_URL=https://api.rudderlabs.com
-      - CONFIG_BACKEND_TOKEN=<your_workspace_token>
+      - WORKSPACE_TOKEN=<your_workspace_token>
       - CONFIG_PATH=/app/config/config.toml
   d-transformer:
     image: rudderlabs/rudder-transformer:v0.1.4
