@@ -2,7 +2,7 @@
 enableBackup = false
 
 [Processor]
-processSessions = true
+processSessions = false
 
 [Router]
 maxStatusUpdateWaitInS = 1

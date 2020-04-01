@@ -2,6 +2,7 @@ package warehouse_test
 
 import (
 	"database/sql"
+	"fmt"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
@@ -17,7 +18,7 @@ var gatewayDBPrefix string
 var routerDBPrefix string
 var dbPollFreqInS int = 1
 var pollIntervalForLoadTables int = 10
-var loadTablesTimeout int = 600
+var loadTablesTimeout int = 300
 var warehouseLoadFolder string
 var eventName string = "ginkgo"
 var warehouseLoadFilesTable string
@@ -51,6 +52,7 @@ var _ = Describe("Warehouse", func() {
 			loadTablesFromAboveTrackJson := []string{"tracks", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
 			Eventually(func() bool {
 				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable)
+				fmt.Println(loadedTables)
 				return helpers.IsThisInThatSliceString(loadTablesFromAboveTrackJson, loadedTables)
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 		})
@@ -90,7 +92,7 @@ var _ = Describe("Warehouse", func() {
 			eventName = strings.Replace(strings.ToLower(eventName), " ", "_", -1)
 			Eventually(func() bool {
 				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable)
-				return helpers.IsThisInThatSliceString([]string{"_" + eventName}, loadedTables)
+				return helpers.IsThisInThatSliceString([]string{eventName}, loadedTables)
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 
 		})
@@ -111,8 +113,7 @@ var _ = Describe("Warehouse", func() {
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 			Eventually(func() bool {
 				loadedSchema := helpers.GetWarehouseSchema(dbHandle, warehouseSchemasTable, sourceIDs[0], destinationsIDs[0])
-				val := reflect.DeepEqual(loadedSchema, helpers.DTSchema)
-				return val
+				return reflect.DeepEqual(loadedSchema, helpers.DTSchema)
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 		})
 	})
