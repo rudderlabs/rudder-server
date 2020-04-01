@@ -70,6 +70,10 @@ func saveRecoveryData(recoveryData RecoveryDataT) {
 	}
 }
 
+func IsNormalMode() bool {
+	return CurrentMode == normalMode
+}
+
 /*
 CheckOccurences : check if this occurred numTimes times in numSecs seconds
 */

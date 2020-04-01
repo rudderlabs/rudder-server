@@ -63,17 +63,6 @@ func insertTokenIfNotExists() {
 	}
 }
 
-//IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
-func IsPostgresCompatible() bool {
-	var versionNum int
-	err := dbHandle.QueryRow("SHOW server_version_num;").Scan(&versionNum)
-	if err != nil {
-		return false
-	}
-
-	return versionNum >= minPostgresVersion
-}
-
 func getWorkspaceFromDB() string {
 	sqlStatement := fmt.Sprintf(`SELECT token FROM workspace order by created_at desc limit 1`)
 	var token string
@@ -104,7 +93,7 @@ func createDBConnection() {
 func ValidateEnv() bool {
 	createDBConnection()
 
-	if !IsPostgresCompatible() {
+	if !misc.IsPostgresCompatible(jobsdb.GetConnectionString()) {
 		logger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
 		return false
 	}
