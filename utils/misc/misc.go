@@ -4,14 +4,19 @@ import (
 	"archive/zip"
 	"bufio"
 	"compress/gzip"
+	"crypto/md5"
+	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -24,10 +29,16 @@ import (
 	"github.com/thoas/go-funk"
 )
 
-// RFC3339 with milli sec precision
-var RFC3339Milli = "2006-01-02T15:04:05.999Z07:00"
-
 var AppStartTime int64
+
+const (
+	// RFC3339 with milli sec precision
+	RFC3339Milli = "2006-01-02T15:04:05.999Z07:00"
+	//This is integer representation of Postgres version.
+	//For ex, integer representation of version 9.6.3 is 90603
+	//Minimum postgres version needed for rudder server is 10
+	minPostgresVersion = 100000
+)
 
 // ErrorStoreT : DS to store the app errors
 type ErrorStoreT struct {
@@ -120,6 +131,12 @@ func AssertErrorIfDev(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+//GetMD5Hash returns EncodeToString(md5 hash of the input string)
+func GetMD5Hash(input string) string {
+	hash := md5.Sum([]byte(input))
+	return hex.EncodeToString(hash[:])
 }
 
 //GetRudderEventMap returns the event structure from the client payload
@@ -461,6 +478,14 @@ func StringKeys(input interface{}) []string {
 	return stringKeys
 }
 
+func MapStringKeys(input map[string]interface{}) []string {
+	keys := make([]string, 0, len(input))
+	for k := range input {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func TruncateStr(str string, limit int) string {
 	if len(str) > limit {
 		str = str[:limit]
@@ -501,6 +526,18 @@ func SortedStructSliceValues(input interface{}, filedName string) []string {
 
 func bToMb(b uint64) uint64 {
 	return b / 1024 / 1024
+}
+
+func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
+	replacedStr := str
+	for regex, substitute := range expList {
+		exp, err := regexp.Compile(regex)
+		if err != nil {
+			return "", err
+		}
+		replacedStr = exp.ReplaceAllString(replacedStr, substitute)
+	}
+	return replacedStr, nil
 }
 
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number
@@ -551,4 +588,45 @@ func (w GZipWriter) CloseGZ() {
 	w.BufWriter.Flush()
 	w.GzWriter.Close()
 	w.File.Close()
+}
+
+func KeepProcessAlive() {
+	var ch chan int
+	_ = <-ch
+}
+
+// GetOutboundIP returns preferred outbound ip of this machine
+// https://stackoverflow.com/a/37382208
+func GetOutboundIP() (net.IP, error) {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP, nil
+}
+
+//IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
+func IsPostgresCompatible(connInfo string) bool {
+	dbHandle, err := sql.Open("postgres", connInfo)
+	if err != nil {
+		panic(err)
+	}
+	defer dbHandle.Close()
+
+	err = dbHandle.Ping()
+	if err != nil {
+		panic(err)
+	}
+
+	var versionNum int
+	err = dbHandle.QueryRow("SHOW server_version_num;").Scan(&versionNum)
+	if err != nil {
+		return false
+	}
+
+	return versionNum >= minPostgresVersion
 }

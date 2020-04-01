@@ -1,11 +1,5 @@
 package helpers
 
-// Ginkgo tests use the following credentials
-// CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com
-// CONFIG_BACKEND_TOKEN=1TEeQIJJqpviy5uAbWuxjk1XttY
-// USERNAME=srikanth+ginkgo@rudderlabs.com
-// PASSWORD=secret123
-
 var BatchPayload = `
 {
 	"batch": [

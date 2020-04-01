@@ -139,7 +139,7 @@ class SourceDetails extends Component<IConfiguredSourcesProps, any> {
         },
       };
       fileDownload(
-        JSON.stringify(sourceConfig),
+        JSON.stringify(sourceConfig, null, 2),
         `${source.name}_Source_Config.json`,
       );
     }

@@ -102,15 +102,25 @@ uploadFreqInS = 30
 maxFailedCountForJob = 128
 
 [Warehouse]
+mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
+webPort = 8082
 stagingFilesTable = "wh_staging_files"
 loadFilesTable = "wh_load_files"
 uploadsTable = "wh_uploads"
+tableUploadsTable = "wh_table_uploads"
 schemasTable = "wh_schemas"
 uploadFreqInS = 1800
 noOfWorkers = 8
+noOfSlaveWorkerRoutines = 4
 mainLoopSleepInS = 60
 maxRetry = 3
 stagingFilesBatchSize = 240
+    [Warehouse.redshift]
+    maxParallelLoads = 3
+    [Warehouse.snowflake]
+    maxParallelLoads = 3
+    [Warehouse.bigquery]
+    maxParallelLoads = 20
 
 [Processor]
 loopSleepInMS = 10
@@ -172,3 +182,9 @@ statsCollectionInterval=10
 enableCPUStats=true
 enableMemStats=true
 enableGCStats=true
+
+[PgNotifier]
+retriggerIntervalInS = 2
+retriggerCount = 100
+trackBatchIntervalInS = 2
+maxAttempt = 3

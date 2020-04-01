@@ -246,28 +246,6 @@ func (jd *HandleT) GetDBHandle() *sql.DB {
 	return jd.dbHandle
 }
 
-//IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
-func IsPostgresCompatible() bool {
-	psqlInfo := GetConnectionString()
-	dbHandle, err := sql.Open("postgres", psqlInfo)
-	if err != nil {
-		panic(err)
-	}
-
-	err = dbHandle.Ping()
-	if err != nil {
-		panic(err)
-	}
-
-	var versionNum int
-	err = dbHandle.QueryRow("SHOW server_version_num;").Scan(&versionNum)
-	if err != nil {
-		return false
-	}
-
-	return versionNum >= minPostgresVersion
-}
-
 /*
 Setup is used to initialize the HandleT structure.
 clearAll = True means it will remove all existing tables
@@ -1758,11 +1736,6 @@ const (
 	backupDropDSOperation      = "BACKUP_DROP_DS"
 	dropDSOperation            = "DROP_DS"
 	RawDataDestUploadOperation = "S3_DEST_UPLOAD"
-
-	//This is integer representation of Postgres version.
-	//For ex, integer representation of version 9.6.3 is 90603
-	//Minimum postgres version needed for rudder server is 10
-	minPostgresVersion = 100000
 )
 
 type JournalEntryT struct {

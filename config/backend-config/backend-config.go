@@ -20,16 +20,17 @@ import (
 )
 
 var (
-	backendConfig                        BackendConfig
-	isMultiWorkspace                     bool
-	multiWorkspaceSecret                 string
-	configBackendURL, configBackendToken string
-	pollInterval                         time.Duration
-	configFromFile                       bool
-	configJSONPath                       string
-	curSourceJSON                        SourcesT
-	curSourceJSONLock                    sync.RWMutex
-	initialized                          bool
+	backendConfig                    BackendConfig
+	isMultiWorkspace                 bool
+	multiWorkspaceSecret             string
+	configBackendURL, workspaceToken string
+	pollInterval                     time.Duration
+	configFromFile                   bool
+	configJSONPath                   string
+	curSourceJSON                    SourcesT
+	curSourceJSONLock                sync.RWMutex
+	initialized                      bool
+	LastSync                         string
 )
 
 var Eb = new(utils.EventBus)
@@ -90,14 +91,11 @@ func loadConfig() {
 	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
 
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-	configBackendToken = config.GetEnv("CONFIG_BACKEND_TOKEN", "1P2tfQQKarhlsG6S3JGLdXptyZY")
+	workspaceToken = config.GetWorkspaceToken()
+
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
 	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
-}
-
-func GetConfigBackendToken() string {
-	return configBackendToken
 }
 
 func MakePostRequest(url string, endpoint string, data interface{}) (response []byte, ok bool) {
@@ -110,7 +108,7 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 		return []byte{}, false
 	}
 
-	request.SetBasicAuth(configBackendToken, "")
+	request.SetBasicAuth(workspaceToken, "")
 	request.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(request)
@@ -171,6 +169,7 @@ func pollConfigUpdate() {
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()
 			initialized = true
+			LastSync = time.Now().Format(time.RFC3339)
 			Eb.Publish("processConfig", filteredSourcesJSON)
 			Eb.Publish("backendConfig", sourceJSON)
 		}

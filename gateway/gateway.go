@@ -443,13 +443,18 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 	var dbService string = "UP"
 	var enabledRouter string = "TRUE"
+	var backendConfigMode string = "API"
 	if !gateway.jobsDB.CheckPGHealth() {
 		dbService = "DOWN"
 	}
 	if !config.GetBool("enableRouter", true) {
 		enabledRouter = "FALSE"
 	}
-	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine())
+	if config.GetBool("BackendConfig.configFromFile", false) {
+		backendConfigMode = "JSON"
+	}
+
+	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync)
 	w.Write([]byte(healthVal))
 }
 
