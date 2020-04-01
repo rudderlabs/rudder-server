@@ -51,13 +51,13 @@ var primaryKeyMap = map[string]string{
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	arr := []string{}
 	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, strings.ToUpper(name), dataTypesMap[dataType]))
+		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, dataTypesMap[dataType]))
 	}
 	return strings.Join(arr[:], ",")
 }
 
 func (sf *HandleT) createTable(name string, columns map[string]string) (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, strings.ToUpper(name), columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v )`, name, columnsWithDataTypes(columns, ""))
 	logger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -74,7 +74,7 @@ func (sf *HandleT) tableExists(tableName string) (exists bool, err error) {
 }
 
 func (sf *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN "%s" %s`, strings.ToUpper(tableName), strings.ToUpper(columnName), dataTypesMap[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType])
 	logger.Infof("Adding column in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -178,17 +178,11 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 		if index > 0 {
 			sortedColumnNames += fmt.Sprintf(`, `)
 		}
-		sort.Strings(strkeys)
-		var sortedColumnNames string
-		for index, key := range strkeys {
-			if index > 0 {
-				sortedColumnNames += fmt.Sprintf(`, `)
-			}
-			sortedColumnNames += fmt.Sprintf(`"%s"`, strings.ToUpper(key))
-		}
+		sortedColumnNames += fmt.Sprintf(`%s`, key)
+	}
 
-		stagingTableName := strings.ToUpper(fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String()))
-		sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s"."%s" LIKE "%s"."%s"`, sf.Namespace, stagingTableName, sf.Namespace, strings.ToUpper(tableName))
+	stagingTableName := fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, tableName)
 
 	logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
@@ -222,37 +216,47 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 		return
 	}
 
-		var columnNames, stagingColumnNames, columnsWithValues string
-		for idx, str := range strkeys {
-			columnNames += fmt.Sprintf(`"%s"`, strings.ToUpper(str))
-			stagingColumnNames += fmt.Sprintf(`staging."%s"`, strings.ToUpper(str))
-			columnsWithValues += fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, strings.ToUpper(str))
-			if idx != len(strkeys)-1 {
-				columnNames += fmt.Sprintf(`,`)
-				stagingColumnNames += fmt.Sprintf(`,`)
-				columnsWithValues += fmt.Sprintf(`,`)
-			}
+	primaryKey := "ID"
+	if column, ok := primaryKeyMap[tableName]; ok {
+		primaryKey = column
+	}
+
+	var columnNames, stagingColumnNames, columnsWithValues string
+	for idx, str := range strkeys {
+		columnNames += fmt.Sprintf(`%s`, str)
+		stagingColumnNames += fmt.Sprintf(`staging.%s`, str)
+		columnsWithValues += fmt.Sprintf(`original.%[1]s = staging.%[1]s`, str)
+		if idx != len(strkeys)-1 {
+			columnNames += fmt.Sprintf(`,`)
+			stagingColumnNames += fmt.Sprintf(`,`)
+			columnsWithValues += fmt.Sprintf(`,`)
 		}
 	}
 
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY ID ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[3]s"
+											SELECT *, row_number() OVER (PARTITION BY %[3]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
-									ON original.%[4]s = staging.%[4]s
+									ON original.%[3]s = staging.%[3]s
 									WHEN MATCHED THEN
-									UPDATE SET %[7]s
+									UPDATE SET %[6]s
 									WHEN NOT MATCHED THEN
-									INSERT (%[5]s) VALUES (%[6]s)`, sf.Namespace, strings.ToUpper(tableName), stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues)
-		logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
-		_, err = sf.Db.Exec(sqlStatement)
-		if err != nil {
-			logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
-			errList = append(errList, err)
-			continue
-		}
+									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues)
+	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		return
+	}
+
+	timer.End()
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, sf.Upload.ID, tableName, sf.DbHandle)
+	logger.Infof("SF: Complete load for table:%s\n", tableName)
+	return
+}
 
 func (sf *HandleT) load() (errList []error) {
 	var accessKeyID, accessKey string
