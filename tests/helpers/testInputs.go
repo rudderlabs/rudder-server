@@ -267,7 +267,7 @@ var DiffStringFormatBatchPayload = `
 			"label": "Demo Label",
 			"category": "Demo Category",
 			"value": 5,
-			"text": "Ken\"ny\"s iPh'o\"ne5\",6",
+			"text": "Ken\"ny\"s iPh'o\"ne5\",6"
 		},
 		"type": "track",
 		"originalTimestamp": "2019-08-12T05:08:30.909Z",
