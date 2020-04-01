@@ -2,7 +2,6 @@ package warehouse_test
 
 import (
 	"database/sql"
-	"fmt"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
@@ -52,7 +51,6 @@ var _ = Describe("Warehouse", func() {
 			loadTablesFromAboveTrackJson := []string{"tracks", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
 			Eventually(func() bool {
 				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable)
-				fmt.Println(loadedTables)
 				return helpers.IsThisInThatSliceString(loadTablesFromAboveTrackJson, loadedTables)
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 		})
@@ -89,12 +87,11 @@ var _ = Describe("Warehouse", func() {
 		})
 		It("should be able to create load file", func() {
 			helpers.SendBatchRequest("1YyeVOLDReXPNYORjDlvE7PM1Jw", helpers.AddKeyToJSON(helpers.RemoveKeyFromJSON(helpers.DiffStringFormatBatchPayload, "batch.0.messageId", "batch.0.anonymousId"), "batch.0.event", eventName))
-			eventName = strings.Replace(strings.ToLower(eventName), " ", "_", -1)
+			eventName := strings.Replace(strings.ToLower(eventName), " ", "_", -1)
 			Eventually(func() bool {
 				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable)
 				return helpers.IsThisInThatSliceString([]string{eventName}, loadedTables)
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-
 		})
 	})
 	Describe("sending different data types for a key consecutively", func() {
