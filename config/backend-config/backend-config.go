@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
+	"sort"
 	"sync"
 	"time"
 
@@ -162,6 +163,13 @@ func pollConfigUpdate() {
 		if !ok {
 			statConfigBackendError.Increment()
 		}
+
+		//sorting the sourceJSON.
+		//json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
+		sort.Slice(sourceJSON.Sources[:], func(i, j int) bool {
+			return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
+		})
+
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
 			logger.Info("Workspace Config changed")
 			curSourceJSONLock.Lock()
@@ -188,9 +196,9 @@ func GetWorkspaceIDForWriteKey(writeKey string) string {
 func Subscribe(channel chan utils.DataEvent, topic string) {
 	Eb.Subscribe(topic, channel)
 	curSourceJSONLock.RLock()
-	filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
 
 	if topic == "processConfig" {
+		filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
 		Eb.PublishToChannel(channel, topic, filteredSourcesJSON)
 	} else if topic == "backendConfig" {
 		Eb.PublishToChannel(channel, topic, curSourceJSON)
