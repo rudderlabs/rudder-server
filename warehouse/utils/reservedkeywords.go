@@ -2,7 +2,6 @@ package warehouseutils
 
 var ReservedKeywords = map[string]map[string]bool{
 	"SNOWFLAKE": {
-		"SKFDSL":            true,
 		"ACCOUNT":           true,
 		"ALL":               true,
 		"ALTER":             true,
