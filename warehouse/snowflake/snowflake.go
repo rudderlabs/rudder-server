@@ -51,13 +51,13 @@ var primaryKeyMap = map[string]string{
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	arr := []string{}
 	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, dataTypesMap[dataType]))
+		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, strings.ToUpper(name), dataTypesMap[dataType]))
 	}
 	return strings.Join(arr[:], ",")
 }
 
 func (sf *HandleT) createTable(name string, columns map[string]string) (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v )`, name, columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, strings.ToUpper(name), columnsWithDataTypes(columns, ""))
 	logger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -74,7 +74,7 @@ func (sf *HandleT) tableExists(tableName string) (exists bool, err error) {
 }
 
 func (sf *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN "%s" %s`, strings.ToUpper(tableName), strings.ToUpper(columnName), dataTypesMap[columnType])
 	logger.Infof("Adding column in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
