@@ -133,7 +133,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 			time.Sleep(trackBatchInterval)
 			// keep polling db for batch status
 			// or subscribe to triggers
-			stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND (status='%s' OR status='%s' OR status='%s')`, queueName, batchID, WaitingState, FailedState, ExecutingState)
+			stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND status!='%s' AND status!='%s'`, queueName, batchID, SucceededState, AbortedState)
 			var count int
 			err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
 			if err != nil {
@@ -172,9 +172,11 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 		var err error
 		if response.Err != nil {
 			stmt := fmt.Sprintf(`UPDATE %[1]s SET status=(CASE
-					WHEN	attempt > %[2]d THEN CAST ( '%[3]s' AS pg_notifier_status_type)
-				ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
-				END), updated_at = '%[5]s', error = '%[6]s' WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), response.Err.Error(), id)
+									WHEN attempt > %[2]d
+									THEN CAST ( '%[3]s' AS pg_notifier_status_type)
+									ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
+									END), updated_at = '%[5]s', error = '%[6]s'
+									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), response.Err.Error(), id)
 			_, err = tx.Exec(stmt)
 		} else {
 			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
@@ -245,7 +247,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "topic", "payload", "created_at", "updated_at"))
+	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "topic", "payload"))
 	if err != nil {
 		return
 	}
@@ -254,7 +256,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 	batchID := uuid.NewV4().String()
 	logger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(messages), queueName, batchID)
 	for _, message := range messages {
-		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload), time.Now(), time.Now())
+		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload))
 		if err != nil {
 			return
 		}
@@ -282,7 +284,7 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 		func(ev pq.ListenerEventType, err error) {
 			logger.Debugf("PgNotifier: Event received in pq listener %v", ev)
 			if err != nil {
-				logger.Errorf("PgNotifier: Error in pq listener for event type: %v %v ", ev, err)
+				logger.Debugf("PgNotifier: Error in pq listener for event type: %v %v ", ev, err)
 			}
 		})
 	err = listener.Listen(topic)
@@ -372,7 +374,8 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 								'waiting',
 								'executing',
 								'succeeded',
-								'failed'
+								'failed',
+								'aborted'
 									);
 							EXCEPTION
 								WHEN duplicate_object THEN null;
@@ -390,8 +393,8 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 										  status pg_notifier_status_type NOT NULL,
 										  topic VARCHAR(64) NOT NULL,
 										  payload JSONB NOT NULL,
-										  created_at TIMESTAMP NOT NULL,
-										  updated_at TIMESTAMP NOT NULL,
+										  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+										  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 										  last_exec_time TIMESTAMP,
 										  attempt SMALLINT DEFAULT 0,
 										  error VARCHAR(64),
@@ -409,7 +412,7 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 		return
 	}
 
-	// create index on status
+	// create index on batch_id
 	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_batch_id_idx ON %[1]s (batch_id);`, queueName)
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {

@@ -155,7 +155,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debugf("[%v Router] :: trying to send payload %v of %v", rt.destID, attempts, ser)
 
 			deliveryTimeStat.Start()
-			respStatusCode, respStatus, respBody = rt.netHandle.SendPost(job.EventPayload)
+			respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
 			deliveryTimeStat.End()
 
 			if useTestSink {

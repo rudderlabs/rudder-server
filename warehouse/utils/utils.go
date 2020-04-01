@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"regexp"
 	"strconv"
 	"strings"
@@ -427,7 +426,7 @@ func ToSafeDBString(str string) string {
 
 	}
 	if res == "" {
-		res = fmt.Sprintf("STRINGEMPTY_%v", rand.Intn(100000))
+		res = "STRINGEMPTY"
 	}
 	return res
 }

@@ -50,7 +50,7 @@ var (
 	jobQueryBatchSize          int
 	noOfWorkers                int
 	noOfSlaveWorkerRoutines    int
-	slaveWorkerRoutineStatus   []bool //Busy-true
+	slaveWorkerRoutineBusy     []bool //Busy-true
 	uploadFreqInS              int64
 	mainLoopSleep              time.Duration
 	stagingFilesBatchSize      int
@@ -162,7 +162,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if destination.Enabled && destination.DestinationDefinition.Name == wh.destType {
+					if destination.DestinationDefinition.Name == wh.destType {
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
 					}
 				}
@@ -560,8 +560,6 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	}
 	warehouseutils.SetStagingFilesStatus(jsonIDs, warehouseutils.StagingFileExecutingState, wh.dbHandle)
 
-	wg := misc.NewWaitGroup()
-	wg.Add(len(job.List))
 	logger.Debugf("WH: Starting batch processing %v stage files with %v workers for %s:%s", len(job.List), noOfWorkers, wh.destType, job.Warehouse.Destination.ID)
 	var messages []pgnotifier.MessageT
 	for _, stagingFile := range job.List {
@@ -664,13 +662,9 @@ func (wh *HandleT) initWorkers() {
 				for {
 					// handle job to process staging files and convert them into load files
 					processStagingFilesJobList := <-wh.uploadToWarehouseQ
-					var whOneFullPassTimer *stats.RudderStats
-					for i, job := range processStagingFilesJobList {
-						if i == 0 {
-							whOneFullPassTimer = warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", job.Warehouse.Destination.ID)
-							whOneFullPassTimer.Start()
-						}
-
+					whOneFullPassTimer := warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", processStagingFilesJobList[0].Warehouse.Destination.ID)
+					whOneFullPassTimer.Start()
+					for _, job := range processStagingFilesJobList {
 						createPlusUploadTimer := warehouseutils.DestStat(stats.TimerType, "stagingfileset_total_handling_time", job.Warehouse.Destination.ID)
 						createPlusUploadTimer.Start()
 
@@ -1138,23 +1132,18 @@ func monitorDestRouters() {
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
-			if source.Enabled {
-				for _, destination := range source.Destinations {
-					if destination.Enabled {
-						enabledDestinations[destination.DestinationDefinition.Name] = true
-						if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-							wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-							if !ok {
-								logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-								var wh HandleT
-								wh.Setup(destination.DestinationDefinition.Name)
-								dstToWhRouter[destination.DestinationDefinition.Name] = &wh
-							} else {
-								logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-								wh.Enable()
-							}
-						}
-
+			for _, destination := range source.Destinations {
+				enabledDestinations[destination.DestinationDefinition.Name] = true
+				if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+					wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
+					if !ok {
+						logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+						var wh HandleT
+						wh.Setup(destination.DestinationDefinition.Name)
+						dstToWhRouter[destination.DestinationDefinition.Name] = &wh
+					} else {
+						logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+						wh.Enable()
 					}
 				}
 			}
@@ -1442,6 +1431,7 @@ func startWebHandler() {
 		http.HandleFunc("/v1/process", processHandler)
 		logger.Infof("WH: Starting warehouse master service in %d", webPort)
 	} else {
+		webPort = 8083
 		logger.Infof("WH: Starting warehouse slave service in %d", webPort)
 	}
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
@@ -1471,12 +1461,12 @@ func claimAndProcess(workerIdx int, slaveID string) {
 		}
 		claim.ClaimResponseChan <- response
 	}
-	slaveWorkerRoutineStatus[workerIdx-1] = false
-	logger.Infof("WH: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineStatus)
+	slaveWorkerRoutineBusy[workerIdx-1] = false
+	logger.Infof("WH: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
 }
 
 func setupSlave() {
-	slaveWorkerRoutineStatus = make([]bool, noOfSlaveWorkerRoutines)
+	slaveWorkerRoutineBusy = make([]bool, noOfSlaveWorkerRoutines)
 	slaveID := uuid.NewV4().String()
 	rruntime.Go(func() {
 		jobNotificationChannel, err := notifier.Subscribe("process_staging_file")
@@ -1485,15 +1475,13 @@ func setupSlave() {
 		}
 		for {
 			ev := <-jobNotificationChannel
-			logger.Infof("WH: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineStatus)
+			logger.Infof("WH: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
 			for workerIdx := 1; workerIdx <= noOfSlaveWorkerRoutines; workerIdx++ {
-				if !slaveWorkerRoutineStatus[workerIdx-1] {
-					slaveWorkerRoutineStatus[workerIdx-1] = true
+				if !slaveWorkerRoutineBusy[workerIdx-1] {
+					slaveWorkerRoutineBusy[workerIdx-1] = true
 					idx := workerIdx
 					rruntime.Go(func() {
-						func(index int) {
-							claimAndProcess(index, slaveID)
-						}(idx)
+						claimAndProcess(idx, slaveID)
 					})
 					break
 				}
@@ -1507,7 +1495,7 @@ func isStandAlone() bool {
 }
 
 func isMaster() bool {
-	return warehouseMode == config.MasteMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
+	return warehouseMode == config.MasterMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
 }
 
 func isSlave() bool {
@@ -1515,6 +1503,7 @@ func isSlave() bool {
 }
 
 func Start() {
+	time.Sleep(1 * time.Second)
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
 	if !isStandAlone() && !db.IsNormalMode() {
 		logger.Infof("Skipping start of warehouse service...")
@@ -1558,9 +1547,5 @@ func Start() {
 		})
 	}
 
-	rruntime.Go(func() {
-		startWebHandler()
-	})
-
-	misc.KeepProcessAlive()
+	startWebHandler()
 }

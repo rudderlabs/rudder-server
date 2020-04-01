@@ -46,7 +46,6 @@ var (
 	objectStorageDestinations                   []string
 	warehouseDestinations                       []string
 	warehouseMode                               string
-	startRouterWithWarehouse                    bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -63,8 +62,6 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	startRouterWithWarehouse = config.GetBool("Warehouse.startRouter", false)
-
 }
 
 // Test Function
@@ -93,28 +90,25 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
-			if source.Enabled {
-				for _, destination := range source.Destinations {
-					enabledDestinations[destination.DestinationDefinition.Name] = true
-					//For batch router destinations
-					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
-						if !ok {
-							logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
-							var brt batchrouter.HandleT
-							brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
-							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
-						}
-					} else {
-						_, ok := dstToRouter[destination.DestinationDefinition.Name]
-						if !ok {
-							logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
-							var router router.HandleT
-							router.Setup(routerDB, destination.DestinationDefinition.Name)
-							dstToRouter[destination.DestinationDefinition.Name] = &router
-						}
+			for _, destination := range source.Destinations {
+				enabledDestinations[destination.DestinationDefinition.Name] = true
+				//For batch router destinations
+				if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+					if !ok {
+						logger.Info("Starting a new Batch Destination Router", destination.DestinationDefinition.Name)
+						var brt batchrouter.HandleT
+						brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
+						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 					}
-
+				} else {
+					_, ok := dstToRouter[destination.DestinationDefinition.Name]
+					if !ok {
+						logger.Info("Starting a new Destination", destination.DestinationDefinition.Name)
+						var router router.HandleT
+						router.Setup(routerDB, destination.DestinationDefinition.Name)
+						dstToRouter[destination.DestinationDefinition.Name] = &router
+					}
 				}
 			}
 		}

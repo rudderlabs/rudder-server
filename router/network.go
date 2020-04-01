@@ -228,7 +228,7 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 
 }
 
-func (network *NetHandleT) SendPost(jsonData []byte) (int, string, string) {
+func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	// Get response version
 	version := integrations.GetResponseVersion(jsonData)
 

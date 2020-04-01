@@ -17,7 +17,7 @@ var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
 const (
 	EmbeddedMode    = "embedded"
-	MasteMode       = "master"
+	MasterMode      = "master"
 	MasterSlaveMode = "master_and_slave"
 	SlaveMode       = "slave"
 	OffMode         = "off"
