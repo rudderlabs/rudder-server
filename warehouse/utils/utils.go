@@ -413,7 +413,7 @@ func Datatype(in interface{}) string {
 }
 
 //ToSafeDBString to remove special characters
-func ToSafeDBString(str string) string {
+func ToSafeDBString(provider string, str string) string {
 	res := ""
 	if str != "" {
 		r := []rune(str)
@@ -427,6 +427,9 @@ func ToSafeDBString(str string) string {
 	}
 	if res == "" {
 		res = "STRINGEMPTY"
+	}
+	if _, ok := ReservedKeywords[provider][strings.ToUpper(str)]; ok {
+		res = fmt.Sprintf(`_%s`, res)
 	}
 	return res
 }

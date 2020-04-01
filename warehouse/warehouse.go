@@ -321,7 +321,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	startJSONID := jsonUploadsList[0].ID
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
 	currentSchema, err := json.Marshal(schema)
-	namespace := misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(warehouse.Source.Name))), 127)
+	namespace := misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(wh.destType, warehouse.Source.Name))), 127)
 	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, currentSchema, "{}", time.Now(), time.Now())
 
 	var uploadID int64
