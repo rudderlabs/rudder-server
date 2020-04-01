@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/warehouse"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/validators"
@@ -255,6 +256,7 @@ func main() {
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB ", *clearDB)
 
+	destinationdebugger.Setup()
 	sourcedebugger.Setup()
 	backendconfig.Setup()
 
