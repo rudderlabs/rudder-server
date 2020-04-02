@@ -268,7 +268,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		if err != nil {
 			logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
 		}
-		routerJob := destinationdebugger.RouterJobT{
+		deliveryStatus := destinationdebugger.DeliveryStatusT{
 			DestinationID: paramaters.DestinationID,
 			SourceID:      paramaters.SourceID,
 			Payload:       job.EventPayload,
@@ -277,7 +277,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			ErrorCode:     status.ErrorCode,
 			ErrorResponse: status.ErrorResponse,
 		}
-		destinationdebugger.RecordRouterJob(paramaters.DestinationID, &routerJob)
+		destinationdebugger.RecordEventDeliveryStatus(paramaters.DestinationID, &deliveryStatus)
 
 		batchTimeStat.End()
 	}

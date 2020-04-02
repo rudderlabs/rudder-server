@@ -16,8 +16,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-//RouterJobT is a structure to hold everything about router job like ids, request payload, response codes etc.
-type RouterJobT struct {
+//DeliveryStatusT is a structure to hold everything related to event delivery
+type DeliveryStatusT struct {
 	DestinationID string          `json:"destinationId"`
 	SourceID      string          `json:"sourceId"`
 	Payload       json.RawMessage `json:"payload"`
@@ -29,15 +29,15 @@ type RouterJobT struct {
 
 var uploadEnabledDestinationIDs []string
 var configSubscriberLock sync.RWMutex
-var routerJobsBatchChannel chan *RouterJobT
-var jobsBufferLock sync.RWMutex
-var routerJobsBuffer []*RouterJobT
+var deliveryStatusesBatchChannel chan *DeliveryStatusT
+var deliveryStatusesBufferLock sync.RWMutex
+var deliveryStatusesBuffer []*DeliveryStatusT
 
 var (
 	configBackendURL                       string
 	maxBatchSize, maxRetry, maxESQueueSize int
 	batchTimeout, retrySleep               time.Duration
-	disableRouterJobUploads                bool
+	disableEventDeliveryStatusUploads      bool
 )
 
 func init() {
@@ -53,14 +53,14 @@ func loadConfig() {
 	maxRetry = config.GetInt("DestinationDebugger.maxRetry", 3)
 	batchTimeout = config.GetDuration("DestinationDebugger.batchTimeoutInS", time.Duration(2)) * time.Second
 	retrySleep = config.GetDuration("DestinationDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	disableRouterJobUploads = config.GetBool("DestinationDebugger.disableRouterJobUploads", false)
+	disableEventDeliveryStatusUploads = config.GetBool("DestinationDebugger.disableEventDeliveryStatusUploads", false)
 }
 
-//RecordRouterJob is used to put the route job in the routerJobsBatchChannel,
+//RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
 //which will be processed by handleJobs.
-func RecordRouterJob(destinationID string, routerJob *RouterJobT) bool {
+func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
 	//if disableEventUploads is true, return;
-	if disableRouterJobUploads {
+	if disableEventDeliveryStatusUploads {
 		return false
 	}
 
@@ -71,13 +71,13 @@ func RecordRouterJob(destinationID string, routerJob *RouterJobT) bool {
 		return false
 	}
 
-	routerJobsBatchChannel <- routerJob
+	deliveryStatusesBatchChannel <- deliveryStatus
 	return true
 }
 
 //Setup initializes this module
 func Setup() {
-	routerJobsBatchChannel = make(chan *RouterJobT)
+	deliveryStatusesBatchChannel = make(chan *DeliveryStatusT)
 	rruntime.Go(func() {
 		backendConfigSubscriber()
 	})
@@ -89,16 +89,16 @@ func Setup() {
 	})
 }
 
-func uploadJobs(jobsBuffer []*RouterJobT) {
+func uploadJobs(deliveryStatusesBuffer []*DeliveryStatusT) {
 	// Upload to a Config Backend
-	var res map[string][]*RouterJobT
-	res = make(map[string][]*RouterJobT)
-	for _, job := range jobsBuffer {
-		var arr []*RouterJobT
+	var res map[string][]*DeliveryStatusT
+	res = make(map[string][]*DeliveryStatusT)
+	for _, job := range deliveryStatusesBuffer {
+		var arr []*DeliveryStatusT
 		if value, ok := res[job.DestinationID]; ok {
 			arr = value
 		} else {
-			arr = make([]*RouterJobT, 0)
+			arr = make([]*DeliveryStatusT, 0)
 		}
 		arr = append(arr, job)
 		res[job.DestinationID] = arr
@@ -112,7 +112,7 @@ func uploadJobs(jobsBuffer []*RouterJobT) {
 	}
 
 	client := &http.Client{}
-	url := fmt.Sprintf("%s/dataplane/destinationDeliveryStatus", configBackendURL)
+	url := fmt.Sprintf("%s/dataplane/eventDeliveryStatus", configBackendURL)
 
 	retryCount := 0
 	var resp *http.Response
@@ -149,23 +149,23 @@ func uploadJobs(jobsBuffer []*RouterJobT) {
 }
 
 func handleJobs() {
-	routerJobsBuffer = make([]*RouterJobT, 0)
+	deliveryStatusesBuffer = make([]*DeliveryStatusT, 0)
 
 	for {
 		select {
-		case routerJob := <-routerJobsBatchChannel:
-			jobsBufferLock.Lock()
+		case deliveryStatus := <-deliveryStatusesBatchChannel:
+			deliveryStatusesBufferLock.Lock()
 
-			//If routerJobsBuffer size is more than maxESQueueSize, Delete oldest.
-			if len(routerJobsBuffer) > maxESQueueSize {
-				routerJobsBuffer[0] = nil
-				routerJobsBuffer = routerJobsBuffer[1:]
+			//If deliveryStatusesBuffer size is more than maxESQueueSize, Delete oldest.
+			if len(deliveryStatusesBuffer) > maxESQueueSize {
+				deliveryStatusesBuffer[0] = nil
+				deliveryStatusesBuffer = deliveryStatusesBuffer[1:]
 			}
 
 			//Append to request buffer
-			routerJobsBuffer = append(routerJobsBuffer, routerJob)
+			deliveryStatusesBuffer = append(deliveryStatusesBuffer, deliveryStatus)
 
-			jobsBufferLock.Unlock()
+			deliveryStatusesBufferLock.Unlock()
 		}
 	}
 }
@@ -174,21 +174,21 @@ func flushJobs() {
 	for {
 		select {
 		case <-time.After(batchTimeout):
-			jobsBufferLock.Lock()
+			deliveryStatusesBufferLock.Lock()
 
-			flushSize := len(routerJobsBuffer)
-			var flushJobs []*RouterJobT
+			flushSize := len(deliveryStatusesBuffer)
+			var flushJobs []*DeliveryStatusT
 
 			if flushSize > maxBatchSize {
 				flushSize = maxBatchSize
 			}
 
 			if flushSize > 0 {
-				flushJobs = routerJobsBuffer[:flushSize]
-				routerJobsBuffer = routerJobsBuffer[flushSize:]
+				flushJobs = deliveryStatusesBuffer[:flushSize]
+				deliveryStatusesBuffer = deliveryStatusesBuffer[flushSize:]
 			}
 
-			jobsBufferLock.Unlock()
+			deliveryStatusesBufferLock.Unlock()
 
 			if flushSize > 0 {
 				uploadJobs(flushJobs)

@@ -73,7 +73,7 @@ maxESQueueSize = 1024
 maxRetry = 3
 batchTimeoutInS = 2
 retrySleepInMS = 100
-disableRouterJobUploads = false
+disableEventDeliveryStatusUploads = false
 
 [JobsDB]
 # Migration related parameters
