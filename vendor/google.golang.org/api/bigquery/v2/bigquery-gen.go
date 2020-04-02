@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2020 Google LLC.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -58,6 +58,7 @@ import (
 	googleapi "google.golang.org/api/googleapi"
 	gensupport "google.golang.org/api/internal/gensupport"
 	option "google.golang.org/api/option"
+	internaloption "google.golang.org/api/option/internaloption"
 	htransport "google.golang.org/api/transport/http"
 )
 
@@ -74,6 +75,7 @@ var _ = googleapi.Version
 var _ = errors.New
 var _ = strings.Replace
 var _ = context.Canceled
+var _ = internaloption.WithDefaultEndpoint
 
 const apiId = "bigquery:v2"
 const apiName = "bigquery"
@@ -121,6 +123,7 @@ func NewService(ctx context.Context, opts ...option.ClientOption) (*Service, err
 	)
 	// NOTE: prepend, so we don't override user-specified scopes.
 	opts = append([]option.ClientOption{scopesOption}, opts...)
+	opts = append(opts, internaloption.WithDefaultEndpoint(basePath))
 	client, endpoint, err := htransport.NewClient(ctx, opts...)
 	if err != nil {
 		return nil, err
@@ -2083,6 +2086,9 @@ type ExplainQueryStage struct {
 	// and spilled to disk.
 	ShuffleOutputBytesSpilled int64 `json:"shuffleOutputBytesSpilled,omitempty,string"`
 
+	// SlotMs: Slot-milliseconds used by the stage.
+	SlotMs int64 `json:"slotMs,omitempty,string"`
+
 	// StartMs: Stage start time represented as milliseconds since epoch.
 	StartMs int64 `json:"startMs,omitempty,string"`
 
@@ -3999,7 +4005,9 @@ type Model struct {
 	// KMS keys). This shows the
 	// encryption configuration of the model data while stored in
 	// BigQuery
-	// storage.
+	// storage. This field can be used with PatchModel to update encryption
+	// key
+	// for an already encrypted model.
 	EncryptionConfiguration *EncryptionConfiguration `json:"encryptionConfiguration,omitempty"`
 
 	// Etag: Output only. A hash of this resource.
@@ -6428,7 +6436,7 @@ func (c *DatasetsDeleteCall) Header() http.Header {
 
 func (c *DatasetsDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -6555,7 +6563,7 @@ func (c *DatasetsGetCall) Header() http.Header {
 
 func (c *DatasetsGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -6699,7 +6707,7 @@ func (c *DatasetsInsertCall) Header() http.Header {
 
 func (c *DatasetsInsertCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -6879,7 +6887,7 @@ func (c *DatasetsListCall) Header() http.Header {
 
 func (c *DatasetsListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -7062,7 +7070,7 @@ func (c *DatasetsPatchCall) Header() http.Header {
 
 func (c *DatasetsPatchCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -7213,7 +7221,7 @@ func (c *DatasetsUpdateCall) Header() http.Header {
 
 func (c *DatasetsUpdateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -7371,7 +7379,7 @@ func (c *JobsCancelCall) Header() http.Header {
 
 func (c *JobsCancelCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -7536,7 +7544,7 @@ func (c *JobsGetCall) Header() http.Header {
 
 func (c *JobsGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -7735,7 +7743,7 @@ func (c *JobsGetQueryResultsCall) Header() http.Header {
 
 func (c *JobsGetQueryResultsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -7969,7 +7977,7 @@ func (c *JobsInsertCall) Header() http.Header {
 
 func (c *JobsInsertCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -8236,7 +8244,7 @@ func (c *JobsListCall) Header() http.Header {
 
 func (c *JobsListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -8456,7 +8464,7 @@ func (c *JobsQueryCall) Header() http.Header {
 
 func (c *JobsQueryCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -8599,7 +8607,7 @@ func (c *ModelsDeleteCall) Header() http.Header {
 
 func (c *ModelsDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -8735,7 +8743,7 @@ func (c *ModelsGetCall) Header() http.Header {
 
 func (c *ModelsGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -8920,7 +8928,7 @@ func (c *ModelsListCall) Header() http.Header {
 
 func (c *ModelsListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -9103,7 +9111,7 @@ func (c *ModelsPatchCall) Header() http.Header {
 
 func (c *ModelsPatchCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -9272,7 +9280,7 @@ func (c *ProjectsGetServiceAccountCall) Header() http.Header {
 
 func (c *ProjectsGetServiceAccountCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -9430,7 +9438,7 @@ func (c *ProjectsListCall) Header() http.Header {
 
 func (c *ProjectsListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -9588,7 +9596,7 @@ func (c *RoutinesDeleteCall) Header() http.Header {
 
 func (c *RoutinesDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -9687,6 +9695,14 @@ func (r *RoutinesService) Get(projectId string, datasetId string, routineId stri
 	return c
 }
 
+// ReadMask sets the optional parameter "readMask": If set, only the
+// Routine fields in the field mask are returned in the
+// response. If unset, all Routine fields are returned.
+func (c *RoutinesGetCall) ReadMask(readMask string) *RoutinesGetCall {
+	c.urlParams_.Set("readMask", readMask)
+	return c
+}
+
 // Fields allows partial responses to be retrieved. See
 // https://developers.google.com/gdata/docs/2.0/basics#PartialResponse
 // for more information.
@@ -9724,7 +9740,7 @@ func (c *RoutinesGetCall) Header() http.Header {
 
 func (c *RoutinesGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -9812,6 +9828,12 @@ func (c *RoutinesGetCall) Do(opts ...googleapi.CallOption) (*Routine, error) {
 	//       "required": true,
 	//       "type": "string"
 	//     },
+	//     "readMask": {
+	//       "description": "If set, only the Routine fields in the field mask are returned in the\nresponse. If unset, all Routine fields are returned.",
+	//       "format": "google-fieldmask",
+	//       "location": "query",
+	//       "type": "string"
+	//     },
 	//     "routineId": {
 	//       "description": "Required. Routine ID of the requested routine",
 	//       "location": "path",
@@ -9882,7 +9904,7 @@ func (c *RoutinesInsertCall) Header() http.Header {
 
 func (c *RoutinesInsertCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -10008,6 +10030,18 @@ func (r *RoutinesService) List(projectId string, datasetId string) *RoutinesList
 	return c
 }
 
+// Filter sets the optional parameter "filter": If set, then only the
+// Routines matching this filter are returned.
+// The current supported form is either "routine_type:<RoutineType>"
+// or
+// "routineType:<RoutineType>", where <RoutineType> is a RoutineType
+// enum.
+// Example: "routineType:SCALAR_FUNCTION".
+func (c *RoutinesListCall) Filter(filter string) *RoutinesListCall {
+	c.urlParams_.Set("filter", filter)
+	return c
+}
+
 // MaxResults sets the optional parameter "maxResults": The maximum
 // number of results to return in a single response page.
 // Leverage the page tokens to iterate through the entire collection.
@@ -10021,6 +10055,19 @@ func (c *RoutinesListCall) MaxResults(maxResults int64) *RoutinesListCall {
 // results
 func (c *RoutinesListCall) PageToken(pageToken string) *RoutinesListCall {
 	c.urlParams_.Set("pageToken", pageToken)
+	return c
+}
+
+// ReadMask sets the optional parameter "readMask": If set, then only
+// the Routine fields in the field mask, as well as
+// project_id, dataset_id and routine_id, are returned in the
+// response.
+// If unset, then the following Routine fields are returned:
+// etag, project_id, dataset_id, routine_id, routine_type,
+// creation_time,
+// last_modified_time, and language.
+func (c *RoutinesListCall) ReadMask(readMask string) *RoutinesListCall {
+	c.urlParams_.Set("readMask", readMask)
 	return c
 }
 
@@ -10061,7 +10108,7 @@ func (c *RoutinesListCall) Header() http.Header {
 
 func (c *RoutinesListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -10140,6 +10187,11 @@ func (c *RoutinesListCall) Do(opts ...googleapi.CallOption) (*ListRoutinesRespon
 	//       "required": true,
 	//       "type": "string"
 	//     },
+	//     "filter": {
+	//       "description": "If set, then only the Routines matching this filter are returned.\nThe current supported form is either \"routine_type:\u003cRoutineType\u003e\" or\n\"routineType:\u003cRoutineType\u003e\", where \u003cRoutineType\u003e is a RoutineType enum.\nExample: \"routineType:SCALAR_FUNCTION\".",
+	//       "location": "query",
+	//       "type": "string"
+	//     },
 	//     "maxResults": {
 	//       "description": "The maximum number of results to return in a single response page.\nLeverage the page tokens to iterate through the entire collection.",
 	//       "format": "uint32",
@@ -10156,6 +10208,12 @@ func (c *RoutinesListCall) Do(opts ...googleapi.CallOption) (*ListRoutinesRespon
 	//       "location": "path",
 	//       "pattern": "^[^/]+$",
 	//       "required": true,
+	//       "type": "string"
+	//     },
+	//     "readMask": {
+	//       "description": "If set, then only the Routine fields in the field mask, as well as\nproject_id, dataset_id and routine_id, are returned in the response.\nIf unset, then the following Routine fields are returned:\netag, project_id, dataset_id, routine_id, routine_type, creation_time,\nlast_modified_time, and language.",
+	//       "format": "google-fieldmask",
+	//       "location": "query",
 	//       "type": "string"
 	//     }
 	//   },
@@ -10246,7 +10304,7 @@ func (c *RoutinesUpdateCall) Header() http.Header {
 
 func (c *RoutinesUpdateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -10410,7 +10468,7 @@ func (c *TabledataInsertAllCall) Header() http.Header {
 
 func (c *TabledataInsertAllCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -10609,7 +10667,7 @@ func (c *TabledataListCall) Header() http.Header {
 
 func (c *TabledataListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -10807,7 +10865,7 @@ func (c *TablesDeleteCall) Header() http.Header {
 
 func (c *TablesDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -10949,7 +11007,7 @@ func (c *TablesGetCall) Header() http.Header {
 
 func (c *TablesGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -11108,7 +11166,7 @@ func (c *TablesInsertCall) Header() http.Header {
 
 func (c *TablesInsertCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -11281,7 +11339,7 @@ func (c *TablesListCall) Header() http.Header {
 
 func (c *TablesListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -11464,7 +11522,7 @@ func (c *TablesPatchCall) Header() http.Header {
 
 func (c *TablesPatchCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -11625,7 +11683,7 @@ func (c *TablesUpdateCall) Header() http.Header {
 
 func (c *TablesUpdateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.11.0 gdcl/20200224")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}

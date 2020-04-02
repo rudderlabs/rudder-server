@@ -3,7 +3,6 @@ module github.com/rudderlabs/rudder-server
 go 1.12
 
 require (
-	cloud.google.com/go v0.53.0
 	cloud.google.com/go/bigquery v1.4.0
 	cloud.google.com/go/storage v1.6.0
 	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
@@ -27,6 +26,7 @@ require (
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang/protobuf v1.3.4 // indirect
 	github.com/google/uuid v1.1.1 // indirect
+	github.com/hashicorp/go-version v1.2.0 // indirect
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334
 	github.com/joho/godotenv v1.3.0
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect

@@ -19,7 +19,6 @@ package jobsdb
 
 import (
 	"bytes"
-	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -199,6 +198,7 @@ var (
 	mainCheckSleepDuration                     time.Duration
 	backupCheckSleepDuration                   time.Duration
 	useJoinForUnprocessed                      bool
+	backupRowsBatchSize                        int64
 )
 
 // Loads db config and migration related config from config file
@@ -223,6 +223,7 @@ func loadConfig() {
 	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	maxTableSize = (config.GetInt64("JobsDB.maxTableSizeInMB", 300) * 1000000)
+	backupRowsBatchSize = config.GetInt64("JobsDB.backupRowsBatchSize", 10000)
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
@@ -675,7 +676,6 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	jd.assertError(err)
 	opID := jd.JournalMarkStart(addDSOperation, opPayload)
 	defer func() {
-		jd.JournalMarkDone(opID)
 		if appendLast {
 			// Tracking time interval between new ds creations. Hence calling end before start
 			if jd.isStatNewDSPeriodInitialized {
@@ -710,6 +710,8 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
                                      error_response JSONB);`, newDS.JobStatusTable, newDS.JobTable)
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
+
+	jd.JournalMarkDone(opID)
 
 	if appendLast {
 		//Refresh the in-memory list. We only need to refresh the
@@ -1521,35 +1523,46 @@ func (jd *HandleT) backupDSLoop() {
 
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
-		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
-		// write jobs table to s3
-		_, err = jd.backupTable(backupDSRange, false)
-		if err != nil {
-			logger.Errorf("Failed to backup table %v", backupDS.JobTable)
-			continue
-		}
 
-		// write job_status table to s3
-		_, err = jd.backupTable(backupDSRange, true)
-		jd.assertError(err)
-		if err != nil {
-			logger.Errorf("Failed to backup table %v", backupDS.JobStatusTable)
+		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
+		success := jd.backupDS(backupDSRange)
+		if !success {
+			jd.removeTableJSONDumps()
+			jd.JournalMarkDone(opID)
 			continue
 		}
 		jd.JournalMarkDone(opID)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
-		opPayload, err = json.Marshal(&backupDS)
-		jd.assertError(err)
 		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
 		jd.dropDS(backupDS, false)
 		jd.JournalMarkDone(opID)
 	}
 }
 
+//backupDS writes both jobs and job_staus table to JOBS_BACKUP_STORAGE_PROVIDER
+func (jd *HandleT) backupDS(backupDSRange dataSetRangeT) bool {
+	// write jobs table to JOBS_BACKUP_STORAGE_PROVIDER
+	_, err := jd.backupTable(backupDSRange, false)
+	if err != nil {
+		logger.Errorf("Failed to backup table %v. Err: %v", backupDSRange.ds.JobTable, err)
+		return false
+	}
+
+	// write job_status table to JOBS_BACKUP_STORAGE_PROVIDER
+	_, err = jd.backupTable(backupDSRange, true)
+	if err != nil {
+		logger.Errorf("Failed to backup table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
+		return false
+	}
+
+	return true
+}
+
 func (jd *HandleT) removeTableJSONDumps() {
 	backupPathDirName := "/rudder-s3-dumps/"
-	tmpDirPath := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	jd.assertError(err)
 	files, err := filepath.Glob(fmt.Sprintf("%v%v_job*", tmpDirPath+backupPathDirName, jd.tablePrefix))
 	jd.assertError(err)
 	for _, f := range files {
@@ -1563,7 +1576,8 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	jd.totalTableDumpTimeStat.Start()
 	var tableName, path, pathPrefix string
 	backupPathDirName := "/rudder-s3-dumps/"
-	tmpDirPath := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	jd.assertError(err)
 
 	if isJobStatusTable {
 		tableName = backupDSRange.ds.JobStatusTable
@@ -1581,41 +1595,55 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			backupDSRange.endTime,
 		)
 	}
+	logger.Infof("Backing up table: %v", tableName)
 
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	if err != nil {
 		panic(err)
 	}
 
-	stmt := fmt.Sprintf(`SELECT json_agg(%[1]s order by job_id asc) FROM %[1]s`, tableName)
-	var rawJSONRows json.RawMessage
-	err = jd.dbHandle.QueryRow(stmt).Scan(&rawJSONRows)
+	var totalCount int64
+	countStmt := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tableName)
+	err = jd.dbHandle.QueryRow(countStmt).Scan(&totalCount)
 	if err != nil {
 		panic(err)
 	}
 
-	var rows []interface{}
-	err = json.Unmarshal(rawJSONRows, &rows)
-	if err != nil {
-		panic(err)
-	}
-	contentSlice := make([][]byte, len(rows))
-	for idx, row := range rows {
-		rowBytes, err := json.Marshal(row)
+	gzWriter, err := misc.CreateGZ(path)
+	defer os.Remove(path)
+
+	var offset int64
+	for {
+		stmt := fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s order by job_id asc limit %[2]d offset %[3]d) AS dump_table`, tableName, backupRowsBatchSize, offset)
+		var rawJSONRows json.RawMessage
+		row := jd.dbHandle.QueryRow(stmt)
+		err = row.Scan(&rawJSONRows)
 		if err != nil {
 			panic(err)
 		}
-		contentSlice[idx] = rowBytes
-	}
-	content := bytes.Join(contentSlice[:], []byte("\n"))
 
-	gzipFile, err := os.Create(path)
-	gzipWriter := gzip.NewWriter(gzipFile)
-	_, err = gzipWriter.Write(content)
-	if err != nil {
-		panic(err)
+		var rows []interface{}
+		err = json.Unmarshal(rawJSONRows, &rows)
+		if err != nil {
+			panic(err)
+		}
+		contentSlice := make([][]byte, len(rows))
+		for idx, row := range rows {
+			rowBytes, err := json.Marshal(row)
+			if err != nil {
+				panic(err)
+			}
+			contentSlice[idx] = rowBytes
+		}
+		content := bytes.Join(contentSlice[:], []byte("\n"))
+		gzWriter.Write(content)
+		offset += backupRowsBatchSize
+		if offset >= totalCount {
+			break
+		}
 	}
-	gzipWriter.Close()
+
+	gzWriter.CloseGZ()
 	jd.tableFileDumpTimeStat.End()
 
 	jd.fileUploadTimeStat.Start()
@@ -1626,24 +1654,25 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	pathPrefixes := make([]string, 0)
 	pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
 
+	logger.Infof("Uploading backup table to object storage: %v", tableName)
+	var output filemanager.UploadOutput
 	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
-		_, err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
+		output, err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
 	} else {
-		_, err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
+		output, err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
 	}
+
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 		logger.Errorf("Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
-	} else {
-		// Do not record stat in error case as error case time might be low and skew stats
-		jd.fileUploadTimeStat.End()
-		jd.totalTableDumpTimeStat.End()
+		return false, err
 	}
 
-	err = os.Remove(path)
-	jd.assertError(err)
-
-	return true, err
+	// Do not record stat in error case as error case time might be low and skew stats
+	jd.fileUploadTimeStat.End()
+	jd.totalTableDumpTimeStat.End()
+	logger.Infof("Backed up table: %v at %v", tableName, output.Location)
+	return true, nil
 }
 
 func (jd *HandleT) getBackupDSRange() dataSetRangeT {

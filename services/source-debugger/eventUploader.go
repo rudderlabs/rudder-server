@@ -171,7 +171,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 			return
 		}
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-		req.SetBasicAuth(backendconfig.GetConfigBackendToken(), "")
+		req.SetBasicAuth(config.GetWorkspaceToken(), "")
 
 		resp, err = client.Do(req)
 		if err != nil {
@@ -277,7 +277,7 @@ func updateConfig(sources backendconfig.SourcesT) {
 
 func backendConfigSubscriber() {
 	configChannel := make(chan utils.DataEvent)
-	backendconfig.Subscribe(configChannel)
+	backendconfig.Subscribe(configChannel, "processConfig")
 	for {
 		config := <-configChannel
 		updateConfig(config.Data.(backendconfig.SourcesT))

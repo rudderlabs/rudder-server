@@ -908,6 +908,12 @@
               "required": true,
               "type": "string"
             },
+            "readMask": {
+              "description": "If set, only the Routine fields in the field mask are returned in the\nresponse. If unset, all Routine fields are returned.",
+              "format": "google-fieldmask",
+              "location": "query",
+              "type": "string"
+            },
             "routineId": {
               "description": "Required. Routine ID of the requested routine",
               "location": "path",
@@ -981,6 +987,11 @@
               "required": true,
               "type": "string"
             },
+            "filter": {
+              "description": "If set, then only the Routines matching this filter are returned.\nThe current supported form is either \"routine_type:\u003cRoutineType\u003e\" or\n\"routineType:\u003cRoutineType\u003e\", where \u003cRoutineType\u003e is a RoutineType enum.\nExample: \"routineType:SCALAR_FUNCTION\".",
+              "location": "query",
+              "type": "string"
+            },
             "maxResults": {
               "description": "The maximum number of results to return in a single response page.\nLeverage the page tokens to iterate through the entire collection.",
               "format": "uint32",
@@ -997,6 +1008,12 @@
               "location": "path",
               "pattern": "^[^/]+$",
               "required": true,
+              "type": "string"
+            },
+            "readMask": {
+              "description": "If set, then only the Routine fields in the field mask, as well as\nproject_id, dataset_id and routine_id, are returned in the response.\nIf unset, then the following Routine fields are returned:\netag, project_id, dataset_id, routine_id, routine_type, creation_time,\nlast_modified_time, and language.",
+              "format": "google-fieldmask",
+              "location": "query",
               "type": "string"
             }
           },
@@ -1411,7 +1428,7 @@
       }
     }
   },
-  "revision": "20191105",
+  "revision": "20191211",
   "rootUrl": "https://bigquery.googleapis.com/",
   "schemas": {
     "AggregateClassificationMetrics": {
@@ -2447,6 +2464,11 @@
         },
         "shuffleOutputBytesSpilled": {
           "description": "Total number of bytes written to shuffle and spilled to disk.",
+          "format": "int64",
+          "type": "string"
+        },
+        "slotMs": {
+          "description": "Slot-milliseconds used by the stage.",
           "format": "int64",
           "type": "string"
         },
@@ -3662,7 +3684,7 @@
         },
         "encryptionConfiguration": {
           "$ref": "EncryptionConfiguration",
-          "description": "Custom encryption configuration (e.g., Cloud KMS keys). This shows the\nencryption configuration of the model data while stored in BigQuery\nstorage."
+          "description": "Custom encryption configuration (e.g., Cloud KMS keys). This shows the\nencryption configuration of the model data while stored in BigQuery\nstorage. This field can be used with PatchModel to update encryption key\nfor an already encrypted model."
         },
         "etag": {
           "description": "Output only. A hash of this resource.",

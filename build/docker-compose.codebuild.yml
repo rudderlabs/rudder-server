@@ -26,6 +26,7 @@ services:
       - docker.env
     environment:
       - JOBS_DB_HOST=db
+      - WORKSPACE_TOKEN=$INTEGRATION_TESTS_WORKSPACE_TOKEN
 
   d-transformer:
     build:

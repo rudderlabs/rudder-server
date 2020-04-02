@@ -140,6 +140,15 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		gateway.batchTimeStat.Start()
 		var allMessageIds [][]byte
 		for _, req := range breq.batchRequest {
+			writeKey, _, ok := req.request.BasicAuth()
+			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
+			if !ok || writeKey == "" {
+				req.done <- getStatus(NoWriteKeyInBasicAuth)
+				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
+				continue
+			}
+
 			ipAddr := misc.GetIPFromReq(req.request)
 			if req.request.Body == nil {
 				req.done <- getStatus(RequestBodyNil)
@@ -148,8 +157,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			body, err := ioutil.ReadAll(req.request.Body)
 			req.request.Body.Close()
-
-			writeKey, _, ok := req.request.BasicAuth()
 
 			if enableRateLimit {
 				//If ratelimiter returns true for LimitReached, Just drop the event batch and continue.
@@ -162,13 +169,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				}
 			}
 
-			if !ok || writeKey == "" {
-				req.done <- getStatus(NoWriteKeyInBasicAuth)
-				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
-				continue
-			}
-			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if err != nil {
 				req.done <- getStatus(RequestBodyReadFailed)
 				preDbStoreCount++
@@ -443,13 +443,18 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 	var dbService string = "UP"
 	var enabledRouter string = "TRUE"
+	var backendConfigMode string = "API"
 	if !gateway.jobsDB.CheckPGHealth() {
 		dbService = "DOWN"
 	}
 	if !config.GetBool("enableRouter", true) {
 		enabledRouter = "FALSE"
 	}
-	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine())
+	if config.GetBool("BackendConfig.configFromFile", false) {
+		backendConfigMode = "JSON"
+	}
+
+	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync)
 	w.Write([]byte(healthVal))
 }
 
@@ -482,7 +487,7 @@ func (gateway *HandleT) startWebHandler() {
 // Gets the config from config backend and extracts enabled writekeys
 func backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch)
+	backendconfig.Subscribe(ch, "processConfig")
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -512,7 +517,10 @@ func (gateway *HandleT) gcBadgerDB() {
 func (gateway *HandleT) openBadger(clearDB *bool) {
 	var err error
 	badgerPathName := "/badgerdb"
-	tmpDirPath := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
 	path := fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 	gateway.badgerDB, err = badger.Open(badger.DefaultOptions(path))
 	if err != nil {

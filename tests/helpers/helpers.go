@@ -2,9 +2,14 @@ package helpers
 
 import (
 	"bytes"
+	"compress/gzip"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,66 +19,9 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-// Ginkgo tests use the following credentials
-// CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com
-// CONFIG_BACKEND_TOKEN=1TEeQIJJqpviy5uAbWuxjk1XttY
-// USERNAME=srikanth+ginkgo@rudderlabs.com
-// PASSWORD=secret123
-
-var sampleEvent = `
-	{
-		"batch": [
-			{
-			"anonymousId": "49e4bdd1c280bc00",
-			"channel": "android-sdk",
-			"destination_props": {
-				"AF": {
-				"af_uid": "1566363489499-3377330514807116178"
-				}
-			},
-			"context": {
-				"app": {
-				"build": "1",
-				"name": "RudderAndroidClient",
-				"namespace": "com.rudderlabs.android.sdk",
-				"version": "1.0"
-				},
-				"device": {
-				"id": "49e4bdd1c280bc00",
-				"manufacturer": "Google",
-				"model": "Android SDK built for x86",
-				"name": "generic_x86"
-				},
-				"locale": "en-US",
-				"network": {
-				"carrier": "Android"
-				},
-				"screen": {
-				"density": 420,
-				"height": 1794,
-				"width": 1080
-				},
-				"traits": {
-				"anonymousId": "49e4bdd1c280bc00"
-				},
-				"user_agent": "Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"
-			},
-			"event": "Demo Track",
-			"integrations": {
-				"All": true
-			},
-			"properties": {
-				"label": "Demo Label",
-				"category": "Demo Category",
-				"value": 5
-			},
-			"type": "track",
-			"originalTimestamp": "2019-08-12T05:08:30.909Z",
-			"sentAt": "2019-08-12T05:08:30.909Z"
-			}
-		]
-	}
-`
+const (
+	serverIP = "http://localhost:8080"
+)
 
 // EventOptsT is the type specifying override options over sample event.json
 type EventOptsT struct {
@@ -84,6 +32,24 @@ type EventOptsT struct {
 	GaVal        int
 }
 
+//RemoveKeyFromJSON returns the json with keys removed from the input json
+func RemoveKeyFromJSON(json string, keys ...string) string {
+	for _, key := range keys {
+		var err error
+		json, err = sjson.Delete(json, key)
+		if err != nil {
+			panic(err)
+		}
+	}
+	return json
+}
+
+// AddKeyToJSON adds a key and its value to the
+func AddKeyToJSON(json string, key string, value interface{}) string {
+	json, _ = sjson.Set(json, key, value)
+	return json
+}
+
 // SendEventRequest sends sample event.json with EventOptionsT overrides to gateway server
 func SendEventRequest(options EventOptsT) int {
 	if options.Integrations == nil {
@@ -92,9 +58,9 @@ func SendEventRequest(options EventOptsT) int {
 		}
 	}
 
-	//Source with WriteKey: 1YNNaMMvymQfQh72gHiOLQ1zrDM has one S3 and one GA as destinations. Using this WriteKey as default.
+	//Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations. Using this WriteKey as default.
 	if options.WriteKey == "" {
-		options.WriteKey = "1YNNaMMvymQfQh72gHiOLQ1zrDM"
+		options.WriteKey = "1Yc6YbOGg6U2E8rlj97ZdOawPyr"
 	}
 	if options.ID == "" {
 		options.ID = ksuid.New().String()
@@ -103,17 +69,55 @@ func SendEventRequest(options EventOptsT) int {
 		options.MessageID = uuid.NewV4().String()
 	}
 
-	serverIP := "http://localhost:8080/v1/batch"
-
-	jsonPayload, _ := sjson.Set(sampleEvent, "batch.0.sentAt", time.Now())
+	jsonPayload, _ := sjson.Set(BatchPayload, "batch.0.sentAt", time.Now())
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.integrations", options.Integrations)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.anonymousId", options.ID)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.messageId", options.MessageID)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.properties.value", options.GaVal)
 
-	req, err := http.NewRequest("POST", serverIP, bytes.NewBuffer([]byte(jsonPayload)))
+	return SendBatchRequest(options.WriteKey, jsonPayload)
+}
+
+// SendBatchRequest sends request to /v1/batch
+func SendBatchRequest(userNameForBasicAuth, jsonPayload string) int {
+	return SendRequest("/v1/batch", userNameForBasicAuth, jsonPayload)
+}
+
+// SendIdentifyRequest sends request to /v1/identify
+func SendIdentifyRequest(userNameForBasicAuth, jsonPayload string) int {
+	return SendRequest("/v1/identify", userNameForBasicAuth, jsonPayload)
+}
+
+// SendTrackRequest sends request to /v1/track
+func SendTrackRequest(userNameForBasicAuth, jsonPayload string) int {
+	return SendRequest("/v1/track", userNameForBasicAuth, jsonPayload)
+}
+
+// SendPageRequest sends request to /v1/page
+func SendPageRequest(userNameForBasicAuth, jsonPayload string) int {
+	return SendRequest("/v1/page", userNameForBasicAuth, jsonPayload)
+}
+
+// SendScreenRequest sends request to /v1/screen
+func SendScreenRequest(userNameForBasicAuth, jsonPayload string) int {
+	return SendRequest("/v1/screen", userNameForBasicAuth, jsonPayload)
+}
+
+// SendAliasRequest sends request to /v1/alias
+func SendAliasRequest(userNameForBasicAuth, jsonPayload string) int {
+	return SendRequest("/v1/alias", userNameForBasicAuth, jsonPayload)
+}
+
+// SendGroupRequest sends request to /v1/group
+func SendGroupRequest(userNameForBasicAuth, jsonPayload string) int {
+	return SendRequest("/v1/group", userNameForBasicAuth, jsonPayload)
+}
+
+// SendRequest sends jsonPayload to gateway server with userNameForBasicAuth in basic auth
+func SendRequest(endPoint, userNameForBasicAuth, jsonPayload string) int {
+	req, err := http.NewRequest("POST", serverIP+endPoint, bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(options.WriteKey, "")
+	req.SetBasicAuth(userNameForBasicAuth, "")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -122,6 +126,57 @@ func SendEventRequest(options EventOptsT) int {
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode
+}
+
+// SendHealthRequest sends health request
+func SendHealthRequest() []byte {
+	resp, err := http.Get(serverIP + "/health")
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+	return body
+}
+
+// SendVersionRequest sends version request
+func SendVersionRequest() []byte {
+	resp, err := http.Get(serverIP + "/version")
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+	return body
+}
+
+// SameStringSlice checks if two slices have same strings in any order
+func SameStringSlice(x, y []string) bool {
+	// If x is nil, then y must also be nil.
+	if (x == nil) != (y == nil) {
+		return false
+	}
+
+	if len(x) != len(y) {
+		return false
+	}
+
+	sort.Strings(x)
+	sort.Strings(y)
+
+	for i := range x {
+		if x[i] != y[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 // GetTableNamesWithPrefix returns all table names with specified prefix
@@ -181,12 +236,12 @@ func GetJobStatusCount(dbHandle *sql.DB, jobState string, prefix string) int {
 	return count
 }
 
-// GetJobs returns jobs (with a limit) across all tables with specified prefix
-func GetJobs(dbHandle *sql.DB, prefix string, limit int) []*jobsdb.JobT {
+// GetLatestJobs returns jobs (with a limit) across all tables with specified prefix
+func GetLatestJobs(dbHandle *sql.DB, prefix string, limit int) []*jobsdb.JobT {
 	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_jobs_")
 	var jobList []*jobsdb.JobT
 	for _, tableName := range tableNames {
-		rows, err := dbHandle.Query(fmt.Sprintf(`select %[1]s.job_id, %[1]s.uuid, %[1]s.custom_val,
+		rows, err := dbHandle.Query(fmt.Sprintf(`select %[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
 		%[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at from %[1]s order by %[1]s.created_at desc, %[1]s.job_id desc limit %v;`, tableName, limit-len(jobList)))
 		if err != nil {
 			panic(err)
@@ -194,7 +249,7 @@ func GetJobs(dbHandle *sql.DB, prefix string, limit int) []*jobsdb.JobT {
 		defer rows.Close()
 		for rows.Next() {
 			var job jobsdb.JobT
-			rows.Scan(&job.JobID, &job.UUID, &job.CustomVal,
+			rows.Scan(&job.JobID, &job.UUID, &job.Parameters, &job.CustomVal,
 				&job.EventPayload, &job.CreatedAt, &job.ExpireAt)
 			if len(jobList) < limit {
 				jobList = append(jobList, &job)
@@ -229,4 +284,125 @@ func GetJobStatus(dbHandle *sql.DB, prefix string, limit int, jobState string) [
 		}
 	}
 	return jobStatusList
+}
+
+// GetLoadFileTableName quereis table column form the warehouseLoadFilesTable provided
+func GetLoadFileTableName(dbHandle *sql.DB, warehouseLoadFilesTable string) []string {
+	rows, err := dbHandle.Query(fmt.Sprintf(`SELECT table_name FROM %s`, warehouseLoadFilesTable))
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+	var tableNames []string
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			panic(err)
+		}
+		tableNames = append(tableNames, tableName)
+	}
+	return tableNames
+
+}
+
+func GetWarehouseSchema(dbHandle *sql.DB, warehouseSchemaTable string, sourceID string, destinationID string) map[string]map[string]string {
+	var rawSchema json.RawMessage
+	err := dbHandle.QueryRow(fmt.Sprintf(`SELECT schema FROM %s where source_id='%s'and destination_id='%s'`, warehouseSchemaTable, sourceID, destinationID)).Scan(&rawSchema)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	var schemaMapInterface map[string]interface{}
+	err = json.Unmarshal(rawSchema, &schemaMapInterface)
+	if err != nil {
+		panic(err)
+	}
+	schema := make(map[string]map[string]string)
+	for key, val := range schemaMapInterface {
+		y := make(map[string]string)
+		x := val.(map[string]interface{})
+		for k, v := range x {
+			y[k] = v.(string)
+		}
+		schema[key] = y
+	}
+	return schema
+}
+
+func GetEventLoadFileData(dbHandle *sql.DB, warehouseLoadFilesTable string, eventName string, bucket string) string {
+	rows, err := dbHandle.Query(fmt.Sprintf(` select location from %s where table_name='%s' limit 1`, warehouseLoadFilesTable, eventName))
+	if err != nil {
+		panic(err)
+	}
+	var location string
+	for rows.Next() {
+		if err := rows.Scan(&location); err != nil {
+			panic(err)
+		}
+	}
+	jsonPath := "loadfile.json.gz"
+	jsonFile, err := os.Create(jsonPath)
+	if err != nil {
+		panic(err)
+	}
+	defer jsonFile.Close()
+	defer os.Remove(jsonPath)
+	DownloadObject(location, bucket, jsonFile)
+	rawf, err := os.Open(jsonPath)
+	if err != nil {
+		panic(err)
+	}
+	reader, err := gzip.NewReader(rawf)
+	if err != nil {
+		panic(err)
+	}
+	jsonByte, err := ioutil.ReadAll(reader)
+	if err != nil {
+		panic(err)
+	}
+	return string(jsonByte)
+}
+
+func DeleteRowsInTable(dbHandle *sql.DB, table string) {
+	_, err := dbHandle.Query(fmt.Sprintf(`delete from only %s`, table))
+	if err != nil {
+		panic(err)
+	}
+}
+func GetDestinationIDsFromLoadFileTable(dbHandle *sql.DB, warehouseLoadFilesTable string, sourceID string) []string {
+	rows, err := dbHandle.Query(fmt.Sprintf(`select destination_id from %s where source_id = '%s'`, warehouseLoadFilesTable, sourceID))
+	if err != nil {
+		panic(err)
+	}
+	var destinationIDs []string
+	for rows.Next() {
+		var destinationID string
+		if err := rows.Scan(&destinationID); err != nil {
+			panic(err)
+		}
+		destinationIDs = append(destinationIDs, destinationID)
+	}
+	return destinationIDs
+}
+
+func IsThisInThatSliceString(smallSlice []string, bigSlice []string) bool {
+	if len(bigSlice) < len(smallSlice) {
+		return false
+	}
+	for _, small := range smallSlice {
+		for i, big := range bigSlice {
+			if small == big {
+				break
+			}
+			if small != big && i == len(bigSlice)-1 {
+				return false
+			}
+		}
+	}
+	return true
 }
