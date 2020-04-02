@@ -1,5 +1,7 @@
 package backendconfig
 
+//go:generate mockgen -destination=../../mocks/mock_backendconfig.go -package=mocks github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
+
 import (
 	"bytes"
 	"encoding/json"
@@ -31,6 +33,9 @@ var (
 	curSourceJSONLock                sync.RWMutex
 	initialized                      bool
 	LastSync                         string
+
+	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
+	DefaultBackendConfig BackendConfig
 )
 
 var Eb = new(utils.EventBus)
@@ -82,13 +87,17 @@ type BackendConfig interface {
 	SetUp()
 	Get() (SourcesT, bool)
 	GetWorkspaceIDForWriteKey(string) string
+	WaitForConfig()
+}
+
+type CommonBackendConfig struct {
 }
 
 func loadConfig() {
 	// Rudder supporting multiple workspaces. false by default
 	isMultiWorkspace = config.GetEnvAsBool("HOSTED_SERVICE", false)
 	// Secret to be sent in basic auth for supporting multiple workspaces. password by default
-	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+	multiWorkspaceSecret = config.GetEnv("HOSTED_SERfVICE_SECRET", "password")
 
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	workspaceToken = config.GetWorkspaceToken()
@@ -198,14 +207,24 @@ func Subscribe(channel chan utils.DataEvent, topic string) {
 	curSourceJSONLock.RUnlock()
 }
 
+/*
+WaitForConfig waits until backend config has been initialized
+Deprecated: Use an instance of BackendConfig instead of static function
+*/
 func WaitForConfig() {
+	backendConfig.WaitForConfig()
+}
+
+/*
+WaitForConfig waits until backend config has been initialized
+*/
+func (bc *CommonBackendConfig) WaitForConfig() {
 	for {
 		if initialized {
 			break
 		}
 		logger.Info("Waiting for initializing backend config")
 		time.Sleep(time.Duration(pollInterval))
-
 	}
 }
 
@@ -218,6 +237,8 @@ func Setup() {
 	}
 
 	backendConfig.SetUp()
+
+	DefaultBackendConfig = backendConfig
 
 	rruntime.Go(func() {
 		pollConfigUpdate()

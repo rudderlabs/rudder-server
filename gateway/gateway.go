@@ -102,7 +102,7 @@ func init() {
 type HandleT struct {
 	webRequestQ                               chan *webRequestT
 	batchRequestQ                             chan *batchWebRequestT
-	jobsDB                                    *jobsdb.HandleT
+	jobsDB                                    jobsdb.JobsDB
 	badgerDB                                  *badger.DB
 	ackCount                                  uint64
 	recvCount                                 uint64
@@ -253,7 +253,9 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			jobEventCountMap[newJob.UUID] = totalEventsInReq
 		}
 
+		println("BEFORE STORE", jobList)
 		errorMessagesMap := gateway.jobsDB.Store(jobList)
+		println("AFTER STORE")
 
 		gateway.writeToBadger(allMessageIds)
 
@@ -425,9 +427,12 @@ func (gateway *HandleT) webGroupHandler(w http.ResponseWriter, r *http.Request) 
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
+	println("sending")
 	done := make(chan string)
 	req := webRequestT{request: r, writer: &w, done: done, reqType: reqType}
 	gateway.webRequestQ <- &req
+	println("wait for response")
+
 	//Wait for batcher process to be done
 	errorMessage := <-done
 	atomic.AddUint64(&gateway.ackCount, 1)
@@ -462,7 +467,12 @@ func reflectOrigin(origin string) bool {
 	return true
 }
 
-func (gateway *HandleT) startWebHandler() {
+/*
+StartWebHandler starts all gateway web handlers, listening on gateway port.
+Supports CORS from all origins.
+This function will block.
+*/
+func (gateway *HandleT) StartWebHandler() {
 
 	logger.Infof("Starting in %d", webPort)
 
@@ -537,8 +547,16 @@ func (gateway *HandleT) openBadger(clearDB *bool) {
 	})
 }
 
-//Setup initializes this module
-func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.HandleT, clearDB *bool) {
+/*
+Setup initializes this module:
+- Monitors backend config for changes.
+- Starts web request batching goroutine, that batches incoming messages.
+- Starts web request batch db writer goroutine, that writes incoming batches to JobsDB.
+- Starts debugging goroutine that prints gateway stats.
+
+This function will block until backend config is initialy received.
+*/
+func (gateway *HandleT) Setup(backendconfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter *ratelimiter.HandleT, clearDB *bool) {
 	gateway.latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
 	gateway.batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
 	gateway.batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
@@ -567,5 +585,4 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.H
 	rruntime.Go(func() {
 		gateway.printStats()
 	})
-	gateway.startWebHandler()
 }

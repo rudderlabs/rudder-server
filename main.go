@@ -186,7 +186,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	var gateway gateway.HandleT
 	var rateLimiter ratelimiter.HandleT
 	rateLimiter.SetUp()
-	gateway.Setup(&gatewayDB, &rateLimiter, clearDB)
+	gateway.Setup(backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, clearDB)
+	gateway.StartWebHandler()
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
