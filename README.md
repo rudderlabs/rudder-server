@@ -91,7 +91,7 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 # Setup Instructions (Kubernetes)
 
-1. Go to the [dashboard][dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
+1. Go to the [dashboard][dashboad-on] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
 
 2. Our helm scripts and instructions are in a separate repo - [Download Here][helm-scripts-git-repo]
 
@@ -228,6 +228,7 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 [go-report-card-badge]: https://go-report-card.com/badge/github.com/rudderlabs/rudder-server
 [ssh]: https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls
 [dashboard]: https://app.rudderlabs.com
+[dashboard-on]: https://app.rudderstack.com/signup?type=freetrial
 [agplv3_license]: https://www.gnu.org/licenses/agpl-3.0-standalone.html
 [sspl_license]: https://www.mongodb.com/licensing/server-side-public-license
 [hackernews]: https://news.ycombinator.com/item?id=21081756
