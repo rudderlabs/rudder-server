@@ -16,6 +16,11 @@ See the [HackerNews][hackernews] discussion around RudderStack.
 
 Questions? Read our [Docs][docs] OR join our [Discord][discord] channel. Or please email soumyadeb at rudderlabs.com.
 
+# Try RudderStack?
+
+You can use the [hosted][dashboard-on] RudderStack instance to experience the product.  Click [here][dashboard-on].
+
+
 # Features
 
 1. **Production Ready:** Multiple companies from startups to large engerprieses are running RudderStack for collecting events.
