@@ -63,7 +63,7 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 
 # Setup Instructions (Hosted Demo Account)
 
-1. Go to the [dashboard][dashboard] `https://app.rudderlabs.com` and set up your account.
+1. Go to the [dashboard][dashboard-on] and set up your account.
 2. Select `RudderStack Hosted Service` from the top right corner after you login.
 3. Follow (Send Test Events) instructions below to send test event.
 
