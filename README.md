@@ -16,6 +16,11 @@ See the [HackerNews][hackernews] discussion around RudderStack.
 
 Questions? Read our [Docs][docs] OR join our [Discord][discord] channel. Or please email soumyadeb at rudderlabs.com.
 
+# Try RudderStack?
+
+You can use the [hosted][dashboard-on] RudderStack instance to experience the product.  Click [here][dashboard-on].
+
+
 # Features
 
 1. **Production Ready:** Multiple companies from startups to large engerprieses are running RudderStack for collecting events.
@@ -63,7 +68,7 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 
 # Setup Instructions (Hosted Demo Account)
 
-1. Go to the [dashboard][dashboard] `https://app.rudderlabs.com` and set up your account.
+1. Go to the [dashboard][dashboard-on] and set up your account.
 2. Select `RudderStack Hosted Service` from the top right corner after you login.
 3. Follow (Send Test Events) instructions below to send test event.
 
@@ -91,7 +96,7 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 # Setup Instructions (Kubernetes)
 
-1. Go to the [dashboard][dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
+1. Go to the [dashboard][dashboad-on] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
 
 2. Our helm scripts and instructions are in a separate repo - [Download Here][helm-scripts-git-repo]
 
@@ -228,6 +233,7 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 [go-report-card-badge]: https://go-report-card.com/badge/github.com/rudderlabs/rudder-server
 [ssh]: https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls
 [dashboard]: https://app.rudderlabs.com
+[dashboard-on]: https://app.rudderstack.com/signup?type=freetrial
 [agplv3_license]: https://www.gnu.org/licenses/agpl-3.0-standalone.html
 [sspl_license]: https://www.mongodb.com/licensing/server-side-public-license
 [hackernews]: https://news.ycombinator.com/item?id=21081756
