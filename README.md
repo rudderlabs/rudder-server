@@ -1,8 +1,7 @@
 ![Build Status][build status]
-[![Go Report Card][goreportcardbadge]][goreportcard]
 [![Release]][release]
 
-# ![RudderStack][rudderlogo]
+# ![RudderStack][rudder-logo]
 
 # What is RudderStack?
 
@@ -51,7 +50,7 @@ We would love to see you contribute to RudderStack. See [CONTRIBUTING.md](CONTRI
 - See the [HackerNews][hackernews] discussion around RudderStack.
 - Join our [Discord][discord] channel
 - Follow us [RudderStack][twitter]
-- Get the latest news from the [RudderStack blog][rudderstackblog]
+- Get the latest news from the [RudderStack blog][rudderstack-blog]
 - Subscribe to our newsletter
 
 <!----variable's---->
@@ -59,24 +58,27 @@ We would love to see you contribute to RudderStack. See [CONTRIBUTING.md](CONTRI
 [build status]: https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master
 [release]: https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver
 [discord]: https://discordapp.com/invite/xNEdEGw
+[docs]: https://docs.rudderstack.com/
 [twitter]: https://twitter.com/rudderstack
-[goreportcard]: https://goreportcard.com/report/github.com/rudderlabs/rudder-server
-[goreportcardbadge]: https://goreportcard.com/badge/github.com/rudderlabs/rudder-server
+[go-report-card]: https://go-report-card.com/report/github.com/rudderlabs/rudder-server
+[go-report-card-badge]: https://go-report-card.com/badge/github.com/rudderlabs/rudder-server
 [ssh]: https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls
 [dashboard]: https://app.rudderlabs.com
 [agplv3_license]: https://www.gnu.org/licenses/agpl-3.0-standalone.html
 [sspl_license]: https://www.mongodb.com/licensing/server-side-public-license
 [hackernews]: https://news.ycombinator.com/item?id=21081756
-[helmscriptsgitrepo]: https://github.com/rudderlabs/rudderstack-helm
-[terraformscriptsgitrepo]: https://github.com/rudderlabs/rudder-terraform
+[helm-scripts-git-repo]: https://github.com/rudderlabs/rudderstack-helm
+[terraform-scripts-git-repo]: https://github.com/rudderlabs/rudder-terraform
 [golang]: https://golang.org/dl/
 [node]: https://nodejs.org/en/download/
-[ruddersdkjsgitrepo]: https://github.com/rudderlabs/rudder-sdk-js
-[ruddersdkandroidgitrepo]: https://github.com/rudderlabs/rudder-sdk-android
-[ruddersdkiosgitrepo]: https://github.com/rudderlabs/rudder-sdk-ios
-[rudderlogo]: https://repository-images.githubusercontent.com/197743848/b352c900-dbc8-11e9-9d45-4deb9274101f
-[rudderserverreleases]: https://github.com/rudderlabs/rudder-server/releases
-[ruddertransformerreleases]: https://github.com/rudderlabs/rudder-transformer/releases
-[rudderstackblog]: https://rudderstack.com/blog/
-[rudderserversampleenv]: https://github.com/rudderlabs/rudder-server/blob/master/config/sample.env
-[rudderdockeryml]: https://github.com/rudderlabs/rudder-server/blob/master/rudder-docker.yml
+[rudder-sdk-js-git-repo]: https://github.com/rudderlabs/rudder-sdk-js
+[rudder-sdk-android-git-repo]: https://github.com/rudderlabs/rudder-sdk-android
+[rudder-sdk-ios-git-repo]: https://github.com/rudderlabs/rudder-sdk-ios
+[config-generator]: https://github.com/rudderlabs/config-generator
+[config-generator-section]: https://github.com/rudderlabs/rudder-server/blob/master/README.md#rudderstack-config-generator
+[rudder-logo]: https://repository-images.githubusercontent.com/197743848/b352c900-dbc8-11e9-9d45-4deb9274101f
+[rudder-server-releases]: https://github.com/rudderlabs/rudder-server/releases
+[rudder-transformer-releases]: https://github.com/rudderlabs/rudder-transformer/releases
+[rudderstack-blog]: https://rudderstack.com/blog/
+[rudder-server-sample-env]: https://github.com/rudderlabs/rudder-server/blob/master/config/sample.env
+[rudder-docker-yml]: https://github.com/rudderlabs/rudder-server/blob/master/rudder-docker.yml
