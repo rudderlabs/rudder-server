@@ -27,9 +27,36 @@
 #
 # RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH="./workspaceConfig.json"
 #
+#
 # Eg 5:
-# [JobsDB]
-# enableBackup=false
+# To customize the back-up behaviour of jobs db
+# This is a master flag to enable/disable backup of jobsdb, if false no back up will happen
+# [JobsDB.backup]
+# enabled = true
+#
+# backup settings for gateway, for replay server turn the enabled flag to false
+# pathPrefix is the s3 folder path, the default value is table prefix like gw/rt/batch_rt, if other prefix is provided
+# by default we add the path after instanceID path, so s3 path for dumps in default will be /instance_id/pathPrefix
+# reverse it by pathPrefixBeforeInstanceID
+#
+# [JobsDB.backup.gw]
+# enabled=true
+# pathPrefix="gw"
+# pathPrefixBeforeInstanceID=false
+#
+# backup settings for router
+# [JobsDB.backup.rt]
+# enabled=true
+# failedOnly=true
+# pathPrefix="router"
+#
+# backup settings for batch_router
+# [JobsDB.backup.batch_rt]
+# enabled=true
+# failedOnly=true
+# pathPrefix="batch_router"
+#
+#
 #
 # RSERVER_JOBS_DB_ENABLE_BACKUP=true
 #
@@ -82,15 +109,16 @@ backupRowsBatchSize = 10000
 enabled = true
 
 [JobsDB.backup.gw]
-enabled = true
+enabled=true
+pathPrefix=""
 
 [JobsDB.backup.rt]
-enabled = false
-abortedOnly = false
+enabled=false
+failedOnly=false
 
 [JobsDB.backup.batch_rt]
-enabled = false
-abortedOnly = false
+enabled=false
+failedOnly=false
 
 [Router]
 jobQueryBatchSize = 10000
