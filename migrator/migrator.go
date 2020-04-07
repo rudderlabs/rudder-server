@@ -6,6 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
+
 //Migrator is a handle to this object used in main.go
 type Migrator struct {
 	jobsDB *jobsdb.HandleT
@@ -40,7 +41,7 @@ func (migrator *Migrator) migrate() {
 		toQuery := dbReadBatchSize
 		retryList := migrator.jobsDB.GetToRetry(nil, toQuery, nil) //TODO: First argument nil to be replaced with an appropriate version of []string{gateway.CustomVal}
 		toQuery -= len(retryList)
-		unprocessedList := proc.gatewayDB.GetUnprocessed(nil, toQuery, nil) //TODO: First argument nil to be replaced with an appropriate version of []string{gateway.CustomVal}
+		unprocessedList := migrator.jobsDB.GetUnprocessed(nil, toQuery, nil) //TODO: First argument nil to be replaced with an appropriate version of []string{gateway.CustomVal}
 		if len(unprocessedList)+len(retryList) == 0 {
 			logger.Debugf("Migrator has done with so and so jobsDb. No GW Jobs to process.")
 		}
