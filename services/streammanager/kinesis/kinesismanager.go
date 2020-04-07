@@ -36,6 +36,10 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 	if !ok {
 		panic(fmt.Errorf("typecast of config.Get(\"accessKey\") to string failed"))
 	}
+	useMessageID, ok := config.Get("useMessageId").Value().(bool)
+	if !ok {
+		panic(fmt.Errorf("typecast of config.Get(\"useMessageId\") to bool failed"))
+	}
 
 	s := session.New(&aws.Config{
 		Region:      aws.String(region),
@@ -48,10 +52,17 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 	value, err := json.Marshal(data)
 	userID := parsedJSON.Get("userId").Value().(string)
 
+	partitionKey := aws.String(userID)
+
+	if useMessageID {
+		messageID := parsedJSON.Get("message").Get("messageId").Value().(string)
+		partitionKey = aws.String(messageID)
+	}
+
 	putOutput, err := kc.PutRecord(&kinesis.PutRecordInput{
 		Data:         []byte(value),
 		StreamName:   streamName,
-		PartitionKey: aws.String(userID),
+		PartitionKey: partitionKey,
 	})
 	if err != nil {
 		return 400, err.Error(), ""
