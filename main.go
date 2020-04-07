@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor"
+	"github.com/rudderlabs/rudder-server/migrator"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
@@ -40,6 +41,7 @@ var (
 	maxProcess                                  int
 	gwDBRetention, routerDBRetention            time.Duration
 	enableProcessor, enableRouter, enableBackup bool
+	enableMigrator                              bool
 	isReplayServer                              bool
 	enabledDestinations                         []backendconfig.DestinationT
 	configSubscriberLock                        sync.RWMutex
@@ -62,6 +64,7 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
+	enableMigrator = config.GetBool("enableMigrtor", true)
 }
 
 // Test Function
@@ -181,6 +184,13 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	if enableProcessor {
 		var processor processor.HandleT
 		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+	}
+
+	if enableMigrator {
+		var migrator migrator.Migrator
+		go migrator.Setup(&gatewayDB)
+		go migrator.Setup(&routerDB)
+		go migrator.Setup(&batchRouterDB)
 	}
 
 	var gateway gateway.HandleT
