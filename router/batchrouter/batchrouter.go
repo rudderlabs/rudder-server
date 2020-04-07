@@ -43,6 +43,7 @@ var (
 	lastExecMapLock           sync.RWMutex
 	uploadedRawDataJobsCache  map[string]map[string]bool
 	warehouseURL              string
+	warehouseMode             string
 )
 
 type HandleT struct {
@@ -588,11 +589,16 @@ func loadConfig() {
 	maxFailedCountForJob = config.GetInt("BatchRouter.maxFailedCountForJob", 128)
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
-	warehouseURL = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
+	warehouseMode = config.GetString("Warehouse.mode", "embedded")
+	if warehouseMode == config.EmbeddedMode {
+		warehouseURL = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
+	} else {
+		warehouseURL = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
+	}
 }
 
 func init() {
