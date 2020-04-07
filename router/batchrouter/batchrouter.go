@@ -18,6 +18,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -309,6 +310,34 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 }
 
+func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err error) {
+	var (
+		jobState  string
+		errorResp []byte
+	)
+
+	if err != nil {
+		jobState = jobsdb.FailedState
+		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
+	} else {
+		jobState = jobsdb.SucceededState
+		errorResp = []byte(`{"success":"OK"}`)
+	}
+
+	//Payload and AttemptNum don't make sense in recording batch router delivery status,
+	//So they are set to default values.
+	deliveryStatus := destinationdebugger.DeliveryStatusT{
+		DestinationID: batchDestination.Destination.ID,
+		SourceID:      batchDestination.Source.ID,
+		Payload:       []byte(`{}`),
+		AttemptNum:    1,
+		JobState:      jobState,
+		ErrorCode:     "",
+		ErrorResponse: errorResp,
+	}
+	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
+}
+
 func (brt *HandleT) initWorkers() {
 	for i := 0; i < noOfWorkers; i++ {
 		rruntime.Go(func() {
@@ -322,6 +351,7 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
 							brt.setJobStatus(batchJobs, false, output.Error)
+							brt.recordDeliveryStatus(batchJobs.BatchDestination, output.Error)
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 							if output.JournalOpID > 0 {
 								brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
