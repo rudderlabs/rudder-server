@@ -11,42 +11,36 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+// Config is the config that is required to send data to Kinesis
+type Config struct {
+	Region       string
+	Stream       string
+	AccessKeyID  string
+	AccessKey    string
+	UseMessageID bool
+}
+
 // Produce creates a producer and send data to Kinesis
 func Produce(jsonData json.RawMessage) (int, string, string) {
 
-	//config := jsonData.
 	parsedJSON := gjson.ParseBytes(jsonData)
 	if parsedJSON.Get("output").Exists() {
 		parsedJSON = parsedJSON.Get("output")
 	}
-	config := parsedJSON.Get("config")
-	region, ok := config.Get("region").Value().(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of config.Get(\"region\") to string failed"))
+	configFromJSON, err := json.Marshal(parsedJSON.Get("config").Value())
+	if err != nil {
+		panic(fmt.Errorf("error getting config from payload"))
 	}
-	stream, ok := config.Get("stream").Value().(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of config.Get(\"stream\") to string failed"))
-	}
-	accessKeyID, ok := config.Get("accessKeyID").Value().(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of config.Get(\"accessKeyID\") to string failed"))
-	}
-	accessKey, ok := config.Get("accessKey").Value().(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of config.Get(\"accessKey\") to string failed"))
-	}
-	useMessageID, ok := config.Get("useMessageId").Value().(bool)
-	if !ok {
-		panic(fmt.Errorf("typecast of config.Get(\"useMessageId\") to bool failed"))
-	}
+
+	var config Config
+	json.Unmarshal(configFromJSON, &config)
 
 	s := session.New(&aws.Config{
-		Region:      aws.String(region),
-		Credentials: credentials.NewStaticCredentials(accessKeyID, accessKey, "")})
+		Region:      aws.String(config.Region),
+		Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")})
 	kc := kinesis.New(s)
 
-	streamName := aws.String(stream)
+	streamName := aws.String(config.Stream)
 
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
@@ -54,7 +48,7 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 
 	partitionKey := aws.String(userID)
 
-	if useMessageID {
+	if config.UseMessageID {
 		messageID := parsedJSON.Get("message").Get("messageId").Value().(string)
 		partitionKey = aws.String(messageID)
 	}

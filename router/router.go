@@ -16,8 +16,8 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/services/streammanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -60,7 +60,7 @@ var (
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait                             time.Duration
 	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
-	objectStreamDestination                                                        []string
+	customDestinations                                                             []string
 )
 
 func isSuccessStatus(status int) bool {
@@ -82,7 +82,7 @@ func loadConfig() {
 	useTestSink = config.GetBool("Router.useTestSink", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
-	objectStreamDestination = []string{"KINESIS"}
+	customDestinations = []string{"KINESIS"}
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -105,7 +105,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		batchTimeStat.Start()
 		logger.Debug("Router :: trying to send payload to GA", respBody)
 
-		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload, job.CustomVal)
+		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
 		if userID == "" {
 			panic(fmt.Errorf("userID is empty"))
 		}
@@ -158,8 +158,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debugf("[%v Router] :: trying to send payload %v of %v", rt.destID, attempts, ser)
 
 			deliveryTimeStat.Start()
-			if misc.ContainsString(objectStreamDestination, job.CustomVal) {
-				respStatusCode, respStatus, respBody = streammanager.Produce(job.EventPayload, job.CustomVal)
+			if misc.ContainsString(customDestinations, job.CustomVal) {
+				respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal)
 			} else {
 				respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
 			}
@@ -291,7 +291,7 @@ func getHash(s string) int {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload, job.CustomVal)
+	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
 
 	var index int
 	if randomWorkerAssign {
