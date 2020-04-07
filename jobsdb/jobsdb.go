@@ -49,10 +49,9 @@ import (
 // configuration from the config/env files to
 // instantiate jobdb correctly
 type BackupSettingsT struct {
-	BackupEnabled              bool
-	FailedOnly                 bool
-	PathPrefix                 string
-	PathPrefixBeforeInstanceID bool
+	BackupEnabled bool
+	FailedOnly    bool
+	PathPrefix    string
 }
 
 /*
@@ -151,17 +150,21 @@ var dbErrorMap = map[string]string{
 }
 
 // return backup settings depending on jobdb type
+// the gateway, the router and the processor
+// BackupEnabled = true => all the jobsdb are eligible for backup
+// instanceBackupEnabled = true => the individual jobsdb too is eligible for backup
+// instanceBackupFailedAndAborted = true => the individual jobdb backsup failed and aborted jobs only
+// pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
 func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
 	config.Initialize()
-	// for replay server, make the instance (gw/rt/batch_rt) backup accordingly in the config file itself
+	// for replay server, we are changing the gateway backup to false in main.go
 	masterBackupEnabled := config.GetBool("JobsDB.backup.enabled", false)
 	instanceBackupEnabled := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix), false)
 	instanceBackupFailedAndAborted := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix), false)
 	pathPrefix := config.GetString(fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix), jd.tablePrefix)
-	pathPrefixBeforeInstanceID := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.pathPrefixBeforeInstanceID", jd.tablePrefix), true)
 
 	backupSettings := BackupSettingsT{BackupEnabled: masterBackupEnabled && instanceBackupEnabled,
-		FailedOnly: instanceBackupFailedAndAborted, PathPrefix: strings.TrimSpace(pathPrefix), PathPrefixBeforeInstanceID: pathPrefixBeforeInstanceID}
+		FailedOnly: instanceBackupFailedAndAborted, PathPrefix: strings.TrimSpace(pathPrefix)}
 
 	return &backupSettings
 }
@@ -1562,24 +1565,24 @@ func (jd *HandleT) backupDS(backupDSRange dataSetRangeT) bool {
 	// return after backing up aboprted jobs if the flag is turned on
 	// backupDS is only called when BackupSettings.BackupEnabled is true
 	if jd.BackupSettings.FailedOnly {
-		logger.Info("[JobsDB:: ] backupDS: starting backing up aborted")
+		logger.Info("[JobsDB] ::  backupDS: starting backing up aborted")
 		_, err := jd.backupTable(backupDSRange, false)
 		if err != nil {
-			logger.Errorf("Failed to backup aborted jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
+			logger.Errorf("[JobsDB] :: Failed to backup aborted jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 			return false
 		}
 	} else {
 		// write jobs table to JOBS_BACKUP_STORAGE_PROVIDER
 		_, err := jd.backupTable(backupDSRange, false)
 		if err != nil {
-			logger.Errorf("Failed to backup table %v. Err: %v", backupDSRange.ds.JobTable, err)
+			logger.Errorf("[JobsDB] :: Failed to backup table %v. Err: %v", backupDSRange.ds.JobTable, err)
 			return false
 		}
 
 		// write job_status table to JOBS_BACKUP_STORAGE_PROVIDER
 		_, err = jd.backupTable(backupDSRange, true)
 		if err != nil {
-			logger.Errorf("Failed to backup table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
+			logger.Errorf("[JobsDB] :: Failed to backup table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 			return false
 		}
 
@@ -1645,7 +1648,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	// if backupOnlyAborted, process join of aborted rows of jobstatus with jobs table
 	// else upload entire jobstatus and jobs table from pre_drop
 	if jd.BackupSettings.FailedOnly {
-		logger.Info("[JobsDB:: ] backupTable: backing up aborted/failed entries")
+		logger.Info("[JobsDB] :: backupTable: backing up aborted/failed entries")
 		tableName = backupDSRange.ds.JobStatusTable
 		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
 		path = fmt.Sprintf(`%v%v_%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, AbortedState)
@@ -1673,7 +1676,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	}
 
-	logger.Infof("Backing up table: %v", tableName)
+	logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
 
 	var totalCount int64
 	err = jd.dbHandle.QueryRow(countStmt).Scan(&totalCount)
@@ -1684,7 +1687,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	// return without doing anything as no jobs not present in ds
 	if totalCount == 0 {
 		//  Do not record stat for this case?
-		logger.Infof("[JobsDB::] not processiong table dump as no rows match criteria. %v", tableName)
+		logger.Infof("[JobsDB] ::  not processiong table dump as no rows match criteria. %v", tableName)
 		return true, nil
 	}
 
@@ -1737,18 +1740,15 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	defer file.Close()
 
 	pathPrefixes := make([]string, 0)
+	// For empty path prefix, don't need to add anything to the array
 	if jd.BackupSettings.PathPrefix != "" {
-		if jd.BackupSettings.PathPrefixBeforeInstanceID {
-			pathPrefixes = append(pathPrefixes, jd.BackupSettings.PathPrefix, config.GetEnv("INSTANCE_ID", "1"))
-		} else {
-			pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"), jd.BackupSettings.PathPrefix)
-		}
+		pathPrefixes = append(pathPrefixes, jd.BackupSettings.PathPrefix, config.GetEnv("INSTANCE_ID", "1"))
 
 	} else {
 		pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
 	}
 
-	logger.Infof("Uploading backup table to object storage: %v", tableName)
+	logger.Infof("[JobsDB] :: Uploading backup table to object storage: %v", tableName)
 	var output filemanager.UploadOutput
 	// get a file uploader
 	fileUploader, errored := jd.getFileUploader()
@@ -1757,14 +1757,14 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
-		logger.Errorf("Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
+		logger.Errorf("[JobsDB] :: Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
 		return false, err
 	}
 
 	// Do not record stat in error case as error case time might be low and skew stats
 	fileUploadTimeStat.End()
 	totalTableDumpTimeStat.End()
-	logger.Infof("Backed up table: %v at %v", tableName, output.Location)
+	logger.Infof("[JobsDB] :: Backed up table: %v at %v", tableName, output.Location)
 	return true, nil
 }
 

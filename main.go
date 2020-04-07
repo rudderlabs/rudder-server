@@ -37,15 +37,15 @@ import (
 )
 
 var (
-	warehouseMode                                                                                      string
-	maxProcess                                                                                         int
-	gwDBRetention, routerDBRetention                                                                   time.Duration
-	enableProcessor, enableRouter, enableBackup, routerBackupOnlyAborted, batchRouterBackupOnlyAborted bool
-	isReplayServer                                                                                     bool
-	enabledDestinations                                                                                []backendconfig.DestinationT
-	configSubscriberLock                                                                               sync.RWMutex
-	objectStorageDestinations                                                                          []string
-	warehouseDestinations                                                                              []string
+	warehouseMode                    string
+	maxProcess                       int
+	gwDBRetention, routerDBRetention time.Duration
+	enableProcessor, enableRouter    bool
+	isReplayServer                   bool
+	enabledDestinations              []backendconfig.DestinationT
+	configSubscriberLock             sync.RWMutex
+	objectStorageDestinations        []string
+	warehouseDestinations            []string
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -57,6 +57,7 @@ func loadConfig() {
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
+	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
@@ -161,16 +162,11 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	sourcedebugger.Setup()
 	backendconfig.Setup()
 
-	//Forcing enableBackup false if this server is for handling replayed events
+	//Forcing enableBackup false for gatewaydb if this server is for handling replayed events
 	if isReplayServer {
-		enableBackup = false
+		config.SetBool("JobsDB.backup.gw.enabled", false)
 	}
 
-	// Setup the three modules, the gateway, the router and the processor
-	// enableBackup = true => gateway_backup: all, router_backup: false, brt_backup: false
-	// routerBackupOnlyAborted = true => enableBackup ? true => router_backup_aborted: true
-	// batchRouterBackupOnlyAborted = true => enableBackup ? true => brt_backup_aborted: true
-	// Forcing backup false if this server is for handling replayed events
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention)
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
