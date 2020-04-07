@@ -67,6 +67,14 @@ batchTimeoutInS = 2
 retrySleepInMS = 100
 disableEventUploads = false
 
+[DestinationDebugger]
+maxBatchSize = 32
+maxESQueueSize = 1024
+maxRetry = 3
+batchTimeoutInS = 2
+retrySleepInMS = 100
+disableEventDeliveryStatusUploads = false
+
 [JobsDB]
 # Migration related parameters
 jobDoneMigrateThres = 0.8
