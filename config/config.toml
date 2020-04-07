@@ -37,12 +37,9 @@
 # backup settings for gateway, for replay server turn the enabled flag to false
 # pathPrefix is the s3 folder path, the default value is table prefix like gw/rt/batch_rt, if other prefix is provided
 # by default we add the path after instanceID path, so s3 path for dumps in default will be /instance_id/pathPrefix
-# reverse it by pathPrefixBeforeInstanceID
-#
 # [JobsDB.backup.gw]
 # enabled=true
 # pathPrefix="gw"
-# pathPrefixBeforeInstanceID=false
 #
 # backup settings for router
 # [JobsDB.backup.rt]
