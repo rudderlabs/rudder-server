@@ -40,6 +40,14 @@ var (
 
 var Eb = new(utils.EventBus)
 
+const (
+	/*TopicBackendConfig topic provides updates on full backend config, via Subscribe function */
+	TopicBackendConfig = "backendConfig"
+
+	/*TopicProcessConfig topic provides updates on backend config of processor enabled destinations, via Subscribe function */
+	TopicProcessConfig = "processConfig"
+)
+
 type DestinationDefinitionT struct {
 	ID          string
 	Name        string
@@ -88,6 +96,7 @@ type BackendConfig interface {
 	Get() (SourcesT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 	WaitForConfig()
+	Subscribe(channel chan utils.DataEvent, topic string)
 }
 
 type CommonBackendConfig struct {
@@ -97,7 +106,7 @@ func loadConfig() {
 	// Rudder supporting multiple workspaces. false by default
 	isMultiWorkspace = config.GetEnvAsBool("HOSTED_SERVICE", false)
 	// Secret to be sent in basic auth for supporting multiple workspaces. password by default
-	multiWorkspaceSecret = config.GetEnv("HOSTED_SERfVICE_SECRET", "password")
+	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
 
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	workspaceToken = config.GetWorkspaceToken()
@@ -179,8 +188,8 @@ func pollConfigUpdate() {
 			curSourceJSONLock.Unlock()
 			initialized = true
 			LastSync = time.Now().Format(time.RFC3339)
-			Eb.Publish("processConfig", filteredSourcesJSON)
-			Eb.Publish("backendConfig", sourceJSON)
+			Eb.Publish(TopicProcessConfig, filteredSourcesJSON)
+			Eb.Publish(TopicBackendConfig, sourceJSON)
 		}
 		time.Sleep(time.Duration(pollInterval))
 	}
@@ -194,14 +203,30 @@ func GetWorkspaceIDForWriteKey(writeKey string) string {
 	return backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 }
 
+/*
+Subscribe subscribes a channel to a specific topic of backend config updates.
+Deprecated: Use an instance of BackendConfig instead of static function
+*/
 func Subscribe(channel chan utils.DataEvent, topic string) {
+	backendConfig.Subscribe(channel, topic)
+}
+
+/*
+Subscribe subscribes a channel to a specific topic of backend config updates.
+Channel will receive a new utils.DataEvent each time the backend configuration is updated.
+Data of the DataEvent should be a backendconfig.SourcesT struct.
+Available topics are:
+- TopicBackendConfig: Will receive complete backend configuration
+- TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
+*/
+func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic string) {
 	Eb.Subscribe(topic, channel)
 	curSourceJSONLock.RLock()
 	filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
 
-	if topic == "processConfig" {
+	if topic == TopicProcessConfig {
 		Eb.PublishToChannel(channel, topic, filteredSourcesJSON)
-	} else if topic == "backendConfig" {
+	} else if topic == TopicBackendConfig {
 		Eb.PublishToChannel(channel, topic, curSourceJSON)
 	}
 	curSourceJSONLock.RUnlock()

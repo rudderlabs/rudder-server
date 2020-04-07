@@ -70,30 +70,7 @@ var batchEvent = []byte(`
 	}
 `)
 
-func loadConfig() {
-	//Port where GW is running
-	webPort = config.GetInt("Gateway.webPort", 8080)
-	//Number of incoming requests that are batched before initiating write
-	maxBatchSize = config.GetInt("Gateway.maxBatchSize", 32)
-	//Timeout after which batch is formed anyway with whatever requests
-	//are available
-	batchTimeout = (config.GetDuration("Gateway.batchTimeoutInMS", time.Duration(20)) * time.Millisecond)
-	//Multiple DB writers are used to write data to DB
-	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess", 4)
-	// CustomVal is used as a key in the jobsDB customval column
-	CustomVal = config.GetString("Gateway.CustomVal", "GW")
-	// Maximum request size to gateway
-	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 100000) * 1000
-	// Enable dedup of incoming events by default
-	enableDedup = config.GetBool("Gateway.enableDedup", false)
-	// Dedup time window in hours
-	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
-	// Enable rate limit on incoming events. false by default
-	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
-}
-
 func init() {
-	config.Initialize()
 	loadConfig()
 	loadStatusMap()
 }
@@ -253,9 +230,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			jobEventCountMap[newJob.UUID] = totalEventsInReq
 		}
 
-		println("BEFORE STORE", jobList)
 		errorMessagesMap := gateway.jobsDB.Store(jobList)
-		println("AFTER STORE")
 
 		gateway.writeToBadger(allMessageIds)
 
@@ -427,11 +402,9 @@ func (gateway *HandleT) webGroupHandler(w http.ResponseWriter, r *http.Request) 
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
-	println("sending")
 	done := make(chan string)
 	req := webRequestT{request: r, writer: &w, done: done, reqType: reqType}
 	gateway.webRequestQ <- &req
-	println("wait for response")
 
 	//Wait for batcher process to be done
 	errorMessage := <-done
@@ -495,9 +468,9 @@ func (gateway *HandleT) StartWebHandler() {
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func backendConfigSubscriber() {
+func backendConfigSubscriber(bc backendconfig.BackendConfig) {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "processConfig")
+	bc.Subscribe(ch, backendconfig.TopicProcessConfig)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -573,7 +546,7 @@ func (gateway *HandleT) Setup(backendconfig backendconfig.BackendConfig, jobsDB 
 		gateway.webRequestBatcher()
 	})
 	rruntime.Go(func() {
-		backendConfigSubscriber()
+		backendConfigSubscriber(backendconfig)
 	})
 	for i := 0; i < maxDBWriterProcess; i++ {
 		j := i

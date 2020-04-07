@@ -65,7 +65,7 @@ type ObjectStorageT struct {
 
 func (brt *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()

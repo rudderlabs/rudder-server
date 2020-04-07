@@ -5,9 +5,11 @@
 package mocks
 
 import (
+	reflect "reflect"
+
 	gomock "github.com/golang/mock/gomock"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	reflect "reflect"
+	utils "github.com/rudderlabs/rudder-server/utils"
 )
 
 // MockBackendConfig is a mock of BackendConfig interface
@@ -72,6 +74,18 @@ func (m *MockBackendConfig) SetUp() {
 func (mr *MockBackendConfigMockRecorder) SetUp() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUp", reflect.TypeOf((*MockBackendConfig)(nil).SetUp))
+}
+
+// Subscribe mocks base method
+func (m *MockBackendConfig) Subscribe(arg0 chan utils.DataEvent, arg1 string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Subscribe", arg0, arg1)
+}
+
+// Subscribe indicates an expected call of Subscribe
+func (mr *MockBackendConfigMockRecorder) Subscribe(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Subscribe", reflect.TypeOf((*MockBackendConfig)(nil).Subscribe), arg0, arg1)
 }
 
 // WaitForConfig mocks base method

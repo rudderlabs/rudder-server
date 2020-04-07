@@ -153,7 +153,7 @@ func loadConfig() {
 
 func (wh *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -1123,7 +1123,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
 
 	for {
