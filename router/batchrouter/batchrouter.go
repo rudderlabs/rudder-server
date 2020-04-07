@@ -583,6 +583,15 @@ func (brt *HandleT) crashRecover() {
 	}
 }
 
+func getWarehouseURL() (url string) {
+	if warehouseMode == config.EmbeddedMode {
+		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
+	} else {
+		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
+	}
+	return
+}
+
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
@@ -594,11 +603,7 @@ func loadConfig() {
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	if warehouseMode == config.EmbeddedMode {
-		warehouseURL = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
-	} else {
-		warehouseURL = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
-	}
+	warehouseURL = getWarehouseURL()
 }
 
 func init() {
