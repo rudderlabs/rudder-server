@@ -15,6 +15,8 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	uuid "github.com/satori/go.uuid"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -26,15 +28,17 @@ import (
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
+const (
+	WriteKeyEnabled   = "enabled-write-key"
+	WriteKeyDisabled  = "disabled-write-key"
+	WriteKeyInvalid   = "invalid-write-key"
+	WriteKeyEmpty     = ""
+	SourceIDEnabled   = "enabled-source"
+	SourceIDDisabled  = "disabled-source"
+	TestRemoteAddress = "test.com"
+)
+
 var _ = Describe("Gateway", func() {
-	const (
-		WriteKeyEnabled  = "enabled-write-key"
-		WriteKeyDisabled = "disabled-write-key"
-		WriteKeyInvalid  = "invalid-write-key"
-		WriteKeyEmpty    = ""
-		SourceIDEnabled  = "enabled-source"
-		SourceIDDisabled = "disabled-source"
-	)
 
 	var (
 		asyncHelper testutils.AsyncTestHelper
@@ -44,15 +48,15 @@ var _ = Describe("Gateway", func() {
 		mockBackendConfig *mocks.MockBackendConfig
 	)
 
-	allHandlers := func(gateway *HandleT) []http.HandlerFunc {
-		return []http.HandlerFunc{
-			gateway.webAliasHandler,
-			gateway.webBatchHandler,
-			gateway.webGroupHandler,
-			gateway.webIdentifyHandler,
-			gateway.webPageHandler,
-			gateway.webScreenHandler,
-			gateway.webTrackHandler,
+	allHandlers := func(gateway *HandleT) map[string]http.HandlerFunc {
+		return map[string]http.HandlerFunc{
+			"alias":    gateway.webAliasHandler,
+			"batch":    gateway.webBatchHandler,
+			"group":    gateway.webGroupHandler,
+			"identify": gateway.webIdentifyHandler,
+			"page":     gateway.webPageHandler,
+			"screen":   gateway.webScreenHandler,
+			"track":    gateway.webTrackHandler,
 		}
 	}
 
@@ -115,9 +119,10 @@ var _ = Describe("Gateway", func() {
 		})
 
 		// common tests for all web handlers
-		assertHandler := func(handler http.HandlerFunc) {
+		assertSingleMessageHandler := func(handlerType string, handler http.HandlerFunc) {
 			It("should accept valid requests, and store to jobsdb", func() {
-				validBody := `{"data":"valid-json"}`
+				validBody := `{"data":{"string":"valid-json","nested":{"child":1}}}`
+				validBodyJSON := json.RawMessage(validBody)
 
 				mockJobsDB.
 					EXPECT().Store(gomock.Any()).
@@ -127,8 +132,39 @@ var _ = Describe("Gateway", func() {
 						for _, job := range jobs {
 							Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
 							Expect(job.Parameters).To(Equal(json.RawMessage(fmt.Sprintf(`{"source_id": "%v"}`, SourceIDEnabled))))
-							Expect(job.CustomVal).To(Equal("GW"))
-							Expect(job.EventPayload).To(Equal(json.RawMessage(validBody)))
+							Expect(job.CustomVal).To(Equal(CustomVal))
+
+							responseData := []byte(job.EventPayload)
+							receivedAt := gjson.GetBytes(responseData, "receivedAt")
+							writeKey := gjson.GetBytes(responseData, "writeKey")
+							requestIP := gjson.GetBytes(responseData, "requestIP")
+							batch := gjson.GetBytes(responseData, "batch")
+							payload := gjson.GetBytes(responseData, "batch.0")
+							messageID := payload.Get("messageId")
+							anonymousID := payload.Get("anonymousId")
+							messageType := payload.Get("type")
+
+							strippedPayload, _ := sjson.Delete(payload.String(), "messageId")
+							strippedPayload, _ = sjson.Delete(strippedPayload, "anonymousId")
+							strippedPayload, _ = sjson.Delete(strippedPayload, "type")
+
+							// Assertions regarding response metadata
+							Expect(time.Parse(misc.RFC3339Milli, receivedAt.String())).To(BeTemporally("~", time.Now()))
+							Expect(writeKey.String()).To(Equal(WriteKeyEnabled))
+							Expect(requestIP.String()).To(Equal(TestRemoteAddress))
+
+							// Assertions regarding batch
+							Expect(batch.Array()).To(HaveLen(1))
+
+							// Assertions regarding batch message
+							Expect(messageID.Exists()).To(BeTrue())
+							Expect(messageID.String()).To(testutils.BeValidUUID())
+							Expect(anonymousID.Exists()).To(BeTrue())
+							Expect(anonymousID.String()).To(testutils.BeValidUUID())
+							Expect(messageType.Exists()).To(BeTrue())
+							Expect(messageType.String()).To(Equal(handlerType))
+							Expect(strippedPayload).To(MatchJSON(validBodyJSON))
+
 							result[job.UUID] = ""
 						}
 						asyncHelper.ExpectAndNotifyCallback()()
@@ -140,8 +176,10 @@ var _ = Describe("Gateway", func() {
 			})
 		}
 
-		for _, handler := range allHandlers(gateway) {
-			assertHandler(handler)
+		for handlerType, handler := range allHandlers(gateway) {
+			if handlerType != "batch" {
+				assertSingleMessageHandler(handlerType, handler)
+			}
 		}
 	})
 
@@ -225,6 +263,7 @@ func authorizedRequest(username string, body io.Reader) *http.Request {
 	basicAuth := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:password-should-be-ignored", username)))
 
 	req.Header.Set("Authorization", fmt.Sprintf("Basic %s", basicAuth))
+	req.RemoteAddr = TestRemoteAddress
 	return req
 }
 
