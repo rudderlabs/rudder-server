@@ -857,7 +857,7 @@ func (proc *HandleT) handleReplay(combinedList []*jobsdb.JobT) {
 func (proc *HandleT) mainLoop() {
 
 	logger.Info("Processor loop started")
-	var currSleepTime int64
+	currLoopSleep := time.Duration(0)
 
 	for {
 
@@ -877,8 +877,7 @@ func (proc *HandleT) mainLoop() {
 			logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
 			proc.pStatsDBR.End(0)
 
-			currSleepTime = 2*currSleepTime + 1
-			currLoopSleep := time.Duration(currSleepTime) * loopSleep
+			currLoopSleep = 2*currLoopSleep + loopSleep
 			if currLoopSleep > maxLoopSleep {
 				currLoopSleep = maxLoopSleep
 			}
@@ -886,7 +885,7 @@ func (proc *HandleT) mainLoop() {
 			time.Sleep(currLoopSleep)
 			continue
 		} else {
-			currSleepTime = 0
+			currLoopSleep = time.Duration(0)
 		}
 
 		proc.statListSort.Start()

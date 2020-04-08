@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"math"
@@ -18,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -46,6 +48,12 @@ type jobResponseT struct {
 	status *jobsdb.JobStatusT
 	worker *workerT
 	userID string
+}
+
+//ParametersT struct holds source id and destination id of a job
+type ParametersT struct {
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -276,6 +284,24 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debugf("[%v Router] :: sending failed/aborted state as response", rt.destID)
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		}
+
+		//Sending destination response to config backend
+		var paramaters ParametersT
+		err := json.Unmarshal(job.Parameters, &paramaters)
+		if err != nil {
+			logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+		}
+		deliveryStatus := destinationdebugger.DeliveryStatusT{
+			DestinationID: paramaters.DestinationID,
+			SourceID:      paramaters.SourceID,
+			Payload:       job.EventPayload,
+			AttemptNum:    status.AttemptNum,
+			JobState:      status.JobState,
+			ErrorCode:     status.ErrorCode,
+			ErrorResponse: status.ErrorResponse,
+		}
+		destinationdebugger.RecordEventDeliveryStatus(paramaters.DestinationID, &deliveryStatus)
+
 		batchTimeStat.End()
 	}
 }
