@@ -228,6 +228,8 @@ github.com/satori/go.uuid
 github.com/segmentio/ksuid
 # github.com/snowflakedb/gosnowflake v1.3.4
 github.com/snowflakedb/gosnowflake
+# github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72
+github.com/spaolacci/murmur3
 # github.com/spf13/afero v1.2.2
 github.com/spf13/afero
 github.com/spf13/afero/mem

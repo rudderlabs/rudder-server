@@ -36,7 +36,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/migrator"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -325,17 +324,6 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	rruntime.Go(func() {
 		jd.mainCheckLoop()
 	})
-
-	if config.GetBool("Migrator.enableMigrator, true") {
-		logger.Info("Shanmukh : Trying to setup migrator for ", jd.tablePrefix)
-		go jd.setupMigrator()
-	}
-}
-
-func (jd *HandleT) setupMigrator() {
-	logger.Info("Shanmukh : Inside setupMigrator for ", jd.tablePrefix)
-	var migrator migrator.Migrator
-	go migrator.Setup(jd)
 }
 
 /*

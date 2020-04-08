@@ -21,8 +21,9 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/migrator"
+	"github.com/rudderlabs/rudder-server/pathfinder"
+	"github.com/rudderlabs/rudder-server/processor"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
@@ -48,6 +49,7 @@ var (
 	objectStorageDestinations                   []string
 	warehouseDestinations                       []string
 	warehouseMode                               string
+	pf                                          pathfinder.Pathfinder
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -64,7 +66,7 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	enableMigrator = config.GetBool("enableMigrtor", true)
+	enableMigrator = config.GetBool("enableMigrtor", false)
 }
 
 // Test Function
@@ -187,10 +189,21 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	}
 
 	if enableMigrator {
+		logger.Info("Shanmukh: setting up pathfinder")
+		s := make([]pathfinder.NodeMeta, 4)
+		s[0] = pathfinder.GetNodeMeta(0, "node0ConnString")
+		s[1] = pathfinder.GetNodeMeta(1, "node1ConnString")
+		s[2] = pathfinder.GetNodeMeta(2, "node2ConnString")
+		s[3] = pathfinder.GetNodeMeta(3, "node3ConnString")
+
+		pf.Setup(s)
+
+		logger.Info("Shanmukh: setting up migrators")
 		var migrator migrator.Migrator
-		go migrator.Setup(&gatewayDB)
-		go migrator.Setup(&routerDB)
-		go migrator.Setup(&batchRouterDB)
+		go migrator.Setup(&gatewayDB, pf)
+		go migrator.Setup(&routerDB, pf)
+		go migrator.Setup(&batchRouterDB, pf)
+
 	}
 
 	var gateway gateway.HandleT
