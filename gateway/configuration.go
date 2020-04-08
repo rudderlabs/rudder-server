@@ -34,3 +34,17 @@ func loadConfig() {
 func (*HandleT) MaxReqSize() int {
 	return maxReqSize
 }
+
+//SetEnableRateLimit overrides enableRateLimit configuration and returns previous value
+func SetEnableRateLimit(b bool) bool {
+	prev := enableRateLimit
+	enableRateLimit = b
+	return prev
+}
+
+//SetEnableDedup overrides enableDedup configuration and returns previous value
+func SetEnableDedup(b bool) bool {
+	prev := enableDedup
+	enableDedup = b
+	return prev
+}

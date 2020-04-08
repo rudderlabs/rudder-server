@@ -5,11 +5,10 @@
 package mocks
 
 import (
-	reflect "reflect"
-
 	gomock "github.com/golang/mock/gomock"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	utils "github.com/rudderlabs/rudder-server/utils"
+	reflect "reflect"
 )
 
 // MockBackendConfig is a mock of BackendConfig interface

@@ -48,16 +48,20 @@ var _ = Describe("Gateway", func() {
 		mockBackendConfig *mocks.MockBackendConfig
 	)
 
-	allHandlers := func(gateway *HandleT) map[string]http.HandlerFunc {
-		return map[string]http.HandlerFunc{
-			"alias":    gateway.webAliasHandler,
-			"batch":    gateway.webBatchHandler,
-			"group":    gateway.webGroupHandler,
-			"identify": gateway.webIdentifyHandler,
-			"page":     gateway.webPageHandler,
-			"screen":   gateway.webScreenHandler,
-			"track":    gateway.webTrackHandler,
-		}
+	// This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
+	sampleBackendConfig := backendconfig.SourcesT{
+		Sources: []backendconfig.SourceT{
+			backendconfig.SourceT{
+				ID:       SourceIDDisabled,
+				WriteKey: WriteKeyDisabled,
+				Enabled:  false,
+			},
+			backendconfig.SourceT{
+				ID:       SourceIDEnabled,
+				WriteKey: WriteKeyEnabled,
+				Enabled:  true,
+			},
+		},
 	}
 
 	BeforeEach(func() {
@@ -73,22 +77,7 @@ var _ = Describe("Gateway", func() {
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 			Do(func(channel chan utils.DataEvent, topic string) {
 				// on Subscribe, emulate a backend configuration event
-				data := backendconfig.SourcesT{
-					Sources: []backendconfig.SourceT{
-						backendconfig.SourceT{
-							ID:       SourceIDDisabled,
-							WriteKey: WriteKeyDisabled,
-							Enabled:  false,
-						},
-						backendconfig.SourceT{
-							ID:       SourceIDEnabled,
-							WriteKey: WriteKeyEnabled,
-							Enabled:  true,
-						},
-					},
-				}
-				event := utils.DataEvent{Data: data, Topic: topic}
-				go func() { channel <- event }()
+				go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: topic} }()
 			}).
 			Do(asyncHelper.ExpectAndNotifyCallback()).
 			Return().Times(1)
@@ -127,8 +116,6 @@ var _ = Describe("Gateway", func() {
 				mockJobsDB.
 					EXPECT().Store(gomock.Any()).
 					DoAndReturn(func(jobs []*jobsdb.JobT) map[uuid.UUID]string {
-						// a valid jobsdb Store should return a map of jobs' uuids with empty error strings.
-						var result = make(map[uuid.UUID]string)
 						for _, job := range jobs {
 							Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
 							Expect(job.Parameters).To(Equal(json.RawMessage(fmt.Sprintf(`{"source_id": "%v"}`, SourceIDEnabled))))
@@ -149,7 +136,7 @@ var _ = Describe("Gateway", func() {
 							strippedPayload, _ = sjson.Delete(strippedPayload, "type")
 
 							// Assertions regarding response metadata
-							Expect(time.Parse(misc.RFC3339Milli, receivedAt.String())).To(BeTemporally("~", time.Now()))
+							Expect(time.Parse(misc.RFC3339Milli, receivedAt.String())).To(BeTemporally("~", time.Now(), 2*time.Millisecond))
 							Expect(writeKey.String()).To(Equal(WriteKeyEnabled))
 							Expect(requestIP.String()).To(Equal(TestRemoteAddress))
 
@@ -164,11 +151,10 @@ var _ = Describe("Gateway", func() {
 							Expect(messageType.Exists()).To(BeTrue())
 							Expect(messageType.String()).To(Equal(handlerType))
 							Expect(strippedPayload).To(MatchJSON(validBodyJSON))
-
-							result[job.UUID] = ""
 						}
 						asyncHelper.ExpectAndNotifyCallback()()
-						return result
+
+						return jobsToEmptyErrors(jobs)
 					}).
 					Times(1)
 
@@ -181,6 +167,46 @@ var _ = Describe("Gateway", func() {
 				assertSingleMessageHandler(handlerType, handler)
 			}
 		}
+	})
+
+	Context("Rate limits", func() {
+		var (
+			gateway      = &HandleT{}
+			clearDB bool = false
+
+			mockRateLimiter    *mocks.MockRateLimiter
+			oldEnableRateLimit bool
+		)
+
+		BeforeEach(func() {
+			mockRateLimiter = mocks.NewMockRateLimiter(mockCtrl)
+
+			oldEnableRateLimit = SetEnableRateLimit(true)
+			gateway.Setup(mockBackendConfig, mockJobsDB, mockRateLimiter, &clearDB)
+		})
+
+		It("should store messages successfuly if rate limit is not reached for workspace", func() {
+			workspaceID := "some-workspace-id"
+
+			mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes()
+			mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(false).Times(1)
+			mockJobsDB.EXPECT().Store(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
+			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 200, "OK")
+		})
+
+		It("should reject messages if rate limit is reached for workspace", func() {
+			workspaceID := "some-workspace-id"
+			var emptyJobsList []*jobsdb.JobT
+
+			mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes()
+			mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(true).Times(1)
+			mockJobsDB.EXPECT().Store(emptyJobsList).Return(jobsToEmptyErrors(emptyJobsList))
+			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 400, TooManyRequests+"\n")
+		})
+
+		AfterEach(func() {
+			SetEnableRateLimit(oldEnableRateLimit)
+		})
 	})
 
 	Context("Invalid requests", func() {
@@ -196,7 +222,7 @@ var _ = Describe("Gateway", func() {
 			mockJobsDB.
 				EXPECT().Store(emptyJobsList).
 				Do(asyncHelper.ExpectAndNotifyCallback()).
-				Return(make(map[uuid.UUID]string)).
+				Return(jobsToEmptyErrors(emptyJobsList)).
 				Times(1)
 
 			gateway.Setup(mockBackendConfig, mockJobsDB, nil, &clearDB)
@@ -277,4 +303,25 @@ func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, response
 		Expect(rr.Result().StatusCode).To(Equal(responseStatus))
 		Expect(body).To(Equal(responseBody))
 	}, time.Second)
+}
+
+func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"alias":    gateway.webAliasHandler,
+		"batch":    gateway.webBatchHandler,
+		"group":    gateway.webGroupHandler,
+		"identify": gateway.webIdentifyHandler,
+		"page":     gateway.webPageHandler,
+		"screen":   gateway.webScreenHandler,
+		"track":    gateway.webTrackHandler,
+	}
+}
+
+// converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
+func jobsToEmptyErrors(jobs []*jobsdb.JobT) map[uuid.UUID]string {
+	var result = make(map[uuid.UUID]string)
+	for _, job := range jobs {
+		result[job.UUID] = ""
+	}
+	return result
 }
