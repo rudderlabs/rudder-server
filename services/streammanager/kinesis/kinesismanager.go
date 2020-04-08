@@ -20,7 +20,7 @@ type Config struct {
 	UseMessageID bool
 }
 
-// Produce creates a producer and send data to Kinesis
+// Produce creates a producer and send data to Kinesis.
 func Produce(jsonData json.RawMessage) (int, string, string) {
 
 	parsedJSON := gjson.ParseBytes(jsonData)
