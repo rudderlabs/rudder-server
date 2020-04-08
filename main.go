@@ -66,7 +66,7 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	enableMigrator = config.GetBool("enableMigrtor", false)
+	enableMigrator = config.GetBool("enableMigrtor", true)
 }
 
 // Test Function
@@ -201,8 +201,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		logger.Info("Shanmukh: setting up migrators")
 		var migrator migrator.Migrator
 		go migrator.Setup(&gatewayDB, pf)
-		go migrator.Setup(&routerDB, pf)
-		go migrator.Setup(&batchRouterDB, pf)
+		// go migrator.Setup(&routerDB, pf)
+		// go migrator.Setup(&batchRouterDB, pf)
 
 	}
 

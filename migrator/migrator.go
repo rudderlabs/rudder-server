@@ -2,12 +2,12 @@ package migrator
 
 import (
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/pathfinder"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/pathfinder"
-	"github.com/rudderlabs/rudder-server/gateway"
 
 	"github.com/spaolacci/murmur3"
 )
@@ -15,7 +15,7 @@ import (
 //Migrator is a handle to this object used in main.go
 type Migrator struct {
 	jobsDB *jobsdb.HandleT
-	pf		pathfinder.Pathfinder
+	pf     pathfinder.Pathfinder
 }
 
 func init() {
@@ -37,7 +37,7 @@ var (
 )
 
 func loadConfig() {
-	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 10000)
+	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 100)
 }
 
 func (migrator *Migrator) migrate() {
@@ -47,7 +47,7 @@ func (migrator *Migrator) migrate() {
 	for {
 		toQuery := dbReadBatchSize
 		logger.Info("Shanmukh: query size ", toQuery)
-		
+
 		// customValFilters := []string{gateway.CustomVal}
 		// customValFilters := []string{}
 		customValFilters := []string{gateway.CustomVal}
