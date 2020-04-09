@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 )
 
@@ -37,12 +38,13 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 
 	var s *session.Session
 	if config.AccessKeyID == "" || config.AccessKey == "" {
-		s = session.New(&aws.Config{
-			Region: aws.String(config.Region)})
+		s = session.Must(session.NewSession(&aws.Config{
+			Region: aws.String(config.Region),
+		}))
 	} else {
-		s = session.New(&aws.Config{
+		s = session.Must(session.NewSession(&aws.Config{
 			Region:      aws.String(config.Region),
-			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")})
+			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")}))
 	}
 
 	kc := kinesis.New(s)
@@ -66,7 +68,8 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 		PartitionKey: partitionKey,
 	})
 	if err != nil {
-		return 400, err.Error(), ""
+		logger.Debugf("==== error in kinesis ==== %v", err.Error())
+		return 500, err.Error(), ""
 	}
 	message := fmt.Sprintf("Message delivered at SequenceNumber: %v , shard Id: %v", putOutput.SequenceNumber, putOutput.ShardId)
 	return 200, "Success", message
