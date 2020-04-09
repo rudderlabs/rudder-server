@@ -35,9 +35,16 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 	var config Config
 	json.Unmarshal(configFromJSON, &config)
 
-	s := session.New(&aws.Config{
-		Region:      aws.String(config.Region),
-		Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")})
+	var s *session.Session
+	if config.AccessKeyID == "" || config.AccessKey == "" {
+		s = session.New(&aws.Config{
+			Region: aws.String(config.Region)})
+	} else {
+		s = session.New(&aws.Config{
+			Region:      aws.String(config.Region),
+			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")})
+	}
+
 	kc := kinesis.New(s)
 
 	streamName := aws.String(config.Stream)
