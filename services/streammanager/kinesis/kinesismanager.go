@@ -68,7 +68,7 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 		PartitionKey: partitionKey,
 	})
 	if err != nil {
-		logger.Debugf("==== error in kinesis ==== %v", err.Error())
+		logger.Errorf("error in kinesis :: %v", err.Error())
 		return 500, err.Error(), ""
 	}
 	message := fmt.Sprintf("Message delivered at SequenceNumber: %v , shard Id: %v", putOutput.SequenceNumber, putOutput.ShardId)
