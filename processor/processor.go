@@ -31,26 +31,26 @@ type HandleT struct {
 	transformer           *transformerHandleT
 	pStatsJobs            *misc.PerfStats
 	pStatsDBR             *misc.PerfStats
-	statGatewayDBR        *stats.RudderStats
+	statGatewayDBR        stats.RudderStats
 	pStatsDBW             *misc.PerfStats
-	statGatewayDBW        *stats.RudderStats
-	statRouterDBW         *stats.RudderStats
-	statBatchRouterDBW    *stats.RudderStats
-	statActiveUsers       *stats.RudderStats
+	statGatewayDBW        stats.RudderStats
+	statRouterDBW         stats.RudderStats
+	statBatchRouterDBW    stats.RudderStats
+	statActiveUsers       stats.RudderStats
 	userJobListMap        map[string][]*jobsdb.JobT
 	userEventsMap         map[string][]interface{}
 	userPQItemMap         map[string]*pqItemT
-	statJobs              *stats.RudderStats
-	statDBR               *stats.RudderStats
-	statDBW               *stats.RudderStats
-	statLoopTime          *stats.RudderStats
-	statSessionTransform  *stats.RudderStats
-	statUserTransform     *stats.RudderStats
-	statDestTransform     *stats.RudderStats
-	statListSort          *stats.RudderStats
-	marshalSingularEvents *stats.RudderStats
-	destProcessing        *stats.RudderStats
-	statNumDests          *stats.RudderStats
+	statJobs              stats.RudderStats
+	statDBR               stats.RudderStats
+	statDBW               stats.RudderStats
+	statLoopTime          stats.RudderStats
+	statSessionTransform  stats.RudderStats
+	statUserTransform     stats.RudderStats
+	statDestTransform     stats.RudderStats
+	statListSort          stats.RudderStats
+	marshalSingularEvents stats.RudderStats
+	destProcessing        stats.RudderStats
+	statNumDests          stats.RudderStats
 	destStats             map[string]*DestStatT
 	userToSessionIDMap    map[string]string
 	userJobPQ             pqT
@@ -60,11 +60,11 @@ type HandleT struct {
 
 type DestStatT struct {
 	id               string
-	numEvents        *stats.RudderStats
-	numOutputEvents  *stats.RudderStats
-	sessionTransform *stats.RudderStats
-	userTransform    *stats.RudderStats
-	destTransform    *stats.RudderStats
+	numEvents        stats.RudderStats
+	numOutputEvents  stats.RudderStats
+	sessionTransform stats.RudderStats
+	userTransform    stats.RudderStats
+	destTransform    stats.RudderStats
 }
 
 func newDestinationStat(destID string) *DestStatT {

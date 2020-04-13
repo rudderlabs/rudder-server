@@ -35,6 +35,11 @@ func (*HandleT) MaxReqSize() int {
 	return maxReqSize
 }
 
+// EnableRateLimit is true if rate limiting is enabled on gateway
+func IsEnableRateLimit() bool {
+	return enableRateLimit
+}
+
 //SetEnableRateLimit overrides enableRateLimit configuration and returns previous value
 func SetEnableRateLimit(b bool) bool {
 	prev := enableRateLimit

@@ -14,6 +14,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/dgraph-io/badger"
+	"github.com/onsi/ginkgo"
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -85,12 +86,13 @@ type HandleT struct {
 	recvCount                                 uint64
 	backendConfig                             backendconfig.BackendConfig
 	rateLimiter                               ratelimiter.RateLimiter
-	batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
+	stats                                     stats.Stats
+	batchSizeStat, batchTimeStat, latencyStat stats.RudderStats
 }
 
-func updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
+func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
 	for writeKey, count := range writeKeyStats {
-		writeKeyStatsD := stats.NewWriteKeyStat(bucket, stats.CountType, writeKey)
+		writeKeyStatsD := gateway.stats.NewWriteKeyStat(bucket, stats.CountType, writeKey)
 		writeKeyStatsD.Count(count)
 	}
 }
@@ -154,7 +156,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				continue
 			}
 			if !gjson.ValidBytes(body) {
-				req.done <- getStatus(InvalidJson)
+				req.done <- getStatus(InvalidJSON)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
@@ -258,18 +260,18 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		gateway.batchTimeStat.End()
 		gateway.batchSizeStat.Count(len(breq.batchRequest))
 		// update stats request wise
-		updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")
-		updateWriteKeyStats(writeKeySuccessStats, "gateway.write_key_successful_requests")
-		updateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
+		gateway.updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")
+		gateway.updateWriteKeyStats(writeKeySuccessStats, "gateway.write_key_successful_requests")
+		gateway.updateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
 		if enableRateLimit {
-			updateWriteKeyStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests")
+			gateway.updateWriteKeyStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests")
 		}
 		// update stats event wise
-		updateWriteKeyStats(writeKeyEventStats, "gateway.write_key_events")
-		updateWriteKeyStats(writeKeySuccessEventStats, "gateway.write_key_successful_events")
-		updateWriteKeyStats(writeKeyFailEventStats, "gateway.write_key_failed_events")
+		gateway.updateWriteKeyStats(writeKeyEventStats, "gateway.write_key_events")
+		gateway.updateWriteKeyStats(writeKeySuccessEventStats, "gateway.write_key_successful_events")
+		gateway.updateWriteKeyStats(writeKeyFailEventStats, "gateway.write_key_failed_events")
 		if enableDedup {
-			updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
+			gateway.updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
 		}
 	}
 }
@@ -530,10 +532,11 @@ Setup initializes this module:
 
 This function will block until backend config is initialy received.
 */
-func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, clearDB *bool) {
-	gateway.latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
-	gateway.batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
-	gateway.batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
+func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, s stats.Stats, clearDB *bool) {
+	gateway.stats = s
+	gateway.latencyStat = gateway.stats.NewStat("gateway.response_time", stats.TimerType)
+	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
+	gateway.batchTimeStat = gateway.stats.NewStat("gateway.batch_time", stats.TimerType)
 
 	if enableDedup {
 		gateway.openBadger(clearDB)
