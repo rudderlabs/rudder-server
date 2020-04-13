@@ -78,6 +78,15 @@ func SendEventRequest(options EventOptsT) int {
 	return SendBatchRequest(options.WriteKey, jsonPayload)
 }
 
+// SendLoadRequests Send bunch of requests to server
+func SendLoadRequests() {
+	for i := 0; i < 100000; i++ {
+		options := EventOptsT{GaVal: 3}
+		fmt.Println("request making...")
+		SendEventRequest(options)
+	}
+}
+
 // SendBatchRequest sends request to /v1/batch
 func SendBatchRequest(userNameForBasicAuth, jsonPayload string) int {
 	return SendRequest("/v1/batch", userNameForBasicAuth, jsonPayload)
