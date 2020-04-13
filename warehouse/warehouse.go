@@ -264,6 +264,16 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 			}
 		}
 	}
+	// add rudder_discards table
+	destType := warehouse.Destination.DestinationDefinition.Name
+	discards := map[string]string{
+		warehouseutils.ToCase(destType, "table_name"):   "string",
+		warehouseutils.ToCase(destType, "row_id"):       "string",
+		warehouseutils.ToCase(destType, "column_name"):  "string",
+		warehouseutils.ToCase(destType, "column_value"): "string",
+		warehouseutils.ToCase(destType, "received_at"):  "datetime",
+	}
+	schemaMap[warehouseutils.ToCase(destType, warehouseutils.DiscardsTable)] = discards
 	return schemaMap
 }
 
@@ -997,9 +1007,9 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		}
 		if job.DestinationType == "BQ" {
 			for _, columnName := range sortedTableColumnMap[tableName] {
-				if columnName == "uuid_ts" {
+				if columnName == warehouseutils.ToCase(job.DestinationType, "uuid_ts") {
 					// add uuid_ts to track when event was processed into load_file
-					columnData["uuid_ts"] = uuidTS.Format("2006-01-02 15:04:05 Z")
+					columnData[warehouseutils.ToCase(job.DestinationType, "uuid_ts")] = uuidTS.Format("2006-01-02 15:04:05 Z")
 					continue
 				}
 				columnVal, ok := columnData[columnName]
@@ -1016,12 +1026,42 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
-					if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
+					if dataTypeInSchema == "string" {
+						// cast to string since string type column can accomodate any kind of value
+						columnData[columnName] = fmt.Sprintf(`%v`, columnVal)
+					} else if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
 					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
 						columnData[columnName] = int(columnVal.(float64))
 					} else {
 						columnData[columnName] = nil
+						rowID, hasID := columnData[warehouseutils.ToCase(job.DestinationType, "id")]
+						receivedAt, hasReceivedAt := columnData[warehouseutils.ToCase(job.DestinationType, "received_at")]
+						if hasID && hasReceivedAt {
+							discardsTable := warehouseutils.ToCase(job.DestinationType, warehouseutils.DiscardsTable)
+							if _, ok := outputFileMap[discardsTable]; !ok {
+								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
+								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
+								defer gzWriter.CloseGZ()
+								if err != nil {
+									return nil, err
+								}
+								outputFileMap[discardsTable] = gzWriter
+							}
+
+							discardsData := map[string]interface{}{
+								"column_name":  columnName,
+								"column_value": fmt.Sprintf(`%v`, columnVal),
+								"received_at":  receivedAt,
+								"row_id":       rowID,
+								"table_name":   tableName,
+							}
+							dLine, err := json.Marshal(discardsData)
+							if err != nil {
+								return loadFileIDs, err
+							}
+							outputFileMap[discardsTable].WriteGZ(string(dLine) + "\n")
+						}
 						continue
 					}
 				}
@@ -1037,7 +1077,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 			var buff bytes.Buffer
 			csvWriter := csv.NewWriter(&buff)
 			for _, columnName := range sortedTableColumnMap[tableName] {
-				if columnName == "uuid_ts" {
+				if columnName == warehouseutils.ToCase(job.DestinationType, "uuid_ts") {
 					// add uuid_ts to track when event was processed into load_file
 					csvRow = append(csvRow, fmt.Sprintf("%v", uuidTS.Format(misc.RFC3339Milli)))
 					continue
@@ -1058,12 +1098,37 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
-					if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
+					if dataTypeInSchema == "string" {
+						// pass it along since string type column can accomodate any kind of value
+					} else if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
 					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
 						columnVal = int(columnVal.(float64))
 					} else {
 						csvRow = append(csvRow, "")
+						rowID, hasID := columnData[warehouseutils.ToCase(job.DestinationType, "id")]
+						receivedAt, hasReceivedAt := columnData[warehouseutils.ToCase(job.DestinationType, "received_at")]
+						if hasID && hasReceivedAt {
+							discardsTable := warehouseutils.ToCase(job.DestinationType, warehouseutils.DiscardsTable)
+							if _, ok := outputFileMap[discardsTable]; !ok {
+								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
+								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
+								defer gzWriter.CloseGZ()
+								if err != nil {
+									return nil, err
+								}
+								outputFileMap[discardsTable] = gzWriter
+							}
+
+							discardRow := []string{}
+							var dBuff bytes.Buffer
+							dCsvWriter := csv.NewWriter(&dBuff)
+							// sorted discard columns: column_name, column_value, received_at, row_id, table_name
+							discardRow = append(discardRow, columnName, fmt.Sprintf("%v", columnVal), fmt.Sprintf("%v", receivedAt), fmt.Sprintf("%v", rowID), tableName)
+							dCsvWriter.Write(discardRow)
+							dCsvWriter.Flush()
+							outputFileMap[discardsTable].WriteGZ(dBuff.String())
+						}
 						continue
 					}
 				}
