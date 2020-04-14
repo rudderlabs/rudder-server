@@ -1,15 +1,15 @@
 package migrator
 
 import (
+	"bufio"
+	"encoding/json"
+	"os"
+
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/pathfinder"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	"github.com/spaolacci/murmur3"
 )
 
 //Migrator is a handle to this object used in main.go
@@ -26,10 +26,15 @@ func init() {
 //Setup initializes the module
 func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) {
 	migrator.jobsDB = jobsDB
+	migrator.pf = pf
 	logger.Info("Shanmukh: inside migrator setup")
+	// rruntime.Go(func() {
+	// 	migrator.export()
+	// })
 	rruntime.Go(func() {
-		migrator.migrate()
+		migrator.importFromFile()
 	})
+
 }
 
 var (
@@ -37,52 +42,97 @@ var (
 )
 
 func loadConfig() {
-	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 100)
+	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 10000)
 }
 
-func (migrator *Migrator) migrate() {
+func (migrator *Migrator) importFromFile() {
 
-	logger.Info("Shanmukh: Migrator loop starting")
+	logger.Info("Shanmukh: import loop starting")
+	importFiles := []string{"0.json", "1.json", "2.json", "3.json"}
 
-	for {
-		toQuery := dbReadBatchSize
-		logger.Info("Shanmukh: query size ", toQuery)
+	for _, file := range importFiles {
+		migrator.readFromFileAndWriteToDB(file)
+		logger.Info("done : ", file)
+	}
+}
 
-		// customValFilters := []string{gateway.CustomVal}
-		// customValFilters := []string{}
-		customValFilters := []string{gateway.CustomVal}
-
-		retryList := migrator.jobsDB.GetToRetry(customValFilters, toQuery, nil) //TODO: First argument nil to be replaced with an appropriate version of []string{gateway.CustomVal}
-		toQuery -= len(retryList)
-		logger.Info("Shanmukh: retryList size ", len(retryList))
-		unprocessedList := migrator.jobsDB.GetUnprocessed(customValFilters, toQuery, nil) //TODO: First argument nil to be replaced with an appropriate version of []string{gateway.CustomVal}
-		logger.Info("Shanmukh: unprocessed size ", len(unprocessedList))
-		if len(unprocessedList)+len(retryList) == 0 {
-			logger.Debugf("Shanmukh: Migrator has done with so and so jobsDb. No GW Jobs to process.")
-			break
+func (migrator *Migrator) readFromFileAndWriteToDB(filePath string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	// Scan() reads next line and returns false when reached end or error
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !migrator.processSingleLine(line) {
+			return nil
 		}
-		combinedList := append(unprocessedList, retryList...)
-		migrator.filterAndMigrateLocal(combinedList)
+		// process the line
 	}
+	// check if Scan() finished because of error or because it reached end of file
+	return scanner.Err()
 }
 
-func (migrator *Migrator) filterAndMigrateLocal(jobList []*jobsdb.JobT) {
-	logger.Info("Shanmukh: inside filterAndMigrateLocal")
-
-	m := make(map[pathfinder.NodeMeta][]*jobsdb.JobT)
-	for _, job := range jobList {
-		eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
-		if !ok {
-			//TODO: This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.
-			logger.Debug("This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.")
-			continue
-		}
-		userID, ok := misc.GetAnonymousID(eventList[0])
-		nodeMeta := migrator.pf.GetNodeFromHash(murmur3.Sum32([]byte(userID)))
-		m[nodeMeta] = append(m[nodeMeta], job)
+func (migrator *Migrator) processSingleLine(line string) bool {
+	job := jobsdb.JobT{}
+	err := json.Unmarshal([]byte(line), &job)
+	if err != nil {
+		logger.Error(err)
+		return false
 	}
-
-	for nMeta, jobList := range m {
-		logger.Info(nMeta, jobList)
-	}
+	migrator.jobsDB.Store([]*jobsdb.JobT{&job})
+	return true
 }
+
+// func (migrator *Migrator) export() {
+
+// 	logger.Info("Shanmukh: Migrator loop starting")
+
+// 	// for {
+// 	toQuery := dbReadBatchSize
+
+// 	jobList := migrator.jobsDB.Get(toQuery)
+// 	migrator.filterAndMigrateLocal(jobList)
+// 	// }
+// }
+
+// func (migrator *Migrator) filterAndMigrateLocal(jobList []*jobsdb.JobT) {
+// 	logger.Info("Shanmukh: inside filterAndMigrateLocal")
+
+// 	m := make(map[pathfinder.NodeMeta][]*jobsdb.JobT)
+// 	for _, job := range jobList {
+// 		eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
+// 		if !ok {
+// 			//TODO: This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.
+// 			logger.Debug("This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.")
+// 			continue
+// 		}
+// 		userID, ok := misc.GetAnonymousID(eventList[0])
+
+// 		nodeMeta := migrator.pf.GetNodeFromHash(murmur3.Sum32([]byte(userID)))
+// 		m[nodeMeta] = append(m[nodeMeta], job)
+// 	}
+
+// 	for nMeta, jobList := range m {
+// 		file, err := os.OpenFile(fmt.Sprintf("%d.json", nMeta.GetNodeID()), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+
+// 		if err != nil {
+// 			log.Fatalf("failed creating file: %s", err)
+// 		}
+
+// 		datawriter := bufio.NewWriter(file)
+
+// 		for _, job := range jobList {
+// 			m, err := json.Marshal(job)
+// 			if err != nil {
+// 				logger.Error("Something went wrong in marshalling")
+// 			}
+// 			_, _ = datawriter.WriteString(string(m) + "\n")
+// 		}
+// 		logger.Info(nMeta, len(jobList))
+// 		datawriter.Flush()
+// 		file.Close()
+// 	}
+// }

@@ -17,6 +17,11 @@ type NodeMeta struct {
 	connectionString string
 }
 
+//GetNodeID is a getter for nodeID
+func (nMeta *NodeMeta) GetNodeID() int {
+	return nMeta.nodeID
+}
+
 //GetNodeMeta returns a NodeMeta struct
 func GetNodeMeta(nodeID int, connectionString string) NodeMeta {
 	return NodeMeta{nodeID: nodeID, connectionString: connectionString}
@@ -35,6 +40,5 @@ func (pf *Pathfinder) Setup(clusterState []NodeMeta) {
 
 //GetNodeFromHash returns NodeMeta from hash
 func (pf *Pathfinder) GetNodeFromHash(hash uint32) NodeMeta {
-	logger.Info("Shanmukh: inside GetNodeFromHash")
 	return pf.clusterState[int(hash)%len(pf.clusterState)]
 }

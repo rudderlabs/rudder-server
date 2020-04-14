@@ -52,13 +52,13 @@ job status. State can be one of
 ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
 */
 type JobStatusT struct {
-	JobID         int64
-	JobState      string //ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
-	AttemptNum    int
-	ExecTime      time.Time
-	RetryTime     time.Time
-	ErrorCode     string
-	ErrorResponse json.RawMessage
+	JobID         int64           `json:"JobID"`
+	JobState      string          `json:"JobState"` //ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
+	AttemptNum    int             `json:"AttemptNum"`
+	ExecTime      time.Time       `json:"ExecTime"`
+	RetryTime     time.Time       `json:"RetryTime"`
+	ErrorCode     string          `json:"ErrorCode"`
+	ErrorResponse json.RawMessage `json:"ErrorResponse"`
 }
 
 /*
@@ -67,14 +67,14 @@ by the system and LastJobStatus is populated when reading a processed
 job  while rest should be set by the user.
 */
 type JobT struct {
-	UUID          uuid.UUID
-	JobID         int64
-	CreatedAt     time.Time
-	ExpireAt      time.Time
-	CustomVal     string
-	EventPayload  json.RawMessage
-	LastJobStatus JobStatusT
-	Parameters    json.RawMessage
+	UUID          uuid.UUID       `json:"UUID"`
+	JobID         int64           `json:"JobID"`
+	CreatedAt     time.Time       `json:"CreatedAt"`
+	ExpireAt      time.Time       `json:"ExpireAt"`
+	CustomVal     string          `json:"CustomVal"`
+	EventPayload  json.RawMessage `json:"EventPayload"`
+	LastJobStatus JobStatusT      `json:"LastJobStatus"`
+	Parameters    json.RawMessage `json:"Parameters"`
 }
 
 //The struct fields need to be exposed to JSON package
@@ -324,6 +324,53 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	rruntime.Go(func() {
 		jd.mainCheckLoop()
 	})
+}
+
+/*
+Setup is used to initialize the HandleT structure.
+clearAll = True means it will remove all existing tables
+tablePrefix must be unique and is used to separate
+multiple users of JobsDB
+dsRetentionPeriod = A DS is not deleted if it has some activity
+in the retention time
+*/
+func (jd *HandleT) SetupForMigration(tablePrefix string, retentionPeriod time.Duration, toBackup bool) {
+
+	var err error
+	psqlInfo := GetConnectionString()
+	jd.assert(tablePrefix != "", "tablePrefix received is empty")
+	jd.tablePrefix = tablePrefix
+	jd.dsRetentionPeriod = retentionPeriod
+	jd.toBackup = toBackup
+	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]bool{}
+
+	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
+	jd.assertError(err)
+
+	err = jd.dbHandle.Ping()
+	jd.assertError(err)
+
+	logger.Infof("Connected to %s DB", tablePrefix)
+
+	jd.setupEnumTypes()
+	jd.setupJournal()
+	jd.recoverFromJournal()
+
+	//Refresh in memory list. We don't take lock
+	//here because this is called before anything
+	//else
+	jd.getDSList(true)
+	jd.getDSRangeList(true)
+
+	//If no DS present, add one
+	if len(jd.datasetList) == 0 {
+		jd.addNewDS(true, dataSetT{})
+	}
+
+	// Schema Migration: Created_at column should have a default now()
+	dList := jd.getDSList(false)
+	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
+
 }
 
 /*
@@ -2186,6 +2233,84 @@ func (jd *HandleT) CheckPGHealth() bool {
 	return true
 }
 
+//Get all jobs with no filters
+func (jd *HandleT) Get(count int) []*JobT {
+
+	//The order of lock is very important. The mainCheckLoop
+	//takes lock in this order so reversing this will cause
+	//deadlocks
+	jd.dsMigrationLock.RLock()
+	jd.dsListLock.RLock()
+	defer jd.dsMigrationLock.RUnlock()
+	defer jd.dsListLock.RUnlock()
+
+	dsList := jd.getDSList(false)
+	outJobs := make([]*JobT, 0)
+	jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
+	if count == 0 {
+		return outJobs
+	}
+	for _, ds := range dsList {
+		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
+		jobs, err := jd.getJobsDS(ds, count, false)
+		jd.assertError(err)
+		outJobs = append(outJobs, jobs...)
+		count -= len(jobs)
+		jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
+		if count == 0 {
+			break
+		}
+	}
+	//Release lock
+	return outJobs
+}
+
+func (jd *HandleT) getJobsDS(ds dataSetT, count int, withJobStatus bool) ([]*JobT, error) {
+	var rows *sql.Rows
+	var err error
+
+	// What does isEmptyResult do?
+	// if jd.isEmptyResult(ds, []string{"NP"}, customValFilters, parameterFilters) {
+	// 	logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+	// 	return []*JobT{}, nil
+	// }
+
+	var sqlStatement string
+
+	if withJobStatus {
+		//TODO: Need to fix this and handle properly
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
+											   %[1]s.event_payload, %[1]s.created_at,
+											   %[1]s.expire_at
+											 FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
+											 WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable)
+	} else {
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
+											   %[1]s.event_payload, %[1]s.created_at,
+											   %[1]s.expire_at
+											 FROM %[1]s`, ds.JobTable)
+	}
+
+	if count > 0 {
+		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
+	}
+
+	rows, err = jd.dbHandle.Query(sqlStatement)
+	jd.assertError(err)
+	defer rows.Close()
+
+	var jobList []*JobT
+	for rows.Next() {
+		var job JobT
+		err := rows.Scan(&job.JobID, &job.UUID, &job.Parameters, &job.CustomVal,
+			&job.EventPayload, &job.CreatedAt, &job.ExpireAt)
+		jd.assertError(err)
+		jobList = append(jobList, &job)
+	}
+
+	return jobList, nil
+}
+
 /*
 ================================================
 ==============Test Functions Below==============
@@ -2206,9 +2331,7 @@ func (jd *HandleT) dropTables() error {
 }
 
 func (jd *HandleT) setupEnumTypes() {
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+	psqlInfo := GetConnectionString()
 
 	dbHandle, err := sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
