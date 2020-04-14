@@ -45,19 +45,19 @@ We are building RudderStack because we believe open-source and cloud-prem is imp
 # Telemetry
 
 To help us improve RudderStack, we collect performance and diagnostic metrics about how you use it and how it's working. No customer data is present in the metrics.
-The metrics collection can be disabled by setting the variable `enableDiagnosis` to false in config/config.toml
 
-All the collected metrics are listed in config/config.toml under the Diagnostics section
-As of now these are the metrics which are being tracked
+The metrics collection can be disabled by setting the variable `enableDiagnostics` to false in `config/config.toml`
 
-1. enableServerStartMetric: Tracks every time when server starts
-2. enableConfigIdentifyMetric: Tracks when the config is fetched for the first time from control-plane
-3. enableServerStartedMetric: Tracks when the server is ready to accept requests
-4. enableConfigProcessedMetric: Tracks when the config is changed
-5. enableGatewayMetric: Tracks no of success/failed requests
-6. enableRouterMetric: Tracks no of success/aborted/retries requests for every router destination
-7. enableBatchRouterMetric: Tracks no of success/failed requests for every batch router destination
-8. enableDestinationFailuresMetric: Tracks destination failures
+Following are the metrics that are being collected. They are listed in `config/config.toml` under the Diagnostics section.
+
+1. _enableServerStartMetric_: Tracks every time when server starts
+2. _enableConfigIdentifyMetric_: Tracks when the config is fetched for the first time from control-plane
+3. _enableServerStartedMetric_: Tracks when the server is ready to accept requests
+4. _enableConfigProcessedMetric_: Tracks when the config is changed
+5. _enableGatewayMetric_: Tracks no. of success/failed requests
+6. _enableRouterMetric_: Tracks no. of success/aborted/retries requests for every router destination
+7. _enableBatchRouterMetric_: Tracks no. of success/failed requests for every batch router destination
+8. _enableDestinationFailuresMetric_: Tracks destination failures
 
 # Contribution
 
