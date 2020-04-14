@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -118,6 +119,10 @@ type StagingFileT struct {
 	CreatedAt time.Time
 }
 
+type ErrorResponseT struct {
+	Error string
+}
+
 func init() {
 	config.Initialize()
 	loadConfig()
@@ -164,6 +169,11 @@ func (wh *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == wh.destType {
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
+						if destination.Config != nil {
+							if destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
+								wh.syncLiveWarehouseStatus(source.ID, destination.ID) // consider a diff go-routine ?
+							}
+						}
 					}
 				}
 			}
@@ -171,7 +181,18 @@ func (wh *HandleT) backendConfigSubscriber() {
 		configSubscriberLock.Unlock()
 	}
 }
-
+func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string) {
+	rows, _ := wh.dbHandle.Query(fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at asc limit %d`, warehouseUploadsTable, sourceID, destinationID, 10)) // change limit count
+	var uploadIDs []int64
+	for rows.Next() {
+		var uploadID int64
+		rows.Scan(&uploadID)
+		uploadIDs = append(uploadIDs, uploadID)
+	}
+	for _, uploadID := range uploadIDs {
+		wh.recordDeliveryStatus(uploadID)
+	}
+}
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
 	sqlStatement := fmt.Sprintf(`SELECT id, location, source_id, schema, status, created_at
                                 FROM %[1]s
@@ -655,6 +676,60 @@ func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err e
 	return
 }
 
+func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
+	var (
+		sourceID      string
+		destinationID string
+		status        string
+		errorCode     string
+		errorResp     string
+		updatedAt     time.Time
+		tableName     string
+		tableStatus   string
+	)
+	successfulTableUploads := make([]string, 0)
+	failedTableUploads := make([]string, 0)
+
+	row := wh.dbHandle.QueryRow(fmt.Sprintf(`select source_id, destination_id, status, error, updated_at from %s where id=%d`, warehouseUploadsTable, uploadID))
+	row.Scan(&sourceID, &destinationID, &status, &errorResp, &updatedAt)
+	rows, _ := wh.dbHandle.Query(fmt.Sprintf(`select table_name, status from %s where wh_upload_id=%d`, warehouseTableUploadsTable, uploadID))
+	for rows.Next() {
+		rows.Scan(&tableName, &tableStatus)
+		if tableStatus == warehouseutils.ExportedDataState {
+			successfulTableUploads = append(successfulTableUploads, tableName)
+		} else {
+			failedTableUploads = append(failedTableUploads, tableName)
+		}
+	}
+	var errorRespB []byte
+	if errorResp == "{}" {
+		errorCode = "200"
+		errorRespB, _ = json.Marshal(ErrorResponseT{Error: errorResp})
+	} else {
+		errorCode = "400"
+		errorRespB = []byte(`{"success":"OK"}`)
+	}
+
+	payloadMap := map[string]interface{}{
+		"lastSyncedAt":             updatedAt,
+		"successful_table_uploads": successfulTableUploads,
+		"failed_table_uploads":     failedTableUploads,
+		"uploadID":                 uploadID,
+		"error":                    errorResp,
+	}
+	payload, _ := json.Marshal(payloadMap)
+	deliveryStatus := destinationdebugger.DeliveryStatusT{
+		DestinationID: destinationID,
+		SourceID:      sourceID,
+		Payload:       payload,
+		AttemptNum:    1,
+		JobState:      status,
+		ErrorCode:     errorCode,
+		ErrorResponse: errorRespB,
+	}
+	destinationdebugger.RecordEventDeliveryStatus(destinationID, &deliveryStatus)
+}
+
 func (wh *HandleT) initWorkers() {
 	for i := 0; i < noOfWorkers; i++ {
 		rruntime.Go(func() {
@@ -679,10 +754,12 @@ func (wh *HandleT) initWorkers() {
 								//Unreachable code. So not modifying the stat 'failed_uploads', which is reused later for copying.
 								warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 								warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
+								wh.recordDeliveryStatus(job.Upload.ID)
 								break
 							}
 						}
 						err := wh.SyncLoadFilesToWarehouse(&job)
+						wh.recordDeliveryStatus(job.Upload.ID)
 
 						createPlusUploadTimer.End()
 
