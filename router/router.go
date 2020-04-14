@@ -249,7 +249,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				//doubling sleep in between. That case will be handled in case above
 				logger.Debugf("[%v Router] :: Aborting the job and deleting from user map", rt.destID)
 				status.JobState = jobsdb.AbortedState
-				status.AttemptNum = job.LastJobStatus.AttemptNum
+				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
 				eventsAbortedStat.Increment()
 				break
 			default:
