@@ -426,7 +426,7 @@ func (rt *HandleT) statusInsertLoop() {
 				statusList = append(statusList, resp.status)
 
 				//tracking router errors
-				if diagnostics.EnableServerStartMetric {
+				if diagnostics.EnableDestinationFailuresMetric {
 					if resp.status.JobState == jobsdb.FailedState || resp.status.JobState == jobsdb.AbortedState {
 						var event string
 						if resp.status.JobState == jobsdb.FailedState {

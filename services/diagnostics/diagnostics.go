@@ -38,16 +38,17 @@ const (
 )
 
 var (
-	EnableDiagnostics           bool
-	endpoint                    string
-	writekey                    string
-	EnableServerStartMetric     bool
-	EnableConfigIdentifyMetric  bool
-	EnableServerStartedMetric   bool
-	EnableConfigProcessedMetric bool
-	EnableGatewayMetric         bool
-	EnableRouterMetric          bool
-	EnableBatchRouterMetric     bool
+	EnableDiagnostics               bool
+	endpoint                        string
+	writekey                        string
+	EnableServerStartMetric         bool
+	EnableConfigIdentifyMetric      bool
+	EnableServerStartedMetric       bool
+	EnableConfigProcessedMetric     bool
+	EnableGatewayMetric             bool
+	EnableRouterMetric              bool
+	EnableBatchRouterMetric         bool
+	EnableDestinationFailuresMetric bool
 )
 
 var diagnostics Diagnostics
@@ -76,7 +77,7 @@ func init() {
 func loadConfig() {
 	EnableDiagnostics = config.GetBool("Diagnosis.enableDiagnosis", true)
 	endpoint = config.GetString("Diagnosis.endpoint", "https://hosted.rudderlabs.com")
-	writekey = config.GetString("Diagnosis.writekey", "1Zn529y077Awo0fE7RiRrAVSgvs")
+	writekey = config.GetString("Diagnosis.writekey", "1aWPBIROQvFYW9FHxgc03nUsLza")
 	EnableServerStartMetric = config.GetBool("Diagnosis.enableServerStartMetric", true)
 	EnableConfigIdentifyMetric = config.GetBool("Diagnosis.enableConfigIdentifyMetric", true)
 	EnableServerStartedMetric = config.GetBool("Diagnosis.enableServerStartedMetric", true)
@@ -84,6 +85,7 @@ func loadConfig() {
 	EnableGatewayMetric = config.GetBool("Diagnosis.enableGatewayMetric", true)
 	EnableRouterMetric = config.GetBool("Diagnosis.enableRouterMetric", true)
 	EnableBatchRouterMetric = config.GetBool("Diagnosis.enableBatchRouterMetric", true)
+	EnableDestinationFailuresMetric = config.GetBool("Diagnosis.destinationFailures", true)
 }
 
 func Track(event string, properties map[string]interface{}) {
@@ -108,6 +110,7 @@ func DisableMetrics(enableMetrics bool) {
 		EnableGatewayMetric = false
 		EnableRouterMetric = false
 		EnableBatchRouterMetric = false
+		EnableDestinationFailuresMetric = false
 	}
 
 }

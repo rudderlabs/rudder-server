@@ -309,7 +309,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	}
 
 	//tracking batch router errors
-	if diagnostics.EnableServerStartMetric {
+	if diagnostics.EnableDestinationFailuresMetric {
 		if batchJobState == jobsdb.FailedState {
 			diagnostics.Track(diagnostics.BatchRouterFailed, map[string]interface{}{
 				diagnostics.BatchRouterDestination: brt.destType,
