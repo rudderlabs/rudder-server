@@ -30,20 +30,21 @@ import (
 )
 
 var (
-	jobQueryBatchSize         int
-	noOfWorkers               int
-	maxFailedCountForJob      int
-	mainLoopSleep             time.Duration
-	uploadFreqInS             int64
-	configSubscriberLock      sync.RWMutex
-	objectStorageDestinations []string
-	warehouseDestinations     []string
-	inProgressMap             map[string]bool
-	inProgressMapLock         sync.RWMutex
-	lastExecMap               map[string]int64
-	lastExecMapLock           sync.RWMutex
-	uploadedRawDataJobsCache  map[string]map[string]bool
-	warehouseURL              string
+	jobQueryBatchSize             int
+	noOfWorkers                   int
+	maxFailedCountForJob          int
+	mainLoopSleep                 time.Duration
+	uploadFreqInS                 int64
+	configSubscriberLock          sync.RWMutex
+	objectStorageDestinations     []string
+	warehouseDestinations         []string
+	inProgressMap                 map[string]bool
+	inProgressMapLock             sync.RWMutex
+	lastExecMap                   map[string]int64
+	lastExecMapLock               sync.RWMutex
+	uploadedRawDataJobsCache      map[string]map[string]bool
+	warehouseURL                  string
+	noOfRetriesToWarehouseService int
 )
 
 type HandleT struct {
@@ -246,13 +247,20 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, location string) (err 
 	jsonPayload, err := json.Marshal(&payload)
 
 	uri := fmt.Sprintf(`%s/v1/process`, warehouseURL)
-	_, err = brt.netHandle.Post(uri, "application/json; charset=utf-8",
-		bytes.NewBuffer(jsonPayload))
-	if err != nil {
-		logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
-	} else {
-		logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
+	backoff := 0
+	for i := 0; i < noOfRetriesToWarehouseService; i++ {
+		_, err = brt.netHandle.Post(uri, "application/json; charset=utf-8",
+			bytes.NewBuffer(jsonPayload))
+		if err != nil {
+			logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
+			backoff = 2*backoff + 1 // what if back off exceeds its data type capacity
+			time.Sleep(time.Duration(backoff) * time.Second)
+		} else {
+			logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
+			break
+		}
 	}
+
 	return
 }
 
@@ -623,6 +631,7 @@ func loadConfig() {
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
+	noOfRetriesToWarehouseService = config.GetInt("BatchRouter.noOfRetriesToWarehouseService", 10)
 }
 
 func init() {
