@@ -85,7 +85,7 @@ func loadConfig() {
 	EnableGatewayMetric = config.GetBool("Diagnosis.enableGatewayMetric", true)
 	EnableRouterMetric = config.GetBool("Diagnosis.enableRouterMetric", true)
 	EnableBatchRouterMetric = config.GetBool("Diagnosis.enableBatchRouterMetric", true)
-	EnableDestinationFailuresMetric = config.GetBool("Diagnosis.destinationFailures", true)
+	EnableDestinationFailuresMetric = config.GetBool("Diagnosis.enableDestinationFailuresMetric", true)
 }
 
 func Track(event string, properties map[string]interface{}) {

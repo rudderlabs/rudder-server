@@ -57,7 +57,7 @@ As of now these are the metrics which are being tracked
 5. enableGatewayMetric: Tracks no of success/failed requests
 6. enableRouterMetric: Tracks no of success/aborted/retries requests for every router destination
 7. enableBatchRouterMetric: Tracks no of success/failed requests for every batch router destination
-8. destinationFailures: Tracks destination failures
+8. enableDestinationFailuresMetric: Tracks destination failures
 
 # Contribution
 

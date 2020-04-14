@@ -196,7 +196,7 @@ enableConfigProcessedMetric = true
 enableGatewayMetric = true
 enableRouterMetric = true
 enableBatchRouterMetric = true
-destinationFailures = true
+enableDestinationFailuresMetric = true
 
 
 # runtime stats are collected using go runtime package and published to statsd
