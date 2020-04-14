@@ -333,14 +333,14 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 }
 
-func (brt *HandleT) trackRequestMetrics(batchReqDiagnosis batchRequestMetric) {
+func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {
 	if diagnostics.EnableBatchRouterMetric {
 		brt.batchRequestsMetricLock.Lock()
 		if brt.batchRequestsMetric == nil {
 			var batchRequestsMetric []batchRequestMetric
-			brt.batchRequestsMetric = append(batchRequestsMetric, batchReqDiagnosis)
+			brt.batchRequestsMetric = append(batchRequestsMetric, batchReqDiagnostics)
 		} else {
-			brt.batchRequestsMetric = append(brt.batchRequestsMetric, batchReqDiagnosis)
+			brt.batchRequestsMetric = append(brt.batchRequestsMetric, batchReqDiagnostics)
 		}
 		brt.batchRequestsMetricLock.Unlock()
 	}
@@ -691,7 +691,7 @@ func loadConfig() {
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
 	// Time period for diagnosis ticker
-	diagnosisTickerTime = config.GetDuration("Diagnosis.batchRouterTimePeriodInS", 600) * time.Second
+	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 }
 
 func init() {

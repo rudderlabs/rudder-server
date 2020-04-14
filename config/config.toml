@@ -195,8 +195,8 @@ enableFileNameInLog=false
 enableStackTrace=false
 
 
-[Diagnosis]
-enableDiagnosis = true
+[Diagnostics]
+enableDiagnostics = true
 gatewayTimePeriodInS = 60
 routerTimePeriodInS = 60
 batchRouterTimePeriodInS = 600

@@ -101,7 +101,7 @@ func loadConfig() {
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
-	diagnosisTickerTime = config.GetDuration("Diagnosis.routerTimePeriodInS", 60) * time.Second
+	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {

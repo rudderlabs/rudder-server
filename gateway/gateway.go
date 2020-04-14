@@ -93,7 +93,7 @@ func loadConfig() {
 	// Enable rate limit on incoming events. false by default
 	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
 	// Time period for diagnosis ticker
-	diagnosisTickerTime = config.GetDuration("Diagnosis.gatewayTimePeriodInS", 60) * time.Second
+	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
 }
 
 func init() {

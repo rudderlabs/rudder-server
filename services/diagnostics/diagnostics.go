@@ -75,17 +75,17 @@ func init() {
 }
 
 func loadConfig() {
-	EnableDiagnostics = config.GetBool("Diagnosis.enableDiagnosis", true)
-	endpoint = config.GetString("Diagnosis.endpoint", "https://hosted.rudderlabs.com")
-	writekey = config.GetString("Diagnosis.writekey", "1aWPBIROQvFYW9FHxgc03nUsLza")
-	EnableServerStartMetric = config.GetBool("Diagnosis.enableServerStartMetric", true)
-	EnableConfigIdentifyMetric = config.GetBool("Diagnosis.enableConfigIdentifyMetric", true)
-	EnableServerStartedMetric = config.GetBool("Diagnosis.enableServerStartedMetric", true)
-	EnableConfigProcessedMetric = config.GetBool("Diagnosis.enableConfigProcessedMetric", true)
-	EnableGatewayMetric = config.GetBool("Diagnosis.enableGatewayMetric", true)
-	EnableRouterMetric = config.GetBool("Diagnosis.enableRouterMetric", true)
-	EnableBatchRouterMetric = config.GetBool("Diagnosis.enableBatchRouterMetric", true)
-	EnableDestinationFailuresMetric = config.GetBool("Diagnosis.enableDestinationFailuresMetric", true)
+	EnableDiagnostics = config.GetBool("Diagnostics.enableDiagnostics", true)
+	endpoint = config.GetString("Diagnostics.endpoint", "https://hosted.rudderlabs.com")
+	writekey = config.GetString("Diagnostics.writekey", "1aWPBIROQvFYW9FHxgc03nUsLza")
+	EnableServerStartMetric = config.GetBool("Diagnostics.enableServerStartMetric", true)
+	EnableConfigIdentifyMetric = config.GetBool("Diagnostics.enableConfigIdentifyMetric", true)
+	EnableServerStartedMetric = config.GetBool("Diagnostics.enableServerStartedMetric", true)
+	EnableConfigProcessedMetric = config.GetBool("Diagnostics.enableConfigProcessedMetric", true)
+	EnableGatewayMetric = config.GetBool("Diagnostics.enableGatewayMetric", true)
+	EnableRouterMetric = config.GetBool("Diagnostics.enableRouterMetric", true)
+	EnableBatchRouterMetric = config.GetBool("Diagnostics.enableBatchRouterMetric", true)
+	EnableDestinationFailuresMetric = config.GetBool("Diagnostics.enableDestinationFailuresMetric", true)
 }
 
 func Track(event string, properties map[string]interface{}) {
