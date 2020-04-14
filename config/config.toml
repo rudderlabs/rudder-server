@@ -27,9 +27,6 @@
 #
 # RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH="./workspaceConfig.json"
 #
-# Eg 5:
-# [JobsDB]
-# enableBackup=false
 #
 # RSERVER_JOBS_DB_ENABLE_BACKUP=true
 #
@@ -84,8 +81,22 @@ maxMigrateOnce = 10
 maxTableSizeInMB = 300
 mainCheckSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
-enableBackup = true
 backupRowsBatchSize = 10000
+
+[JobsDB.backup]
+enabled = true
+
+[JobsDB.backup.gw]
+enabled=true
+pathPrefix=""
+
+[JobsDB.backup.rt]
+enabled=false
+failedOnly=false
+
+[JobsDB.backup.batch_rt]
+enabled=false
+failedOnly=false
 
 [Router]
 jobQueryBatchSize = 10000

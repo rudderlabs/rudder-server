@@ -40,15 +40,15 @@ import (
 )
 
 var (
-	maxProcess                                  int
-	gwDBRetention, routerDBRetention            time.Duration
-	enableProcessor, enableRouter, enableBackup bool
-	isReplayServer                              bool
-	enabledDestinations                         []backendconfig.DestinationT
-	configSubscriberLock                        sync.RWMutex
-	objectStorageDestinations                   []string
-	warehouseDestinations                       []string
-	warehouseMode                               string
+	warehouseMode                    string
+	maxProcess                       int
+	gwDBRetention, routerDBRetention time.Duration
+	enableProcessor, enableRouter    bool
+	isReplayServer                   bool
+	enabledDestinations              []backendconfig.DestinationT
+	configSubscriberLock             sync.RWMutex
+	objectStorageDestinations        []string
+	warehouseDestinations            []string
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -60,7 +60,6 @@ func loadConfig() {
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
-	enableBackup = config.GetBool("JobsDB.enableBackup", true)
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
@@ -173,16 +172,14 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	sourcedebugger.Setup()
 	backendconfig.Setup()
 
-	//Forcing enableBackup false if this server is for handling replayed events
+	//Forcing enableBackup false for gatewaydb if this server is for handling replayed events
 	if isReplayServer {
-		enableBackup = false
+		config.SetBool("JobsDB.backup.gw.enabled", false)
 	}
 
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, enableBackup)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention, false)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, false)
-
-	//Setup the three modules, the gateway, the router and the processor
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention)
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
 
 	if enableRouter {
 		go monitorDestRouters(&routerDB, &batchRouterDB)

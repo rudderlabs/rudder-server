@@ -39,9 +39,9 @@ func Initialize() {
 	viper.SetConfigFile(configPath)
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig() // Find and read the config file
-	// Don't panic if config.toml is not found. Use the default config values instead
+	// Don't panic if config.toml is not found or error with parsing. Use the default config values instead
 	if err != nil {
-		fmt.Println("Config toml file not found. Using the default values")
+		fmt.Println("[Config] :: Failed to parse Config toml, using default values", err)
 	}
 }
 
