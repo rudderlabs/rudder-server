@@ -186,6 +186,11 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				break
 			}
 			if !isSuccessStatus(respStatusCode) {
+				reqMetric.RequestRetries = reqMetric.RequestRetries + 1
+				if attempts == ser-1 {
+					reqMetric.RequestAborted = reqMetric.RequestAborted + 1
+					reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
+				}
 				//400 series error are client errors. Can't continue
 				if respStatusCode >= http.StatusBadRequest && respStatusCode <= http.StatusUnavailableForLegalReasons {
 					break
@@ -198,11 +203,6 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				logger.Debugf("[%v Router] :: worker %v sleeping for  %v ",
 					rt.destID, worker.workerID, worker.sleepTime)
 				time.Sleep(worker.sleepTime)
-				reqMetric.RequestRetries = reqMetric.RequestRetries + 1
-				if attempts == ser-1 {
-					reqMetric.RequestAborted = reqMetric.RequestAborted + 1
-					reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
-				}
 				continue
 			} else {
 				atomic.AddUint64(&rt.successCount, 1)
