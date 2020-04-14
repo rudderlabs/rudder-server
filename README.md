@@ -44,7 +44,7 @@ We are building RudderStack because we believe open-source and cloud-prem is imp
 
 # Telemetry
 
-To help us improve Rudderstack, we collect performance and diagnostic metrics about how you use it and how it's working. No customer data is present in the metrics.
+To help us improve RudderStack, we collect performance and diagnostic metrics about how you use it and how it's working. No customer data is present in the metrics.
 The metrics collection can be disabled by setting the variable `enableDiagnosis` to false in config/config.toml
 
 All the collected metrics are listed in config/config.toml under the Diagnostics section
