@@ -13,7 +13,7 @@ AsyncTestHelper provides synchronization methods to test goroutines.
 Example:
 
 	var (
-		asyncHelper testutils.AsyncTestHelper`
+		asyncHelper testutils.AsyncTestHelper
 	)
 
 	BeforeEach(func() {

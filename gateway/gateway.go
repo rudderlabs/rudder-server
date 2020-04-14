@@ -14,7 +14,6 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/dgraph-io/badger"
-	"github.com/onsi/ginkgo"
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
