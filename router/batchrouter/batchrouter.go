@@ -637,7 +637,6 @@ func loadConfig() {
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
-	noOfRetriesToWarehouseService = config.GetInt("BatchRouter.noOfRetriesToWarehouseService", 10)
 }
 
 func init() {
