@@ -35,7 +35,7 @@ func (*HandleT) MaxReqSize() int {
 	return maxReqSize
 }
 
-// EnableRateLimit is true if rate limiting is enabled on gateway
+// IsEnableRateLimit is true if rate limiting is enabled on gateway
 func IsEnableRateLimit() bool {
 	return enableRateLimit
 }

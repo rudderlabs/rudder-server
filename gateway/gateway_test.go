@@ -38,6 +38,8 @@ const (
 	TestRemoteAddress = "test.com"
 )
 
+var testTimeout = 5 * time.Second
+
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.SourcesT{
 	Sources: []backendconfig.SourceT{
@@ -97,7 +99,7 @@ func (c *context) Setup() {
 }
 
 func (c *context) Finish() {
-	c.asyncHelper.WaitWithTimeout(time.Minute)
+	c.asyncHelper.WaitWithTimeout(testTimeout)
 	c.mockCtrl.Finish()
 }
 
@@ -153,11 +155,55 @@ var _ = Describe("Gateway", func() {
 			gateway.Setup(c.mockBackendConfig, c.mockJobsDB, nil, c.mockStats, &clearDB)
 		})
 
+		assertJobMetadata := func(job *jobsdb.JobT, batchLength int) {
+			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
+			Expect(job.Parameters).To(Equal(json.RawMessage(fmt.Sprintf(`{"source_id": "%v"}`, SourceIDEnabled))))
+			Expect(job.CustomVal).To(Equal(CustomVal))
+
+			responseData := []byte(job.EventPayload)
+			receivedAt := gjson.GetBytes(responseData, "receivedAt")
+			writeKey := gjson.GetBytes(responseData, "writeKey")
+			requestIP := gjson.GetBytes(responseData, "requestIP")
+			batch := gjson.GetBytes(responseData, "batch")
+
+			Expect(time.Parse(misc.RFC3339Milli, receivedAt.String())).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+			Expect(writeKey.String()).To(Equal(WriteKeyEnabled))
+			Expect(requestIP.String()).To(Equal(TestRemoteAddress))
+			Expect(batch.Array()).To(HaveLen(batchLength))
+		}
+
+		createValidBody := func(customProperty string, customValue string) []byte {
+			validData := `{"data":{"string":"valid-json","nested":{"child":1}}}`
+			validDataWithProperty, _ := sjson.SetBytes([]byte(validData), customProperty, customValue)
+
+			return validDataWithProperty
+		}
+
+		assertJobBatchItem := func(payload gjson.Result) {
+			messageID := payload.Get("messageId")
+			anonymousID := payload.Get("anonymousId")
+			messageType := payload.Get("type")
+
+			// Assertions regarding batch message
+			Expect(messageID.Exists()).To(BeTrue())
+			Expect(messageID.String()).To(testutils.BeValidUUID())
+			Expect(anonymousID.Exists()).To(BeTrue())
+			Expect(anonymousID.String()).To(testutils.BeValidUUID())
+			Expect(messageType.Exists()).To(BeTrue())
+		}
+
+		stripJobPayload := func(payload gjson.Result) string {
+			strippedPayload, _ := sjson.Delete(payload.String(), "messageId")
+			strippedPayload, _ = sjson.Delete(strippedPayload, "anonymousId")
+			strippedPayload, _ = sjson.Delete(strippedPayload, "type")
+
+			return strippedPayload
+		}
+
 		// common tests for all web handlers
 		assertSingleMessageHandler := func(handlerType string, handler http.HandlerFunc) {
-			It("should accept valid requests, and store to jobsdb", func() {
-				validBody := `{"data":{"string":"valid-json","nested":{"child":1}}}`
-				validBodyJSON := json.RawMessage(validBody)
+			It("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func() {
+				validBody := createValidBody("custom-property", "custom-value")
 
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
@@ -174,40 +220,17 @@ var _ = Describe("Gateway", func() {
 					EXPECT().Store(gomock.Any()).
 					DoAndReturn(func(jobs []*jobsdb.JobT) map[uuid.UUID]string {
 						for _, job := range jobs {
-							Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
-							Expect(job.Parameters).To(Equal(json.RawMessage(fmt.Sprintf(`{"source_id": "%v"}`, SourceIDEnabled))))
-							Expect(job.CustomVal).To(Equal(CustomVal))
+							assertJobMetadata(job, 1)
 
 							responseData := []byte(job.EventPayload)
-							receivedAt := gjson.GetBytes(responseData, "receivedAt")
-							writeKey := gjson.GetBytes(responseData, "writeKey")
-							requestIP := gjson.GetBytes(responseData, "requestIP")
-							batch := gjson.GetBytes(responseData, "batch")
 							payload := gjson.GetBytes(responseData, "batch.0")
-							messageID := payload.Get("messageId")
-							anonymousID := payload.Get("anonymousId")
+
+							assertJobBatchItem(payload)
+
 							messageType := payload.Get("type")
-
-							strippedPayload, _ := sjson.Delete(payload.String(), "messageId")
-							strippedPayload, _ = sjson.Delete(strippedPayload, "anonymousId")
-							strippedPayload, _ = sjson.Delete(strippedPayload, "type")
-
-							// Assertions regarding response metadata
-							Expect(time.Parse(misc.RFC3339Milli, receivedAt.String())).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
-							Expect(writeKey.String()).To(Equal(WriteKeyEnabled))
-							Expect(requestIP.String()).To(Equal(TestRemoteAddress))
-
-							// Assertions regarding batch
-							Expect(batch.Array()).To(HaveLen(1))
-
-							// Assertions regarding batch message
-							Expect(messageID.Exists()).To(BeTrue())
-							Expect(messageID.String()).To(testutils.BeValidUUID())
-							Expect(anonymousID.Exists()).To(BeTrue())
-							Expect(anonymousID.String()).To(testutils.BeValidUUID())
-							Expect(messageType.Exists()).To(BeTrue())
 							Expect(messageType.String()).To(Equal(handlerType))
-							Expect(strippedPayload).To(MatchJSON(validBodyJSON))
+
+							Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
 						}
 						c.asyncHelper.ExpectAndNotifyCallback()()
 
@@ -215,7 +238,7 @@ var _ = Describe("Gateway", func() {
 					}).
 					Times(1)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 200, "OK")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 200, "OK")
 			})
 		}
 
@@ -224,6 +247,78 @@ var _ = Describe("Gateway", func() {
 				assertSingleMessageHandler(handlerType, handler)
 			}
 		}
+
+		It("should process multiple requests to all endpoints (except batch) in a batch", func() {
+			handlers := allHandlers(gateway)
+
+			handlerExpectation := func(handlerType string, handler http.HandlerFunc) *RequestExpectation {
+				// we add the handler type in custom property of request's body, to check that the type field is set correctly while batching
+				validBody := createValidBody("custom-property-type", handlerType)
+				validRequest := authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody))
+
+				return &RequestExpectation{
+					request:        validRequest,
+					handler:        handler,
+					responseStatus: 200,
+					responseBody:   "OK",
+				}
+			}
+
+			c.mockStatGatewayBatchSize.EXPECT().Count(6).
+				Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
+
+			callStart := c.mockStatGatewayBatchTime.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
+
+			callStore := c.mockJobsDB.
+				EXPECT().Store(gomock.Any()).
+				DoAndReturn(func(jobs []*jobsdb.JobT) map[uuid.UUID]string {
+					// will collect all message handler types, found in jobs send to Store function
+					typesFound := make(map[string]bool, 6)
+
+					for _, job := range jobs {
+						assertJobMetadata(job, 1)
+
+						responseData := []byte(job.EventPayload)
+						payload := gjson.GetBytes(responseData, "batch.0")
+
+						assertJobBatchItem(payload)
+
+						messageType := payload.Get("type").String()
+						Expect(stripJobPayload(payload)).To(MatchJSON(createValidBody("custom-property-type", messageType)))
+
+						typesFound[messageType] = true
+					}
+
+					// ensure all message handler types appear in jobs
+					for t := range handlers {
+						if t != "batch" {
+							_, found := typesFound[t]
+							Expect(found).To(BeTrue())
+						}
+					}
+
+					c.asyncHelper.ExpectAndNotifyCallback()()
+
+					return jobsToEmptyErrors(jobs)
+				}).
+				Times(1)
+
+			c.mockStatGatewayBatchTime.EXPECT().End().After(callStart).After(callStore).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
+
+			expectations := []*RequestExpectation{}
+			for t, h := range handlers {
+				if t != "batch" {
+					expectations = append(expectations, handlerExpectation(t, h))
+				}
+			}
+
+			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 6)
+			c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 6)
+			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
+			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 0)
+
+			expectBatch(expectations)
+		})
 	})
 
 	Context("Rate limits", func() {
@@ -418,9 +513,37 @@ func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, response
 
 		bodyBytes, _ := ioutil.ReadAll(rr.Body)
 		body := string(bodyBytes)
+
 		Expect(rr.Result().StatusCode).To(Equal(responseStatus))
 		Expect(body).To(Equal(responseBody))
-	}, time.Minute)
+	}, testTimeout)
+}
+
+type RequestExpectation struct {
+	request        *http.Request
+	handler        http.HandlerFunc
+	responseStatus int
+	responseBody   string
+}
+
+func expectBatch(expectations []*RequestExpectation) {
+	c := make(chan struct{})
+
+	for _, x := range expectations {
+		go func(e *RequestExpectation) {
+			defer GinkgoRecover()
+			expectHandlerResponse(e.handler, e.request, e.responseStatus, e.responseBody)
+			c <- struct{}{}
+		}(x)
+	}
+
+	misc.RunWithTimeout(func() {
+		for range expectations {
+			<-c
+		}
+	}, func() {
+		Fail("Not all batch requests responded on time")
+	}, testTimeout)
 }
 
 func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
