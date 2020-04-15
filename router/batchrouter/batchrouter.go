@@ -30,22 +30,21 @@ import (
 )
 
 var (
-	jobQueryBatchSize             int
-	noOfWorkers                   int
-	maxFailedCountForJob          int
-	maxRetriesToWarehouseService  int
-	mainLoopSleep                 time.Duration
-	uploadFreqInS                 int64
-	configSubscriberLock          sync.RWMutex
-	objectStorageDestinations     []string
-	warehouseDestinations         []string
-	inProgressMap                 map[string]bool
-	inProgressMapLock             sync.RWMutex
-	lastExecMap                   map[string]int64
-	lastExecMapLock               sync.RWMutex
-	uploadedRawDataJobsCache      map[string]map[string]bool
-	warehouseURL                  string
-	noOfRetriesToWarehouseService int
+	jobQueryBatchSize            int
+	noOfWorkers                  int
+	maxFailedCountForJob         int
+	maxRetriesToWarehouseService int
+	mainLoopSleep                time.Duration
+	uploadFreqInS                int64
+	configSubscriberLock         sync.RWMutex
+	objectStorageDestinations    []string
+	warehouseDestinations        []string
+	inProgressMap                map[string]bool
+	inProgressMapLock            sync.RWMutex
+	lastExecMap                  map[string]int64
+	lastExecMapLock              sync.RWMutex
+	uploadedRawDataJobsCache     map[string]map[string]bool
+	warehouseURL                 string
 )
 
 type HandleT struct {
@@ -288,7 +287,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			jobState = jobsdb.AbortedState
 		} else {
 			// change job state to abort state after maxRetriesToWarehouseService, if warehouse service is not reachable.
-			if job.LastJobStatus.AttemptNum >= maxRetriesToWarehouseService && postToWarehouseErr {
+			if jobState == jobsdb.FailedState && job.LastJobStatus.AttemptNum >= maxRetriesToWarehouseService && postToWarehouseErr {
 				jobState = jobsdb.AbortedState
 			}
 		}
