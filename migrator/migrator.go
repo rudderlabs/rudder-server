@@ -71,26 +71,26 @@ func (migrator *Migrator) readFromFileAndWriteToDB(filePath string) error {
 	jobList := []*jobsdb.JobT{}
 	for scanner.Scan() {
 		line := scanner.Text()
-		job, status := migrator.processSingleLine(line);
+		job, status := migrator.processSingleLine(line)
 		if !status {
 			return nil
 		}
-		jobList = append(jobList, job)
+		jobList = append(jobList, &job)
 		// process the line
 	}
-	
+
 	migrator.jobsDB.Store(jobList)
 
 	// check if Scan() finished because of error or because it reached end of file
 	return scanner.Err()
 }
 
-func (migrator *Migrator) processSingleLine(line string) jobsdb.JobT, bool {
+func (migrator *Migrator) processSingleLine(line string) (jobsdb.JobT, bool) {
 	job := jobsdb.JobT{}
 	err := json.Unmarshal([]byte(line), &job)
 	if err != nil {
 		logger.Error(err)
-		return nil, false
+		return jobsdb.JobT{}, false
 	}
 	return job, true
 }
@@ -136,7 +136,7 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 	for nMeta, jobList := range m {
 		var jobState string
 		var writeToFile bool
-		if (nMeta.GetNodeID() != misc.GetNodeID()) {
+		if nMeta.GetNodeID() != misc.GetNodeID() {
 			jobState = jobsdb.MigratedState
 			writeToFile = true
 		} else {
@@ -144,7 +144,7 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 			writeToFile = false
 		}
 
-		if (writeToFile) {
+		if writeToFile {
 			file, err := os.OpenFile(fmt.Sprintf("%d_%d_%d.json", misc.GetNodeID(), nMeta.GetNodeID(), fileIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
 			if err != nil {
