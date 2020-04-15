@@ -45,6 +45,15 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
+// BackupSettingsT is for capturing the backup
+// configuration from the config/env files to
+// instantiate jobdb correctly
+type BackupSettingsT struct {
+	BackupEnabled bool
+	FailedOnly    bool
+	PathPrefix    string
+}
+
 /*
 JobStatusT is used for storing status of the job. It is
 the responsibility of the user of this module to set appropriate
@@ -97,24 +106,23 @@ HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
-	dbHandle                                                                               *sql.DB
-	tablePrefix                                                                            string
-	datasetList                                                                            []dataSetT
-	datasetRangeList                                                                       []dataSetRangeT
-	dsListLock                                                                             sync.RWMutex
-	dsMigrationLock                                                                        sync.RWMutex
-	dsRetentionPeriod                                                                      time.Duration
-	dsEmptyResultCache                                                                     map[dataSetT]map[string]map[string]map[string]bool
-	dsCacheLock                                                                            sync.Mutex
-	toBackup                                                                               bool
-	jobsFileUploader                                                                       filemanager.FileManager
-	jobStatusFileUploader                                                                  filemanager.FileManager
-	statTableCount                                                                         *stats.RudderStats
-	statNewDSPeriod                                                                        *stats.RudderStats
-	isStatNewDSPeriodInitialized                                                           bool
-	statDropDSPeriod                                                                       *stats.RudderStats
-	isStatDropDSPeriodInitialized                                                          bool
-	tableFileDumpTimeStat, fileUploadTimeStat, totalTableDumpTimeStat, jobsdbQueryTimeStat *stats.RudderStats
+	dbHandle                      *sql.DB
+	tablePrefix                   string
+	datasetList                   []dataSetT
+	datasetRangeList              []dataSetRangeT
+	dsListLock                    sync.RWMutex
+	dsMigrationLock               sync.RWMutex
+	dsRetentionPeriod             time.Duration
+	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]bool
+	dsCacheLock                   sync.Mutex
+	BackupSettings                *BackupSettingsT
+	jobsFileUploader              filemanager.FileManager
+	statTableCount                *stats.RudderStats
+	statNewDSPeriod               *stats.RudderStats
+	isStatNewDSPeriodInitialized  bool
+	statDropDSPeriod              *stats.RudderStats
+	isStatDropDSPeriodInitialized bool
+	jobsdbQueryTimeStat           *stats.RudderStats
 }
 
 //The struct which is written to the journal
@@ -139,6 +147,26 @@ var dbErrorMap = map[string]string{
 	"Invalid Unicode":          "22P05",
 	"Invalid Escape Sequence":  "22025",
 	"Invalid Escape Character": "22019",
+}
+
+// return backup settings depending on jobdb type
+// the gateway, the router and the processor
+// BackupEnabled = true => all the jobsdb are eligible for backup
+// instanceBackupEnabled = true => the individual jobsdb too is eligible for backup
+// instanceBackupFailedAndAborted = true => the individual jobdb backsup failed and aborted jobs only
+// pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
+func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
+	config.Initialize()
+	// for replay server, we are changing the gateway backup to false in main.go
+	masterBackupEnabled := config.GetBool("JobsDB.backup.enabled", false)
+	instanceBackupEnabled := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix), false)
+	instanceBackupFailedAndAborted := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix), false)
+	pathPrefix := config.GetString(fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix), jd.tablePrefix)
+
+	backupSettings := BackupSettingsT{BackupEnabled: masterBackupEnabled && instanceBackupEnabled,
+		FailedOnly: instanceBackupFailedAndAborted, PathPrefix: strings.TrimSpace(pathPrefix)}
+
+	return &backupSettings
 }
 
 //Some helper functions
@@ -227,6 +255,7 @@ func loadConfig() {
 	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
+
 }
 
 func init() {
@@ -254,15 +283,16 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, toBackup bool) {
+func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration) {
 
 	var err error
 	psqlInfo := GetConnectionString()
 	jd.assert(tablePrefix != "", "tablePrefix received is empty")
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
-	jd.toBackup = toBackup
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]bool{}
+
+	jd.BackupSettings = jd.getBackUpSettings()
 
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
@@ -278,9 +308,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
 	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
-	jd.tableFileDumpTimeStat = stats.NewStat(fmt.Sprintf("jobsdb.%s_table_file_dump_time", jd.tablePrefix), stats.TimerType)
-	jd.fileUploadTimeStat = stats.NewStat(fmt.Sprintf("jobsdb.%s_file_upload_time", jd.tablePrefix), stats.TimerType)
-	jd.totalTableDumpTimeStat = stats.NewStat(fmt.Sprintf("jobsdb.%s_total_table_dump_time", jd.tablePrefix), stats.TimerType)
+
 	if clearAll {
 		jd.dropAllDS()
 		jd.delJournal()
@@ -306,16 +334,8 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	dList := jd.getDSList(false)
 	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
 
-	if jd.toBackup {
-		jd.jobsFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-			Config:   filemanager.GetProviderConfigFromEnv(),
-		})
-		jd.assertError(err)
-		jd.jobStatusFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-			Config:   filemanager.GetProviderConfigFromEnv(),
-		})
+	if jd.BackupSettings.BackupEnabled {
+		jd.jobsFileUploader, err = jd.getFileUploader()
 		jd.assertError(err)
 		rruntime.Go(func() {
 			jd.backupDSLoop()
@@ -931,7 +951,7 @@ func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 
 	//Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
-		if jd.toBackup {
+		if jd.BackupSettings.BackupEnabled {
 			jd.renameDS(ds, false)
 		} else {
 			jd.dropDS(ds, false)
@@ -1542,18 +1562,30 @@ func (jd *HandleT) backupDSLoop() {
 
 //backupDS writes both jobs and job_staus table to JOBS_BACKUP_STORAGE_PROVIDER
 func (jd *HandleT) backupDS(backupDSRange dataSetRangeT) bool {
-	// write jobs table to JOBS_BACKUP_STORAGE_PROVIDER
-	_, err := jd.backupTable(backupDSRange, false)
-	if err != nil {
-		logger.Errorf("Failed to backup table %v. Err: %v", backupDSRange.ds.JobTable, err)
-		return false
-	}
+	// return after backing up aboprted jobs if the flag is turned on
+	// backupDS is only called when BackupSettings.BackupEnabled is true
+	if jd.BackupSettings.FailedOnly {
+		logger.Info("[JobsDB] ::  backupDS: starting backing up aborted")
+		_, err := jd.backupTable(backupDSRange, false)
+		if err != nil {
+			logger.Errorf("[JobsDB] :: Failed to backup aborted jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
+			return false
+		}
+	} else {
+		// write jobs table to JOBS_BACKUP_STORAGE_PROVIDER
+		_, err := jd.backupTable(backupDSRange, false)
+		if err != nil {
+			logger.Errorf("[JobsDB] :: Failed to backup table %v. Err: %v", backupDSRange.ds.JobTable, err)
+			return false
+		}
 
-	// write job_status table to JOBS_BACKUP_STORAGE_PROVIDER
-	_, err = jd.backupTable(backupDSRange, true)
-	if err != nil {
-		logger.Errorf("Failed to backup table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
-		return false
+		// write job_status table to JOBS_BACKUP_STORAGE_PROVIDER
+		_, err = jd.backupTable(backupDSRange, true)
+		if err != nil {
+			logger.Errorf("[JobsDB] :: Failed to backup table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
+			return false
+		}
+
 	}
 
 	return true
@@ -1571,40 +1603,95 @@ func (jd *HandleT) removeTableJSONDumps() {
 	}
 }
 
+// getBackUpQuery individual queries for getting rows in json
+func (jd *HandleT) getBackUpQuery(backupDSRange dataSetRangeT, isJobStatusTable bool, offset int64) string {
+	var stmt string
+	if jd.BackupSettings.FailedOnly {
+		// check failed and aborted state, order the output based on destination, job_id, exec_time
+		stmt = fmt.Sprintf(`SELECT coalesce(json_agg(failed_jobs), '[]'::json) FROM (select * from %[1]s %[2]s INNER JOIN %[3]s %[4]s ON  %[2]s.job_id = %[4]s.job_id
+			where %[2]s.job_state in ('%[5]s', '%[6]s') order by  %[4]s.custom_val, %[2]s.job_id, %[2]s.exec_time asc limit %[7]d offset %[8]d) AS failed_jobs`, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job",
+			FailedState, AbortedState, backupRowsBatchSize, offset)
+	} else {
+		if isJobStatusTable {
+			stmt = fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s order by job_id asc limit %[2]d offset %[3]d) AS dump_table`, backupDSRange.ds.JobStatusTable, backupRowsBatchSize, offset)
+		} else {
+			stmt = fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s order by job_id asc limit %[2]d offset %[3]d) AS dump_table`, backupDSRange.ds.JobTable, backupRowsBatchSize, offset)
+		}
+	}
+
+	return stmt
+
+}
+
+// getFileUploader get a file uploader
+func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
+	if jd.jobsFileUploader != nil {
+		return jd.jobsFileUploader, nil
+	}
+	return filemanager.New(&filemanager.SettingsT{
+		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+		Config:   filemanager.GetProviderConfigFromEnv(),
+	})
+
+}
+
 func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable bool) (success bool, err error) {
-	jd.tableFileDumpTimeStat.Start()
-	jd.totalTableDumpTimeStat.Start()
-	var tableName, path, pathPrefix string
+	tableFileDumpTimeStat := stats.NewJobsDBStat("table_FileDump_TimeStat", stats.TimerType, jd.tablePrefix)
+	tableFileDumpTimeStat.Start()
+	totalTableDumpTimeStat := stats.NewJobsDBStat("total_TableDump_TimeStat", stats.TimerType, jd.tablePrefix)
+	totalTableDumpTimeStat.Start()
+	var tableName, path, pathPrefix, countStmt string
 	backupPathDirName := "/rudder-s3-dumps/"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	jd.assertError(err)
 
-	if isJobStatusTable {
+	// if backupOnlyAborted, process join of aborted rows of jobstatus with jobs table
+	// else upload entire jobstatus and jobs table from pre_drop
+	if jd.BackupSettings.FailedOnly {
+		logger.Info("[JobsDB] :: backupTable: backing up aborted/failed entries")
 		tableName = backupDSRange.ds.JobStatusTable
 		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
-		path = fmt.Sprintf(`%v%v.gz`, tmpDirPath+backupPathDirName, pathPrefix)
+		path = fmt.Sprintf(`%v%v_%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, AbortedState)
+		// checked failed and aborted state
+		countStmt = fmt.Sprintf(`SELECT COUNT(*) FROM %s where job_state in ('%s', '%s')`, tableName, FailedState, AbortedState)
 	} else {
-		tableName = backupDSRange.ds.JobTable
-		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
-		path = fmt.Sprintf(`%v%v.%v.%v.%v.%v.gz`,
-			tmpDirPath+backupPathDirName,
-			pathPrefix,
-			backupDSRange.minJobID,
-			backupDSRange.maxJobID,
-			backupDSRange.startTime,
-			backupDSRange.endTime,
-		)
-	}
-	logger.Infof("Backing up table: %v", tableName)
+		if isJobStatusTable {
+			tableName = backupDSRange.ds.JobStatusTable
+			pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
+			path = fmt.Sprintf(`%v%v.gz`, tmpDirPath+backupPathDirName, pathPrefix)
+			countStmt = fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tableName)
+		} else {
+			tableName = backupDSRange.ds.JobTable
+			pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
+			path = fmt.Sprintf(`%v%v.%v.%v.%v.%v.gz`,
+				tmpDirPath+backupPathDirName,
+				pathPrefix,
+				backupDSRange.minJobID,
+				backupDSRange.maxJobID,
+				backupDSRange.startTime,
+				backupDSRange.endTime,
+			)
+			countStmt = fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tableName)
+		}
 
-	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
+	}
+
+	logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
+
+	var totalCount int64
+	err = jd.dbHandle.QueryRow(countStmt).Scan(&totalCount)
 	if err != nil {
 		panic(err)
 	}
 
-	var totalCount int64
-	countStmt := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tableName)
-	err = jd.dbHandle.QueryRow(countStmt).Scan(&totalCount)
+	// return without doing anything as no jobs not present in ds
+	if totalCount == 0 {
+		//  Do not record stat for this case?
+		logger.Infof("[JobsDB] ::  not processiong table dump as no rows match criteria. %v", tableName)
+		return true, nil
+	}
+
+	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	if err != nil {
 		panic(err)
 	}
@@ -1614,7 +1701,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	var offset int64
 	for {
-		stmt := fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s order by job_id asc limit %[2]d offset %[3]d) AS dump_table`, tableName, backupRowsBatchSize, offset)
+		stmt := jd.getBackUpQuery(backupDSRange, isJobStatusTable, offset)
 		var rawJSONRows json.RawMessage
 		row := jd.dbHandle.QueryRow(stmt)
 		err = row.Scan(&rawJSONRows)
@@ -1644,34 +1731,40 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	}
 
 	gzWriter.CloseGZ()
-	jd.tableFileDumpTimeStat.End()
+	tableFileDumpTimeStat.End()
 
-	jd.fileUploadTimeStat.Start()
+	fileUploadTimeStat := stats.NewJobsDBStat("fileUpload_TimeStat", stats.TimerType, jd.tablePrefix)
+	fileUploadTimeStat.Start()
 	file, err := os.Open(path)
 	jd.assertError(err)
 	defer file.Close()
 
 	pathPrefixes := make([]string, 0)
-	pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
+	// For empty path prefix, don't need to add anything to the array
+	if jd.BackupSettings.PathPrefix != "" {
+		pathPrefixes = append(pathPrefixes, jd.BackupSettings.PathPrefix, config.GetEnv("INSTANCE_ID", "1"))
 
-	logger.Infof("Uploading backup table to object storage: %v", tableName)
-	var output filemanager.UploadOutput
-	if strings.HasPrefix(pathPrefix, fmt.Sprintf("%v_job_status_", jd.tablePrefix)) {
-		output, err = jd.jobStatusFileUploader.Upload(file, pathPrefixes...)
 	} else {
-		output, err = jd.jobsFileUploader.Upload(file, pathPrefixes...)
+		pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
 	}
+
+	logger.Infof("[JobsDB] :: Uploading backup table to object storage: %v", tableName)
+	var output filemanager.UploadOutput
+	// get a file uploader
+	fileUploader, errored := jd.getFileUploader()
+	jd.assertError(errored)
+	output, err = fileUploader.Upload(file, pathPrefixes...)
 
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
-		logger.Errorf("Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
+		logger.Errorf("[JobsDB] :: Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
 		return false, err
 	}
 
 	// Do not record stat in error case as error case time might be low and skew stats
-	jd.fileUploadTimeStat.End()
-	jd.totalTableDumpTimeStat.End()
-	logger.Infof("Backed up table: %v at %v", tableName, output.Location)
+	fileUploadTimeStat.End()
+	totalTableDumpTimeStat.End()
+	logger.Infof("[JobsDB] :: Backed up table: %v at %v", tableName, output.Location)
 	return true, nil
 }
 
@@ -1914,7 +2007,7 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		//Some of the source datasets would have been
 		migrateSrc := opPayloadJSON.From
 		for _, ds := range migrateSrc {
-			if jd.toBackup {
+			if jd.BackupSettings.BackupEnabled {
 				jd.renameDS(ds, true)
 			} else {
 				jd.dropDS(ds, true)
