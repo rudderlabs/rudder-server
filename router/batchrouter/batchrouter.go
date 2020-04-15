@@ -359,9 +359,10 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat.End()
 							setDestInProgress(batchJobs.BatchDestination, false)
 						case misc.ContainsString(warehouseDestinations, brt.destType):
-							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType)
+							objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config)
+							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 							destUploadStat.Start()
-							output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
+							output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
 							if output.Error == nil && output.Key != "" {
 								output.Error = brt.postToWarehouse(batchJobs, output.Key)
 								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)

@@ -32,6 +32,8 @@ type HandleT struct {
 	CurrentSchema map[string]map[string]string
 	Warehouse     warehouseutils.WarehouseT
 	Upload        warehouseutils.UploadT
+	CloudProvider string
+	ObjectStorage string
 }
 
 var dataTypesMap = map[string]string{
@@ -147,7 +149,20 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
-func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, accessKeyID, accessKey string) (err error) {
+func (sf *HandleT) authString() string {
+	var auth string
+	switch sf.CloudProvider {
+	case "AWS":
+		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s')`, warehouseutils.GetConfigValue("accessKeyID", sf.Warehouse), warehouseutils.GetConfigValue("accessKey", sf.Warehouse))
+		break
+	case "GCP", "AZURE":
+		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, warehouseutils.GetConfigValue("storageIntegration", sf.Warehouse))
+		break
+	}
+	return auth
+}
+
+func (sf *HandleT) loadTable(tableName string, columnMap map[string]string) (err error) {
 	status, err := warehouseutils.GetTableUploadStatus(sf.Upload.ID, tableName, sf.DbHandle)
 	if status == warehouseutils.ExportedDataState {
 		logger.Infof("SF: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
@@ -196,10 +211,10 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 	if err != nil {
 		panic(err)
 	}
-	loadFolder := warehouseutils.GetS3LocationFolder(csvObjectLocation)
+	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, csvObjectLocation)
 
-	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s') PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, accessKeyID, accessKey)
+	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, sf.authString())
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
@@ -259,15 +274,6 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 }
 
 func (sf *HandleT) load() (errList []error) {
-	var accessKeyID, accessKey string
-	config := sf.Warehouse.Destination.Config.(map[string]interface{})
-	if config["accessKeyID"] != nil {
-		accessKeyID = config["accessKeyID"].(string)
-	}
-	if config["accessKey"] != nil {
-		accessKey = config["accessKey"].(string)
-	}
-
 	logger.Infof("SF: Starting load for all %v tables\n", len(sf.Upload.Schema))
 	var wg sync.WaitGroup
 	wg.Add(len(sf.Upload.Schema))
@@ -277,7 +283,7 @@ func (sf *HandleT) load() (errList []error) {
 		cMap := columnMap
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
-			loadError := sf.loadTable(tName, cMap, accessKeyID, accessKey)
+			loadError := sf.loadTable(tName, cMap)
 			if loadError != nil {
 				errList = append(errList, loadError)
 			}
@@ -411,6 +417,8 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	sf.DbHandle = config.DbHandle
 	sf.Warehouse = config.Warehouse
 	sf.Upload = config.Upload
+	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(config.Warehouse.Destination.Config)
+	sf.ObjectStorage = warehouseutils.ObjectStorageType("SNOWFLAKE", config.Warehouse.Destination.Config)
 
 	currSchema, err := warehouseutils.GetCurrentSchema(sf.DbHandle, sf.Warehouse)
 	if err != nil {

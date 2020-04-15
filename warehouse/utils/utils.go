@@ -51,9 +51,14 @@ var (
 )
 
 var ObjectStorageMap = map[string]string{
-	"RS":        "S3",
-	"BQ":        "GCS",
-	"SNOWFLAKE": "S3",
+	"RS": "S3",
+	"BQ": "GCS",
+}
+
+var SnowflakeStorageMap = map[string]string{
+	"AWS":   "S3",
+	"GCP":   "GCS",
+	"AZURE": "AZURE_BLOB",
 }
 
 func init() {
@@ -335,6 +340,25 @@ func GetLoadFileLocation(dbHandle *sql.DB, sourceId string, destinationId string
 	return
 }
 
+// GetObjectFolder returns the folder path for the storage object based on the storage provider
+// eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
+func GetObjectFolder(provider string, location string) (folder string) {
+	switch provider {
+	case "S3":
+		folder = GetS3LocationFolder(location)
+		break
+	case "GCS":
+		folder = GetGCSLocationFolder(location, "gcs")
+		break
+	case "AZURE_BLOB":
+		folder = GetAzureBlobLocationFolder(location)
+		break
+	}
+	return
+}
+
+// GetS3Location parses path-style location http url to return in s3:// format
+// https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetS3Location(location string) (string, string) {
 	r, _ := regexp.Compile("\\.s3.*\\.amazonaws\\.com")
 	subLocation := r.FindString(location)
@@ -348,29 +372,56 @@ func GetS3Location(location string) (string, string) {
 	return region, str2
 }
 
+// GetS3LocationFolder returns the folder path for an s3 object
+// https://test-bucket.s3.amazonaws.com/myfolder/test-object.csv --> s3://test-bucket/myfolder
 func GetS3LocationFolder(location string) string {
 	_, s3Location := GetS3Location(location)
 	lastPos := strings.LastIndex(s3Location, "/")
 	return s3Location[:lastPos]
 }
 
-func GetGCSLocation(location string) string {
-	str1 := strings.Replace(location, "https", "gs", 1)
+// GetGCSLocation parses path-style location http url to return in gcs:// format
+// https://storage.googleapis.com/test-bucket/test-object.csv --> gcs://test-bucket/test-object.csv
+func GetGCSLocation(location string, tldFormat string) string {
+	str1 := strings.Replace(location, "https", tldFormat, 1)
 	str2 := strings.Replace(str1, "storage.googleapis.com/", "", 1)
 	return str2
+}
+
+// GetGCSLocationFolder returns the folder path for an gcs object
+// https://storage.googleapis.com/test-bucket/myfolder/test-object.csv --> gcs://test-bucket/myfolder
+func GetGCSLocationFolder(location string, tldFormat string) string {
+	s3Location := GetGCSLocation(location, tldFormat)
+	lastPos := strings.LastIndex(s3Location, "/")
+	return s3Location[:lastPos]
+}
+
+func GetGCSLocations(locations []string, tldFormat string) (gcsLocations []string, err error) {
+	for _, location := range locations {
+		gcsLocations = append(gcsLocations, GetGCSLocation(location, tldFormat))
+	}
+	return
+}
+
+// GetAzureBlobLocation parses path-style location http url to return in azure:// format
+// https://myproject.blob.core.windows.net/test-bucket/test-object.csv  --> azure://myproject.blob.core.windows.net/test-bucket/test-object.csv
+func GetAzureBlobLocation(location string) string {
+	str1 := strings.Replace(location, "https", "azure", 1)
+	return str1
+}
+
+// GetAzureBlobLocationFolder returns the folder path for an azure storage object
+// https://myproject.blob.core.windows.net/test-bucket/myfolder/test-object.csv  --> azure://myproject.blob.core.windows.net/myfolder
+func GetAzureBlobLocationFolder(location string) string {
+	s3Location := GetAzureBlobLocation(location)
+	lastPos := strings.LastIndex(s3Location, "/")
+	return s3Location[:lastPos]
 }
 
 func GetS3Locations(locations []string) (s3Locations []string, err error) {
 	for _, location := range locations {
 		_, s3Location := GetS3Location(location)
 		s3Locations = append(s3Locations, s3Location)
-	}
-	return
-}
-
-func GetGCSLocations(locations []string) (gcsLocations []string, err error) {
-	for _, location := range locations {
-		gcsLocations = append(gcsLocations, GetGCSLocation((location)))
 	}
 	return
 }
@@ -449,4 +500,33 @@ func GetIP() string {
 
 func GetSlaveWorkerId(workerIdx int, slaveID string) string {
 	return fmt.Sprintf("%v-%v-%v", GetIP(), workerIdx, slaveID)
+}
+
+func SnowflakeCloudProvider(config interface{}) string {
+	c := config.(map[string]interface{})
+	provider, ok := c["cloudProvider"].(string)
+	if provider == "" || !ok {
+		provider = "AWS"
+	}
+	return provider
+}
+
+func ObjectStorageType(destType string, config interface{}) string {
+	if destType != "SNOWFLAKE" {
+		return ObjectStorageMap[destType]
+	}
+	c := config.(map[string]interface{})
+	provider, ok := c["cloudProvider"].(string)
+	if provider == "" || !ok {
+		provider = "AWS"
+	}
+	return SnowflakeStorageMap[provider]
+}
+
+func GetConfigValue(key string, warehouse WarehouseT) (val string) {
+	config := warehouse.Destination.Config.(map[string]interface{})
+	if config[key] != nil {
+		val, _ = config[key].(string)
+	}
+	return val
 }

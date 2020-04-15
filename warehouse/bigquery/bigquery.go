@@ -181,7 +181,7 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 	if err != nil {
 		panic(err)
 	}
-	locations, err = warehouseutils.GetGCSLocations(locations)
+	locations, err = warehouseutils.GetGCSLocations(locations, "gs")
 	logger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
 	gcsRef := bigquery.NewGCSReference(locations...)
 	gcsRef.SourceFormat = bigquery.JSON
