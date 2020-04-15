@@ -48,7 +48,9 @@ type ErrorStoreT struct {
 //RudderError : to store rudder error
 type RudderError struct {
 	StartTime         int64
+	CrashTime         int64
 	ReadableStartTime string
+	ReadableCrashTime string
 	Message           string
 	StackTrace        string
 	Code              int
@@ -108,11 +110,15 @@ func RecordAppError(err error) {
 		return
 	}
 
+	crashTime := time.Now().Unix()
+
 	//TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
 	errorStore.Errors = append(errorStore.Errors,
 		RudderError{
 			StartTime:         AppStartTime,
+			CrashTime:         crashTime,
 			ReadableStartTime: fmt.Sprint(time.Unix(AppStartTime, 0)),
+			ReadableCrashTime: fmt.Sprint(time.Unix(crashTime, 0)),
 			Message:           err.Error(),
 			StackTrace:        stackTrace,
 			Code:              101,
