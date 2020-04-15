@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -629,4 +630,13 @@ func IsPostgresCompatible(connInfo string) bool {
 	}
 
 	return versionNum >= minPostgresVersion
+}
+
+//GetNodeID returns the nodeId of the current node
+func GetNodeID() int {
+	nodeID := config.GetInt("nodeId", -1)
+	if nodeID == -1 {
+		panic(errors.New("nodeId is not set. Please pass it as an env var RSERVER_NODE_ID"))
+	}
+	return nodeID
 }

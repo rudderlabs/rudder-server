@@ -53,7 +53,7 @@ ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
 */
 type JobStatusT struct {
 	JobID         int64           `json:"JobID"`
-	JobState      string          `json:"JobState"` //ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
+	JobState      string          `json:"JobState"` //ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrated, wont_migrate
 	AttemptNum    int             `json:"AttemptNum"`
 	ExecTime      time.Time       `json:"ExecTime"`
 	RetryTime     time.Time       `json:"RetryTime"`
@@ -167,6 +167,8 @@ const (
 	WaitingState      = "waiting"
 	WaitingRetryState = "waiting_retry"
 	InternalState     = "NP"
+	MigratedState     = "migrated"
+	WontMigrateState  = "wont_migrate"
 )
 
 var validJobStates = map[string]bool{
@@ -177,6 +179,8 @@ var validJobStates = map[string]bool{
 	AbortedState:      true,
 	WaitingState:      true,
 	WaitingRetryState: true,
+	MigratedState:     true,
+	WontMigrateState:  true,
 }
 
 func (jd *HandleT) checkValidJobState(stateFilters []string) {
@@ -1399,6 +1403,90 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	return jobList, nil
 }
 
+//SQLJobStatusT is a temporary struct to handle nulls from postgres query
+type SQLJobStatusT struct {
+	JobID         sql.NullInt64
+	JobState      sql.NullString //ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrated
+	AttemptNum    sql.NullInt64
+	ExecTime      sql.NullTime
+	RetryTime     sql.NullTime
+	ErrorCode     sql.NullString
+	ErrorResponse sql.NullString
+}
+
+func (jd *HandleT) getNonMigratedJobsDS(ds dataSetT, count int, withJobStatus bool) ([]*JobT, error) {
+	var rows *sql.Rows
+	var err error
+
+	// What does isEmptyResult do?
+	// if jd.isEmptyResult(ds, []string{"NP"}, customValFilters, parameterFilters) {
+	// 	logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+	// 	return []*JobT{}, nil
+	// }
+
+	var sqlStatement string
+
+	if withJobStatus {
+		sqlStatement = fmt.Sprintf(`
+		SELECT * FROM (
+			SELECT DISTINCT ON (%[1]s.job_id)
+				%[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
+				%[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at,
+				%[2]s.job_state, %[2]s.attempt, %[2]s.exec_time,
+				%[2]s.retry_time, %[2]s.error_code, %[2]s.error_response
+			FROM %[1]s LEFT JOIN %[2]s
+				ON %[1]s.job_id = %[2]s.job_id
+			order by %[1]s.job_id asc, %[2]s.id desc
+		) as temp WHERE job_state IS NULL OR (job_state != 'migrated' AND job_state != 'wont_migrate')`, ds.JobTable, ds.JobStatusTable)
+	} else {
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
+											   %[1]s.event_payload, %[1]s.created_at,
+											   %[1]s.expire_at
+											 FROM %[1]s`, ds.JobTable)
+	}
+
+	if count > 0 {
+		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
+	}
+
+	logger.Info(sqlStatement)
+	rows, err = jd.dbHandle.Query(sqlStatement)
+	jd.assertError(err)
+	defer rows.Close()
+
+	var jobList []*JobT
+	sqlJobStatusT := SQLJobStatusT{}
+	for rows.Next() {
+		var job JobT
+		err := rows.Scan(&job.JobID, &job.UUID, &job.Parameters, &job.CustomVal,
+			&job.EventPayload, &job.CreatedAt, &job.ExpireAt,
+			&sqlJobStatusT.JobState, &sqlJobStatusT.AttemptNum,
+			&sqlJobStatusT.ExecTime, &sqlJobStatusT.RetryTime,
+			&sqlJobStatusT.ErrorCode, &sqlJobStatusT.ErrorResponse)
+		if err != nil {
+			logger.Info(err)
+		}
+		jd.assertError(err)
+		if sqlJobStatusT.JobState.Valid {
+			rows.Scan(&job.JobID, &job.UUID, &job.Parameters, &job.CustomVal,
+				&job.EventPayload, &job.CreatedAt, &job.ExpireAt,
+				&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
+				&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
+				&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse)
+		}
+		jobList = append(jobList, &job)
+	}
+
+	return jobList, nil
+}
+
+func (jd *HandleT) deleteWontMigrateJobStatusDS(ds dataSetT) {
+	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE job_state='wont_migrate'`, ds.JobStatusTable)
+	logger.Info(sqlStatement)
+	_, err := jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+}
+
 func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
 
 	if len(statusList) == 0 {
@@ -2220,21 +2308,8 @@ func (jd *HandleT) GetExecuting(customValFilters []string, count int, parameterF
 	return jd.GetProcessed([]string{ExecutingState}, customValFilters, count, parameterFilters)
 }
 
-/*
-CheckPGHealth returns health check for pg database
-*/
-func (jd *HandleT) CheckPGHealth() bool {
-	rows, err := jd.dbHandle.Query(fmt.Sprintf(`SELECT 'Rudder DB Health Check'::text as message`))
-	if err != nil {
-		fmt.Println(err)
-		return false
-	}
-	defer rows.Close()
-	return true
-}
-
-//Get all jobs with no filters
-func (jd *HandleT) Get(count int) []*JobT {
+//GetNonMigrated all jobs with no filters
+func (jd *HandleT) GetNonMigrated(count int) []*JobT {
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -2252,7 +2327,7 @@ func (jd *HandleT) Get(count int) []*JobT {
 	}
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
-		jobs, err := jd.getJobsDS(ds, count, false)
+		jobs, err := jd.getNonMigratedJobsDS(ds, count, true)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
@@ -2265,50 +2340,29 @@ func (jd *HandleT) Get(count int) []*JobT {
 	return outJobs
 }
 
-func (jd *HandleT) getJobsDS(ds dataSetT, count int, withJobStatus bool) ([]*JobT, error) {
-	var rows *sql.Rows
-	var err error
+//PostMigrationCleanup removes all the entries from job_status_tables that are of state 'wont_migrate'
+func (jd *HandleT) PostMigrationCleanup() {
+	jd.dsListLock.RLock()
+	defer jd.dsListLock.RUnlock()
 
-	// What does isEmptyResult do?
-	// if jd.isEmptyResult(ds, []string{"NP"}, customValFilters, parameterFilters) {
-	// 	logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
-	// 	return []*JobT{}, nil
-	// }
+	dsList := jd.getDSList(false)
 
-	var sqlStatement string
-
-	if withJobStatus {
-		//TODO: Need to fix this and handle properly
-		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
-											   %[1]s.event_payload, %[1]s.created_at,
-											   %[1]s.expire_at
-											 FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
-											 WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable)
-	} else {
-		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
-											   %[1]s.event_payload, %[1]s.created_at,
-											   %[1]s.expire_at
-											 FROM %[1]s`, ds.JobTable)
+	for _, ds := range dsList {
+		jd.deleteWontMigrateJobStatusDS(ds)
 	}
+}
 
-	if count > 0 {
-		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
+/*
+CheckPGHealth returns health check for pg database
+*/
+func (jd *HandleT) CheckPGHealth() bool {
+	rows, err := jd.dbHandle.Query(fmt.Sprintf(`SELECT 'Rudder DB Health Check'::text as message`))
+	if err != nil {
+		fmt.Println(err)
+		return false
 	}
-
-	rows, err = jd.dbHandle.Query(sqlStatement)
-	jd.assertError(err)
 	defer rows.Close()
-
-	var jobList []*JobT
-	for rows.Next() {
-		var job JobT
-		err := rows.Scan(&job.JobID, &job.UUID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.CreatedAt, &job.ExpireAt)
-		jd.assertError(err)
-		jobList = append(jobList, &job)
-	}
-
-	return jobList, nil
+	return true
 }
 
 /*
@@ -2345,7 +2399,9 @@ func (jd *HandleT) setupEnumTypes() {
                                               'succeeded',
                                               'waiting_retry',
                                               'failed',
-                                              'aborted');
+											  'aborted',
+											  'migrated',
+											  'wont_migrate');
                                      EXCEPTION
                                         WHEN duplicate_object THEN null;
                             END $$;`

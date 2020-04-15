@@ -9,6 +9,7 @@ import (
 //Pathfinder struct holds the current cluster state based on which it maps users to corresponding nodes
 type Pathfinder struct {
 	clusterState []NodeMeta
+	// version			int
 }
 
 //NodeMeta struct holds the nodeId and its connection Info
