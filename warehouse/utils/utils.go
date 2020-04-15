@@ -30,6 +30,8 @@ const (
 	ExportingDataFailedState      = "exporting_data_failed"
 	ExportedDataState             = "exported_data"
 	AbortedState                  = "aborted"
+	GeneratingStagingFileFailed   = "generating_staging_file_failed"
+	GeneratedStagingFile          = "generated_staging_file"
 )
 
 const (
