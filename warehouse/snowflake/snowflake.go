@@ -52,7 +52,7 @@ var primaryKeyMap = map[string]string{
 var partitionKeyMap = map[string]string{
 	"USERS":      "ID",
 	"IDENTIFIES": "ID",
-	strings.ToUpper(warehouseutils.DiscardsTable): "ROW_ID, COLUMN_NAME",
+	strings.ToUpper(warehouseutils.DiscardsTable): "ROW_ID, COLUMN_NAME, TABLE_NAME",
 }
 
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
@@ -251,7 +251,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 
 	var additionalJoinClause string
 	if tableName == strings.ToUpper(warehouseutils.DiscardsTable) {
-		additionalJoinClause = fmt.Sprintf(`AND original.%[1]s = staging.%[1]s`, "COLUMN_NAME")
+		additionalJoinClause = fmt.Sprintf(`AND original.%[1]s = staging.%[1]s`, "TABLE_NAME")
 	}
 
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original

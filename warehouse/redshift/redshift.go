@@ -58,7 +58,7 @@ var primaryKeyMap = map[string]string{
 var partitionKeyMap = map[string]string{
 	"users":                      "id",
 	"identifies":                 "id",
-	warehouseutils.DiscardsTable: "row_id, column_name",
+	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
@@ -314,7 +314,7 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, buck
 
 	var additionalJoinClause string
 	if tableName == warehouseutils.DiscardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]s.%[2]s.%[3]s`, rs.Namespace, tableName, "column_name")
+		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]s.%[2]s.%[3]s`, rs.Namespace, tableName, "table_name")
 	}
 
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s)`, rs.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)

@@ -46,7 +46,7 @@ var dataTypesMap = map[string]bigquery.FieldType{
 var partitionKeyMap = map[string]string{
 	"users":                      "id",
 	"identifies":                 "id",
-	warehouseutils.DiscardsTable: "row_id, column_name",
+	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
 func (bq *HandleT) setUploadError(err error, state string) {
