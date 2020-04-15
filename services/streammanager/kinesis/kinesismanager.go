@@ -3,6 +3,7 @@ package kinesis
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -12,6 +13,8 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+var abortableErrors = []string{}
+
 // Config is the config that is required to send data to Kinesis
 type Config struct {
 	Region       string
@@ -19,6 +22,13 @@ type Config struct {
 	AccessKeyID  string
 	AccessKey    string
 	UseMessageID bool
+}
+
+func init() {
+	abortableErrors = []string{"AccessDeniedException", "IncompleteSignature", "InvalidAction", "InvalidClientTokenId", "InvalidParameterCombination",
+		"InvalidParameterValue", "InvalidQueryParameter", "MissingAuthenticationToken", "MissingParameter", "InvalidArgumentException",
+		"KMSAccessDeniedException", "KMSDisabledException", "KMSInvalidStateException", "KMSNotFoundException", "KMSOptInRequired",
+		"ResourceNotFoundException", "UnrecognizedClientException", "ValidationError"}
 }
 
 // Produce creates a producer and send data to Kinesis.
@@ -69,8 +79,25 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 	})
 	if err != nil {
 		logger.Errorf("error in kinesis :: %v", err.Error())
-		return 500, err.Error(), ""
+		statusCode := GetStatusCodeFromError(err)
+		return statusCode, err.Error(), ""
 	}
 	message := fmt.Sprintf("Message delivered at SequenceNumber: %v , shard Id: %v", putOutput.SequenceNumber, putOutput.ShardId)
 	return 200, "Success", message
+}
+
+// GetStatusCodeFromError parses the error and returns the status so that event gets retried or failed.
+func GetStatusCodeFromError(err error) int {
+	statusCode := 500
+
+	errorString := err.Error()
+
+	for _, s := range abortableErrors {
+		if strings.Contains(errorString, s) {
+			statusCode = 400
+			break
+		}
+	}
+
+	return statusCode
 }
