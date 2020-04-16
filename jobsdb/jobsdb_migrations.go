@@ -21,6 +21,38 @@ func (jd *HandleT) SetupForMigration(tablePrefix string, retentionPeriod time.Du
 	//TODO: Create jobsDB tables etc.,
 }
 
+//GetNonMigrated all jobs with no filters
+func (jd *HandleT) GetNonMigrated(count int) []*JobT {
+
+	//The order of lock is very important. The mainCheckLoop
+	//takes lock in this order so reversing this will cause
+	//deadlocks
+	jd.dsMigrationLock.RLock()
+	jd.dsListLock.RLock()
+	defer jd.dsMigrationLock.RUnlock()
+	defer jd.dsListLock.RUnlock()
+
+	dsList := jd.getDSList(false)
+	outJobs := make([]*JobT, 0)
+	jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
+	if count == 0 {
+		return outJobs
+	}
+	for _, ds := range dsList {
+		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
+		jobs, err := jd.getNonMigratedJobsDS(ds, count)
+		jd.assertError(err)
+		outJobs = append(outJobs, jobs...)
+		count -= len(jobs)
+		jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
+		if count == 0 {
+			break
+		}
+	}
+	//Release lock
+	return outJobs
+}
+
 //SQLJobStatusT is a temporary struct to handle nulls from postgres query
 type SQLJobStatusT struct {
 	JobID         sql.NullInt64
@@ -32,7 +64,7 @@ type SQLJobStatusT struct {
 	ErrorResponse sql.NullString
 }
 
-func (jd *HandleT) getNonMigratedJobsDS(ds dataSetT, count int, withJobStatus bool) ([]*JobT, error) {
+func (jd *HandleT) getNonMigratedJobsDS(ds dataSetT, count int) ([]*JobT, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -44,8 +76,7 @@ func (jd *HandleT) getNonMigratedJobsDS(ds dataSetT, count int, withJobStatus bo
 
 	var sqlStatement string
 
-	if withJobStatus {
-		sqlStatement = fmt.Sprintf(`
+	sqlStatement = fmt.Sprintf(`
 		SELECT * FROM (
 			SELECT DISTINCT ON (%[1]s.job_id)
 				%[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
@@ -56,12 +87,6 @@ func (jd *HandleT) getNonMigratedJobsDS(ds dataSetT, count int, withJobStatus bo
 				ON %[1]s.job_id = %[2]s.job_id
 			order by %[1]s.job_id asc, %[2]s.id desc
 		) as temp WHERE job_state IS NULL OR (job_state != 'migrated' AND job_state != 'wont_migrate')`, ds.JobTable, ds.JobStatusTable)
-	} else {
-		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
-											   %[1]s.event_payload, %[1]s.created_at,
-											   %[1]s.expire_at
-											 FROM %[1]s`, ds.JobTable)
-	}
 
 	if count > 0 {
 		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
@@ -99,6 +124,18 @@ func (jd *HandleT) getNonMigratedJobsDS(ds dataSetT, count int, withJobStatus bo
 	return jobList, nil
 }
 
+//PostMigrationCleanup removes all the entries from job_status_tables that are of state 'wont_migrate'
+func (jd *HandleT) PostMigrationCleanup() {
+	jd.dsListLock.RLock()
+	defer jd.dsListLock.RUnlock()
+
+	dsList := jd.getDSList(false)
+
+	for _, ds := range dsList {
+		jd.deleteWontMigrateJobStatusDS(ds)
+	}
+}
+
 func (jd *HandleT) deleteWontMigrateJobStatusDS(ds dataSetT) {
 	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE job_state='wont_migrate'`, ds.JobStatusTable)
 	logger.Info(sqlStatement)
@@ -113,48 +150,4 @@ func (jd *HandleT) StoreImportedJobs(jobList []*JobT) map[uuid.UUID]string {
 
 	dsList := jd.getDSList(false)
 	return jd.storeJobsDS(dsList[len(dsList)-1], true, true, jobList)
-}
-
-//GetNonMigrated all jobs with no filters
-func (jd *HandleT) GetNonMigrated(count int) []*JobT {
-
-	//The order of lock is very important. The mainCheckLoop
-	//takes lock in this order so reversing this will cause
-	//deadlocks
-	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
-	defer jd.dsMigrationLock.RUnlock()
-	defer jd.dsListLock.RUnlock()
-
-	dsList := jd.getDSList(false)
-	outJobs := make([]*JobT, 0)
-	jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
-	if count == 0 {
-		return outJobs
-	}
-	for _, ds := range dsList {
-		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
-		jobs, err := jd.getNonMigratedJobsDS(ds, count, true)
-		jd.assertError(err)
-		outJobs = append(outJobs, jobs...)
-		count -= len(jobs)
-		jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
-		if count == 0 {
-			break
-		}
-	}
-	//Release lock
-	return outJobs
-}
-
-//PostMigrationCleanup removes all the entries from job_status_tables that are of state 'wont_migrate'
-func (jd *HandleT) PostMigrationCleanup() {
-	jd.dsListLock.RLock()
-	defer jd.dsListLock.RUnlock()
-
-	dsList := jd.getDSList(false)
-
-	for _, ds := range dsList {
-		jd.deleteWontMigrateJobStatusDS(ds)
-	}
 }
