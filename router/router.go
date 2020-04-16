@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -38,6 +40,9 @@ type HandleT struct {
 	isEnabled             bool
 	toClearFailJobIDMutex sync.Mutex
 	toClearFailJobIDMap   map[int][]string
+	requestsMetricLock    sync.RWMutex
+	diagnosisTicker       *time.Ticker
+	requestsMetric        []requestMetric
 }
 
 type jobResponseT struct {
@@ -65,11 +70,18 @@ type workerT struct {
 var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
 	maxFailedCountForJob                                                           int
-	readSleep, minSleep, maxSleep, maxStatusUpdateWait                             time.Duration
+	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
 	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
 	customDestinations                                                             []string
 )
+
+type requestMetric struct {
+	RequestRetries       int
+	RequestAborted       int
+	RequestSuccess       int
+	RequestCompletedTime time.Duration
+}
 
 func isSuccessStatus(status int) bool {
 	return status >= 200 && status < 300
@@ -90,6 +102,8 @@ func loadConfig() {
 	useTestSink = config.GetBool("Router.useTestSink", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
+	// Time period for diagnosis ticker
+	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
 	customDestinations = []string{"KINESIS"}
 }
 
@@ -162,7 +176,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				panic(fmt.Errorf("previousFailedJobID:%d != job.JobID:%d", previousFailedJobID, job.JobID))
 			}
 		}
-
+		var reqMetric requestMetric
+		diagnosisStartTime := time.Now()
 		//We can execute thoe job
 		for attempts = 0; attempts < ser; attempts++ {
 			logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", rt.destID, attempts, ser)
@@ -181,6 +196,11 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				break
 			}
 			if !isSuccessStatus(respStatusCode) {
+				reqMetric.RequestRetries = reqMetric.RequestRetries + 1
+				if attempts == ser-1 {
+					reqMetric.RequestAborted = reqMetric.RequestAborted + 1
+					reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
+				}
 				//400 series error are client errors. Can't continue
 				if respStatusCode >= http.StatusBadRequest && respStatusCode <= http.StatusUnavailableForLegalReasons {
 					break
@@ -206,10 +226,13 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				}
 				logger.Debugf("[%v Router] :: sleep for worker %v decreased to %v",
 					rt.destID, worker.workerID, worker.sleepTime)
+				// stop time - success
+				reqMetric.RequestSuccess = reqMetric.RequestSuccess + 1
+				reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
 				break
 			}
 		}
-
+		rt.trackRequestMetrics(reqMetric)
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			ExecTime:      time.Now(),
@@ -293,6 +316,19 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		destinationdebugger.RecordEventDeliveryStatus(paramaters.DestinationID, &deliveryStatus)
 
 		batchTimeStat.End()
+	}
+}
+
+func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
+	if diagnostics.EnableRouterMetric {
+		rt.requestsMetricLock.Lock()
+		if rt.requestsMetric == nil {
+			var requestsMetric []requestMetric
+			rt.requestsMetric = append(requestsMetric, reqMetric)
+		} else {
+			rt.requestsMetric = append(rt.requestsMetric, reqMetric)
+		}
+		rt.requestsMetricLock.Unlock()
 	}
 }
 
@@ -401,6 +437,25 @@ func (rt *HandleT) statusInsertLoop() {
 			var statusList []*jobsdb.JobStatusT
 			for _, resp := range responseList {
 				statusList = append(statusList, resp.status)
+
+				//tracking router errors
+				if diagnostics.EnableDestinationFailuresMetric {
+					if resp.status.JobState == jobsdb.FailedState || resp.status.JobState == jobsdb.AbortedState {
+						var event string
+						if resp.status.JobState == jobsdb.FailedState {
+							event = diagnostics.RouterFailed
+						} else {
+							event = diagnostics.RouterAborted
+						}
+						diagnostics.Track(event, map[string]interface{}{
+							diagnostics.RouterDestination: rt.destID,
+							diagnostics.UserID:            resp.userID,
+							diagnostics.RouterAttemptNum:  resp.status.AttemptNum,
+							diagnostics.ErrorCode:         resp.status.ErrorCode,
+							diagnostics.ErrorResponse:     resp.status.ErrorResponse,
+						})
+					}
+				}
 			}
 
 			if len(statusList) > 0 {
@@ -442,6 +497,43 @@ func (rt *HandleT) statusInsertLoop() {
 		}
 	}
 
+}
+
+func (rt *HandleT) collectMetrics() {
+	if diagnostics.EnableRouterMetric {
+		for {
+			select {
+			case _ = <-rt.diagnosisTicker.C:
+				rt.requestsMetricLock.RLock()
+				var diagnosisProperties map[string]interface{}
+				retries := 0
+				aborted := 0
+				success := 0
+				var compTime time.Duration
+				for _, reqMetric := range rt.requestsMetric {
+					retries = retries + reqMetric.RequestRetries
+					aborted = aborted + reqMetric.RequestAborted
+					success = success + reqMetric.RequestSuccess
+					compTime = compTime + reqMetric.RequestCompletedTime
+				}
+				if len(rt.requestsMetric) > 0 {
+					diagnosisProperties = map[string]interface{}{
+						rt.destID: map[string]interface{}{
+							diagnostics.RouterAborted:       aborted,
+							diagnostics.RouterRetries:       retries,
+							diagnostics.RouterSuccess:       success,
+							diagnostics.RouterCompletedTime: (compTime / time.Duration(len(rt.requestsMetric))) / time.Millisecond,
+						},
+					}
+
+					diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
+				}
+
+				rt.requestsMetric = nil
+				rt.requestsMetricLock.RUnlock()
+			}
+		}
+	}
 }
 
 //#JobOrder (see other #JobOrder comment)
@@ -611,6 +703,7 @@ func init() {
 //Setup initializes this module
 func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	logger.Info("Router started")
+	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	rt.jobsDB = jobsDB
 	rt.destID = destID
 	rt.crashRecover()
@@ -622,8 +715,10 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.netHandle.Setup(destID)
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destID)
-
 	rt.initWorkers()
+	rruntime.Go(func() {
+		rt.collectMetrics()
+	})
 	rruntime.Go(func() {
 		rt.printStatsLoop()
 	})
