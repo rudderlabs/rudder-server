@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	diagnostics "github.com/rudderlabs/rudder-server/services/diagnostics"
+
 	"github.com/rudderlabs/rudder-server/services/stats"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -64,12 +66,14 @@ type SourceT struct {
 	SourceDefinition SourceDefinitionT
 	Config           interface{}
 	Enabled          bool
+	WorkspaceID      string
 	Destinations     []DestinationT
 	WriteKey         string
 }
 
 type SourcesT struct {
-	Sources []SourceT `json:"sources"`
+	EnableMetrics bool      `json:"enableMetrics"`
+	Sources       []SourceT `json:"sources"`
 }
 
 type TransformationT struct {
@@ -139,6 +143,28 @@ func init() {
 	loadConfig()
 }
 
+func trackConfig(preConfig SourcesT, curConfig SourcesT) {
+	diagnostics.DisableMetrics(curConfig.EnableMetrics)
+	if diagnostics.EnableConfigIdentifyMetric {
+		if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
+			diagnostics.Identify(map[string]interface{}{
+				diagnostics.ConfigIdentify: curConfig.Sources[0].WorkspaceID,
+			})
+		}
+	}
+	if diagnostics.EnableConfigProcessedMetric {
+		noOfSources := len(curConfig.Sources)
+		noOfDestinations := 0
+		for _, source := range curConfig.Sources {
+			noOfDestinations = noOfDestinations + len(source.Destinations)
+		}
+		diagnostics.Track(diagnostics.ConfigProcessed, map[string]interface{}{
+			diagnostics.SourcesCount:      noOfSources,
+			diagnostics.DesitanationCount: noOfDestinations,
+		})
+	}
+}
+
 func filterProcessorEnabledDestinations(config SourcesT) SourcesT {
 	var modifiedSources SourcesT
 	modifiedSources.Sources = make([]SourceT, 0)
@@ -173,6 +199,7 @@ func pollConfigUpdate() {
 		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
 			logger.Info("Workspace Config changed")
 			curSourceJSONLock.Lock()
+			trackConfig(curSourceJSON, sourceJSON)
 			filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
 			curSourceJSON = sourceJSON
 			curSourceJSONLock.Unlock()
