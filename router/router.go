@@ -115,7 +115,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		batchTimeStat.Start()
 		logger.Debug("Router :: trying to send payload to GA", respBody)
 
-		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
+		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload, job.CustomVal)
 		if userID == "" {
 			panic(fmt.Errorf("userID is empty"))
 		}
@@ -322,7 +322,7 @@ func getHash(s string) int {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
+	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload, job.CustomVal)
 
 	var index int
 	if randomWorkerAssign {
