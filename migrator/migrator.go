@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -36,7 +38,7 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 	migrator.export()
 	// })
 	// rruntime.Go(func() {
-	migrator.importFromFile()
+	// migrator.importFromFiles()
 	// })
 
 }
@@ -49,10 +51,10 @@ func loadConfig() {
 	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 100)
 }
 
-func (migrator *Migrator) importFromFile() {
+func (migrator *Migrator) importFromFiles() {
 
 	logger.Info("Shanmukh: import loop starting")
-	importFiles := []string{"0.json", "1.json", "2.json", "3.json"}
+	importFiles := migrator.getImportFiles()
 
 	for _, file := range importFiles {
 		migrator.readFromFileAndWriteToDB(file)
@@ -93,6 +95,27 @@ func (migrator *Migrator) processSingleLine(line string) (jobsdb.JobT, bool) {
 		return jobsdb.JobT{}, false
 	}
 	return job, true
+}
+
+func (migrator *Migrator) getImportFiles() []string {
+	allFiles := []string{"0_1_0.json", "0_1_1.json", "0_1_2.json", "0_2_0.json", "0_2_1.json", "0_2_2.json", "0_3_0.json", "0_3_1.json", "0_3_2.json"}
+	filesToImport := []string{}
+	for _, file := range allFiles {
+		fileSplits := strings.Split(file, "_")
+		if len(fileSplits) != 3 {
+			logger.Error("Must panic here")
+		}
+
+		currNode := misc.GetNodeID()
+		currNodeStr := strconv.Itoa(misc.GetNodeID())
+		isEqual := fileSplits[1] == strconv.Itoa(misc.GetNodeID())
+
+		logger.Info(currNode, currNodeStr, isEqual)
+		if fileSplits[1] == strconv.Itoa(misc.GetNodeID()) {
+			filesToImport = append(filesToImport, file)
+		}
+	}
+	return filesToImport
 }
 
 func (migrator *Migrator) export() {
@@ -174,7 +197,7 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 			logger.Info(nMeta, len(jobList))
 			datawriter.Flush()
 			file.Close()
-			uploadTos3AndNotifyDestNode(fileName, nMeta)
+			migrator.uploadTos3AndNotifyDestNode(fileName, nMeta)
 			fileIndex++
 		} else {
 			for _, job := range jobList {
@@ -192,6 +215,10 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 		}
 	}
 	return statusList
+}
+
+func (migrator *Migrator) uploadTos3AndNotifyDestNode(fileName string, nMeta pathfinder.NodeMeta) {
+	//TODO:
 }
 
 func (migrator *Migrator) postExport() {
