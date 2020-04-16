@@ -145,7 +145,8 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 		}
 
 		if writeToFile {
-			file, err := os.OpenFile(fmt.Sprintf("%d_%d_%d.json", misc.GetNodeID(), nMeta.GetNodeID(), fileIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			fileName := fmt.Sprintf("%d_%d_%d.json", misc.GetNodeID(), nMeta.GetNodeID(), fileIndex)
+			file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
 			if err != nil {
 				log.Fatalf("failed creating file: %s", err)
@@ -173,6 +174,7 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 			logger.Info(nMeta, len(jobList))
 			datawriter.Flush()
 			file.Close()
+			uploadTos3AndNotifyDestNode(fileName, nMeta)
 			fileIndex++
 		} else {
 			for _, job := range jobList {
