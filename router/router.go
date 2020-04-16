@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/customdestinationmanager"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -67,6 +68,7 @@ var (
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait                             time.Duration
 	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
+	customDestinations                                                             []string
 )
 
 func isSuccessStatus(status int) bool {
@@ -88,6 +90,7 @@ func loadConfig() {
 	useTestSink = config.GetBool("Router.useTestSink", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
+	customDestinations = []string{"KINESIS"}
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -98,6 +101,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		fmt.Sprintf("router.%s_batch_time", rt.destID), stats.TimerType)
 	failedAttemptsStat := stats.NewStat(
 		fmt.Sprintf("router.%s_failed_attempts", rt.destID), stats.CountType)
+	retryAttemptsStat := stats.NewStat(
+		fmt.Sprintf("router.%s_retry_attempts", rt.destID), stats.CountType)
 	eventsDeliveredStat := stats.NewStat(
 		fmt.Sprintf("router.%s_events_delivered", rt.destID), stats.CountType)
 	eventsAbortedStat := stats.NewStat(
@@ -108,9 +113,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		var respStatusCode, attempts int
 		var respStatus, respBody string
 		batchTimeStat.Start()
-		logger.Debug("Router :: trying to send payload to GA", respBody)
+		logger.Debugf("Router :: trying to send payload to %s. Payload: ", rt.destID, job.EventPayload)
 
-		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
+		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload, job.CustomVal)
 		if userID == "" {
 			panic(fmt.Errorf("userID is empty"))
 		}
@@ -120,7 +125,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debug("Router is disabled")
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+				AttemptNum:    job.LastJobStatus.AttemptNum,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
@@ -141,7 +146,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			resp := fmt.Sprintf(`{"blocking_id":"%v", "user_id":"%s"}`, previousFailedJobID, userID)
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+				AttemptNum:    job.LastJobStatus.AttemptNum,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     respStatus,
@@ -160,10 +165,15 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 
 		//We can execute thoe job
 		for attempts = 0; attempts < ser; attempts++ {
-			logger.Debugf("[%v Router] :: trying to send payload %v of %v", rt.destID, attempts, ser)
+			logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", rt.destID, attempts, ser)
 
 			deliveryTimeStat.Start()
-			respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
+			if misc.ContainsString(customDestinations, job.CustomVal) {
+				respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal)
+			} else {
+				respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
+			}
+
 			deliveryTimeStat.End()
 
 			if useTestSink {
@@ -183,6 +193,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				logger.Debugf("[%v Router] :: worker %v sleeping for  %v ",
 					rt.destID, worker.workerID, worker.sleepTime)
 				time.Sleep(worker.sleepTime)
+
+				retryAttemptsStat.Increment()
+
 				continue
 			} else {
 				atomic.AddUint64(&rt.successCount, 1)
@@ -201,7 +214,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			JobID:         job.JobID,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
-			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+			AttemptNum:    job.LastJobStatus.AttemptNum,
 			ErrorCode:     strconv.Itoa(respStatusCode),
 			ErrorResponse: []byte(`{}`),
 		}
@@ -210,7 +223,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			//#JobOrder (see other #JobOrder comment)
 			// failedAttemptsStat.Count(job.LastJobStatus.AttemptNum)
 			eventsDeliveredStat.Increment()
-			status.AttemptNum = job.LastJobStatus.AttemptNum + 1
+			status.AttemptNum = job.LastJobStatus.AttemptNum
 			status.JobState = jobsdb.SucceededState
 			logger.Debugf("[%v Router] :: sending success status to response", rt.destID)
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
@@ -236,7 +249,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				//We still mark the job failed but don't increment the AttemptNum
 				//This is a heuristic. Will fix it with Sayan's idea
 				status.JobState = jobsdb.FailedState
-				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
+				status.AttemptNum = job.LastJobStatus.AttemptNum
 				logger.Debugf("[%v Router] :: Marking job as failed and not incrementing the AttemptNum since jobs from more than 5 users are failing for destination", rt.destID)
 				break
 			case status.AttemptNum >= maxFailedCountForJob:
@@ -309,7 +322,7 @@ func getHash(s string) int {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
+	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload, job.CustomVal)
 
 	var index int
 	if randomWorkerAssign {
@@ -522,7 +535,7 @@ func (rt *HandleT) generatorLoop() {
 			if w != nil {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
-					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+					AttemptNum:    job.LastJobStatus.AttemptNum,
 					JobState:      jobsdb.ExecutingState,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
@@ -567,7 +580,7 @@ func (rt *HandleT) crashRecover() {
 				RetryTime:     time.Now(),
 				JobState:      jobsdb.FailedState,
 				ErrorCode:     "",
-				ErrorResponse: []byte(`{}`), // check
+				ErrorResponse: []byte(`{"Error": "Rudder server crashed while sending job to destination"}`), // check
 			}
 			statusList = append(statusList, &status)
 		}

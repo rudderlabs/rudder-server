@@ -14,6 +14,7 @@ import (
 
 var (
 	destTransformURL, userTransformURL string
+	customDestination                  []string
 )
 
 func init() {
@@ -22,6 +23,7 @@ func init() {
 
 func loadConfig() {
 	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	customDestination = []string{"KINESIS"}
 }
 
 const (
@@ -142,8 +144,23 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	return postInfo
 }
 
+// GetUserIDForStreamDestination parses the payload to get userId
+func GetUserIDForStreamDestination(jsonData json.RawMessage) string {
+	var userID string
+	parsedJSON := gjson.ParseBytes(jsonData)
+	if parsedJSON.Get("output").Exists() {
+		parsedJSON = parsedJSON.Get("output")
+		userID = parsedJSON.Get("userId").Value().(string)
+	}
+	return userID
+}
+
 // GetUserIDFromTransformerResponse parses the payload to get userId
-func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) string {
+func GetUserIDFromTransformerResponse(transformRaw json.RawMessage, destination string) string {
+
+	if misc.ContainsString(customDestination, destination) {
+		return GetUserIDForStreamDestination(transformRaw)
+	}
 	// Get response version
 	version := GetResponseVersion(transformRaw)
 	var userID string
