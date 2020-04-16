@@ -2320,9 +2320,9 @@ func (jd *HandleT) setupEnumTypes() {
                                               'succeeded',
                                               'waiting_retry',
                                               'failed',
-											  'aborted',
-											  'migrated',
-											  'wont_migrate');
+                                              'aborted',
+                                              'migrated',
+                                              'wont_migrate');
                                      EXCEPTION
                                         WHEN duplicate_object THEN null;
                             END $$;`
