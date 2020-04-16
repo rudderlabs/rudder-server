@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/customdestinationmanager"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -67,6 +68,7 @@ var (
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait                             time.Duration
 	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
+	customDestinations                                                             []string
 )
 
 func isSuccessStatus(status int) bool {
@@ -88,6 +90,7 @@ func loadConfig() {
 	useTestSink = config.GetBool("Router.useTestSink", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
+	customDestinations = []string{"KINESIS"}
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -98,6 +101,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		fmt.Sprintf("router.%s_batch_time", rt.destID), stats.TimerType)
 	failedAttemptsStat := stats.NewStat(
 		fmt.Sprintf("router.%s_failed_attempts", rt.destID), stats.CountType)
+	retryAttemptsStat := stats.NewStat(
+		fmt.Sprintf("router.%s_retry_attempts", rt.destID), stats.CountType)
 	eventsDeliveredStat := stats.NewStat(
 		fmt.Sprintf("router.%s_events_delivered", rt.destID), stats.CountType)
 	eventsAbortedStat := stats.NewStat(
@@ -110,7 +115,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		batchTimeStat.Start()
 		logger.Debugf("Router :: trying to send payload to %s. Payload: ", rt.destID, job.EventPayload)
 
-		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
+		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload, job.CustomVal)
 		if userID == "" {
 			panic(fmt.Errorf("userID is empty"))
 		}
@@ -163,7 +168,12 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", rt.destID, attempts, ser)
 
 			deliveryTimeStat.Start()
-			respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
+			if misc.ContainsString(customDestinations, job.CustomVal) {
+				respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal)
+			} else {
+				respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
+			}
+
 			deliveryTimeStat.End()
 
 			if useTestSink {
@@ -183,6 +193,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				logger.Debugf("[%v Router] :: worker %v sleeping for  %v ",
 					rt.destID, worker.workerID, worker.sleepTime)
 				time.Sleep(worker.sleepTime)
+
+				retryAttemptsStat.Increment()
+
 				continue
 			} else {
 				atomic.AddUint64(&rt.successCount, 1)
@@ -309,7 +322,7 @@ func getHash(s string) int {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
+	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload, job.CustomVal)
 
 	var index int
 	if randomWorkerAssign {
