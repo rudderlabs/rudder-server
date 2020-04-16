@@ -407,8 +407,8 @@ func GetIPFromReq(req *http.Request) string {
 	if addresses[0] == "" {
 		return req.RemoteAddr // When there is no load-balancer
 	}
-	strings.Replace(addresses[0], " ", "", -1)
-	return addresses[0]
+
+	return strings.Replace(addresses[0], " ", "", -1)
 }
 
 func ContainsString(slice []string, str string) bool {
