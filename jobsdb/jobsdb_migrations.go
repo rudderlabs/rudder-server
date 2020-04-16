@@ -17,7 +17,7 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) SetupForMigration(tablePrefix string, retentionPeriod time.Duration, toBackup bool) {
+func (jd *HandleT) SetupForImportAndAccept(tablePrefix string, retentionPeriod time.Duration, toBackup bool) {
 	//TODO: Create jobsDB tables etc.,
 }
 
@@ -145,9 +145,13 @@ func (jd *HandleT) deleteWontMigrateJobStatusDS(ds dataSetT) {
 
 //StoreImportedJobs is used to write the jobs to _tables
 func (jd *HandleT) StoreImportedJobs(jobList []*JobT) map[uuid.UUID]string {
-	jd.dsListLock.RLock()
-	defer jd.dsListLock.RUnlock()
+	// jd.dsListLock.RLock()
+	// defer jd.dsListLock.RUnlock()
 
-	dsList := jd.getDSList(false)
-	return jd.storeJobsDS(dsList[len(dsList)-1], true, true, jobList)
+	// dsList := jd.getDSList(false)
+	// for _, job := range jobList {
+
+	// }
+	// return jd.storeJobsDS(dsList[len(dsList)-1], true, true, jobList)
+	return nil
 }

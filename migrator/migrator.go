@@ -33,14 +33,14 @@ func init() {
 func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) {
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
+	// if pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
+	// 	migrator.jobsDB.SetupForImportAndAcceptNewEvents()
+	// 	rruntime.Go(func() {
+	// 		migrator.importFromFiles()
+	// 	})
+	// }
 	logger.Info("Shanmukh: inside migrator setup")
-	// rruntime.Go(func() {
 	migrator.export()
-	// })
-	// rruntime.Go(func() {
-	// migrator.importFromFiles()
-	// })
-
 }
 
 var (
@@ -105,12 +105,6 @@ func (migrator *Migrator) getImportFiles() []string {
 		if len(fileSplits) != 3 {
 			logger.Error("Must panic here")
 		}
-
-		currNode := misc.GetNodeID()
-		currNodeStr := strconv.Itoa(misc.GetNodeID())
-		isEqual := fileSplits[1] == strconv.Itoa(misc.GetNodeID())
-
-		logger.Info(currNode, currNodeStr, isEqual)
 		if fileSplits[1] == strconv.Itoa(misc.GetNodeID()) {
 			filesToImport = append(filesToImport, file)
 		}

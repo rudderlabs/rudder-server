@@ -43,3 +43,13 @@ func (pf *Pathfinder) Setup(clusterState []NodeMeta) {
 func (pf *Pathfinder) GetNodeFromHash(hash uint32) NodeMeta {
 	return pf.clusterState[int(hash)%len(pf.clusterState)]
 }
+
+//DoesNodeBelongToTheCluster returns a true if the passed nodeID is a part of the cluster
+func (pf *Pathfinder) DoesNodeBelongToTheCluster(nodeID int) bool {
+	for _, nMeta := range pf.clusterState {
+		if nodeID == nMeta.GetNodeID() {
+			return true
+		}
+	}
+	return false
+}
