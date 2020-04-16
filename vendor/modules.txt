@@ -224,8 +224,12 @@ github.com/pkg/browser
 github.com/pkg/errors
 # github.com/rs/cors v1.7.0
 github.com/rs/cors
+# github.com/rudderlabs/analytics-go v3.1.0+incompatible
+github.com/rudderlabs/analytics-go
 # github.com/satori/go.uuid v1.2.0
 github.com/satori/go.uuid
+# github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c
+github.com/segmentio/backo-go
 # github.com/segmentio/ksuid v1.0.2
 github.com/segmentio/ksuid
 # github.com/snowflakedb/gosnowflake v1.3.4
@@ -253,6 +257,8 @@ github.com/tidwall/match
 github.com/tidwall/pretty
 # github.com/tidwall/sjson v1.0.4
 github.com/tidwall/sjson
+# github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c
+github.com/xtgo/uuid
 # go.opencensus.io v0.22.3
 go.opencensus.io/trace
 go.opencensus.io/plugin/ochttp
@@ -284,7 +290,10 @@ go.uber.org/zap/internal/exit
 # golang.org/x/crypto v0.0.0-20200221231518-2aa609cf4a9d
 golang.org/x/crypto/ocsp
 golang.org/x/crypto/argon2
+golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blake2b
+golang.org/x/crypto/blowfish
+golang.org/x/crypto/ocsp
 # golang.org/x/exp v0.0.0-20200224162631-6cc2880d07d6
 golang.org/x/exp/cmd/apidiff
 golang.org/x/exp/apidiff

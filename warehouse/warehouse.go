@@ -1535,7 +1535,9 @@ func Start() {
 	}
 
 	if isMaster() {
-		backendconfig.Setup()
+		if warehouseMode != config.EmbeddedMode {
+			backendconfig.Setup()
+		}
 		logger.Infof("WH: Starting warehouse master...")
 		err = notifier.AddTopic("process_staging_file")
 		if err != nil {

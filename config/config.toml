@@ -194,6 +194,22 @@ enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
 
+
+[Diagnostics]
+enableDiagnostics = true
+gatewayTimePeriodInS = 60
+routerTimePeriodInS = 60
+batchRouterTimePeriodInS = 600
+enableServerStartMetric = true
+enableConfigIdentifyMetric = true
+enableServerStartedMetric = true
+enableConfigProcessedMetric = true
+enableGatewayMetric = true
+enableRouterMetric = true
+enableBatchRouterMetric = true
+enableDestinationFailuresMetric = true
+
+
 # runtime stats are collected using go runtime package and published to statsd
 [RuntimeStats]
 enabled=true

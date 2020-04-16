@@ -590,6 +590,51 @@ func (w GZipWriter) CloseGZ() {
 	w.File.Close()
 }
 
+func GetMacAddress() string {
+	//----------------------
+	// Get the local machine IP address
+	// https://www.socketloop.com/tutorials/golang-how-do-I-get-the-local-ip-non-loopback-address
+	//----------------------
+
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+
+	var currentIP, currentNetworkHardwareName string
+	for _, address := range addrs {
+		// check the address type and if it is not a loopback then that's the current ip
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				currentIP = ipnet.IP.String()
+			}
+		}
+	}
+
+	// get all the system's or local machine's network interfaces
+	interfaces, _ := net.Interfaces()
+	for _, interf := range interfaces {
+		if addrs, err := interf.Addrs(); err == nil {
+			for _, addr := range addrs {
+				// only interested in the name with current IP address
+				if strings.Contains(addr.String(), currentIP) {
+					currentNetworkHardwareName = interf.Name
+				}
+			}
+		}
+	}
+
+	// extract the hardware information base on the interface name captured above
+	netInterface, err := net.InterfaceByName(currentNetworkHardwareName)
+	if err != nil {
+		return ""
+	}
+
+	macAddress := netInterface.HardwareAddr
+
+	return macAddress.String()
+}
+
 func KeepProcessAlive() {
 	var ch chan int
 	_ = <-ch
