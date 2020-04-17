@@ -36,6 +36,18 @@ type HandleT struct {
 	ObjectStorage string
 }
 
+// String constants for snowflake destination config
+const (
+	AWSAccessKey       = "accessKey"
+	AWSAccessSecret    = "accessKeyID"
+	StorageIntegration = "storageIntegration"
+	SFAccount          = "account"
+	SFWarehouse        = "warehouse"
+	SFDbName           = "database"
+	SFUserName         = "user"
+	SFPassword         = "password"
+)
+
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
 	"int":      "number",
@@ -153,10 +165,10 @@ func (sf *HandleT) authString() string {
 	var auth string
 	switch sf.CloudProvider {
 	case "AWS":
-		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s')`, warehouseutils.GetConfigValue("accessKeyID", sf.Warehouse), warehouseutils.GetConfigValue("accessKey", sf.Warehouse))
+		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s')`, warehouseutils.GetConfigValue(AWSAccessSecret, sf.Warehouse), warehouseutils.GetConfigValue(AWSAccessKey, sf.Warehouse))
 		break
 	case "GCP", "AZURE":
-		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, warehouseutils.GetConfigValue("storageIntegration", sf.Warehouse))
+		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse))
 		break
 	}
 	return auth
@@ -404,11 +416,11 @@ type OptionalCredsT struct {
 
 func (sf *HandleT) getConnectionCredentials(opts OptionalCredsT) SnowflakeCredentialsT {
 	return SnowflakeCredentialsT{
-		account:    sf.Warehouse.Destination.Config.(map[string]interface{})["account"].(string),
-		whName:     sf.Warehouse.Destination.Config.(map[string]interface{})["warehouse"].(string),
-		dbName:     sf.Warehouse.Destination.Config.(map[string]interface{})["database"].(string),
-		username:   sf.Warehouse.Destination.Config.(map[string]interface{})["user"].(string),
-		password:   sf.Warehouse.Destination.Config.(map[string]interface{})["password"].(string),
+		account:    warehouseutils.GetConfigValue(SFAccount, sf.Warehouse),
+		whName:     warehouseutils.GetConfigValue(SFWarehouse, sf.Warehouse),
+		dbName:     warehouseutils.GetConfigValue(SFDbName, sf.Warehouse),
+		username:   warehouseutils.GetConfigValue(SFUserName, sf.Warehouse),
+		password:   warehouseutils.GetConfigValue(SFPassword, sf.Warehouse),
 		schemaName: opts.schemaName,
 	}
 }

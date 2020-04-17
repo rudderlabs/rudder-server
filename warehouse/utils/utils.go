@@ -348,7 +348,7 @@ func GetObjectFolder(provider string, location string) (folder string) {
 		folder = GetS3LocationFolder(location)
 		break
 	case "GCS":
-		folder = GetGCSLocationFolder(location, "gcs")
+		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gcs"})
 		break
 	case "AZURE_BLOB":
 		folder = GetAzureBlobLocationFolder(location)
@@ -359,46 +359,54 @@ func GetObjectFolder(provider string, location string) (folder string) {
 
 // GetS3Location parses path-style location http url to return in s3:// format
 // https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
-func GetS3Location(location string) (string, string) {
+func GetS3Location(location string) (s3Location string, region string) {
 	r, _ := regexp.Compile("\\.s3.*\\.amazonaws\\.com")
 	subLocation := r.FindString(location)
 	regionTokens := strings.Split(subLocation, ".")
-	var region string
 	if len(regionTokens) == 5 {
 		region = regionTokens[2]
 	}
 	str1 := r.ReplaceAllString(location, "")
-	str2 := strings.Replace(str1, "https", "s3", 1)
-	return region, str2
+	s3Location = strings.Replace(str1, "https", "s3", 1)
+	return
 }
 
 // GetS3LocationFolder returns the folder path for an s3 object
 // https://test-bucket.s3.amazonaws.com/myfolder/test-object.csv --> s3://test-bucket/myfolder
 func GetS3LocationFolder(location string) string {
-	_, s3Location := GetS3Location(location)
+	s3Location, _ := GetS3Location(location)
 	lastPos := strings.LastIndex(s3Location, "/")
 	return s3Location[:lastPos]
 }
 
+type GCSLocationOptionsT struct {
+	TLDFormat string
+}
+
 // GetGCSLocation parses path-style location http url to return in gcs:// format
 // https://storage.googleapis.com/test-bucket/test-object.csv --> gcs://test-bucket/test-object.csv
-func GetGCSLocation(location string, tldFormat string) string {
-	str1 := strings.Replace(location, "https", tldFormat, 1)
+// tldFormat is used to set return format "<tldFormat>://..."
+func GetGCSLocation(location string, options GCSLocationOptionsT) string {
+	tld := "gs"
+	if options.TLDFormat != "" {
+		tld = options.TLDFormat
+	}
+	str1 := strings.Replace(location, "https", tld, 1)
 	str2 := strings.Replace(str1, "storage.googleapis.com/", "", 1)
 	return str2
 }
 
 // GetGCSLocationFolder returns the folder path for an gcs object
 // https://storage.googleapis.com/test-bucket/myfolder/test-object.csv --> gcs://test-bucket/myfolder
-func GetGCSLocationFolder(location string, tldFormat string) string {
-	s3Location := GetGCSLocation(location, tldFormat)
+func GetGCSLocationFolder(location string, options GCSLocationOptionsT) string {
+	s3Location := GetGCSLocation(location, options)
 	lastPos := strings.LastIndex(s3Location, "/")
 	return s3Location[:lastPos]
 }
 
-func GetGCSLocations(locations []string, tldFormat string) (gcsLocations []string, err error) {
+func GetGCSLocations(locations []string, options GCSLocationOptionsT) (gcsLocations []string) {
 	for _, location := range locations {
-		gcsLocations = append(gcsLocations, GetGCSLocation(location, tldFormat))
+		gcsLocations = append(gcsLocations, GetGCSLocation(location, options))
 	}
 	return
 }
@@ -418,9 +426,9 @@ func GetAzureBlobLocationFolder(location string) string {
 	return s3Location[:lastPos]
 }
 
-func GetS3Locations(locations []string) (s3Locations []string, err error) {
+func GetS3Locations(locations []string) (s3Locations []string) {
 	for _, location := range locations {
-		_, s3Location := GetS3Location(location)
+		s3Location, _ := GetS3Location(location)
 		s3Locations = append(s3Locations, s3Location)
 	}
 	return

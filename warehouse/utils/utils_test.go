@@ -14,19 +14,19 @@ var _ = Describe("Utils", func() {
 				It("should parse url and return location and region", func() {
 					var region, location string
 
-					region, location = GetS3Location("https://test-bucket.s3.amazonaws.com/test-object.csv")
+					location, region = GetS3Location("https://test-bucket.s3.amazonaws.com/test-object.csv")
 					Expect(region).To(Equal(""))
 					Expect(location).To(Equal("s3://test-bucket/test-object.csv"))
 
-					region, location = GetS3Location("https://test-bucket.s3.any-region.amazonaws.com/test-object.csv")
+					location, region = GetS3Location("https://test-bucket.s3.any-region.amazonaws.com/test-object.csv")
 					Expect(region).To(Equal("any-region"))
 					Expect(location).To(Equal("s3://test-bucket/test-object.csv"))
 
-					region, location = GetS3Location("https://my.test-bucket.s3.amazonaws.com/test-object.csv")
+					location, region = GetS3Location("https://my.test-bucket.s3.amazonaws.com/test-object.csv")
 					Expect(region).To(Equal(""))
 					Expect(location).To(Equal("s3://my.test-bucket/test-object.csv"))
 
-					region, location = GetS3Location("https://my.test-bucket.s3.us-west-1.amazonaws.com/test-object.csv")
+					location, region = GetS3Location("https://my.test-bucket.s3.us-west-1.amazonaws.com/test-object.csv")
 					Expect(region).To(Equal("us-west-1"))
 					Expect(location).To(Equal("s3://my.test-bucket/test-object.csv"))
 				})
@@ -56,7 +56,7 @@ var _ = Describe("Utils", func() {
 						"https://my.test-bucket.s3.us-west-1.amazonaws.com/test-object.csv",
 					}
 
-					locations, _ := GetS3Locations(inputs)
+					locations := GetS3Locations(inputs)
 					Expect(locations[0]).To(Equal("s3://test-bucket/test-object.csv"))
 					Expect(locations[1]).To(Equal("s3://test-bucket/test-object.csv"))
 					Expect(locations[2]).To(Equal("s3://my.test-bucket/test-object.csv"))
@@ -70,10 +70,10 @@ var _ = Describe("Utils", func() {
 				It("should parse url and return location", func() {
 					var location string
 
-					location = GetGCSLocation("https://storage.googleapis.com/test-bucket/test-object.csv", "gs")
+					location = GetGCSLocation("https://storage.googleapis.com/test-bucket/test-object.csv", GCSLocationOptionsT{})
 					Expect(location).To(Equal("gs://test-bucket/test-object.csv"))
 
-					location = GetGCSLocation("https://storage.googleapis.com/my.test-bucket/test-object.csv", "gs")
+					location = GetGCSLocation("https://storage.googleapis.com/my.test-bucket/test-object.csv", GCSLocationOptionsT{})
 					Expect(location).To(Equal("gs://my.test-bucket/test-object.csv"))
 				})
 			})
@@ -82,10 +82,10 @@ var _ = Describe("Utils", func() {
 				It("should parse url and return location folder", func() {
 					var location string
 
-					location = GetGCSLocationFolder("https://storage.googleapis.com/test-bucket/test-object.csv", "gs")
+					location = GetGCSLocationFolder("https://storage.googleapis.com/test-bucket/test-object.csv", GCSLocationOptionsT{})
 					Expect(location).To(Equal("gs://test-bucket"))
 
-					location = GetGCSLocationFolder("https://storage.googleapis.com/my.test-bucket/test-object.csv", "gs")
+					location = GetGCSLocationFolder("https://storage.googleapis.com/my.test-bucket/test-object.csv", GCSLocationOptionsT{})
 					Expect(location).To(Equal("gs://my.test-bucket"))
 				})
 			})
@@ -99,7 +99,7 @@ var _ = Describe("Utils", func() {
 						"https://storage.googleapis.com/my.test-bucket/test-object2.csv",
 					}
 
-					locations, _ := GetGCSLocations(inputs, "gs")
+					locations := GetGCSLocations(inputs, GCSLocationOptionsT{})
 					Expect(locations[0]).To(Equal("gs://test-bucket/test-object.csv"))
 					Expect(locations[1]).To(Equal("gs://my.test-bucket/test-object.csv"))
 					Expect(locations[2]).To(Equal("gs://my.test-bucket2/test-object.csv"))
