@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/stats"
 
@@ -150,19 +151,18 @@ func alertOps(mode string) {
 	}
 }
 
-// sendRecoveryModeStat sends the recovery mode metric every 1 minute
+// sendRecoveryModeStat sends the recovery mode metric every 10 seconds
 func sendRecoveryModeStat() {
+	recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
 	for {
-		time.Sleep(1 * time.Minute)
-		recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
-		if CurrentMode != normalMode {
-			if CurrentMode == degradedMode {
-				recoveryModeStat.Gauge(2)
-			} else if CurrentMode == maintenanceMode {
-				recoveryModeStat.Gauge(3)
-			}
-		} else {
+		time.Sleep(10 * time.Second)
+		switch CurrentMode {
+		case normalMode:
 			recoveryModeStat.Gauge(1)
+		case degradedMode:
+			recoveryModeStat.Gauge(2)
+		case maintenanceMode:
+			recoveryModeStat.Gauge(3)
 		}
 	}
 }
@@ -202,5 +202,7 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 	recoveryHandler.Handle()
 	logger.Infof("Starting in %s mode", recoveryData.Mode)
 	CurrentMode = recoveryData.Mode
-	go sendRecoveryModeStat()
+	rruntime.Go(func() {
+		sendRecoveryModeStat()
+	})
 }
