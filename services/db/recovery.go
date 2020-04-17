@@ -70,6 +70,7 @@ func saveRecoveryData(recoveryData RecoveryDataT) {
 	}
 }
 
+// IsNormalMode checks if the current mode is normal
 func IsNormalMode() bool {
 	return CurrentMode == normalMode
 }
@@ -149,6 +150,24 @@ func alertOps(mode string) {
 	}
 }
 
+// sendRecoveryModeStat sends the recovery mode metric every 1 minute
+func sendRecoveryModeStat() {
+	for {
+		time.Sleep(1 * time.Minute)
+		recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
+		if CurrentMode != normalMode {
+			if CurrentMode == degradedMode {
+				recoveryModeStat.Gauge(2)
+			} else if CurrentMode == maintenanceMode {
+				recoveryModeStat.Gauge(3)
+			}
+		} else {
+			recoveryModeStat.Gauge(1)
+		}
+	}
+}
+
+// HandleRecovery decides the recovery Mode in which app should run based on earlier crashes
 func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool, currTime int64) {
 
 	enabled := config.GetBool("recovery.enabled", false)
@@ -178,19 +197,10 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 		}
 	}
 
-	recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
-	if recoveryData.Mode != normalMode {
-		if recoveryData.Mode == degradedMode {
-			recoveryModeStat.Gauge(2)
-		} else if recoveryData.Mode == maintenanceMode {
-			recoveryModeStat.Gauge(3)
-		}
-	} else {
-		recoveryModeStat.Gauge(1)
-	}
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
 	logger.Infof("Starting in %s mode", recoveryData.Mode)
 	CurrentMode = recoveryData.Mode
+	go sendRecoveryModeStat()
 }
