@@ -1,3 +1,18 @@
+/*
+Logger Interface Use instance of logger instead of exported functions
+
+usage example
+
+import "github.com/rudderlabs/rudder-server/utils/logger"
+
+var	log logger.LoggerI  = &logger.LoggerT{}
+			or
+var	log logger.LoggerI = logger.NewLogger()
+
+...
+
+log.Setup()
+*/
 //go:generate mockgen -destination=../../mocks/utils/logger/mock_logger.go -package mock_logger github.com/rudderlabs/rudder-server/utils/logger LoggerI
 package logger
 
