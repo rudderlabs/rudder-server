@@ -581,10 +581,10 @@ func enhanceWithTimeFields(event map[string]interface{}, singularEventMap map[st
 	sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
 
 	// set all timestamps in RFC3339 format
-	event["message"].(map[string]interface{})["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
-	event["message"].(map[string]interface{})["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339Milli)
-	event["message"].(map[string]interface{})["sentAt"] = sentAt.Format(misc.RFC3339Milli)
-	event["message"].(map[string]interface{})["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339Milli)
+	event["message"].(map[string]interface{})["receivedAt"] = receivedAt.Format(misc.RFC3339MilliWithTrailing0s)
+	event["message"].(map[string]interface{})["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339MilliWithTrailing0s)
+	event["message"].(map[string]interface{})["sentAt"] = sentAt.Format(misc.RFC3339MilliWithTrailing0s)
+	event["message"].(map[string]interface{})["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339MilliWithTrailing0s)
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
