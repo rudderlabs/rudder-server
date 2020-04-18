@@ -174,9 +174,9 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		config.SetBool("JobsDB.backup.gw.enabled", false)
 	}
 
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
+	isGwNew := gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
+	isRouterNew := routerDB.Setup(*clearDB, "rt", routerDBRetention)
+	isBatchRouterNew := batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
 
 	if enableRouter {
 		go monitorDestRouters(&routerDB, &batchRouterDB)
@@ -190,18 +190,20 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	if enableMigrator {
 		logger.Info("Shanmukh: setting up pathfinder")
 		s := make([]pathfinder.NodeMeta, 4)
-		s[0] = pathfinder.GetNodeMeta(0, "node0ConnString")
-		s[1] = pathfinder.GetNodeMeta(1, "node1ConnString")
-		s[2] = pathfinder.GetNodeMeta(2, "node2ConnString")
-		s[3] = pathfinder.GetNodeMeta(3, "node3ConnString")
+		s[0] = pathfinder.GetNodeMeta(1, "node0ConnString")
+		s[1] = pathfinder.GetNodeMeta(2, "node1ConnString")
+		s[2] = pathfinder.GetNodeMeta(3, "node2ConnString")
+		s[3] = pathfinder.GetNodeMeta(4, "node3ConnString")
 
-		pf.Setup(s)
+		pf.Setup(s, 1)
 
 		logger.Info("Shanmukh: setting up migrators")
 		var migrator migrator.Migrator
-		go migrator.Setup(&gatewayDB, pf)
-		// go migrator.Setup(&routerDB, pf)
-		// go migrator.Setup(&batchRouterDB, pf)
+		migrator.Setup(&gatewayDB, pf, isGwNew)
+		_ = isRouterNew
+		_ = isBatchRouterNew
+		// migrator.Setup(&routerDB, pf, isRouterNew)
+		// migrator.Setup(&batchRouterDB, pf, isBatchRouterNew)
 
 	}
 

@@ -123,6 +123,7 @@ type HandleT struct {
 	statDropDSPeriod              *stats.RudderStats
 	isStatDropDSPeriodInitialized bool
 	jobsdbQueryTimeStat           *stats.RudderStats
+	migrationState                MigrationState
 }
 
 //The struct which is written to the journal
@@ -287,8 +288,9 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration) {
+func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration) bool {
 
+	var isNewJobsDB bool
 	var err error
 	psqlInfo := GetConnectionString()
 	jd.assert(tablePrefix != "", "tablePrefix received is empty")
@@ -332,6 +334,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	//If no DS present, add one
 	if len(jd.datasetList) == 0 {
 		jd.addNewDS(true, dataSetT{})
+		isNewJobsDB = true
 	}
 
 	// Schema Migration: Created_at column should have a default now()
@@ -348,6 +351,8 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	rruntime.Go(func() {
 		jd.mainCheckLoop()
 	})
+
+	return isNewJobsDB
 }
 
 /*
@@ -1449,9 +1454,6 @@ so take both the list and data lock
 func (jd *HandleT) mainCheckLoop() {
 
 	for {
-		if config.GetBool("enableMigrator", false) {
-			continue
-		}
 		time.Sleep(mainCheckSleepDuration)
 		logger.Debug("Main check:Start")
 		jd.dsListLock.RLock()
@@ -1468,6 +1470,9 @@ func (jd *HandleT) mainCheckLoop() {
 			jd.dsListLock.Unlock()
 		}
 
+		if config.GetBool("enableMigrator", false) {
+			continue
+		}
 		//Take the lock and run actual migration
 		jd.dsMigrationLock.Lock()
 

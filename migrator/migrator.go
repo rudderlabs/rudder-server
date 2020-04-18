@@ -13,9 +13,9 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/pathfinder"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/spaolacci/murmur3"
 )
 
 //Migrator is a handle to this object used in main.go
@@ -30,15 +30,15 @@ func init() {
 }
 
 //Setup initializes the module
-func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) {
+func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, isNew bool) {
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
-	// if pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
-	// 	migrator.jobsDB.SetupForImportAndAcceptNewEvents()
-	// 	rruntime.Go(func() {
-	// 		migrator.importFromFiles()
-	// 	})
-	// }
+	if pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
+		migrator.jobsDB.SetupForImportAndAcceptNewEvents(pf.GetVersion(), isNew)
+		rruntime.Go(func() {
+			migrator.importFromFiles()
+		})
+	}
 	logger.Info("Shanmukh: inside migrator setup")
 	migrator.export()
 }
@@ -57,8 +57,7 @@ func (migrator *Migrator) importFromFiles() {
 	importFiles := migrator.getImportFiles()
 
 	for _, file := range importFiles {
-		migrator.readFromFileAndWriteToDB(file)
-		logger.Info("done : ", file)
+		migrator.readFromFileAndWriteToDB(file) //Make this concurrent
 	}
 }
 
@@ -81,8 +80,8 @@ func (migrator *Migrator) readFromFileAndWriteToDB(filePath string) error {
 		// process the line
 	}
 
-	migrator.jobsDB.Store(jobList)
-
+	migrator.jobsDB.StoreImportedJobsAndJobStatuses(jobList)
+	logger.Info("done : ", file)
 	// check if Scan() finished because of error or because it reached end of file
 	return scanner.Err()
 }
@@ -144,7 +143,7 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 		}
 		userID, ok := misc.GetAnonymousID(eventList[0])
 
-		nodeMeta := migrator.pf.GetNodeFromHash(murmur3.Sum32([]byte(userID)))
+		nodeMeta := migrator.pf.GetNodeFromID(userID)
 		m[nodeMeta] = append(m[nodeMeta], job)
 	}
 
@@ -177,41 +176,36 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 					logger.Error("Something went wrong in marshalling")
 				}
 				_, _ = datawriter.WriteString(string(m) + "\n")
-				newStatus := jobsdb.JobStatusT{
-					JobID:         job.JobID,
-					JobState:      jobState,
-					AttemptNum:    1,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
-					ErrorCode:     "200",
-					ErrorResponse: []byte(`{"success":"OK"}`),
-				}
-				statusList = append(statusList, &newStatus)
+				buildStatusList(statusList, job, jobState)
 			}
 			logger.Info(nMeta, len(jobList))
 			datawriter.Flush()
 			file.Close()
-			migrator.uploadTos3AndNotifyDestNode(fileName, nMeta)
+			migrator.uploadToS3AndNotifyDestNode(fileName, nMeta)
 			fileIndex++
 		} else {
 			for _, job := range jobList {
-				newStatus := jobsdb.JobStatusT{
-					JobID:         job.JobID,
-					JobState:      jobState,
-					AttemptNum:    1,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
-					ErrorCode:     "200",
-					ErrorResponse: []byte(`{"success":"OK"}`),
-				}
-				statusList = append(statusList, &newStatus)
+				buildStatusList(statusList, job, jobState)
 			}
 		}
 	}
 	return statusList
 }
 
-func (migrator *Migrator) uploadTos3AndNotifyDestNode(fileName string, nMeta pathfinder.NodeMeta) {
+func buildStatusList(statusList []*jobsdb.JobStatusT, job *jobsdb.JobT, jobState string) {
+	newStatus := jobsdb.JobStatusT{
+		JobID:         job.JobID,
+		JobState:      jobState,
+		AttemptNum:    1,
+		ExecTime:      time.Now(),
+		RetryTime:     time.Now(),
+		ErrorCode:     "200",
+		ErrorResponse: []byte(`{"success":"OK"}`),
+	}
+	statusList = append(statusList, &newStatus)
+}
+
+func (migrator *Migrator) uploadToS3AndNotifyDestNode(fileName string, nMeta pathfinder.NodeMeta) {
 	//TODO:
 }
 

@@ -3,22 +3,60 @@ package jobsdb
 import (
 	"database/sql"
 	"fmt"
-	"time"
+	"math"
+	"sync"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	uuid "github.com/satori/go.uuid"
 )
 
+//MigrationState maintains the state required during the migration process
+type MigrationState struct {
+	sequenceProvider        SequenceProvider
+	dsForNewEvents          dataSetT
+	isDsForMigrationCreated bool
+	migrationDSCreationLock sync.RWMutex
+}
+
 /*
-SetupForMigration is used to initialize the HandleT structure.
+SetupForImportAndAcceptNewEvents is used to initialize the HandleT structure.
 clearAll = True means it will remove all existing tables
 tablePrefix must be unique and is used to separate
 multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) SetupForImportAndAccept(tablePrefix string, retentionPeriod time.Duration, toBackup bool) {
-	//TODO: Create jobsDB tables etc.,
+func (jd *HandleT) SetupForImportAndAcceptNewEvents(version int, isNew bool) {
+	jd.dsListLock.Lock()
+	defer jd.dsListLock.Unlock()
+	dsList := jd.getDSList(true)
+	newDSMin := int64(0)
+
+	if !isNew {
+		var minID, maxID sql.NullInt64
+		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsList[len(dsList)-1].JobTable)
+		row := jd.dbHandle.QueryRow(sqlStatement)
+		err := row.Scan(&minID, &maxID)
+		jd.assertError(err)
+		if maxID.Valid {
+			newDSMin = int64(maxID.Int64)
+		} else {
+			panic("Unable to get max")
+		}
+		jd.migrationState.dsForNewEvents = jd.addNewDS(true, dataSetT{})
+	} else {
+		jd.migrationState.dsForNewEvents = dsList[0]
+	}
+	jd.updateSequenceNumber(jd.migrationState.dsForNewEvents, int64(version)*int64(math.Pow10(13)), jd.tablePrefix)
+	jd.migrationState.sequenceProvider = NewSequenceProvider(newDSMin + 1)
+}
+
+func (jd *HandleT) updateSequenceNumber(ds dataSetT, sequenceNumber int64, tablePrefix string) {
+	sqlStatement := fmt.Sprintf(`SELECT setval('%s_jobs_%s_job_id_seq', %d)`,
+		tablePrefix, ds.Index, sequenceNumber)
+	_, err := jd.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic("Unable to set sequence number")
+	}
 }
 
 //GetNonMigrated all jobs with no filters
@@ -143,15 +181,48 @@ func (jd *HandleT) deleteWontMigrateJobStatusDS(ds dataSetT) {
 	jd.assertError(err)
 }
 
-//StoreImportedJobs is used to write the jobs to _tables
-func (jd *HandleT) StoreImportedJobs(jobList []*JobT) map[uuid.UUID]string {
-	// jd.dsListLock.RLock()
-	// defer jd.dsListLock.RUnlock()
+//StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
+func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT) {
+	startJobID := jd.migrationState.sequenceProvider.ReserveIds(len(jobList))
 
-	// dsList := jd.getDSList(false)
-	// for _, job := range jobList {
+	statusList := []*JobStatusT{}
 
-	// }
-	// return jd.storeJobsDS(dsList[len(dsList)-1], true, true, jobList)
-	return nil
+	for idx, job := range jobList {
+		jobID := startJobID + int64(idx)
+		job.JobID = jobID
+		job.LastJobStatus.JobID = jobID
+		if job.LastJobStatus.JobState != "" {
+			statusList = append(statusList, &job.LastJobStatus)
+		}
+	}
+
+	jd.dsListLock.Lock()
+	dsList := jd.getDSList(true)
+
+	targetDS := dataSetT{"", "", "Unset"}
+
+	jd.migrationState.migrationDSCreationLock.Lock()
+	if !jd.migrationState.isDsForMigrationCreated {
+		targetDS = jd.addNewDS(false, jd.migrationState.dsForNewEvents)
+		jd.migrationState.isDsForMigrationCreated = true
+	}
+	jd.migrationState.migrationDSCreationLock.Unlock()
+
+	if targetDS.Index == "Unset" {
+		for idx, ds := range dsList {
+			if ds.Index == jd.migrationState.dsForNewEvents.Index {
+				targetDS = dsList[idx-1] //before this assert idx > 0
+			}
+		}
+	}
+
+	if targetDS.Index == "Unset" {
+		panic("No ds found to migrate to")
+	}
+
+	jd.dsListLock.Unlock()
+
+	//Take proper locks(may be not required) and move the two lines below into a single transaction
+	jd.storeJobsDS(targetDS, true, true, jobList) //what is retry each expected to do?
+	jd.updateJobStatusDS(targetDS, statusList, []string{}, []ParameterFilterT{})
 }
