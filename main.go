@@ -188,6 +188,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	}
 
 	if enableMigrator {
+		backendReplciaCount := config.GetEnv("BACKEND_REPLICA_COUNT", "5")
+		
 		logger.Info("Shanmukh: setting up pathfinder")
 		s := make([]pathfinder.NodeMeta, 4)
 		s[0] = pathfinder.GetNodeMeta(1, "node0ConnString")
@@ -199,9 +201,11 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 		logger.Info("Shanmukh: setting up migrators")
 		var migrator migrator.Migrator
+
+		//TODO: Should this be concurrent?
 		migrator.Setup(&gatewayDB, pf, isGwNew)
-		_ = isRouterNew
-		_ = isBatchRouterNew
+		migrator.Setup(&routerDB, pf, isRouterNew)
+		migrator.Setup(&batchRouterDB, pf, isBatchRouterNew)
 		// migrator.Setup(&routerDB, pf, isRouterNew)
 		// migrator.Setup(&batchRouterDB, pf, isBatchRouterNew)
 

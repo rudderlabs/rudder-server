@@ -41,6 +41,7 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 	}
 	logger.Info("Shanmukh: inside migrator setup")
 	migrator.export()
+	panic(fmt.Sprintf("Node not in cluster. Won't be accepting any more events", pf))
 }
 
 var (
