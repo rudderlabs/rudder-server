@@ -69,6 +69,7 @@ var (
 	warehouseTableUploadsTable string
 	warehouseSchemasTable      string
 	warehouseMode              string
+	warehouseSyncPreFetchCount int
 )
 var (
 	host, user, password, dbname string
@@ -154,6 +155,7 @@ func loadConfig() {
 	dbname = config.GetEnv("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
 	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
@@ -169,10 +171,8 @@ func (wh *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == wh.destType {
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
-						if destination.Config != nil {
-							if destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
-								wh.syncLiveWarehouseStatus(source.ID, destination.ID) // consider a diff go-routine ?
-							}
+						if destination.Config != nil && destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
+							wh.syncLiveWarehouseStatus(source.ID, destination.ID) // consider a diff go-routine?
 						}
 					}
 				}
@@ -182,7 +182,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 	}
 }
 func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string) {
-	rows, _ := wh.dbHandle.Query(fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at asc limit %d`, warehouseUploadsTable, sourceID, destinationID, 10)) // change limit count
+	rows, _ := wh.dbHandle.Query(fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at asc limit %d`, warehouseUploadsTable, sourceID, destinationID, warehouseSyncPreFetchCount))
 	var uploadIDs []int64
 	for rows.Next() {
 		var uploadID int64
@@ -701,13 +701,17 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 			failedTableUploads = append(failedTableUploads, tableName)
 		}
 	}
+	//TODO: take attempNum from e
+	//var e map[string]map[string]interface{}
+	//_=json.Unmarshal([]byte(errorResp),e)
+
 	var errorRespB []byte
 	if errorResp == "{}" {
 		errorCode = "200"
 		errorRespB, _ = json.Marshal(ErrorResponseT{Error: errorResp})
 	} else {
 		errorCode = "400"
-		errorRespB = []byte(`{"success":"OK"}`)
+		errorRespB, _ = json.Marshal(ErrorResponseT{Error: errorResp})
 	}
 
 	payloadMap := map[string]interface{}{
