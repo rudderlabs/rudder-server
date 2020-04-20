@@ -91,7 +91,7 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 		return UploadOutput{}, err
 	}
 
-	return UploadOutput{Location: fileName}, nil
+	return UploadOutput{Location: blobURL.String()}, nil
 }
 
 func (manager *AzureBlobStorageManager) Download(output *os.File, key string) error {
