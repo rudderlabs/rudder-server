@@ -182,7 +182,11 @@ func (wh *HandleT) backendConfigSubscriber() {
 	}
 }
 func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string) {
-	rows, _ := wh.dbHandle.Query(fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at asc limit %d`, warehouseUploadsTable, sourceID, destinationID, warehouseSyncPreFetchCount))
+	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at asc limit %d`, warehouseUploadsTable, sourceID, destinationID, warehouseSyncPreFetchCount))
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	defer rows.Close()
 	var uploadIDs []int64
 	for rows.Next() {
 		var uploadID int64
@@ -703,8 +707,15 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 	failedTableUploads := make([]string, 0)
 
 	row := wh.dbHandle.QueryRow(fmt.Sprintf(`select source_id, destination_id, status, error, updated_at from %s where id=%d`, warehouseUploadsTable, uploadID))
-	row.Scan(&sourceID, &destinationID, &status, &errorResp, &updatedAt)
-	rows, _ := wh.dbHandle.Query(fmt.Sprintf(`select table_name, status from %s where wh_upload_id=%d`, warehouseTableUploadsTable, uploadID))
+	err:=row.Scan(&sourceID, &destinationID, &status, &errorResp, &updatedAt)
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select table_name, status from %s where wh_upload_id=%d`, warehouseTableUploadsTable, uploadID))
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	defer rows.Close()
 	for rows.Next() {
 		rows.Scan(&tableName, &tableStatus)
 		if tableStatus == warehouseutils.ExportedDataState {
@@ -715,7 +726,10 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 	}
 
 	var e map[string]map[string]interface{}
-	_=json.Unmarshal([]byte(errorResp),&e)
+	err=json.Unmarshal([]byte(errorResp),&e)
+	if err != nil {
+		panic(err)
+	}
 	for _,value:= range e {
 		if attempt,ok:=value["attempt"]; ok {
 			attemptNum = attemptNum + int(attempt.(float64))
