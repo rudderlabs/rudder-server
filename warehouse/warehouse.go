@@ -172,7 +172,11 @@ func (wh *HandleT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == wh.destType {
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
 						if destination.Config != nil && destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
-							wh.syncLiveWarehouseStatus(source.ID, destination.ID)
+							sourceID :=source.ID
+							destinationID:= destination.ID
+							rruntime.Go(func(){
+								wh.syncLiveWarehouseStatus(sourceID, destinationID)
+							})
 						}
 					}
 				}
@@ -194,10 +198,7 @@ func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string
 		uploadIDs = append(uploadIDs, uploadID)
 	}
 	for _, uploadID := range uploadIDs {
-		uploadID:=uploadID
-		rruntime.Go(func() {
-			wh.recordDeliveryStatus(uploadID)
-		})
+		wh.recordDeliveryStatus(uploadID)
 	}
 }
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
