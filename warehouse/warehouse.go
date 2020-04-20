@@ -729,17 +729,19 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 		}
 	}
 
-	var e map[string]map[string]interface{}
-	err=json.Unmarshal([]byte(errorResp),&e)
+	var errJson map[string]map[string]interface{}
+	err=json.Unmarshal([]byte(errorResp),&errJson)
 	if err != nil {
 		panic(err)
 	}
-	for _,value:= range e {
-		if attempt,ok:=value["attempt"]; ok {
+	if stateErr,ok:=errJson[status]; ok {
+		if attempt, ok:=stateErr["attempt"]; ok{
 			attemptNum = attemptNum + int(attempt.(float64))
 		}
 	}
-
+	if attemptNum == 0 {
+		attemptNum = 1
+	}
 	var errorRespB []byte
 	if errorResp == "{}" {
 		errorCode = "200"
