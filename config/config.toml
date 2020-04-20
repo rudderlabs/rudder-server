@@ -122,6 +122,7 @@ noOfWorkers = 8
 noOfSlaveWorkerRoutines = 4
 mainLoopSleepInS = 60
 maxRetry = 3
+warehouseSyncPreFetchCount = 10
 stagingFilesBatchSize = 240
     [Warehouse.redshift]
     maxParallelLoads = 3
@@ -132,7 +133,7 @@ stagingFilesBatchSize = 240
 
 [Processor]
 loopSleepInMS = 10
-maxLoopSleepInMS = 5000
+maxLoopSleepInMS = 5000z
 dbReadBatchSize = 10000
 transformBatchSize = 100
 userTransformBatchSize = 200

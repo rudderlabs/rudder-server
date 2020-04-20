@@ -686,6 +686,7 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 		updatedAt     time.Time
 		tableName     string
 		tableStatus   string
+		attemptNum    int
 	)
 	successfulTableUploads := make([]string, 0)
 	failedTableUploads := make([]string, 0)
@@ -701,18 +702,23 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 			failedTableUploads = append(failedTableUploads, tableName)
 		}
 	}
-	//TODO: take attempNum from e
-	//var e map[string]map[string]interface{}
-	//_=json.Unmarshal([]byte(errorResp),e)
+
+	var e map[string]map[string]interface{}
+	_=json.Unmarshal([]byte(errorResp),&e)
+	for _,value:= range e {
+		if attempt,ok:=value["attempt"]; ok {
+			attemptNum = attemptNum + int(attempt.(float64))
+		}
+	}
 
 	var errorRespB []byte
 	if errorResp == "{}" {
 		errorCode = "200"
-		errorRespB, _ = json.Marshal(ErrorResponseT{Error: errorResp})
 	} else {
 		errorCode = "400"
-		errorRespB, _ = json.Marshal(ErrorResponseT{Error: errorResp})
+
 	}
+	errorRespB, _ = json.Marshal(ErrorResponseT{Error: errorResp})
 
 	payloadMap := map[string]interface{}{
 		"lastSyncedAt":             updatedAt,
@@ -726,7 +732,7 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 		DestinationID: destinationID,
 		SourceID:      sourceID,
 		Payload:       payload,
-		AttemptNum:    1,
+		AttemptNum:    attemptNum,
 		JobState:      status,
 		ErrorCode:     errorCode,
 		ErrorResponse: errorRespB,
