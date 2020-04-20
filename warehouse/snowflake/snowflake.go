@@ -58,8 +58,15 @@ var dataTypesMap = map[string]string{
 }
 
 var primaryKeyMap = map[string]string{
-	"users":      "ID",
-	"identifies": "ID",
+	"USERS":      "ID",
+	"IDENTIFIES": "ID",
+	strings.ToUpper(warehouseutils.DiscardsTable): "ROW_ID",
+}
+
+var partitionKeyMap = map[string]string{
+	"USERS":      "ID",
+	"IDENTIFIES": "ID",
+	strings.ToUpper(warehouseutils.DiscardsTable): "ROW_ID, COLUMN_NAME, TABLE_NAME",
 }
 
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
@@ -180,6 +187,10 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		logger.Infof("SF: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
 		return
 	}
+	if !warehouseutils.HasLoadFiles(sf.DbHandle, sf.Warehouse.Source.ID, sf.Warehouse.Destination.ID, tableName, sf.Upload.StartLoadFileID, sf.Upload.EndLoadFileID) {
+		warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, sf.Upload.ID, tableName, sf.DbHandle)
+		return
+	}
 	logger.Infof("SF: Starting load for table:%s\n", tableName)
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, sf.Upload.ID, tableName, sf.DbHandle)
 	timer := warehouseutils.DestStat(stats.TimerType, "single_table_upload_time", sf.Warehouse.Destination.ID)
@@ -248,6 +259,11 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		primaryKey = column
 	}
 
+	partitionKey := "ID"
+	if column, ok := partitionKeyMap[tableName]; ok {
+		partitionKey = column
+	}
+
 	var columnNames, stagingColumnNames, columnsWithValues string
 	for idx, str := range strkeys {
 		columnNames += fmt.Sprintf(`%s`, str)
@@ -260,17 +276,22 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		}
 	}
 
+	var additionalJoinClause string
+	if tableName == strings.ToUpper(warehouseutils.DiscardsTable) {
+		additionalJoinClause = fmt.Sprintf(`AND original.%[1]s = staging.%[1]s`, "TABLE_NAME")
+	}
+
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY %[3]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
+											SELECT *, row_number() OVER (PARTITION BY %[8]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
-									ON original.%[3]s = staging.%[3]s
+									ON (original.%[3]s = staging.%[3]s %[7]s)
 									WHEN MATCHED THEN
 									UPDATE SET %[6]s
 									WHEN NOT MATCHED THEN
-									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues)
+									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey)
 	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {

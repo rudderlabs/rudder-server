@@ -40,6 +40,10 @@ const (
 	StagingFileWaitingState   = "waiting"
 )
 
+const (
+	DiscardsTable = "rudder_discards"
+)
+
 var (
 	warehouseUploadsTable      string
 	warehouseTableUploadsTable string
@@ -296,6 +300,18 @@ func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, curren
 	return
 }
 
+func HasLoadFiles(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) bool {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s
+								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)`,
+		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
+	var count int64
+	err := dbHandle.QueryRow(sqlStatement).Scan(&count)
+	if err != nil {
+		panic(err)
+	}
+	return count > 0
+}
+
 func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (locations []string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
 		SELECT  staging_file_id, MAX(id) AS id FROM wh_load_files
@@ -330,11 +346,23 @@ func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId strin
 }
 
 func GetLoadFileLocation(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (location string, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s
-								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v) LIMIT 1`,
-		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
+	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
+		SELECT  staging_file_id, MAX(id) AS id FROM wh_load_files
+		WHERE ( source_id='%[2]s'
+			AND destination_id='%[3]s'
+			AND table_name='%[4]s'
+			AND id >= %[5]v
+			AND id <= %[6]v)
+		GROUP BY staging_file_id ) uniqueStagingFiles
+		ON  wh_load_files.id = uniqueStagingFiles.id `,
+		warehouseLoadFilesTable,
+		sourceId,
+		destinationId,
+		tableName,
+		start,
+		end)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
 	return
@@ -491,6 +519,13 @@ func ToSafeDBString(provider string, str string) string {
 		res = fmt.Sprintf(`_%s`, res)
 	}
 	return res
+}
+
+func ToCase(provider string, str string) string {
+	if strings.ToUpper(provider) == "SNOWFLAKE" {
+		str = strings.ToUpper(str)
+	}
+	return str
 }
 
 func GetIP() string {

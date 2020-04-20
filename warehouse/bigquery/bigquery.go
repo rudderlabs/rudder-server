@@ -49,8 +49,10 @@ var dataTypesMap = map[string]bigquery.FieldType{
 	"datetime": bigquery.TimestampFieldType,
 }
 
-var primaryKeyMap = map[string]string{
-	"identifies": "user_id",
+var partitionKeyMap = map[string]string{
+	"users":                      "id",
+	"identifies":                 "id",
+	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
 func (bq *HandleT) setUploadError(err error, state string) {
@@ -83,14 +85,14 @@ func (bq *HandleT) createTable(name string, columns map[string]string) (err erro
 		return err
 	}
 
-	primaryKey := "id"
-	if column, ok := primaryKeyMap[name]; ok {
-		primaryKey = column
+	partitionKey := "id"
+	if column, ok := partitionKeyMap[name]; ok {
+		partitionKey = column
 	}
 
 	// assuming it has field named id upon which dedup is done in view
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + primaryKey + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
 					AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
 			)
 		WHERE __row_number = 1`
@@ -177,6 +179,10 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 	uploadStatus, err := warehouseutils.GetTableUploadStatus(bq.Upload.ID, tableName, bq.DbHandle)
 	if uploadStatus == warehouseutils.ExportedDataState {
 		logger.Infof("BQ: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
+		return
+	}
+	if !warehouseutils.HasLoadFiles(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID) {
+		warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, bq.Upload.ID, tableName, bq.DbHandle)
 		return
 	}
 
