@@ -903,7 +903,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	}
 
 	downloader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: warehouseutils.ObjectStorageMap[job.DestinationType],
+		Provider: warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig),
 		Config:   job.DestinationConfig.(map[string]interface{}),
 	})
 	if err != nil {
@@ -1082,7 +1082,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	warehouseutils.DestStat(stats.CountType, "bytes_processed_in_staging_file", job.DestinationID).Count(lineBytesCounter)
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: warehouseutils.ObjectStorageMap[job.DestinationType],
+		Provider: warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig),
 		Config:   job.DestinationConfig.(map[string]interface{}),
 	})
 	if err != nil {
@@ -1095,7 +1095,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		outputFile.CloseGZ()
 		file, err := os.Open(outputFile.File.Name())
 		defer os.Remove(outputFile.File.Name())
-		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageMap[job.DestinationType], tableName, job.StagingFileID)
+		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
 		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.BatchID, tableName))
 		// tableName, job.Warehouse.Source.ID, fmt.Sprintf(`%v-%v`, strconv.FormatInt(job.Upload.ID, 10), uuid.NewV4().String()))
 		if err != nil {

@@ -35,6 +35,12 @@ type HandleT struct {
 	Upload        warehouseutils.UploadT
 }
 
+// String constants for bigquery destination config
+const (
+	GCPProjectID   = "project"
+	GCPCredentials = "credentials"
+)
+
 var dataTypesMap = map[string]bigquery.FieldType{
 	"boolean":  bigquery.BooleanFieldType,
 	"int":      bigquery.NumericFieldType,
@@ -181,7 +187,7 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 	if err != nil {
 		panic(err)
 	}
-	locations, err = warehouseutils.GetGCSLocations(locations)
+	locations = warehouseutils.GetGCSLocations(locations, warehouseutils.GCSLocationOptionsT{})
 	logger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
 	gcsRef := bigquery.NewGCSReference(locations...)
 	gcsRef.SourceFormat = bigquery.JSON
@@ -314,11 +320,11 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	bq.DbHandle = config.DbHandle
 	bq.Warehouse = config.Warehouse
 	bq.Upload = config.Upload
-	bq.ProjectID = strings.TrimSpace(bq.Warehouse.Destination.Config.(map[string]interface{})["project"].(string))
+	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 
 	bq.Db, err = bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
-		credentials: bq.Warehouse.Destination.Config.(map[string]interface{})["credentials"].(string),
+		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
