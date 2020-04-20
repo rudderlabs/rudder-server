@@ -118,6 +118,7 @@ uploadsTable = "wh_uploads"
 tableUploadsTable = "wh_table_uploads"
 schemasTable = "wh_schemas"
 uploadFreqInS = 1800
+maxRetriesToWarehouseService = 128
 noOfWorkers = 8
 noOfSlaveWorkerRoutines = 4
 mainLoopSleepInS = 60
