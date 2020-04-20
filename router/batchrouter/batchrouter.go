@@ -461,6 +461,8 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 }
 
 func (brt *HandleT) mainLoop() {
+	eventsReceived := stats.NewStat(
+		fmt.Sprintf("batch.router.%s_events_received", brt.destType), stats.CountType)
 	for {
 		time.Sleep(mainLoopSleep)
 		for _, batchDestination := range brt.batchDestinations {
@@ -495,6 +497,7 @@ func (brt *HandleT) mainLoop() {
 			toQuery -= len(waitList)
 			unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, parameterFilters)
 			brtQueryStat.End()
+			eventsReceived.Increment()
 
 			combinedList := append(waitList, append(unprocessedList, retryList...)...)
 			if len(combinedList) == 0 {

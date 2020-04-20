@@ -570,6 +570,8 @@ func (rt *HandleT) generatorLoop() {
 
 	generatorStat := stats.NewStat("router.generator_loop", stats.TimerType)
 	countStat := stats.NewStat("router.generator_events", stats.CountType)
+	eventsReceived := stats.NewStat(
+		fmt.Sprintf("router.%s_events_received", rt.destID), stats.CountType)
 
 	for {
 		generatorStat.Start()
@@ -644,6 +646,7 @@ func (rt *HandleT) generatorLoop() {
 
 		//Send the jobs to the jobQ
 		for _, wrkJob := range toProcess {
+			eventsReceived.Increment()
 			wrkJob.worker.channel <- wrkJob.job
 		}
 
