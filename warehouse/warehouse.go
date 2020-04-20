@@ -163,13 +163,27 @@ func (wh *HandleT) backendConfigSubscriber() {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == wh.destType {
-						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
+						namespace:= getNamespaceFromDestinationConfig(destination.Config, source.Name, wh.destType)
+						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace})
 					}
 				}
 			}
 		}
 		configSubscriberLock.Unlock()
 	}
+}
+func getNamespaceFromDestinationConfig(config interface{}, sourceName string, destType string) string{
+	configMap := config.(map[string]interface{})
+	var namespace string
+	if configMap["namespace"]!=nil{
+		namespace = configMap["namespace"].(string)
+	}
+	if len(strings.TrimSpace(namespace))>0 {
+		namespace = misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(destType, namespace))), 127)
+	} else {
+		namespace = misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(destType, sourceName))), 127)
+	}
+	return namespace
 }
 
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
@@ -321,8 +335,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	startJSONID := jsonUploadsList[0].ID
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
 	currentSchema, err := json.Marshal(schema)
-	namespace := misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(wh.destType, warehouse.Source.Name))), 127)
-	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, currentSchema, "{}", time.Now(), time.Now())
+	row := stmt.QueryRow(warehouse.Source.ID, warehouse.Namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, currentSchema, "{}", time.Now(), time.Now())
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
@@ -332,7 +345,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 	upload := warehouseutils.UploadT{
 		ID:                 uploadID,
-		Namespace:          namespace,
+		Namespace:          warehouse.Namespace,
 		SourceID:           warehouse.Source.ID,
 		DestinationID:      warehouse.Destination.ID,
 		DestinationType:    wh.destType,
