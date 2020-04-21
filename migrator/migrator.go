@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"path/filepath"
+	"bytes"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/mitchellh/mapstructure"
@@ -201,6 +203,9 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 		m[nodeMeta] = append(m[nodeMeta], job)
 	}
 
+	backupPathDirName := "/migrator/"
+	tmpDirPath, err := misc.CreateTMPDIR()
+
 	var statusList []*jobsdb.JobStatusT
 	for nMeta, jobList := range m {
 		var jobState string
@@ -214,30 +219,40 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 		}
 
 		if writeToFile {
-			fileName := fmt.Sprintf("%s_%s_%s_%d_%d.json", migrator.jobsDB.GetTablePrefix(), misc.GetNodeID(), nMeta.GetNodeID(), jobList[0].JobID, len(jobList))
-			file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			//TODO: Instead of directly doing OpenFile, check if it already exists, if it exists rename the existing file and create again
-			//Otherwise there is a chance of adding data to an existing file
+			path := fmt.Sprintf(`%v%s_%s_%s_%d_%d.gz`, tmpDirPath+backupPathDirName, migrator.jobsDB.GetTablePrefix(), misc.GetNodeID(), nMeta.GetNodeID(), jobList[0].JobID, len(jobList))
+
+			err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 			if err != nil {
-				log.Fatalf("failed creating file: %s", err)
+				panic(err)
 			}
 
-			datawriter := bufio.NewWriter(file)
+			gzWriter, err := misc.CreateGZ(path)
 
-			for _, job := range jobList {
+			contentSlice := make([][]byte, len(jobList))
+			for idx, job := range jobList {
 				m, err := json.Marshal(job)
 				if err != nil {
 					logger.Error("Something went wrong in marshalling")
 				}
-				_, _ = datawriter.WriteString(string(m) + "\n")
+
+				contentSlice[idx] = m
 				statusList = append(statusList, buildStatus(job, jobState))
 			}
+
 			logger.Info(nMeta, len(jobList))
-			datawriter.Flush()
-			file.Close()
-			file, err = os.Open(fileName)
+
+			content := bytes.Join(contentSlice[:], []byte("\n"))
+			gzWriter.Write(content)
+
+			gzWriter.CloseGZ()
+			file, err := os.Open(path)
+			if err != nil {
+				panic(err)
+			}
 			migrator.uploadToS3AndNotifyDestNode(file, nMeta)
 			file.Close()
+
+			os.Remove(path)
 		} else {
 			for _, job := range jobList {
 				statusList = append(statusList, buildStatus(job, jobState))
