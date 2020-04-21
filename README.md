@@ -109,7 +109,7 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 1. Install Golang 1.13 or above. [Download Here][golang]
 2. Install NodeJS 10.6 or above. [Download Here][node]
-3. Install PostgreSQL 10 or above and set up the DB
+3. Install PostgreSQL 10 or above and set up the DB. If you are on a linux distribution, you have to switch to postgres user `sudo su - postgres` before running the below commands.
 
 ```
 psql -c "CREATE DATABASE jobsdb"
@@ -119,13 +119,16 @@ psql "jobsdb" -c "GRANT ALL PRIVILEGES ON DATABASE jobsdb to rudder";
 ```
 
 4. Go to the [dashboard][dashboard] and set up your account. Copy your workspace token from top of the home page
-5. Clone this repository. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
-   and navigate to the transformer directory `cd rudder-transformer`
-6. Install dependencies `npm i` and start the destination transformer `node destTransformer.js`
-7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
-8. Update the `WORKSPACE_TOKEN` environment variable with the token fetched in step 4
-9. Run the backend server `go run -mod=vendor main.go`
-10. Follow (Send Test Events) instructions below to send test event.
+5. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
+
+   (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
+   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule init && git submodule update`
+6. Navigate to the transformer directory `cd rudder-transformer`
+7. Install dependencies `npm i` and start the destination transformer `node destTransformer.js`
+8. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
+9. Update the `WORKSPACE_TOKEN` environment variable with the token fetched in step 4
+10. Run the backend server `go run -mod=vendor main.go`
+11. Follow (Send Test Events) instructions below to send test event.
 
 ---
 

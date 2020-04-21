@@ -362,7 +362,7 @@ func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) 
 	}
 }
 
-func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err error) {
+func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err error, isWarehouse bool) {
 	var (
 		jobState  string
 		errorResp []byte
@@ -370,9 +370,15 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 
 	if err != nil {
 		jobState = jobsdb.FailedState
+		if isWarehouse {
+			jobState = warehouseutils.GeneratingStagingFileFailed
+		}
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 	} else {
 		jobState = jobsdb.SucceededState
+		if isWarehouse {
+			jobState = warehouseutils.GeneratedStagingFile
+		}
 		errorResp = []byte(`{"success":"OK"}`)
 	}
 
@@ -403,7 +409,7 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
 							brt.setJobStatus(batchJobs, false, output.Error)
-							brt.recordDeliveryStatus(batchJobs.BatchDestination, output.Error)
+							brt.recordDeliveryStatus(batchJobs.BatchDestination, output.Error, false)
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 							if output.JournalOpID > 0 {
 								brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
@@ -420,6 +426,7 @@ func (brt *HandleT) initWorkers() {
 								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
 								warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
 							}
+							brt.recordDeliveryStatus(batchJobs.BatchDestination, output.Error, true)
 							brt.setJobStatus(batchJobs, true, output.Error)
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 							destUploadStat.End()
