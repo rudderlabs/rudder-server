@@ -195,15 +195,17 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8081)
 		logger.Info("Shanmukh: setting up pathfinder")
 
-		pf.Setup(pathfinder.Setup(backendReplicaCount, clusterVersion, dnsPattern, migratorPort), clusterVersion)
+		pf.Setup(pathfinder.Setup(backendReplicaCount, clusterVersion, dnsPattern), clusterVersion)
 
 		logger.Info("Shanmukh: setting up migrators")
-		var migrator migrator.Migrator
+		var gatewayMigrator migrator.Migrator
+		var routerMigrator migrator.Migrator
+		var batchRouterwMigrator migrator.Migrator
 
 		//TODO: Should this be concurrent?
-		migrator.Setup(&gatewayDB, pf, 8081)
-		// migrator.Setup(&routerDB, pf, 8082)
-		// migrator.Setup(&batchRouterDB, pf, 8083)
+		gatewayMigrator.Setup(&gatewayDB, pf, migratorPort)
+		routerMigrator.Setup(&routerDB, pf, migratorPort)
+		batchRouterwMigrator.Setup(&batchRouterDB, pf, migratorPort)
 
 		if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
 			shouldStartGateWay = false

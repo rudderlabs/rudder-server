@@ -28,8 +28,8 @@ func (nMeta *NodeMeta) GetNodeID() string {
 }
 
 //GetNodeConnectionString is a getter for connectionString
-func (nMeta *NodeMeta) GetNodeConnectionString() string {
-	return nMeta.connectionString
+func (nMeta *NodeMeta) GetNodeConnectionString(port int) string {
+	return fmt.Sprintf("%s:%d", nMeta.connectionString, port)
 }
 
 //GetVersion returns of the current cluster
@@ -37,21 +37,20 @@ func (pf *Pathfinder) GetVersion() int {
 	return pf.version
 }
 
-//GetNodeMeta returns a NodeMeta struct
+//GetNodeMeta is a constructor for NodeMeta struct
 func GetNodeMeta(nodeID string, connectionString string) NodeMeta {
 	return NodeMeta{nodeID: nodeID, connectionString: connectionString}
 }
 
 //Setup sets the cluster state based on which users are routed to corresponding nodes
-func Setup(backendNodeCount int, version int, dnsPattern string, migratorPort int) []NodeMeta {
+func Setup(backendNodeCount int, version int, dnsPattern string) []NodeMeta {
 	clusterInfo := []NodeMeta{}
 	for i := 0; i < backendNodeCount; i++ {
-		connectionString := fmt.Sprintf("%s:%d",
+		connectionString :=
 			strings.ReplaceAll(
 				strings.ReplaceAll(dnsPattern, "VERSION", strconv.Itoa(version)),
 				"NODENUM",
-				strconv.Itoa(i)),
-			migratorPort)
+				strconv.Itoa(i))
 		nMeta := GetNodeMeta(fmt.Sprintf("v%d_node%d", version, i), connectionString)
 		clusterInfo = append(clusterInfo, nMeta)
 	}
