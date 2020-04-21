@@ -117,7 +117,6 @@ psql -c "CREATE USER rudder SUPERUSER"
 psql "jobsdb" -c "ALTER USER rudder WITH ENCRYPTED PASSWORD 'rudder'";
 psql "jobsdb" -c "GRANT ALL PRIVILEGES ON DATABASE jobsdb to rudder";
 ```
-   (For Linux users) You have to switch to postgres user before running the above commands.
 
 4. Go to the [dashboard][dashboard] and set up your account. Copy your workspace token from top of the home page
 5. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
