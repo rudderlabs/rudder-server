@@ -30,6 +30,7 @@ type Migrator struct {
 	jobsDB      *jobsdb.HandleT
 	pf          pathfinder.Pathfinder
 	fileManager filemanager.FileManager
+	port        int
 }
 
 func init() {
@@ -43,6 +44,7 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
 	migrator.fileManager = migrator.setupFileManager()
+	migrator.port = port
 
 	migrator.jobsDB.SetupCheckpointDBTable()
 
@@ -50,7 +52,7 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 		migrator.jobsDB.SetupForImportAndAcceptNewEvents(pf.GetVersion())
 	}
 
-	go migrator.startWebHandler(port)
+	go migrator.startWebHandler()
 	migrator.export()
 	//panic only if node doesn't belong to cluster
 	if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
@@ -94,19 +96,23 @@ func reflectOrigin(origin string) bool {
 	return true
 }
 
-func (migrator *Migrator) startWebHandler(port int) {
-	migratorPort := port
-	logger.Infof("Starting in %d", migratorPort)
+func (migrator *Migrator) getURI(uri string) string {
+	return fmt.Sprintf("/%s%s", migrator.jobsDB.GetTablePrefix(), uri)
+}
 
-	http.HandleFunc("/fileToImport", migrator.importHandler)
-	http.HandleFunc("/status", migrator.statusHandler)
+func (migrator *Migrator) startWebHandler() {
+	logger.Infof("Starting in %d", migrator.port)
+
+	logger.Info(migrator.jobsDB.GetTablePrefix(), migrator.port, fmt.Sprintf("/%s/fileToImport", migrator.jobsDB.GetTablePrefix()))
+	http.HandleFunc(migrator.getURI("/fileToImport"), migrator.importHandler)
+	http.HandleFunc(migrator.getURI("/status"), migrator.statusHandler)
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
 		AllowedHeaders:   []string{"*"},
 	})
 
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(migratorPort), c.Handler(bugsnag.Handler(nil))))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(migrator.port), c.Handler(bugsnag.Handler(nil))))
 }
 
 func (migrator *Migrator) setupFileManager() filemanager.FileManager {
@@ -279,7 +285,7 @@ func (migrator *Migrator) uploadToS3AndNotifyDestNode(file *os.File, nMeta pathf
 
 		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
 
-		go misc.MakeAsyncPostRequest(nMeta.GetNodeConnectionString(), "/fileToImport", migrationEvent, 5, migrator.postHandler)
+		go misc.MakeAsyncPostRequest(nMeta.GetNodeConnectionString(migrator.port), migrator.getURI("/fileToImport"), migrationEvent, 5, migrator.postHandler)
 	}
 }
 
