@@ -102,6 +102,9 @@ type StorageUploadOutput struct {
 	LocalFilePaths []string
 	JournalOpID    int64
 	Error          error
+	FirstEventAt   string
+	LastEventAt    string
+	TotalEvents    int
 }
 
 type ErrorResponseT struct {
@@ -167,6 +170,12 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 			LocalFilePaths: []string{gzipFilePath},
 		}
 	}
+	// assumes events from warehouse have received_at in metadata
+	var firstEventAt, lastEventAt string
+	if isWarehouse {
+		firstEventAt = gjson.GetBytes(batchJobs.Jobs[0].EventPayload, "metadata.received_at").String()
+		lastEventAt = gjson.GetBytes(batchJobs.Jobs[len(batchJobs.Jobs)-1].EventPayload, "metadata.received_at").String()
+	}
 
 	logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
 
@@ -222,10 +231,13 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		Key:            strings.Join(keyPrefixes, "/") + "/" + fileName,
 		LocalFilePaths: []string{gzipFilePath},
 		JournalOpID:    opID,
+		FirstEventAt:   firstEventAt,
+		LastEventAt:    lastEventAt,
+		TotalEvents:    len(batchJobs.Jobs),
 	}
 }
 
-func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, location string) (err error) {
+func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOutput) (err error) {
 	schemaMap := make(map[string]map[string]interface{})
 	for _, job := range batchJobs.Jobs {
 		var payload map[string]interface{}
@@ -251,7 +263,10 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, location string) (err 
 			Source:      batchJobs.BatchDestination.Source,
 			Destination: batchJobs.BatchDestination.Destination,
 		},
-		Location: location,
+		Location:     output.Key,
+		FirstEventAt: output.FirstEventAt,
+		LastEventAt:  output.LastEventAt,
+		TotalEvents:  output.TotalEvents,
 	}
 
 	jsonPayload, err := json.Marshal(&payload)
@@ -401,7 +416,7 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
 							if output.Error == nil && output.Key != "" {
-								output.Error = brt.postToWarehouse(batchJobs, output.Key)
+								output.Error = brt.postToWarehouse(batchJobs, output)
 								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
 								warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
 							}

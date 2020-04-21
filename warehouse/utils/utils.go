@@ -42,6 +42,8 @@ const (
 
 const (
 	DiscardsTable = "rudder_discards"
+	SyncFrequency = "syncFrequency"
+	SyncStartAt   = "syncStartAt"
 )
 
 var (
@@ -109,6 +111,7 @@ type UploadT struct {
 	Status             string
 	Schema             map[string]map[string]string
 	Error              json.RawMessage
+	Timings            []map[string]string
 }
 
 type CurrentSchemaT struct {
@@ -120,6 +123,9 @@ type StagingFileT struct {
 	Schema           map[string]map[string]interface{}
 	BatchDestination DestinationT
 	Location         string
+	FirstEventAt     string
+	LastEventAt      string
+	TotalEvents      int
 }
 
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, error) {
@@ -185,10 +191,81 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 	return
 }
 
-func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error) {
+type UploadColumnT struct {
+	Column string
+	Value  interface{}
+}
+
+// GetUploadTimings returns timings json column
+// eg. timings: [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
+func GetUploadTimings(upload UploadT, dbHandle *sql.DB) (timings []map[string]string) {
+	var rawJSON json.RawMessage
+	var jsonInterface []interface{}
+	sqlStatement := fmt.Sprintf(`SELECT timings FROM %s WHERE id=%d`, warehouseUploadsTable, upload.ID)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&rawJSON)
+	if err != nil {
+		return
+	}
+	err = json.Unmarshal(rawJSON, &jsonInterface)
+	if err != nil {
+		return
+	}
+
+	for _, i := range jsonInterface {
+		m, ok := i.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		timing := map[string]string{}
+		for status, t := range m {
+			timing[status] = t.(string)
+		}
+		timings = append(timings, timing)
+	}
+	return
+}
+
+// GetNewTimings appends current status with current time to timings column
+// eg. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
+func GetNewTimings(upload UploadT, dbHandle *sql.DB, status string) []byte {
+	timings := GetUploadTimings(upload, dbHandle)
+	timing := map[string]string{status: time.Now().Format(misc.RFC3339Milli)}
+	timings = append(timings, timing)
+	marshalledTimings, err := json.Marshal(timings)
+	if err != nil {
+		panic(err)
+	}
+	return marshalledTimings
+}
+
+func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB, additionalFields ...UploadColumnT) (err error) {
 	logger.Infof("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=$3`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), upload.ID)
+	var extraFields string
+	if len(additionalFields) > 0 {
+		for _, f := range additionalFields {
+			extraFields += fmt.Sprintf(`%s=%v,`, f.Column, f.Value)
+		}
+	}
+	marshalledTimings := GetNewTimings(upload, dbHandle, status)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, %s updated_at=$2, timings=$3 WHERE id=$4`, warehouseUploadsTable, extraFields)
+	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), marshalledTimings, upload.ID)
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+// SetUploadColumns sets any column values passed as args in UploadColumnT format for warehouseUploadsTable
+func SetUploadColumns(upload UploadT, dbHandle *sql.DB, fields ...UploadColumnT) (err error) {
+	var columns string
+	for idx, f := range fields {
+		columns += fmt.Sprintf(`%s=%v`, f.Column, f.Value)
+		if idx < len(fields)-1 {
+			columns += ","
+		}
+	}
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, warehouseUploadsTable, columns)
+	_, err = dbHandle.Exec(sqlStatement, upload.ID)
 	if err != nil {
 		panic(err)
 	}
@@ -252,7 +329,12 @@ func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusEr
 }
 
 func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHandle *sql.DB) (err error) {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, last_exec_time=$2 WHERE wh_upload_id=$3 AND table_name=$4`, warehouseTableUploadsTable)
+	// set last_exec_time only if status is executing
+	var lastExec string
+	if status == ExecutingState {
+		lastExec = fmt.Sprintf(`, last_exec_time=%v`, time.Now())
+	}
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 %s WHERE wh_upload_id=$3 AND table_name=$4`, warehouseTableUploadsTable, lastExec)
 	logger.Infof("WH: Setting table upload status: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), uploadID, tableName)
 	if err != nil {
