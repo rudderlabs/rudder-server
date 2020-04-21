@@ -74,14 +74,14 @@ func NewMigrationEvent(migrationType string, fromNode string, toNode string, fil
 
 //SetupCheckpointDBTable creates a table
 func (jd *HandleT) SetupCheckpointDBTable() {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE %s_migration_checkpoints (
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s_migration_checkpoints (
 		id BIGSERIAL PRIMARY KEY,
 		migration_type varchar(20) NOT NULL,
 		from_node varchar(64) NOT NULL,
 		to_node VARCHAR(64) NOT NULL,
-		file_location varchar(64) NOT NULL,
-		status varchar(64) NOT NULL DEFAULT NOW(),
-		start_sequence BIGINT NOT NULL DEFAULT NOW(),
+		file_location varchar(256),
+		status varchar(64),
+		start_sequence BIGINT,
 		time_stamp TIMESTAMP NOT NULL DEFAULT NOW());`, jd.GetTablePrefix())
 
 	_, err := jd.dbHandle.Exec(sqlStatement)

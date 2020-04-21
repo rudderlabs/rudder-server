@@ -36,7 +36,7 @@ func init() {
 }
 
 //Setup initializes the module
-func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) {
+func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, port int) {
 	logger.Info("Shanmukh: inside migrator setup")
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
@@ -48,7 +48,7 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 		migrator.jobsDB.SetupForImportAndAcceptNewEvents(pf.GetVersion())
 	}
 
-	go migrator.startWebHandler()
+	go migrator.startWebHandler(port)
 	migrator.export()
 	//panic only if node doesn't belong to cluster
 	if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
@@ -92,8 +92,8 @@ func reflectOrigin(origin string) bool {
 	return true
 }
 
-func (migrator *Migrator) startWebHandler() {
-	migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8081)
+func (migrator *Migrator) startWebHandler(port int) {
+	migratorPort := port
 	logger.Infof("Starting in %d", migratorPort)
 
 	http.HandleFunc("/fileToImport", migrator.importHandler)
@@ -228,7 +228,9 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 			logger.Info(nMeta, len(jobList))
 			datawriter.Flush()
 			file.Close()
+			file, err = os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			migrator.uploadToS3AndNotifyDestNode(file, nMeta)
+			file.Close()
 		} else {
 			for _, job := range jobList {
 				statusList = append(statusList, buildStatus(job, jobState))

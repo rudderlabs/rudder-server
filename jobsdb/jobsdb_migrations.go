@@ -289,7 +289,8 @@ func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType stri
 		panic("Unable to query")
 	}
 	defer rows.Close()
-	rows.Next()
+	//rows.Next()
+	//TODO: Verify this
 	var sequenceNumber int64
 	sequenceNumber = 0
 	err = rows.Scan(&sequenceNumber)

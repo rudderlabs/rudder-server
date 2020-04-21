@@ -201,9 +201,9 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		var migrator migrator.Migrator
 
 		//TODO: Should this be concurrent?
-		migrator.Setup(&gatewayDB, pf)
-		migrator.Setup(&routerDB, pf)
-		migrator.Setup(&batchRouterDB, pf)
+		migrator.Setup(&gatewayDB, pf, 8081)
+		// migrator.Setup(&routerDB, pf, 8082)
+		// migrator.Setup(&batchRouterDB, pf, 8083)
 
 		if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
 			shouldStartGateWay = false
