@@ -64,7 +64,7 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 	if migrationEvent.MigrationType == jobsdb.ExportOp {
 		filePathSlice := strings.Split(migrationEvent.FileLocation, "/")
 		fileName := filePathSlice[len(filePathSlice)-1]
-		file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+		file, err := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR, 0644)
 		if err != nil {
 			panic("Handle this")
 		}
@@ -210,7 +210,8 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 		if writeToFile {
 			fileName := fmt.Sprintf("%s_%s_%s_%d_%d.json", migrator.jobsDB.GetTablePrefix(), misc.GetNodeID(), nMeta.GetNodeID(), jobList[0].JobID, len(jobList))
 			file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-
+			//TODO: Instead of directly doing OpenFile, check if it already exists, if it exists rename the existing file and create again
+			//Otherwise there is a chance of adding data to an existing file
 			if err != nil {
 				log.Fatalf("failed creating file: %s", err)
 			}
@@ -258,6 +259,7 @@ func (migrator *Migrator) uploadToS3AndNotifyDestNode(file *os.File, nMeta pathf
 	if err != nil {
 		panic(uploadOutput)
 	} else {
+		//TODO: delete this file otherwise in failure case, the file exists and same data will be appended to it
 		migrationEvent := jobsdb.NewMigrationEvent("export", misc.GetNodeID(), nMeta.GetNodeID(), uploadOutput.Location, jobsdb.Exported, 0)
 
 		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)

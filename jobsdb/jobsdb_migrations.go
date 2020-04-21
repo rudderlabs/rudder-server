@@ -27,27 +27,36 @@ func (jd *HandleT) SetupForImportAndAcceptNewEvents(version int) {
 	jd.dsListLock.Lock()
 	defer jd.dsListLock.Unlock()
 	dsList := jd.getDSList(true)
-	newDSMin := int64(0)
+	importDSMin := int64(0)
 
 	if !jd.isEmpty(dsList[len(dsList)-1]) {
-		var maxID sql.NullInt64
-		sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, dsList[len(dsList)-1].JobTable)
-		row := jd.dbHandle.QueryRow(sqlStatement)
-		err := row.Scan(&maxID)
-		jd.assertError(err)
-		if maxID.Valid {
-			newDSMin = int64(maxID.Int64)
-		} else {
-			panic("Unable to get max")
-		}
+		importDSMin = jd.getMaxIDForDs(dsList[len(dsList)-1])
 		jd.migrationState.dsForNewEvents = jd.addNewDS(true, dataSetT{})
 	} else {
-		jd.migrationState.dsForNewEvents = dsList[0]
+		if len(dsList) > 1 {
+			importDSMin = jd.getMaxIDForDs(dsList[len(dsList)-2])
+		}
+		jd.migrationState.dsForNewEvents = dsList[len(dsList)-1]
 	}
 	jd.updateSequenceNumber(jd.migrationState.dsForNewEvents, int64(version)*int64(math.Pow10(13)), jd.tablePrefix)
-	jd.migrationState.sequenceProvider = NewSequenceProvider(newDSMin + 1)
+	jd.migrationState.sequenceProvider = NewSequenceProvider(importDSMin + 1)
 
 	//TODO: recover from crash
+}
+
+func (jd *HandleT) getMaxIDForDs(ds dataSetT) int64 {
+	var maxID sql.NullInt64
+	sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, ds.JobTable)
+	row := jd.dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&maxID)
+	jd.assertError(err)
+	var max int64
+	if maxID.Valid {
+		max = int64(maxID.Int64)
+	} else {
+		panic("Unable to get max")
+	}
+	return max
 }
 
 func (jd *HandleT) isEmpty(ds dataSetT) bool {
@@ -200,10 +209,10 @@ func (jd *HandleT) deleteWontMigrateJobStatusDS(ds dataSetT) {
 	jd.assertError(err)
 }
 
-func (jd *HandleT) getStartJobID(count int, fileName string, migrationEvent MigrationEvent) int64 {
+func (jd *HandleT) getStartJobID(count int, migrationEvent MigrationEvent) int64 {
 	var sequenceNumber int64
 	sequenceNumber = 0
-	sequenceNumber = jd.getSeqNoForFileFromDB(fileName, ImportOp)
+	sequenceNumber = jd.getSeqNoForFileFromDB(migrationEvent.FileLocation, ImportOp)
 	if sequenceNumber == 0 {
 		sequenceNumber = jd.migrationState.sequenceProvider.ReserveIds(count)
 	}
@@ -214,7 +223,7 @@ func (jd *HandleT) getStartJobID(count int, fileName string, migrationEvent Migr
 
 //StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
 func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent MigrationEvent) {
-	startJobID := jd.getStartJobID(len(jobList), fileName, migrationEvent)
+	startJobID := jd.getStartJobID(len(jobList), migrationEvent)
 	statusList := []*JobStatusT{}
 
 	for idx, job := range jobList {
@@ -279,7 +288,7 @@ func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType stri
 		fmt.Sprintf("MigrationType: %s is not a supported operation. Should be %s or %s",
 			migrationType, ExportOp, ImportOp))
 
-	sqlStatement := fmt.Sprintf(`SELECT * from %s_migration_checkpoints WHERE file_location = $1 AND migration_type = $2 ORDER BY id DESC`, jd.GetTablePrefix())
+	sqlStatement := fmt.Sprintf(`SELECT start_sequence from %s_migration_checkpoints WHERE file_location = $1 AND migration_type = $2 ORDER BY id DESC`, jd.GetTablePrefix())
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
@@ -288,13 +297,13 @@ func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType stri
 	if err != nil {
 		panic("Unable to query")
 	}
-	defer rows.Close()
-	//rows.Next()
-	//TODO: Verify this
+	rows.Next()
+
 	var sequenceNumber int64
 	sequenceNumber = 0
 	err = rows.Scan(&sequenceNumber)
-	if err != nil {
+	rows.Close()
+	if err != nil && err.Error() != "sql: Rows are closed" {
 		panic("query result pares issue")
 	}
 	return sequenceNumber
