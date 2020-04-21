@@ -66,7 +66,7 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	enableMigrator = config.GetBool("enableMigrtor", true)
+	enableMigrator = config.GetBool("enableMigrator", true)
 }
 
 // Test Function
