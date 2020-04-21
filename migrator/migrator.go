@@ -116,7 +116,7 @@ func (migrator *Migrator) setupFileManager() filemanager.FileManager {
 	fm, err := filemanager.New(&settings)
 	// _ = err
 	// return fm
-	if err != nil {
+	if err == nil {
 		return fm
 	}
 	panic("Unable to get filemanager")
