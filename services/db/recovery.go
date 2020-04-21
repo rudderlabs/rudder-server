@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/stats"
 
@@ -70,6 +71,7 @@ func saveRecoveryData(recoveryData RecoveryDataT) {
 	}
 }
 
+// IsNormalMode checks if the current mode is normal
 func IsNormalMode() bool {
 	return CurrentMode == normalMode
 }
@@ -149,6 +151,23 @@ func alertOps(mode string) {
 	}
 }
 
+// sendRecoveryModeStat sends the recovery mode metric every 10 seconds
+func sendRecoveryModeStat() {
+	recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
+	for {
+		time.Sleep(10 * time.Second)
+		switch CurrentMode {
+		case normalMode:
+			recoveryModeStat.Gauge(1)
+		case degradedMode:
+			recoveryModeStat.Gauge(2)
+		case maintenanceMode:
+			recoveryModeStat.Gauge(3)
+		}
+	}
+}
+
+// HandleRecovery decides the recovery Mode in which app should run based on earlier crashes
 func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool, currTime int64) {
 
 	enabled := config.GetBool("recovery.enabled", false)
@@ -178,19 +197,12 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 		}
 	}
 
-	recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
-	if recoveryData.Mode != normalMode {
-		if recoveryData.Mode == degradedMode {
-			recoveryModeStat.Gauge(2)
-		} else if recoveryData.Mode == maintenanceMode {
-			recoveryModeStat.Gauge(3)
-		}
-	} else {
-		recoveryModeStat.Gauge(1)
-	}
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
 	logger.Infof("Starting in %s mode", recoveryData.Mode)
 	CurrentMode = recoveryData.Mode
+	rruntime.Go(func() {
+		sendRecoveryModeStat()
+	})
 }

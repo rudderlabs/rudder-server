@@ -93,6 +93,8 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 # Setup Instructions (Kubernetes)
 
+**Note:** This is the recommended way of installing RudderStack for running in production. Our hosted deployment runs on Kubernetes so we maintain/patch much more frequently. 
+
 1. Go to the [dashboard][dashboad-on] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
 
 2. Our helm scripts and instructions are in a separate repo - [Download Here][helm-scripts-git-repo]
@@ -103,7 +105,7 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 # Setup Instructions (Native Installation)
 
-Disclaimer: This is not the easiest way of installing RudderStack. Please use this if you want to know more about the internals.
+**Disclaimer:** This is not the recommended way of installing RudderStack. Please use this if you want to know more about the internals.
 
 1. Install Golang 1.13 or above. [Download Here][golang]
 2. Install NodeJS 10.6 or above. [Download Here][node]
