@@ -189,8 +189,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 	shouldStartGateWay := true
 	if enableMigrator {
-		backendReplicaCount := config.GetEnvAsInt("NEW_BACKEND_REPLICA_COUNT", 6)
-		clusterVersion := config.GetEnvAsInt("NEW_CLUSTER_VERSION", 2)
+		backendReplicaCount := config.GetEnvAsInt("BACKEND_REPLICA_COUNT", 6)
+		clusterVersion := config.GetEnvAsInt("CLUSTER_VERSION", 2)
 		dnsPattern := config.GetEnv("URL_PATTERN", "http://cluster-VERSION-node-NODENUM.rudderlabs.com")
 		migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8081)
 		logger.Info("Shanmukh: setting up pathfinder")
