@@ -18,24 +18,22 @@ type MigrationState struct {
 }
 
 /*
-SetupForImportAndAcceptNewEvents is used to initialize the HandleT structure.
-clearAll = True means it will remove all existing tables
-tablePrefix must be unique and is used to separate
-multiple users of JobsDB
-dsRetentionPeriod = A DS is not deleted if it has some activity
-in the retention time
+SetupForImportAndAcceptNewEvents is used to initialize the MigrationState structure.
+It creates a new ds if an empty ds is not already present for incoming events
+It also sets up sequence provider to last id in the previous table
+version = used to set the id space of new incoming events to version*10^13
 */
-func (jd *HandleT) SetupForImportAndAcceptNewEvents(version int, isNew bool) {
+func (jd *HandleT) SetupForImportAndAcceptNewEvents(version int) {
 	jd.dsListLock.Lock()
 	defer jd.dsListLock.Unlock()
 	dsList := jd.getDSList(true)
 	newDSMin := int64(0)
 
-	if !isNew {
-		var minID, maxID sql.NullInt64
-		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsList[len(dsList)-1].JobTable)
+	if !jd.isEmpty(dsList[len(dsList)-1]) {
+		var maxID sql.NullInt64
+		sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, dsList[len(dsList)-1].JobTable)
 		row := jd.dbHandle.QueryRow(sqlStatement)
-		err := row.Scan(&minID, &maxID)
+		err := row.Scan(&maxID)
 		jd.assertError(err)
 		if maxID.Valid {
 			newDSMin = int64(maxID.Int64)
@@ -48,6 +46,21 @@ func (jd *HandleT) SetupForImportAndAcceptNewEvents(version int, isNew bool) {
 	}
 	jd.updateSequenceNumber(jd.migrationState.dsForNewEvents, int64(version)*int64(math.Pow10(13)), jd.tablePrefix)
 	jd.migrationState.sequenceProvider = NewSequenceProvider(newDSMin + 1)
+
+	//TODO: recover from crash
+}
+
+func (jd *HandleT) isEmpty(ds dataSetT) bool {
+	var count sql.NullInt64
+	sqlStatement := fmt.Sprintf(`SELECT count(*) from %s`, ds.JobTable)
+	row := jd.dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&count)
+	jd.assertError(err)
+	if !count.Valid {
+		panic("Unable to get count on this dataset")
+	} else {
+		return count.Int64 == 0
+	}
 }
 
 func (jd *HandleT) updateSequenceNumber(ds dataSetT, sequenceNumber int64, tablePrefix string) {
@@ -60,7 +73,7 @@ func (jd *HandleT) updateSequenceNumber(ds dataSetT, sequenceNumber int64, table
 }
 
 //GetNonMigrated all jobs with no filters
-func (jd *HandleT) GetNonMigrated(count int) []*JobT {
+func (jd *HandleT) GetNonMigrated(count int, lastDSIndex string) []*JobT {
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -76,6 +89,7 @@ func (jd *HandleT) GetNonMigrated(count int) []*JobT {
 	if count == 0 {
 		return outJobs
 	}
+
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 		jobs, err := jd.getNonMigratedJobsDS(ds, count)
@@ -84,6 +98,11 @@ func (jd *HandleT) GetNonMigrated(count int) []*JobT {
 		count -= len(jobs)
 		jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
 		if count == 0 {
+			break
+		}
+
+		//Instead of full dsList, it needs to do only till the dataset before import and newEvent datasets
+		if ds.Index == lastDSIndex {
 			break
 		}
 	}
@@ -181,10 +200,21 @@ func (jd *HandleT) deleteWontMigrateJobStatusDS(ds dataSetT) {
 	jd.assertError(err)
 }
 
-//StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
-func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT) {
-	startJobID := jd.migrationState.sequenceProvider.ReserveIds(len(jobList))
+func (jd *HandleT) getStartJobID(count int, fileName string, migrationEvent MigrationEvent) int64 {
+	var sequenceNumber int64
+	sequenceNumber = 0
+	sequenceNumber = jd.getSeqNoForFileFromDB(fileName, ImportOp)
+	if sequenceNumber == 0 {
+		sequenceNumber = jd.migrationState.sequenceProvider.ReserveIds(count)
+	}
+	migrationEvent.StartSeq = sequenceNumber
+	jd.Checkpoint(&migrationEvent)
+	return sequenceNumber
+}
 
+//StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
+func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent MigrationEvent) {
+	startJobID := jd.getStartJobID(len(jobList), fileName, migrationEvent)
 	statusList := []*JobStatusT{}
 
 	for idx, job := range jobList {
@@ -223,6 +253,48 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT) {
 	jd.dsListLock.Unlock()
 
 	//Take proper locks(may be not required) and move the two lines below into a single transaction
-	jd.storeJobsDS(targetDS, true, true, jobList) //what is retry each expected to do?
+	jd.storeJobsDS(targetDS, true, true, jobList)
+	//what is retry each expected to do?
+	//TODO: Verify what is going to happen if the same jobs are imported again
+
 	jd.updateJobStatusDS(targetDS, statusList, []string{}, []ParameterFilterT{})
+}
+
+//GetTablePrefix returns the table prefix of the jobsdb
+func (jd *HandleT) GetTablePrefix() string {
+	return jd.tablePrefix
+}
+
+//GetLatestDSIndex gives the index of the latest datasetT
+func (jd *HandleT) GetLatestDSIndex() string {
+	jd.dsListLock.Lock()
+	defer jd.dsListLock.Unlock()
+	dsList := jd.getDSList(true)
+	return dsList[len(dsList)-1].Index
+}
+
+func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType string) int64 {
+	jd.assert(migrationType == ExportOp ||
+		migrationType == ImportOp,
+		fmt.Sprintf("MigrationType: %s is not a supported operation. Should be %s or %s",
+			migrationType, ExportOp, ImportOp))
+
+	sqlStatement := fmt.Sprintf(`SELECT * from %s_migration_checkpoints WHERE file_location = $1 AND migration_type = $2 ORDER BY id DESC`, jd.GetTablePrefix())
+	stmt, err := jd.dbHandle.Prepare(sqlStatement)
+	jd.assertError(err)
+	defer stmt.Close()
+
+	rows, err := stmt.Query(fileLocation, migrationType)
+	if err != nil {
+		panic("Unable to query")
+	}
+	defer rows.Close()
+	rows.Next()
+	var sequenceNumber int64
+	sequenceNumber = 0
+	err = rows.Scan(&sequenceNumber)
+	if err != nil {
+		panic("query result pares issue")
+	}
+	return sequenceNumber
 }

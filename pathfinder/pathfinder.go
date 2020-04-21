@@ -1,7 +1,10 @@
 package pathfinder
 
 import (
+	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/spaolacci/murmur3"
@@ -15,13 +18,18 @@ type Pathfinder struct {
 
 //NodeMeta struct holds the nodeId and its connection Info
 type NodeMeta struct {
-	nodeID           int
+	nodeID           string
 	connectionString string
 }
 
 //GetNodeID is a getter for nodeID
-func (nMeta *NodeMeta) GetNodeID() int {
+func (nMeta *NodeMeta) GetNodeID() string {
 	return nMeta.nodeID
+}
+
+//GetNodeConnectionString is a getter for connectionString
+func (nMeta *NodeMeta) GetNodeConnectionString() string {
+	return nMeta.connectionString
 }
 
 //GetVersion returns of the current cluster
@@ -30,8 +38,24 @@ func (pf *Pathfinder) GetVersion() int {
 }
 
 //GetNodeMeta returns a NodeMeta struct
-func GetNodeMeta(nodeID int, connectionString string) NodeMeta {
+func GetNodeMeta(nodeID string, connectionString string) NodeMeta {
 	return NodeMeta{nodeID: nodeID, connectionString: connectionString}
+}
+
+//Setup sets the cluster state based on which users are routed to corresponding nodes
+func Setup(backendNodeCount int, version int, dnsPattern string, migratorPort int) []NodeMeta {
+	clusterInfo := []NodeMeta{}
+	for i := 0; i < backendNodeCount; i++ {
+		connectionString := fmt.Sprintf("%s:%d",
+			strings.ReplaceAll(
+				strings.ReplaceAll(dnsPattern, "VERSION", strconv.Itoa(version)),
+				"NODENUM",
+				strconv.Itoa(i)),
+			migratorPort)
+		nMeta := GetNodeMeta(fmt.Sprintf("v%d_node%d", version, i), connectionString)
+		clusterInfo = append(clusterInfo, nMeta)
+	}
+	return clusterInfo
 }
 
 //Setup sets the cluster state based on which users are routed to corresponding nodes
@@ -56,7 +80,7 @@ func (pf *Pathfinder) GetNodeFromID(id string) NodeMeta {
 }
 
 //DoesNodeBelongToTheCluster returns a true if the passed nodeID is a part of the cluster
-func (pf *Pathfinder) DoesNodeBelongToTheCluster(nodeID int) bool {
+func (pf *Pathfinder) DoesNodeBelongToTheCluster(nodeID string) bool {
 	for _, nMeta := range pf.clusterState {
 		if nodeID == nMeta.GetNodeID() {
 			return true

@@ -131,6 +131,19 @@ func GetEnv(key string, defaultVal string) string {
 	return defaultVal
 }
 
+// GetEnvAsInt returns the int value of environment value stored in the key variable
+// If not set, default value will be return. If set but unparsable, system panics
+func GetEnvAsInt(key string, defaultVal int) int {
+	stringValue, exists := os.LookupEnv(key)
+	if !exists {
+		return defaultVal
+	}
+	if value, err := strconv.Atoi(stringValue); err == nil {
+		return value
+	}
+	panic(fmt.Sprintf("Unable to parse the value of %s env variable. Value : %s", key, stringValue))
+}
+
 // GetEnvAsBool returns the boolean environment value stored in key variable
 func GetEnvAsBool(name string, defaultVal bool) bool {
 	valueStr := GetEnv(name, "")

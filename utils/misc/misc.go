@@ -3,12 +3,12 @@ package misc
 import (
 	"archive/zip"
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"crypto/md5"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -633,10 +633,40 @@ func IsPostgresCompatible(connInfo string) bool {
 }
 
 //GetNodeID returns the nodeId of the current node
-func GetNodeID() int {
-	nodeID := config.GetInt("nodeId", -1)
-	if nodeID == -1 {
-		panic(errors.New("nodeId is not set. Please pass it as an env var RSERVER_NODE_ID"))
-	}
+func GetNodeID() string {
+	nodeID := config.GetRequiredEnv("NODE_ID")
 	return nodeID
+}
+
+//MakeAsyncPostRequest is Util function to make a post request. //TODO: copied from backend-config.go. Use this there instead of duplicate code
+//TODO: Pass and set request headers
+func MakeAsyncPostRequest(endpoint string, uri string, data interface{}, retryCount int, handler func(int, interface{}, string, string, interface{})) {
+	client := &http.Client{}
+	url := fmt.Sprintf("%s%s", endpoint, uri)
+	dataJSON, err1 := json.Marshal(data)
+	_ = err1
+	request, err := http.NewRequest("POST", url, bytes.NewBuffer(dataJSON))
+	if err != nil {
+		logger.Errorf("Failed to create request object for url: %s and data: %s, Error: %s", url, string(dataJSON), err.Error())
+		panic("Unable to create a http request object")
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(request)
+	if err != nil {
+		logger.Errorf("Request failed: %s, Error: %s", url, err.Error())
+		handler(retryCount, nil, endpoint, uri, data)
+	}
+
+	if resp.StatusCode != 200 && resp.StatusCode != 202 {
+		logger.Errorf("Got error response %d", resp.StatusCode)
+		handler(retryCount, nil, endpoint, uri, data)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+
+	logger.Debugf("Successful %s", string(body))
+	handler(-1, body, "", "", data)
 }

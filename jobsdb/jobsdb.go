@@ -288,9 +288,8 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration) bool {
+func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration) {
 
-	var isNewJobsDB bool
 	var err error
 	psqlInfo := GetConnectionString()
 	jd.assert(tablePrefix != "", "tablePrefix received is empty")
@@ -334,7 +333,6 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	//If no DS present, add one
 	if len(jd.datasetList) == 0 {
 		jd.addNewDS(true, dataSetT{})
-		isNewJobsDB = true
 	}
 
 	// Schema Migration: Created_at column should have a default now()
@@ -352,7 +350,6 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		jd.mainCheckLoop()
 	})
 
-	return isNewJobsDB
 }
 
 /*
@@ -1470,6 +1467,7 @@ func (jd *HandleT) mainCheckLoop() {
 			jd.dsListLock.Unlock()
 		}
 
+		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		if config.GetBool("enableMigrator", false) {
 			continue
 		}

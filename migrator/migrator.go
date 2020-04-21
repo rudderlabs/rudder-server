@@ -4,24 +4,30 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go"
+	"github.com/mitchellh/mapstructure"
+	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/pathfinder"
-	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //Migrator is a handle to this object used in main.go
 type Migrator struct {
-	jobsDB *jobsdb.HandleT
-	pf     pathfinder.Pathfinder
+	jobsDB      *jobsdb.HandleT
+	pf          pathfinder.Pathfinder
+	fileManager filemanager.FileManager
 }
 
 func init() {
@@ -30,18 +36,90 @@ func init() {
 }
 
 //Setup initializes the module
-func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, isNew bool) {
+func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) {
+	logger.Info("Shanmukh: inside migrator setup")
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
+	migrator.fileManager = migrator.setupFileManager()
+
+	migrator.jobsDB.SetupCheckpointDBTable()
+
 	if pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
-		migrator.jobsDB.SetupForImportAndAcceptNewEvents(pf.GetVersion(), isNew)
-		rruntime.Go(func() {
-			migrator.importFromFiles()
-		})
+		migrator.jobsDB.SetupForImportAndAcceptNewEvents(pf.GetVersion())
 	}
-	logger.Info("Shanmukh: inside migrator setup")
+
+	go migrator.startWebHandler()
 	migrator.export()
-	panic(fmt.Sprintf("Node not in cluster. Won't be accepting any more events", pf))
+	//panic only if node doesn't belong to cluster
+	if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
+		panic(fmt.Sprintf("Node not in cluster. Won't be accepting any more events %v", pf))
+	}
+}
+
+func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) {
+	body, _ := ioutil.ReadAll(r.Body)
+	r.Body.Close()
+	migrationEvent := jobsdb.MigrationEvent{}
+	json.Unmarshal(body, &migrationEvent)
+	if migrationEvent.MigrationType == jobsdb.ExportOp {
+		filePathSlice := strings.Split(migrationEvent.FileLocation, "/")
+		fileName := filePathSlice[len(filePathSlice)-1]
+		file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+		if err != nil {
+			panic("Handle this")
+		}
+		err = migrator.fileManager.Download(file, fileName)
+		if err != nil {
+			panic("Unable to download file")
+		}
+		migrationEvent.MigrationType = jobsdb.ImportOp
+		migrationEvent.ID = 0
+		migrationEvent.Status = jobsdb.Prepared
+		migrationEvent.TimeStamp = time.Now()
+		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
+		migrator.readFromFileAndWriteToDB(file, migrationEvent)
+		logger.Debug("Import done")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	}
+}
+
+func (migrator *Migrator) statusHandler(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func reflectOrigin(origin string) bool {
+	return true
+}
+
+func (migrator *Migrator) startWebHandler() {
+	migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8081)
+	logger.Infof("Starting in %d", migratorPort)
+
+	http.HandleFunc("/fileToImport", migrator.importHandler)
+	http.HandleFunc("/status", migrator.statusHandler)
+	c := cors.New(cors.Options{
+		AllowOriginFunc:  reflectOrigin,
+		AllowCredentials: true,
+		AllowedHeaders:   []string{"*"},
+	})
+
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(migratorPort), c.Handler(bugsnag.Handler(nil))))
+}
+
+func (migrator *Migrator) setupFileManager() filemanager.FileManager {
+	conf := map[string]interface{}{}
+	conf["bucketName"] = config.GetString("migratorBucket", "1-2-migrations")
+	conf["accessKeyID"] = config.GetString("accessKeyID", "")
+	conf["accessKey"] = config.GetString("accessKey", "")
+	settings := filemanager.SettingsT{"S3", conf}
+	fm, err := filemanager.New(&settings)
+	// _ = err
+	// return fm
+	if err != nil {
+		return fm
+	}
+	panic("Unable to get filemanager")
 }
 
 var (
@@ -49,25 +127,10 @@ var (
 )
 
 func loadConfig() {
-	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 100)
+	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 1000)
 }
 
-func (migrator *Migrator) importFromFiles() {
-
-	logger.Info("Shanmukh: import loop starting")
-	importFiles := migrator.getImportFiles()
-
-	for _, file := range importFiles {
-		migrator.readFromFileAndWriteToDB(file) //Make this concurrent
-	}
-}
-
-func (migrator *Migrator) readFromFileAndWriteToDB(filePath string) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
+func (migrator *Migrator) readFromFileAndWriteToDB(file *os.File, migrationEvent jobsdb.MigrationEvent) error {
 	scanner := bufio.NewScanner(file)
 	// Scan() reads next line and returns false when reached end or error
 	jobList := []*jobsdb.JobT{}
@@ -80,8 +143,7 @@ func (migrator *Migrator) readFromFileAndWriteToDB(filePath string) error {
 		jobList = append(jobList, &job)
 		// process the line
 	}
-
-	migrator.jobsDB.StoreImportedJobsAndJobStatuses(jobList)
+	migrator.jobsDB.StoreImportedJobsAndJobStatuses(jobList, file.Name(), migrationEvent)
 	logger.Info("done : ", file)
 	// check if Scan() finished because of error or because it reached end of file
 	return scanner.Err()
@@ -97,34 +159,19 @@ func (migrator *Migrator) processSingleLine(line string) (jobsdb.JobT, bool) {
 	return job, true
 }
 
-func (migrator *Migrator) getImportFiles() []string {
-	allFiles := []string{"0_1_0.json", "0_1_1.json", "0_1_2.json", "0_2_0.json", "0_2_1.json", "0_2_2.json", "0_3_0.json", "0_3_1.json", "0_3_2.json"}
-	filesToImport := []string{}
-	for _, file := range allFiles {
-		fileSplits := strings.Split(file, "_")
-		if len(fileSplits) != 3 {
-			logger.Error("Must panic here")
-		}
-		if fileSplits[1] == strconv.Itoa(misc.GetNodeID()) {
-			filesToImport = append(filesToImport, file)
-		}
-	}
-	return filesToImport
-}
-
 func (migrator *Migrator) export() {
 
 	logger.Info("Shanmukh: Migrator loop starting")
-
+	lastDSIndex := migrator.jobsDB.GetLatestDSIndex()
 	for {
 		toQuery := dbReadBatchSize
 
-		jobList := migrator.jobsDB.GetNonMigrated(toQuery)
+		jobList := migrator.jobsDB.GetNonMigrated(toQuery, lastDSIndex)
 		if len(jobList) == 0 {
 			break
 		}
-		var statusList []*jobsdb.JobStatusT
-		statusList = migrator.filterAndDump(jobList)
+
+		statusList := migrator.filterAndDump(jobList)
 		migrator.jobsDB.UpdateJobStatus(statusList, []string{}, []jobsdb.ParameterFilterT{})
 	}
 
@@ -148,7 +195,6 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 		m[nodeMeta] = append(m[nodeMeta], job)
 	}
 
-	fileIndex := 0
 	var statusList []*jobsdb.JobStatusT
 	for nMeta, jobList := range m {
 		var jobState string
@@ -162,7 +208,7 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 		}
 
 		if writeToFile {
-			fileName := fmt.Sprintf("%d_%d_%d.json", misc.GetNodeID(), nMeta.GetNodeID(), fileIndex)
+			fileName := fmt.Sprintf("%s_%s_%s_%d_%d.json", migrator.jobsDB.GetTablePrefix(), misc.GetNodeID(), nMeta.GetNodeID(), jobList[0].JobID, len(jobList))
 			file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
 			if err != nil {
@@ -177,23 +223,22 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 					logger.Error("Something went wrong in marshalling")
 				}
 				_, _ = datawriter.WriteString(string(m) + "\n")
-				buildStatusList(statusList, job, jobState)
+				statusList = append(statusList, buildStatus(job, jobState))
 			}
 			logger.Info(nMeta, len(jobList))
 			datawriter.Flush()
 			file.Close()
-			migrator.uploadToS3AndNotifyDestNode(fileName, nMeta)
-			fileIndex++
+			migrator.uploadToS3AndNotifyDestNode(file, nMeta)
 		} else {
 			for _, job := range jobList {
-				buildStatusList(statusList, job, jobState)
+				statusList = append(statusList, buildStatus(job, jobState))
 			}
 		}
 	}
 	return statusList
 }
 
-func buildStatusList(statusList []*jobsdb.JobStatusT, job *jobsdb.JobT, jobState string) {
+func buildStatus(job *jobsdb.JobT, jobState string) *jobsdb.JobStatusT {
 	newStatus := jobsdb.JobStatusT{
 		JobID:         job.JobID,
 		JobState:      jobState,
@@ -203,11 +248,37 @@ func buildStatusList(statusList []*jobsdb.JobStatusT, job *jobsdb.JobT, jobState
 		ErrorCode:     "200",
 		ErrorResponse: []byte(`{"success":"OK"}`),
 	}
-	statusList = append(statusList, &newStatus)
+	return &newStatus
 }
 
-func (migrator *Migrator) uploadToS3AndNotifyDestNode(fileName string, nMeta pathfinder.NodeMeta) {
-	//TODO:
+func (migrator *Migrator) uploadToS3AndNotifyDestNode(file *os.File, nMeta pathfinder.NodeMeta) {
+	uploadOutput, err := migrator.fileManager.Upload(file)
+	if err != nil {
+		panic(uploadOutput)
+	} else {
+		migrationEvent := jobsdb.NewMigrationEvent("export", misc.GetNodeID(), nMeta.GetNodeID(), uploadOutput.Location, jobsdb.Exported, 0)
+
+		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
+
+		go misc.MakeAsyncPostRequest(nMeta.GetNodeConnectionString(), "/fileToImport", migrationEvent, 5, migrator.postHandler)
+	}
+}
+
+func (migrator *Migrator) postHandler(retryCount int, response interface{}, endpoint string, uri string, data interface{}) {
+	if retryCount == -1 {
+		responseMigrationEvent := jobsdb.MigrationEvent{}
+		mapstructure.Decode(response, &responseMigrationEvent)
+		migrationEvent := jobsdb.MigrationEvent{}
+		mapstructure.Decode(data, &migrationEvent)
+		migrationEvent.StartSeq = responseMigrationEvent.StartSeq
+		migrationEvent.Status = jobsdb.Imported
+		migrationEvent.TimeStamp = time.Now()
+		migrator.jobsDB.Checkpoint(&migrationEvent)
+	} else if retryCount > 1 {
+		misc.MakeAsyncPostRequest(endpoint, uri, data, retryCount-1, migrator.postHandler)
+	} else if retryCount == 1 {
+		panic("Ran out of retries. Go debug")
+	}
 }
 
 func (migrator *Migrator) postExport() {

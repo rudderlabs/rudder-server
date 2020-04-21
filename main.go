@@ -174,9 +174,9 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		config.SetBool("JobsDB.backup.gw.enabled", false)
 	}
 
-	isGwNew := gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
-	isRouterNew := routerDB.Setup(*clearDB, "rt", routerDBRetention)
-	isBatchRouterNew := batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention)
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
 
 	if enableRouter {
 		go monitorDestRouters(&routerDB, &batchRouterDB)
@@ -187,34 +187,35 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
 	}
 
+	shouldStartGateWay := true
 	if enableMigrator {
-		backendReplciaCount := config.GetEnv("BACKEND_REPLICA_COUNT", "5")
-		
+		backendReplicaCount := config.GetEnvAsInt("NEW_BACKEND_REPLICA_COUNT", 6)
+		clusterVersion := config.GetEnvAsInt("NEW_CLUSTER_VERSION", 2)
+		dnsPattern := config.GetEnv("URL_PATTERN", "http://cluster-VERSION-node-NODENUM.rudderlabs.com")
+		migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8081)
 		logger.Info("Shanmukh: setting up pathfinder")
-		s := make([]pathfinder.NodeMeta, 4)
-		s[0] = pathfinder.GetNodeMeta(1, "node0ConnString")
-		s[1] = pathfinder.GetNodeMeta(2, "node1ConnString")
-		s[2] = pathfinder.GetNodeMeta(3, "node2ConnString")
-		s[3] = pathfinder.GetNodeMeta(4, "node3ConnString")
 
-		pf.Setup(s, 1)
+		pf.Setup(pathfinder.Setup(backendReplicaCount, clusterVersion, dnsPattern, migratorPort), clusterVersion)
 
 		logger.Info("Shanmukh: setting up migrators")
 		var migrator migrator.Migrator
 
 		//TODO: Should this be concurrent?
-		migrator.Setup(&gatewayDB, pf, isGwNew)
-		migrator.Setup(&routerDB, pf, isRouterNew)
-		migrator.Setup(&batchRouterDB, pf, isBatchRouterNew)
-		// migrator.Setup(&routerDB, pf, isRouterNew)
-		// migrator.Setup(&batchRouterDB, pf, isBatchRouterNew)
+		migrator.Setup(&gatewayDB, pf)
+		migrator.Setup(&routerDB, pf)
+		migrator.Setup(&batchRouterDB, pf)
 
+		if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
+			shouldStartGateWay = false
+		}
 	}
 
-	var gateway gateway.HandleT
-	var rateLimiter ratelimiter.HandleT
-	rateLimiter.SetUp()
-	gateway.Setup(&gatewayDB, &rateLimiter, clearDB)
+	if shouldStartGateWay {
+		var gateway gateway.HandleT
+		var rateLimiter ratelimiter.HandleT
+		rateLimiter.SetUp()
+		gateway.Setup(&gatewayDB, &rateLimiter, clearDB)
+	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
