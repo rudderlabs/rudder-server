@@ -578,9 +578,9 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 
-	gateway.latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
-	gateway.batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
-	gateway.batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
+	gateway.latencyStat = gateway.stats.NewStat("gateway.response_time", stats.TimerType)
+	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
+	gateway.batchTimeStat = gateway.stats.NewStat("gateway.batch_time", stats.TimerType)
 
 	if enableDedup {
 		gateway.openBadger(clearDB)

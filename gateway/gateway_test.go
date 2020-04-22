@@ -43,12 +43,12 @@ var testTimeout = 5 * time.Second
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.SourcesT{
 	Sources: []backendconfig.SourceT{
-		backendconfig.SourceT{
+		{
 			ID:       SourceIDDisabled,
 			WriteKey: WriteKeyDisabled,
 			Enabled:  false,
 		},
-		backendconfig.SourceT{
+		{
 			ID:       SourceIDEnabled,
 			WriteKey: WriteKeyEnabled,
 			Enabled:  true,
