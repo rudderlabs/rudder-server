@@ -192,11 +192,10 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		backendReplicaCount := config.GetEnvAsInt("BACKEND_REPLICA_COUNT", 6)
 		clusterVersion := config.GetEnvAsInt("CLUSTER_VERSION", 2)
 		dnsPattern := config.GetEnv("URL_PATTERN", "http://cluster-VERSION-node-NODENUM.rudderlabs.com")
-		logger.Info("Shanmukh: setting up pathfinder")
 
 		pf.Setup(pathfinder.Setup(backendReplicaCount, clusterVersion, dnsPattern), clusterVersion)
 
-		logger.Info("Shanmukh: setting up migrators")
+		logger.Info("Setting up migrators")
 		var gatewayMigrator migrator.Migrator
 		var routerMigrator migrator.Migrator
 		var batchRouterwMigrator migrator.Migrator

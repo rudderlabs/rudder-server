@@ -41,7 +41,7 @@ func (jd *HandleT) SetupForImportAndAcceptNewEvents(version int) {
 
 	seqNoForNewDS := int64(version) * int64(math.Pow10(13))
 	jd.updateSequenceNumber(jd.migrationState.dsForNewEvents, seqNoForNewDS)
-	logger.Info("New dataSet %s is prepared with start sequence : %d", jd.migrationState.dsForNewEvents, seqNoForNewDS)
+	logger.Info("Jobsdb: New dataSet %s is prepared with start sequence : %d", jd.migrationState.dsForNewEvents, seqNoForNewDS)
 	jd.migrationState.sequenceProvider = NewSequenceProvider(importDSMin + 1)
 
 	//TODO: recover from crash

@@ -41,7 +41,7 @@ func init() {
 
 //Setup initializes the module
 func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, port int) {
-	logger.Info("Shanmukh: inside migrator setup")
+	logger.Info("Migrator: Setting up migrator for % jobsdb", jobsDB.GetTablePrefix())
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
 	migrator.fileManager = migrator.setupFileManager()
@@ -65,7 +65,7 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		panic(err)
 	}
-	logger.Info("Request received to import %s", migrationEvent.FileLocation)
+	logger.Info("Migrator: Request received to import %s", migrationEvent.FileLocation)
 	if migrationEvent.MigrationType == jobsdb.ExportOp {
 		localTmpDirName := "/migrator-import/"
 		tmpDirPath, err := misc.CreateTMPDIR()
@@ -126,7 +126,7 @@ func (migrator *Migrator) getURI(uri string) string {
 }
 
 func (migrator *Migrator) startWebHandler() {
-	logger.Infof("Starting migrationWebHandler on port %d", migrator.port)
+	logger.Info("Migrator: Starting migrationWebHandler on port %d", migrator.port)
 
 	//TODO fix this.
 	http.HandleFunc(migrator.getURI("/fileToImport"), migrator.importHandler)
@@ -187,7 +187,7 @@ func (migrator *Migrator) readFromFileAndWriteToDB(file *os.File, migrationEvent
 	}
 	reader.Close()
 	migrator.jobsDB.StoreImportedJobsAndJobStatuses(jobList, file.Name(), migrationEvent)
-	logger.Info("Done importing file %s", file.Name())
+	logger.Info("Migrator: Done importing file %s", file.Name())
 	// check if Scan() finished because of error or because it reached end of file
 	return sc.Err()
 }
@@ -203,7 +203,7 @@ func (migrator *Migrator) processSingleLine(line []byte) (jobsdb.JobT, bool) {
 }
 
 func (migrator *Migrator) export() {
-	logger.Info("Shanmukh: Export loop is starting")
+	logger.Info("Migrator: Export loop is starting")
 	lastDSIndex := migrator.jobsDB.GetLatestDSIndex()
 	for {
 		toQuery := dbReadBatchSize
@@ -221,14 +221,12 @@ func (migrator *Migrator) export() {
 }
 
 func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobStatusT {
-	logger.Info("Shanmukh: inside filterAndMigrateLocal")
-
 	m := make(map[pathfinder.NodeMeta][]*jobsdb.JobT)
 	for _, job := range jobList {
 		eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
 		if !ok {
 			//TODO: This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.
-			logger.Debug("This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.")
+			logger.Debug("Migrator: This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.")
 			continue
 		}
 		userID, ok := misc.GetAnonymousID(eventList[0])
@@ -314,13 +312,13 @@ func (migrator *Migrator) uploadToS3AndNotifyDestNode(file *os.File, nMeta pathf
 	if err != nil {
 		panic(uploadOutput)
 	} else {
-		logger.Info("Uploaded an export file to %s", uploadOutput.Location)
+		logger.Info("Migrator: Uploaded an export file to %s", uploadOutput.Location)
 		//TODO: delete this file otherwise in failure case, the file exists and same data will be appended to it
 		migrationEvent := jobsdb.NewMigrationEvent("export", misc.GetNodeID(), nMeta.GetNodeID(), uploadOutput.Location, jobsdb.Exported, 0)
 
 		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
 
-		logger.Info("Notifying destination node %s to download and import file from %s", migrationEvent.ToNode, migrationEvent.FileLocation)
+		logger.Info("Migrator: Notifying destination node %s to download and import file from %s", migrationEvent.ToNode, migrationEvent.FileLocation)
 		go misc.MakeAsyncPostRequest(nMeta.GetNodeConnectionString(migrator.port), migrator.getURI("/fileToImport"), migrationEvent, 5, migrator.postHandler)
 	}
 }

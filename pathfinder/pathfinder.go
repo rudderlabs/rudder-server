@@ -60,13 +60,13 @@ func Setup(backendNodeCount int, version int, dnsPattern string) []NodeMeta {
 //Setup sets the cluster state based on which users are routed to corresponding nodes
 func (pf *Pathfinder) Setup(clusterState []NodeMeta, version int) {
 	//TODO: Look for duplicate nodeIds
-	logger.Info("Shanmukh: inside pathfinder setup")
 
 	sort.Slice(clusterState, func(i, j int) bool {
 		return clusterState[i].nodeID < clusterState[j].nodeID
 	})
 	pf.clusterState = clusterState
 	pf.version = version
+	logger.Info("Pathfinder is setup %v", pf)
 }
 
 func (pf *Pathfinder) getNodeFromHash(hash uint32) NodeMeta {

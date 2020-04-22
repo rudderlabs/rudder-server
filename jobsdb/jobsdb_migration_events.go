@@ -94,5 +94,5 @@ func (jd *HandleT) SetupCheckpointDBTable() {
 
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
-	logger.Info("%s_migration_checkpoints table created", jd.GetTablePrefix())
+	logger.Info("Migration: %s_migration_checkpoints table created", jd.GetTablePrefix())
 }
