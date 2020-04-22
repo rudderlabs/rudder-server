@@ -13,6 +13,7 @@ import (
 	"time"
 	"path/filepath"
 	"bytes"
+	"compress/gzip"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/mitchellh/mapstructure"
@@ -54,37 +55,64 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 
 	go migrator.startWebHandler()
 	migrator.export()
-	//panic only if node doesn't belong to cluster
+	/*//panic only if node doesn't belong to cluster
 	if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
 		panic(fmt.Sprintf("Node not in cluster. Won't be accepting any more events %v", pf))
-	}
+	}*/
 }
 
 func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) {
 	body, _ := ioutil.ReadAll(r.Body)
 	r.Body.Close()
 	migrationEvent := jobsdb.MigrationEvent{}
-	json.Unmarshal(body, &migrationEvent)
+	err := json.Unmarshal(body, &migrationEvent)
+	if err != nil {
+		panic(err)
+	}
 	if migrationEvent.MigrationType == jobsdb.ExportOp {
+		localTmpDirName := "/migrator-import/"
+		tmpDirPath, err := misc.CreateTMPDIR()
+		if err != nil {
+			panic(err)
+		}
+
 		filePathSlice := strings.Split(migrationEvent.FileLocation, "/")
 		fileName := filePathSlice[len(filePathSlice)-1]
-		file, err := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR, 0644)
+		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fileName)
+
+		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		if err != nil {
-			panic("Handle this")
+			panic(err)
 		}
-		err = migrator.fileManager.Download(file, fileName)
+		jsonFile, err := os.Create(jsonPath)
+		if err != nil {
+			panic(err)
+		}
+
+		err = migrator.fileManager.Download(jsonFile, fileName)
 		if err != nil {
 			panic("Unable to download file")
 		}
+
+		jsonFile.Close()
+
+		rawf, err := os.Open(jsonPath)
+		if err != nil {
+			panic(err)
+		}
+		
 		migrationEvent.MigrationType = jobsdb.ImportOp
 		migrationEvent.ID = 0
 		migrationEvent.Status = jobsdb.Prepared
 		migrationEvent.TimeStamp = time.Now()
 		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
-		migrator.readFromFileAndWriteToDB(file, migrationEvent)
+		migrator.readFromFileAndWriteToDB(rawf, migrationEvent)
 		logger.Debug("Import done")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
+
+		rawf.Close()
+		os.Remove(jsonPath)
 	}
 }
 
@@ -104,8 +132,11 @@ func (migrator *Migrator) startWebHandler() {
 	logger.Infof("Starting in %d", migrator.port)
 
 	logger.Info(migrator.jobsDB.GetTablePrefix(), migrator.port, fmt.Sprintf("/%s/fileToImport", migrator.jobsDB.GetTablePrefix()))
-	http.HandleFunc(migrator.getURI("/fileToImport"), migrator.importHandler)
-	http.HandleFunc(migrator.getURI("/status"), migrator.statusHandler)
+	//TODO fix this.
+	/*http.HandleFunc(migrator.getURI("/fileToImport"), migrator.importHandler)
+	http.HandleFunc(migrator.getURI("/status"), migrator.statusHandler)*/
+	http.HandleFunc("/fileToImport", migrator.importHandler)
+	http.HandleFunc("/status", migrator.statusHandler)
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
@@ -139,27 +170,35 @@ func loadConfig() {
 }
 
 func (migrator *Migrator) readFromFileAndWriteToDB(file *os.File, migrationEvent jobsdb.MigrationEvent) error {
-	scanner := bufio.NewScanner(file)
+	
+	reader, err := gzip.NewReader(file)
+	if err != nil {
+		panic(err)
+	}
+
+	sc := bufio.NewScanner(reader)
 	// Scan() reads next line and returns false when reached end or error
 	jobList := []*jobsdb.JobT{}
-	for scanner.Scan() {
-		line := scanner.Text()
-		job, status := migrator.processSingleLine(line)
+
+	for sc.Scan() {
+		lineBytes := sc.Bytes()
+		job, status := migrator.processSingleLine(lineBytes)
 		if !status {
 			return nil
 		}
 		jobList = append(jobList, &job)
 		// process the line
 	}
+	reader.Close()
 	migrator.jobsDB.StoreImportedJobsAndJobStatuses(jobList, file.Name(), migrationEvent)
 	logger.Info("done : ", file)
 	// check if Scan() finished because of error or because it reached end of file
-	return scanner.Err()
+	return sc.Err()
 }
 
-func (migrator *Migrator) processSingleLine(line string) (jobsdb.JobT, bool) {
+func (migrator *Migrator) processSingleLine(line []byte) (jobsdb.JobT, bool) {
 	job := jobsdb.JobT{}
-	err := json.Unmarshal([]byte(line), &job)
+	err := json.Unmarshal(line, &job)
 	if err != nil {
 		logger.Error(err)
 		return jobsdb.JobT{}, false
@@ -203,7 +242,7 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 		m[nodeMeta] = append(m[nodeMeta], job)
 	}
 
-	backupPathDirName := "/migrator/"
+	backupPathDirName := "/migrator-export/"
 	tmpDirPath, err := misc.CreateTMPDIR()
 
 	var statusList []*jobsdb.JobStatusT
