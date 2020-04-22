@@ -66,7 +66,7 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	enableMigrator = config.GetBool("enableMigrator", true)
+	enableMigrator = config.GetBool("enableMigrator", false)
 }
 
 // Test Function
@@ -192,7 +192,6 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		backendReplicaCount := config.GetEnvAsInt("BACKEND_REPLICA_COUNT", 6)
 		clusterVersion := config.GetEnvAsInt("CLUSTER_VERSION", 2)
 		dnsPattern := config.GetEnv("URL_PATTERN", "http://cluster-VERSION-node-NODENUM.rudderlabs.com")
-		migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8081)
 		logger.Info("Shanmukh: setting up pathfinder")
 
 		pf.Setup(pathfinder.Setup(backendReplicaCount, clusterVersion, dnsPattern), clusterVersion)
@@ -203,9 +202,9 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		var batchRouterwMigrator migrator.Migrator
 
 		//TODO: Should this be concurrent?
-		gatewayMigrator.Setup(&gatewayDB, pf, migratorPort)
-		routerMigrator.Setup(&routerDB, pf, migratorPort)
-		batchRouterwMigrator.Setup(&batchRouterDB, pf, migratorPort)
+		gatewayMigrator.Setup(&gatewayDB, pf, 8084)
+		routerMigrator.Setup(&routerDB, pf, 8084)
+		batchRouterwMigrator.Setup(&batchRouterDB, pf, 8086)
 
 		if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
 			shouldStartGateWay = false

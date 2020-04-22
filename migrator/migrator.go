@@ -2,18 +2,18 @@ package migrator
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-	"path/filepath"
-	"bytes"
-	"compress/gzip"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/mitchellh/mapstructure"
@@ -55,10 +55,6 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 
 	go migrator.startWebHandler()
 	migrator.export()
-	/*//panic only if node doesn't belong to cluster
-	if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
-		panic(fmt.Sprintf("Node not in cluster. Won't be accepting any more events %v", pf))
-	}*/
 }
 
 func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +96,7 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 		if err != nil {
 			panic(err)
 		}
-		
+
 		migrationEvent.MigrationType = jobsdb.ImportOp
 		migrationEvent.ID = 0
 		migrationEvent.Status = jobsdb.Prepared
@@ -170,7 +166,7 @@ func loadConfig() {
 }
 
 func (migrator *Migrator) readFromFileAndWriteToDB(file *os.File, migrationEvent jobsdb.MigrationEvent) error {
-	
+
 	reader, err := gzip.NewReader(file)
 	if err != nil {
 		panic(err)
