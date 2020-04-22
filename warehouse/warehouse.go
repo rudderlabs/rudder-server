@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -30,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -71,6 +71,7 @@ var (
 	warehouseSchemasTable      string
 	warehouseMode              string
 	warehouseSyncPreFetchCount int
+	scheduledTimesCache        map[string][]int
 )
 var (
 	host, user, password, dbname string
@@ -152,6 +153,7 @@ func loadConfig() {
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
+	scheduledTimesCache = map[string][]int{}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	host = config.GetEnv("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	user = config.GetEnv("WAREHOUSE_JOBS_DB_USER", "ubuntu")
@@ -175,9 +177,9 @@ func (wh *HandleT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == wh.destType {
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
 						if destination.Config != nil && destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
-							sourceID :=source.ID
-							destinationID:= destination.ID
-							rruntime.Go(func(){
+							sourceID := source.ID
+							destinationID := destination.ID
+							rruntime.Go(func() {
 								wh.syncLiveWarehouseStatus(sourceID, destinationID)
 							})
 						}
@@ -504,6 +506,9 @@ func parseTimeToMinsOfDay(str string) int {
 // scheduledTimes returns all possible start time
 // eg. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
 func scheduledTimes(syncFrequency, syncStartAt string) (times []int) {
+	if cachedTimes, ok := scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)]; ok {
+		return cachedTimes
+	}
 	syncStartAtInMin := parseTimeToMinsOfDay(syncStartAt)
 	syncFrequencyInMin, _ := strconv.Atoi(syncFrequency)
 	times = append(times, syncStartAtInMin)
@@ -528,6 +533,7 @@ func scheduledTimes(syncFrequency, syncStartAt string) (times []int) {
 		counter++
 	}
 	times = append(funk.ReverseInt(prependTimes), times...)
+	scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)] = times
 	return
 }
 
@@ -886,7 +892,7 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 	failedTableUploads := make([]string, 0)
 
 	row := wh.dbHandle.QueryRow(fmt.Sprintf(`select source_id, destination_id, status, error, updated_at from %s where id=%d`, warehouseUploadsTable, uploadID))
-	err:=row.Scan(&sourceID, &destinationID, &status, &errorResp, &updatedAt)
+	err := row.Scan(&sourceID, &destinationID, &status, &errorResp, &updatedAt)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
@@ -905,12 +911,12 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 	}
 
 	var errJson map[string]map[string]interface{}
-	err=json.Unmarshal([]byte(errorResp),&errJson)
+	err = json.Unmarshal([]byte(errorResp), &errJson)
 	if err != nil {
 		panic(err)
 	}
-	if stateErr,ok:=errJson[status]; ok {
-		if attempt, ok:=stateErr["attempt"]; ok{
+	if stateErr, ok := errJson[status]; ok {
+		if attempt, ok := stateErr["attempt"]; ok {
 			attemptNum = attemptNum + int(attempt.(float64))
 		}
 	}
