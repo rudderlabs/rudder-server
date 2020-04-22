@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
+
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -30,30 +32,34 @@ import (
 )
 
 var (
-	jobQueryBatchSize         int
-	noOfWorkers               int
-	maxFailedCountForJob      int
-	mainLoopSleep             time.Duration
-	uploadFreqInS             int64
-	configSubscriberLock      sync.RWMutex
-	objectStorageDestinations []string
-	warehouseDestinations     []string
-	inProgressMap             map[string]bool
-	inProgressMapLock         sync.RWMutex
-	lastExecMap               map[string]int64
-	lastExecMapLock           sync.RWMutex
-	uploadedRawDataJobsCache  map[string]map[string]bool
-	warehouseURL              string
+	jobQueryBatchSize                  int
+	noOfWorkers                        int
+	maxFailedCountForJob               int
+	mainLoopSleep, diagnosisTickerTime time.Duration
+	uploadFreqInS                      int64
+	configSubscriberLock               sync.RWMutex
+	objectStorageDestinations          []string
+	warehouseDestinations              []string
+	inProgressMap                      map[string]bool
+	inProgressMapLock                  sync.RWMutex
+	lastExecMap                        map[string]int64
+	lastExecMapLock                    sync.RWMutex
+	uploadedRawDataJobsCache           map[string]map[string]bool
+	warehouseURL                       string
+	warehouseMode                      string
 )
 
 type HandleT struct {
-	destType          string
-	batchDestinations []DestinationT
-	netHandle         *http.Client
-	processQ          chan BatchJobsT
-	jobsDB            *jobsdb.HandleT
-	jobsDBHandle      *sql.DB
-	isEnabled         bool
+	destType                string
+	batchDestinations       []DestinationT
+	netHandle               *http.Client
+	processQ                chan BatchJobsT
+	jobsDB                  *jobsdb.HandleT
+	jobsDBHandle            *sql.DB
+	isEnabled               bool
+	batchRequestsMetricLock sync.RWMutex
+	diagnosisTicker         *time.Ticker
+	batchRequestsMetric     []batchRequestMetric
 }
 
 type ObjectStorageT struct {
@@ -83,6 +89,11 @@ func (brt *HandleT) backendConfigSubscriber() {
 		}
 		configSubscriberLock.Unlock()
 	}
+}
+
+type batchRequestMetric struct {
+	batchRequestSuccess int
+	batchRequestFailed  int
 }
 
 type StorageUploadOutput struct {
@@ -262,19 +273,22 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		errorResp     []byte
 	)
 
+	var batchReqMetric batchRequestMetric
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to object storage: %v %v", err, batchJobs.BatchDestination.Source.ID)
 		batchJobState = jobsdb.FailedState
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
+		batchReqMetric.batchRequestFailed = 1
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
 	} else {
 		logger.Debugf("BRT: Uploaded to object storage : %v at %v", batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		batchJobState = jobsdb.SucceededState
 		errorResp = []byte(`{"success":"OK"}`)
+		batchReqMetric.batchRequestSuccess = 1
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
 	}
-
+	brt.trackRequestMetrics(batchReqMetric)
 	var statusList []*jobsdb.JobStatusT
 
 	for _, job := range batchJobs.Jobs {
@@ -295,6 +309,16 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		statusList = append(statusList, &status)
 	}
 
+	//tracking batch router errors
+	if diagnostics.EnableDestinationFailuresMetric {
+		if batchJobState == jobsdb.FailedState {
+			diagnostics.Track(diagnostics.BatchRouterFailed, map[string]interface{}{
+				diagnostics.BatchRouterDestination: brt.destType,
+				diagnostics.ErrorResponse:          string(errorResp),
+			})
+		}
+	}
+
 	parameterFilters := []jobsdb.ParameterFilterT{
 		jobsdb.ParameterFilterT{
 			Name:  "source_id",
@@ -310,7 +334,20 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 }
 
-func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err error) {
+func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {
+	if diagnostics.EnableBatchRouterMetric {
+		brt.batchRequestsMetricLock.Lock()
+		if brt.batchRequestsMetric == nil {
+			var batchRequestsMetric []batchRequestMetric
+			brt.batchRequestsMetric = append(batchRequestsMetric, batchReqDiagnostics)
+		} else {
+			brt.batchRequestsMetric = append(brt.batchRequestsMetric, batchReqDiagnostics)
+		}
+		brt.batchRequestsMetricLock.Unlock()
+	}
+}
+
+func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err error, isWarehouse bool) {
 	var (
 		jobState  string
 		errorResp []byte
@@ -318,9 +355,15 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 
 	if err != nil {
 		jobState = jobsdb.FailedState
+		if isWarehouse {
+			jobState = warehouseutils.GeneratingStagingFileFailed
+		}
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 	} else {
 		jobState = jobsdb.SucceededState
+		if isWarehouse {
+			jobState = warehouseutils.GeneratedStagingFile
+		}
 		errorResp = []byte(`{"success":"OK"}`)
 	}
 
@@ -351,7 +394,7 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
 							brt.setJobStatus(batchJobs, false, output.Error)
-							brt.recordDeliveryStatus(batchJobs.BatchDestination, output.Error)
+							brt.recordDeliveryStatus(batchJobs.BatchDestination, output.Error, false)
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 							if output.JournalOpID > 0 {
 								brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
@@ -359,14 +402,16 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat.End()
 							setDestInProgress(batchJobs.BatchDestination, false)
 						case misc.ContainsString(warehouseDestinations, brt.destType):
-							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType)
+							objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config)
+							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 							destUploadStat.Start()
-							output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
+							output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
 							if output.Error == nil && output.Key != "" {
 								output.Error = brt.postToWarehouse(batchJobs, output.Key)
 								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
 								warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
 							}
+							brt.recordDeliveryStatus(batchJobs.BatchDestination, output.Error, true)
 							brt.setJobStatus(batchJobs, true, output.Error)
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 							destUploadStat.End()
@@ -612,17 +657,60 @@ func (brt *HandleT) crashRecover() {
 	}
 }
 
+func getWarehouseURL() (url string) {
+	if warehouseMode == config.EmbeddedMode {
+		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
+	} else {
+		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
+	}
+	return
+}
+
+func (brt *HandleT) collectMetrics() {
+	if diagnostics.EnableBatchRouterMetric {
+		for {
+			select {
+			case _ = <-brt.diagnosisTicker.C:
+				brt.batchRequestsMetricLock.RLock()
+				var diagnosisProperties map[string]interface{}
+				success := 0
+				failed := 0
+				for _, batchReqMetric := range brt.batchRequestsMetric {
+					success = success + batchReqMetric.batchRequestSuccess
+					failed = failed + batchReqMetric.batchRequestFailed
+				}
+				if len(brt.batchRequestsMetric) > 0 {
+					diagnosisProperties = map[string]interface{}{
+						brt.destType: map[string]interface{}{
+							diagnostics.BatchRouterSuccess: success,
+							diagnostics.BatchRouterFailed:  failed,
+						},
+					}
+
+					diagnostics.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
+				}
+
+				brt.batchRequestsMetric = nil
+				brt.batchRequestsMetricLock.RUnlock()
+			}
+		}
+	}
+}
+
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
 	maxFailedCountForJob = config.GetInt("BatchRouter.maxFailedCountForJob", 128)
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
-	warehouseURL = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
+	warehouseMode = config.GetString("Warehouse.mode", "embedded")
+	warehouseURL = getWarehouseURL()
+	// Time period for diagnosis ticker
+	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 }
 
 func init() {
@@ -634,6 +722,7 @@ func init() {
 //Setup initializes this module
 func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	logger.Infof("BRT: Batch Router started: %s", destType)
+	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.destType = destType
 	brt.jobsDB = jobsDB
 	brt.jobsDBHandle = brt.jobsDB.GetDBHandle()
@@ -646,6 +735,9 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.processQ = make(chan BatchJobsT)
 	brt.crashRecover()
 
+	rruntime.Go(func() {
+		brt.collectMetrics()
+	})
 	rruntime.Go(func() {
 		brt.initWorkers()
 	})

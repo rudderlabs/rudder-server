@@ -28,6 +28,8 @@ func loadConfig() {
 	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 	// Enable rate limit on incoming events. false by default
 	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
+	// Time period for diagnosis ticker
+	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers

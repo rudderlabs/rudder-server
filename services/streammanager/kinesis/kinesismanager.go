@@ -80,7 +80,7 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 	if err != nil {
 		logger.Errorf("error in kinesis :: %v", err.Error())
 		statusCode := GetStatusCodeFromError(err)
-		return statusCode, err.Error(), ""
+		return statusCode, err.Error(), err.Error()
 	}
 	message := fmt.Sprintf("Message delivered at SequenceNumber: %v , shard Id: %v", putOutput.SequenceNumber, putOutput.ShardId)
 	return 200, "Success", message

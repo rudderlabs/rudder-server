@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
+
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/dgraph-io/badger"
 	"github.com/rs/cors"
@@ -57,7 +59,7 @@ var (
 	maxReqSize                                int
 	enableDedup                               bool
 	enableRateLimit                           bool
-	dedupWindow                               time.Duration
+	dedupWindow, diagnosisTickerTime          time.Duration
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -87,6 +89,10 @@ type HandleT struct {
 	rateLimiter                               ratelimiter.RateLimiter
 	stats                                     stats.Stats
 	batchSizeStat, batchTimeStat, latencyStat stats.RudderStats
+	trackSuccessCount                         int
+	trackFailureCount                         int
+	requestMetricLock                         sync.RWMutex
+	diagnosisTicker                           *time.Ticker
 }
 
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -250,7 +256,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			jobIDReqMap[uuid].done <- err
 		}
-
 		//Sending events to config backend
 		for _, event := range eventBatchesToRecord {
 			sourcedebugger.RecordEvent(gjson.Get(event, "writeKey").Str, event)
@@ -411,12 +416,45 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	//Wait for batcher process to be done
 	errorMessage := <-done
 	atomic.AddUint64(&gateway.ackCount, 1)
+	gateway.trackRequestMetrics(errorMessage)
 	if errorMessage != "" {
 		logger.Debug(errorMessage)
 		http.Error(w, errorMessage, 400)
 	} else {
 		logger.Debug(getStatus(Ok))
 		w.Write([]byte(getStatus(Ok)))
+	}
+}
+
+func (gateway *HandleT) trackRequestMetrics(errorMessage string) {
+	if diagnostics.EnableGatewayMetric {
+		gateway.requestMetricLock.Lock()
+		defer gateway.requestMetricLock.Unlock()
+		if errorMessage != "" {
+			gateway.trackFailureCount = gateway.trackFailureCount + 1
+		} else {
+			gateway.trackSuccessCount = gateway.trackSuccessCount + 1
+		}
+	}
+}
+
+func (gateway *HandleT) collectMetrics() {
+	if diagnostics.EnableGatewayMetric {
+		for {
+			select {
+			case _ = <-gateway.diagnosisTicker.C:
+				gateway.requestMetricLock.RLock()
+				if gateway.trackSuccessCount > 0 || gateway.trackFailureCount > 0 {
+					diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
+						diagnostics.GatewaySuccess: gateway.trackSuccessCount,
+						diagnostics.GatewayFailure: gateway.trackFailureCount,
+					})
+					gateway.trackSuccessCount = 0
+					gateway.trackFailureCount = 0
+				}
+				gateway.requestMetricLock.RUnlock()
+			}
+		}
 	}
 }
 
@@ -465,7 +503,11 @@ func (gateway *HandleT) StartWebHandler() {
 		AllowCredentials: true,
 		AllowedHeaders:   []string{"*"},
 	})
-
+	if diagnostics.EnableServerStartedMetric {
+		diagnostics.Track(diagnostics.ServerStarted, map[string]interface{}{
+			diagnostics.ServerStarted: time.Now(),
+		})
+	}
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), c.Handler(bugsnag.Handler(nil))))
 }
 
@@ -533,9 +575,12 @@ This function will block until backend config is initialy received.
 */
 func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, s stats.Stats, clearDB *bool) {
 	gateway.stats = s
-	gateway.latencyStat = gateway.stats.NewStat("gateway.response_time", stats.TimerType)
-	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
-	gateway.batchTimeStat = gateway.stats.NewStat("gateway.batch_time", stats.TimerType)
+
+	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
+
+	gateway.latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
+	gateway.batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
+	gateway.batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
 
 	if enableDedup {
 		gateway.openBadger(clearDB)
@@ -561,5 +606,8 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 	gateway.backendConfig.WaitForConfig()
 	rruntime.Go(func() {
 		gateway.printStats()
+	})
+	rruntime.Go(func() {
+		gateway.collectMetrics()
 	})
 }
