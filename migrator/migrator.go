@@ -52,10 +52,6 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 
 	go migrator.startWebHandler()
 	migrator.export()
-	//panic only if node doesn't belong to cluster
-	if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
-		panic(fmt.Sprintf("Node not in cluster. Won't be accepting any more events %v", pf))
-	}
 }
 
 func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) {

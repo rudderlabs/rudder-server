@@ -671,10 +671,16 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 		jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
 		for idx, ds := range dList {
 			if ds.Index == insertBeforeDS.Index {
-				//We never insert before the first element
-				jd.assert(idx > 0, fmt.Sprintf("idx: %d <= 0", idx))
+				// //We never insert before the first element
+				// jd.assert(idx > 0, fmt.Sprintf("idx: %d <= 0", idx))
 				levels, levelVals := jd.mapDSToLevel(ds)
-				levelsPre, levelPreVals := jd.mapDSToLevel(dList[idx-1])
+				var dsPre dataSetT
+				if idx == 0 {
+					dsPre = dataSetT{"", "", "0"}
+				} else {
+					dsPre = dList[idx-1]
+				}
+				levelsPre, levelPreVals := jd.mapDSToLevel(dsPre)
 				//Some sanity checks (see comment above)
 				//Insert before is never required on level2.
 				//The level0 must be different by one
