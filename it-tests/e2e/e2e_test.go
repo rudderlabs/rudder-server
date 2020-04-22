@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/tests/helpers"
+	"github.com/rudderlabs/rudder-server/it-tests/helpers"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"

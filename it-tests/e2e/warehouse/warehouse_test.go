@@ -2,14 +2,15 @@ package warehouse_test
 
 import (
 	"database/sql"
+	"reflect"
+	"strings"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/it-tests/helpers"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/tests/helpers"
 	"github.com/tidwall/gjson"
-	"reflect"
-	"strings"
 )
 
 var dbHandle *sql.DB
