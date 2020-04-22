@@ -1,6 +1,6 @@
 package ratelimiter
 
-//go:generate mockgen -destination=../mocks/mock_ratelimiter.go -package=mocks github.com/rudderlabs/rudder-server/rate-limiter RateLimiter
+//go:generate mockgen -destination=../mocks/rate-limiter/mock_ratelimiter.go -package=mocks_ratelimiter github.com/rudderlabs/rudder-server/rate-limiter RateLimiter
 
 import (
 	"time"

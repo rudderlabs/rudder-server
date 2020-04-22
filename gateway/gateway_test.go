@@ -20,7 +20,10 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/mocks"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
+	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
+	mocksStats "github.com/rudderlabs/rudder-server/mocks/stats"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -60,27 +63,27 @@ type context struct {
 	asyncHelper testutils.AsyncTestHelper
 
 	mockCtrl          *gomock.Controller
-	mockJobsDB        *mocks.MockJobsDB
-	mockBackendConfig *mocks.MockBackendConfig
-	mockRateLimiter   *mocks.MockRateLimiter
-	mockStats         *mocks.MockStats
+	mockJobsDB        *mocksJobsDB.MockJobsDB
+	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	mockRateLimiter   *mocksRateLimiter.MockRateLimiter
+	mockStats         *mocksStats.MockStats
 
-	mockStatGatewayResponseTime *mocks.MockRudderStats
-	mockStatGatewayBatchSize    *mocks.MockRudderStats
-	mockStatGatewayBatchTime    *mocks.MockRudderStats
+	mockStatGatewayResponseTime *mocksStats.MockRudderStats
+	mockStatGatewayBatchSize    *mocksStats.MockRudderStats
+	mockStatGatewayBatchTime    *mocksStats.MockRudderStats
 }
 
 // Initiaze mocks and common expectations
 func (c *context) Setup() {
 	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockJobsDB = mocks.NewMockJobsDB(c.mockCtrl)
-	c.mockBackendConfig = mocks.NewMockBackendConfig(c.mockCtrl)
-	c.mockRateLimiter = mocks.NewMockRateLimiter(c.mockCtrl)
-	c.mockStats = mocks.NewMockStats(c.mockCtrl)
+	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
+	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
+	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
+	c.mockStats = mocksStats.NewMockStats(c.mockCtrl)
 
-	c.mockStatGatewayResponseTime = mocks.NewMockRudderStats(c.mockCtrl)
-	c.mockStatGatewayBatchSize = mocks.NewMockRudderStats(c.mockCtrl)
-	c.mockStatGatewayBatchTime = mocks.NewMockRudderStats(c.mockCtrl)
+	c.mockStatGatewayResponseTime = mocksStats.NewMockRudderStats(c.mockCtrl)
+	c.mockStatGatewayBatchSize = mocksStats.NewMockRudderStats(c.mockCtrl)
+	c.mockStatGatewayBatchTime = mocksStats.NewMockRudderStats(c.mockCtrl)
 
 	// During Setup, gateway always creates the following stats
 	c.mockStats.EXPECT().NewStat("gateway.response_time", stats.TimerType).Return(c.mockStatGatewayResponseTime).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
@@ -105,7 +108,7 @@ func (c *context) Finish() {
 
 // helper function to add expectations about a specific writeKey stat. Returns gomock.Call of RudderStats Count()
 func (c *context) expectWriteKeyStat(name string, writeKey string, count int) *gomock.Call {
-	mockStat := mocks.NewMockRudderStats(c.mockCtrl)
+	mockStat := mocksStats.NewMockRudderStats(c.mockCtrl)
 
 	c.mockStats.EXPECT().NewWriteKeyStat(name, stats.CountType, writeKey).
 		Return(mockStat).Times(1).
