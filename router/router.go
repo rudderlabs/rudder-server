@@ -109,18 +109,12 @@ func loadConfig() {
 
 func (rt *HandleT) workerProcess(worker *workerT) {
 
-	deliveryTimeStat := stats.NewStat(
-		fmt.Sprintf("router.%s_delivery_time", rt.destID), stats.TimerType)
-	batchTimeStat := stats.NewStat(
-		fmt.Sprintf("router.%s_batch_time", rt.destID), stats.TimerType)
-	failedAttemptsStat := stats.NewStat(
-		fmt.Sprintf("router.%s_failed_attempts", rt.destID), stats.CountType)
-	retryAttemptsStat := stats.NewStat(
-		fmt.Sprintf("router.%s_retry_attempts", rt.destID), stats.CountType)
-	eventsDeliveredStat := stats.NewStat(
-		fmt.Sprintf("router.%s_events_delivered", rt.destID), stats.CountType)
-	eventsAbortedStat := stats.NewStat(
-		fmt.Sprintf("router.%s_events_aborted", rt.destID), stats.CountType)
+	deliveryTimeStat := stats.NewStatWithParam("router.delivery_time", stats.TimerType, rt.destID)
+	batchTimeStat := stats.NewStatWithParam("router.batch_time", stats.TimerType, rt.destID)
+	failedAttemptsStat := stats.NewStatWithParam("router.failed_attempts", stats.CountType, rt.destID)
+	retryAttemptsStat := stats.NewStatWithParam("router.retry_attempts", stats.CountType, rt.destID)
+	eventsDeliveredStat := stats.NewStatWithParam("router.events_delivered", stats.CountType, rt.destID)
+	eventsAbortedStat := stats.NewStatWithParam("router.events_aborted", stats.CountType, rt.destID)
 
 	for {
 		job := <-worker.channel
@@ -414,8 +408,8 @@ func (rt *HandleT) statusInsertLoop() {
 	//Wait for the responses from statusQ
 	lastUpdate := time.Now()
 
-	statusStat := stats.NewStat("router.status_loop", stats.TimerType)
-	countStat := stats.NewStat("router.status_events", stats.CountType)
+	statusStat := stats.NewStatWithParam("router.status_loop", stats.TimerType, rt.destID)
+	countStat := stats.NewStatWithParam("router.status_events", stats.CountType, rt.destID)
 
 	for {
 		rt.perfStats.Start()
@@ -570,8 +564,6 @@ func (rt *HandleT) generatorLoop() {
 
 	generatorStat := stats.NewStat("router.generator_loop", stats.TimerType)
 	countStat := stats.NewStat("router.generator_events", stats.CountType)
-	eventsReceived := stats.NewStat(
-		fmt.Sprintf("router.%s_events_received", rt.destID), stats.CountType)
 
 	for {
 		generatorStat.Start()
@@ -646,7 +638,6 @@ func (rt *HandleT) generatorLoop() {
 
 		//Send the jobs to the jobQ
 		for _, wrkJob := range toProcess {
-			eventsReceived.Increment()
 			wrkJob.worker.channel <- wrkJob.job
 		}
 

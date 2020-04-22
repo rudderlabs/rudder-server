@@ -67,12 +67,12 @@ type DestStatT struct {
 	destTransform    *stats.RudderStats
 }
 
-func newDestinationStat(destID string) *DestStatT {
-	numEvents := stats.NewDestStat("proc_num_events", stats.CountType, destID)
-	numOutputEvents := stats.NewDestStat("proc_num_output_events", stats.CountType, destID)
-	sessionTransform := stats.NewDestStat("proc_session_transform", stats.TimerType, destID)
-	userTransform := stats.NewDestStat("proc_user_transform", stats.TimerType, destID)
-	destTransform := stats.NewDestStat("proc_dest_transform", stats.TimerType, destID)
+func newDestinationStat(destID string, destType string, destName string) *DestStatT {
+	numEvents := stats.NewDestStat("proc_num_events", stats.CountType, destID, destType, destName)
+	numOutputEvents := stats.NewDestStat("proc_num_output_events", stats.CountType, destID, destType, destName)
+	sessionTransform := stats.NewDestStat("proc_session_transform", stats.TimerType, destID, destType, destName)
+	userTransform := stats.NewDestStat("proc_user_transform", stats.TimerType, destID, destType, destName)
+	destTransform := stats.NewDestStat("proc_dest_transform", stats.TimerType, destID, destType, destName)
 	return &DestStatT{
 		id:               destID,
 		numEvents:        numEvents,
@@ -236,7 +236,7 @@ func (proc *HandleT) backendConfigSubscriber() {
 					destinationTransformationEnabledMap[destination.ID] = len(destination.Transformations) > 0
 					_, ok := proc.destStats[destination.ID]
 					if !ok {
-						proc.destStats[destination.ID] = newDestinationStat(destination.ID)
+						proc.destStats[destination.ID] = newDestinationStat(destination.ID, destination.DestinationDefinition.Name, destination.Name)
 					}
 				}
 			}

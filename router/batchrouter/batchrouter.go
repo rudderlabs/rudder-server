@@ -107,12 +107,12 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func updateDestStatusStats(id string, count int, isSuccess bool) {
+func updateDestStatusStats(id string, count int, isSuccess bool, destType string, destName string) {
 	var destStatsD *stats.RudderStats
 	if isSuccess {
-		destStatsD = stats.NewBatchDestStat("batch_router.dest_successful_events", stats.CountType, id)
+		destStatsD = stats.NewBatchDestStat("batch_router.dest_successful_events", stats.CountType, id, destType, destName)
 	} else {
-		destStatsD = stats.NewBatchDestStat("batch_router.dest_failed_attempts", stats.CountType, id)
+		destStatsD = stats.NewBatchDestStat("batch_router.dest_failed_attempts", stats.CountType, id, destType, destName)
 	}
 	destStatsD.Count(count)
 }
@@ -273,19 +273,22 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	)
 
 	var batchReqMetric batchRequestMetric
+	destID := batchJobs.BatchDestination.Destination.ID
+	destType := batchJobs.BatchDestination.Destination.DestinationDefinition.Name
+	destname := batchJobs.BatchDestination.Destination.Name
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to object storage: %v %v", err, batchJobs.BatchDestination.Source.ID)
 		batchJobState = jobsdb.FailedState
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 		batchReqMetric.batchRequestFailed = 1
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
-		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
+		updateDestStatusStats(destID, 1, false, destType, destname)
 	} else {
 		logger.Debugf("BRT: Uploaded to object storage : %v at %v", batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		batchJobState = jobsdb.SucceededState
 		errorResp = []byte(`{"success":"OK"}`)
 		batchReqMetric.batchRequestSuccess = 1
-		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
+		updateDestStatusStats(destID, len(batchJobs.Jobs), true, destType, destname)
 	}
 	brt.trackRequestMetrics(batchReqMetric)
 	var statusList []*jobsdb.JobStatusT
@@ -461,8 +464,6 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 }
 
 func (brt *HandleT) mainLoop() {
-	eventsReceived := stats.NewStat(
-		fmt.Sprintf("batch.router.%s_events_received", brt.destType), stats.CountType)
 	for {
 		time.Sleep(mainLoopSleep)
 		for _, batchDestination := range brt.batchDestinations {
@@ -497,7 +498,6 @@ func (brt *HandleT) mainLoop() {
 			toQuery -= len(waitList)
 			unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, parameterFilters)
 			brtQueryStat.End()
-			eventsReceived.Increment()
 
 			combinedList := append(waitList, append(unprocessedList, retryList...)...)
 			if len(combinedList) == 0 {

@@ -305,9 +305,9 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	//Kill any pending queries
 	jd.terminateQueries()
 
-	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
-	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
-	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
+	jd.statTableCount = stats.NewStatWithParam("jobsdb.tables_count", stats.GaugeType, jd.tablePrefix)
+	jd.statNewDSPeriod = stats.NewStatWithParam("jobsdb.new_ds_period", stats.TimerType, jd.tablePrefix)
+	jd.statDropDSPeriod = stats.NewStatWithParam("jobsdb.drop_ds_period", stats.TimerType, jd.tablePrefix)
 
 	if clearAll {
 		jd.dropAllDS()

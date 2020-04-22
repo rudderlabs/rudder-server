@@ -75,6 +75,23 @@ func NewStat(Name string, StatType string) (rStats *RudderStats) {
 	}
 }
 
+func NewStatWithParam(Name string, StatType string, param string) (rStats *RudderStats) {
+	jobsdbClientsMapLock.Lock()
+	defer jobsdbClientsMapLock.Unlock()
+	if _, found := jobsdbClientsMap[param]; !found {
+		var err error
+		jobsdbClientsMap[param], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, fmt.Sprintf("%s", param), param))
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+	return &RudderStats{
+		Name:     Name,
+		StatType: StatType,
+		Client:   jobsdbClientsMap[param],
+	}
+}
+
 // NewWriteKeyStat is used to create new writekey specific stat. Writekey is added as one of the tags in this case
 func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *RudderStats) {
 	writeKeyClientsMapLock.Lock()
@@ -97,12 +114,12 @@ func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *Rud
 	}
 }
 
-func NewBatchDestStat(Name string, StatType string, destID string) *RudderStats {
+func NewBatchDestStat(Name string, StatType string, destID string, destType string, destName string) *RudderStats {
 	batchDestClientsMapLock.Lock()
 	defer batchDestClientsMapLock.Unlock()
 	if _, found := batchDestClientsMap[destID]; !found {
 		var err error
-		batchDestClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destID", destID))
+		batchDestClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destID", destID, "destType", destType, "destName", destName))
 		if err != nil {
 			logger.Error(err)
 		}
@@ -111,16 +128,17 @@ func NewBatchDestStat(Name string, StatType string, destID string) *RudderStats 
 		Name:     Name,
 		StatType: StatType,
 		DestID:   destID,
+		DestType: destType,
 		Client:   batchDestClientsMap[destID],
 	}
 }
 
-func NewDestStat(Name string, StatType string, destID string) *RudderStats {
+func NewDestStat(Name string, StatType string, destID string, destType string, destName string) *RudderStats {
 	destClientsMapLock.Lock()
 	defer destClientsMapLock.Unlock()
 	if _, found := destClientsMap[destID]; !found {
 		var err error
-		destClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destID", destID))
+		destClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destType", destType, "destID", destID, "destName", destName))
 		if err != nil {
 			logger.Error(err)
 		}
@@ -128,8 +146,8 @@ func NewDestStat(Name string, StatType string, destID string) *RudderStats {
 	return &RudderStats{
 		Name:        Name,
 		StatType:    StatType,
-		DestID:      destID,
-		Client:      destClientsMap[destID],
+		DestType:    destType,
+		Client:      destClientsMap[destType],
 		dontProcess: false,
 	}
 }
@@ -215,6 +233,7 @@ type RudderStats struct {
 	Timing      statsd.Timing
 	writeKey    string
 	DestID      string
+	DestType    string
 	Client      *statsd.Client
 	dontProcess bool
 }
