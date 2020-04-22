@@ -38,7 +38,10 @@ func (jd *HandleT) SetupForImportAndAcceptNewEvents(version int) {
 		}
 		jd.migrationState.dsForNewEvents = dsList[len(dsList)-1]
 	}
-	jd.updateSequenceNumber(jd.migrationState.dsForNewEvents, int64(version)*int64(math.Pow10(13)), jd.tablePrefix)
+
+	seqNoForNewDS := int64(version) * int64(math.Pow10(13))
+	jd.updateSequenceNumber(jd.migrationState.dsForNewEvents, seqNoForNewDS)
+	logger.Info("New dataSet %s is prepared with start sequence : %d", jd.migrationState.dsForNewEvents, seqNoForNewDS)
 	jd.migrationState.sequenceProvider = NewSequenceProvider(importDSMin + 1)
 
 	//TODO: recover from crash
@@ -72,9 +75,9 @@ func (jd *HandleT) isEmpty(ds dataSetT) bool {
 	}
 }
 
-func (jd *HandleT) updateSequenceNumber(ds dataSetT, sequenceNumber int64, tablePrefix string) {
+func (jd *HandleT) updateSequenceNumber(ds dataSetT, sequenceNumber int64) {
 	sqlStatement := fmt.Sprintf(`SELECT setval('%s_jobs_%s_job_id_seq', %d)`,
-		tablePrefix, ds.Index, sequenceNumber)
+		jd.tablePrefix, ds.Index, sequenceNumber)
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	if err != nil {
 		panic("Unable to set sequence number")

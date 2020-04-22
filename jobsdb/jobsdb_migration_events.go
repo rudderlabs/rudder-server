@@ -3,6 +3,8 @@ package jobsdb
 import (
 	"fmt"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 //MigrationEvent captures an event of export/import to recover from incase of a crash during migration
@@ -64,6 +66,12 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 	if err != nil {
 		panic("Failed to checkpoint")
 	}
+	logger.Info("Migration: %s checkpoint from %s to %s. file: %s, status: %s",
+		migrationEvent.MigrationType,
+		migrationEvent.FromNode,
+		migrationEvent.ToNode,
+		migrationEvent.FileLocation,
+		migrationEvent.Status)
 	return meID
 }
 
@@ -86,4 +94,5 @@ func (jd *HandleT) SetupCheckpointDBTable() {
 
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
+	logger.Info("%s_migration_checkpoints table created", jd.GetTablePrefix())
 }

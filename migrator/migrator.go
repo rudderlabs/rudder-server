@@ -65,6 +65,7 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		panic(err)
 	}
+	logger.Info("Request received to import %s", migrationEvent.FileLocation)
 	if migrationEvent.MigrationType == jobsdb.ExportOp {
 		localTmpDirName := "/migrator-import/"
 		tmpDirPath, err := misc.CreateTMPDIR()
@@ -125,14 +126,13 @@ func (migrator *Migrator) getURI(uri string) string {
 }
 
 func (migrator *Migrator) startWebHandler() {
-	logger.Infof("Starting in %d", migrator.port)
+	logger.Infof("Starting migrationWebHandler on port %d", migrator.port)
 
-	logger.Info(migrator.jobsDB.GetTablePrefix(), migrator.port, fmt.Sprintf("/%s/fileToImport", migrator.jobsDB.GetTablePrefix()))
 	//TODO fix this.
-	/*http.HandleFunc(migrator.getURI("/fileToImport"), migrator.importHandler)
-	http.HandleFunc(migrator.getURI("/status"), migrator.statusHandler)*/
-	http.HandleFunc("/fileToImport", migrator.importHandler)
-	http.HandleFunc("/status", migrator.statusHandler)
+	http.HandleFunc(migrator.getURI("/fileToImport"), migrator.importHandler)
+	http.HandleFunc(migrator.getURI("/status"), migrator.statusHandler)
+	// http.HandleFunc("/fileToImport", migrator.importHandler)
+	// http.HandleFunc("/status", migrator.statusHandler)
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
@@ -187,7 +187,7 @@ func (migrator *Migrator) readFromFileAndWriteToDB(file *os.File, migrationEvent
 	}
 	reader.Close()
 	migrator.jobsDB.StoreImportedJobsAndJobStatuses(jobList, file.Name(), migrationEvent)
-	logger.Info("done : ", file)
+	logger.Info("Done importing file %s", file.Name())
 	// check if Scan() finished because of error or because it reached end of file
 	return sc.Err()
 }
@@ -203,8 +203,7 @@ func (migrator *Migrator) processSingleLine(line []byte) (jobsdb.JobT, bool) {
 }
 
 func (migrator *Migrator) export() {
-
-	logger.Info("Shanmukh: Migrator loop starting")
+	logger.Info("Shanmukh: Export loop is starting")
 	lastDSIndex := migrator.jobsDB.GetLatestDSIndex()
 	for {
 		toQuery := dbReadBatchSize
@@ -315,11 +314,13 @@ func (migrator *Migrator) uploadToS3AndNotifyDestNode(file *os.File, nMeta pathf
 	if err != nil {
 		panic(uploadOutput)
 	} else {
+		logger.Info("Uploaded an export file to %s", uploadOutput.Location)
 		//TODO: delete this file otherwise in failure case, the file exists and same data will be appended to it
 		migrationEvent := jobsdb.NewMigrationEvent("export", misc.GetNodeID(), nMeta.GetNodeID(), uploadOutput.Location, jobsdb.Exported, 0)
 
 		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
 
+		logger.Info("Notifying destination node %s to download and import file from %s", migrationEvent.ToNode, migrationEvent.FileLocation)
 		go misc.MakeAsyncPostRequest(nMeta.GetNodeConnectionString(migrator.port), migrator.getURI("/fileToImport"), migrationEvent, 5, migrator.postHandler)
 	}
 }
@@ -334,9 +335,9 @@ func (migrator *Migrator) postHandler(retryCount int, response interface{}, endp
 		migrationEvent.Status = jobsdb.Imported
 		migrationEvent.TimeStamp = time.Now()
 		migrator.jobsDB.Checkpoint(&migrationEvent)
-	} else if retryCount > 1 {
+	} else if retryCount > 0 {
 		misc.MakeAsyncPostRequest(endpoint, uri, data, retryCount-1, migrator.postHandler)
-	} else if retryCount == 1 {
+	} else if retryCount == 0 {
 		panic("Ran out of retries. Go debug")
 	}
 }
