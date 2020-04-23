@@ -166,9 +166,6 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 			// for _, listItem := range list {
 			// 	queryParams.Add(key, fmt.Sprint(listItem))
 			// }
-
-			// since we have not seen a case of multiple query values for same key,
-			// so moving away from the splitting logic for now
 			queryParams.Add(key, fmt.Sprint(valString))
 		}
 
