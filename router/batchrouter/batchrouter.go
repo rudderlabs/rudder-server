@@ -170,11 +170,11 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 			LocalFilePaths: []string{gzipFilePath},
 		}
 	}
-	// assumes events from warehouse have received_at in metadata
+	// assumes events from warehouse have receivedAt in metadata
 	var firstEventAt, lastEventAt string
 	if isWarehouse {
-		firstEventAt = gjson.GetBytes(batchJobs.Jobs[0].EventPayload, "metadata.received_at").String()
-		lastEventAt = gjson.GetBytes(batchJobs.Jobs[len(batchJobs.Jobs)-1].EventPayload, "metadata.received_at").String()
+		firstEventAt = gjson.GetBytes(batchJobs.Jobs[0].EventPayload, "metadata.receivedAt").String()
+		lastEventAt = gjson.GetBytes(batchJobs.Jobs[len(batchJobs.Jobs)-1].EventPayload, "metadata.receivedAt").String()
 	}
 
 	logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
