@@ -72,32 +72,7 @@ var batchEvent = []byte(`
 	}
 `)
 
-func loadConfig() {
-	//Port where GW is running
-	webPort = config.GetInt("Gateway.webPort", 8080)
-	//Number of incoming requests that are batched before initiating write
-	maxBatchSize = config.GetInt("Gateway.maxBatchSize", 32)
-	//Timeout after which batch is formed anyway with whatever requests
-	//are available
-	batchTimeout = (config.GetDuration("Gateway.batchTimeoutInMS", time.Duration(20)) * time.Millisecond)
-	//Multiple DB writers are used to write data to DB
-	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess", 4)
-	// CustomVal is used as a key in the jobsDB customval column
-	CustomVal = config.GetString("Gateway.CustomVal", "GW")
-	// Maximum request size to gateway
-	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 100000) * 1000
-	// Enable dedup of incoming events by default
-	enableDedup = config.GetBool("Gateway.enableDedup", false)
-	// Dedup time window in hours
-	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
-	// Enable rate limit on incoming events. false by default
-	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
-	// Time period for diagnosis ticker
-	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
-}
-
 func init() {
-	config.Initialize()
 	loadConfig()
 	loadStatusMap()
 }
@@ -106,21 +81,23 @@ func init() {
 type HandleT struct {
 	webRequestQ                               chan *webRequestT
 	batchRequestQ                             chan *batchWebRequestT
-	jobsDB                                    *jobsdb.HandleT
+	jobsDB                                    jobsdb.JobsDB
 	badgerDB                                  *badger.DB
 	ackCount                                  uint64
 	recvCount                                 uint64
-	rateLimiter                               *ratelimiter.HandleT
-	batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
+	backendConfig                             backendconfig.BackendConfig
+	rateLimiter                               ratelimiter.RateLimiter
+	stats                                     stats.Stats
+	batchSizeStat, batchTimeStat, latencyStat stats.RudderStats
 	trackSuccessCount                         int
 	trackFailureCount                         int
 	requestMetricLock                         sync.RWMutex
 	diagnosisTicker                           *time.Ticker
 }
 
-func updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
+func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
 	for writeKey, count := range writeKeyStats {
-		writeKeyStatsD := stats.NewWriteKeyStat(bucket, stats.CountType, writeKey)
+		writeKeyStatsD := gateway.stats.NewWriteKeyStat(bucket, stats.CountType, writeKey)
 		writeKeyStatsD.Count(count)
 	}
 }
@@ -167,8 +144,8 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			req.request.Body.Close()
 
 			if enableRateLimit {
-				//If ratelimiter returns true for LimitReached, Just drop the event batch and continue.
-				restrictorKey := backendconfig.GetWorkspaceIDForWriteKey(writeKey)
+				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
+				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 				if gateway.rateLimiter.LimitReached(restrictorKey) {
 					req.done <- getStatus(TooManyRequests)
 					preDbStoreCount++
@@ -184,7 +161,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				continue
 			}
 			if !gjson.ValidBytes(body) {
-				req.done <- getStatus(InvalidJson)
+				req.done <- getStatus(InvalidJSON)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
@@ -287,18 +264,18 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		gateway.batchTimeStat.End()
 		gateway.batchSizeStat.Count(len(breq.batchRequest))
 		// update stats request wise
-		updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")
-		updateWriteKeyStats(writeKeySuccessStats, "gateway.write_key_successful_requests")
-		updateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
+		gateway.updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")
+		gateway.updateWriteKeyStats(writeKeySuccessStats, "gateway.write_key_successful_requests")
+		gateway.updateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
 		if enableRateLimit {
-			updateWriteKeyStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests")
+			gateway.updateWriteKeyStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests")
 		}
 		// update stats event wise
-		updateWriteKeyStats(writeKeyEventStats, "gateway.write_key_events")
-		updateWriteKeyStats(writeKeySuccessEventStats, "gateway.write_key_successful_events")
-		updateWriteKeyStats(writeKeyFailEventStats, "gateway.write_key_failed_events")
+		gateway.updateWriteKeyStats(writeKeyEventStats, "gateway.write_key_events")
+		gateway.updateWriteKeyStats(writeKeySuccessEventStats, "gateway.write_key_successful_events")
+		gateway.updateWriteKeyStats(writeKeyFailEventStats, "gateway.write_key_failed_events")
 		if enableDedup {
-			updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
+			gateway.updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
 		}
 	}
 }
@@ -435,6 +412,7 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	done := make(chan string)
 	req := webRequestT{request: r, writer: &w, done: done, reqType: reqType}
 	gateway.webRequestQ <- &req
+
 	//Wait for batcher process to be done
 	errorMessage := <-done
 	atomic.AddUint64(&gateway.ackCount, 1)
@@ -502,7 +480,12 @@ func reflectOrigin(origin string) bool {
 	return true
 }
 
-func (gateway *HandleT) startWebHandler() {
+/*
+StartWebHandler starts all gateway web handlers, listening on gateway port.
+Supports CORS from all origins.
+This function will block.
+*/
+func (gateway *HandleT) StartWebHandler() {
 
 	logger.Infof("Starting in %d", webPort)
 
@@ -529,9 +512,9 @@ func (gateway *HandleT) startWebHandler() {
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func backendConfigSubscriber() {
+func (gateway *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "processConfig")
+	gateway.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -581,18 +564,29 @@ func (gateway *HandleT) openBadger(clearDB *bool) {
 	})
 }
 
-//Setup initializes this module
-func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.HandleT, clearDB *bool) {
+/*
+Setup initializes this module:
+- Monitors backend config for changes.
+- Starts web request batching goroutine, that batches incoming messages.
+- Starts web request batch db writer goroutine, that writes incoming batches to JobsDB.
+- Starts debugging goroutine that prints gateway stats.
+
+This function will block until backend config is initialy received.
+*/
+func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, s stats.Stats, clearDB *bool) {
+	gateway.stats = s
+
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 
-	gateway.latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
-	gateway.batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
-	gateway.batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
+	gateway.latencyStat = gateway.stats.NewStat("gateway.response_time", stats.TimerType)
+	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
+	gateway.batchTimeStat = gateway.stats.NewStat("gateway.batch_time", stats.TimerType)
 
 	if enableDedup {
 		gateway.openBadger(clearDB)
 		defer gateway.badgerDB.Close()
 	}
+	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
@@ -601,7 +595,7 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.H
 		gateway.webRequestBatcher()
 	})
 	rruntime.Go(func() {
-		backendConfigSubscriber()
+		gateway.backendConfigSubscriber()
 	})
 	for i := 0; i < maxDBWriterProcess; i++ {
 		j := i
@@ -609,12 +603,11 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.H
 			gateway.webRequestBatchDBWriter(j)
 		})
 	}
-	backendconfig.WaitForConfig()
+	gateway.backendConfig.WaitForConfig()
 	rruntime.Go(func() {
 		gateway.printStats()
 	})
 	rruntime.Go(func() {
 		gateway.collectMetrics()
 	})
-	gateway.startWebHandler()
 }

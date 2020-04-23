@@ -81,7 +81,7 @@ func countError(errType string) {
 	errorCounts[errType]++
 }
 
-var countStat, successStat *stats.RudderStats
+var countStat, successStat stats.RudderStats
 
 func stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {

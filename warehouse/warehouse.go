@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -68,6 +69,7 @@ var (
 	warehouseTableUploadsTable string
 	warehouseSchemasTable      string
 	warehouseMode              string
+	warehouseSyncPreFetchCount int
 )
 var (
 	host, user, password, dbname string
@@ -118,6 +120,10 @@ type StagingFileT struct {
 	CreatedAt time.Time
 }
 
+type ErrorResponseT struct {
+	Error string
+}
+
 func init() {
 	config.Initialize()
 	loadConfig()
@@ -149,11 +155,12 @@ func loadConfig() {
 	dbname = config.GetEnv("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
 	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -164,6 +171,13 @@ func (wh *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == wh.destType {
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
+						if destination.Config != nil && destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
+							sourceID :=source.ID
+							destinationID:= destination.ID
+							rruntime.Go(func(){
+								wh.syncLiveWarehouseStatus(sourceID, destinationID)
+							})
+						}
 					}
 				}
 			}
@@ -171,7 +185,22 @@ func (wh *HandleT) backendConfigSubscriber() {
 		configSubscriberLock.Unlock()
 	}
 }
-
+func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string) {
+	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at asc limit %d`, warehouseUploadsTable, sourceID, destinationID, warehouseSyncPreFetchCount))
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	defer rows.Close()
+	var uploadIDs []int64
+	for rows.Next() {
+		var uploadID int64
+		rows.Scan(&uploadID)
+		uploadIDs = append(uploadIDs, uploadID)
+	}
+	for _, uploadID := range uploadIDs {
+		wh.recordDeliveryStatus(uploadID)
+	}
+}
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
 	sqlStatement := fmt.Sprintf(`SELECT id, location, source_id, schema, status, created_at
                                 FROM %[1]s
@@ -666,6 +695,82 @@ func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err e
 	return
 }
 
+func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
+	var (
+		sourceID      string
+		destinationID string
+		status        string
+		errorCode     string
+		errorResp     string
+		updatedAt     time.Time
+		tableName     string
+		tableStatus   string
+		attemptNum    int
+	)
+	successfulTableUploads := make([]string, 0)
+	failedTableUploads := make([]string, 0)
+
+	row := wh.dbHandle.QueryRow(fmt.Sprintf(`select source_id, destination_id, status, error, updated_at from %s where id=%d`, warehouseUploadsTable, uploadID))
+	err:=row.Scan(&sourceID, &destinationID, &status, &errorResp, &updatedAt)
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select table_name, status from %s where wh_upload_id=%d`, warehouseTableUploadsTable, uploadID))
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		rows.Scan(&tableName, &tableStatus)
+		if tableStatus == warehouseutils.ExportedDataState {
+			successfulTableUploads = append(successfulTableUploads, tableName)
+		} else {
+			failedTableUploads = append(failedTableUploads, tableName)
+		}
+	}
+
+	var errJson map[string]map[string]interface{}
+	err=json.Unmarshal([]byte(errorResp),&errJson)
+	if err != nil {
+		panic(err)
+	}
+	if stateErr,ok:=errJson[status]; ok {
+		if attempt, ok:=stateErr["attempt"]; ok{
+			attemptNum = attemptNum + int(attempt.(float64))
+		}
+	}
+	if attemptNum == 0 {
+		attemptNum = 1
+	}
+	var errorRespB []byte
+	if errorResp == "{}" {
+		errorCode = "200"
+	} else {
+		errorCode = "400"
+
+	}
+	errorRespB, _ = json.Marshal(ErrorResponseT{Error: errorResp})
+
+	payloadMap := map[string]interface{}{
+		"lastSyncedAt":             updatedAt,
+		"successful_table_uploads": successfulTableUploads,
+		"failed_table_uploads":     failedTableUploads,
+		"uploadID":                 uploadID,
+		"error":                    errorResp,
+	}
+	payload, _ := json.Marshal(payloadMap)
+	deliveryStatus := destinationdebugger.DeliveryStatusT{
+		DestinationID: destinationID,
+		SourceID:      sourceID,
+		Payload:       payload,
+		AttemptNum:    attemptNum,
+		JobState:      status,
+		ErrorCode:     errorCode,
+		ErrorResponse: errorRespB,
+	}
+	destinationdebugger.RecordEventDeliveryStatus(destinationID, &deliveryStatus)
+}
+
 func (wh *HandleT) initWorkers() {
 	for i := 0; i < noOfWorkers; i++ {
 		rruntime.Go(func() {
@@ -690,10 +795,12 @@ func (wh *HandleT) initWorkers() {
 								//Unreachable code. So not modifying the stat 'failed_uploads', which is reused later for copying.
 								warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 								warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
+								wh.recordDeliveryStatus(job.Upload.ID)
 								break
 							}
 						}
 						err := wh.SyncLoadFilesToWarehouse(&job)
+						wh.recordDeliveryStatus(job.Upload.ID)
 
 						createPlusUploadTimer.End()
 
@@ -1190,7 +1297,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
 
 	for {

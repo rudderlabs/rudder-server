@@ -1,5 +1,7 @@
 package backendconfig
 
+//go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
+
 import (
 	"bytes"
 	"encoding/json"
@@ -34,9 +36,20 @@ var (
 	curSourceJSONLock                sync.RWMutex
 	initialized                      bool
 	LastSync                         string
+
+	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
+	DefaultBackendConfig BackendConfig
 )
 
 var Eb = new(utils.EventBus)
+
+const (
+	/*TopicBackendConfig topic provides updates on full backend config, via Subscribe function */
+	TopicBackendConfig = "backendConfig"
+
+	/*TopicProcessConfig topic provides updates on backend config of processor enabled destinations, via Subscribe function */
+	TopicProcessConfig = "processConfig"
+)
 
 type DestinationDefinitionT struct {
 	ID          string
@@ -87,6 +100,11 @@ type BackendConfig interface {
 	SetUp()
 	Get() (SourcesT, bool)
 	GetWorkspaceIDForWriteKey(string) string
+	WaitForConfig()
+	Subscribe(channel chan utils.DataEvent, topic string)
+}
+
+type CommonBackendConfig struct {
 }
 
 func loadConfig() {
@@ -205,8 +223,8 @@ func pollConfigUpdate() {
 			curSourceJSONLock.Unlock()
 			initialized = true
 			LastSync = time.Now().Format(time.RFC3339)
-			Eb.Publish("processConfig", filteredSourcesJSON)
-			Eb.Publish("backendConfig", sourceJSON)
+			Eb.Publish(TopicProcessConfig, filteredSourcesJSON)
+			Eb.Publish(TopicBackendConfig, sourceJSON)
 		}
 		time.Sleep(time.Duration(pollInterval))
 	}
@@ -220,27 +238,53 @@ func GetWorkspaceIDForWriteKey(writeKey string) string {
 	return backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 }
 
+/*
+Subscribe subscribes a channel to a specific topic of backend config updates.
+Deprecated: Use an instance of BackendConfig instead of static function
+*/
 func Subscribe(channel chan utils.DataEvent, topic string) {
+	backendConfig.Subscribe(channel, topic)
+}
+
+/*
+Subscribe subscribes a channel to a specific topic of backend config updates.
+Channel will receive a new utils.DataEvent each time the backend configuration is updated.
+Data of the DataEvent should be a backendconfig.SourcesT struct.
+Available topics are:
+- TopicBackendConfig: Will receive complete backend configuration
+- TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
+*/
+func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic string) {
 	Eb.Subscribe(topic, channel)
 	curSourceJSONLock.RLock()
 
-	if topic == "processConfig" {
+	if topic == TopicProcessConfig {
 		filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
 		Eb.PublishToChannel(channel, topic, filteredSourcesJSON)
-	} else if topic == "backendConfig" {
+	} else if topic == TopicBackendConfig {
 		Eb.PublishToChannel(channel, topic, curSourceJSON)
 	}
 	curSourceJSONLock.RUnlock()
 }
 
+/*
+WaitForConfig waits until backend config has been initialized
+Deprecated: Use an instance of BackendConfig instead of static function
+*/
 func WaitForConfig() {
+	backendConfig.WaitForConfig()
+}
+
+/*
+WaitForConfig waits until backend config has been initialized
+*/
+func (bc *CommonBackendConfig) WaitForConfig() {
 	for {
 		if initialized {
 			break
 		}
 		logger.Info("Waiting for initializing backend config")
 		time.Sleep(time.Duration(pollInterval))
-
 	}
 }
 
@@ -253,6 +297,8 @@ func Setup() {
 	}
 
 	backendConfig.SetUp()
+
+	DefaultBackendConfig = backendConfig
 
 	rruntime.Go(func() {
 		pollConfigUpdate()

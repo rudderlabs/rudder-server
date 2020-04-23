@@ -47,8 +47,8 @@ var badJSON *bool
 var badJSONRate *int
 var dupEventsRate *int
 
-var loadStat *stats.RudderStats
-var requestTimeStat *stats.RudderStats
+var loadStat stats.RudderStats
+var requestTimeStat stats.RudderStats
 
 func main() {
 	logger.Setup()

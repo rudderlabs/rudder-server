@@ -30,6 +30,8 @@ const (
 	ExportingDataFailedState      = "exporting_data_failed"
 	ExportedDataState             = "exported_data"
 	AbortedState                  = "aborted"
+	GeneratingStagingFileFailed   = "generating_staging_file_failed"
+	GeneratedStagingFile          = "generated_staging_file"
 )
 
 const (
@@ -471,7 +473,7 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	return schema
 }
 
-func DestStat(statType string, statName string, id string) *stats.RudderStats {
+func DestStat(statType string, statName string, id string) stats.RudderStats {
 	return stats.NewBatchDestStat(fmt.Sprintf("warehouse.%s", statName), statType, id)
 }
 
