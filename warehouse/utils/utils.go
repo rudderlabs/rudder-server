@@ -260,14 +260,17 @@ func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB, additional
 // SetUploadColumns sets any column values passed as args in UploadColumnT format for warehouseUploadsTable
 func SetUploadColumns(upload UploadT, dbHandle *sql.DB, fields ...UploadColumnT) (err error) {
 	var columns string
+	values := []interface{}{upload.ID}
+	// setting values using syntax $n since Exec can correctlt format time.Time strings
 	for idx, f := range fields {
-		columns += fmt.Sprintf(`%s=%v`, f.Column, f.Value)
+		columns += fmt.Sprintf(`%s=$%d`, f.Column, idx+2)
 		if idx < len(fields)-1 {
 			columns += ","
 		}
+		values = append(values, f.Value)
 	}
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, warehouseUploadsTable, columns)
-	_, err = dbHandle.Exec(sqlStatement, upload.ID)
+	_, err = dbHandle.Exec(sqlStatement, values...)
 	if err != nil {
 		panic(err)
 	}
@@ -332,13 +335,16 @@ func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusEr
 
 func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHandle *sql.DB) (err error) {
 	// set last_exec_time only if status is executing
+	execValues := []interface{}{status, time.Now(), uploadID, tableName}
 	var lastExec string
 	if status == ExecutingState {
-		lastExec = fmt.Sprintf(`, last_exec_time=%v`, time.Now())
+		// setting values using syntax $n since Exec can correctlt format time.Time strings
+		lastExec = fmt.Sprintf(`, last_exec_time=$%d`, len(execValues)+1)
+		execValues = append(execValues, time.Now())
 	}
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 %s WHERE wh_upload_id=$3 AND table_name=$4`, warehouseTableUploadsTable, lastExec)
 	logger.Infof("WH: Setting table upload status: %v", sqlStatement)
-	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), uploadID, tableName)
+	_, err = dbHandle.Exec(sqlStatement, execValues...)
 	if err != nil {
 		panic(err)
 	}
