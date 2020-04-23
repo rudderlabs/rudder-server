@@ -315,6 +315,16 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 	return schemaMap
 }
 
+func (wh *HandleT) areTableUploadsCreated(upload warehouseutils.UploadT) bool {
+	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE wh_upload_id=%d`, warehouseTableUploadsTable, upload.ID)
+	var count int
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
+	if err != nil {
+		panic(err)
+	}
+	return count > 0
+}
+
 func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[string]map[string]string) (err error) {
 	//Using transactions for bulk copying
 	txn, err := wh.dbHandle.Begin()
@@ -356,7 +366,7 @@ func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[st
 	return
 }
 
-func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT, schema map[string]map[string]string) warehouseutils.UploadT {
+func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) warehouseutils.UploadT {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, first_event_at, last_event_at, created_at, updated_at, timings)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`, warehouseUploadsTable)
 	logger.Infof("WH: %s: Creating record in wh_load_files id: %v", wh.destType, sqlStatement)
@@ -368,7 +378,6 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 	startJSONID := jsonUploadsList[0].ID
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
-	currentSchema, err := json.Marshal(schema)
 	namespace := misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(wh.destType, warehouse.Source.Name))), 127)
 
 	var firstEventAt, lastEventAt interface{}
@@ -379,7 +388,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		lastEventAt = jsonUploadsList[0].LastEventAt
 	}
 
-	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, currentSchema, "{}", firstEventAt, lastEventAt, time.Now(), time.Now(), "[]")
+	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, "{}", "{}", firstEventAt, lastEventAt, time.Now(), time.Now(), "[]")
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
@@ -396,13 +405,6 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		StartStagingFileID: startJSONID,
 		EndStagingFileID:   endJSONID,
 		Status:             warehouseutils.WaitingState,
-		Schema:             schema,
-	}
-
-	err = wh.initTableUploads(upload, schema)
-	if err != nil {
-		// TODO: Handle error / Retry
-		logger.Error("WH: Error creating records in wh_table_uploads", err)
 	}
 
 	return upload
@@ -697,10 +699,7 @@ func (wh *HandleT) mainLoop() {
 					if lastIndex >= len(stagingFilesList) {
 						lastIndex = len(stagingFilesList)
 					}
-					// merge schemas over all staging files in this batch
-					consolidatedSchema := wh.consolidateSchema(warehouse, stagingFilesList[count:lastIndex])
-					// create record in wh_uploads to mark start of upload to warehouse flow
-					upload := wh.initUpload(warehouse, stagingFilesList[count:lastIndex], consolidatedSchema)
+					upload := wh.initUpload(warehouse, stagingFilesList[count:lastIndex])
 					job := ProcessStagingFilesJobT{
 						List:      stagingFilesList[count:lastIndex],
 						Warehouse: warehouse,
@@ -962,6 +961,25 @@ func (wh *HandleT) initWorkers() {
 					whOneFullPassTimer := warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", processStagingFilesJobList[0].Warehouse.Destination.ID)
 					whOneFullPassTimer.Start()
 					for _, job := range processStagingFilesJobList {
+						// consolidate schema if not already done
+						if len(job.Upload.Schema) == 0 {
+							// merge schemas over all staging files in this batch
+							consolidatedSchema := wh.consolidateSchema(job.Warehouse, job.List)
+							marshalledSchema, err := json.Marshal(consolidatedSchema)
+							if err != nil {
+								panic(err)
+							}
+							warehouseutils.SetUploadColumns(job.Upload, wh.dbHandle, warehouseutils.UploadColumnT{Column: "schema", Value: marshalledSchema})
+							job.Upload.Schema = consolidatedSchema
+						}
+						if !wh.areTableUploadsCreated(job.Upload) {
+							err := wh.initTableUploads(job.Upload, job.Upload.Schema)
+							if err != nil {
+								// TODO: Handle error / Retry
+								logger.Error("WH: Error creating records in wh_table_uploads", err)
+							}
+						}
+
 						createPlusUploadTimer := warehouseutils.DestStat(stats.TimerType, "stagingfileset_total_handling_time", job.Warehouse.Destination.ID)
 						createPlusUploadTimer.Start()
 
