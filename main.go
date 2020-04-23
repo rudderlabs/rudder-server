@@ -145,7 +145,7 @@ func startWarehouseService() {
 	warehouse.Start()
 }
 
-func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintenanceMode bool) {
+func startRudderCore(clearDB *bool, mode *db.ModeT) {
 	logger.Info("Main starting")
 
 	if !validators.ValidateEnv() {
@@ -154,7 +154,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
-	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, misc.AppStartTime)
+	db.HandleRecovery(mode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
 
@@ -202,7 +202,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 		//TODO: Should this be concurrent?
 		gatewayMigrator.Setup(&gatewayDB, pf, 8084)
-		routerMigrator.Setup(&routerDB, pf, 8084)
+		routerMigrator.Setup(&routerDB, pf, 8085)
 		batchRouterwMigrator.Setup(&batchRouterDB, pf, 8086)
 
 		if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
@@ -262,6 +262,7 @@ func main() {
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
+	migrationMode := flag.Bool("migration-mode", false, "a bool")
 
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
@@ -320,7 +321,7 @@ func main() {
 
 	if canStartServer() {
 		rruntime.Go(func() {
-			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+			startRudderCore(clearDB, &db.ModeT{NormalMode: *normalMode, DegradedMode: *degradedMode, MaintenanceMode: *maintenanceMode, MigrationMode: *migrationMode})
 		})
 	}
 

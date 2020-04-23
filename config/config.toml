@@ -39,6 +39,7 @@ routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
 enableStats = true
+enableMigrator = false
 
 [RateLimit]
 eventLimit=1000
