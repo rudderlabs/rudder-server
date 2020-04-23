@@ -202,7 +202,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 		//TODO: Should this be concurrent?
 		gatewayMigrator.Setup(&gatewayDB, pf, 8084)
-		routerMigrator.Setup(&routerDB, pf, 8084)
+		routerMigrator.Setup(&routerDB, pf, 8085)
 		batchRouterwMigrator.Setup(&batchRouterDB, pf, 8086)
 
 		if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
