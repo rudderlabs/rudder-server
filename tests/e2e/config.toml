@@ -1,0 +1,225 @@
+# Contains the configuration for the whole server
+# Dont set secrets, passwords, api_keys etc. in this file. Use '.env' file or environment variables for that
+
+# These values can be overriden through environment variables. The regex for these is present in config/config.go
+# Please look at the following examples to override the config
+#
+# Eg 1:
+# maxProcess = 12
+#
+# RSERVER_MAX_PROCESS=12
+#
+# Eg 2:
+# [RateLimit]
+# eventLimit=1000
+#
+# RSERVER_RATE_LIMIT_EVENT_LIMIT=1000
+#
+# Eg 3:
+# [Gateway]
+# maxDBWriterProcess = 64
+#
+# RSERVER_GATEWAY_MAX_DBWRITER_PROCESS=64
+#
+# Eg 4:
+# [BackendConfig]
+# configJSONPath = "./workspaceConfig.json"
+#
+# RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH="./workspaceConfig.json"
+#
+#
+# RSERVER_JOBS_DB_ENABLE_BACKUP=true
+#
+
+
+
+maxProcess = 12 # Max number of cpu process to be used by go runtime
+gwDBRetentionInHr = 0
+routerDBRetention = 0
+enableProcessor = true
+enableRouter = true
+enableStats = true
+
+[RateLimit]
+eventLimit=1000
+rateLimitWindowInMins=60
+noOfBucketsInWindow=12
+
+[Gateway]
+webPort = 8080
+maxDBWriterProcess = 64
+CustomVal = "GW"
+maxBatchSize = 32
+batchTimeoutInMS = 20
+maxReqSizeInKB = 100000
+enableDedup = false
+enableRateLimit = false
+dedupWindowInS = 86400
+
+[SourceDebugger]
+maxBatchSize = 32
+maxESQueueSize = 1024
+maxRetry = 3
+batchTimeoutInS = 2
+retrySleepInMS = 100
+disableEventUploads = false
+
+[DestinationDebugger]
+maxBatchSize = 32
+maxESQueueSize = 1024
+maxRetry = 3
+batchTimeoutInS = 2
+retrySleepInMS = 100
+disableEventDeliveryStatusUploads = false
+
+[JobsDB]
+# Migration related parameters
+jobDoneMigrateThres = 0.8
+jobStatusMigrateThres = 5
+maxDSSize = 100000
+maxMigrateOnce = 10
+maxTableSizeInMB = 300
+mainCheckSleepDurationInS = 5
+backupCheckSleepDurationIns = 5
+backupRowsBatchSize = 10000
+
+[JobsDB.backup]
+enabled = true
+
+[JobsDB.backup.gw]
+enabled=true
+pathPrefix=""
+
+[JobsDB.backup.rt]
+enabled=false
+failedOnly=false
+
+[JobsDB.backup.batch_rt]
+enabled=false
+failedOnly=false
+
+[Router]
+jobQueryBatchSize = 10000
+updateStatusBatchSize = 1000
+readSleepInMS = 1000
+noOfWorkers = 64
+noOfJobsPerChannel = 1000
+ser = 3
+maxSleepInS = 60
+minSleepInS = 0
+maxStatusUpdateWaitInS = 5
+randomWorkerAssign = false
+useTestSink = false
+maxFailedCountForJob = 8
+keepOrderOnFailure = true
+
+[BatchRouter]
+mainLoopSleepInS = 2
+noOfWorkers = 8
+jobQueryBatchSize = 100000
+uploadFreqInS = 3
+maxFailedCountForJob = 128
+
+[Warehouse]
+mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
+webPort = 8082
+stagingFilesTable = "wh_staging_files"
+loadFilesTable = "wh_load_files"
+uploadsTable = "wh_uploads"
+tableUploadsTable = "wh_table_uploads"
+schemasTable = "wh_schemas"
+uploadFreqInS = 6
+noOfWorkers = 8
+noOfSlaveWorkerRoutines = 4
+mainLoopSleepInS = 2
+maxRetry = 3
+stagingFilesBatchSize = 240
+    [Warehouse.redshift]
+    maxParallelLoads = 3
+    [Warehouse.snowflake]
+    maxParallelLoads = 3
+    [Warehouse.bigquery]
+    maxParallelLoads = 20
+
+[Processor]
+loopSleepInMS = 10
+maxLoopSleepInMS = 500
+dbReadBatchSize = 10000
+transformBatchSize = 100
+userTransformBatchSize = 200
+sessionThresholdEvents = 100
+sessionInactivityThresholdInS = 120
+maxChanSize = 2048
+processSessions = false
+numTransformWorker = 8
+maxRetry = 30
+retrySleepInMS = 100
+
+[BackendConfig]
+configFromFile = false
+configJSONPath = "/etc/rudderstack/workspaceConfig.json"
+pollIntervalInS = 5
+
+
+# If the server crashes 'crashThreshold' times in 'durationInS' seconds,
+#       then we mark it degraded
+# If the server crashes 'degradedCrashThreshold' times in 'degradedDurationInS' seconds in degraded mode,
+#       then we mark it maintenance
+# If the server crashes 'maintenanceCrashThreshold' times in 'maintenanceDurationInS' seconds in maintenance mode,
+#       then we stop the server
+# Stores related metadata in storagePath
+[recovery]
+enabled = true
+errorStorePath = "/tmp/error_store.json"
+storagePath = "/tmp/recovery_data.json"
+    [recovery.normal]
+    crashThreshold = 5
+    durationInS = 300
+    [recovery.degraded]
+    crashThreshold = 5
+    durationInS = 300
+    [recovery.maintenance]
+    crashThreshold = 5
+    durationInS = 300
+
+# logger configuration
+[Logger]
+enableConsole=true
+enableFile=false
+consoleJsonFormat=false
+fileJsonFormat=false
+logFileLocation="/tmp/rudder_log.log"
+logFileSize = 100 # in MB
+enableTimestamp=true
+enableFileNameInLog=false
+enableStackTrace=false
+
+
+[Diagnostics]
+enableDiagnostics = true
+gatewayTimePeriodInS = 60
+routerTimePeriodInS = 60
+batchRouterTimePeriodInS = 600
+enableServerStartMetric = true
+enableConfigIdentifyMetric = true
+enableServerStartedMetric = true
+enableConfigProcessedMetric = true
+enableGatewayMetric = true
+enableRouterMetric = true
+enableBatchRouterMetric = true
+enableDestinationFailuresMetric = true
+
+
+# runtime stats are collected using go runtime package and published to statsd
+[RuntimeStats]
+enabled=true
+statsCollectionInterval=10
+enableCPUStats=true
+enableMemStats=true
+enableGCStats=true
+
+[PgNotifier]
+retriggerIntervalInS = 2
+retriggerCount = 100
+trackBatchIntervalInS = 2
+maxAttempt = 3

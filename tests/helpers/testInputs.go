@@ -163,7 +163,7 @@ var ScreenPayload = `
 }
 `
 
-var BQBatchPayload = `
+var WarehouseBatchPayload = `
 {
 	"batch": [
 		{
@@ -178,19 +178,19 @@ var BQBatchPayload = `
 		"context": {
 			"app": {
 			"build": "1",
-			"name": "SELECT",
+			"name": "RudderAndroidClient",
 			"namespace": "com.rudderlabs.android.sdk",
 			"version": "1.0"
 			},
 			"device": {
 			"id": "49e4bdd1c280bc00",
 			"manufacturer": "Google",
-			"model": "Omega",
+			"model": "Android SDK built for x86",
 			"name": "generic_x86"
 			},
 			"locale": "en-US",
 			"network": {
-			"carrier": "Nokia"
+			"carrier": "Android"
 			},
 			"screen": {
 			"density": 420,
@@ -200,17 +200,16 @@ var BQBatchPayload = `
 			"traits": {
 			"anonymousId": "49e4bdd1c280bc00"
 			},
-			"user_agent": "Black Mamba"
+			"user_agent": "Dalvik/2.1.0 (Linux; U; An  droid 9; Android SDK built for x86 Build/PSR1.180720.075)"
 		},
-		"event": "JOIN",
+		"event": "Demo Track",
 		"integrations": {
 			"All": true
 		},
 		"properties": {
-			"MERGE": "LIMIT",
-			"NATURAL": "TRUE",
-			"HAVING": "BETWEEN",
-			"WHERE":"HERE"
+			"label": "Demo Label",
+			"category": "Demo Category",
+			"value": 5
 		},
 		"type": "track",
 		"originalTimestamp": "2019-08-12T05:08:30.909Z",
