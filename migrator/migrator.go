@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -31,6 +32,8 @@ type Migrator struct {
 	jobsDB      *jobsdb.HandleT
 	pf          pathfinder.Pathfinder
 	fileManager filemanager.FileManager
+	doneLock    sync.RWMutex
+	done        bool
 	port        int
 }
 
@@ -40,12 +43,11 @@ func init() {
 }
 
 //Setup initializes the module
-func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, port int) {
+func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) {
 	logger.Info("Migrator: Setting up migrator for % jobsdb", jobsDB.GetTablePrefix())
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
 	migrator.fileManager = migrator.setupFileManager()
-	migrator.port = port
 
 	migrator.jobsDB.SetupCheckpointDBTable()
 
@@ -53,8 +55,7 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 		migrator.jobsDB.SetupForImportAndAcceptNewEvents(pf.GetVersion())
 	}
 
-	go migrator.startWebHandler()
-	migrator.export()
+	go migrator.export()
 }
 
 func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) {
@@ -113,8 +114,14 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (migrator *Migrator) statusHandler(w http.ResponseWriter, r *http.Request) {
+func (migrator *Migrator) exportStatusHandler() bool {
+	migrator.doneLock.RLock()
+	defer migrator.doneLock.RUnlock()
+	return migrator.done
+}
 
+func (migrator *Migrator) importStatusHandler() bool {
+	return true
 }
 
 func reflectOrigin(origin string) bool {
@@ -125,21 +132,72 @@ func (migrator *Migrator) getURI(uri string) string {
 	return fmt.Sprintf("/%s%s", migrator.jobsDB.GetTablePrefix(), uri)
 }
 
-func (migrator *Migrator) startWebHandler() {
-	logger.Info("Migrator: Starting migrationWebHandler on port %d", migrator.port)
+type StatusResponseT struct {
+	Completed bool   `json:"completed"`
+	Gw        bool   `json:"gw"`
+	Rt        bool   `json:"rt"`
+	BatchRt   bool   `json:"batch_rt"`
+	Mode      string `json:"mode,omitempty"`
+}
 
-	//TODO fix this.
-	http.HandleFunc(migrator.getURI("/fileToImport"), migrator.importHandler)
-	http.HandleFunc(migrator.getURI("/status"), migrator.statusHandler)
-	// http.HandleFunc("/fileToImport", migrator.importHandler)
-	// http.HandleFunc("/status", migrator.statusHandler)
+func StartWebHandler(migratorPort int, gwMigrator *Migrator, rtMigrator *Migrator, brtMigrator *Migrator) {
+	logger.Info("Migrator: Starting migrationWebHandler on port %d", migratorPort)
+
+	http.HandleFunc("/gw/fileToImport", gwMigrator.importHandler)
+	http.HandleFunc("/rt/fileToImport", rtMigrator.importHandler)
+	http.HandleFunc("/batch_rt/fileToImport", brtMigrator.importHandler)
+
+	http.HandleFunc("/export/status", func(w http.ResponseWriter, r *http.Request) {
+		gwCompleted := gwMigrator.exportStatusHandler()
+		rtCompleted := rtMigrator.exportStatusHandler()
+		brtCompleted := brtMigrator.exportStatusHandler()
+		completed := gwCompleted && rtCompleted && brtCompleted
+		mode := "export"
+
+		response := StatusResponseT{
+			Completed: completed,
+			Gw:        gwCompleted,
+			Rt:        rtCompleted,
+			BatchRt:   brtCompleted,
+			Mode:      mode,
+		}
+
+		responseJSON, err := json.Marshal(response)
+		if err != nil {
+			panic("Invalid JSON in export status")
+		}
+		w.Write(responseJSON)
+	})
+
+	http.HandleFunc("/import/status", func(w http.ResponseWriter, r *http.Request) {
+		gwCompleted := gwMigrator.importStatusHandler()
+		rtCompleted := rtMigrator.importStatusHandler()
+		brtCompleted := brtMigrator.importStatusHandler()
+		completed := gwCompleted && rtCompleted && brtCompleted
+		mode := "import"
+
+		response := StatusResponseT{
+			Completed: completed,
+			Gw:        gwCompleted,
+			Rt:        rtCompleted,
+			BatchRt:   brtCompleted,
+			Mode:      mode,
+		}
+
+		responseJSON, err := json.Marshal(response)
+		if err != nil {
+			panic("Invalid JSON in export status")
+		}
+		w.Write(responseJSON)
+	})
+
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
 		AllowedHeaders:   []string{"*"},
 	})
 
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(migrator.port), c.Handler(bugsnag.Handler(nil))))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(migratorPort), c.Handler(bugsnag.Handler(nil))))
 }
 
 func (migrator *Migrator) setupFileManager() filemanager.FileManager {
@@ -218,6 +276,9 @@ func (migrator *Migrator) export() {
 	}
 
 	migrator.postExport()
+	migrator.doneLock.Lock()
+	defer migrator.doneLock.Unlock()
+	migrator.done = true
 }
 
 func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobStatusT {

@@ -191,6 +191,7 @@ func startRudderCore(clearDB *bool, mode *db.ModeT) {
 	if enableMigrator {
 		backendReplicaCount := config.GetEnvAsInt("BACKEND_REPLICA_COUNT", 6)
 		clusterVersion := config.GetEnvAsInt("CLUSTER_VERSION", 2)
+		migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8084)
 		dnsPattern := config.GetEnv("URL_PATTERN", "http://cluster-VERSION-node-NODENUM.rudderlabs.com")
 
 		pf.Setup(pathfinder.Setup(backendReplicaCount, clusterVersion, dnsPattern), clusterVersion)
@@ -198,12 +199,14 @@ func startRudderCore(clearDB *bool, mode *db.ModeT) {
 		logger.Info("Setting up migrators")
 		var gatewayMigrator migrator.Migrator
 		var routerMigrator migrator.Migrator
-		var batchRouterwMigrator migrator.Migrator
+		var batchRouterMigrator migrator.Migrator
 
 		//TODO: Should this be concurrent?
-		gatewayMigrator.Setup(&gatewayDB, pf, 8084)
-		routerMigrator.Setup(&routerDB, pf, 8085)
-		batchRouterwMigrator.Setup(&batchRouterDB, pf, 8086)
+		gatewayMigrator.Setup(&gatewayDB, pf)
+		routerMigrator.Setup(&routerDB, pf)
+		batchRouterMigrator.Setup(&batchRouterDB, pf)
+
+		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)
 
 		if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
 			shouldStartGateWay = false
