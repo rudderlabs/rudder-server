@@ -45,13 +45,14 @@ func init() {
 }
 
 //Setup initializes the module
-func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, version int, nextVersion int) {
+func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, version int, nextVersion int, migratorPort int) {
 	logger.Info("Migrator: Setting up migrator for % jobsdb", jobsDB.GetTablePrefix())
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
 	migrator.fileManager = migrator.setupFileManager()
 	migrator.version = version
 	migrator.nextVersion = nextVersion
+	migrator.port = migratorPort
 
 	migrator.jobsDB.SetupCheckpointDBTable()
 
@@ -93,7 +94,7 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 
 		err = migrator.fileManager.Download(jsonFile, fileName)
 		if err != nil {
-			panic("Unable to download file")
+			panic(err.Error())
 		}
 
 		jsonFile.Close()
@@ -386,7 +387,7 @@ func buildStatus(job *jobsdb.JobT, jobState string) *jobsdb.JobStatusT {
 func (migrator *Migrator) uploadToS3AndNotifyDestNode(file *os.File, nMeta pathfinder.NodeMeta) {
 	uploadOutput, err := migrator.fileManager.Upload(file)
 	if err != nil {
-		panic(uploadOutput)
+		panic(err.Error())
 	} else {
 		logger.Info("Migrator: Uploaded an export file to %s", uploadOutput.Location)
 		//TODO: delete this file otherwise in failure case, the file exists and same data will be appended to it
