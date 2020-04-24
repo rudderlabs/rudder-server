@@ -207,8 +207,8 @@ func startRudderCore(clearDB *bool, mode *db.ModeT) {
 
 		//TODO: Should this be concurrent?
 		gatewayMigrator.Setup(&gatewayDB, pf, clusterVersion, nextclusterVersion, migratorPort)
-		routerMigrator.Setup(&routerDB, pf, clusterVersion, nextclusterVersion, migratorPort)
-		batchRouterMigrator.Setup(&batchRouterDB, pf, clusterVersion, nextclusterVersion, migratorPort)
+		//routerMigrator.Setup(&routerDB, pf, clusterVersion, nextclusterVersion, migratorPort)
+		//batchRouterMigrator.Setup(&batchRouterDB, pf, clusterVersion, nextclusterVersion, migratorPort)
 
 		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)
 

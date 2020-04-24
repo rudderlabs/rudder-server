@@ -149,21 +149,22 @@ func StartWebHandler(migratorPort int, gwMigrator *Migrator, rtMigrator *Migrato
 	logger.Info("Migrator: Starting migrationWebHandler on port %d", migratorPort)
 
 	http.HandleFunc("/gw/fileToImport", gwMigrator.importHandler)
-	http.HandleFunc("/rt/fileToImport", rtMigrator.importHandler)
-	http.HandleFunc("/batch_rt/fileToImport", brtMigrator.importHandler)
+	//http.HandleFunc("/rt/fileToImport", rtMigrator.importHandler)
+	//http.HandleFunc("/batch_rt/fileToImport", brtMigrator.importHandler)
 
 	http.HandleFunc("/export/status", func(w http.ResponseWriter, r *http.Request) {
 		gwCompleted := gwMigrator.exportStatusHandler()
-		rtCompleted := rtMigrator.exportStatusHandler()
-		brtCompleted := brtMigrator.exportStatusHandler()
-		completed := gwCompleted && rtCompleted && brtCompleted
+		//rtCompleted := rtMigrator.exportStatusHandler()
+		//brtCompleted := brtMigrator.exportStatusHandler()
+		//completed := gwCompleted && rtCompleted && brtCompleted
+		completed := gwCompleted
 		mode := "export"
 
 		response := StatusResponseT{
 			Completed: completed,
 			Gw:        gwCompleted,
-			Rt:        rtCompleted,
-			BatchRt:   brtCompleted,
+			Rt:        completed, //TODO change
+			BatchRt:   completed, //TODO change
 			Mode:      mode,
 		}
 
@@ -176,16 +177,17 @@ func StartWebHandler(migratorPort int, gwMigrator *Migrator, rtMigrator *Migrato
 
 	http.HandleFunc("/import/status", func(w http.ResponseWriter, r *http.Request) {
 		gwCompleted := gwMigrator.importStatusHandler()
-		rtCompleted := rtMigrator.importStatusHandler()
-		brtCompleted := brtMigrator.importStatusHandler()
-		completed := gwCompleted && rtCompleted && brtCompleted
+		//rtCompleted := rtMigrator.importStatusHandler()
+		//brtCompleted := brtMigrator.importStatusHandler()
+		//completed := gwCompleted && rtCompleted && brtCompleted
+		completed := gwCompleted
 		mode := "import"
 
 		response := StatusResponseT{
 			Completed: completed,
 			Gw:        gwCompleted,
-			Rt:        rtCompleted,
-			BatchRt:   brtCompleted,
+			Rt:        completed, //TODO change
+			BatchRt:   completed, //TODO change
 			Mode:      mode,
 		}
 
@@ -209,7 +211,8 @@ func (migrator *Migrator) setupFileManager() filemanager.FileManager {
 	conf := map[string]interface{}{}
 	conf["bucketName"] = config.GetRequiredEnv("MIGRATOR_BUCKET")
 
-	bucketPrefix := config.GetEnv("MIGRATOR_BUCKET_PREFIX", "")
+	//TODO fix importing prefix bug
+	/*bucketPrefix := config.GetEnv("MIGRATOR_BUCKET_PREFIX", "")
 	versionPrefix := fmt.Sprintf("%d-%d", migrator.version, migrator.nextVersion)
 
 	if bucketPrefix != "" {
@@ -217,7 +220,7 @@ func (migrator *Migrator) setupFileManager() filemanager.FileManager {
 	} else {
 		bucketPrefix = versionPrefix
 	}
-	conf["prefix"] = bucketPrefix
+	conf["prefix"] = bucketPrefix*/
 
 	conf["accessKeyID"] = config.GetEnv("MIGRATOR_ACCESS_KEY_ID", "")
 	conf["accessKey"] = config.GetEnv("MIGRATOR_SECRET_ACCESS_KEY", "")
