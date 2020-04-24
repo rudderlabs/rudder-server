@@ -147,7 +147,7 @@ func NewDestStat(Name string, StatType string, destID string, destType string, d
 		Name:        Name,
 		StatType:    StatType,
 		DestType:    destType,
-		Client:      destClientsMap[destType],
+		Client:      destClientsMap[destID],
 		dontProcess: false,
 	}
 }
@@ -177,6 +177,7 @@ func (rStats *RudderStats) Count(n int) {
 	if rStats.StatType != CountType {
 		panic(fmt.Errorf("rStats.StatType:%s is not count", rStats.StatType))
 	}
+	fmt.Printf("%+v", rStats)
 	rStats.Client.Count(rStats.Name, n)
 }
 
