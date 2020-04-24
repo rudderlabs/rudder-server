@@ -75,12 +75,12 @@ func NewStat(Name string, StatType string) (rStats *RudderStats) {
 	}
 }
 
-func NewStatWithParam(Name string, StatType string, param string) (rStats *RudderStats) {
+func NewStatWithParam(Name string, StatType string, paramName string, paramValue string) (rStats *RudderStats) {
 	jobsdbClientsMapLock.Lock()
 	defer jobsdbClientsMapLock.Unlock()
-	if _, found := jobsdbClientsMap[param]; !found {
+	if _, found := jobsdbClientsMap[paramValue]; !found {
 		var err error
-		jobsdbClientsMap[param], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, fmt.Sprintf("%s", param), param))
+		jobsdbClientsMap[paramValue], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, fmt.Sprintf("%s", paramName), paramValue))
 		if err != nil {
 			logger.Error(err)
 		}
@@ -88,7 +88,7 @@ func NewStatWithParam(Name string, StatType string, param string) (rStats *Rudde
 	return &RudderStats{
 		Name:     Name,
 		StatType: StatType,
-		Client:   jobsdbClientsMap[param],
+		Client:   jobsdbClientsMap[paramValue],
 	}
 }
 
