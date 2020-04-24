@@ -218,8 +218,8 @@ func (migrator *Migrator) setupFileManager() filemanager.FileManager {
 	}
 	conf["prefix"] = bucketPrefix
 
-	conf["accessKeyID"] = config.GetString("accessKeyID", "")
-	conf["accessKey"] = config.GetString("accessKey", "")
+	conf["accessKeyID"] = config.GetEnv("MIGRATOR_ACCESS_KEY_ID", "")
+	conf["accessKey"] = config.GetEnv("MIGRATOR_SECRET_ACCESS_KEY", "")
 	settings := filemanager.SettingsT{"S3", conf}
 	fm, err := filemanager.New(&settings)
 	// _ = err
