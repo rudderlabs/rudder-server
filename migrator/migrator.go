@@ -41,20 +41,21 @@ func init() {
 
 //Setup initializes the module
 func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, port int) {
-	logger.Info("Migrator: Setting up migrator for % jobsdb", jobsDB.GetTablePrefix())
+	logger.Infof("Migrator: Setting up migrator for %s jobsdb", jobsDB.GetTablePrefix())
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
 	migrator.fileManager = migrator.setupFileManager()
 	migrator.port = port
 
-	migrator.jobsDB.SetupCheckpointDBTable()
+	migrator.jobsDB.SetupCheckpointTable()
 
-	if pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
-		migrator.jobsDB.SetupForImportAndAcceptNewEvents(pf.GetVersion())
-	}
+	migrator.jobsDB.SetupForMigrateAndAcceptNewEvents(pf.GetVersion())
 
 	go migrator.startWebHandler()
+	// MigrationEvent
 	migrator.export()
+	migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", "", jobsdb.Exported, 0)
+	migrator.jobsDB.Checkpoint(&migrationEvent)
 }
 
 func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +66,7 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		panic(err)
 	}
-	logger.Info("Migrator: Request received to import %s", migrationEvent.FileLocation)
+	logger.Infof("Migrator: Request received to import %s", migrationEvent.FileLocation)
 	if migrationEvent.MigrationType == jobsdb.ExportOp {
 		localTmpDirName := "/migrator-import/"
 		tmpDirPath, err := misc.CreateTMPDIR()
@@ -100,7 +101,7 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 
 		migrationEvent.MigrationType = jobsdb.ImportOp
 		migrationEvent.ID = 0
-		migrationEvent.Status = jobsdb.Prepared
+		migrationEvent.Status = jobsdb.PreparedForImport
 		migrationEvent.TimeStamp = time.Now()
 		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
 		migrator.readFromFileAndWriteToDB(rawf, migrationEvent)
@@ -114,7 +115,14 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (migrator *Migrator) statusHandler(w http.ResponseWriter, r *http.Request) {
+	// migrationEvents := migrator.jobsDB.GetCheckpoints()
 
+	// w.WriteHeader(http.StatusOK)
+	// resp, err := json.Marshal(migrationEvents)
+	// if err != nil {
+	// 	panic("Unable to Marshal")
+	// }
+	// w.Write(resp)
 }
 
 func reflectOrigin(origin string) bool {
@@ -126,13 +134,10 @@ func (migrator *Migrator) getURI(uri string) string {
 }
 
 func (migrator *Migrator) startWebHandler() {
-	logger.Info("Migrator: Starting migrationWebHandler on port %d", migrator.port)
+	logger.Infof("Migrator: Starting migrationWebHandler on port %d", migrator.port)
 
-	//TODO fix this.
 	http.HandleFunc(migrator.getURI("/fileToImport"), migrator.importHandler)
 	http.HandleFunc(migrator.getURI("/status"), migrator.statusHandler)
-	// http.HandleFunc("/fileToImport", migrator.importHandler)
-	// http.HandleFunc("/status", migrator.statusHandler)
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
@@ -187,7 +192,7 @@ func (migrator *Migrator) readFromFileAndWriteToDB(file *os.File, migrationEvent
 	}
 	reader.Close()
 	migrator.jobsDB.StoreImportedJobsAndJobStatuses(jobList, file.Name(), migrationEvent)
-	logger.Info("Migrator: Done importing file %s", file.Name())
+	logger.Infof("Migrator: Done importing file %s", file.Name())
 	// check if Scan() finished because of error or because it reached end of file
 	return sc.Err()
 }
@@ -202,14 +207,24 @@ func (migrator *Migrator) processSingleLine(line []byte) (jobsdb.JobT, bool) {
 	return job, true
 }
 
+func (migrator *Migrator) isExportDone() {
+	migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp)
+}
+
 func (migrator *Migrator) export() {
-	logger.Info("Migrator: Export loop is starting")
-	lastDSIndex := migrator.jobsDB.GetLatestDSIndex()
+	logger.Infof("Migrator: Export loop is starting")
+
+	if !migrator.jobsDB.ShouldExport() {
+		return
+	}
+
 	for {
 		toQuery := dbReadBatchSize
 
-		jobList := migrator.jobsDB.GetNonMigrated(toQuery, lastDSIndex)
+		jobList := migrator.jobsDB.GetNonMigrated(toQuery)
 		if len(jobList) == 0 {
+			migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", "", jobsdb.Exported, 0)
+			migrator.jobsDB.Checkpoint(&migrationEvent)
 			break
 		}
 
@@ -221,15 +236,10 @@ func (migrator *Migrator) export() {
 }
 
 func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobStatusT {
+	logger.Infof("Inside filter and dump")
 	m := make(map[pathfinder.NodeMeta][]*jobsdb.JobT)
 	for _, job := range jobList {
-		eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
-		if !ok {
-			//TODO: This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.
-			logger.Debug("Migrator: This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.")
-			continue
-		}
-		userID, ok := misc.GetAnonymousID(eventList[0])
+		userID := migrator.jobsDB.GetUserID(job)
 
 		nodeMeta := migrator.pf.GetNodeFromID(userID)
 		m[nodeMeta] = append(m[nodeMeta], job)
@@ -281,7 +291,7 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 			if err != nil {
 				panic(err)
 			}
-			migrator.uploadToS3AndNotifyDestNode(file, nMeta)
+			migrator.uploadToS3(file, nMeta)
 			file.Close()
 
 			os.Remove(path)
@@ -307,20 +317,25 @@ func buildStatus(job *jobsdb.JobT, jobState string) *jobsdb.JobStatusT {
 	return &newStatus
 }
 
-func (migrator *Migrator) uploadToS3AndNotifyDestNode(file *os.File, nMeta pathfinder.NodeMeta) {
+func (migrator *Migrator) uploadToS3(file *os.File, nMeta pathfinder.NodeMeta) {
 	uploadOutput, err := migrator.fileManager.Upload(file)
 	if err != nil {
-		panic(uploadOutput)
+		//TODO: Retry
 	} else {
-		logger.Info("Migrator: Uploaded an export file to %s", uploadOutput.Location)
+		logger.Infof("Migrator: Uploaded an export file to %s", uploadOutput.Location)
 		//TODO: delete this file otherwise in failure case, the file exists and same data will be appended to it
 		migrationEvent := jobsdb.NewMigrationEvent("export", misc.GetNodeID(), nMeta.GetNodeID(), uploadOutput.Location, jobsdb.Exported, 0)
 
 		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
-
-		logger.Info("Migrator: Notifying destination node %s to download and import file from %s", migrationEvent.ToNode, migrationEvent.FileLocation)
-		go misc.MakeAsyncPostRequest(nMeta.GetNodeConnectionString(migrator.port), migrator.getURI("/fileToImport"), migrationEvent, 5, migrator.postHandler)
+		go migrator.readFromCheckpointAndNotify(migrationEvent, nMeta)
 	}
+}
+
+func (migrator *Migrator) readFromCheckpointAndNotify(migrationEvent jobsdb.MigrationEvent, nMeta pathfinder.NodeMeta) {
+	// migrator.jobsDB.GetCheckpoints()
+	logger.Infof("Migrator: Notifying destination node %s to download and import file from %s", migrationEvent.ToNode, migrationEvent.FileLocation)
+	go misc.MakeAsyncPostRequest(nMeta.GetNodeConnectionString(migrator.port), migrator.getURI("/fileToImport"), migrationEvent, 5, migrator.postHandler)
+
 }
 
 func (migrator *Migrator) postHandler(retryCount int, response interface{}, endpoint string, uri string, data interface{}) {
@@ -336,7 +351,7 @@ func (migrator *Migrator) postHandler(retryCount int, response interface{}, endp
 	} else if retryCount > 0 {
 		misc.MakeAsyncPostRequest(endpoint, uri, data, retryCount-1, migrator.postHandler)
 	} else if retryCount == 0 {
-		panic("Ran out of retries. Go debug")
+		//panic("Ran out of retries. Go debug")
 	}
 }
 

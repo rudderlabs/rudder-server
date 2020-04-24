@@ -198,12 +198,12 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		logger.Info("Setting up migrators")
 		var gatewayMigrator migrator.Migrator
 		var routerMigrator migrator.Migrator
-		var batchRouterwMigrator migrator.Migrator
+		// var batchRouterMigrator migrator.Migrator
 
 		//TODO: Should this be concurrent?
 		gatewayMigrator.Setup(&gatewayDB, pf, 8084)
 		routerMigrator.Setup(&routerDB, pf, 8085)
-		batchRouterwMigrator.Setup(&batchRouterDB, pf, 8086)
+		// batchRouterMigrator.Setup(&batchRouterDB, pf, 8086)
 
 		if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
 			shouldStartGateWay = false

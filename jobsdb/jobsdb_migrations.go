@@ -2,49 +2,94 @@ package jobsdb
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //MigrationState maintains the state required during the migration process
 type MigrationState struct {
-	sequenceProvider        SequenceProvider
-	dsForNewEvents          dataSetT
-	isDsForMigrationCreated bool
-	migrationDSCreationLock sync.RWMutex
+	sequenceProvider     SequenceProvider
+	DsForNewEvents       dataSetT `json:"dsForNewEvents"`
+	DsForImport          dataSetT `json:"dsForImport"`
+	LastDsForExport      dataSetT `json:"lastDsForExport"`
+	importDSCreationLock sync.RWMutex
 }
 
 /*
-SetupForImportAndAcceptNewEvents is used to initialize the MigrationState structure.
+SetupForMigrateAndAcceptNewEvents is used to initialize the MigrationState structure.
 It creates a new ds if an empty ds is not already present for incoming events
-It also sets up sequence provider to last id in the previous table
+It sets up sequence provider to last id in the previous table
+It marks the DsForNewEvents(create if not exists), the ds to which new events can go to
+It also marks the last populated dsIndex before migration start
 version = used to set the id space of new incoming events to version*10^13
 */
-func (jd *HandleT) SetupForImportAndAcceptNewEvents(version int) {
+func (jd *HandleT) SetupForMigrateAndAcceptNewEvents(version int) {
 	jd.dsListLock.Lock()
 	defer jd.dsListLock.Unlock()
 	dsList := jd.getDSList(true)
 	importDSMin := int64(0)
 
+	migrationState := MigrationState{}
+	migrationEvents := jd.GetCheckpoints(ExportOp)
+	if len(migrationEvents) > 0 {
+		json.Unmarshal([]byte(migrationEvents[0].Payload), &migrationState)
+	}
+
+	//TODO: Need to improvise this
+	var shouldSetSequenceForDsForNewEvents bool
+	if migrationState.DsForNewEvents.Index == "" {
+		shouldSetSequenceForDsForNewEvents = true
+	}
+
 	if !jd.isEmpty(dsList[len(dsList)-1]) {
 		importDSMin = jd.getMaxIDForDs(dsList[len(dsList)-1])
-		jd.migrationState.dsForNewEvents = jd.addNewDS(true, dataSetT{})
+		if migrationState.DsForNewEvents.Index == "" {
+			migrationState.DsForNewEvents = jd.addNewDS(true, dataSetT{})
+		}
 	} else {
 		if len(dsList) > 1 {
 			importDSMin = jd.getMaxIDForDs(dsList[len(dsList)-2])
 		}
-		jd.migrationState.dsForNewEvents = dsList[len(dsList)-1]
+		if migrationState.DsForNewEvents.Index == "" {
+			migrationState.DsForNewEvents = dsList[len(dsList)-1]
+		}
 	}
 
-	seqNoForNewDS := int64(version) * int64(math.Pow10(13))
-	jd.updateSequenceNumber(jd.migrationState.dsForNewEvents, seqNoForNewDS)
-	logger.Info("Jobsdb: New dataSet %s is prepared with start sequence : %d", jd.migrationState.dsForNewEvents, seqNoForNewDS)
-	jd.migrationState.sequenceProvider = NewSequenceProvider(importDSMin + 1)
+	dsList = jd.getDSList(true)
 
-	//TODO: recover from crash
+	if migrationState.LastDsForExport.Index == "" {
+		for idx, ds := range dsList {
+			if jd.migrationState.DsForNewEvents.Index == ds.Index {
+				if idx > 0 {
+					migrationState.LastDsForExport = dsList[idx-1]
+				}
+			}
+		}
+	}
+
+	if shouldSetSequenceForDsForNewEvents {
+		seqNoForNewDS := int64(version) * int64(math.Pow10(13))
+		jd.updateSequenceNumber(migrationState.DsForNewEvents, seqNoForNewDS)
+		logger.Infof("Jobsdb: New dataSet %s is prepared with start sequence : %d", jd.migrationState.DsForNewEvents, seqNoForNewDS)
+	}
+
+	jd.migrationState.DsForNewEvents = migrationState.DsForNewEvents
+	jd.migrationState.LastDsForExport = migrationState.LastDsForExport
+
+	jd.migrationState.sequenceProvider = NewSequenceProvider(importDSMin + 1)
+	migrationEvent := NewMigrationEvent(ExportOp, misc.GetNodeID(), "All", "", PreparedForExport, 0)
+	payloadBytes, err := json.Marshal(migrationState)
+	if err != nil {
+		panic("Unable to Marshal")
+	}
+	migrationEvent.Payload = string(payloadBytes)
+	jd.Checkpoint(&migrationEvent)
 }
 
 func (jd *HandleT) getMaxIDForDs(ds dataSetT) int64 {
@@ -80,12 +125,12 @@ func (jd *HandleT) updateSequenceNumber(ds dataSetT, sequenceNumber int64) {
 		jd.tablePrefix, ds.Index, sequenceNumber)
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	if err != nil {
-		panic("Unable to set sequence number")
+		panic(err.Error())
 	}
 }
 
 //GetNonMigrated all jobs with no filters
-func (jd *HandleT) GetNonMigrated(count int, lastDSIndex string) []*JobT {
+func (jd *HandleT) GetNonMigrated(count int) []*JobT {
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -114,7 +159,7 @@ func (jd *HandleT) GetNonMigrated(count int, lastDSIndex string) []*JobT {
 		}
 
 		//Instead of full dsList, it needs to do only till the dataset before import and newEvent datasets
-		if ds.Index == lastDSIndex {
+		if ds.Index == jd.migrationState.LastDsForExport.Index {
 			break
 		}
 	}
@@ -241,18 +286,30 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	jd.dsListLock.Lock()
 	dsList := jd.getDSList(true)
 
+	migrationState := MigrationState{}
+	migrationEvents := jd.GetCheckpoints(ExportOp)
+	if len(migrationEvents) > 0 {
+		json.Unmarshal([]byte(migrationEvents[0].Payload), &migrationState)
+	}
+
 	targetDS := dataSetT{"", "", "Unset"}
 
-	jd.migrationState.migrationDSCreationLock.Lock()
-	if !jd.migrationState.isDsForMigrationCreated {
-		targetDS = jd.addNewDS(false, jd.migrationState.dsForNewEvents)
-		jd.migrationState.isDsForMigrationCreated = true
+	jd.migrationState.importDSCreationLock.Lock()
+	if migrationState.DsForImport.Index == "" {
+		migrationState.DsForImport = jd.addNewDS(false, jd.migrationState.DsForNewEvents)
+		payloadBytes, err := json.Marshal(migrationState)
+		if err != nil {
+			panic("Unable to Marshal")
+		}
+		migrationEvent.Payload = string(payloadBytes)
+		jd.Checkpoint(&migrationEvent)
 	}
-	jd.migrationState.migrationDSCreationLock.Unlock()
+
+	jd.migrationState.importDSCreationLock.Unlock()
 
 	if targetDS.Index == "Unset" {
 		for idx, ds := range dsList {
-			if ds.Index == jd.migrationState.dsForNewEvents.Index {
+			if ds.Index == jd.migrationState.DsForNewEvents.Index {
 				targetDS = dsList[idx-1] //before this assert idx > 0
 			}
 		}
@@ -277,37 +334,37 @@ func (jd *HandleT) GetTablePrefix() string {
 	return jd.tablePrefix
 }
 
-//GetLatestDSIndex gives the index of the latest datasetT
-func (jd *HandleT) GetLatestDSIndex() string {
-	jd.dsListLock.Lock()
-	defer jd.dsListLock.Unlock()
-	dsList := jd.getDSList(true)
-	return dsList[len(dsList)-1].Index
+//GetUserID from job
+func (jd *HandleT) GetUserID(job *JobT) string {
+	var userID string
+	switch jd.GetTablePrefix() {
+	case "gw":
+		eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
+		if !ok {
+			//TODO: This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.
+			panic("Migrator: This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.")
+		}
+		userID, ok = misc.GetAnonymousID(eventList[0])
+	case "rt":
+		userID = integrations.GetUserIDFromTransformerResponse(job.EventPayload)
+	case "batch_rt":
+		parsed, status := misc.ParseBatchRouterJob(job.EventPayload)
+		if status {
+			userID = fmt.Sprintf("%v", parsed["anonymousId"])
+		} else {
+			panic("Not able to get userId/AnonymousId from batch job")
+		}
+	}
+	return userID
 }
 
-func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType string) int64 {
-	jd.assert(migrationType == ExportOp ||
-		migrationType == ImportOp,
-		fmt.Sprintf("MigrationType: %s is not a supported operation. Should be %s or %s",
-			migrationType, ExportOp, ImportOp))
-
-	sqlStatement := fmt.Sprintf(`SELECT start_sequence from %s_migration_checkpoints WHERE file_location = $1 AND migration_type = $2 ORDER BY id DESC`, jd.GetTablePrefix())
-	stmt, err := jd.dbHandle.Prepare(sqlStatement)
-	jd.assertError(err)
-	defer stmt.Close()
-
-	rows, err := stmt.Query(fileLocation, migrationType)
-	if err != nil {
-		panic("Unable to query")
+//ShouldExport tells if export should happen in migration
+func (jd *HandleT) ShouldExport() bool {
+	migrationStates := jd.GetCheckpoints(ExportOp)
+	if len(migrationStates) > 1 {
+		if migrationStates[len(migrationStates)-1].ToNode == "All" {
+			return false
+		}
 	}
-	rows.Next()
-
-	var sequenceNumber int64
-	sequenceNumber = 0
-	err = rows.Scan(&sequenceNumber)
-	rows.Close()
-	if err != nil && err.Error() != "sql: Rows are closed" {
-		panic("query result pares issue")
-	}
-	return sequenceNumber
+	return true
 }
