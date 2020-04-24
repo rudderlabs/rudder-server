@@ -150,7 +150,10 @@ func GetUserIDForStreamDestination(jsonData json.RawMessage) string {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	if parsedJSON.Get("output").Exists() {
 		parsedJSON = parsedJSON.Get("output")
-		userID = parsedJSON.Get("userId").Value().(string)
+		var ok bool
+		if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
+			userID=fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
+		}
 	}
 	return userID
 }
