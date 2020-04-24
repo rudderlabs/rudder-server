@@ -95,7 +95,7 @@ func GetPostInfoNew(transformRaw json.RawMessage) PostParameterNewT {
 	}
 	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
 	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"userId\") to string failed"))
+		postInfo.UserID=fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
 	postInfo.Body, ok = parsedJSON.Get("body").Value().(interface{})
 	if !ok {
@@ -127,7 +127,7 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	}
 	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
 	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"userId\") to string failed"))
+		postInfo.UserID=fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
 	postInfo.Payload, ok = parsedJSON.Get("payload").Value().(interface{})
 	if !ok {
