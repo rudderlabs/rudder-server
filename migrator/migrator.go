@@ -35,6 +35,8 @@ type Migrator struct {
 	doneLock    sync.RWMutex
 	done        bool
 	port        int
+	version     int
+	nextVersion int
 }
 
 func init() {
@@ -43,16 +45,18 @@ func init() {
 }
 
 //Setup initializes the module
-func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) {
+func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, version int, nextVersion int) {
 	logger.Info("Migrator: Setting up migrator for % jobsdb", jobsDB.GetTablePrefix())
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
 	migrator.fileManager = migrator.setupFileManager()
+	migrator.version = version
+	migrator.nextVersion = nextVersion
 
 	migrator.jobsDB.SetupCheckpointDBTable()
 
 	if pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
-		migrator.jobsDB.SetupForImportAndAcceptNewEvents(pf.GetVersion())
+		migrator.jobsDB.SetupForImportAndAcceptNewEvents(version)
 	}
 
 	go migrator.export()
@@ -202,7 +206,18 @@ func StartWebHandler(migratorPort int, gwMigrator *Migrator, rtMigrator *Migrato
 
 func (migrator *Migrator) setupFileManager() filemanager.FileManager {
 	conf := map[string]interface{}{}
-	conf["bucketName"] = config.GetString("migratorBucket", "1-2-migrations")
+	conf["bucketName"] = config.GetRequiredEnv("MIGRATOR_BUCKET")
+
+	bucketPrefix := config.GetEnv("MIGRATOR_BUCKET_PREFIX", "")
+	versionPrefix := fmt.Sprintf("%d-%d", migrator.version, migrator.nextVersion)
+
+	if bucketPrefix != "" {
+		bucketPrefix = fmt.Sprintf("%s/%s", bucketPrefix, versionPrefix)
+	} else {
+		bucketPrefix = versionPrefix
+	}
+	conf["prefix"] = bucketPrefix
+
 	conf["accessKeyID"] = config.GetString("accessKeyID", "")
 	conf["accessKey"] = config.GetString("accessKey", "")
 	settings := filemanager.SettingsT{"S3", conf}

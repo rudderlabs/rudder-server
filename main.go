@@ -51,6 +51,8 @@ var (
 	warehouseDestinations            []string
 	enableMigrator                   bool
 	pf                               pathfinder.Pathfinder
+	clusterVersion                   int
+	instanceIDPattern                string
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -67,6 +69,8 @@ func loadConfig() {
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	enableMigrator = config.GetBool("enableMigrator", false)
+	clusterVersion = config.GetEnvAsInt("CLUSTER_VERSION", 1)
+	instanceIDPattern = config.GetEnv("INSTANCE_ID_PATTERN", "hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>")
 }
 
 // Test Function
@@ -189,12 +193,12 @@ func startRudderCore(clearDB *bool, mode *db.ModeT) {
 
 	shouldStartGateWay := true
 	if enableMigrator {
-		backendReplicaCount := config.GetEnvAsInt("BACKEND_REPLICA_COUNT", 6)
-		clusterVersion := config.GetEnvAsInt("CLUSTER_VERSION", 2)
+		backendCount := config.GetEnvAsInt("MIGRATING_TO_BACKEND_COUNT", 6)
+		nextclusterVersion := config.GetEnvAsInt("MIGRATING_TO_CLUSTER_VERSION", -1)
 		migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8084)
-		dnsPattern := config.GetEnv("URL_PATTERN", "http://cluster-VERSION-node-NODENUM.rudderlabs.com")
+		dnsPattern := config.GetEnv("URL_PATTERN", "http://hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>.rudderstack.com")
 
-		pf.Setup(pathfinder.Setup(backendReplicaCount, clusterVersion, dnsPattern), clusterVersion)
+		pf.Setup(pathfinder.Setup(backendCount, nextclusterVersion, dnsPattern, instanceIDPattern), nextclusterVersion)
 
 		logger.Info("Setting up migrators")
 		var gatewayMigrator migrator.Migrator
@@ -202,9 +206,9 @@ func startRudderCore(clearDB *bool, mode *db.ModeT) {
 		var batchRouterMigrator migrator.Migrator
 
 		//TODO: Should this be concurrent?
-		gatewayMigrator.Setup(&gatewayDB, pf)
-		routerMigrator.Setup(&routerDB, pf)
-		batchRouterMigrator.Setup(&batchRouterDB, pf)
+		gatewayMigrator.Setup(&gatewayDB, pf, clusterVersion, nextclusterVersion)
+		routerMigrator.Setup(&routerDB, pf, clusterVersion, nextclusterVersion)
+		batchRouterMigrator.Setup(&batchRouterDB, pf, clusterVersion, nextclusterVersion)
 
 		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)
 
