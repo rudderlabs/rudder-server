@@ -20,6 +20,7 @@ func (handler *NormalModeHandler) HasThresholdReached() bool {
 }
 
 func (handler *NormalModeHandler) Handle() {
+	config.SetBool("enableMigrator", false)
 }
 
 type NormalModeHandler struct {
