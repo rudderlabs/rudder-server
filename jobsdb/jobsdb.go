@@ -339,6 +339,9 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	dList := jd.getDSList(false)
 	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
 
+	//TODO Alter exising job_status table. job_id datatype from INT to BIGINT
+	//TODO Alter exising job_state_type. migrated, wont_migrate types to be added.
+
 	if jd.BackupSettings.BackupEnabled {
 		jd.jobsFileUploader, err = jd.getFileUploader()
 		jd.assertError(err)
@@ -733,7 +736,7 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 
 	sqlStatement = fmt.Sprintf(`CREATE TABLE %s (
                                      id BIGSERIAL PRIMARY KEY,
-                                     job_id INT REFERENCES %s(job_id),
+                                     job_id BIGINT REFERENCES %s(job_id),
                                      job_state job_state_type,
                                      attempt SMALLINT,
                                      exec_time TIMESTAMP,
@@ -2354,7 +2357,7 @@ func (jd *HandleT) createTables() error {
 
 	sqlStatement = `CREATE TABLE job_status (
                             id BIGSERIAL PRIMARY KEY,
-                            job_id INT REFERENCES jobs(job_id),
+                            job_id BIGINT REFERENCES jobs(job_id),
                             job_state job_state_type,
                             attempt SMALLINT,
                             exec_time TIMESTAMP,

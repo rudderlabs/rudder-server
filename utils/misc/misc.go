@@ -645,7 +645,7 @@ func IsPostgresCompatible(connInfo string) bool {
 
 //GetNodeID returns the nodeId of the current node
 func GetNodeID() string {
-	nodeID := config.GetRequiredEnv("NODE_ID")
+	nodeID := config.GetRequiredEnv("INSTANCE_ID")
 	return nodeID
 }
 

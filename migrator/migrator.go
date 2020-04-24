@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -31,7 +32,11 @@ type Migrator struct {
 	jobsDB      *jobsdb.HandleT
 	pf          pathfinder.Pathfinder
 	fileManager filemanager.FileManager
+	doneLock    sync.RWMutex
+	done        bool
 	port        int
+	version     int
+	nextVersion int
 }
 
 func init() {
@@ -40,22 +45,19 @@ func init() {
 }
 
 //Setup initializes the module
-func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, port int) {
+func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, version int, nextVersion int, migratorPort int) {
 	logger.Infof("Migrator: Setting up migrator for %s jobsdb", jobsDB.GetTablePrefix())
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
 	migrator.fileManager = migrator.setupFileManager()
-	migrator.port = port
+	migrator.version = version
+	migrator.nextVersion = nextVersion
+	migrator.port = migratorPort
 
 	migrator.jobsDB.SetupCheckpointTable()
 
 	migrator.jobsDB.SetupForMigrateAndAcceptNewEvents(pf.GetVersion())
-
-	go migrator.startWebHandler()
-	// MigrationEvent
 	migrator.export()
-	migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", "", jobsdb.Exported, 0)
-	migrator.jobsDB.Checkpoint(&migrationEvent)
 }
 
 func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +91,7 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 
 		err = migrator.fileManager.Download(jsonFile, fileName)
 		if err != nil {
-			panic("Unable to download file")
+			panic(err.Error())
 		}
 
 		jsonFile.Close()
@@ -114,15 +116,14 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (migrator *Migrator) statusHandler(w http.ResponseWriter, r *http.Request) {
-	// migrationEvents := migrator.jobsDB.GetCheckpoints()
+func (migrator *Migrator) exportStatusHandler() bool {
+	migrator.doneLock.RLock()
+	defer migrator.doneLock.RUnlock()
+	return migrator.done
+}
 
-	// w.WriteHeader(http.StatusOK)
-	// resp, err := json.Marshal(migrationEvents)
-	// if err != nil {
-	// 	panic("Unable to Marshal")
-	// }
-	// w.Write(resp)
+func (migrator *Migrator) importStatusHandler() bool {
+	return true
 }
 
 func reflectOrigin(origin string) bool {
@@ -133,25 +134,93 @@ func (migrator *Migrator) getURI(uri string) string {
 	return fmt.Sprintf("/%s%s", migrator.jobsDB.GetTablePrefix(), uri)
 }
 
-func (migrator *Migrator) startWebHandler() {
-	logger.Infof("Migrator: Starting migrationWebHandler on port %d", migrator.port)
+type StatusResponseT struct {
+	Completed bool   `json:"completed"`
+	Gw        bool   `json:"gw"`
+	Rt        bool   `json:"rt"`
+	BatchRt   bool   `json:"batch_rt"`
+	Mode      string `json:"mode,omitempty"`
+}
 
-	http.HandleFunc(migrator.getURI("/fileToImport"), migrator.importHandler)
-	http.HandleFunc(migrator.getURI("/status"), migrator.statusHandler)
+func StartWebHandler(migratorPort int, gwMigrator *Migrator, rtMigrator *Migrator, brtMigrator *Migrator) {
+	logger.Infof("Migrator: Starting migrationWebHandler on port %d", migratorPort)
+
+	http.HandleFunc("/gw/fileToImport", gwMigrator.importHandler)
+	//http.HandleFunc("/rt/fileToImport", rtMigrator.importHandler)
+	//http.HandleFunc("/batch_rt/fileToImport", brtMigrator.importHandler)
+
+	http.HandleFunc("/export/status", func(w http.ResponseWriter, r *http.Request) {
+		gwCompleted := gwMigrator.exportStatusHandler()
+		//rtCompleted := rtMigrator.exportStatusHandler()
+		//brtCompleted := brtMigrator.exportStatusHandler()
+		//completed := gwCompleted && rtCompleted && brtCompleted
+		completed := gwCompleted
+		mode := "export"
+
+		response := StatusResponseT{
+			Completed: completed,
+			Gw:        gwCompleted,
+			Rt:        completed, //TODO change
+			BatchRt:   completed, //TODO change
+			Mode:      mode,
+		}
+
+		responseJSON, err := json.Marshal(response)
+		if err != nil {
+			panic("Invalid JSON in export status")
+		}
+		w.Write(responseJSON)
+	})
+
+	http.HandleFunc("/import/status", func(w http.ResponseWriter, r *http.Request) {
+		gwCompleted := gwMigrator.importStatusHandler()
+		//rtCompleted := rtMigrator.importStatusHandler()
+		//brtCompleted := brtMigrator.importStatusHandler()
+		//completed := gwCompleted && rtCompleted && brtCompleted
+		completed := gwCompleted
+		mode := "import"
+
+		response := StatusResponseT{
+			Completed: completed,
+			Gw:        gwCompleted,
+			Rt:        completed, //TODO change
+			BatchRt:   completed, //TODO change
+			Mode:      mode,
+		}
+
+		responseJSON, err := json.Marshal(response)
+		if err != nil {
+			panic("Invalid JSON in export status")
+		}
+		w.Write(responseJSON)
+	})
+
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
 		AllowedHeaders:   []string{"*"},
 	})
 
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(migrator.port), c.Handler(bugsnag.Handler(nil))))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(migratorPort), c.Handler(bugsnag.Handler(nil))))
 }
 
 func (migrator *Migrator) setupFileManager() filemanager.FileManager {
 	conf := map[string]interface{}{}
-	conf["bucketName"] = config.GetString("migratorBucket", "1-2-migrations")
-	conf["accessKeyID"] = config.GetString("accessKeyID", "")
-	conf["accessKey"] = config.GetString("accessKey", "")
+	conf["bucketName"] = config.GetRequiredEnv("MIGRATOR_BUCKET")
+
+	//TODO fix importing prefix bug
+	/*bucketPrefix := config.GetEnv("MIGRATOR_BUCKET_PREFIX", "")
+	versionPrefix := fmt.Sprintf("%d-%d", migrator.version, migrator.nextVersion)
+
+	if bucketPrefix != "" {
+		bucketPrefix = fmt.Sprintf("%s/%s", bucketPrefix, versionPrefix)
+	} else {
+		bucketPrefix = versionPrefix
+	}
+	conf["prefix"] = bucketPrefix*/
+
+	conf["accessKeyID"] = config.GetEnv("MIGRATOR_ACCESS_KEY_ID", "")
+	conf["accessKey"] = config.GetEnv("MIGRATOR_SECRET_ACCESS_KEY", "")
 	settings := filemanager.SettingsT{"S3", conf}
 	fm, err := filemanager.New(&settings)
 	// _ = err
@@ -233,6 +302,9 @@ func (migrator *Migrator) export() {
 	}
 
 	migrator.postExport()
+	migrator.doneLock.Lock()
+	defer migrator.doneLock.Unlock()
+	migrator.done = true
 }
 
 func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobStatusT {
@@ -321,6 +393,7 @@ func (migrator *Migrator) uploadToS3(file *os.File, nMeta pathfinder.NodeMeta) {
 	uploadOutput, err := migrator.fileManager.Upload(file)
 	if err != nil {
 		//TODO: Retry
+		panic(err.Error())
 	} else {
 		logger.Infof("Migrator: Uploaded an export file to %s", uploadOutput.Location)
 		//TODO: delete this file otherwise in failure case, the file exists and same data will be appended to it
@@ -357,4 +430,6 @@ func (migrator *Migrator) postHandler(retryCount int, response interface{}, endp
 
 func (migrator *Migrator) postExport() {
 	migrator.jobsDB.PostMigrationCleanup()
+	migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", "", jobsdb.Exported, 0)
+	migrator.jobsDB.Checkpoint(&migrationEvent)
 }

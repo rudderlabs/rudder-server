@@ -51,6 +51,8 @@ var (
 	warehouseDestinations            []string
 	enableMigrator                   bool
 	pf                               pathfinder.Pathfinder
+	clusterVersion                   int
+	instanceIDPattern                string
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -67,6 +69,8 @@ func loadConfig() {
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	enableMigrator = config.GetBool("enableMigrator", false)
+	clusterVersion = config.GetEnvAsInt("CLUSTER_VERSION", 1)
+	instanceIDPattern = config.GetEnv("INSTANCE_ID_PATTERN", "hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>")
 }
 
 // Test Function
@@ -145,7 +149,7 @@ func startWarehouseService() {
 	warehouse.Start()
 }
 
-func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintenanceMode bool) {
+func startRudderCore(clearDB *bool, mode *db.ModeT) {
 	logger.Info("Main starting")
 
 	if !validators.ValidateEnv() {
@@ -154,7 +158,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
-	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, misc.AppStartTime)
+	db.HandleRecovery(mode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
 
@@ -189,21 +193,28 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 	shouldStartGateWay := true
 	if enableMigrator {
-		backendReplicaCount := config.GetEnvAsInt("BACKEND_REPLICA_COUNT", 6)
-		clusterVersion := config.GetEnvAsInt("CLUSTER_VERSION", 2)
-		dnsPattern := config.GetEnv("URL_PATTERN", "http://cluster-VERSION-node-NODENUM.rudderlabs.com")
+		backendCount := config.GetEnvAsInt("MIGRATING_TO_BACKEND_COUNT", 6)
+		nextclusterVersion := config.GetEnvAsInt("MIGRATING_TO_CLUSTER_VERSION", -1)
+		if nextclusterVersion == -1 {
+			nextclusterVersion = clusterVersion
+		}
+		migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8084)
+		dnsPattern := config.GetEnv("URL_PATTERN", "http://backend-<CLUSTER_VERSION><NODENUM>")
 
-		pf.Setup(pathfinder.Setup(backendReplicaCount, clusterVersion, dnsPattern), clusterVersion)
+		//TODO: This is screwed up
+		pf.Setup(pathfinder.Setup(backendCount, nextclusterVersion, dnsPattern, instanceIDPattern), nextclusterVersion)
 
 		logger.Info("Setting up migrators")
 		var gatewayMigrator migrator.Migrator
 		var routerMigrator migrator.Migrator
-		// var batchRouterMigrator migrator.Migrator
+		var batchRouterMigrator migrator.Migrator
 
 		//TODO: Should this be concurrent?
-		gatewayMigrator.Setup(&gatewayDB, pf, 8084)
-		routerMigrator.Setup(&routerDB, pf, 8085)
-		// batchRouterMigrator.Setup(&batchRouterDB, pf, 8086)
+		gatewayMigrator.Setup(&gatewayDB, pf, clusterVersion, nextclusterVersion, migratorPort)
+		//routerMigrator.Setup(&routerDB, pf, clusterVersion, nextclusterVersion, migratorPort)
+		//batchRouterMigrator.Setup(&batchRouterDB, pf, clusterVersion, nextclusterVersion, migratorPort)
+
+		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)
 
 		if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
 			shouldStartGateWay = false
@@ -262,6 +273,7 @@ func main() {
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
+	migrationMode := flag.Bool("migration-mode", false, "a bool")
 
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
@@ -320,7 +332,7 @@ func main() {
 
 	if canStartServer() {
 		rruntime.Go(func() {
-			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+			startRudderCore(clearDB, &db.ModeT{NormalMode: *normalMode, DegradedMode: *degradedMode, MaintenanceMode: *maintenanceMode, MigrationMode: *migrationMode})
 		})
 	}
 

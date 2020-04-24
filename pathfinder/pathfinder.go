@@ -43,15 +43,20 @@ func GetNodeMeta(nodeID string, connectionString string) NodeMeta {
 }
 
 //Setup sets the cluster state based on which users are routed to corresponding nodes
-func Setup(backendNodeCount int, version int, dnsPattern string) []NodeMeta {
+func Setup(backendNodeCount int, version int, dnsPattern string, instanceIDPattern string) []NodeMeta {
 	clusterInfo := []NodeMeta{}
 	for i := 0; i < backendNodeCount; i++ {
 		connectionString :=
 			strings.ReplaceAll(
-				strings.ReplaceAll(dnsPattern, "VERSION", strconv.Itoa(version)),
-				"NODENUM",
+				strings.ReplaceAll(dnsPattern, "<CLUSTER_VERSION>", strconv.Itoa(version)),
+				"<NODENUM>",
 				strconv.Itoa(i))
-		nMeta := GetNodeMeta(fmt.Sprintf("v%d_node%d", version, i), connectionString)
+
+		instanceID := strings.ReplaceAll(
+			strings.ReplaceAll(instanceIDPattern, "<CLUSTER_VERSION>", strconv.Itoa(version)),
+			"<NODENUM>",
+			strconv.Itoa(i))
+		nMeta := GetNodeMeta(instanceID, connectionString)
 		clusterInfo = append(clusterInfo, nMeta)
 	}
 	return clusterInfo
