@@ -57,7 +57,7 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	if err != nil {
 		return UploadOutput{}, err
 	}
-	return UploadOutput{Location: output.Location, ObjectName: fileName}, err
+	return UploadOutput{Location: output.Location}, err
 }
 
 func (manager *S3Manager) Download(output *os.File, key string) error {

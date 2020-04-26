@@ -47,7 +47,7 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 		return UploadOutput{}, nil
 	}
 
-	return UploadOutput{Location: manager.ObjectUrl(fileName), ObjectName: fileName}, nil
+	return UploadOutput{Location: manager.ObjectUrl(fileName)}, nil
 }
 
 func (manager *MinioManager) Download(file *os.File, key string) error {
