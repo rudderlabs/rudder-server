@@ -23,22 +23,25 @@ type MigrationEvent struct {
 
 //ENUM Values for MigrationType
 const (
-	ExportOp = "export"
-	ImportOp = "import"
+	ExportOp          = "export"
+	ImportOp          = "import"
+	AcceptNewEventsOp = "acceptNewEvents"
 )
 
 //ENUM Values for Status
 const (
-	Exported          = "exported"
-	Imported          = "imported"
-	PreparedForImport = "prepared_for_import"
-	PreparedForExport = "prepared_for_export"
+	Exported                  = "exported"
+	Imported                  = "imported"
+	PreparedForImport         = "prepared_for_import"
+	PreparedForExport         = "prepared_for_export"
+	PreparedToAcceptNewEvents = "prepared_to_accept_new_events"
 )
 
 //Checkpoint writes a migration event
 func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 	jd.assert(migrationEvent.MigrationType == ExportOp ||
-		migrationEvent.MigrationType == ImportOp,
+		migrationEvent.MigrationType == ImportOp ||
+		migrationEvent.MigrationType == AcceptNewEventsOp,
 		fmt.Sprintf("MigrationType: %s is not a supported operation. Should be %s or %s",
 			migrationEvent.MigrationType, ExportOp, ImportOp))
 
@@ -46,8 +49,8 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 	if migrationEvent.ID > 0 {
 		sqlStatement = fmt.Sprintf(`UPDATE %s_migration_checkpoints SET status = $1, start_sequence = $2 WHERE id = $3 RETURNING id`, jd.GetTablePrefix())
 	} else {
-		sqlStatement = fmt.Sprintf(`INSERT INTO %s_migration_checkpoints (migration_type, from_node, to_node, file_location, status, start_sequence, time_stamp)
-									VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, jd.GetTablePrefix())
+		sqlStatement = fmt.Sprintf(`INSERT INTO %s_migration_checkpoints (migration_type, from_node, to_node, file_location, status, start_sequence, payload, time_stamp)
+									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, jd.GetTablePrefix())
 	}
 
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
@@ -64,6 +67,7 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 			migrationEvent.FileLocation,
 			migrationEvent.Status,
 			migrationEvent.StartSeq,
+			migrationEvent.Payload,
 			time.Now()).Scan(&meID)
 	}
 	if err != nil {
@@ -77,6 +81,20 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 		migrationEvent.FileLocation,
 		migrationEvent.Status)
 	return meID
+}
+
+//NewSetupCheckpointEvent returns a new migration event that captures setup for export, import of new event acceptance
+func NewSetupCheckpointEvent(migrationType string, node string) MigrationEvent {
+	switch migrationType {
+	case ExportOp:
+		return NewMigrationEvent(migrationType, node, "All", "", PreparedForExport, 0)
+	case AcceptNewEventsOp:
+		return NewMigrationEvent(migrationType, "All", node, "", PreparedToAcceptNewEvents, 0)
+	case ImportOp:
+		return NewMigrationEvent(migrationType, "All", node, "", PreparedForImport, 0)
+	default:
+		panic("Illegal usage")
+	}
 }
 
 //NewMigrationEvent is a constructor for MigrationEvent struct

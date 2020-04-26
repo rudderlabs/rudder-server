@@ -13,10 +13,10 @@ func (sequenceProvider *SequenceProvider) init(startValue int64) {
 }
 
 //NewSequenceProvider initializes a sequenceprovider with a start value and returns the provider
-func NewSequenceProvider(startValue int64) SequenceProvider {
+func NewSequenceProvider(startValue int64) *SequenceProvider {
 	sequenceProvider := SequenceProvider{}
 	sequenceProvider.init(startValue)
-	return sequenceProvider
+	return &sequenceProvider
 }
 
 //ReserveIds returns a sequence number (seq) and the user can use ids from seq to seq + count -1
@@ -26,4 +26,9 @@ func (sequenceProvider *SequenceProvider) ReserveIds(count int) int64 {
 	sequenceIDToReturn := sequenceProvider.sequenceID
 	sequenceProvider.sequenceID = sequenceProvider.sequenceID + int64(count)
 	return sequenceIDToReturn
+}
+
+//IsInitialized tells if the sequence provider is initialized or not
+func (sequenceProvider *SequenceProvider) IsInitialized() bool {
+	return sequenceProvider.sequenceID != 0
 }

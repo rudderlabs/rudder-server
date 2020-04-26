@@ -132,11 +132,23 @@ func GetEnv(key string, defaultVal string) string {
 }
 
 // GetEnvAsInt returns the int value of environment value stored in the key variable
-// If not set, default value will be return. If set but unparsable, system panics
+// If not set, default value will be return. If set but unparsable, returns 0
 func GetEnvAsInt(key string, defaultVal int) int {
 	stringValue, exists := os.LookupEnv(key)
 	if !exists {
 		return defaultVal
+	}
+	if value, err := strconv.Atoi(stringValue); err == nil {
+		return value
+	}
+	return 0
+}
+
+// GetRequiredEnvAsInt returns the environment value stored in key variable as int, no default
+func GetRequiredEnvAsInt(key string) int {
+	stringValue, exists := os.LookupEnv(key)
+	if !exists {
+		panic(fmt.Errorf("Fatal error, no required environment variable: %s", key))
 	}
 	if value, err := strconv.Atoi(stringValue); err == nil {
 		return value

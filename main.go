@@ -193,8 +193,8 @@ func startRudderCore(clearDB *bool, mode *db.ModeT) {
 
 	shouldStartGateWay := true
 	if enableMigrator {
-		backendCount := config.GetEnvAsInt("MIGRATING_TO_BACKEND_COUNT", 6)
-		nextclusterVersion := config.GetEnvAsInt("MIGRATING_TO_CLUSTER_VERSION", -1)
+		backendCount := config.GetRequiredEnvAsInt("MIGRATING_TO_BACKEND_COUNT")
+		nextclusterVersion := config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
 		if nextclusterVersion == -1 {
 			nextclusterVersion = clusterVersion
 		}
