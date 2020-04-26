@@ -193,6 +193,7 @@ func startRudderCore(clearDB *bool, mode *db.ModeT) {
 
 	shouldStartGateWay := true
 	if enableMigrator {
+		logger.Info("Shanmukh Debug: migrator is enabled")
 		backendCount := config.GetRequiredEnvAsInt("MIGRATING_TO_BACKEND_COUNT")
 		nextclusterVersion := config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
 		if nextclusterVersion == -1 {
@@ -209,10 +210,10 @@ func startRudderCore(clearDB *bool, mode *db.ModeT) {
 		var routerMigrator migrator.Migrator
 		var batchRouterMigrator migrator.Migrator
 
-		//TODO: Should this be concurrent?
+		//TODO: These should be concurrent?
 		gatewayMigrator.Setup(&gatewayDB, pf, clusterVersion, nextclusterVersion, migratorPort)
-		//routerMigrator.Setup(&routerDB, pf, clusterVersion, nextclusterVersion, migratorPort)
-		//batchRouterMigrator.Setup(&batchRouterDB, pf, clusterVersion, nextclusterVersion, migratorPort)
+		routerMigrator.Setup(&routerDB, pf, clusterVersion, nextclusterVersion, migratorPort)
+		batchRouterMigrator.Setup(&batchRouterDB, pf, clusterVersion, nextclusterVersion, migratorPort)
 
 		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)
 

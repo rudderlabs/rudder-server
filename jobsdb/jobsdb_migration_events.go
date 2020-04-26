@@ -30,11 +30,13 @@ const (
 
 //ENUM Values for Status
 const (
-	Exported                  = "exported"
-	Imported                  = "imported"
-	PreparedForImport         = "prepared_for_import"
-	PreparedForExport         = "prepared_for_export"
-	PreparedToAcceptNewEvents = "prepared_to_accept_new_events"
+	Exported               = "exported"
+	Imported               = "imported"
+	PreparedForImport      = "prepared_for_import"
+	PreparedForExport      = "prepared_for_export"
+	SetupForImport         = "setup_for_import"
+	SetupForExport         = "setup_for_export"
+	SetupToAcceptNewEvents = "setup_to_accept_new_events"
 )
 
 //Checkpoint writes a migration event
@@ -87,11 +89,11 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 func NewSetupCheckpointEvent(migrationType string, node string) MigrationEvent {
 	switch migrationType {
 	case ExportOp:
-		return NewMigrationEvent(migrationType, node, "All", "", PreparedForExport, 0)
+		return NewMigrationEvent(migrationType, node, "All", "", SetupForExport, 0)
 	case AcceptNewEventsOp:
-		return NewMigrationEvent(migrationType, "All", node, "", PreparedToAcceptNewEvents, 0)
+		return NewMigrationEvent(migrationType, "All", node, "", SetupToAcceptNewEvents, 0)
 	case ImportOp:
-		return NewMigrationEvent(migrationType, "All", node, "", PreparedForImport, 0)
+		return NewMigrationEvent(migrationType, "All", node, "", SetupForImport, 0)
 	default:
 		panic("Illegal usage")
 	}
@@ -147,9 +149,37 @@ func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType stri
 	return sequenceNumber
 }
 
+//GetSetupCheckpoint gets all checkpoints and
+func (jd *HandleT) GetSetupCheckpoint(migrationType string) *MigrationEvent {
+	var setupStatus string
+	switch migrationType {
+	case ExportOp:
+		setupStatus = SetupForExport
+	case AcceptNewEventsOp:
+		setupStatus = SetupToAcceptNewEvents
+	case ImportOp:
+		setupStatus = SetupForImport
+	}
+	setupEvents := jd.getCheckpoints(migrationType, fmt.Sprintf(`SELECT * FROM %s_migration_checkpoints WHERE migration_type = $1 AND status = '%s' ORDER BY ID ASC`, jd.GetTablePrefix(), setupStatus))
+
+	switch len(setupEvents) {
+	case 0:
+		return nil
+	case 1:
+		return setupEvents[0]
+	default:
+		panic("Something went wrong")
+	}
+
+}
+
 //GetCheckpoints gets all checkpoints and
 func (jd *HandleT) GetCheckpoints(migrationType string) []*MigrationEvent {
-	sqlStatement := fmt.Sprintf(`SELECT * from %s_migration_checkpoints WHERE migration_type = $1 ORDER BY ID ASC`, jd.GetTablePrefix())
+	return jd.getCheckpoints(migrationType, fmt.Sprintf(`SELECT * from %s_migration_checkpoints WHERE migration_type = $1 ORDER BY ID ASC`, jd.GetTablePrefix()))
+}
+
+func (jd *HandleT) getCheckpoints(migrationType string, query string) []*MigrationEvent {
+	sqlStatement := query
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()

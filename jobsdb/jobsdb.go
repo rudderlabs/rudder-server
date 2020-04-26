@@ -675,6 +675,7 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 		for idx, ds := range dList {
 			if ds.Index == insertBeforeDS.Index {
 				// //We never insert before the first element
+				// We do now.
 				// jd.assert(idx > 0, fmt.Sprintf("idx: %d <= 0", idx))
 				levels, levelVals := jd.mapDSToLevel(ds)
 				var dsPre dataSetT

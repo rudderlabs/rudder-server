@@ -9,18 +9,18 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func (jd *HandleT) exportSetup(dsList []dataSetT, setupEvent *MigrationEvent, ds *dataSetT) bool {
+func (jd *HandleT) exportSetup(dsList []dataSetT, ds dataSetT) (dataSetT, bool) {
 	dsListLen := len(dsList)
 	if ds.Index == "" {
 		if !jd.isEmpty(dsList[dsListLen-1]) {
-			ds = &dsList[dsListLen-1]
+			ds = dsList[dsListLen-1]
 		} else if dsListLen > 1 {
-			ds = &dsList[dsListLen-2]
+			ds = dsList[dsListLen-2]
 		}
 
-		return true
+		return ds, true
 	}
-	return false
+	return ds, false
 }
 
 //GetNonMigrated all jobs with no filters
@@ -180,7 +180,8 @@ func (jd *HandleT) GetUserID(job *JobT) string {
 func (jd *HandleT) ShouldExport() bool {
 	migrationStates := jd.GetCheckpoints(ExportOp)
 	if len(migrationStates) > 1 {
-		if migrationStates[len(migrationStates)-1].ToNode == "All" {
+		lastExportMigrationState := migrationStates[len(migrationStates)-1]
+		if lastExportMigrationState.ToNode == "All" && lastExportMigrationState.Status == Exported {
 			return false
 		}
 	}

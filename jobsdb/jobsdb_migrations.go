@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -19,20 +20,12 @@ type MigrationState struct {
 }
 
 //setupFor is boiler plate code for setting up for different scenarios
-func (jd *HandleT) setupFor(migrationType string, ds *dataSetT, handler func([]dataSetT, *MigrationEvent, *dataSetT) bool) {
+func (jd *HandleT) setupFor(migrationType string, ds dataSetT, handler func([]dataSetT, dataSetT) (dataSetT, bool)) dataSetT {
 	jd.dsListLock.Lock()
 	defer jd.dsListLock.Unlock()
 
-	migrationEvents := jd.GetCheckpoints(migrationType)
-	var setupEvent *MigrationEvent
-	if len(migrationEvents) > 0 {
-		setupEvent = migrationEvents[0]
-	} else {
-		//TODO:
-		//export: fromNodeId = misc.getNodeId, toNodeId=All, payload = LastDsForExport, status=PreparedForExport
-		//import: fromNodeId = All, toNodeId=All, payload = DsForImport, status=PreparedForImport
-		//prepareforEvents: fromNodeId = All, toNodeId=misc.getNodeId, payload = DsForNewEvents, status=PreparedForNew
-
+	setupEvent := jd.GetSetupCheckpoint(migrationType)
+	if setupEvent == nil {
 		me := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
 		me.Payload = "{}"
 		setupEvent = &me
@@ -40,7 +33,7 @@ func (jd *HandleT) setupFor(migrationType string, ds *dataSetT, handler func([]d
 	json.Unmarshal([]byte(setupEvent.Payload), ds)
 
 	dsList := jd.getDSList(true)
-	shouldCheckpoint := handler(dsList, setupEvent, ds)
+	ds, shouldCheckpoint := handler(dsList, ds)
 
 	if shouldCheckpoint {
 		payloadBytes, err := json.Marshal(ds)
@@ -50,17 +43,19 @@ func (jd *HandleT) setupFor(migrationType string, ds *dataSetT, handler func([]d
 		setupEvent.Payload = string(payloadBytes)
 		jd.Checkpoint(setupEvent)
 	}
-
+	return ds
 }
 
 //SetupForMigrations is used to setup jobsdb for export or for import or for both
 func (jd *HandleT) SetupForMigrations(forExport bool, forImport bool) {
 	if forExport {
-		jd.setupFor(ExportOp, &jd.migrationState.LastDsForExport, jd.exportSetup)
+		jd.migrationState.LastDsForExport = jd.setupFor(ExportOp, jd.migrationState.LastDsForExport, jd.exportSetup)
 	}
 	if forImport {
-		jd.setupFor(AcceptNewEventsOp, &jd.migrationState.DsForNewEvents, jd.dsForNewEventsSetup)
+		jd.migrationState.DsForNewEvents = jd.setupFor(AcceptNewEventsOp, jd.migrationState.DsForNewEvents, jd.dsForNewEventsSetup)
 	}
+
+	logger.Infof("Last ds for export : %v || Ds for new events :%v", jd.migrationState.LastDsForExport, jd.migrationState.DsForNewEvents)
 }
 
 func (jd *HandleT) isEmpty(ds dataSetT) bool {

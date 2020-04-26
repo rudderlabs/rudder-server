@@ -9,12 +9,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-func (jd *HandleT) dsForImportEventsSetup(dsList []dataSetT, setupEvent *MigrationEvent, ds *dataSetT) bool {
+func (jd *HandleT) dsForImportEventsSetup(dsList []dataSetT, ds dataSetT) (dataSetT, bool) {
 	var shouldCheckpoint bool
 	if ds.Index == "" {
-		dsForImport := jd.addNewDS(false, jd.migrationState.DsForNewEvents)
-		ds = &dsForImport
-
+		ds = jd.addNewDS(false, jd.migrationState.DsForNewEvents)
+		logger.Infof("Should Checkpoint Import Setup event for the new ds : %v", ds)
 		shouldCheckpoint = true
 	}
 
@@ -23,36 +22,36 @@ func (jd *HandleT) dsForImportEventsSetup(dsList []dataSetT, setupEvent *Migrati
 		importDSMin := jd.getMaxIDForDs(ds)
 
 		if importDSMin == 0 {
-			for idx, ds := range dsList {
-				if ds.Index == ds.Index {
+			for idx, dataSet := range dsList {
+				if dataSet.Index == ds.Index {
 					if idx > 0 {
-						importDSMin = jd.getMaxIDForDs(&dsList[idx-1])
+						importDSMin = jd.getMaxIDForDs(dsList[idx-1])
 					}
 				}
 			}
 		}
 		jd.migrationState.sequenceProvider = NewSequenceProvider(importDSMin + 1)
 	}
-	return shouldCheckpoint
+	return ds, shouldCheckpoint
 }
 
-func (jd *HandleT) dsForNewEventsSetup(dsList []dataSetT, setupEvent *MigrationEvent, ds *dataSetT) bool {
+func (jd *HandleT) dsForNewEventsSetup(dsList []dataSetT, ds dataSetT) (dataSetT, bool) {
 	dsListLen := len(dsList)
 
 	if ds.Index == "" {
 		if jd.isEmpty(dsList[dsListLen-1]) {
-			ds = &dsList[dsListLen-1]
+			ds = dsList[dsListLen-1]
 		} else {
 			dsForNewEvents := jd.addNewDS(true, dataSetT{})
-			ds = &dsForNewEvents
+			ds = dsForNewEvents
 		}
 
 		seqNoForNewDS := int64(getNewVersion()) * int64(math.Pow10(13))
 		jd.updateSequenceNumber(ds, seqNoForNewDS)
-		logger.Infof("Jobsdb: New dataSet %s is prepared with start sequence : %d", jd.migrationState.DsForNewEvents, seqNoForNewDS)
-		return true
+		logger.Infof("Jobsdb: New dataSet %s is prepared with start sequence : %d", ds, seqNoForNewDS)
+		return ds, true
 	}
-	return false
+	return ds, false
 }
 
 func getNewVersion() int {
@@ -62,6 +61,14 @@ func getNewVersion() int {
 
 //StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
 func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent MigrationEvent) {
+	if jd.migrationState.DsForImport.Index == "" {
+		jd.migrationState.DsForImport = jd.setupFor(ImportOp, jd.migrationState.DsForImport, jd.dsForImportEventsSetup)
+	}
+
+	if jd.migrationState.DsForImport.Index == "" {
+		panic("dsForImportEvents was not setup. Go debug")
+	}
+
 	startJobID := jd.getStartJobID(len(jobList), migrationEvent)
 	statusList := []*JobStatusT{}
 
@@ -72,14 +79,6 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 		if job.LastJobStatus.JobState != "" {
 			statusList = append(statusList, &job.LastJobStatus)
 		}
-	}
-
-	if jd.migrationState.DsForImport.Index == "" {
-		jd.setupFor(ImportOp, &jd.migrationState.DsForImport, jd.dsForImportEventsSetup)
-	}
-
-	if jd.migrationState.DsForImport.Index == "" {
-		panic("dsForImportEvents was not setup. Go debug")
 	}
 
 	//TODO: modify storeJobsDS and updateJobStatusDS to accept an additional bool to support "on conflict do nothing"
@@ -100,7 +99,7 @@ func (jd *HandleT) getStartJobID(count int, migrationEvent MigrationEvent) int64
 	return sequenceNumber
 }
 
-func (jd *HandleT) updateSequenceNumber(ds *dataSetT, sequenceNumber int64) {
+func (jd *HandleT) updateSequenceNumber(ds dataSetT, sequenceNumber int64) {
 	sqlStatement := fmt.Sprintf(`SELECT setval('%s_jobs_%s_job_id_seq', %d)`,
 		jd.tablePrefix, ds.Index, sequenceNumber)
 	_, err := jd.dbHandle.Exec(sqlStatement)
@@ -109,7 +108,7 @@ func (jd *HandleT) updateSequenceNumber(ds *dataSetT, sequenceNumber int64) {
 	}
 }
 
-func (jd *HandleT) getMaxIDForDs(ds *dataSetT) int64 {
+func (jd *HandleT) getMaxIDForDs(ds dataSetT) int64 {
 	var maxID sql.NullInt64
 	sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
