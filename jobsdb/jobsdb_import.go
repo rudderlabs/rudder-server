@@ -46,7 +46,7 @@ func (jd *HandleT) dsForNewEventsSetup(dsList []dataSetT, ds dataSetT) (dataSetT
 			ds = dsForNewEvents
 		}
 
-		seqNoForNewDS := int64(getNewVersion()) * int64(math.Pow10(13))
+		seqNoForNewDS := int64(getNewVersion())*int64(math.Pow10(13)) + 1
 		jd.updateSequenceNumber(ds, seqNoForNewDS)
 		logger.Infof("Jobsdb: New dataSet %s is prepared with start sequence : %d", ds, seqNoForNewDS)
 		return ds, true
@@ -93,9 +93,9 @@ func (jd *HandleT) getStartJobID(count int, migrationEvent MigrationEvent) int64
 	sequenceNumber = jd.getSeqNoForFileFromDB(migrationEvent.FileLocation, ImportOp)
 	if sequenceNumber == 0 {
 		sequenceNumber = jd.migrationState.sequenceProvider.ReserveIds(count)
+		migrationEvent.StartSeq = sequenceNumber
+		jd.Checkpoint(&migrationEvent)
 	}
-	migrationEvent.StartSeq = sequenceNumber
-	jd.Checkpoint(&migrationEvent)
 	return sequenceNumber
 }
 
