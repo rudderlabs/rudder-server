@@ -3,11 +3,56 @@ package helpers
 import (
 	"database/sql"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	awsS3Manager "github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"os"
 )
+
+
+func DownloadObjectFromS3(location string, destConfig interface{}, file *os.File){
+	config := destConfig.(map[string]interface{})
+	fmt.Println(config)
+	if _,ok := config["bucketName"]; !ok{
+		panic("bucketName not found")
+	}
+	if _,ok := config["accessKeyID"]; !ok{
+		panic("accessKeyID not found")
+	}
+	if _,ok := config["accessKey"]; !ok{
+		panic("accessKey not found")
+	}
+
+	bucket := config["bucketName"].(string)
+	accessKeyID:= config["accessKeyID"].(string)
+	accessKey:= config["accessKey"].(string)
+
+	getRegionSession := session.Must(session.NewSession())
+	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, bucket, "us-east-1")
+	if err!=nil {
+		panic(err)
+	}
+	var sess *session.Session
+	sess = session.Must(session.NewSession(&aws.Config{
+		Region:      aws.String(region),
+		Credentials: credentials.NewStaticCredentials(accessKeyID, accessKey, ""),
+	}))
+	downloader := awsS3Manager.NewDownloader(sess)
+	_, err = downloader.Download(file,
+		&s3.GetObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(location),
+		})
+	if err != nil {
+		panic(err)
+	}
+}
+
 
 func queryRS(anonymousId string, table string, namespace string, destConfig interface{}) QueryTrackPayload {
 	config := destConfig.(map[string]interface{})
-	fmt.Println(config)
 	if _,ok:= config["user"]; !ok {
 		panic("user not found")
 	}
@@ -34,7 +79,6 @@ func queryRS(anonymousId string, table string, namespace string, destConfig inte
 		host,
 		port,
 		dbName)
-
 	var err error
 	var db *sql.DB
 	db, err = sql.Open("postgres", url)

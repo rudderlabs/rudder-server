@@ -34,6 +34,12 @@ type EventOptsT struct {
 
 type QueryTrackPayload struct{
 	Label string `json:"label"`
+	Text string `json:"text"`
+	Property1 string `json:"property1"`
+	Property2 string `json:"property2"`
+	Property3 string `json:"property3"`
+	Property4 string `json:"property4"`
+	Property5 string `json:"property5"`
 }
 
 //RemoveKeyFromJSON returns the json with keys removed from the input json
@@ -349,38 +355,60 @@ func GetWarehouseSchema(dbHandle *sql.DB, warehouseSchemaTable string, sourceID 
 type warehouseHandle interface {
 	DownloadObject(location string, bucket string, file *os.File)
 }
-func GetEventLoadFileData(dbHandle *sql.DB, warehouseLoadFilesTable string, eventName string, bucket string) string {
-	rows, err := dbHandle.Query(fmt.Sprintf(` select location from %s where table_name='%s' limit 1`, warehouseLoadFilesTable, eventName))
-	if err != nil {
-		panic(err)
-	}
+func GetEventLoadFileData(dbHandle *sql.DB, warehouseLoadFilesTable string, eventName string, sourceId string, destinationId string, destType string, destConfig interface{}) string {
+	row := dbHandle.QueryRow(fmt.Sprintf(` select location from %s where table_name='%s' and source_id='%s' and destination_id='%s' order by updated_at desc`, warehouseLoadFilesTable, eventName, sourceId, destinationId))
 	var location string
-	for rows.Next() {
-		if err := rows.Scan(&location); err != nil {
+	if err := row.Scan(&location); err != nil {
+			panic(err)
+	}
+	var data []byte
+	if destType == "BQ" {
+		jsonPath := "loadfile.json.gz"
+		jsonFile, err := os.Create(jsonPath)
+		if err != nil {
+			panic(err)
+		}
+		defer jsonFile.Close()
+		defer os.Remove(jsonPath)
+		DownloadObjectFromGCS(location, destConfig, jsonFile)
+		rawf, err := os.Open(jsonPath)
+		if err != nil {
+			panic(err)
+		}
+		reader, err := gzip.NewReader(rawf)
+		if err != nil {
+			panic(err)
+		}
+		data, err = ioutil.ReadAll(reader)
+		if err != nil {
 			panic(err)
 		}
 	}
-	jsonPath := "loadfile.json.gz"
-	jsonFile, err := os.Create(jsonPath)
-	if err != nil {
-		panic(err)
+	if destType == "SNOWFLAKE" && destType == "RS" {
+		csvPath := "loadfile.csv.gz"
+		csvFile, err := os.Create(csvPath)
+		if err != nil {
+			panic(err)
+		}
+		defer csvFile.Close()
+		defer os.Remove(csvPath)
+		DownloadObjectFromS3(location, destConfig, csvFile)
+		rawf, err := os.Open(csvPath)
+		if err != nil {
+			panic(err)
+		}
+		reader, err := gzip.NewReader(rawf)
+		if err != nil {
+			panic(err)
+		}
+		data, err = ioutil.ReadAll(reader)
+		if err != nil {
+			panic(err)
+		}
 	}
-	defer jsonFile.Close()
-	defer os.Remove(jsonPath)
-	DownloadObject(location, bucket, jsonFile)
-	rawf, err := os.Open(jsonPath)
-	if err != nil {
-		panic(err)
-	}
-	reader, err := gzip.NewReader(rawf)
-	if err != nil {
-		panic(err)
-	}
-	jsonByte, err := ioutil.ReadAll(reader)
-	if err != nil {
-		panic(err)
-	}
-	return string(jsonByte)
+
+
+	return string(data)
 }
 func DeleteRowsInTables(dbHandle *sql.DB, tables []string){
 	for _,table := range tables{

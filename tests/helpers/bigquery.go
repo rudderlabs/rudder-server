@@ -1,15 +1,14 @@
 package helpers
 
 import (
-	"cloud.google.com/go/storage"
 	"cloud.google.com/go/bigquery"
+	"cloud.google.com/go/storage"
 	"context"
 	"fmt"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"io"
 	"os"
-	"strings"
 )
 
 type BQHandle struct {
@@ -27,16 +26,24 @@ func getObjectsIterator(bucket string, prefix string) *storage.ObjectIterator {
 	return it
 }
 
-func DownloadObject(location string, bucket string, file *os.File) {
+func DownloadObjectFromGCS(location string, destConf interface{}, file *os.File) {
+	config := destConf.(map[string]interface{})
+	if _,ok := config["bucketName"]; !ok{
+		panic("bucketName not found")
+	}
+	bucket := config["bucketName"].(string)
+	if _,ok := config["credentials"]; !ok {
+		panic("credentials not found")
+	}
+	credentials := config["credentials"].(string)
 	ctx := context.Background()
-	client, err := storage.NewClient(ctx)
+	client, err := storage.NewClient(ctx, option.WithCredentialsJSON([]byte(credentials)))
 	if err != nil {
 		panic(err)
 	}
-	gcsBaseUrl := "https://storage.googleapis.com/"
-	location = strings.Replace(location, gcsBaseUrl+bucket+"/", "", 1)
+	//gcsBaseUrl := "https://storage.googleapis.com/"
+	//location = strings.Replace(location, gcsBaseUrl+bucket+"/", "", 1)
 	objReader, err := client.Bucket(bucket).Object(location).NewReader(ctx)
-
 	if err != nil {
 		panic(err)
 	}
@@ -63,7 +70,7 @@ func queryBQ(anonymousId string, table string, dataset string, destConfig interf
 	if err != nil {
 		panic(err)
 	}
-	q := client.Query(fmt.Sprintf(`select label from %[1]s.%[2]s.%[3]s where anonymous_id = '%[4]s' limit 1`,projectId, dataset, table, anonymousId ))
+	q := client.Query(fmt.Sprintf(`select label from %[1]s.%[2]s.%[3]s where anonymous_id = '%[4]s' order by received_at desc limit 1`,projectId, dataset, table, anonymousId ))
 	//fmt.Println(fmt.Sprintf(`select label from %[1]s.%[2]s.%[3]s where anonymous_id = '%[4]s'`,projectId, dataset, table, anonymousId  ))
 	it, err := q.Read(ctx)
 	if err != nil {

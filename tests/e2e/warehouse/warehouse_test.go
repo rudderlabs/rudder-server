@@ -23,10 +23,6 @@ var pollIntervalForLoadTables int = 10
 var loadTablesTimeout int = 100
 var eventName string = "ginkgo"
 var warehouseTables []string
-var bucket string = "warehouse_ginkgo"
-var destinationsIDs = []string{"1arWHNQ33AOhDWd8DHOJFoCNHzQ"}
-var sourceIDs = []string{"1arW7wSKSTpPyp0cscWOR37qvww"}
-
 var dbKeywords = []string{"alter", "select", "while", "limit", "is", "from", "dynamic", "catalog", "right"}
 var writeKey string = "1arW7vLmzvmwMkTzDFwmcKiAikX"
 var sourceJSON backendconfig.SourcesT
@@ -87,43 +83,43 @@ func initializeWarehouseConfig(){
 var warehouses  = make(map[string][]warehouseutils.WarehouseT)
 
 var _ = Describe("Warehouse", func() {
-	Describe("By sending a generic track event, it should be able to create load files in gcs and upload in warehouses ", func() {
+	PDescribe("By sending a generic track event, it should be able to create load files in gcs and upload in warehouses ", func() {
 		BeforeEach(func(){
 			helpers.DeleteRowsInTables(dbHandle, warehouseTables)
 		})
-		//PDescribe("BigQuery",func() {
-		//	It("should able to create a load file in database with event name", func() {
-		//		destType := BQ
-		//		WarehouseConfig := warehouses[destType]
-		//		batchJson := helpers.AddKeyToJSON(helpers.WarehouseBatchPayload, "batch.0.event", eventName)
-		//		anonymousId:= uuid.NewV4().String()
-		//		batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.anonymousId", anonymousId)
-		//		helpers.SendBatchRequest(writeKey, batchJson)
-		//		loadTablesFromAboveTrackJson := []string{"tracks", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
-		//		Eventually(func() bool {
-		//			loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-		//			return helpers.IsThisInThatSliceString(loadTablesFromAboveTrackJson, loadedTables)
-		//		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-		//		By("should have same data for load file as the event payload sent")
-		//		loadedFileData := helpers.GetEventLoadFileData(dbHandle, warehouseLoadFilesTable, eventName, bucket)
-		//		Expect(gjson.Get(batchJson, "batch.0.event").String()).Should(Equal(gjson.Get(loadedFileData, "event").String()))
-		//		By("should be able to create load files if source has two warehouse destinations")
-		//		loadedDestinationIDs := helpers.GetDestinationIDsFromLoadFileTable(dbHandle, warehouseLoadFilesTable, sourceIDs[0])
-		//		Expect(helpers.IsThisInThatSliceString(destinationsIDs, loadedDestinationIDs)).Should(Equal(true))
-		//		By("should be able to upload to bq with state exported_data")
-		//		var namespace string
-		//		var state string
-		//		Eventually(func() string {
-		//			namespace,state=helpers.FetchUpdateState(dbHandle, warehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-		//			return state
-		//		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
-		//		By("should be able to query with anonymousId and compare properties and timestamps")
-		//		Eventually(func() string{
-		//			payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace)
-		//			return payload.Label
-		//		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(gjson.Get(batchJson, "batch.0.properties.label" ).String()))
-		//	})
-		//})
+		Describe("BigQuery",func() {
+			It("should able to create a load file in database with event name", func() {
+				destType := BQ
+				WarehouseConfig := warehouses[destType]
+				batchJson := helpers.AddKeyToJSON(helpers.WarehouseBatchPayload, "batch.0.event", eventName)
+				anonymousId:= uuid.NewV4().String()
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.anonymousId", anonymousId)
+				helpers.SendBatchRequest(writeKey, batchJson)
+				loadTablesFromAboveTrackJson := []string{"tracks", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
+				Eventually(func() bool {
+					loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return helpers.IsThisInThatSliceString(loadTablesFromAboveTrackJson, loadedTables)
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+				By("should have same data for load file as the event payload sent")
+				loadedFileData := helpers.GetEventLoadFileData(dbHandle, warehouseLoadFilesTable, eventName,destType, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, WarehouseConfig[0].Destination.Config)
+				Expect(gjson.Get(batchJson, "batch.0.event").String()).Should(Equal(gjson.Get(loadedFileData, "event").String()))
+				By("should be able to create load files if source has two warehouse destinations")
+				//loadedDestinationIDs := helpers.GetDestinationIDsFromLoadFileTable(dbHandle, warehouseLoadFilesTable, sourceIDs[0])
+				//Expect(helpers.IsThisInThatSliceString(destinationsIDs, loadedDestinationIDs)).Should(Equal(true))
+				By("should be able to upload to bq with state exported_data")
+				var namespace string
+				var state string
+				Eventually(func() string {
+					namespace,state=helpers.FetchUpdateState(dbHandle, warehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return state
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+				By("should be able to query with anonymousId and compare properties and timestamps")
+				Eventually(func() string{
+					payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
+					return payload.Label
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(gjson.Get(batchJson, "batch.0.properties.label" ).String()))
+			})
+		})
 		Describe("REDSHIFT",func() {
 			It("should able to create a load file in database with event name", func() {
 				destType := RS
@@ -137,8 +133,8 @@ var _ = Describe("Warehouse", func() {
 					loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 					return helpers.IsThisInThatSliceString(loadTablesFromAboveTrackJson, loadedTables)
 				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-				//By("should have same data for load file as the event payload sent")
-				//loadedFileData := helpers.GetEventLoadFileData(dbHandle, warehouseLoadFilesTable, eventName, bucket)
+				loadedFileData := helpers.GetEventLoadFileData(dbHandle, warehouseLoadFilesTable, eventName,destType, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, WarehouseConfig[0].Destination.Config)
+				Expect(gjson.Get(batchJson, "batch.0.event").String()).Should(Equal(gjson.Get(loadedFileData, "event").String()))
 				//Expect(gjson.Get(batchJson, "batch.0.event").String()).Should(Equal(gjson.Get(loadedFileData, "event").String()))
 				//By("should be able to create load files if source has two warehouse destinations")
 				//loadedDestinationIDs := helpers.GetDestinationIDsFromLoadFileTable(dbHandle, warehouseLoadFilesTable, sourceIDs[0])
@@ -159,7 +155,7 @@ var _ = Describe("Warehouse", func() {
 
 			})
 		})
-		PDescribe("SNOWFLAKE",func() {
+		Describe("SNOWFLAKE",func() {
 			It("should able to create a load file in database with event name", func() {
 				destType := SNOWFLAKE
 				WarehouseConfig := warehouses[destType]
@@ -172,9 +168,9 @@ var _ = Describe("Warehouse", func() {
 					loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 					return helpers.IsThisInThatSliceString(loadTablesFromAboveTrackJson, loadedTables)
 				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-				//By("should have same data for load file as the event payload sent")
-				//loadedFileData := helpers.GetEventLoadFileData(dbHandle, warehouseLoadFilesTable, eventName, bucket)
-				//Expect(gjson.Get(batchJson, "batch.0.event").String()).Should(Equal(gjson.Get(loadedFileData, "event").String()))
+				By("should have same data for load file as the event payload sent")
+				loadedFileData := helpers.GetEventLoadFileData(dbHandle, warehouseLoadFilesTable, eventName,destType, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, WarehouseConfig[0].Destination.Config)
+				Expect(gjson.Get(batchJson, "batch.0.event").String()).Should(Equal(gjson.Get(loadedFileData, "event").String()))
 				//By("should be able to create load files if source has two warehouse destinations")
 				//loadedDestinationIDs := helpers.GetDestinationIDsFromLoadFileTable(dbHandle, warehouseLoadFilesTable, sourceIDs[0])
 				//Expect(helpers.IsThisInThatSliceString(destinationsIDs, loadedDestinationIDs)).Should(Equal(true))
@@ -196,37 +192,144 @@ var _ = Describe("Warehouse", func() {
 		})
 
 	})
-	//Describe("Compatible with segment warehouse schema", func() {
-	//	BeforeEach(func(){
-	//		helpers.DeleteRowsInTables(dbHandle, warehouseTables)
-	//	})
-	//	It("should be able to create tables ", func() {
-	//		helpers.SendTrackRequest(writeKey, helpers.AddKeyToJSON(helpers.RemoveKeyFromJSON(helpers.TrackPayload, "messageId", "anonymousId"), "event", eventName))
-	//		helpers.SendIdentifyRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.IdentifyPayload, "messageId", "anonymousId"))
-	//		helpers.SendPageRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.PagePayload, "messageId", "anonymousId"))
-	//		helpers.SendAliasRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.AliasPayload, "messageId", "anonymousId"))
-	//		helpers.SendGroupRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.GroupPayload, "messageId", "anonymousId"))
-	//		helpers.SendScreenRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.ScreenPayload, "messageId", "anonymousId"))
-	//		tables := []string{"identifies", "users", "pages", "tracks", "screens","_groups","aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)} // group, alias are not supported.
-	//		Eventually(func() bool {
-	//			loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable)
-	//			return helpers.IsThisInThatSliceString(tables, loadedTables)
-	//		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-	//	})
-	//})
-	//Describe("testing with different string formats", func() {
-	//	BeforeEach(func(){
-	//		helpers.DeleteRowsInTables(dbHandle, warehouseTables)
-	//	})
-	//	It("should be able to create load file", func() {
-	//		helpers.SendBatchRequest(writeKey, helpers.AddKeyToJSON(helpers.RemoveKeyFromJSON(helpers.DiffStringFormatBatchPayload, "batch.0.messageId", "batch.0.anonymousId"), "batch.0.event", eventName))
-	//		eventName := strings.Replace(strings.ToLower(eventName), " ", "_", -1)
-	//		Eventually(func() bool {
-	//			loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable)
-	//			return helpers.IsThisInThatSliceString([]string{eventName}, loadedTables)
-	//		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-	//	})
-	//})
+	PDescribe("Compatible with segment warehouse schema", func() {
+		BeforeEach(func(){
+			helpers.DeleteRowsInTables(dbHandle, warehouseTables)
+		})
+		Describe("BQ", func(){
+			It("should be able to create tables ", func() {
+				destType := BQ
+				WarehouseConfig := warehouses[destType]
+				helpers.SendTrackRequest(writeKey, helpers.AddKeyToJSON(helpers.RemoveKeyFromJSON(helpers.TrackPayload, "messageId", "anonymousId"), "event", eventName))
+				helpers.SendIdentifyRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.IdentifyPayload, "messageId", "anonymousId"))
+				helpers.SendPageRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.PagePayload, "messageId", "anonymousId"))
+				helpers.SendAliasRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.AliasPayload, "messageId", "anonymousId"))
+				helpers.SendGroupRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.GroupPayload, "messageId", "anonymousId"))
+				helpers.SendScreenRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.ScreenPayload, "messageId", "anonymousId"))
+				tables := []string{"identifies", "users", "pages", "tracks", "screens","_groups","aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)} // group, alias are not supported.
+				Eventually(func() bool {
+					loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return helpers.IsThisInThatSliceString(tables, loadedTables)
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+				Eventually(func() string {
+					_,state:=helpers.FetchUpdateState(dbHandle, warehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return state
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+			})
+		})
+		Describe("RS", func(){
+			It("should be able to create tables ", func() {
+				destType := RS
+				WarehouseConfig := warehouses[destType]
+				helpers.SendTrackRequest(writeKey, helpers.AddKeyToJSON(helpers.RemoveKeyFromJSON(helpers.TrackPayload, "messageId", "anonymousId"), "event", eventName))
+				helpers.SendIdentifyRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.IdentifyPayload, "messageId", "anonymousId"))
+				helpers.SendPageRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.PagePayload, "messageId", "anonymousId"))
+				helpers.SendAliasRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.AliasPayload, "messageId", "anonymousId"))
+				helpers.SendGroupRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.GroupPayload, "messageId", "anonymousId"))
+				helpers.SendScreenRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.ScreenPayload, "messageId", "anonymousId"))
+				tables := []string{"identifies", "users", "pages", "tracks", "screens","groups","aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)} // group, alias are not supported.
+				Eventually(func() bool {
+					loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return helpers.IsThisInThatSliceString(tables, loadedTables)
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+				Eventually(func() string {
+					_,state:=helpers.FetchUpdateState(dbHandle, warehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return state
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+			})
+		})
+		Describe("SNOWFLAKE", func(){
+			It("should be able to create tables ", func() {
+				destType := SNOWFLAKE
+				WarehouseConfig := warehouses[destType]
+				helpers.SendTrackRequest(writeKey, helpers.AddKeyToJSON(helpers.RemoveKeyFromJSON(helpers.TrackPayload, "messageId", "anonymousId"), "event", eventName))
+				helpers.SendIdentifyRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.IdentifyPayload, "messageId", "anonymousId"))
+				helpers.SendPageRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.PagePayload, "messageId", "anonymousId"))
+				helpers.SendAliasRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.AliasPayload, "messageId", "anonymousId"))
+				helpers.SendGroupRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.GroupPayload, "messageId", "anonymousId"))
+				helpers.SendScreenRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.ScreenPayload, "messageId", "anonymousId"))
+				tables := []string{"IDENTIFIES", "USERS", "PAGES", "TRACKS", "SCREENS","GROUPS","ALIASES", strings.Replace(strings.ToUpper(eventName), " ", "_", -1)}
+				Eventually(func() bool {
+					loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return helpers.IsThisInThatSliceString(tables, loadedTables)
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+				Eventually(func() string {
+					_,state:=helpers.FetchUpdateState(dbHandle, warehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return state
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+			})
+		})
+
+	})
+	PDescribe("testing with different string formats", func() {
+		BeforeEach(func(){
+			helpers.DeleteRowsInTables(dbHandle, warehouseTables)
+		})
+		Describe("warehouse", func(){
+			It("should be able to create load file", func() {
+				destType := BQ
+				WarehouseConfig := warehouses[destType]
+				batchJson := helpers.AddKeyToJSON(helpers.WarehouseBatchPayload, "batch.0.event", eventName)
+				anonymousId:= uuid.NewV4().String()
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.anonymousId", anonymousId)
+				text := "Ken\"ny\"s iPh'o\"ne5\",6"
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.properties.text", text)
+				eventName := strings.Replace(strings.ToLower(eventName), " ", "_", -1)
+				Eventually(func() bool {
+					loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return helpers.IsThisInThatSliceString([]string{eventName}, loadedTables)
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+				Eventually(func() string {
+					_,state:=helpers.FetchUpdateState(dbHandle, warehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return state
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+
+			})
+		})
+		Describe("RS", func(){
+			It("should be able to create load file", func() {
+				destType := RS
+				WarehouseConfig := warehouses[destType]
+				batchJson := helpers.AddKeyToJSON(helpers.WarehouseBatchPayload, "batch.0.event", eventName)
+				anonymousId:= uuid.NewV4().String()
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.anonymousId", anonymousId)
+				text := "Ken\"ny\"s iPh'o\"ne5\",6"
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.properties.text", text)
+				eventName := strings.Replace(strings.ToLower(eventName), " ", "_", -1)
+				Eventually(func() bool {
+					loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return helpers.IsThisInThatSliceString([]string{eventName}, loadedTables)
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+				Eventually(func() string {
+					_,state:=helpers.FetchUpdateState(dbHandle, warehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return state
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+
+			})
+		})
+		Describe("SNOWFLAKE", func(){
+			It("should be able to create load file", func() {
+				destType := SNOWFLAKE
+				WarehouseConfig := warehouses[destType]
+				batchJson := helpers.AddKeyToJSON(helpers.WarehouseBatchPayload, "batch.0.event", eventName)
+				anonymousId:= uuid.NewV4().String()
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.anonymousId", anonymousId)
+				text := "Ken\"ny\"s iPh'o\"ne5\",6"
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.properties.text", text)
+				eventName := strings.Replace(strings.ToLower(eventName), " ", "_", -1)
+				Eventually(func() bool {
+					loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return helpers.IsThisInThatSliceString([]string{eventName}, loadedTables)
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+				Eventually(func() string {
+					_,state:=helpers.FetchUpdateState(dbHandle, warehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return state
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+
+			})
+		})
+
+	})
 	//Describe("sending different data types for a key consecutively", func() {
 	//	BeforeEach(func(){
 	//		helpers.DeleteRowsInTables(dbHandle, warehouseTables)
@@ -246,18 +349,41 @@ var _ = Describe("Warehouse", func() {
 	//		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 	//	})
 	//})
-	//Describe("Reserved Keywords as one of keys in an event should be replaced by _key", func() {
-	//	BeforeEach(func(){
-	//		helpers.DeleteRowsInTables(dbHandle, warehouseTables)
-	//	})
-	//	It("should be able to create load file, while sending reservered keywords", func() {
-	//		helpers.SendBatchRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.BQBatchPayload, "batch.0.messageId", "batch.0.anonymousId"))
-	//		eventName := gjson.Get(helpers.BQBatchPayload, "batch.0.event").String()
-	//		eventName = strings.Replace(strings.ToLower(eventName), " ", "_", -1)
-	//		Eventually(func() bool {
-	//			loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable)
-	//			return helpers.IsThisInThatSliceString([]string{"_" + eventName}, loadedTables)
-	//		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-	//	})
-	//})
+	Describe("Reserved Keywords as one of keys in an event should be replaced by _key", func() {
+		BeforeEach(func(){
+			helpers.DeleteRowsInTables(dbHandle, warehouseTables)
+		})
+		Describe("BQ", func(){
+			It("should be able to create load file, while sending reservered keywords", func() {
+				destType := BQ
+				WarehouseConfig := warehouses[destType]
+				batchJson := helpers.AddKeyToJSON(helpers.WarehouseBatchPayload, "batch.0.event", eventName)
+				anonymousId:= uuid.NewV4().String()
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.anonymousId", anonymousId)
+				eventName = strings.Replace(strings.ToLower(eventName), " ", "_", -1)
+				property1 := "join"
+				property2 := "select"
+				property3 := "where"
+				property4 := "order"
+				property5 := "from"
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.properties." + property1, property1)
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.properties." + property2, property2)
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.properties." + property3, property3)
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.properties." + property4, property4)
+				batchJson =  helpers.AddKeyToJSON(batchJson, "batch.0.properties." + property5, property5)
+				fmt.Println(helpers.SendBatchRequest(writeKey, batchJson))
+				fmt.Println(batchJson)
+				Eventually(func() string {
+					_,state:=helpers.FetchUpdateState(dbHandle, warehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+					return state
+				}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+				//Eventually(func() string {
+				//	_,state:=helpers.FetchUpdateState(dbHandle, warehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+				//	return state
+				//}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+
+			})
+		})
+
+	})
 })
