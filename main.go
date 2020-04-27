@@ -49,10 +49,10 @@ var (
 	configSubscriberLock             sync.RWMutex
 	objectStorageDestinations        []string
 	warehouseDestinations            []string
-	enableMigrator                   bool
 	pf                               pathfinder.Pathfinder
 	clusterVersion                   int
 	instanceIDPattern                string
+	migrationModeFlag                string
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -68,7 +68,6 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	enableMigrator = config.GetBool("enableMigrator", false)
 	clusterVersion = config.GetEnvAsInt("CLUSTER_VERSION", 1)
 	instanceIDPattern = config.GetEnv("INSTANCE_ID_PATTERN", "hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>")
 }
@@ -149,7 +148,16 @@ func startWarehouseService() {
 	warehouse.Start()
 }
 
-func startRudderCore(clearDB *bool, mode *db.ModeT) {
+// flag --migration-mode overrides MIGRATION_MODE env.
+func getMigrationMode() string {
+	if migrationModeFlag != "" {
+		return migrationModeFlag
+	}
+
+	return config.GetEnv("MIGRATION_MODE", "")
+}
+
+func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintenanceMode bool) {
 	logger.Info("Main starting")
 
 	if !validators.ValidateEnv() {
@@ -158,7 +166,7 @@ func startRudderCore(clearDB *bool, mode *db.ModeT) {
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
-	db.HandleRecovery(mode, misc.AppStartTime)
+	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
 
@@ -189,6 +197,17 @@ func startRudderCore(clearDB *bool, mode *db.ModeT) {
 	if enableProcessor {
 		var processor processor.HandleT
 		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+	}
+
+	//TODO fill the if/else blocks properly
+	enableMigrator := false
+	migrationMode := getMigrationMode()
+	if migrationMode == "import" {
+		enableMigrator = true
+	} else if migrationMode == "export" {
+		enableMigrator = true
+	} else if migrationMode == "import-export" {
+		enableMigrator = true
 	}
 
 	shouldStartGateWay := true
@@ -277,7 +296,8 @@ func main() {
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
-	migrationMode := flag.Bool("migration-mode", false, "a bool")
+
+	flag.StringVar(&migrationModeFlag, "migration-mode", "", "mode of migration. import/export/import-export")
 
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
@@ -336,7 +356,7 @@ func main() {
 
 	if canStartServer() {
 		rruntime.Go(func() {
-			startRudderCore(clearDB, &db.ModeT{NormalMode: *normalMode, DegradedMode: *degradedMode, MaintenanceMode: *maintenanceMode, MigrationMode: *migrationMode})
+			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
 		})
 	}
 

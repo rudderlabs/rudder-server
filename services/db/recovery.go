@@ -19,20 +19,12 @@ const (
 	normalMode      = "normal"
 	degradedMode    = "degraded"
 	maintenanceMode = "maintenance"
-	migrationMode   = "migration"
 )
 
 type RecoveryHandler interface {
 	RecordAppStart(int64)
 	HasThresholdReached() bool
 	Handle()
-}
-
-type ModeT struct {
-	NormalMode      bool
-	DegradedMode    bool
-	MaintenanceMode bool
-	MigrationMode   bool
 }
 
 var CurrentMode string = normalMode // default mode
@@ -45,8 +37,6 @@ type RecoveryDataT struct {
 	ReadableDegradedModeStartTimes    []string
 	MaintenanceModeStartTimes         []int64
 	ReadableMaintenanceModeStartTimes []string
-	MigrationModeStartTimes           []int64
-	ReadableMigrationModeStartTimes   []string
 	Mode                              string
 }
 
@@ -108,16 +98,14 @@ func CheckOccurences(occurences []int64, numTimes int, numSecs int) (occurred bo
 	return
 }
 
-func getForceRecoveryMode(mode *ModeT) string {
+func getForceRecoveryMode(forceNormal bool, forceDegraded bool, forceMaintenance bool) string {
 	switch {
-	case mode.NormalMode:
+	case forceNormal:
 		return normalMode
-	case mode.DegradedMode:
+	case forceDegraded:
 		return degradedMode
-	case mode.MaintenanceMode:
+	case forceMaintenance:
 		return maintenanceMode
-	case mode.MigrationMode:
-		return migrationMode
 	}
 	return ""
 
@@ -131,8 +119,6 @@ func getNextMode(currentMode string) string {
 		return maintenanceMode
 	case maintenanceMode:
 		return ""
-	case migrationMode:
-		return migrationMode
 	}
 	return ""
 }
@@ -146,8 +132,6 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 		recoveryHandler = &DegradedModeHandler{recoveryData: recoveryData}
 	case maintenanceMode:
 		recoveryHandler = &MaintenanceModeHandler{recoveryData: recoveryData}
-	case migrationMode:
-		recoveryHandler = &MigrationModeHandler{recoveryData: recoveryData}
 	default:
 		panic("Invalid Recovery Mode " + recoveryData.Mode)
 	}
@@ -165,13 +149,13 @@ func alertOps(mode string) {
 	}
 }
 
-func HandleRecovery(mode *ModeT, currTime int64) {
+func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool, currTime int64) {
 
 	enabled := config.GetBool("recovery.enabled", false)
 	if !enabled {
 		return
 	}
-	forceMode := getForceRecoveryMode(mode)
+	forceMode := getForceRecoveryMode(forceNormal, forceDegraded, forceMaintenance)
 	isForced := false
 
 	recoveryData := getRecoveryData()
