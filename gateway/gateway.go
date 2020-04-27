@@ -60,6 +60,7 @@ var (
 	enableDedup                               bool
 	enableRateLimit                           bool
 	dedupWindow, diagnosisTickerTime          time.Duration
+	commonBackendConfig                       backendconfig.CommonBackendConfigI = new(backendconfig.CommonBackendConfig)
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -86,6 +87,7 @@ type HandleT struct {
 	ackCount                                  uint64
 	recvCount                                 uint64
 	backendConfig                             backendconfig.BackendConfig
+	commonBackendConfig                       backendconfig.CommonBackendConfigI
 	rateLimiter                               ratelimiter.RateLimiter
 	stats                                     stats.Stats
 	batchSizeStat, batchTimeStat, latencyStat stats.RudderStats
@@ -523,7 +525,7 @@ func (gateway *HandleT) StartWebHandler() {
 // Gets the config from config backend and extracts enabled writekeys
 func (gateway *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	gateway.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
+	gateway.commonBackendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -596,6 +598,7 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 		defer gateway.badgerDB.Close()
 	}
 	gateway.backendConfig = backendConfig
+	gateway.commonBackendConfig = commonBackendConfig
 	gateway.rateLimiter = rateLimiter
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
@@ -612,7 +615,7 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 			gateway.webRequestBatchDBWriter(j)
 		})
 	}
-	gateway.backendConfig.WaitForConfig()
+	gateway.commonBackendConfig.WaitForConfig()
 	rruntime.Go(func() {
 		gateway.printStats()
 	})
