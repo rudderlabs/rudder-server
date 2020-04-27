@@ -36,12 +36,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
-	"github.com/thoas/go-funk"
 )
 
 var (
@@ -343,7 +343,7 @@ func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[st
 	}
 
 	for _, table := range tables {
-		_, err = stmt.Exec(upload.ID, table, "waiting", "{}", time.Now(), time.Now())
+		_, err = stmt.Exec(upload.ID, table, "waiting", "{}", timeutil.Now(), timeutil.Now())
 		if err != nil {
 			return
 		}
@@ -367,8 +367,8 @@ func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[st
 }
 
 func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) warehouseutils.UploadT {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, first_event_at, last_event_at, created_at, updated_at, timings)
-	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`, warehouseUploadsTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, first_event_at, last_event_at, created_at, updated_at)
+	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`, warehouseUploadsTable)
 	logger.Infof("WH: %s: Creating record in wh_load_files id: %v", wh.destType, sqlStatement)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	if err != nil {
@@ -388,7 +388,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		lastEventAt = jsonUploadsList[0].LastEventAt
 	}
 
-	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, "{}", "{}", firstEventAt, lastEventAt, time.Now(), time.Now(), "[]")
+	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, "{}", "{}", firstEventAt, lastEventAt, timeutil.Now(), timeutil.Now())
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
@@ -478,7 +478,7 @@ func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency 
 	}
 	lastExecMapLock.Lock()
 	defer lastExecMapLock.Unlock()
-	if lastExecTime, ok := lastExecMap[connectionString(warehouse)]; ok && time.Now().Unix()-lastExecTime < freqInS {
+	if lastExecTime, ok := lastExecMap[connectionString(warehouse)]; ok && timeutil.Now().Unix()-lastExecTime < freqInS {
 		return true
 	}
 	return false
@@ -487,119 +487,7 @@ func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency 
 func setLastExec(warehouse warehouseutils.WarehouseT) {
 	lastExecMapLock.Lock()
 	defer lastExecMapLock.Unlock()
-	lastExecMap[connectionString(warehouse)] = time.Now().Unix()
-}
-
-// parseTimeToMinsOfDay returns minutes since start of day for a timestamp in format `15:30`
-// eg. parseTimeToMinsOfDay("02:30") -> 150
-func parseTimeToMinsOfDay(str string) int {
-	x := strings.Split(str, ":")
-	hrs, err := strconv.Atoi(x[0])
-	if err != nil {
-		panic(err)
-	}
-	mins, err := strconv.Atoi(x[1])
-	if err != nil {
-		panic(err)
-	}
-	return (hrs * 60) + mins
-}
-
-// scheduledTimes returns all possible start time
-// eg. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
-func scheduledTimes(syncFrequency, syncStartAt string) (times []int) {
-	if cachedTimes, ok := scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)]; ok {
-		return cachedTimes
-	}
-	syncStartAtInMin := parseTimeToMinsOfDay(syncStartAt)
-	syncFrequencyInMin, _ := strconv.Atoi(syncFrequency)
-	times = append(times, syncStartAtInMin)
-	counter := 1
-	for {
-		mins := syncStartAtInMin + counter*syncFrequencyInMin
-		if mins >= 1440 {
-			break
-		}
-		times = append(times, mins)
-		counter++
-	}
-
-	prependTimes := []int{}
-	counter = 1
-	for {
-		mins := syncStartAtInMin - counter*syncFrequencyInMin
-		if mins < 0 {
-			break
-		}
-		prependTimes = append(prependTimes, mins)
-		counter++
-	}
-	times = append(funk.ReverseInt(prependTimes), times...)
-	scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)] = times
-	return
-}
-
-func startOfDay(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
-}
-
-// getPrevScheduledTime returns closest previous scheduled time
-// eg. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
-// prev scheduled time for current time (eg. 18:00 -> 16:00 same day, 00:30 -> 22:00 prev day)
-func getPrevScheduledTime(syncFrequency, syncStartAt string) time.Time {
-	allStartTimes := scheduledTimes(syncFrequency, syncStartAt)
-
-	loc, _ := time.LoadLocation("UTC")
-	now := time.Now().In(loc)
-	// current time in minutes since start of day
-	currMins := now.Hour()*60 + now.Minute()
-
-	// get position where current time can fit in the sorted list of allallStartTimes
-	pos := 0
-	for idx, t := range allStartTimes {
-		if currMins > t {
-			continue
-		}
-		pos = idx - 1
-		break
-	}
-
-	// if current time is less than first start time in a day, take last start time in prev day
-	if pos < 0 {
-		return startOfDay(now).Add(time.Hour * time.Duration(-24)).Add(time.Minute * time.Duration(allStartTimes[len(allStartTimes)-1]))
-	}
-	return startOfDay(now).Add(time.Minute * time.Duration(allStartTimes[pos]))
-}
-
-// getLastUploadStartTime returns the start time of the last upload
-func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) (lastUploadTime time.Time) {
-	var t sql.NullTime
-	sqlStatement := fmt.Sprintf(`select last_exec_at from %s where source_id='%s' and destination_id='%s' order by id desc limit 1`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID)
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&t)
-	if err != nil && err != sql.ErrNoRows {
-		panic(err)
-	}
-	if err == sql.ErrNoRows || !t.Valid {
-		return
-	}
-	return t.Time
-}
-
-func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
-	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
-	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
-	if syncFrequency != "" && syncStartAt != "" {
-		prevScheduledTime := getPrevScheduledTime(syncFrequency, syncStartAt)
-		lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
-		// start upload only if no upload has started in current window
-		// eg. with prec scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
-		if lastUploadExecTime.Before(prevScheduledTime) {
-			return true
-		}
-	} else {
-		return !uploadFrequencyExceeded(warehouse, syncFrequency)
-	}
-	return false
+	lastExecMap[connectionString(warehouse)] = timeutil.Now().Unix()
 }
 
 type WarehouseManager interface {
@@ -673,7 +561,7 @@ func (wh *HandleT) mainLoop() {
 				}
 				wh.uploadToWarehouseQ <- jobs
 			} else {
-				if !wh.canStartUpload(warehouse) {
+				if !wh.CanStartUpload(warehouse) {
 					logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
 					setDestInProgress(warehouse, false)
 					continue
@@ -811,12 +699,12 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	startLoadFileID := loadFileIDs[0]
 	endLoadFileID := loadFileIDs[len(loadFileIDs)-1]
 
-	err = warehouseutils.SetUploadStatus(
+	err = warehouseutils.SetUploadColumns(
 		job.Upload,
-		warehouseutils.GeneratedLoadFileState,
 		wh.dbHandle,
-		warehouseutils.UploadColumnT{Column: "start_load_file_id", Value: startLoadFileID},
-		warehouseutils.UploadColumnT{Column: "end_load_file_id", Value: endLoadFileID},
+		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.GeneratedLoadFileState},
+		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["startLoadFileID"], Value: startLoadFileID},
+		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["endLoadFileID"], Value: endLoadFileID},
 	)
 	if err != nil {
 		panic(err)
@@ -990,10 +878,14 @@ func (wh *HandleT) initWorkers() {
 						warehouseutils.SetUploadColumns(
 							job.Upload,
 							wh.dbHandle,
-							warehouseutils.UploadColumnT{Column: "last_exec_at", Value: time.Now()},
+							warehouseutils.UploadColumnT{Column: "last_exec_at", Value: timeutil.Now()},
 						)
 						if job.Upload.StartLoadFileID == 0 {
-							warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
+							warehouseutils.SetUploadColumns(
+								job.Upload,
+								wh.dbHandle,
+								warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.GeneratingLoadFileState},
+							)
 							err := wh.createLoadFiles(&job)
 							if err != nil {
 								//Unreachable code. So not modifying the stat 'failed_uploads', which is reused later for copying.
@@ -1280,7 +1172,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	// tableContentMap := make(map[string]string)
 	outputFileMap := make(map[string]misc.GZipWriter)
 	eventsCountMap := make(map[string]int)
-	uuidTS := time.Now()
+	uuidTS := timeutil.Now()
 	sc := bufio.NewScanner(reader)
 	misc.PrintMemUsage()
 
@@ -1491,7 +1383,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		defer stmt.Close()
 
 		var fileID int64
-		err = stmt.QueryRow(job.StagingFileID, uploadLocation.Location, job.SourceID, job.DestinationID, job.DestinationType, tableName, eventsCountMap[tableName], time.Now()).Scan(&fileID)
+		err = stmt.QueryRow(job.StagingFileID, uploadLocation.Location, job.SourceID, job.DestinationID, job.DestinationType, tableName, eventsCountMap[tableName], timeutil.Now()).Scan(&fileID)
 		if err != nil {
 			panic(err)
 		}
@@ -1818,7 +1710,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(stagingFile.Location, schemaPayload, stagingFile.BatchDestination.Source.ID, stagingFile.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, stagingFile.TotalEvents, firstEventAt, lastEventAt, time.Now())
+	_, err = stmt.Exec(stagingFile.Location, schemaPayload, stagingFile.BatchDestination.Source.ID, stagingFile.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, stagingFile.TotalEvents, firstEventAt, lastEventAt, timeutil.Now())
 	if err != nil {
 		panic(err)
 	}
