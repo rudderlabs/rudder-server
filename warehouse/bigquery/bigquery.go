@@ -56,11 +56,7 @@ var partitionKeyMap = map[string]string{
 }
 
 func (bq *HandleT) setUploadError(err error, state string) {
-	warehouseutils.SetUploadColumns(
-		bq.Upload,
-		bq.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.ExportingDataFailedState},
-	)
+	warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataFailedState, bq.DbHandle)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseUploadsTable)
 	_, err = bq.DbHandle.Exec(sqlStatement, state, err.Error(), time.Now(), bq.Upload.ID)
 	if err != nil {
@@ -274,22 +270,14 @@ func init() {
 func (bq *HandleT) MigrateSchema() (err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", bq.Warehouse.Destination.ID)
 	timer.Start()
-	warehouseutils.SetUploadColumns(
-		bq.Upload,
-		bq.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.UpdatingSchemaState},
-	)
+	warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatingSchemaState, bq.DbHandle)
 	logger.Infof("BQ: Updaing schema for bigquery in project: %s", bq.ProjectID)
 	updatedSchema, err := bq.updateSchema()
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
 		return
 	}
-	err = warehouseutils.SetUploadColumns(
-		bq.Upload,
-		bq.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.UpdatedSchemaState},
-	)
+	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatedSchemaState, bq.DbHandle)
 	if err != nil {
 		panic(err)
 	}
@@ -304,11 +292,7 @@ func (bq *HandleT) MigrateSchema() (err error) {
 
 func (bq *HandleT) Export() (err error) {
 	logger.Infof("BQ: Starting export to Bigquery for source:%s and wh_upload:%v", bq.Warehouse.Source.ID, bq.Upload.ID)
-	err = warehouseutils.SetUploadColumns(
-		bq.Upload,
-		bq.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.ExportingDataState},
-	)
+	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataState, bq.DbHandle)
 	if err != nil {
 		panic(err)
 	}
@@ -327,11 +311,7 @@ func (bq *HandleT) Export() (err error) {
 		warehouseutils.SetUploadError(bq.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, bq.DbHandle)
 		return errors.New(errStr)
 	}
-	err = warehouseutils.SetUploadColumns(
-		bq.Upload,
-		bq.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.ExportedDataState},
-	)
+	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportedDataState, bq.DbHandle)
 	if err != nil {
 		panic(err)
 	}

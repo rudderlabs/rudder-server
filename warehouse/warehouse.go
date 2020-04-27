@@ -71,7 +71,6 @@ var (
 	warehouseSchemasTable      string
 	warehouseMode              string
 	warehouseSyncPreFetchCount int
-	scheduledTimesCache        map[string][]int
 )
 var (
 	host, user, password, dbname string
@@ -153,7 +152,6 @@ func loadConfig() {
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
-	scheduledTimesCache = map[string][]int{}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	host = config.GetEnv("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	user = config.GetEnv("WAREHOUSE_JOBS_DB_USER", "ubuntu")
@@ -342,8 +340,9 @@ func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[st
 		tables = append(tables, t)
 	}
 
+	now := timeutil.Now()
 	for _, table := range tables {
-		_, err = stmt.Exec(upload.ID, table, "waiting", "{}", timeutil.Now(), timeutil.Now())
+		_, err = stmt.Exec(upload.ID, table, "waiting", "{}", now, now)
 		if err != nil {
 			return
 		}
@@ -388,7 +387,8 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		lastEventAt = jsonUploadsList[0].LastEventAt
 	}
 
-	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, "{}", "{}", firstEventAt, lastEventAt, timeutil.Now(), timeutil.Now())
+	now := timeutil.Now()
+	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, "{}", "{}", firstEventAt, lastEventAt, now, now)
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
@@ -561,7 +561,7 @@ func (wh *HandleT) mainLoop() {
 				}
 				wh.uploadToWarehouseQ <- jobs
 			} else {
-				if !wh.CanStartUpload(warehouse) {
+				if !wh.canStartUpload(warehouse) {
 					logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
 					setDestInProgress(warehouse, false)
 					continue
@@ -699,12 +699,12 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	startLoadFileID := loadFileIDs[0]
 	endLoadFileID := loadFileIDs[len(loadFileIDs)-1]
 
-	err = warehouseutils.SetUploadColumns(
+	err = warehouseutils.SetUploadStatus(
 		job.Upload,
+		warehouseutils.GeneratedLoadFileState,
 		wh.dbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.GeneratedLoadFileState},
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["startLoadFileID"], Value: startLoadFileID},
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["endLoadFileID"], Value: endLoadFileID},
+		warehouseutils.UploadColumnT{Column: warehouseutils.UploadStartLoadFileIDField, Value: startLoadFileID},
+		warehouseutils.UploadColumnT{Column: warehouseutils.UploadEndLoadFileIDField, Value: endLoadFileID},
 	)
 	if err != nil {
 		panic(err)
@@ -857,7 +857,11 @@ func (wh *HandleT) initWorkers() {
 							if err != nil {
 								panic(err)
 							}
-							warehouseutils.SetUploadColumns(job.Upload, wh.dbHandle, warehouseutils.UploadColumnT{Column: "schema", Value: marshalledSchema})
+							warehouseutils.SetUploadColumns(
+								job.Upload,
+								wh.dbHandle,
+								warehouseutils.UploadColumnT{Column: warehouseutils.UploadSchemaField, Value: marshalledSchema},
+							)
 							job.Upload.Schema = consolidatedSchema
 						}
 						if !wh.areTableUploadsCreated(job.Upload) {
@@ -878,14 +882,10 @@ func (wh *HandleT) initWorkers() {
 						warehouseutils.SetUploadColumns(
 							job.Upload,
 							wh.dbHandle,
-							warehouseutils.UploadColumnT{Column: "last_exec_at", Value: timeutil.Now()},
+							warehouseutils.UploadColumnT{Column: warehouseutils.UploadLastExecAtField, Value: timeutil.Now()},
 						)
 						if job.Upload.StartLoadFileID == 0 {
-							warehouseutils.SetUploadColumns(
-								job.Upload,
-								wh.dbHandle,
-								warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.GeneratingLoadFileState},
-							)
+							warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
 							err := wh.createLoadFiles(&job)
 							if err != nil {
 								//Unreachable code. So not modifying the stat 'failed_uploads', which is reused later for copying.

@@ -11,6 +11,14 @@ import (
 	"github.com/thoas/go-funk"
 )
 
+var (
+	scheduledTimesCache map[string][]int
+)
+
+func init() {
+	scheduledTimesCache = map[string][]int{}
+}
+
 // ScheduledTimes returns all possible start times as per schedule
 // eg. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
 func ScheduledTimes(syncFrequency, syncStartAt string) (times []int) {
@@ -78,8 +86,8 @@ func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time)
 	return timeutil.StartOfDay(now).Add(time.Minute * time.Duration(allStartTimes[pos]))
 }
 
-// GetLastUploadStartTime returns the start time of the last upload
-func (wh *HandleT) GetLastUploadStartTime(warehouse warehouseutils.WarehouseT) (lastUploadTime time.Time) {
+// getLastUploadStartTime returns the start time of the last upload
+func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) (lastUploadTime time.Time) {
 	var t sql.NullTime
 	sqlStatement := fmt.Sprintf(`select last_exec_at from %s where source_id='%s' and destination_id='%s' order by id desc limit 1`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID)
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&t)
@@ -92,13 +100,13 @@ func (wh *HandleT) GetLastUploadStartTime(warehouse warehouseutils.WarehouseT) (
 	return t.Time
 }
 
-// CanStartUpload indicates if a upload can be started now for the warehouse based on its configured schedule
-func (wh *HandleT) CanStartUpload(warehouse warehouseutils.WarehouseT) bool {
+// canStartUpload indicates if a upload can be started now for the warehouse based on its configured schedule
+func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
 	if syncFrequency != "" && syncStartAt != "" {
 		prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
-		lastUploadExecTime := wh.GetLastUploadStartTime(warehouse)
+		lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
 		// start upload only if no upload has started in current window
 		// eg. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
 		if lastUploadExecTime.Before(prevScheduledTime) {

@@ -436,22 +436,14 @@ func init() {
 func (rs *HandleT) MigrateSchema() (err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", rs.Warehouse.Destination.ID)
 	timer.Start()
-	warehouseutils.SetUploadColumns(
-		rs.Upload,
-		rs.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.UpdatingSchemaState},
-	)
+	warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatingSchemaState, rs.DbHandle)
 	logger.Infof("RS: Updaing schema for redshfit schemaname: %s", rs.Namespace)
 	updatedSchema, err := rs.updateSchema()
 	if err != nil {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
 		return
 	}
-	err = warehouseutils.SetUploadColumns(
-		rs.Upload,
-		rs.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.UpdatedSchemaState},
-	)
+	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatedSchemaState, rs.DbHandle)
 	if err != nil {
 		panic(err)
 	}
@@ -466,11 +458,7 @@ func (rs *HandleT) MigrateSchema() (err error) {
 
 func (rs *HandleT) Export() (err error) {
 	logger.Infof("RS: Starting export to redshift for source:%s and wh_upload:%v", rs.Warehouse.Source.ID, rs.Upload.ID)
-	err = warehouseutils.SetUploadColumns(
-		rs.Upload,
-		rs.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.ExportingDataState},
-	)
+	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportingDataState, rs.DbHandle)
 	if err != nil {
 		panic(err)
 	}
@@ -490,11 +478,7 @@ func (rs *HandleT) Export() (err error) {
 		warehouseutils.SetUploadError(rs.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, rs.DbHandle)
 		return errors.New(errStr)
 	}
-	err = warehouseutils.SetUploadColumns(
-		rs.Upload,
-		rs.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.ExportedDataState},
-	)
+	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportedDataState, rs.DbHandle)
 	if err != nil {
 		panic(err)
 	}

@@ -3,7 +3,6 @@ package warehouseutils
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -49,6 +48,16 @@ const (
 	SyncStartAt   = "syncStartAt"
 )
 
+const (
+	UploadStatusField          = "status"
+	UploadStartLoadFileIDField = "start_load_file_id"
+	UploadEndLoadFileIDField   = "end_load_file_id"
+	UploadUpdatedAtField       = "updated_at"
+	UploadTimingsField         = "timings"
+	UploadSchemaField          = "schema"
+	UploadLastExecAtField      = "last_exec_at"
+)
+
 var (
 	warehouseUploadsTable      string
 	warehouseTableUploadsTable string
@@ -68,12 +77,6 @@ var SnowflakeStorageMap = map[string]string{
 	"AWS":   "S3",
 	"GCP":   "GCS",
 	"AZURE": "AZURE_BLOB",
-}
-
-var UploadFields = map[string]string{
-	"status":          "status",
-	"startLoadFileID": "start_load_file_id",
-	"endLoadFileID":   "end_load_file_id",
 }
 
 func init() {
@@ -231,12 +234,30 @@ func GetNewTimings(upload UploadT, dbHandle *sql.DB, status string) []byte {
 	return marshalledTimings
 }
 
+func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB, additionalFields ...UploadColumnT) (err error) {
+	logger.Infof("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
+	marshalledTimings := GetNewTimings(upload, dbHandle, status)
+	opts := []UploadColumnT{
+		{Column: UploadStatusField, Value: status},
+		{Column: UploadTimingsField, Value: marshalledTimings},
+		{Column: UploadUpdatedAtField, Value: timeutil.Now()},
+	}
+
+	additionalFields = append(additionalFields, opts...)
+
+	SetUploadColumns(
+		upload,
+		dbHandle,
+		additionalFields...,
+	)
+	return
+}
+
 // SetUploadColumns sets any column values passed as args in UploadColumnT format for warehouseUploadsTable
 func SetUploadColumns(upload UploadT, dbHandle *sql.DB, fields ...UploadColumnT) (err error) {
-	var isSettingStatus bool
-	var columns, status string
+	var columns string
 	values := []interface{}{upload.ID}
-	// setting values using syntax $n since Exec can correctlt format time.Time strings
+	// setting values using syntax $n since Exec can correctly format time.Time strings
 	for idx, f := range fields {
 		// start with $2 as $1 is upload.ID
 		columns += fmt.Sprintf(`%s=$%d`, f.Column, idx+2)
@@ -244,19 +265,6 @@ func SetUploadColumns(upload UploadT, dbHandle *sql.DB, fields ...UploadColumnT)
 			columns += ","
 		}
 		values = append(values, f.Value)
-		if f.Column == UploadFields["status"] {
-			isSettingStatus = true
-			var ok bool
-			status, ok = f.Value.(string)
-			if !ok {
-				return errors.New("Status field is not a string")
-			}
-		}
-	}
-	if isSettingStatus {
-		columns += fmt.Sprintf(`, timings=$%d`, len(fields)+2)
-		marshalledTimings := GetNewTimings(upload, dbHandle, status)
-		values = append(values, marshalledTimings)
 	}
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, warehouseUploadsTable, columns)
 	_, err = dbHandle.Exec(sqlStatement, values...)
@@ -268,7 +276,7 @@ func SetUploadColumns(upload UploadT, dbHandle *sql.DB, fields ...UploadColumnT)
 
 func SetUploadError(upload UploadT, statusError error, state string, dbHandle *sql.DB) (err error) {
 	logger.Errorf("WH: Failed during %s stage: %v\n", state, statusError.Error())
-	SetUploadColumns(upload, dbHandle, UploadColumnT{Column: UploadFields["status"], Value: state})
+	SetUploadStatus(upload, state, dbHandle)
 	var e map[string]map[string]interface{}
 	json.Unmarshal(upload.Error, &e)
 	if e == nil {

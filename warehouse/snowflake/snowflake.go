@@ -379,22 +379,14 @@ func init() {
 func (sf *HandleT) MigrateSchema() (err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", sf.Warehouse.Destination.ID)
 	timer.Start()
-	warehouseutils.SetUploadColumns(
-		sf.Upload,
-		sf.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.UpdatingSchemaState},
-	)
+	warehouseutils.SetUploadStatus(sf.Upload, warehouseutils.UpdatingSchemaState, sf.DbHandle)
 	logger.Infof("SF: Updating schema for snowflake schemaname: %s", sf.Namespace)
 	updatedSchema, err := sf.updateSchema()
 	if err != nil {
 		warehouseutils.SetUploadError(sf.Upload, err, warehouseutils.UpdatingSchemaFailedState, sf.DbHandle)
 		return
 	}
-	err = warehouseutils.SetUploadColumns(
-		sf.Upload,
-		sf.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.UpdatedSchemaState},
-	)
+	err = warehouseutils.SetUploadStatus(sf.Upload, warehouseutils.UpdatedSchemaState, sf.DbHandle)
 	if err != nil {
 		panic(err)
 	}
@@ -409,11 +401,7 @@ func (sf *HandleT) MigrateSchema() (err error) {
 
 func (sf *HandleT) Export() (err error) {
 	logger.Infof("SF: Starting export to snowflake for source:%s and wh_upload:%v", sf.Warehouse.Source.ID, sf.Upload.ID)
-	err = warehouseutils.SetUploadColumns(
-		sf.Upload,
-		sf.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.ExportingDataState},
-	)
+	err = warehouseutils.SetUploadStatus(sf.Upload, warehouseutils.ExportingDataState, sf.DbHandle)
 	if err != nil {
 		panic(err)
 	}
@@ -432,11 +420,7 @@ func (sf *HandleT) Export() (err error) {
 		warehouseutils.SetUploadError(sf.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, sf.DbHandle)
 		return errors.New(errStr)
 	}
-	err = warehouseutils.SetUploadColumns(
-		sf.Upload,
-		sf.DbHandle,
-		warehouseutils.UploadColumnT{Column: warehouseutils.UploadFields["status"], Value: warehouseutils.ExportedDataState},
-	)
+	err = warehouseutils.SetUploadStatus(sf.Upload, warehouseutils.ExportedDataState, sf.DbHandle)
 	if err != nil {
 		panic(err)
 	}
