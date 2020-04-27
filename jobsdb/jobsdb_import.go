@@ -60,7 +60,7 @@ func getNewVersion() int {
 }
 
 //StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
-func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent MigrationEvent) {
+func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent *MigrationEvent) {
 	if jd.migrationState.DsForImport.Index == "" {
 		jd.migrationState.DsForImport = jd.setupFor(ImportOp, jd.migrationState.DsForImport, jd.dsForImportEventsSetup)
 	}
@@ -87,14 +87,14 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	jd.updateJobStatusDS(jd.migrationState.DsForImport, statusList, []string{}, []ParameterFilterT{})
 }
 
-func (jd *HandleT) getStartJobID(count int, migrationEvent MigrationEvent) int64 {
+func (jd *HandleT) getStartJobID(count int, migrationEvent *MigrationEvent) int64 {
 	var sequenceNumber int64
 	sequenceNumber = 0
 	sequenceNumber = jd.getSeqNoForFileFromDB(migrationEvent.FileLocation, ImportOp)
 	if sequenceNumber == 0 {
 		sequenceNumber = jd.migrationState.sequenceProvider.ReserveIds(count)
 		migrationEvent.StartSeq = sequenceNumber
-		jd.Checkpoint(&migrationEvent)
+		jd.Checkpoint(migrationEvent)
 	}
 	return sequenceNumber
 }

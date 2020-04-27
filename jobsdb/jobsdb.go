@@ -196,6 +196,7 @@ const (
 	WaitingState      = "waiting"
 	WaitingRetryState = "waiting_retry"
 	InternalState     = "NP"
+	MigratingState    = "migrating"
 	MigratedState     = "migrated"
 	WontMigrateState  = "wont_migrate"
 )
@@ -208,6 +209,7 @@ var validJobStates = map[string]bool{
 	AbortedState:      true,
 	WaitingState:      true,
 	WaitingRetryState: true,
+	MigratingState:    true,
 	MigratedState:     true,
 	WontMigrateState:  true,
 }
@@ -2334,6 +2336,7 @@ func (jd *HandleT) setupEnumTypes() {
                                               'waiting_retry',
                                               'failed',
                                               'aborted',
+                                              'migrating',
                                               'migrated',
                                               'wont_migrate');
                                      EXCEPTION

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -12,11 +11,10 @@ import (
 
 //MigrationState maintains the state required during the migration process
 type MigrationState struct {
-	sequenceProvider     *SequenceProvider
-	DsForNewEvents       dataSetT `json:"dsForNewEvents"`
-	DsForImport          dataSetT `json:"dsForImport"`
-	LastDsForExport      dataSetT `json:"lastDsForExport"`
-	importDSCreationLock sync.RWMutex
+	sequenceProvider *SequenceProvider
+	DsForNewEvents   dataSetT `json:"dsForNewEvents"`
+	DsForImport      dataSetT `json:"dsForImport"`
+	LastDsForExport  dataSetT `json:"lastDsForExport"`
 }
 
 //setupFor is boiler plate code for setting up for different scenarios

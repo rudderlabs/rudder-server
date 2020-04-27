@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -27,11 +28,57 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	logger.Infof("Migrator: Request received to import %s", migrationEvent.FileLocation)
 	if migrationEvent.MigrationType == jobsdb.ExportOp {
-		localTmpDirName := "/migrator-import/"
-		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
 			panic(err)
 		}
+
+		migrationEvent.MigrationType = jobsdb.ImportOp
+		migrationEvent.ID = 0
+		migrationEvent.Status = jobsdb.PreparedForImport
+		migrationEvent.TimeStamp = time.Now()
+		//dedup if event already received
+		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
+	} else {
+		logger.Errorf("Wrong migration event received. Only export type events are expected. migrationType: %s, migrationEvent: %v", migrationEvent.MigrationType, migrationEvent)
+	}
+	logger.Debug("Ack: %v", migrationEvent)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
+
+//Verify: this is similar to getDumpQForNode. Should we write a single function for both. How to do it?
+func (migrator *Migrator) getImportQForNode(nodeID string) (chan *jobsdb.MigrationEvent, bool) {
+	isNewChannel := false
+	if _, ok := migrator.importQueues[nodeID]; !ok {
+		notifyQ := make(chan *jobsdb.MigrationEvent)
+		migrator.importQueues[nodeID] = notifyQ
+		isNewChannel = true
+	}
+	return migrator.importQueues[nodeID], isNewChannel
+}
+
+func (migrator *Migrator) readFromCheckPointAndTriggerImport() {
+	for {
+		checkPoints := migrator.jobsDB.GetCheckpoints(jobsdb.ImportOp)
+		for _, checkPoint := range checkPoints {
+			if checkPoint.Status == jobsdb.PreparedForImport {
+				importQ, isNew := migrator.getImportQForNode(checkPoint.FromNode)
+				if isNew {
+					rruntime.Go(func() {
+						migrator.processImport(importQ)
+					})
+				}
+				importQ <- checkPoint
+			}
+		}
+	}
+}
+
+func (migrator *Migrator) processImport(importQ chan *jobsdb.MigrationEvent) {
+	localTmpDirName := "/migrator-import/"
+	tmpDirPath, err := misc.CreateTMPDIR()
+	for {
+		migrationEvent := <-importQ
 
 		filePathSlice := strings.Split(migrationEvent.FileLocation, "/")
 		fileName := filePathSlice[len(filePathSlice)-1]
@@ -58,22 +105,16 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 			panic(err)
 		}
 
-		migrationEvent.MigrationType = jobsdb.ImportOp
-		migrationEvent.ID = 0
-		migrationEvent.Status = jobsdb.PreparedForImport
-		migrationEvent.TimeStamp = time.Now()
-		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
 		migrator.readFromFileAndWriteToDB(rawf, migrationEvent)
-		logger.Debug("Import done")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		migrationEvent.Status = jobsdb.Imported
+		migrator.jobsDB.Checkpoint(migrationEvent)
 
 		rawf.Close()
 		os.Remove(jsonPath)
 	}
 }
 
-func (migrator *Migrator) readFromFileAndWriteToDB(file *os.File, migrationEvent jobsdb.MigrationEvent) error {
+func (migrator *Migrator) readFromFileAndWriteToDB(file *os.File, migrationEvent *jobsdb.MigrationEvent) error {
 
 	reader, err := gzip.NewReader(file)
 	if err != nil {

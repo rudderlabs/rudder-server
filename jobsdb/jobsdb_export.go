@@ -94,7 +94,7 @@ func (jd *HandleT) getNonMigratedJobsDS(ds dataSetT, count int) ([]*JobT, error)
 			FROM %[1]s LEFT JOIN %[2]s
 				ON %[1]s.job_id = %[2]s.job_id
 			order by %[1]s.job_id asc, %[2]s.id desc
-		) as temp WHERE job_state IS NULL OR (job_state != 'migrated' AND job_state != 'wont_migrate')`, ds.JobTable, ds.JobStatusTable)
+		) as temp WHERE job_state IS NULL OR (job_state != 'migrating' AND job_state != 'migrated' AND job_state != 'wont_migrate')`, ds.JobTable, ds.JobStatusTable)
 
 	if count > 0 {
 		sqlStatement += fmt.Sprintf(" LIMIT %d", count)

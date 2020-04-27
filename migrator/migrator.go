@@ -13,20 +13,24 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/pathfinder"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 //Migrator is a handle to this object used in main.go
 type Migrator struct {
-	jobsDB      *jobsdb.HandleT
-	pf          pathfinder.Pathfinder
-	fileManager filemanager.FileManager
-	doneLock    sync.RWMutex
-	done        bool
-	port        int
-	version     int
-	nextVersion int
+	jobsDB       *jobsdb.HandleT
+	pf           pathfinder.Pathfinder
+	fileManager  filemanager.FileManager
+	doneLock     sync.RWMutex
+	done         bool
+	port         int
+	version      int
+	nextVersion  int
+	dumpQueues   map[string]chan []*jobsdb.JobT
+	notifyQueues map[string]chan *jobsdb.MigrationEvent
+	importQueues map[string]chan *jobsdb.MigrationEvent
 }
 
 func init() {
@@ -35,7 +39,8 @@ func init() {
 }
 
 //Setup initializes the module
-func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, version int, nextVersion int, migratorPort int) {
+//Clean this up
+func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, forExport bool, forImport bool, version int, nextVersion int, migratorPort int) {
 	logger.Infof("Migrator: Setting up migrator for %s jobsdb", jobsDB.GetTablePrefix())
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
@@ -46,9 +51,23 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 
 	migrator.jobsDB.SetupCheckpointTable()
 
-	migrator.jobsDB.SetupForMigrations(true, true)
+	//take these as arguments
+	isExport := true
+	isImport := true
+	migrator.jobsDB.SetupForMigrations(forExport, forImport)
 
-	migrator.export()
+	if isExport {
+		rruntime.Go(func() {
+			migrator.export()
+		})
+	}
+
+	if isImport {
+		rruntime.Go(func() {
+			migrator.readFromCheckPointAndTriggerImport()
+		})
+	}
+
 }
 
 func (migrator *Migrator) exportStatusHandler() bool {

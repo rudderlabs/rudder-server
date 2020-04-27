@@ -2,7 +2,6 @@ package filemanager
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -80,9 +79,6 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
 		}))
 	}
-	fmt.Println("________________________________________________________")
-	fmt.Println("Shanmukh Debug: %s_%s", key, manager.Config.Bucket)
-	fmt.Println("________________________________________________________")
 	downloader := s3manager.NewDownloader(sess)
 	_, err = downloader.Download(output,
 		&s3.GetObjectInput{

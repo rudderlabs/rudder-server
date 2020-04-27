@@ -649,35 +649,33 @@ func GetNodeID() string {
 	return nodeID
 }
 
-//MakeAsyncPostRequest is Util function to make a post request. //TODO: copied from backend-config.go. Use this there instead of duplicate code
-//TODO: Pass and set request headers
-func MakeAsyncPostRequest(endpoint string, uri string, data interface{}, retryCount int, handler func(int, interface{}, string, string, interface{})) {
+//MakePostRequest is Util function to make a post request. //TODO: copied from backend-config.go. try to centralize it?
+func MakePostRequest(url string, endpoint string, data interface{}) (response []byte, statusCode int) {
 	client := &http.Client{}
-	url := fmt.Sprintf("%s%s", endpoint, uri)
-	dataJSON, err1 := json.Marshal(data)
-	_ = err1
-	request, err := http.NewRequest("POST", url, bytes.NewBuffer(dataJSON))
+	backendURL := fmt.Sprintf("%s%s", url, endpoint)
+	dataJSON, _ := json.Marshal(data)
+	request, err := http.NewRequest("POST", backendURL, bytes.NewBuffer(dataJSON))
 	if err != nil {
-		logger.Errorf("Failed to create request object for url: %s and data: %s, Error: %s", url, string(dataJSON), err.Error())
-		panic("Unable to create a http request object")
+		logger.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
+		return []byte{}, 0
 	}
 
 	request.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(request)
+	// Not handling errors when sending alert to victorops
 	if err != nil {
-		logger.Errorf("Request failed: %s, Error: %s", url, err.Error())
-		handler(retryCount, nil, endpoint, uri, data)
+		logger.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
+		return []byte{}, 0
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		logger.Errorf("Got error response %d", resp.StatusCode)
-		handler(retryCount, nil, endpoint, uri, data)
+		logger.Errorf("ConfigBackend: Got error response %d", resp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
-	logger.Debugf("Successful %s", string(body))
-	handler(-1, body, "", "", data)
+	logger.Debugf("ConfigBackend: Successful %s", string(body))
+	return body, resp.StatusCode
 }

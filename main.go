@@ -201,9 +201,12 @@ func startRudderCore(clearDB *bool, mode *db.ModeT) {
 		}
 		migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8084)
 		dnsPattern := config.GetEnv("URL_PATTERN", "http://backend-<CLUSTER_VERSION><NODENUM>")
+		forExport := config.GetEnvAsBool("FOR_IMPORT", true)
+		forImport := config.GetEnvAsBool("FOR_EXPORT", true)
 
-		//TODO: This is screwed up
-		pf.Setup(pathfinder.Setup(backendCount, nextclusterVersion, dnsPattern, instanceIDPattern), nextclusterVersion)
+		if forExport {
+			pf.Setup(pathfinder.Setup(backendCount, nextclusterVersion, dnsPattern, instanceIDPattern), nextclusterVersion)
+		}
 
 		logger.Info("Setting up migrators")
 		var gatewayMigrator migrator.Migrator
@@ -211,9 +214,9 @@ func startRudderCore(clearDB *bool, mode *db.ModeT) {
 		var batchRouterMigrator migrator.Migrator
 
 		//TODO: These should be concurrent?
-		gatewayMigrator.Setup(&gatewayDB, pf, clusterVersion, nextclusterVersion, migratorPort)
-		routerMigrator.Setup(&routerDB, pf, clusterVersion, nextclusterVersion, migratorPort)
-		batchRouterMigrator.Setup(&batchRouterDB, pf, clusterVersion, nextclusterVersion, migratorPort)
+		gatewayMigrator.Setup(&gatewayDB, pf, forExport, forImport, clusterVersion, nextclusterVersion, migratorPort)
+		routerMigrator.Setup(&routerDB, pf, forExport, forImport, clusterVersion, nextclusterVersion, migratorPort)
+		batchRouterMigrator.Setup(&batchRouterDB, pf, forExport, forImport, clusterVersion, nextclusterVersion, migratorPort)
 
 		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)
 

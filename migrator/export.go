@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mitchellh/mapstructure"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/pathfinder"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -24,8 +24,18 @@ func loadConfig() {
 	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 1000)
 }
 
-func (migrator *Migrator) isExportDone() {
-	migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp)
+func (migrator *Migrator) waitForExportDone() {
+	anyPendingNotifications := true
+	for ok := true; ok; ok = anyPendingNotifications {
+		exportEvents := migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp)
+		anyPendingNotifications = false
+		for _, exportEvent := range exportEvents {
+			if exportEvent.Status == jobsdb.Exported {
+				anyPendingNotifications = true
+			}
+		}
+		//Todo: additionally makesure there are no jobs left in migrating state
+	}
 }
 
 func (migrator *Migrator) export() {
@@ -35,6 +45,10 @@ func (migrator *Migrator) export() {
 		return
 	}
 
+	rruntime.Go(func() {
+		migrator.readFromCheckpointAndNotify()
+	})
+
 	for {
 		toQuery := dbReadBatchSize
 
@@ -43,9 +57,11 @@ func (migrator *Migrator) export() {
 			break
 		}
 
-		statusList := migrator.filterAndDump(jobList)
-		migrator.jobsDB.UpdateJobStatus(statusList, []string{}, []jobsdb.ParameterFilterT{})
+		filteredData := migrator.filterByNode(jobList)
+		migrator.delegateDump(filteredData)
 	}
+
+	migrator.waitForExportDone()
 
 	migrator.postExport()
 	migrator.doneLock.Lock()
@@ -53,21 +69,51 @@ func (migrator *Migrator) export() {
 	migrator.done = true
 }
 
-func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobStatusT {
+func (migrator *Migrator) filterByNode(jobList []*jobsdb.JobT) map[pathfinder.NodeMeta][]*jobsdb.JobT {
 	logger.Infof("Inside filter and dump")
-	m := make(map[pathfinder.NodeMeta][]*jobsdb.JobT)
+	filteredData := make(map[pathfinder.NodeMeta][]*jobsdb.JobT)
+	var statusList []*jobsdb.JobStatusT
 	for _, job := range jobList {
 		userID := migrator.jobsDB.GetUserID(job)
 
 		nodeMeta := migrator.pf.GetNodeFromID(userID)
-		m[nodeMeta] = append(m[nodeMeta], job)
+		statusList = append(statusList, buildStatus(job, jobsdb.MigratingState))
+
+		filteredData[nodeMeta] = append(filteredData[nodeMeta], job)
 	}
+	migrator.jobsDB.UpdateJobStatus(statusList, []string{}, []jobsdb.ParameterFilterT{})
 
-	backupPathDirName := "/migrator-export/"
-	tmpDirPath, err := misc.CreateTMPDIR()
+	return filteredData
+}
 
-	var statusList []*jobsdb.JobStatusT
-	for nMeta, jobList := range m {
+func (migrator *Migrator) delegateDump(filteredData map[pathfinder.NodeMeta][]*jobsdb.JobT) {
+	for nMeta, jobList := range filteredData {
+		dumpQ, isNew := migrator.getDumpQForNode(nMeta.GetNodeID())
+		if isNew {
+			rruntime.Go(func() {
+				migrator.writeToFileAndUpload(nMeta, dumpQ)
+			})
+		}
+		dumpQ <- jobList
+	}
+}
+
+func (migrator *Migrator) getDumpQForNode(nodeID string) (chan []*jobsdb.JobT, bool) {
+	isNewChannel := false
+	if _, ok := migrator.dumpQueues[nodeID]; !ok {
+		dumpQ := make(chan []*jobsdb.JobT)
+		migrator.dumpQueues[nodeID] = dumpQ
+		isNewChannel = true
+	}
+	return migrator.dumpQueues[nodeID], isNewChannel
+}
+
+func (migrator *Migrator) writeToFileAndUpload(nMeta pathfinder.NodeMeta, ch chan []*jobsdb.JobT) {
+	for {
+		jobList := <-ch
+		backupPathDirName := "/migrator-export/"
+		tmpDirPath, err := misc.CreateTMPDIR()
+
 		var jobState string
 		var writeToFile bool
 		if nMeta.GetNodeID() != misc.GetNodeID() {
@@ -78,6 +124,7 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 			writeToFile = false
 		}
 
+		var statusList []*jobsdb.JobStatusT
 		if writeToFile {
 			path := fmt.Sprintf(`%v%s_%s_%s_%d_%d.gz`, tmpDirPath+backupPathDirName, migrator.jobsDB.GetTablePrefix(), misc.GetNodeID(), nMeta.GetNodeID(), jobList[0].JobID, len(jobList))
 
@@ -109,7 +156,7 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 			if err != nil {
 				panic(err)
 			}
-			migrator.uploadToS3(file, nMeta)
+			migrator.upload(file, nMeta)
 			file.Close()
 
 			os.Remove(path)
@@ -118,8 +165,8 @@ func (migrator *Migrator) filterAndDump(jobList []*jobsdb.JobT) []*jobsdb.JobSta
 				statusList = append(statusList, buildStatus(job, jobState))
 			}
 		}
+		migrator.jobsDB.UpdateJobStatus(statusList, []string{}, []jobsdb.ParameterFilterT{})
 	}
-	return statusList
 }
 
 func buildStatus(job *jobsdb.JobT, jobState string) *jobsdb.JobStatusT {
@@ -135,7 +182,7 @@ func buildStatus(job *jobsdb.JobT, jobState string) *jobsdb.JobStatusT {
 	return &newStatus
 }
 
-func (migrator *Migrator) uploadToS3(file *os.File, nMeta pathfinder.NodeMeta) {
+func (migrator *Migrator) upload(file *os.File, nMeta pathfinder.NodeMeta) {
 	uploadOutput, err := migrator.fileManager.Upload(file)
 	if err != nil {
 		//TODO: Retry
@@ -144,33 +191,49 @@ func (migrator *Migrator) uploadToS3(file *os.File, nMeta pathfinder.NodeMeta) {
 		logger.Infof("Migrator: Uploaded an export file to %s", uploadOutput.Location)
 		//TODO: delete this file otherwise in failure case, the file exists and same data will be appended to it
 		migrationEvent := jobsdb.NewMigrationEvent("export", misc.GetNodeID(), nMeta.GetNodeID(), uploadOutput.Location, jobsdb.Exported, 0)
-
 		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
-		go migrator.readFromCheckpointAndNotify(migrationEvent, nMeta)
 	}
 }
 
-func (migrator *Migrator) readFromCheckpointAndNotify(migrationEvent jobsdb.MigrationEvent, nMeta pathfinder.NodeMeta) {
-	// migrator.jobsDB.GetCheckpoints()
-	logger.Infof("Migrator: Notifying destination node %s to download and import file from %s", migrationEvent.ToNode, migrationEvent.FileLocation)
-	go misc.MakeAsyncPostRequest(nMeta.GetNodeConnectionString(migrator.port), migrator.getURI("/fileToImport"), migrationEvent, 5, migrator.postHandler)
-
+func (migrator *Migrator) readFromCheckpointAndNotify() {
+	for {
+		checkPoints := migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp)
+		for _, checkPoint := range checkPoints {
+			if checkPoint.Status == jobsdb.Exported {
+				notifyQ, isNew := migrator.getNotifyQForNode(checkPoint.ToNode)
+				if isNew {
+					rruntime.Go(func() {
+						migrator.notify(migrator.pf.GetNodeFromID(checkPoint.ToNode), notifyQ)
+					})
+				}
+				notifyQ <- checkPoint
+			}
+		}
+	}
 }
 
-func (migrator *Migrator) postHandler(retryCount int, response interface{}, endpoint string, uri string, data interface{}) {
-	if retryCount == -1 {
-		responseMigrationEvent := jobsdb.MigrationEvent{}
-		mapstructure.Decode(response, &responseMigrationEvent)
-		migrationEvent := jobsdb.MigrationEvent{}
-		mapstructure.Decode(data, &migrationEvent)
-		migrationEvent.StartSeq = responseMigrationEvent.StartSeq
-		migrationEvent.Status = jobsdb.Imported
-		migrationEvent.TimeStamp = time.Now()
-		migrator.jobsDB.Checkpoint(&migrationEvent)
-	} else if retryCount > 0 {
-		misc.MakeAsyncPostRequest(endpoint, uri, data, retryCount-1, migrator.postHandler)
-	} else if retryCount == 0 {
-		//panic("Ran out of retries. Go debug")
+//Verify: this is similar to getDumpQForNode. Should we write a single function for both. How to do it?
+func (migrator *Migrator) getNotifyQForNode(nodeID string) (chan *jobsdb.MigrationEvent, bool) {
+	isNewChannel := false
+	if _, ok := migrator.notifyQueues[nodeID]; !ok {
+		notifyQ := make(chan *jobsdb.MigrationEvent)
+		migrator.notifyQueues[nodeID] = notifyQ
+		isNewChannel = true
+	}
+	return migrator.notifyQueues[nodeID], isNewChannel
+}
+
+func (migrator *Migrator) notify(nMeta pathfinder.NodeMeta, notifyQ chan *jobsdb.MigrationEvent) {
+	for {
+		checkPoint := <-notifyQ
+		logger.Infof("Migrator: Notifying destination node %s to download and import file from %s", checkPoint.ToNode, checkPoint.FileLocation)
+		statusCode := 0
+		for ok := true; ok; ok = (statusCode != 200) {
+			_, statusCode = misc.MakePostRequest(nMeta.GetNodeConnectionString(migrator.port), migrator.getURI("/fileToImport"), checkPoint)
+			logger.Infof("Migrator: Notified destination node %s to download and import file from %s. Responded with statusCode: %d", checkPoint.ToNode, checkPoint.FileLocation, statusCode)
+		}
+		checkPoint.Status = jobsdb.Notified
+		migrator.jobsDB.Checkpoint(checkPoint)
 	}
 }
 

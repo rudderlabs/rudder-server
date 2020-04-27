@@ -31,6 +31,8 @@ const (
 //ENUM Values for Status
 const (
 	Exported               = "exported"
+	Notified               = "notified"
+	Acknowledged           = "acknowledged"
 	Imported               = "imported"
 	PreparedForImport      = "prepared_for_import"
 	PreparedForExport      = "prepared_for_export"
