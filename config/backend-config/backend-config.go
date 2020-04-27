@@ -1,6 +1,6 @@
 package backendconfig
 
-//go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
+//go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig,CommonBackendConfigI
 
 import (
 	"bytes"
@@ -112,6 +112,8 @@ type BackendConfig interface {
 }
 type CommonBackendConfig struct {
 }
+
+var commonBackendConfig CommonBackendConfigI = &CommonBackendConfig{}
 
 func loadConfig() {
 	// Rudder supporting multiple workspaces. false by default
@@ -281,7 +283,7 @@ WaitForConfig waits until backend config has been initialized
 Deprecated: Use an instance of BackendConfig instead of static function
 */
 func WaitForConfig() {
-	backendConfig.WaitForConfig()
+	commonBackendConfig.WaitForConfig()
 }
 
 /*

@@ -89,7 +89,7 @@ func (c *context) Setup() {
 	c.mockStatGatewayResponseTime = mocksStats.NewMockRudderStats(c.mockCtrl)
 	c.mockStatGatewayBatchSize = mocksStats.NewMockRudderStats(c.mockCtrl)
 	c.mockStatGatewayBatchTime = mocksStats.NewMockRudderStats(c.mockCtrl)
-
+	commonBackendConfig = c.mockCommonBackendConfig
 	// During Setup, gateway always creates the following stats
 	c.mockStats.EXPECT().NewStat("gateway.response_time", stats.TimerType).Return(c.mockStatGatewayResponseTime).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 	c.mockStats.EXPECT().NewStat("gateway.batch_size", stats.CountType).Return(c.mockStatGatewayBatchSize).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
