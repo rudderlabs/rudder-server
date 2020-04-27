@@ -592,6 +592,7 @@ func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, 
 	event["metadata"] = make(map[string]interface{})
 	event["metadata"].(map[string]interface{})["sourceId"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	event["metadata"].(map[string]interface{})["jobId"] = batchEvent.JobID
+	event["metadata"].(map[string]interface{})["userId"] = batchEvent.UserID
 	event["metadata"].(map[string]interface{})["destinationId"] = destination.ID
 	event["metadata"].(map[string]interface{})["destinationType"] = destination.DestinationDefinition.Name
 	event["metadata"].(map[string]interface{})["messageId"] = event["message"].(map[string]interface{})["messageId"].(string)
@@ -780,12 +781,20 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			// in case of custom transformations metadata of first event is returned along with all events in session
 			// source_id will be same for all events belong to same user in a session
 			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
-			destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
 			if !ok {
 				logger.Errorf("Error retrieving source_id from transformed event: %+v", destEvent)
 			}
+			destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
+			if !ok {
+				logger.Errorf("Error retrieving destination_id from transformed event: %+v", destEvent)
+			}
+			userID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["userId"].(string)
+			if !ok {
+				logger.Errorf("Error retrieving user_id from transformed event: %+v", destEvent)
+			}
 			newJob := jobsdb.JobT{
 				UUID:         id,
+				UserID:       userID,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),

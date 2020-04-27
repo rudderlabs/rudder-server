@@ -78,6 +78,7 @@ job  while rest should be set by the user.
 type JobT struct {
 	UUID          uuid.UUID       `json:"UUID"`
 	JobID         int64           `json:"JobID"`
+	UserID        string          `json:"UserID"`
 	CreatedAt     time.Time       `json:"CreatedAt"`
 	ExpireAt      time.Time       `json:"ExpireAt"`
 	CustomVal     string          `json:"CustomVal"`
@@ -727,7 +728,8 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	//Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
                                       job_id BIGSERIAL PRIMARY KEY,
-                                      uuid UUID NOT NULL,
+									  uuid UUID NOT NULL,
+									  user_id TEXT,
 									  parameters JSONB NOT NULL,
                                       custom_val VARCHAR(64) NOT NULL,
                                       event_payload JSONB NOT NULL,
@@ -1003,11 +1005,11 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 	errorMessagesMap = make(map[uuid.UUID]string)
 
 	if copyID {
-		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "parameters", "custom_val",
+		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "parameters", "custom_val",
 			"event_payload", "created_at", "expire_at"))
 		jd.assertError(err)
 	} else {
-		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "parameters", "custom_val", "event_payload"))
+		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "parameters", "custom_val", "event_payload"))
 		jd.assertError(err)
 	}
 
@@ -1017,10 +1019,10 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 			errorMessagesMap[job.UUID] = ""
 		}
 		if copyID {
-			_, err = stmt.Exec(job.JobID, job.UUID, job.Parameters, job.CustomVal,
+			_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.Parameters, job.CustomVal,
 				string(job.EventPayload), job.CreatedAt, job.ExpireAt)
 		} else {
-			_, err = stmt.Exec(job.UUID, job.Parameters, job.CustomVal, string(job.EventPayload))
+			_, err = stmt.Exec(job.UUID, job.UserID, job.Parameters, job.CustomVal, string(job.EventPayload))
 		}
 		jd.assertError(err)
 	}
@@ -1045,12 +1047,12 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 }
 
 func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (errorMessage string) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (uuid, custom_val, parameters, event_payload)
-	                                   VALUES ($1, $2, $3, (regexp_replace($4::text, '\\u0000', '', 'g'))::json) RETURNING job_id`, ds.JobTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (uuid, user_id, custom_val, parameters, event_payload)
+	                                   VALUES ($1, $2, $3, $4, (regexp_replace($5::text, '\\u0000', '', 'g'))::json) RETURNING job_id`, ds.JobTable)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
-	_, err = stmt.Exec(job.UUID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
+	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 	if err == nil {
 		return
 	}
@@ -1250,7 +1252,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	var rows *sql.Rows
 	if getAll {
 		sqlStatement := fmt.Sprintf(`SELECT
-                                  %[1]s.job_id, %[1]s.uuid, %[1]s.parameters,  %[1]s.custom_val, %[1]s.event_payload,
+                                  %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters,  %[1]s.custom_val, %[1]s.event_payload,
                                   %[1]s.created_at, %[1]s.expire_at,
                                   job_latest_state.job_state, job_latest_state.attempt,
                                   job_latest_state.exec_time, job_latest_state.retry_time,
@@ -1269,7 +1271,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 		defer rows.Close()
 	} else {
 		sqlStatement := fmt.Sprintf(`SELECT
-                                               %[1]s.job_id, %[1]s.uuid,  %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload,
+                                               %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload,
                                                %[1]s.created_at, %[1]s.expire_at,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
@@ -1296,7 +1298,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
-		err := rows.Scan(&job.JobID, &job.UUID, &job.Parameters, &job.CustomVal,
+		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
 			&job.EventPayload, &job.CreatedAt, &job.ExpireAt,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
@@ -1340,13 +1342,13 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	var sqlStatement string
 
 	if useJoinForUnprocessed {
-		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
                                                %[1]s.expire_at
                                              FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
                                              WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable)
 	} else {
-		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
+		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
                                                %[1]s.expire_at
                                              FROM %[1]s WHERE %[1]s.job_id NOT IN (SELECT DISTINCT(%[2]s.job_id)
@@ -1376,7 +1378,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
-		err := rows.Scan(&job.JobID, &job.UUID, &job.Parameters, &job.CustomVal,
+		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
 			&job.EventPayload, &job.CreatedAt, &job.ExpireAt)
 		jd.assertError(err)
 		jobList = append(jobList, &job)
@@ -2351,6 +2353,7 @@ func (jd *HandleT) createTables() error {
 	sqlStatement := `CREATE TABLE jobs (
                              job_id BIGSERIAL PRIMARY KEY,
 							 uuid UUID NOT NULL,
+							 user_id TEXT,
 							 parameters JSONB NOT NULL,
                              custom_val INT NOT NULL,
                              event_payload JSONB NOT NULL,
@@ -2389,6 +2392,7 @@ func (jd *HandleT) staticDSTest() {
 		id := uuid.NewV4()
 		newJob := JobT{
 			UUID:         id,
+			UserID:       id.String(),
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			CustomVal:    testEndPoint,
@@ -2481,6 +2485,7 @@ func (jd *HandleT) dynamicDSTestMigrate() {
 			id := uuid.NewV4()
 			newJob := JobT{
 				UUID:         id,
+				UserID:       id.String(),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    testEndPoint,
@@ -2516,6 +2521,7 @@ func (jd *HandleT) dynamicTest() {
 			id := uuid.NewV4()
 			newJob := JobT{
 				UUID:         id,
+				UserID:       id.String(),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    testEndPoint,
