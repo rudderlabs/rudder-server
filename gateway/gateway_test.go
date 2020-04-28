@@ -62,12 +62,11 @@ var sampleBackendConfig = backendconfig.SourcesT{
 type context struct {
 	asyncHelper testutils.AsyncTestHelper
 
-	mockCtrl                *gomock.Controller
-	mockJobsDB              *mocksJobsDB.MockJobsDB
-	mockBackendConfig       *mocksBackendConfig.MockBackendConfig
-	mockCommonBackendConfig *mocksBackendConfig.MockCommonBackendConfigI
-	mockRateLimiter         *mocksRateLimiter.MockRateLimiter
-	mockStats               *mocksStats.MockStats
+	mockCtrl          *gomock.Controller
+	mockJobsDB        *mocksJobsDB.MockJobsDB
+	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	mockRateLimiter   *mocksRateLimiter.MockRateLimiter
+	mockStats         *mocksStats.MockStats
 
 	mockStatGatewayResponseTime *mocksStats.MockRudderStats
 	mockStatGatewayBatchSize    *mocksStats.MockRudderStats
@@ -79,14 +78,13 @@ func (c *context) Setup() {
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockCommonBackendConfig = mocksBackendConfig.NewMockCommonBackendConfigI(c.mockCtrl)
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
 	c.mockStats = mocksStats.NewMockStats(c.mockCtrl)
 
 	c.mockStatGatewayResponseTime = mocksStats.NewMockRudderStats(c.mockCtrl)
 	c.mockStatGatewayBatchSize = mocksStats.NewMockRudderStats(c.mockCtrl)
 	c.mockStatGatewayBatchTime = mocksStats.NewMockRudderStats(c.mockCtrl)
-	commonBackendConfig = c.mockCommonBackendConfig
+
 	// During Setup, gateway always creates the following stats
 	c.mockStats.EXPECT().NewStat("gateway.response_time", stats.TimerType).Return(c.mockStatGatewayResponseTime).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 	c.mockStats.EXPECT().NewStat("gateway.batch_size", stats.CountType).Return(c.mockStatGatewayBatchSize).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())

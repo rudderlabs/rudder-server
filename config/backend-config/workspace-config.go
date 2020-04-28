@@ -9,7 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
-var IoUtils sysUtils.IoUtilI = sysUtils.NewIoUtil()
+var IoUtil sysUtils.IoUtilI = sysUtils.NewIoUtil()
 
 type WorkspaceConfig struct {
 	CommonBackendConfig
@@ -68,7 +68,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 // getFromFile reads the workspace config from JSON file
 func (workspaceConfig *WorkspaceConfig) getFromFile() (SourcesT, bool) {
 	log.Info("Reading workspace config from JSON file")
-	data, err := IoUtils.ReadFile(configJSONPath)
+	data, err := IoUtil.ReadFile(configJSONPath)
 	if err != nil {
 		log.Errorf("Unable to read backend config from file: %s", configJSONPath)
 		return SourcesT{}, false
