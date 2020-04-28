@@ -368,7 +368,7 @@ func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[st
 func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) warehouseutils.UploadT {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, first_event_at, last_event_at, created_at, updated_at)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`, warehouseUploadsTable)
-	logger.Infof("WH: %s: Creating record in wh_load_files id: %v", wh.destType, sqlStatement)
+	logger.Infof("WH: %s: Creating record in %s table: %v", wh.destType, warehouseUploadsTable, sqlStatement)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
