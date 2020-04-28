@@ -212,6 +212,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 	shouldStartGateWay := true
 	if enableMigrator {
+		shouldStartGateWay := false
 		logger.Info("Shanmukh Debug: migrator is enabled")
 		backendCount := config.GetRequiredEnvAsInt("MIGRATING_TO_BACKEND_COUNT")
 		nextclusterVersion := config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
@@ -241,8 +242,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)
 
-		if !pf.DoesNodeBelongToTheCluster(misc.GetNodeID()) {
-			shouldStartGateWay = false
+		if forImport {
+			shouldStartGateWay = true
 		}
 	}
 

@@ -82,13 +82,3 @@ func (pf *Pathfinder) getNodeFromHash(hash uint32) NodeMeta {
 func (pf *Pathfinder) GetNodeFromID(id string) NodeMeta {
 	return pf.getNodeFromHash(murmur3.Sum32([]byte(id)))
 }
-
-//DoesNodeBelongToTheCluster returns a true if the passed nodeID is a part of the cluster
-func (pf *Pathfinder) DoesNodeBelongToTheCluster(nodeID string) bool {
-	for _, nMeta := range pf.clusterState {
-		if nodeID == nMeta.GetNodeID() {
-			return true
-		}
-	}
-	return false
-}
