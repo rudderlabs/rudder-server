@@ -295,7 +295,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	brt.trackRequestMetrics(batchReqMetric)
 	var statusList []*jobsdb.JobStatusT
 
-	if err!=nil && postToWarehouseErr {
+	if postToWarehouseErr {
 		warehouseServiceFailedTimeLock.Lock()
 		if warehouseServiceFailedTime.IsZero() {
 			warehouseServiceFailedTime = time.Now()
@@ -317,11 +317,10 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 				warehouseServiceFailedTimeLock.RUnlock()
 			}
 		}
-		if err == nil && postToWarehouseErr {
+		if !postToWarehouseErr {
 			warehouseServiceFailedTimeLock.Lock()
 			warehouseServiceFailedTime = time.Time{}
 			warehouseServiceFailedTimeLock.Unlock()
-
 		}
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
