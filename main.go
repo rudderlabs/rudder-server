@@ -188,7 +188,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 	if enableProcessor {
 		var processor processor.HandleT
-		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+		processor.Setup(backendconfig.DefaultBackendConfig, &gatewayDB, &routerDB, &batchRouterDB)
 
 		if !isReplayServer {
 			var replay replay.ReplayProcessorT

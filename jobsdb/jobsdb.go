@@ -64,6 +64,11 @@ JobsDB interface contains public methods to access JobsDB data
 type JobsDB interface {
 	Store(jobList []*JobT) map[uuid.UUID]string
 	CheckPGHealth() bool
+	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT)
+
+	GetToRetry(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
+	GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
+	GetExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
 }
 
 /*

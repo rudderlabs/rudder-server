@@ -25,9 +25,10 @@ import (
 
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
-	gatewayDB             *jobsdb.HandleT
-	routerDB              *jobsdb.HandleT
-	batchRouterDB         *jobsdb.HandleT
+	gatewayDB             jobsdb.JobsDB
+	routerDB              jobsdb.JobsDB
+	batchRouterDB         jobsdb.JobsDB
+	backendConfig         backendconfig.BackendConfig
 	transformer           *transformerHandleT
 	pStatsJobs            *misc.PerfStats
 	pStatsDBR             *misc.PerfStats
@@ -113,7 +114,8 @@ func init() {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, batchRouterDB *jobsdb.HandleT) {
+func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB) {
+	proc.backendConfig = backendConfig
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
@@ -202,7 +204,7 @@ func loadConfig() {
 
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "processConfig")
+	proc.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
