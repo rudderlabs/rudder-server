@@ -3,24 +3,23 @@ package jobsdb
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func (jd *HandleT) exportSetup(dsList []dataSetT, ds dataSetT) (dataSetT, bool) {
+func (jd *HandleT) getLastDsForExport(dsList []dataSetT) dataSetT {
 	dsListLen := len(dsList)
-	if ds.Index == "" {
-		if !jd.isEmpty(dsList[dsListLen-1]) {
-			ds = dsList[dsListLen-1]
-		} else if dsListLen > 1 {
-			ds = dsList[dsListLen-2]
-		}
-
-		return ds, true
+	var ds dataSetT
+	if !jd.isEmpty(dsList[dsListLen-1]) {
+		ds = dsList[dsListLen-1]
+	} else if dsListLen > 1 {
+		ds = dsList[dsListLen-2]
 	}
-	return ds, false
+
+	return ds
 }
 
 //GetNonMigrated all jobs with no filters
@@ -44,6 +43,12 @@ func (jd *HandleT) GetNonMigrated(count int) []*JobT {
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 		jobs, err := jd.getNonMigratedJobsDS(ds, count)
+		var statusList []*JobStatusT
+		for _, job := range jobs {
+			statusList = append(statusList, BuildStatus(job, MigratingState))
+		}
+
+		jd.UpdateJobStatus(statusList, []string{}, []ParameterFilterT{})
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
@@ -59,6 +64,19 @@ func (jd *HandleT) GetNonMigrated(count int) []*JobT {
 	}
 	//Release lock
 	return outJobs
+}
+
+func BuildStatus(job *JobT, jobState string) *JobStatusT {
+	newStatus := JobStatusT{
+		JobID:         job.JobID,
+		JobState:      jobState,
+		AttemptNum:    1,
+		ExecTime:      time.Now(),
+		RetryTime:     time.Now(),
+		ErrorCode:     "200",
+		ErrorResponse: []byte(`{"success":"OK"}`),
+	}
+	return &newStatus
 }
 
 //SQLJobStatusT is a temporary struct to handle nulls from postgres query
@@ -77,6 +95,7 @@ func (jd *HandleT) getNonMigratedJobsDS(ds dataSetT, count int) ([]*JobT, error)
 	var err error
 
 	// What does isEmptyResult do?
+	// TODO: Understand this and check if this should be uncommented or removed
 	// if jd.isEmptyResult(ds, []string{"NP"}, customValFilters, parameterFilters) {
 	// 	logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 	// 	return []*JobT{}, nil
@@ -132,8 +151,20 @@ func (jd *HandleT) getNonMigratedJobsDS(ds dataSetT, count int) ([]*JobT, error)
 	return jobList, nil
 }
 
-//PostMigrationCleanup removes all the entries from job_status_tables that are of state 'wont_migrate'
-func (jd *HandleT) PostMigrationCleanup() {
+//PreExportCleanup removes all the entries from job_status_tables that are of state 'migrating'
+func (jd *HandleT) PreExportCleanup() {
+	jd.dsListLock.RLock()
+	defer jd.dsListLock.RUnlock()
+
+	dsList := jd.getDSList(false)
+
+	for _, ds := range dsList {
+		jd.deleteMigratingJobStatusDS(ds)
+	}
+}
+
+//PostExportCleanup removes all the entries from job_status_tables that are of state 'wont_migrate' or 'migrating'
+func (jd *HandleT) PostExportCleanup() {
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
@@ -141,11 +172,19 @@ func (jd *HandleT) PostMigrationCleanup() {
 
 	for _, ds := range dsList {
 		jd.deleteWontMigrateJobStatusDS(ds)
+		jd.deleteMigratingJobStatusDS(ds)
 	}
 }
 
 func (jd *HandleT) deleteWontMigrateJobStatusDS(ds dataSetT) {
-	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE job_state='wont_migrate' OR job_state='migrating'`, ds.JobStatusTable)
+	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE job_state='wont_migrate'`, ds.JobStatusTable)
+	logger.Info(sqlStatement)
+	_, err := jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+}
+
+func (jd *HandleT) deleteMigratingJobStatusDS(ds dataSetT) {
+	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE job_state='migrating'`, ds.JobStatusTable)
 	logger.Info(sqlStatement)
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)

@@ -17,17 +17,19 @@ import (
 )
 
 var (
-	dbReadBatchSize int
+	dbReadBatchSize              int
+	exportDoneCheckSleepDuration time.Duration
 )
 
 func loadConfig() {
 	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 1000)
+	exportDoneCheckSleepDuration = (config.GetDuration("Migrator.exportDoneCheckSleepDurationIns", time.Duration(2)) * time.Second)
 }
 
 func (migrator *Migrator) waitForExportDone() {
 	anyPendingNotifications := true
 	for ok := true; ok; ok = anyPendingNotifications {
-		//TODO: Add sleep 2 sec
+		time.Sleep(exportDoneCheckSleepDuration)
 		exportEvents := migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp)
 		anyPendingNotifications = false
 		for _, exportEvent := range exportEvents {
@@ -35,8 +37,12 @@ func (migrator *Migrator) waitForExportDone() {
 				anyPendingNotifications = true
 			}
 		}
-		//Todo: additionally makesure there are no jobs left in migrating state
+		//TODO: additionally makesure there are no jobs left in migrating state
 	}
+}
+
+func (migrator *Migrator) preExport() {
+	migrator.jobsDB.PreExportCleanup()
 }
 
 func (migrator *Migrator) export() {
@@ -45,6 +51,8 @@ func (migrator *Migrator) export() {
 	if !migrator.jobsDB.ShouldExport() {
 		return
 	}
+
+	migrator.preExport()
 
 	rruntime.Go(func() {
 		migrator.readFromCheckpointAndNotify()
@@ -73,17 +81,11 @@ func (migrator *Migrator) export() {
 func (migrator *Migrator) filterByNode(jobList []*jobsdb.JobT) map[pathfinder.NodeMeta][]*jobsdb.JobT {
 	logger.Infof("Inside filter and dump")
 	filteredData := make(map[pathfinder.NodeMeta][]*jobsdb.JobT)
-	var statusList []*jobsdb.JobStatusT
 	for _, job := range jobList {
 		userID := migrator.jobsDB.GetUserID(job)
-
 		nodeMeta := migrator.pf.GetNodeFromID(userID)
-		statusList = append(statusList, buildStatus(job, jobsdb.MigratingState))
-
 		filteredData[nodeMeta] = append(filteredData[nodeMeta], job)
 	}
-	migrator.jobsDB.UpdateJobStatus(statusList, []string{}, []jobsdb.ParameterFilterT{}) //TODO: Move this to GetNonMigrated
-
 	return filteredData
 }
 
@@ -144,7 +146,7 @@ func (migrator *Migrator) writeToFileAndUpload(nMeta pathfinder.NodeMeta, ch cha
 				}
 
 				contentSlice[idx] = m
-				statusList = append(statusList, buildStatus(job, jobState))
+				statusList = append(statusList, jobsdb.BuildStatus(job, jobState))
 			}
 
 			logger.Info(nMeta, len(jobList))
@@ -163,24 +165,11 @@ func (migrator *Migrator) writeToFileAndUpload(nMeta pathfinder.NodeMeta, ch cha
 			os.Remove(path)
 		} else {
 			for _, job := range jobList {
-				statusList = append(statusList, buildStatus(job, jobState))
+				statusList = append(statusList, jobsdb.BuildStatus(job, jobState))
 			}
 		}
 		migrator.jobsDB.UpdateJobStatus(statusList, []string{}, []jobsdb.ParameterFilterT{})
 	}
-}
-
-func buildStatus(job *jobsdb.JobT, jobState string) *jobsdb.JobStatusT {
-	newStatus := jobsdb.JobStatusT{
-		JobID:         job.JobID,
-		JobState:      jobState,
-		AttemptNum:    1,
-		ExecTime:      time.Now(),
-		RetryTime:     time.Now(),
-		ErrorCode:     "200",
-		ErrorResponse: []byte(`{"success":"OK"}`),
-	}
-	return &newStatus
 }
 
 func (migrator *Migrator) upload(file *os.File, nMeta pathfinder.NodeMeta) {
@@ -213,7 +202,7 @@ func (migrator *Migrator) readFromCheckpointAndNotify() {
 	}
 }
 
-//Verify: this is similar to getDumpQForNode. Should we write a single function for both. How to do it?
+//TODO: Verify: this is similar to getDumpQForNode. Should we write a single function for both. How to do it?
 func (migrator *Migrator) getNotifyQForNode(nodeID string) (chan *jobsdb.MigrationEvent, bool) {
 	isNewChannel := false
 	if _, ok := migrator.notifyQueues[nodeID]; !ok {
@@ -239,7 +228,7 @@ func (migrator *Migrator) notify(nMeta pathfinder.NodeMeta, notifyQ chan *jobsdb
 }
 
 func (migrator *Migrator) postExport() {
-	migrator.jobsDB.PostMigrationCleanup()
+	migrator.jobsDB.PostExportCleanup()
 	migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", "", jobsdb.Exported, 0)
 	migrator.jobsDB.Checkpoint(&migrationEvent)
 }

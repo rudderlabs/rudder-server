@@ -32,7 +32,6 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 		migrationEvent.ID = 0
 		migrationEvent.Status = jobsdb.PreparedForImport
 		migrationEvent.TimeStamp = time.Now()
-		//dedup if event already received
 		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
 	} else {
 		logger.Errorf("Wrong migration event received. Only export type events are expected. migrationType: %s, migrationEvent: %v", migrationEvent.MigrationType, migrationEvent)
@@ -42,7 +41,7 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 	w.Write([]byte("OK"))
 }
 
-//Verify: this is similar to getDumpQForNode. Should we write a single function for both. How to do it?
+//TODO: Verify: this is similar to getDumpQForNode. Should we write a single function for both. How to do it?
 func (migrator *Migrator) getImportQForNode(nodeID string) (chan *jobsdb.MigrationEvent, bool) {
 	isNewChannel := false
 	if _, ok := migrator.importQueues[nodeID]; !ok {
@@ -128,12 +127,11 @@ func (migrator *Migrator) readFromFileAndWriteToDB(file *os.File, migrationEvent
 			return nil
 		}
 		jobList = append(jobList, &job)
-		// process the line
 	}
 	reader.Close()
 	migrator.jobsDB.StoreImportedJobsAndJobStatuses(jobList, file.Name(), migrationEvent)
 	logger.Infof("Migrator: Done importing file %s", file.Name())
-	// check if Scan() finished because of error or because it reached end of file
+	//TODO: check if Scan() finished because of error or because it reached end of file
 	return sc.Err()
 }
 

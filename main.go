@@ -232,10 +232,12 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		var routerMigrator migrator.Migrator
 		var batchRouterMigrator migrator.Migrator
 
-		//TODO: These should be concurrent?
-		gatewayMigrator.Setup(&gatewayDB, pf, forExport, forImport, clusterVersion, nextclusterVersion, migratorPort)
-		routerMigrator.Setup(&routerDB, pf, forExport, forImport, clusterVersion, nextclusterVersion, migratorPort)
-		batchRouterMigrator.Setup(&batchRouterDB, pf, forExport, forImport, clusterVersion, nextclusterVersion, migratorPort)
+		var wg sync.WaitGroup
+		wg.Add(3)
+		gatewayMigrator.Setup(&gatewayDB, pf, forExport, forImport, migratorPort, &wg)
+		routerMigrator.Setup(&routerDB, pf, forExport, forImport, migratorPort, &wg)
+		batchRouterMigrator.Setup(&batchRouterDB, pf, forExport, forImport, migratorPort, &wg)
+		wg.Wait()
 
 		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)
 

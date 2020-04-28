@@ -9,20 +9,21 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-func (jd *HandleT) dsForImportEventsSetup(dsList []dataSetT, ds dataSetT) (dataSetT, bool) {
-	var shouldCheckpoint bool
-	if ds.Index == "" {
-		ds = jd.addNewDS(false, jd.migrationState.DsForNewEvents)
-		logger.Infof("Should Checkpoint Import Setup event for the new ds : %v", ds)
-		shouldCheckpoint = true
-	}
+func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
+	ds := jd.addNewDS(false, jd.migrationState.DsForNewEvents)
+	logger.Infof("Should Checkpoint Import Setup event for the new ds : %v", ds)
+	return ds
+}
 
+func (jd *HandleT) setupSequenceProvider(ds dataSetT) {
 	if jd.migrationState.sequenceProvider == nil || !jd.migrationState.sequenceProvider.IsInitialized() {
-		dsList = jd.getDSList(true)
-		importDSMin := jd.getMaxIDForDs(ds)
-		//Get sequence number from checkpoints and pick the greatest for importDSMin
+		jd.dsListLock.Lock()
+		defer jd.dsListLock.Unlock()
 
-		//TODO: remove this. Use only checkpoint info
+		dsList := jd.getDSList(true)
+		importDSMin := jd.getMaxIDForDs(ds)
+		//TODO: Get sequence number from checkpoints and pick the greatest for importDSMin
+
 		if importDSMin == 0 {
 			for idx, dataSet := range dsList {
 				if dataSet.Index == ds.Index {
@@ -34,26 +35,22 @@ func (jd *HandleT) dsForImportEventsSetup(dsList []dataSetT, ds dataSetT) (dataS
 		}
 		jd.migrationState.sequenceProvider = NewSequenceProvider(importDSMin + 1)
 	}
-	return ds, shouldCheckpoint
 }
 
-func (jd *HandleT) dsForNewEventsSetup(dsList []dataSetT, ds dataSetT) (dataSetT, bool) {
+func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 	dsListLen := len(dsList)
-
-	if ds.Index == "" {
-		if jd.isEmpty(dsList[dsListLen-1]) {
-			ds = dsList[dsListLen-1]
-		} else {
-			dsForNewEvents := jd.addNewDS(true, dataSetT{})
-			ds = dsForNewEvents
-		}
-
-		seqNoForNewDS := int64(getNewVersion())*int64(math.Pow10(13)) + 1
-		jd.updateSequenceNumber(ds, seqNoForNewDS)
-		logger.Infof("Jobsdb: New dataSet %s is prepared with start sequence : %d", ds, seqNoForNewDS)
-		return ds, true
+	var ds dataSetT
+	if jd.isEmpty(dsList[dsListLen-1]) {
+		ds = dsList[dsListLen-1]
+	} else {
+		dsForNewEvents := jd.addNewDS(true, dataSetT{})
+		ds = dsForNewEvents
 	}
-	return ds, false
+
+	seqNoForNewDS := int64(getNewVersion())*int64(math.Pow10(13)) + 1
+	jd.updateSequenceNumber(ds, seqNoForNewDS)
+	logger.Infof("Jobsdb: New dataSet %s is prepared with start sequence : %d", ds, seqNoForNewDS)
+	return ds
 }
 
 func getNewVersion() int {
@@ -64,7 +61,8 @@ func getNewVersion() int {
 //StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
 func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent *MigrationEvent) {
 	if jd.migrationState.DsForImport.Index == "" {
-		jd.migrationState.DsForImport = jd.setupFor(ImportOp, jd.migrationState.DsForImport, jd.dsForImportEventsSetup)
+		jd.migrationState.DsForImport = jd.findOrCreateDsFromSetupCheckpoint(ImportOp, jd.migrationState.DsForImport, jd.getDsForImport)
+		jd.setupSequenceProvider(jd.migrationState.DsForImport)
 	}
 
 	if jd.migrationState.DsForImport.Index == "" {
@@ -74,7 +72,6 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	startJobID := jd.getStartJobID(len(jobList), migrationEvent)
 	statusList := []*JobStatusT{}
 
-	//TODO: set job.UserID, job.UUID?
 	for idx, job := range jobList {
 		jobID := startJobID + int64(idx)
 		job.JobID = jobID
@@ -85,7 +82,6 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	}
 
 	//TODO: modify storeJobsDS and updateJobStatusDS to accept an additional bool to support "on conflict do nothing"
-	//what is retry each expected to do?
 
 	//TODO: get minimal functions for the below and put them both in a transaction
 	jd.storeJobsDS(jd.migrationState.DsForImport, true, false, jobList)

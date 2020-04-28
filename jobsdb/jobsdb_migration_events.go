@@ -2,20 +2,22 @@ package jobsdb
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //MigrationEvent captures an event of export/import to recover from incase of a crash during migration
 type MigrationEvent struct {
 	ID            int64     `json:"ID"`
-	MigrationType string    `json:"MigrationType"` //ENUM : export, import
+	MigrationType string    `json:"MigrationType"` //ENUM : export, import, acceptNewEvents
 	FromNode      string    `json:"FromNode"`
 	ToNode        string    `json:"ToNode"`
 	FileLocation  string    `json:"FileLocation"`
-	Status        string    `json:"Status"` //ENUM : exported, imported, prepared_for_import
+	Status        string    `json:"Status"` //ENUM : Look up 'Values for Status'
 	StartSeq      int64     `json:"StartSeq"`
 	Payload       string    `json:"Payload"`
 	TimeStamp     time.Time `json:"TimeStamp"`
@@ -41,7 +43,7 @@ const (
 	SetupToAcceptNewEvents = "setup_to_accept_new_events"
 )
 
-//Checkpoint writes a migration event
+//Checkpoint writes a migration event if id is passed as 0. Else it will update status and start_sequence
 func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 	jd.assert(migrationEvent.MigrationType == ExportOp ||
 		migrationEvent.MigrationType == ImportOp ||
@@ -54,7 +56,7 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 		sqlStatement = fmt.Sprintf(`UPDATE %s_migration_checkpoints SET status = $1, start_sequence = $2 WHERE id = $3 RETURNING id`, jd.GetTablePrefix())
 	} else {
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s_migration_checkpoints (migration_type, from_node, to_node, file_location, status, start_sequence, payload, time_stamp)
-									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, jd.GetTablePrefix())
+									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (file_location) DO NOTHING RETURNING id`, jd.GetTablePrefix())
 	}
 
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
@@ -113,15 +115,41 @@ func (jd *HandleT) SetupCheckpointTable() {
 		migration_type varchar(20) NOT NULL,
 		from_node varchar(64) NOT NULL,
 		to_node VARCHAR(64) NOT NULL,
-		file_location varchar(256),
+		file_location TEXT,
 		status varchar(64),
 		start_sequence BIGINT,
-		payload varchar(256),
+		payload TEXT,
 		time_stamp TIMESTAMP NOT NULL DEFAULT NOW());`, jd.GetTablePrefix())
 
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 	logger.Infof("Migration: %s_migration_checkpoints table created", jd.GetTablePrefix())
+}
+
+//findOrCreateDsFromSetupCheckpoint is boiler plate code for setting up for different scenarios
+func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string, ds dataSetT, findOrCreateDs func([]dataSetT) dataSetT) dataSetT {
+	jd.dsListLock.Lock()
+	defer jd.dsListLock.Unlock()
+
+	setupEvent := jd.GetSetupCheckpoint(migrationType)
+	if setupEvent == nil {
+		me := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
+		me.Payload = "{}"
+		setupEvent = &me
+	}
+	json.Unmarshal([]byte(setupEvent.Payload), ds)
+
+	dsList := jd.getDSList(true)
+	if ds.Index == "" {
+		ds := findOrCreateDs(dsList)
+		payloadBytes, err := json.Marshal(ds)
+		if err != nil {
+			panic("Unable to Marshal")
+		}
+		setupEvent.Payload = string(payloadBytes)
+		jd.Checkpoint(setupEvent)
+	}
+	return ds
 }
 
 func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType string) int64 {
@@ -151,7 +179,7 @@ func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType stri
 	return sequenceNumber
 }
 
-//GetSetupCheckpoint gets all checkpoints and
+//GetSetupCheckpoint gets all checkpoints and picks out the setup event for that type
 func (jd *HandleT) GetSetupCheckpoint(migrationType string) *MigrationEvent {
 	var setupStatus string
 	switch migrationType {
@@ -170,7 +198,7 @@ func (jd *HandleT) GetSetupCheckpoint(migrationType string) *MigrationEvent {
 	case 1:
 		return setupEvents[0]
 	default:
-		panic("Something went wrong")
+		panic("More than 1 setup event found. This should not happen")
 	}
 
 }

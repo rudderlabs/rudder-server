@@ -62,7 +62,7 @@ ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted
 */
 type JobStatusT struct {
 	JobID         int64           `json:"JobID"`
-	JobState      string          `json:"JobState"` //ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrated, wont_migrate
+	JobState      string          `json:"JobState"` //ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrating, migrated, wont_migrate
 	AttemptNum    int             `json:"AttemptNum"`
 	ExecTime      time.Time       `json:"ExecTime"`
 	RetryTime     time.Time       `json:"RetryTime"`
@@ -342,8 +342,8 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	dList := jd.getDSList(false)
 	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
 
-	//TODO Alter exising job_status table. job_id datatype from INT to BIGINT
-	//TODO Alter exising job_state_type. migrated, wont_migrate types to be added.
+	//TODO: Alter exising job_status table. job_id datatype from INT to BIGINT
+	//TODO: Alter exising job_state_type. migrated, wont_migrate types to be added.
 
 	if jd.BackupSettings.BackupEnabled {
 		jd.jobsFileUploader, err = jd.getFileUploader()
@@ -677,8 +677,9 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 		jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
 		for idx, ds := range dList {
 			if ds.Index == insertBeforeDS.Index {
-				// //We never insert before the first element
+				// We never insert before the first element
 				// We do now.
+				//TODO: Review this carefully
 				// jd.assert(idx > 0, fmt.Sprintf("idx: %d <= 0", idx))
 				levels, levelVals := jd.mapDSToLevel(ds)
 				var dsPre dataSetT
@@ -1497,7 +1498,7 @@ func (jd *HandleT) mainCheckLoop() {
 		}
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
-		//Condition should be replaced with a customizable isMigrationInProgress
+		//TODO: Condition should be replaced with a customizable isMigrationInProgress
 		if config.GetBool("enableMigrator", false) {
 			continue
 		}

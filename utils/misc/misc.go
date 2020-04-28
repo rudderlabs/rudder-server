@@ -663,7 +663,7 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 	request.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(request)
-	// Not handling errors when sending alert to victorops
+	//TODO: Check this. Not handling errors when sending alert to victorops
 	if err != nil {
 		logger.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
 		return []byte{}, 0
