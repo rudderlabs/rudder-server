@@ -84,6 +84,7 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	//TODO: modify storeJobsDS and updateJobStatusDS to accept an additional bool to support "on conflict do nothing"
 
 	//TODO: get minimal functions for the below and put them both in a transaction
+	logger.Infof("[JobsDB Import] :: Writing jobs from file:%s to db", fileName)
 	jd.storeJobsDS(jd.migrationState.DsForImport, true, false, jobList)
 	jd.updateJobStatusDS(jd.migrationState.DsForImport, statusList, []string{}, []ParameterFilterT{})
 }
@@ -113,8 +114,7 @@ func (jd *HandleT) getMaxIDForDs(ds dataSetT) int64 {
 	var maxID sql.NullInt64
 	sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
-	err := row.Scan(&maxID)
-	jd.assertError(err)
+	row.Scan(&maxID)
 
 	if maxID.Valid {
 		return int64(maxID.Int64)

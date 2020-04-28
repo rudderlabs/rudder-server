@@ -241,9 +241,15 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 		var wg sync.WaitGroup
 		wg.Add(3)
-		go gatewayMigrator.Setup(&gatewayDB, pf, forExport, forImport, migratorPort, &wg)
-		go routerMigrator.Setup(&routerDB, pf, forExport, forImport, migratorPort, &wg)
-		go batchRouterMigrator.Setup(&batchRouterDB, pf, forExport, forImport, migratorPort, &wg)
+		rruntime.Go(func() {
+			gatewayMigrator.Setup(&gatewayDB, pf, forExport, forImport, migratorPort, &wg)
+		})
+		rruntime.Go(func() {
+			routerMigrator.Setup(&routerDB, pf, forExport, forImport, migratorPort, &wg)
+		})
+		rruntime.Go(func() {
+			batchRouterMigrator.Setup(&batchRouterDB, pf, forExport, forImport, migratorPort, &wg)
+		})
 		wg.Wait()
 
 		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)

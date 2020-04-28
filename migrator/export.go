@@ -219,11 +219,12 @@ func (migrator *Migrator) getNotifyQForNode(nodeID string) (chan *jobsdb.Migrati
 func (migrator *Migrator) notify(nMeta pathfinder.NodeMeta, notifyQ chan *jobsdb.MigrationEvent) {
 	for {
 		checkPoint := <-notifyQ
-		logger.Infof("Export-migrator: Notifying destination node %s to download and import file from %s", checkPoint.ToNode, checkPoint.FileLocation)
+		// logger.Infof("Export-migrator: Notifying destination node %s to download and import file from %s", checkPoint.ToNode, checkPoint.FileLocation)
 		statusCode := 0
 		for ok := true; ok; ok = (statusCode != 200) {
+			// logger.Infof("Post body: %v", checkPoint)
 			_, statusCode = misc.MakePostRequest(nMeta.GetNodeConnectionString(migrator.port), migrator.getURI("/fileToImport"), checkPoint)
-			logger.Infof("Export-migrator: Notified destination node %s to download and import file from %s. Responded with statusCode: %d", checkPoint.ToNode, checkPoint.FileLocation, statusCode)
+			// logger.Infof("Export-migrator: Notified destination node %s to download and import file from %s. Responded with statusCode: %d", checkPoint.ToNode, checkPoint.FileLocation, statusCode)
 		}
 		checkPoint.Status = jobsdb.Notified
 		migrator.jobsDB.Checkpoint(checkPoint)
