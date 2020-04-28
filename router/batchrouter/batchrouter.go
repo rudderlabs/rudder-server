@@ -36,7 +36,6 @@ var (
 	noOfWorkers                        int
 	maxFailedCountForJob               int
 	mainLoopSleep, diagnosisTickerTime time.Duration
-	maxRetriesToWarehouseService       int
 	uploadFreqInS                      int64
 	configSubscriberLock               sync.RWMutex
 	objectStorageDestinations          []string
@@ -50,7 +49,7 @@ var (
 	warehouseMode                      string
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
-	warehouseServiceMaxRetryTime       time.Duration
+	warehouseServiceMaxRetryTimeinHr   time.Duration
 )
 
 type HandleT struct {
@@ -313,8 +312,8 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		if jobState == jobsdb.FailedState && job.LastJobStatus.AttemptNum >= maxFailedCountForJob && !postToWarehouseErr {
 			jobState = jobsdb.AbortedState
 		} else {
-			// change job state to abort state after maxRetriesToWarehouseService, if warehouse service is not reachable.
-			if jobState == jobsdb.FailedState && isWarehouse  && postToWarehouseErr {
+			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
+			if jobState == jobsdb.FailedState && isWarehouse && postToWarehouseErr {
 				warehouseServiceFailedTimeLock.RLock()
 				if time.Now().Sub(warehouseServiceFailedTime) > warehouseServiceMaxRetryTimeinHr {
 					jobState = jobsdb.AbortedState
@@ -724,7 +723,6 @@ func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
 	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
 	maxFailedCountForJob = config.GetInt("BatchRouter.maxFailedCountForJob", 128)
-	maxRetriesToWarehouseService = config.GetInt("BatchRouter.maxRetriesToWarehouseService", 128)
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
