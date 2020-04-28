@@ -243,6 +243,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
+				UserID:       gjson.GetBytes(body, "batch.0.anonymousId").Str,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v"}`, enabledWriteKeysSourceMap[writeKey])),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),

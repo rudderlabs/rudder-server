@@ -74,6 +74,7 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	startJobID := jd.getStartJobID(len(jobList), migrationEvent)
 	statusList := []*JobStatusT{}
 
+	//TODO: set job.UserID, job.UUID?
 	for idx, job := range jobList {
 		jobID := startJobID + int64(idx)
 		job.JobID = jobID
