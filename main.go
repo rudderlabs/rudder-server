@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -188,6 +189,11 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	if enableProcessor {
 		var processor processor.HandleT
 		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+
+		if !isReplayServer {
+			var replay replay.ReplayProcessorT
+			replay.Setup(&gatewayDB)
+		}
 	}
 
 	var gateway gateway.HandleT
