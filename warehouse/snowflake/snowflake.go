@@ -456,7 +456,6 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	sf.ObjectStorage = warehouseutils.ObjectStorageType("SNOWFLAKE", config.Warehouse.Destination.Config)
 
 	currSchema, err := warehouseutils.GetCurrentSchema(sf.DbHandle, sf.Warehouse)
-	fmt.Printf("%+v\n", currSchema)
 	if err != nil {
 		panic(err)
 	}
