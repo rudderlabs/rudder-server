@@ -28,10 +28,6 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	logger.Infof("Migrator: Request received to import %s", migrationEvent.FileLocation)
 	if migrationEvent.MigrationType == jobsdb.ExportOp {
-		if err != nil {
-			panic(err)
-		}
-
 		migrationEvent.MigrationType = jobsdb.ImportOp
 		migrationEvent.ID = 0
 		migrationEvent.Status = jobsdb.PreparedForImport

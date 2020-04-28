@@ -52,17 +52,15 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 	migrator.jobsDB.SetupCheckpointTable()
 
 	//take these as arguments
-	isExport := true
-	isImport := true
 	migrator.jobsDB.SetupForMigrations(forExport, forImport)
 
-	if isExport {
+	if forExport {
 		rruntime.Go(func() {
 			migrator.export()
 		})
 	}
 
-	if isImport {
+	if forImport {
 		rruntime.Go(func() {
 			migrator.readFromCheckPointAndTriggerImport()
 		})

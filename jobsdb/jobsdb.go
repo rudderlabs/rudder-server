@@ -1479,7 +1479,23 @@ func (jd *HandleT) mainCheckLoop() {
 			jd.dsListLock.Unlock()
 		}
 
+		if jd.checkIfFullDS(jd.migrationState.DsForImport) {
+			//Adding a new DS updates the list
+			//Doesn't move any data so we only
+			//take the list lock
+			jd.dsListLock.Lock()
+			logger.Info("Main check:NewDS")
+			//TODO: Single transaction for addNewDs and Checkpoint
+			importDs := jd.addNewDS(false, jd.migrationState.DsForNewEvents)
+			setupCheckpoint := jd.GetSetupCheckpoint(ImportOp)
+			payloadBytes, _ := json.Marshal(importDs)
+			setupCheckpoint.Payload = string(payloadBytes)
+			jd.Checkpoint(setupCheckpoint)
+			jd.dsListLock.Unlock()
+		}
+
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
+		//Condition should be replaced with a customizable isMigrationInProgress
 		if config.GetBool("enableMigrator", false) {
 			continue
 		}

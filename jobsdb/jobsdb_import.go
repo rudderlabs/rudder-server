@@ -20,7 +20,9 @@ func (jd *HandleT) dsForImportEventsSetup(dsList []dataSetT, ds dataSetT) (dataS
 	if jd.migrationState.sequenceProvider == nil || !jd.migrationState.sequenceProvider.IsInitialized() {
 		dsList = jd.getDSList(true)
 		importDSMin := jd.getMaxIDForDs(ds)
+		//Get sequence number from checkpoints and pick the greatest for importDSMin
 
+		//TODO: remove this. Use only checkpoint info
 		if importDSMin == 0 {
 			for idx, dataSet := range dsList {
 				if dataSet.Index == ds.Index {
@@ -83,7 +85,9 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 
 	//TODO: modify storeJobsDS and updateJobStatusDS to accept an additional bool to support "on conflict do nothing"
 	//what is retry each expected to do?
-	jd.storeJobsDS(jd.migrationState.DsForImport, true, true, jobList)
+
+	//TODO: get minimal functions for the below and put them both in a transaction
+	jd.storeJobsDS(jd.migrationState.DsForImport, true, false, jobList)
 	jd.updateJobStatusDS(jd.migrationState.DsForImport, statusList, []string{}, []ParameterFilterT{})
 }
 

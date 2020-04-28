@@ -27,6 +27,7 @@ func loadConfig() {
 func (migrator *Migrator) waitForExportDone() {
 	anyPendingNotifications := true
 	for ok := true; ok; ok = anyPendingNotifications {
+		//TODO: Add sleep 2 sec
 		exportEvents := migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp)
 		anyPendingNotifications = false
 		for _, exportEvent := range exportEvents {
@@ -81,7 +82,7 @@ func (migrator *Migrator) filterByNode(jobList []*jobsdb.JobT) map[pathfinder.No
 
 		filteredData[nodeMeta] = append(filteredData[nodeMeta], job)
 	}
-	migrator.jobsDB.UpdateJobStatus(statusList, []string{}, []jobsdb.ParameterFilterT{})
+	migrator.jobsDB.UpdateJobStatus(statusList, []string{}, []jobsdb.ParameterFilterT{}) //TODO: Move this to GetNonMigrated
 
 	return filteredData
 }

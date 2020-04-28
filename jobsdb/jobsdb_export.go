@@ -145,7 +145,7 @@ func (jd *HandleT) PostMigrationCleanup() {
 }
 
 func (jd *HandleT) deleteWontMigrateJobStatusDS(ds dataSetT) {
-	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE job_state='wont_migrate'`, ds.JobStatusTable)
+	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE job_state='wont_migrate' OR job_state='migrating'`, ds.JobStatusTable)
 	logger.Info(sqlStatement)
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
