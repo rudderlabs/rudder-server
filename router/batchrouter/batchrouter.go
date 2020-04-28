@@ -295,13 +295,18 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	brt.trackRequestMetrics(batchReqMetric)
 	var statusList []*jobsdb.JobStatusT
 
-	if postToWarehouseErr {
+	if isWarehouse && postToWarehouseErr {
 		warehouseServiceFailedTimeLock.Lock()
 		if warehouseServiceFailedTime.IsZero() {
 			warehouseServiceFailedTime = time.Now()
 		}
 		warehouseServiceFailedTimeLock.Unlock()
+	} else if isWarehouse {
+		warehouseServiceFailedTimeLock.Lock()
+		warehouseServiceFailedTime = time.Time{}
+		warehouseServiceFailedTimeLock.Unlock()
 	}
+
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 
@@ -309,19 +314,15 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			jobState = jobsdb.AbortedState
 		} else {
 			// change job state to abort state after maxRetriesToWarehouseService, if warehouse service is not reachable.
-			if jobState == jobsdb.FailedState && job.LastJobStatus.AttemptNum >= maxRetriesToWarehouseService  && postToWarehouseErr {
+			if jobState == jobsdb.FailedState && isWarehouse  && postToWarehouseErr {
 				warehouseServiceFailedTimeLock.RLock()
-				if time.Now().Sub(warehouseServiceFailedTime) > warehouseServiceMaxRetryTime {
+				if time.Now().Sub(warehouseServiceFailedTime) > warehouseServiceMaxRetryTimeinHr {
 					jobState = jobsdb.AbortedState
 				}
 				warehouseServiceFailedTimeLock.RUnlock()
 			}
 		}
-		if !postToWarehouseErr {
-			warehouseServiceFailedTimeLock.Lock()
-			warehouseServiceFailedTime = time.Time{}
-			warehouseServiceFailedTimeLock.Unlock()
-		}
+
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -734,7 +735,7 @@ func loadConfig() {
 	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
-	warehouseServiceMaxRetryTime = config.GetDuration("BatchRouter.warehouseServiceMaxRetryTime", 3) * time.Hour
+	warehouseServiceMaxRetryTimeinHr = config.GetDuration("BatchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
 }
 
 func init() {

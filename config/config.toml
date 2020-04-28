@@ -119,6 +119,7 @@ noOfWorkers = 8
 jobQueryBatchSize = 100000
 uploadFreqInS = 30
 maxFailedCountForJob = 128
+warehouseServiceMaxRetryTimeinHr = 3
 
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
