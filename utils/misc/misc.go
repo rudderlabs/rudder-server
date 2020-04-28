@@ -33,8 +33,8 @@ import (
 var AppStartTime int64
 
 const (
-	// RFC3339 with milli sec precision
-	RFC3339Milli = "2006-01-02T15:04:05.999Z07:00"
+	// RFC3339Milli with milli sec precision
+	RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
 	//This is integer representation of Postgres version.
 	//For ex, integer representation of version 9.6.3 is 90603
 	//Minimum postgres version needed for rudder server is 10
@@ -49,7 +49,9 @@ type ErrorStoreT struct {
 //RudderError : to store rudder error
 type RudderError struct {
 	StartTime         int64
+	CrashTime         int64
 	ReadableStartTime string
+	ReadableCrashTime string
 	Message           string
 	StackTrace        string
 	Code              int
@@ -109,11 +111,15 @@ func RecordAppError(err error) {
 		return
 	}
 
+	crashTime := time.Now().Unix()
+
 	//TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
 	errorStore.Errors = append(errorStore.Errors,
 		RudderError{
 			StartTime:         AppStartTime,
+			CrashTime:         crashTime,
 			ReadableStartTime: fmt.Sprint(time.Unix(AppStartTime, 0)),
+			ReadableCrashTime: fmt.Sprint(time.Unix(crashTime, 0)),
 			Message:           err.Error(),
 			StackTrace:        stackTrace,
 			Code:              101,
@@ -600,6 +606,51 @@ func (w GZipWriter) CloseGZ() {
 	w.BufWriter.Flush()
 	w.GzWriter.Close()
 	w.File.Close()
+}
+
+func GetMacAddress() string {
+	//----------------------
+	// Get the local machine IP address
+	// https://www.socketloop.com/tutorials/golang-how-do-I-get-the-local-ip-non-loopback-address
+	//----------------------
+
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+
+	var currentIP, currentNetworkHardwareName string
+	for _, address := range addrs {
+		// check the address type and if it is not a loopback then that's the current ip
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				currentIP = ipnet.IP.String()
+			}
+		}
+	}
+
+	// get all the system's or local machine's network interfaces
+	interfaces, _ := net.Interfaces()
+	for _, interf := range interfaces {
+		if addrs, err := interf.Addrs(); err == nil {
+			for _, addr := range addrs {
+				// only interested in the name with current IP address
+				if strings.Contains(addr.String(), currentIP) {
+					currentNetworkHardwareName = interf.Name
+				}
+			}
+		}
+	}
+
+	// extract the hardware information base on the interface name captured above
+	netInterface, err := net.InterfaceByName(currentNetworkHardwareName)
+	if err != nil {
+		return ""
+	}
+
+	macAddress := netInterface.HardwareAddr
+
+	return macAddress.String()
 }
 
 func KeepProcessAlive() {

@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
+
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -166,6 +168,12 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
+	if diagnostics.EnableServerStartMetric {
+		diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
+			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
+		})
+	}
+
 	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
@@ -351,7 +359,7 @@ func main() {
 		}
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
-			logger.Fatal("SIGTERM called. Process exiting")
+			logger.Log.Sync()
 		}
 		stats.StopRuntimeStats()
 		os.Exit(1)
