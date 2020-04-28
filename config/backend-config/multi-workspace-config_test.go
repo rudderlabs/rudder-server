@@ -30,9 +30,7 @@ var _ = Describe("workspace-config", func() {
 		ctrl.Finish()
 		backendConfig = originalBackendConfig
 		Http = originalHttp
-		backendConfig = &MultiWorkspaceConfig{
-			writeKeyToWorkspaceIDMap: map[string]string{},
-		}
+		log = originalLogger
 	})
 
 	Context("GetWorkspaceIDForWriteKey method", func() {
@@ -47,10 +45,14 @@ var _ = Describe("workspace-config", func() {
 	})
 
 	Context("Get method", func() {
+		var mockHttp *mock_sysUtils.MockHttpI
+		BeforeEach(func() {
+			mockHttp = mock_sysUtils.NewMockHttpI(ctrl)
+			Http = mockHttp
+		})
 		It("Expect to execute request with the correct body and headers and return successfull response", func() {
 			multiWorkspaceSecret = "multiworkspaceSecret"
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-				Expect(req.URL.String()).To(Equal(fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", "")))
 				username, pass, ok := req.BasicAuth()
 				Expect(username).To(Equal("multiworkspaceSecret"))
 				Expect(pass).To(Equal(""))
@@ -61,8 +63,11 @@ var _ = Describe("workspace-config", func() {
 				rw.Header().Set("Content-Type", "application/json")
 				rw.Write(js)
 			}))
-			// {testWordSpaceId:[{}]}defer server.Close()
-			configBackendURL = server.URL
+			defer server.Close()
+
+			testRequest, _ := http.NewRequest("GET", server.URL, nil)
+			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
+
 			workspaceToken = "testToken"
 			config, ok := backendConfig.Get()
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d2")).To(Equal("testWordSpaceId"))
@@ -78,8 +83,11 @@ var _ = Describe("workspace-config", func() {
 				rw.Header().Set("Content-Type", "application/json")
 				rw.Write([]byte(`""`))
 			}))
-			// {testWordSpaceId:[{}]}defer server.Close()
-			configBackendURL = server.URL
+			defer server.Close()
+
+			testRequest, _ := http.NewRequest("GET", server.URL, nil)
+			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
+
 			workspaceToken = "testToken"
 			mockLogger.EXPECT().Error("Error while parsing request", gomock.Any(), "", http.StatusNoContent).Times(1)
 			config, ok := backendConfig.Get()
@@ -87,10 +95,6 @@ var _ = Describe("workspace-config", func() {
 			Expect(ok).To(BeFalse())
 		})
 		It("Expect to make the correct actions if fail to create the request", func() {
-			configBackendURL = "http://rudderstack.com"
-			ctrl := gomock.NewController(GinkgoT())
-			mockHttp := mock_sysUtils.NewMockHttpI(ctrl)
-			Http = mockHttp
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError"))
 			mockLogger.EXPECT().Error("Error when creating request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
 			config, ok := backendConfig.Get()
@@ -98,10 +102,6 @@ var _ = Describe("workspace-config", func() {
 			Expect(ok).To(BeFalse())
 		})
 		It("Expect to make the correct actions if fail to send the request", func() {
-			configBackendURL = ""
-			ctrl := gomock.NewController(GinkgoT())
-			mockHttp := mock_sysUtils.NewMockHttpI(ctrl)
-			Http = mockHttp
 			testRequest, _ := http.NewRequest("GET", "", nil)
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil)
 			mockLogger.EXPECT().Error("Error when sending request to the server", gomock.Any()).Times(1)
