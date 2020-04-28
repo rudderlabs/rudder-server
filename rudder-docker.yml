@@ -13,7 +13,7 @@ services:
     depends_on:
       - db
       - d-transformer
-    image: rudderlabs/rudder-server:v0.1.9-rc.2
+    image: rudderlabs/rudder-server:saas-17042020.190252
     entrypoint: sh -c '/wait-for db:5432 -- /rudder-server'
     ports:
       - "8080:8080"
@@ -28,7 +28,7 @@ services:
       - WORKSPACE_TOKEN=<your_workspace_token>
       - CONFIG_PATH=/app/config/config.toml
   d-transformer:
-    image: rudderlabs/rudder-transformer:v0.1.4
+    image: rudderlabs/rudder-transformer:saas-15042020.170810
     ports:
       - "9090:9090"
   minio:

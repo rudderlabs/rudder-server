@@ -105,6 +105,9 @@ type StorageUploadOutput struct {
 	LocalFilePaths []string
 	JournalOpID    int64
 	Error          error
+	FirstEventAt   string
+	LastEventAt    string
+	TotalEvents    int
 }
 
 type ErrorResponseT struct {
@@ -170,6 +173,12 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 			LocalFilePaths: []string{gzipFilePath},
 		}
 	}
+	// assumes events from warehouse have receivedAt in metadata
+	var firstEventAt, lastEventAt string
+	if isWarehouse {
+		firstEventAt = gjson.GetBytes(batchJobs.Jobs[0].EventPayload, "metadata.receivedAt").String()
+		lastEventAt = gjson.GetBytes(batchJobs.Jobs[len(batchJobs.Jobs)-1].EventPayload, "metadata.receivedAt").String()
+	}
 
 	logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
 
@@ -225,10 +234,13 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		Key:            strings.Join(keyPrefixes, "/") + "/" + fileName,
 		LocalFilePaths: []string{gzipFilePath},
 		JournalOpID:    opID,
+		FirstEventAt:   firstEventAt,
+		LastEventAt:    lastEventAt,
+		TotalEvents:    len(batchJobs.Jobs),
 	}
 }
 
-func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, location string) (err error) {
+func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOutput) (err error) {
 	schemaMap := make(map[string]map[string]interface{})
 	for _, job := range batchJobs.Jobs {
 		var payload map[string]interface{}
@@ -254,7 +266,10 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, location string) (err 
 			Source:      batchJobs.BatchDestination.Source,
 			Destination: batchJobs.BatchDestination.Destination,
 		},
-		Location: location,
+		Location:     output.Key,
+		FirstEventAt: output.FirstEventAt,
+		LastEventAt:  output.LastEventAt,
+		TotalEvents:  output.TotalEvents,
 	}
 
 	jsonPayload, err := json.Marshal(&payload)
@@ -321,7 +336,6 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 				warehouseServiceFailedTimeLock.RUnlock()
 			}
 		}
-
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -372,7 +386,7 @@ func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) 
 	}
 }
 
-func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err error) {
+func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err error, isWarehouse bool) {
 	var (
 		jobState  string
 		errorResp []byte
@@ -380,9 +394,15 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 
 	if err != nil {
 		jobState = jobsdb.FailedState
+		if isWarehouse {
+			jobState = warehouseutils.GeneratingStagingFileFailed
+		}
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 	} else {
 		jobState = jobsdb.SucceededState
+		if isWarehouse {
+			jobState = warehouseutils.GeneratedStagingFile
+		}
 		errorResp = []byte(`{"success":"OK"}`)
 	}
 
@@ -412,8 +432,8 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
+							brt.recordDeliveryStatus(batchJobs.BatchDestination, output.Error, false)
 							brt.setJobStatus(batchJobs, false, output.Error, false)
-							brt.recordDeliveryStatus(batchJobs.BatchDestination, output.Error)
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 							if output.JournalOpID > 0 {
 								brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
@@ -427,13 +447,14 @@ func (brt *HandleT) initWorkers() {
 							output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
 							postToWarehouseErr := false
 							if output.Error == nil && output.Key != "" {
-								output.Error = brt.postToWarehouse(batchJobs, output.Key)
+								output.Error = brt.postToWarehouse(batchJobs, output)
 								if output.Error != nil {
 									postToWarehouseErr = true
 								}
 								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
 								warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
 							}
+							brt.recordDeliveryStatus(batchJobs.BatchDestination, output.Error, true)
 							brt.setJobStatus(batchJobs, true, output.Error, postToWarehouseErr)
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 							destUploadStat.End()
@@ -733,7 +754,6 @@ func loadConfig() {
 	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
-	warehouseServiceMaxRetryTimeinHr = config.GetDuration("BatchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
 }
 
 func init() {

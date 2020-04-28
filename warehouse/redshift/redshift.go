@@ -425,7 +425,7 @@ func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder-staging-"
-	maxParallelLoads = config.GetInt("Warehose.redshift.maxParallelLoads", 3)
+	maxParallelLoads = config.GetInt("Warehouse.redshift.maxParallelLoads", 3)
 }
 
 func init() {
