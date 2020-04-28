@@ -49,7 +49,7 @@ var (
 	warehouseURL                       string
 	warehouseMode                      string
 	warehouseServiceFailedTime         time.Time
-	warehouseServiceFailedTimeLock     sync.Mutex
+	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTime       time.Duration
 )
 
@@ -295,6 +295,13 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	brt.trackRequestMetrics(batchReqMetric)
 	var statusList []*jobsdb.JobStatusT
 
+	if err!=nil && postToWarehouseErr {
+		warehouseServiceFailedTimeLock.Lock()
+		if warehouseServiceFailedTime.IsZero() {
+			warehouseServiceFailedTime = time.Now()
+		}
+		warehouseServiceFailedTimeLock.Unlock()
+	}
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 
@@ -303,17 +310,14 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		} else {
 			// change job state to abort state after maxRetriesToWarehouseService, if warehouse service is not reachable.
 			if jobState == jobsdb.FailedState && job.LastJobStatus.AttemptNum >= maxRetriesToWarehouseService  && postToWarehouseErr {
-				warehouseServiceFailedTimeLock.Lock()
-				if warehouseServiceFailedTime.IsZero() {
-					warehouseServiceFailedTime = time.Now()
-				}
+				warehouseServiceFailedTimeLock.RLock()
 				if time.Now().Sub(warehouseServiceFailedTime) > warehouseServiceMaxRetryTime {
 					jobState = jobsdb.AbortedState
 				}
-				warehouseServiceFailedTimeLock.Unlock()
+				warehouseServiceFailedTimeLock.RUnlock()
 			}
 		}
-		if err != nil && postToWarehouseErr {
+		if err == nil && postToWarehouseErr {
 			warehouseServiceFailedTimeLock.Lock()
 			warehouseServiceFailedTime = time.Time{}
 			warehouseServiceFailedTimeLock.Unlock()
