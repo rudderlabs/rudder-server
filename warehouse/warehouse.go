@@ -21,8 +21,6 @@ import (
 	"sync"
 	"time"
 
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
-
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/iancoleman/strcase"
 	"github.com/lib/pq"
