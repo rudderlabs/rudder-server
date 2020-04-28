@@ -1,6 +1,8 @@
 package backendconfig
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 
 	"net/http"
@@ -15,16 +17,6 @@ import (
 	mock_sysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	stats "github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
-)
-
-const (
-	WriteKeyEnabled   = "enabled-write-key"
-	WriteKeyDisabled  = "disabled-write-key"
-	WriteKeyInvalid   = "invalid-write-key"
-	WriteKeyEmpty     = ""
-	SourceIDEnabled   = "enabled-source"
-	SourceIDDisabled  = "disabled-source"
-	TestRemoteAddress = "test.com"
 )
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
@@ -87,30 +79,20 @@ var SampleBackendConfig2 = SourcesT{
 	},
 }
 var (
-	originalHttp    = Http
-	mockLogger      *mock_logger.MockLoggerI
-	ctrl            *gomock.Controller
-	testRequestData map[string]interface{} = map[string]interface{}{
+	originalHttp       = Http
+	originalLogger     = log
+	mockLogger         *mock_logger.MockLoggerI
+	originalMockPubSub = Eb
+	ctrl               *gomock.Controller
+	testRequestData    map[string]interface{} = map[string]interface{}{
 		"instanceName":         "1",
 		"replayConfigDataList": "test",
 	}
 )
 
-type mockBackendConfig struct {
-	ok bool
-}
-
-func (w *mockBackendConfig) Get() (SourcesT, bool) {
-	return SampleBackendConfig, (w.ok || false)
-}
-func (w *mockBackendConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
-	return ""
-}
-func (w *mockBackendConfig) SetUp() {
-}
-
 var _ = Describe("BackendConfig", func() {
 	BeforeEach(func() {
+		backendConfig = new(WorkspaceConfig)
 		ctrl = gomock.NewController(GinkgoT())
 		mockLogger = mock_logger.NewMockLoggerI(ctrl)
 		log = mockLogger
@@ -118,11 +100,17 @@ var _ = Describe("BackendConfig", func() {
 	AfterEach(func() {
 		ctrl.Finish()
 		Http = originalHttp
+		log = originalLogger
 	})
+
 	Context("MakePostRequest method", func() {
+		var mockHttp *mock_sysUtils.MockHttpI
+		BeforeEach(func() {
+			mockHttp = mock_sysUtils.NewMockHttpI(ctrl)
+			Http = mockHttp
+		})
 		It("Expect to execute request with the correct body and headers and return successfull response", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-				Expect(req.URL.String()).To(Equal("/test"))
 				username, pass, ok := req.BasicAuth()
 				Expect(username).To(Equal("testToken"))
 				Expect(pass).To(Equal(""))
@@ -131,17 +119,20 @@ var _ = Describe("BackendConfig", func() {
 				rw.WriteHeader(http.StatusAccepted)
 				rw.Write([]byte("test body"))
 			}))
+
 			defer server.Close()
+
+			testRequestDataSON, _ := json.Marshal(testRequestData)
+			testRequest, _ := http.NewRequest("POST", server.URL, bytes.NewBuffer(testRequestDataSON))
+			mockHttp.EXPECT().NewRequest("POST", server.URL+"/test", bytes.NewBuffer(testRequestDataSON)).Return(testRequest, nil).Times(1)
+
 			mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).Times(1)
 			workspaceToken = "testToken"
 			body, ok := MakePostRequest(server.URL, "/test", testRequestData)
 			Expect(string(body)).To(Equal("test body"))
 			Expect(ok).To(BeTrue())
 		})
-
 		It("Expect to make the correct actions if fail to send the request", func() {
-			mockHttp := mock_sysUtils.NewMockHttpI(ctrl)
-			Http = mockHttp
 			testRequest, _ := http.NewRequest("GET", "", nil)
 			mockHttp.EXPECT().NewRequest("POST", "", gomock.Any()).Return(testRequest, nil)
 			mockLogger.EXPECT().Errorf("ConfigBackend: Failed to execute request: %s, Error: %s", "", gomock.Any()).Times(1)
@@ -150,9 +141,6 @@ var _ = Describe("BackendConfig", func() {
 			Expect(ok).To(BeFalse())
 		})
 		It("Expect to make the correct actions if fail to create the request", func() {
-			ctrl := gomock.NewController(GinkgoT())
-			mockHttp := mock_sysUtils.NewMockHttpI(ctrl)
-			Http = mockHttp
 			mockHttp.EXPECT().NewRequest("POST", "http://rudderstack.com/test", gomock.Any()).Return(nil, errors.New("TestError"))
 			mockLogger.EXPECT().Errorf("ConfigBackend: Failed to make request: %s, Error: %s", "http://rudderstack.com/test", "TestError").Times(1)
 			body, ok := MakePostRequest("http://rudderstack.com", "/test", testRequestData)
@@ -164,6 +152,12 @@ var _ = Describe("BackendConfig", func() {
 				rw.WriteHeader(http.StatusNotFound)
 				rw.Write([]byte("Not found"))
 			}))
+			defer server.Close()
+
+			testRequestDataSON, _ := json.Marshal(testRequestData)
+			testRequest, _ := http.NewRequest("POST", server.URL, bytes.NewBuffer(testRequestDataSON))
+			mockHttp.EXPECT().NewRequest("POST", server.URL+"/test", bytes.NewBuffer(testRequestDataSON)).Return(testRequest, nil).Times(1)
+
 			mockLogger.EXPECT().Errorf("ConfigBackend: Got error response %d", http.StatusNotFound).Times(1)
 			mockLogger.EXPECT().Debugf("ConfigBackend: Successful %s", "Not found").Times(1)
 			body, ok := MakePostRequest(server.URL, "/test", testRequestData)
@@ -176,27 +170,43 @@ var _ = Describe("BackendConfig", func() {
 			mockStats              *mock_stats.MockStats
 			mockRubberStats        *mock_stats.MockRudderStats
 			statConfigBackendError stats.RudderStats
+			mockIoUtil             *mock_sysUtils.MockIoUtilI
+			originalIoUtil         = Ioutil
+			originalConfigFromFile = configFromFile
 		)
 		BeforeEach(func() {
 			pollInterval = 500
-			backendConfig = &mockBackendConfig{ok: true}
 			mockStats = mock_stats.NewMockStats(ctrl)
 			mockRubberStats = mock_stats.NewMockRudderStats(ctrl)
 			var statsmock stats.Stats = mockStats
 			mockStats.EXPECT().NewStat(gomock.Any(), gomock.Any()).Return(mockRubberStats).Times(1)
 			statConfigBackendError = statsmock.NewStat("config_backend.errors", stats.CountType)
+			mockIoUtil = mock_sysUtils.NewMockIoUtilI(ctrl)
+			IoUtil = mockIoUtil
+			configFromFile = true
+			mockLogger.EXPECT().Info("Reading workspace config from JSON file").Times(1)
+		})
+		AfterEach(func() {
+			configFromFile = originalConfigFromFile
+			Ioutil = originalIoUtil
 		})
 		It("Expect to make the correct actions if Get method fails", func() {
-			backendConfig = &mockBackendConfig{ok: false}
+			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, errors.New("TestRequestError")).Times(1)
+			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).Times(1)
 			mockRubberStats.EXPECT().Increment().Times(1)
+			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
 			configUpdate(statConfigBackendError)
 		})
 		It("Expect to make the correct actions if Get method ok but not new config", func() {
+			config, _ := json.Marshal(SampleBackendConfig)
+			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(config, nil).Times(1)
 			curSourceJSON = SampleBackendConfig
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
 			configUpdate(statConfigBackendError)
 		})
 		It("Expect to make the correct actions if Get method ok and new config", func() {
+			config, _ := json.Marshal(SampleBackendConfig)
+			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(config, nil).Times(1)
 			initialized = false
 			mockPubSub := mock_utils.NewMockEventBusI(ctrl)
 			Eb = mockPubSub
@@ -209,7 +219,7 @@ var _ = Describe("BackendConfig", func() {
 			mockPubSub.EXPECT().Publish(TopicBackendConfig, SampleBackendConfig).Times(1)
 			configUpdate(statConfigBackendError)
 			Expect(initialized).To(BeTrue())
-
+			Eb = originalMockPubSub
 		})
 	})
 
@@ -228,6 +238,9 @@ var _ = Describe("BackendConfig", func() {
 			mockPubSub = mock_utils.NewMockEventBusI(ctrl)
 			Eb = mockPubSub
 		})
+		AfterEach(func() {
+			Eb = originalMockPubSub
+		})
 		It("Expect make the correct actions for processConfig topic", func() {
 			ch := make(chan utils.DataEvent)
 			curSourceJSON = SampleBackendConfig
@@ -235,7 +248,7 @@ var _ = Describe("BackendConfig", func() {
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
 			mockPubSub.EXPECT().Subscribe(TopicProcessConfig, gomock.AssignableToTypeOf(ch)).Times(1)
 			mockPubSub.EXPECT().PublishToChannel(gomock.AssignableToTypeOf(ch), TopicProcessConfig, gomock.Eq(SampleFilteredSources)).Times(1)
-			commonBackendConfig.Subscribe(ch, TopicProcessConfig)
+			backendConfig.Subscribe(ch, TopicProcessConfig)
 
 		})
 		It("Expect make the correct actions for backendConfig topic", func() {
@@ -243,7 +256,7 @@ var _ = Describe("BackendConfig", func() {
 			curSourceJSON = SampleBackendConfig
 			mockPubSub.EXPECT().Subscribe(TopicBackendConfig, gomock.AssignableToTypeOf(ch)).Times(1)
 			mockPubSub.EXPECT().PublishToChannel(gomock.AssignableToTypeOf(ch), TopicBackendConfig, SampleBackendConfig).Times(1)
-			commonBackendConfig.Subscribe(ch, TopicBackendConfig)
+			backendConfig.Subscribe(ch, TopicBackendConfig)
 		})
 	})
 
@@ -251,8 +264,7 @@ var _ = Describe("BackendConfig", func() {
 		It("Should not wait if initialized is true", func() {
 			initialized = true
 			mockLogger.EXPECT().Info("Waiting for initializing backend config").Times(0)
-			commonBackendConfig.WaitForConfig()
-
+			backendConfig.WaitForConfig()
 		})
 		It("Should wait until initialized", func() {
 			initialized = false
@@ -264,8 +276,7 @@ var _ = Describe("BackendConfig", func() {
 					initialized = true
 				}
 			}).Times(5)
-			commonBackendConfig.WaitForConfig()
-
+			backendConfig.WaitForConfig()
 		})
 	})
 })
