@@ -259,7 +259,7 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
-	maxParallelLoads = config.GetInt("Warehose.bigquery.maxParallelLoads", 20)
+	maxParallelLoads = config.GetInt("Warehouse.bigquery.maxParallelLoads", 20)
 }
 
 func init() {

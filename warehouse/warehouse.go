@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -21,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/iancoleman/strcase"
@@ -172,9 +173,9 @@ func (wh *HandleT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == wh.destType {
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination})
 						if destination.Config != nil && destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
-							sourceID :=source.ID
-							destinationID:= destination.ID
-							rruntime.Go(func(){
+							sourceID := source.ID
+							destinationID := destination.ID
+							rruntime.Go(func() {
 								wh.syncLiveWarehouseStatus(sourceID, destinationID)
 							})
 						}
@@ -351,7 +352,7 @@ func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[st
 func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT, schema map[string]map[string]string) warehouseutils.UploadT {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, created_at, updated_at)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13) RETURNING id`, warehouseUploadsTable)
-	logger.Infof("WH: %s: Creating record in wh_load_files id: %v", wh.destType, sqlStatement)
+	logger.Infof("WH: %s: Creating record in %s table: %v", wh.destType, warehouseUploadsTable, sqlStatement)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -711,7 +712,7 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 	failedTableUploads := make([]string, 0)
 
 	row := wh.dbHandle.QueryRow(fmt.Sprintf(`select source_id, destination_id, status, error, updated_at from %s where id=%d`, warehouseUploadsTable, uploadID))
-	err:=row.Scan(&sourceID, &destinationID, &status, &errorResp, &updatedAt)
+	err := row.Scan(&sourceID, &destinationID, &status, &errorResp, &updatedAt)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
@@ -730,12 +731,12 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 	}
 
 	var errJson map[string]map[string]interface{}
-	err=json.Unmarshal([]byte(errorResp),&errJson)
+	err = json.Unmarshal([]byte(errorResp), &errJson)
 	if err != nil {
 		panic(err)
 	}
-	if stateErr,ok:=errJson[status]; ok {
-		if attempt, ok:=stateErr["attempt"]; ok{
+	if stateErr, ok := errJson[status]; ok {
+		if attempt, ok := stateErr["attempt"]; ok {
 			attemptNum = attemptNum + int(attempt.(float64))
 		}
 	}
