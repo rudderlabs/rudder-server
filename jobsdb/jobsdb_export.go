@@ -192,6 +192,8 @@ func (jd *HandleT) deleteMigratingJobStatusDS(ds dataSetT) {
 
 //GetUserID from job
 func (jd *HandleT) GetUserID(job *JobT) string {
+	return job.UserID
+	//If this works, remove the code below.
 	//TODO: Instead of a switch case, should be able to get it as a column in jobsdb
 	var userID string
 	switch jd.GetTablePrefix() {
