@@ -1459,6 +1459,9 @@ func setupTables(dbHandle *sql.DB) {
 									  schema JSONB NOT NULL,
 									  error TEXT,
 									  status wh_staging_state_type,
+									  first_event_at TIMESTAMP,
+									  last_event_at TIMESTAMP,
+									  total_events BIGINT,
 									  created_at TIMESTAMP NOT NULL,
 									  updated_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
 
@@ -1487,7 +1490,8 @@ func setupTables(dbHandle *sql.DB) {
 									  source_id VARCHAR(64) NOT NULL,
 									  destination_id VARCHAR(64) NOT NULL,
 									  destination_type VARCHAR(64) NOT NULL,
-									  table_name VARCHAR(64) NOT NULL,
+									  table_name TEXT NOT NULL,
+									  total_events BIGINT,
 									  created_at TIMESTAMP NOT NULL);`, warehouseLoadFilesTable)
 
 	_, err = dbHandle.Exec(sqlStatement)
@@ -1562,6 +1566,9 @@ func setupTables(dbHandle *sql.DB) {
 									  status wh_upload_state_type NOT NULL,
 									  schema JSONB NOT NULL,
 									  error JSONB,
+									  first_event_at TIMESTAMP,
+									  last_event_at TIMESTAMP,
+									  last_exec_at TIMESTAMP,
 									  timings JSONB,
 									  created_at TIMESTAMP NOT NULL,
 									  updated_at TIMESTAMP NOT NULL);`, warehouseUploadsTable)
@@ -1571,7 +1578,7 @@ func setupTables(dbHandle *sql.DB) {
 		panic(err)
 	}
 
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS first_event_at TIMESTAMP, ADD COLUMN IF NOT EXISTS last_event_at TIMESTAMP, ADD COLUMN IF NOT EXISTS last_exec_at TIMESTAMP`, warehouseUploadsTable)
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS first_event_at TIMESTAMP, ADD COLUMN IF NOT EXISTS last_event_at TIMESTAMP, ADD COLUMN IF NOT EXISTS last_exec_at TIMESTAMP, ADD COLUMN IF NOT EXISTS timings JSONB`, warehouseUploadsTable)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -1612,10 +1619,11 @@ func setupTables(dbHandle *sql.DB) {
 	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
                                       id BIGSERIAL PRIMARY KEY,
 									  wh_upload_id BIGSERIAL NOT NULL,
-									  table_name VARCHAR(64),
+									  table_name TEXT,
 									  status wh_table_upload_state_type NOT NULL,
 									  error TEXT,
 									  last_exec_time TIMESTAMP,
+									  total_events TEXT,
 									  created_at TIMESTAMP NOT NULL,
 									  updated_at TIMESTAMP NOT NULL);`, warehouseTableUploadsTable)
 
