@@ -133,6 +133,7 @@ noOfWorkers = 8
 noOfSlaveWorkerRoutines = 4
 mainLoopSleepInS = 60
 maxRetry = 3
+warehouseSyncPreFetchCount = 10
 stagingFilesBatchSize = 240
     [Warehouse.redshift]
     maxParallelLoads = 3
@@ -193,6 +194,22 @@ logFileSize = 100 # in MB
 enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
+
+
+[Diagnostics]
+enableDiagnostics = true
+gatewayTimePeriodInS = 60
+routerTimePeriodInS = 60
+batchRouterTimePeriodInS = 600
+enableServerStartMetric = true
+enableConfigIdentifyMetric = true
+enableServerStartedMetric = true
+enableConfigProcessedMetric = true
+enableGatewayMetric = true
+enableRouterMetric = true
+enableBatchRouterMetric = true
+enableDestinationFailuresMetric = true
+
 
 # runtime stats are collected using go runtime package and published to statsd
 [RuntimeStats]
