@@ -26,17 +26,19 @@ func (migrator *Migrator) importHandler(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		panic(err)
 	}
-	logger.Infof("Migrator: Request received to import %s", migrationEvent.FileLocation)
-	if migrationEvent.MigrationType == jobsdb.ExportOp {
-		migrationEvent.MigrationType = jobsdb.ImportOp
-		migrationEvent.ID = 0
-		migrationEvent.Status = jobsdb.PreparedForImport
-		migrationEvent.TimeStamp = time.Now()
-		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
-	} else {
-		logger.Errorf("Wrong migration event received. Only export type events are expected. migrationType: %s, migrationEvent: %v", migrationEvent.MigrationType, migrationEvent)
+	logger.Infof("Import-migrator: Request received to import %s", migrationEvent.FileLocation)
+	if migrationEvent.ToNode != "All" {
+		if migrationEvent.MigrationType == jobsdb.ExportOp {
+			migrationEvent.MigrationType = jobsdb.ImportOp
+			migrationEvent.ID = 0
+			migrationEvent.Status = jobsdb.PreparedForImport
+			migrationEvent.TimeStamp = time.Now()
+			migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
+		} else {
+			logger.Errorf("Import-migrator: Wrong migration event received. Only export type events are expected. migrationType: %s, migrationEvent: %v", migrationEvent.MigrationType, migrationEvent)
+		}
 	}
-	logger.Debug("Ack: %v", migrationEvent)
+	logger.Debug("Import-migrator: Ack: %v", migrationEvent)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }
@@ -74,6 +76,7 @@ func (migrator *Migrator) processImport(importQ chan *jobsdb.MigrationEvent) {
 	tmpDirPath, err := misc.CreateTMPDIR()
 	for {
 		migrationEvent := <-importQ
+		logger.Infof("Import-migrator: Downloading file:%s for import", migrationEvent.FileLocation)
 
 		filePathSlice := strings.Split(migrationEvent.FileLocation, "/")
 		fileName := filePathSlice[len(filePathSlice)-1]
@@ -110,6 +113,7 @@ func (migrator *Migrator) processImport(importQ chan *jobsdb.MigrationEvent) {
 }
 
 func (migrator *Migrator) readFromFileAndWriteToDB(file *os.File, migrationEvent *jobsdb.MigrationEvent) error {
+	logger.Infof("Import-migrator: Parsing the file:%s for import and passing it to jobsDb", migrationEvent.FileLocation)
 
 	reader, err := gzip.NewReader(file)
 	if err != nil {
@@ -130,7 +134,7 @@ func (migrator *Migrator) readFromFileAndWriteToDB(file *os.File, migrationEvent
 	}
 	reader.Close()
 	migrator.jobsDB.StoreImportedJobsAndJobStatuses(jobList, file.Name(), migrationEvent)
-	logger.Infof("Migrator: Done importing file %s", file.Name())
+	logger.Infof("Import-migrator: Done importing file %s", file.Name())
 	//TODO: check if Scan() finished because of error or because it reached end of file
 	return sc.Err()
 }

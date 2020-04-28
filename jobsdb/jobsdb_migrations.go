@@ -18,10 +18,10 @@ type MigrationState struct {
 //SetupForMigrations is used to setup jobsdb for export or for import or for both
 func (jd *HandleT) SetupForMigrations(forExport bool, forImport bool) {
 	if forExport {
-		jd.migrationState.LastDsForExport = jd.findOrCreateDsFromSetupCheckpoint(ExportOp, jd.migrationState.LastDsForExport, jd.getLastDsForExport)
+		jd.migrationState.LastDsForExport = jd.findOrCreateDsFromSetupCheckpoint(ExportOp, jd.getLastDsForExport)
 	}
 	if forImport {
-		jd.migrationState.DsForNewEvents = jd.findOrCreateDsFromSetupCheckpoint(AcceptNewEventsOp, jd.migrationState.DsForNewEvents, jd.getDsForNewEvents)
+		jd.migrationState.DsForNewEvents = jd.findOrCreateDsFromSetupCheckpoint(AcceptNewEventsOp, jd.getDsForNewEvents)
 	}
 
 	logger.Infof("Last ds for export : %v || Ds for new events :%v", jd.migrationState.LastDsForExport, jd.migrationState.DsForNewEvents)

@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 func (jd *HandleT) getLastDsForExport(dsList []dataSetT) dataSetT {
@@ -193,28 +191,6 @@ func (jd *HandleT) deleteMigratingJobStatusDS(ds dataSetT) {
 //GetUserID from job
 func (jd *HandleT) GetUserID(job *JobT) string {
 	return job.UserID
-	//If this works, remove the code below.
-	//TODO: Instead of a switch case, should be able to get it as a column in jobsdb
-	var userID string
-	switch jd.GetTablePrefix() {
-	case "gw":
-		eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
-		if !ok {
-			//TODO: This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.
-			panic("Migrator: This can't be happening. This is done only to get userId/anonId. There should be a more reliable way.")
-		}
-		userID, ok = misc.GetAnonymousID(eventList[0])
-	case "rt":
-		userID = integrations.GetUserIDFromTransformerResponse(job.EventPayload)
-	case "batch_rt":
-		parsed, status := misc.ParseBatchRouterJob(job.EventPayload)
-		if status {
-			userID = fmt.Sprintf("%v", parsed["anonymousId"])
-		} else {
-			panic("Not able to get userId/AnonymousId from batch job")
-		}
-	}
-	return userID
 }
 
 //ShouldExport tells if export should happen in migration

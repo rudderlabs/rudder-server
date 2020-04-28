@@ -27,6 +27,7 @@ func loadConfig() {
 }
 
 func (migrator *Migrator) waitForExportDone() {
+	logger.Infof("Export-migrator: All jobs have been queried. Waiting for the same to be exported and acknowledged on notification")
 	anyPendingNotifications := true
 	for ok := true; ok; ok = anyPendingNotifications {
 		time.Sleep(exportDoneCheckSleepDuration)
@@ -42,11 +43,11 @@ func (migrator *Migrator) waitForExportDone() {
 }
 
 func (migrator *Migrator) preExport() {
+	logger.Infof("Export-migrator: Pre export")
 	migrator.jobsDB.PreExportCleanup()
 }
 
 func (migrator *Migrator) export() {
-	logger.Infof("Migrator: Export loop is starting")
 
 	if !migrator.jobsDB.ShouldExport() {
 		return
@@ -58,6 +59,7 @@ func (migrator *Migrator) export() {
 		migrator.readFromCheckpointAndNotify()
 	})
 
+	logger.Infof("Export-migrator: export loop is starting")
 	for {
 		toQuery := dbReadBatchSize
 
@@ -79,7 +81,7 @@ func (migrator *Migrator) export() {
 }
 
 func (migrator *Migrator) filterByNode(jobList []*jobsdb.JobT) map[pathfinder.NodeMeta][]*jobsdb.JobT {
-	logger.Infof("Inside filter and dump")
+	logger.Infof("Export-migrator: Filtering a batch by destination nodes")
 	filteredData := make(map[pathfinder.NodeMeta][]*jobsdb.JobT)
 	for _, job := range jobList {
 		userID := migrator.jobsDB.GetUserID(job)
@@ -114,6 +116,7 @@ func (migrator *Migrator) getDumpQForNode(nodeID string) (chan []*jobsdb.JobT, b
 func (migrator *Migrator) writeToFileAndUpload(nMeta pathfinder.NodeMeta, ch chan []*jobsdb.JobT) {
 	for {
 		jobList := <-ch
+		logger.Infof("Export-migrator: Received a batch for node:%s to be written to file and upload it", nMeta.GetNodeID())
 		backupPathDirName := "/migrator-export/"
 		tmpDirPath, err := misc.CreateTMPDIR()
 
@@ -178,7 +181,7 @@ func (migrator *Migrator) upload(file *os.File, nMeta pathfinder.NodeMeta) {
 		//TODO: Retry
 		panic(err.Error())
 	} else {
-		logger.Infof("Migrator: Uploaded an export file to %s", uploadOutput.Location)
+		logger.Infof("Export-migrator: Uploaded an export file to %s", uploadOutput.Location)
 		//TODO: delete this file otherwise in failure case, the file exists and same data will be appended to it
 		migrationEvent := jobsdb.NewMigrationEvent("export", misc.GetNodeID(), nMeta.GetNodeID(), uploadOutput.Location, jobsdb.Exported, 0)
 		migrationEvent.ID = migrator.jobsDB.Checkpoint(&migrationEvent)
@@ -216,11 +219,11 @@ func (migrator *Migrator) getNotifyQForNode(nodeID string) (chan *jobsdb.Migrati
 func (migrator *Migrator) notify(nMeta pathfinder.NodeMeta, notifyQ chan *jobsdb.MigrationEvent) {
 	for {
 		checkPoint := <-notifyQ
-		logger.Infof("Migrator: Notifying destination node %s to download and import file from %s", checkPoint.ToNode, checkPoint.FileLocation)
+		logger.Infof("Export-migrator: Notifying destination node %s to download and import file from %s", checkPoint.ToNode, checkPoint.FileLocation)
 		statusCode := 0
 		for ok := true; ok; ok = (statusCode != 200) {
 			_, statusCode = misc.MakePostRequest(nMeta.GetNodeConnectionString(migrator.port), migrator.getURI("/fileToImport"), checkPoint)
-			logger.Infof("Migrator: Notified destination node %s to download and import file from %s. Responded with statusCode: %d", checkPoint.ToNode, checkPoint.FileLocation, statusCode)
+			logger.Infof("Export-migrator: Notified destination node %s to download and import file from %s. Responded with statusCode: %d", checkPoint.ToNode, checkPoint.FileLocation, statusCode)
 		}
 		checkPoint.Status = jobsdb.Notified
 		migrator.jobsDB.Checkpoint(checkPoint)
@@ -228,7 +231,8 @@ func (migrator *Migrator) notify(nMeta pathfinder.NodeMeta, notifyQ chan *jobsdb
 }
 
 func (migrator *Migrator) postExport() {
+	logger.Infof("Export-migrator: postExport")
 	migrator.jobsDB.PostExportCleanup()
-	migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", "", jobsdb.Exported, 0)
+	migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", jobsdb.Exported, jobsdb.Exported, 0)
 	migrator.jobsDB.Checkpoint(&migrationEvent)
 }

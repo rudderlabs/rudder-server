@@ -61,7 +61,7 @@ func getNewVersion() int {
 //StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
 func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent *MigrationEvent) {
 	if jd.migrationState.DsForImport.Index == "" {
-		jd.migrationState.DsForImport = jd.findOrCreateDsFromSetupCheckpoint(ImportOp, jd.migrationState.DsForImport, jd.getDsForImport)
+		jd.migrationState.DsForImport = jd.findOrCreateDsFromSetupCheckpoint(ImportOp, jd.getDsForImport)
 		jd.setupSequenceProvider(jd.migrationState.DsForImport)
 	}
 

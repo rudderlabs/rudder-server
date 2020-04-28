@@ -77,7 +77,7 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 			time.Now()).Scan(&meID)
 	}
 	if err != nil {
-		panic("Failed to checkpoint")
+		panic(err)
 	}
 	logger.Infof("%s-Migration: %s checkpoint from %s to %s. file: %s, status: %s",
 		jd.tablePrefix,
@@ -93,11 +93,11 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 func NewSetupCheckpointEvent(migrationType string, node string) MigrationEvent {
 	switch migrationType {
 	case ExportOp:
-		return NewMigrationEvent(migrationType, node, "All", "", SetupForExport, 0)
+		return NewMigrationEvent(migrationType, node, "All", SetupForExport, SetupForExport, 0)
 	case AcceptNewEventsOp:
-		return NewMigrationEvent(migrationType, "All", node, "", SetupToAcceptNewEvents, 0)
+		return NewMigrationEvent(migrationType, "All", node, SetupToAcceptNewEvents, SetupToAcceptNewEvents, 0)
 	case ImportOp:
-		return NewMigrationEvent(migrationType, "All", node, "", SetupForImport, 0)
+		return NewMigrationEvent(migrationType, "All", node, SetupForImport, SetupForImport, 0)
 	default:
 		panic("Illegal usage")
 	}
@@ -115,7 +115,7 @@ func (jd *HandleT) SetupCheckpointTable() {
 		migration_type varchar(20) NOT NULL,
 		from_node varchar(64) NOT NULL,
 		to_node VARCHAR(64) NOT NULL,
-		file_location TEXT,
+		file_location TEXT UNIQUE,
 		status varchar(64),
 		start_sequence BIGINT,
 		payload TEXT,
@@ -127,21 +127,22 @@ func (jd *HandleT) SetupCheckpointTable() {
 }
 
 //findOrCreateDsFromSetupCheckpoint is boiler plate code for setting up for different scenarios
-func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string, ds dataSetT, findOrCreateDs func([]dataSetT) dataSetT) dataSetT {
+func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string, findOrCreateDs func([]dataSetT) dataSetT) dataSetT {
 	jd.dsListLock.Lock()
 	defer jd.dsListLock.Unlock()
 
+	var ds dataSetT
 	setupEvent := jd.GetSetupCheckpoint(migrationType)
 	if setupEvent == nil {
 		me := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
 		me.Payload = "{}"
 		setupEvent = &me
 	}
-	json.Unmarshal([]byte(setupEvent.Payload), ds)
+	json.Unmarshal([]byte(setupEvent.Payload), &ds)
 
 	dsList := jd.getDSList(true)
-	if ds.Index == "" {
-		ds := findOrCreateDs(dsList)
+	if setupEvent.Payload == "{}" {
+		ds = findOrCreateDs(dsList)
 		payloadBytes, err := json.Marshal(ds)
 		if err != nil {
 			panic("Unable to Marshal")

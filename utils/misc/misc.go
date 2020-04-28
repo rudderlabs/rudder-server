@@ -707,7 +707,7 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 	dataJSON, _ := json.Marshal(data)
 	request, err := http.NewRequest("POST", backendURL, bytes.NewBuffer(dataJSON))
 	if err != nil {
-		logger.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
+		logger.Errorf("misc.MakePostRequest: Failed to make request: %s, Error: %s", backendURL, err.Error())
 		return []byte{}, 0
 	}
 
@@ -716,12 +716,12 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 	resp, err := client.Do(request)
 	//TODO: Check this. Not handling errors when sending alert to victorops
 	if err != nil {
-		logger.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
+		logger.Errorf("misc.MakePostRequest: Failed to make request: %s, Error: %s", backendURL, err.Error())
 		return []byte{}, 0
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		logger.Errorf("ConfigBackend: Got error response %d", resp.StatusCode)
+		logger.Errorf("misc.MakePostRequest: Got error response %d", resp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)

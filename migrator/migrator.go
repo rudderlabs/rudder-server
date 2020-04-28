@@ -40,6 +40,11 @@ func init() {
 func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, forExport bool, forImport bool, migratorPort int, wg *sync.WaitGroup) {
 	defer wg.Done()
 	logger.Infof("Migrator: Setting up migrator for %s jobsdb", jobsDB.GetTablePrefix())
+
+	migrator.dumpQueues = make(map[string]chan []*jobsdb.JobT)
+	migrator.notifyQueues = make(map[string]chan *jobsdb.MigrationEvent)
+	migrator.importQueues = make(map[string]chan *jobsdb.MigrationEvent)
+
 	migrator.jobsDB = jobsDB
 	migrator.pf = pf
 	migrator.fileManager = migrator.setupFileManager()
