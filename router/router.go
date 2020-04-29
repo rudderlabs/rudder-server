@@ -104,7 +104,7 @@ func loadConfig() {
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
-	customDestinations = []string{"KINESIS"}
+	customDestinations = []string{"KINESIS", "KAFKA"}
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {

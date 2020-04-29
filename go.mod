@@ -12,6 +12,7 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d // indirect
 	github.com/EagleChen/restrictor v0.0.0-20180420073700-9b81bbf8df1d
+	github.com/Shopify/sarama v1.26.1
 	github.com/araddon/dateparse v0.0.0-20190622164848-0fb0a474d195
 	github.com/aws/aws-sdk-go v1.29.11
 	github.com/bitly/go-simplejson v0.5.0 // indirect
@@ -63,8 +64,6 @@ require (
 	google.golang.org/api v0.19.0
 	google.golang.org/genproto v0.0.0-20200226201735-46b91f19d98c // indirect
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
-	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/ini.v1 v1.52.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
-	gopkg.in/yaml.v2 v2.2.8 // indirect
 )

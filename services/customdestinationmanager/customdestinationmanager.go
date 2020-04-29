@@ -16,7 +16,7 @@ func init() {
 }
 
 func loadConfig() {
-	objectStreamDestinations = []string{"KINESIS"}
+	objectStreamDestinations = []string{"KINESIS", "KAFKA"}
 }
 
 // Send delegates call to appropriate manager based on parameter destination

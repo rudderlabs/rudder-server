@@ -23,7 +23,7 @@ func init() {
 
 func loadConfig() {
 	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	customDestination = []string{"KINESIS"}
+	customDestination = []string{"KINESIS", "KAFKA"}
 }
 
 const (
