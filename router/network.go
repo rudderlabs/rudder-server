@@ -162,10 +162,11 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 		queryParams := req.URL.Query()
 		for key, val := range requestQueryParams {
 			valString := fmt.Sprint(val)
-			list := strings.Split(valString, ",")
-			for _, listItem := range list {
-				queryParams.Add(key, fmt.Sprint(listItem))
-			}
+			// list := strings.Split(valString, ",")
+			// for _, listItem := range list {
+			// 	queryParams.Add(key, fmt.Sprint(listItem))
+			// }
+			queryParams.Add(key, fmt.Sprint(valString))
 		}
 
 		req.URL.RawQuery = queryParams.Encode()

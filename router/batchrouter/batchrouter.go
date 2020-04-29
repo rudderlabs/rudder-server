@@ -46,6 +46,7 @@ var (
 	lastExecMapLock                    sync.RWMutex
 	uploadedRawDataJobsCache           map[string]map[string]bool
 	warehouseURL                       string
+	warehouseMode                      string
 )
 
 type HandleT struct {
@@ -648,6 +649,15 @@ func (brt *HandleT) crashRecover() {
 	}
 }
 
+func getWarehouseURL() (url string) {
+	if warehouseMode == config.EmbeddedMode {
+		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
+	} else {
+		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
+	}
+	return
+}
+
 func (brt *HandleT) collectMetrics() {
 	if diagnostics.EnableBatchRouterMetric {
 		for {
@@ -685,11 +695,12 @@ func loadConfig() {
 	maxFailedCountForJob = config.GetInt("BatchRouter.maxFailedCountForJob", 128)
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
-	warehouseURL = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
+	warehouseMode = config.GetString("Warehouse.mode", "embedded")
+	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 }
