@@ -104,7 +104,7 @@ func (jd *HandleT) getNonMigratedJobsDS(ds dataSetT, count int) ([]*JobT, error)
 	sqlStatement = fmt.Sprintf(`
 		SELECT * FROM (
 			SELECT DISTINCT ON (%[1]s.job_id)
-				%[1]s.job_id, %[1]s.uuid, %[1]s.parameters, %[1]s.custom_val,
+				%[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val,
 				%[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at,
 				%[2]s.job_state, %[2]s.attempt, %[2]s.exec_time,
 				%[2]s.retry_time, %[2]s.error_code, %[2]s.error_response
@@ -126,7 +126,8 @@ func (jd *HandleT) getNonMigratedJobsDS(ds dataSetT, count int) ([]*JobT, error)
 	sqlJobStatusT := SQLJobStatusT{}
 	for rows.Next() {
 		var job JobT
-		err := rows.Scan(&job.JobID, &job.UUID, &job.Parameters, &job.CustomVal,
+		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID,
+			&job.Parameters, &job.CustomVal,
 			&job.EventPayload, &job.CreatedAt, &job.ExpireAt,
 			&sqlJobStatusT.JobState, &sqlJobStatusT.AttemptNum,
 			&sqlJobStatusT.ExecTime, &sqlJobStatusT.RetryTime,

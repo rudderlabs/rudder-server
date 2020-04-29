@@ -52,14 +52,15 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 			migrationEvent.MigrationType, ExportOp, ImportOp))
 
 	var sqlStatement string
+	var checkpointType string
 	if migrationEvent.ID > 0 {
 		sqlStatement = fmt.Sprintf(`UPDATE %s_migration_checkpoints SET status = $1, start_sequence = $2 WHERE id = $3 RETURNING id`, jd.GetTablePrefix())
+		checkpointType = "update"
 	} else {
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s_migration_checkpoints (migration_type, from_node, to_node, file_location, status, start_sequence, payload, time_stamp)
 									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (file_location) DO UPDATE SET status=EXCLUDED.status RETURNING id`, jd.GetTablePrefix())
+		checkpointType = "insert"
 	}
-	logger.Infof(sqlStatement)
-	logger.Infof("%v", migrationEvent)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
@@ -80,13 +81,15 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 	if err != nil {
 		panic(err)
 	}
-	logger.Infof("%s-Migration: %s checkpoint from %s to %s. file: %s, status: %s",
+	logger.Infof("%s-Migration: %s checkpoint %s from %s to %s. file: %s, status: %s for checkpointId: %d",
 		jd.tablePrefix,
 		migrationEvent.MigrationType,
+		checkpointType,
 		migrationEvent.FromNode,
 		migrationEvent.ToNode,
 		migrationEvent.FileLocation,
-		migrationEvent.Status)
+		migrationEvent.Status,
+		migrationEvent.ID)
 	return meID
 }
 

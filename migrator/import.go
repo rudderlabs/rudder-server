@@ -55,10 +55,12 @@ func (migrator *Migrator) getImportQForNode(nodeID string) (chan *jobsdb.Migrati
 }
 
 func (migrator *Migrator) readFromCheckPointAndTriggerImport() {
+	importTriggeredCheckpoints := make(map[int64]*jobsdb.MigrationEvent)
 	for {
 		checkPoints := migrator.jobsDB.GetCheckpoints(jobsdb.ImportOp)
 		for _, checkPoint := range checkPoints {
-			if checkPoint.Status == jobsdb.PreparedForImport {
+			_, found := importTriggeredCheckpoints[checkPoint.ID]
+			if checkPoint.Status == jobsdb.PreparedForImport && !found {
 				importQ, isNew := migrator.getImportQForNode(checkPoint.FromNode)
 				if isNew {
 					rruntime.Go(func() {
@@ -66,6 +68,7 @@ func (migrator *Migrator) readFromCheckPointAndTriggerImport() {
 					})
 				}
 				importQ <- checkPoint
+				importTriggeredCheckpoints[checkPoint.ID] = checkPoint
 			}
 		}
 	}

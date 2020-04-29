@@ -189,10 +189,12 @@ func (migrator *Migrator) upload(file *os.File, nMeta pathfinder.NodeMeta) {
 }
 
 func (migrator *Migrator) readFromCheckpointAndNotify() {
+	notifiedCheckpoints := make(map[int64]*jobsdb.MigrationEvent)
 	for {
 		checkPoints := migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp)
 		for _, checkPoint := range checkPoints {
-			if checkPoint.Status == jobsdb.Exported {
+			_, found := notifiedCheckpoints[checkPoint.ID]
+			if checkPoint.Status == jobsdb.Exported && !found {
 				notifyQ, isNew := migrator.getNotifyQForNode(checkPoint.ToNode)
 				if isNew {
 					rruntime.Go(func() {
@@ -200,6 +202,7 @@ func (migrator *Migrator) readFromCheckpointAndNotify() {
 					})
 				}
 				notifyQ <- checkPoint
+				notifiedCheckpoints[checkPoint.ID] = checkPoint
 			}
 		}
 	}

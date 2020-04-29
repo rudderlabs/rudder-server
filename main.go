@@ -199,29 +199,28 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	routerDB.Setup(*clearDB, "rt", routerDBRetention)
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
 
-	if enableRouter {
-		go monitorDestRouters(&routerDB, &batchRouterDB)
-	}
-
-	if enableProcessor {
-		var processor processor.HandleT
-		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
-	}
-
 	//TODO fill the if/else blocks properly
 	enableMigrator := false
 	migrationMode := getMigrationMode()
+	shouldStartGateWay := true
 	if migrationMode == "import" {
 		enableMigrator = true
+		enableRouter = false
+		enableProcessor = false
+		shouldStartGateWay = true
 	} else if migrationMode == "export" {
 		enableMigrator = true
+		enableRouter = false
+		enableProcessor = false
+		shouldStartGateWay = false
 	} else if migrationMode == "import-export" {
 		enableMigrator = true
+		enableRouter = false
+		enableProcessor = false
+		shouldStartGateWay = true
 	}
 
-	shouldStartGateWay := true
 	if enableMigrator {
-		shouldStartGateWay = false
 		logger.Info("Shanmukh Debug: migrator is enabled")
 		migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8084)
 		dnsPattern := config.GetEnv("URL_PATTERN", "http://backend-<CLUSTER_VERSION><NODENUM>")
@@ -253,10 +252,15 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		wg.Wait()
 
 		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)
+	}
 
-		if forImport {
-			shouldStartGateWay = true
-		}
+	if enableRouter {
+		go monitorDestRouters(&routerDB, &batchRouterDB)
+	}
+
+	if enableProcessor {
+		var processor processor.HandleT
+		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
 	}
 
 	if shouldStartGateWay {

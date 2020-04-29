@@ -16,10 +16,10 @@ func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
 }
 
 func (jd *HandleT) setupSequenceProvider(ds dataSetT) {
-	if jd.migrationState.sequenceProvider == nil || !jd.migrationState.sequenceProvider.IsInitialized() {
-		jd.dsListLock.Lock()
-		defer jd.dsListLock.Unlock()
+	jd.dsListLock.Lock()
+	defer jd.dsListLock.Unlock()
 
+	if jd.migrationState.sequenceProvider == nil || !jd.migrationState.sequenceProvider.IsInitialized() {
 		dsList := jd.getDSList(true)
 		importDSMin := jd.getMaxIDForDs(ds)
 		//TODO: Get sequence number from checkpoints and pick the greatest for importDSMin
