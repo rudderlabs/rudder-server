@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -30,12 +31,12 @@ var (
 )
 
 //Setup sets up exporter with underlying-migrator, pathfinder and initializes dumpQueus and notifyQueuss
-func (exporter *Exporter) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, migratorPort int) {
+func (exporter *Exporter) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) {
 	exporter.pf = pf
 	exporter.dumpQueues = make(map[string]chan []*jobsdb.JobT)
 	exporter.notifyQueues = make(map[string]chan *jobsdb.MigrationEvent)
 	exporter.migrator = &Migrator{}
-	exporter.migrator.Setup(jobsDB, migratorPort)
+	exporter.migrator.Setup(jobsDB)
 	exporter.migrator.jobsDB.SetupForExport()
 	rruntime.Go(func() {
 		exporter.export()
@@ -43,7 +44,7 @@ func (exporter *Exporter) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 }
 
 func loadConfig() {
-	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 1000)
+	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 100000)
 	exportDoneCheckSleepDuration = (config.GetDuration("Migrator.exportDoneCheckSleepDurationIns", time.Duration(2)) * time.Second)
 }
 
@@ -244,7 +245,7 @@ func (exporter *Exporter) notify(nMeta pathfinder.NodeMeta, notifyQ chan *jobsdb
 		statusCode := 0
 		for ok := true; ok; ok = (statusCode != 200) {
 			// logger.Infof("Post body: %v", checkPoint)
-			_, statusCode = misc.MakePostRequest(nMeta.GetNodeConnectionString(exporter.migrator.port), exporter.migrator.getURI("/fileToImport"), checkPoint)
+			_, statusCode = misc.MakePostRequest(nMeta.GetNodeConnectionString(), exporter.migrator.getURI("/fileToImport"), checkPoint)
 			// logger.Infof("Export-migrator: Notified destination node %s to download and import file from %s. Responded with statusCode: %d", checkPoint.ToNode, checkPoint.FileLocation, statusCode)
 		}
 		checkPoint.Status = jobsdb.Notified
@@ -271,6 +272,15 @@ func (exporter *Exporter) isExportDone() bool {
 	return false
 }
 
-func (exporter *Exporter) exportStatusHandler() bool {
+func (exporter *Exporter) ExportStatusHandler() bool {
 	return exporter.isExportDone()
+}
+
+func (exporter *Exporter) ImportHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+	w.Write([]byte("You are notifying an import on an export-only node"))
+}
+
+func (exporter *Exporter) ImportStatusHandler() bool {
+	return false
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/pathfinder"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -25,17 +26,17 @@ type Importer struct {
 }
 
 //Setup sets up importer with underlying-migrator  and initializes importQueues
-func (importer *Importer) Setup(jobsDB *jobsdb.HandleT, migratorPort int) {
+func (importer *Importer) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) {
 	importer.importQueues = make(map[string]chan *jobsdb.MigrationEvent)
 	importer.migrator = &Migrator{}
-	importer.migrator.Setup(jobsDB, migratorPort)
+	importer.migrator.Setup(jobsDB)
 	importer.migrator.jobsDB.SetupForImport()
 	rruntime.Go(func() {
 		importer.readFromCheckPointAndTriggerImport()
 	})
 }
 
-func (importer *Importer) importHandler(w http.ResponseWriter, r *http.Request) {
+func (importer *Importer) ImportHandler(w http.ResponseWriter, r *http.Request) {
 	body, _ := ioutil.ReadAll(r.Body)
 	r.Body.Close()
 	migrationEvent := jobsdb.MigrationEvent{}
@@ -169,7 +170,7 @@ func (importer *Importer) processSingleLine(line []byte) (jobsdb.JobT, bool) {
 	return job, true
 }
 
-func (importer *Importer) importStatusHandler() bool {
+func (importer *Importer) ImportStatusHandler() bool {
 	migrationStates := importer.migrator.jobsDB.GetCheckpoints(jobsdb.ImportOp)
 	if len(migrationStates) > 1 {
 		for _, migrationState := range migrationStates {
@@ -179,4 +180,8 @@ func (importer *Importer) importStatusHandler() bool {
 		}
 	}
 	return true
+}
+
+func (importer *Importer) ExportStatusHandler() bool {
+	return false
 }

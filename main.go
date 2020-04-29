@@ -151,7 +151,7 @@ func startWarehouseService() {
 	warehouse.Start()
 }
 
-// flag --migration-mode overrides MIGRATION_MODE env.
+// flag -migration-mode overrides MIGRATION_MODE env.
 func getMigrationMode() string {
 	if migrationModeFlag != "" {
 		return migrationModeFlag
@@ -225,56 +225,37 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8084)
 		dnsPattern := config.GetEnv("URL_PATTERN", "http://backend-<CLUSTER_VERSION><NODENUM>")
 		forExport := strings.Contains(migrationMode, "export")
-		forImport := strings.Contains(migrationMode, "import")
 
 		if forExport {
 			backendCount := config.GetRequiredEnvAsInt("MIGRATING_TO_BACKEND_COUNT")
 			nextclusterVersion := config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
-			pf.Setup(pathfinder.Setup(backendCount, nextclusterVersion, dnsPattern, instanceIDPattern), nextclusterVersion)
+			pf.Setup(pathfinder.Setup(backendCount, nextclusterVersion, dnsPattern, instanceIDPattern, migratorPort), nextclusterVersion)
 		}
 
 		logger.Info("Setting up migrators")
-		var gatewayExporter migrator.Exporter
-		var gatewayImporter migrator.Importer
-
-		var routerExporter migrator.Exporter
-		var routerImporter migrator.Importer
-
-		var batchRouterExporter migrator.Exporter
-		var batchRouterImporter migrator.Importer
+		var (
+			gatewayMigrator     migrator.Transporter
+			routerMigrator      migrator.Transporter
+			batchRouterMigrator migrator.Transporter
+		)
 
 		var wg sync.WaitGroup
 		wg.Add(3)
 		rruntime.Go(func() {
-			if forExport {
-				gatewayExporter.Setup(&gatewayDB, pf, migratorPort)
-			}
-			if forImport {
-				gatewayImporter.Setup(&gatewayDB, migratorPort)
-			}
+			gatewayMigrator = migrator.New(migrationMode, &gatewayDB, pf)
 			wg.Done()
 		})
 		rruntime.Go(func() {
-			if forExport {
-				routerExporter.Setup(&routerDB, pf, migratorPort)
-			}
-			if forImport {
-				routerImporter.Setup(&routerDB, migratorPort)
-			}
+			routerMigrator = migrator.New(migrationMode, &gatewayDB, pf)
 			wg.Done()
 		})
 		rruntime.Go(func() {
-			if forExport {
-				batchRouterExporter.Setup(&batchRouterDB, pf, migratorPort)
-			}
-			if forImport {
-				batchRouterImporter.Setup(&batchRouterDB, migratorPort)
-			}
+			batchRouterMigrator = migrator.New(migrationMode, &gatewayDB, pf)
 			wg.Done()
 		})
 		wg.Wait()
 
-		go migrator.StartWebHandler(migratorPort, &gatewayExporter, &gatewayImporter, &routerExporter, &routerImporter, &batchRouterExporter, &batchRouterImporter)
+		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)
 	}
 
 	if enableRouter {
