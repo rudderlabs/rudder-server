@@ -55,6 +55,7 @@ type NotificationT struct {
 type ResponseT struct {
 	Status  string
 	Payload json.RawMessage
+	Error   string
 }
 
 type ClaimT struct {
@@ -141,7 +142,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				panic(err)
 			}
 			if count == 0 {
-				stmt = fmt.Sprintf(`SELECT payload, status FROM %s WHERE batch_id = '%s'`, queueName, batchID)
+				stmt = fmt.Sprintf(`SELECT payload, status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
 				rows, err := notifier.dbHandle.Query(stmt)
 				if err != nil {
 					panic(err)
@@ -150,11 +151,12 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				responses := []ResponseT{}
 				for rows.Next() {
 					var payload json.RawMessage
-					var status string
-					err = rows.Scan(&payload, &status)
+					var status, error string
+					err = rows.Scan(&payload, &status, &error)
 					responses = append(responses, ResponseT{
 						Status:  status,
 						Payload: payload,
+						Error:   error,
 					})
 				}
 				*ch <- responses
@@ -175,7 +177,7 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 									WHEN attempt > %[2]d
 									THEN CAST ( '%[3]s' AS pg_notifier_status_type)
 									ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
-									END), updated_at = '%[5]s', error = '%[6]s'
+									END), attempt = attempt + 1, updated_at = '%[5]s', error = '%[6]s'
 									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), response.Err.Error(), id)
 			_, err = tx.Exec(stmt)
 		} else {
@@ -397,12 +399,19 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 										  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 										  last_exec_time TIMESTAMP,
 										  attempt SMALLINT DEFAULT 0,
-										  error VARCHAR(64),
+										  error TEXT,
 										  worker_id VARCHAR(64));`, queueName)
 
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
 		return
+	}
+
+	// change error type to text
+	sqlStmt = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, queueName, "error")
+	_, err = notifier.dbHandle.Exec(sqlStmt)
+	if err != nil {
+		panic(err)
 	}
 
 	// create index on status
