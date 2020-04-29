@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"time"
 
 	"github.com/lib/pq"
@@ -178,7 +178,7 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 									THEN CAST ( '%[3]s' AS pg_notifier_status_type)
 									ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
 									END), updated_at = '%[5]s', error = '%[6]s'
-									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), strings.ReplaceAll(response.Err.Error(),"'","''"), id)
+									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), misc.QuoteLiteral(response.Err.Error()), id)
 			_, err = tx.Exec(stmt)
 		} else {
 			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
