@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -243,4 +245,21 @@ func (jd *HandleT) getCheckpoints(migrationType string, query string) []*Migrati
 		migrationEvents = append(migrationEvents, &migrationEvent)
 	}
 	return migrationEvents
+}
+
+func getNumberOfJobsFromFileLocation(fileLocation string) int64 {
+	slicedS := strings.FieldsFunc(fileLocation, fileLocationSplitter)
+	totalJobs, _ := strconv.ParseInt(slicedS[len(slicedS)-2], 10, 64)
+	return totalJobs
+}
+
+func fileLocationSplitter(r rune) bool {
+	return r == '_' || r == '.'
+}
+
+func (migrationEvent *MigrationEvent) getLastJobID() int64 {
+	if migrationEvent.StartSeq == 0 {
+		return int64(0)
+	}
+	return migrationEvent.StartSeq + getNumberOfJobsFromFileLocation(migrationEvent.FileLocation) - 1
 }
