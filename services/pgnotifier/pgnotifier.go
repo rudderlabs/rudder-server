@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -171,12 +172,13 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 		response := <-ch
 		var err error
 		if response.Err != nil {
+			logger.Error(response.Err.Error())
 			stmt := fmt.Sprintf(`UPDATE %[1]s SET status=(CASE
 									WHEN attempt > %[2]d
 									THEN CAST ( '%[3]s' AS pg_notifier_status_type)
 									ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
 									END), updated_at = '%[5]s', error = '%[6]s'
-									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), response.Err.Error(), id)
+									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), strings.ReplaceAll(response.Err.Error(),"'","''"), id)
 			_, err = tx.Exec(stmt)
 		} else {
 			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
@@ -400,6 +402,13 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 										  error VARCHAR(64),
 										  worker_id VARCHAR(64));`, queueName)
 
+	_, err = notifier.dbHandle.Exec(sqlStmt)
+	if err != nil {
+		return
+	}
+
+	// alter error column to text
+	sqlStmt = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN error TYPE text`, queueName)
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
 		return
