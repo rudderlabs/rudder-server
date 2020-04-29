@@ -1792,11 +1792,10 @@ func startWebHandler() {
 		backendconfig.WaitForConfig()
 		http.HandleFunc("/v1/process", processHandler)
 		logger.Infof("WH: Starting warehouse master service in %d", webPort)
-		log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 	} else {
-		// webPort = 8083
 		logger.Infof("WH: Starting warehouse slave service in %d", webPort)
 	}
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
 func claimAndProcess(workerIdx int, slaveID string) {
