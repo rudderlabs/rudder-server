@@ -89,6 +89,11 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 	return err
 }
 
+func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string {
+	locationSlice := strings.Split(location, "amazonaws.com/")
+	return locationSlice[len(locationSlice)-1]
+}
+
 type S3Object struct {
 	Key              string
 	LastModifiedTime time.Time

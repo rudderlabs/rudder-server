@@ -112,7 +112,7 @@ func (importer *Importer) processImport(importQ chan *jobsdb.MigrationEvent) {
 			panic(err)
 		}
 
-		err = importer.migrator.fileManager.Download(jsonFile, fileName)
+		err = importer.migrator.fileManager.Download(jsonFile, importer.migrator.fileManager.GetDownloadKeyFromFileLocation(migrationEvent.FileLocation))
 		if err != nil {
 			panic(err.Error())
 		}

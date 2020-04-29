@@ -246,11 +246,11 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 			wg.Done()
 		})
 		rruntime.Go(func() {
-			routerMigrator = migrator.New(migrationMode, &gatewayDB, pf)
+			routerMigrator = migrator.New(migrationMode, &routerDB, pf)
 			wg.Done()
 		})
 		rruntime.Go(func() {
-			batchRouterMigrator = migrator.New(migrationMode, &gatewayDB, pf)
+			batchRouterMigrator = migrator.New(migrationMode, &batchRouterDB, pf)
 			wg.Done()
 		})
 		wg.Wait()

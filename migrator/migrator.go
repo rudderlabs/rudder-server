@@ -18,8 +18,10 @@ import (
 
 //Migrator is a handle to this object used in main.go
 type Migrator struct {
-	jobsDB      *jobsdb.HandleT
-	fileManager filemanager.FileManager
+	jobsDB             *jobsdb.HandleT
+	fileManager        filemanager.FileManager
+	fromClusterVersion int
+	toClusterVersion   int
 }
 
 //Transporter interface for export and import implementations
@@ -60,6 +62,9 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT) {
 
 	migrator.jobsDB = jobsDB
 	migrator.fileManager = migrator.setupFileManager()
+
+	migrator.fromClusterVersion = config.GetRequiredEnvAsInt("MIGRATING_FROM_CLUSTER_VERSION")
+	migrator.toClusterVersion = config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
 
 	migrator.jobsDB.SetupCheckpointTable()
 }
@@ -148,23 +153,20 @@ func (migrator *Migrator) setupFileManager() filemanager.FileManager {
 	conf := map[string]interface{}{}
 	conf["bucketName"] = config.GetRequiredEnv("MIGRATOR_BUCKET")
 
-	//TODO fix importing prefix bug
-	/*bucketPrefix := config.GetEnv("MIGRATOR_BUCKET_PREFIX", "")
-	versionPrefix := fmt.Sprintf("%d-%d", migrator.version, migrator.nextVersion)
+	bucketPrefix := config.GetEnv("MIGRATOR_BUCKET_PREFIX", "")
+	versionPrefix := fmt.Sprintf("%d-%d", migrator.fromClusterVersion, migrator.toClusterVersion)
 
 	if bucketPrefix != "" {
 		bucketPrefix = fmt.Sprintf("%s/%s", bucketPrefix, versionPrefix)
 	} else {
 		bucketPrefix = versionPrefix
 	}
-	conf["prefix"] = bucketPrefix*/
+	conf["prefix"] = bucketPrefix
 
 	conf["accessKeyID"] = config.GetEnv("MIGRATOR_ACCESS_KEY_ID", "")
 	conf["accessKey"] = config.GetEnv("MIGRATOR_SECRET_ACCESS_KEY", "")
 	settings := filemanager.SettingsT{Provider: "S3", Config: conf}
 	fm, err := filemanager.New(&settings)
-	// _ = err
-	// return fm
 	if err == nil {
 		return fm
 	}
