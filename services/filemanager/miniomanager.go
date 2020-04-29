@@ -2,9 +2,10 @@ package filemanager
 
 import (
 	"errors"
-	"github.com/minio/minio-go/v6"
 	"os"
 	"strings"
+
+	"github.com/minio/minio-go/v6"
 )
 
 func (manager *MinioManager) ObjectUrl(objectName string) string {
@@ -57,6 +58,11 @@ func (manager *MinioManager) Download(file *os.File, key string) error {
 	}
 	err = minioClient.FGetObject(manager.Config.Bucket, key, file.Name(), minio.GetObjectOptions{})
 	return err
+}
+
+//TODO complete this
+func (manager *MinioManager) GetDownloadKeyFromFileLocation(location string) string {
+	return location
 }
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
