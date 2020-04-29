@@ -70,6 +70,7 @@ func (jd *HandleT) GetNonMigrated(count int) []*JobT {
 	return outJobs
 }
 
+//BuildStatus generates a struct of type JobStatusT for a given job and jobState
 func BuildStatus(job *JobT, jobState string) *JobStatusT {
 	newStatus := JobStatusT{
 		JobID:         job.JobID,

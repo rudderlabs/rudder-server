@@ -20,8 +20,6 @@ type Migrator struct {
 	jobsDB      *jobsdb.HandleT
 	fileManager filemanager.FileManager
 	port        int
-	exporter	*Exporter
-	importer	*Importer
 }
 
 func init() {
@@ -137,7 +135,7 @@ func (migrator *Migrator) setupFileManager() filemanager.FileManager {
 
 	conf["accessKeyID"] = config.GetEnv("MIGRATOR_ACCESS_KEY_ID", "")
 	conf["accessKey"] = config.GetEnv("MIGRATOR_SECRET_ACCESS_KEY", "")
-	settings := filemanager.SettingsT{"S3", conf}
+	settings := filemanager.SettingsT{Provider: "S3", Config: conf}
 	fm, err := filemanager.New(&settings)
 	// _ = err
 	// return fm
