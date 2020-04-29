@@ -385,7 +385,7 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 }
 
 func DestStat(statType string, statName string, id string) *stats.RudderStats {
-	return stats.NewStatWithParam(fmt.Sprintf("warehouse.%s", statName), statType, "destinationId", id)
+	return stats.NewStatWithParam(fmt.Sprintf("warehouse.%s", statName), statType, "destID", id)
 }
 
 func Datatype(in interface{}) string {

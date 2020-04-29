@@ -80,7 +80,7 @@ func NewStatWithParam(Name string, StatType string, paramName string, paramValue
 	defer jobsdbClientsMapLock.Unlock()
 	if _, found := jobsdbClientsMap[paramValue]; !found {
 		var err error
-		jobsdbClientsMap[paramValue], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, fmt.Sprintf("%s", paramName), paramValue))
+		jobsdbClientsMap[paramValue], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, paramName, paramValue))
 		if err != nil {
 			logger.Error(err)
 		}

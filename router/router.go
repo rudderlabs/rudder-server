@@ -109,12 +109,12 @@ func loadConfig() {
 
 func (rt *HandleT) workerProcess(worker *workerT) {
 
-	deliveryTimeStat := stats.NewStatWithParam("router.delivery_time", stats.TimerType, "destinationID", rt.destID)
-	batchTimeStat := stats.NewStatWithParam("router.batch_time", stats.TimerType, "destinationID", rt.destID)
-	failedAttemptsStat := stats.NewStatWithParam("router.failed_attempts", stats.CountType, "destinationID", rt.destID)
-	retryAttemptsStat := stats.NewStatWithParam("router.retry_attempts", stats.CountType, "destinationID", rt.destID)
-	eventsDeliveredStat := stats.NewStatWithParam("router.events_delivered", stats.CountType, "destinationID", rt.destID)
-	eventsAbortedStat := stats.NewStatWithParam("router.events_aborted", stats.CountType, "destinationID", rt.destID)
+	deliveryTimeStat := stats.NewStatWithParam("router.delivery_time", stats.TimerType, "destID", rt.destID)
+	batchTimeStat := stats.NewStatWithParam("router.batch_time", stats.TimerType, "destID", rt.destID)
+	failedAttemptsStat := stats.NewStatWithParam("router.failed_attempts", stats.CountType, "destID", rt.destID)
+	retryAttemptsStat := stats.NewStatWithParam("router.retry_attempts", stats.CountType, "destID", rt.destID)
+	eventsDeliveredStat := stats.NewStatWithParam("router.events_delivered", stats.CountType, "destID", rt.destID)
+	eventsAbortedStat := stats.NewStatWithParam("router.events_aborted", stats.CountType, "destID", rt.destID)
 
 	for {
 		job := <-worker.channel
@@ -408,8 +408,8 @@ func (rt *HandleT) statusInsertLoop() {
 	//Wait for the responses from statusQ
 	lastUpdate := time.Now()
 
-	statusStat := stats.NewStatWithParam("router.status_loop", stats.TimerType, "destinationID", rt.destID)
-	countStat := stats.NewStatWithParam("router.status_events", stats.CountType, "destinationID", rt.destID)
+	statusStat := stats.NewStatWithParam("router.status_loop", stats.TimerType, "destID", rt.destID)
+	countStat := stats.NewStatWithParam("router.status_events", stats.CountType, "destID", rt.destID)
 
 	for {
 		rt.perfStats.Start()

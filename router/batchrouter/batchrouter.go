@@ -386,7 +386,7 @@ func (brt *HandleT) initWorkers() {
 					case batchJobs := <-brt.processQ:
 						switch {
 						case misc.ContainsString(objectStorageDestinations, brt.destType):
-							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+							destUploadStat := stats.NewStatWithParam(`batch_router_dest_upload_time`, stats.TimerType, "destType", brt.destType)
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
 							brt.setJobStatus(batchJobs, false, output.Error)
@@ -398,7 +398,7 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat.End()
 							setDestInProgress(batchJobs.BatchDestination, false)
 						case misc.ContainsString(warehouseDestinations, brt.destType):
-							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType)
+							destUploadStat := stats.NewStatWithParam(fmt.Sprintf(`batch_router.%s_dest_upload_time`, warehouseutils.ObjectStorageMap[brt.destType]), stats.TimerType, "destType", brt.destType)
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(warehouseutils.ObjectStorageMap[brt.destType], batchJobs, true, true)
 							if output.Error == nil && output.Key != "" {
