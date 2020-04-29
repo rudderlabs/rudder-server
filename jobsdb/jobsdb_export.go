@@ -8,6 +8,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
+//SetupForExport is used to setup jobsdb for export or for import or for both
+func (jd *HandleT) SetupForExport() {
+	jd.migrationState.lastDsForExport = jd.findOrCreateDsFromSetupCheckpoint(ExportOp, jd.getLastDsForExport)
+	logger.Infof("Last ds for export : %v", jd.migrationState.lastDsForExport, jd.migrationState.dsForNewEvents)
+}
+
 func (jd *HandleT) getLastDsForExport(dsList []dataSetT) dataSetT {
 	dsListLen := len(dsList)
 	var ds dataSetT
@@ -56,7 +62,7 @@ func (jd *HandleT) GetNonMigrated(count int) []*JobT {
 		}
 
 		//Instead of full dsList, it needs to do only till the dataset before import and newEvent datasets
-		if ds.Index == jd.migrationState.LastDsForExport.Index {
+		if ds.Index == jd.migrationState.lastDsForExport.Index {
 			break
 		}
 	}
@@ -192,16 +198,4 @@ func (jd *HandleT) deleteMigratingJobStatusDS(ds dataSetT) {
 //GetUserID from job
 func (jd *HandleT) GetUserID(job *JobT) string {
 	return job.UserID
-}
-
-//ShouldExport tells if export should happen in migration
-func (jd *HandleT) ShouldExport() bool {
-	migrationStates := jd.GetCheckpoints(ExportOp)
-	if len(migrationStates) > 1 {
-		lastExportMigrationState := migrationStates[len(migrationStates)-1]
-		if lastExportMigrationState.ToNode == "All" && lastExportMigrationState.Status == Exported {
-			return false
-		}
-	}
-	return true
 }

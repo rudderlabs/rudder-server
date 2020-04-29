@@ -6,29 +6,22 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"sync"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/pathfinder"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 //Migrator is a handle to this object used in main.go
 type Migrator struct {
-	jobsDB       *jobsdb.HandleT
-	pf           pathfinder.Pathfinder
-	fileManager  filemanager.FileManager
-	doneLock     sync.RWMutex
-	done         bool
-	port         int
-	dumpQueues   map[string]chan []*jobsdb.JobT
-	notifyQueues map[string]chan *jobsdb.MigrationEvent
-	importQueues map[string]chan *jobsdb.MigrationEvent
+	jobsDB      *jobsdb.HandleT
+	fileManager filemanager.FileManager
+	port        int
+	exporter	*Exporter
+	importer	*Importer
 }
 
 func init() {
@@ -37,46 +30,14 @@ func init() {
 }
 
 //Setup initializes the module
-func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder, forExport bool, forImport bool, migratorPort int, wg *sync.WaitGroup) {
-	defer wg.Done()
+func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT, migratorPort int) {
 	logger.Infof("Migrator: Setting up migrator for %s jobsdb", jobsDB.GetTablePrefix())
 
-	migrator.dumpQueues = make(map[string]chan []*jobsdb.JobT)
-	migrator.notifyQueues = make(map[string]chan *jobsdb.MigrationEvent)
-	migrator.importQueues = make(map[string]chan *jobsdb.MigrationEvent)
-
 	migrator.jobsDB = jobsDB
-	migrator.pf = pf
 	migrator.fileManager = migrator.setupFileManager()
 	migrator.port = migratorPort
 
 	migrator.jobsDB.SetupCheckpointTable()
-
-	//take these as arguments
-	migrator.jobsDB.SetupForMigrations(forExport, forImport)
-
-	if forExport {
-		rruntime.Go(func() {
-			migrator.export()
-		})
-	}
-
-	if forImport {
-		rruntime.Go(func() {
-			migrator.readFromCheckPointAndTriggerImport()
-		})
-	}
-
-}
-
-func (migrator *Migrator) exportStatusHandler() bool {
-	migrator.doneLock.RLock()
-	defer migrator.doneLock.RUnlock()
-	return migrator.done
-}
-
-func (migrator *Migrator) importStatusHandler() bool {
-	return true
 }
 
 func reflectOrigin(origin string) bool {
@@ -97,17 +58,17 @@ type StatusResponseT struct {
 }
 
 //StartWebHandler starts the webhandler for internal communication and status
-func StartWebHandler(migratorPort int, gwMigrator *Migrator, rtMigrator *Migrator, brtMigrator *Migrator) {
+func StartWebHandler(migratorPort int, gatewayExporter *Exporter, gatewayImporter *Importer, routerExporter *Exporter, routerImporter *Importer, batchRouterExporter *Exporter, batchRouterImporter *Importer) {
 	logger.Infof("Migrator: Starting migrationWebHandler on port %d", migratorPort)
 
-	http.HandleFunc("/gw/fileToImport", gwMigrator.importHandler)
-	http.HandleFunc("/rt/fileToImport", rtMigrator.importHandler)
-	http.HandleFunc("/batch_rt/fileToImport", brtMigrator.importHandler)
+	http.HandleFunc("/gw/fileToImport", gatewayImporter.importHandler)
+	http.HandleFunc("/rt/fileToImport", routerImporter.importHandler)
+	http.HandleFunc("/batch_rt/fileToImport", batchRouterImporter.importHandler)
 
 	http.HandleFunc("/export/status", func(w http.ResponseWriter, r *http.Request) {
-		gwCompleted := gwMigrator.exportStatusHandler()
-		rtCompleted := rtMigrator.exportStatusHandler()
-		brtCompleted := brtMigrator.exportStatusHandler()
+		gwCompleted := gatewayExporter.exportStatusHandler()
+		rtCompleted := routerExporter.exportStatusHandler()
+		brtCompleted := batchRouterExporter.exportStatusHandler()
 		completed := gwCompleted && rtCompleted && brtCompleted
 		// completed := gwCompleted
 		mode := "export"
@@ -115,8 +76,8 @@ func StartWebHandler(migratorPort int, gwMigrator *Migrator, rtMigrator *Migrato
 		response := StatusResponseT{
 			Completed: completed,
 			Gw:        gwCompleted,
-			Rt:        completed, //TODO change
-			BatchRt:   completed, //TODO change
+			Rt:        rtCompleted,
+			BatchRt:   brtCompleted,
 			Mode:      mode,
 		}
 
@@ -128,9 +89,9 @@ func StartWebHandler(migratorPort int, gwMigrator *Migrator, rtMigrator *Migrato
 	})
 
 	http.HandleFunc("/import/status", func(w http.ResponseWriter, r *http.Request) {
-		gwCompleted := gwMigrator.importStatusHandler()
-		rtCompleted := rtMigrator.importStatusHandler()
-		brtCompleted := brtMigrator.importStatusHandler()
+		gwCompleted := gatewayImporter.importStatusHandler()
+		rtCompleted := routerImporter.importStatusHandler()
+		brtCompleted := batchRouterImporter.importStatusHandler()
 		completed := gwCompleted && rtCompleted && brtCompleted
 		// completed := gwCompleted
 		mode := "import"
@@ -138,8 +99,8 @@ func StartWebHandler(migratorPort int, gwMigrator *Migrator, rtMigrator *Migrato
 		response := StatusResponseT{
 			Completed: completed,
 			Gw:        gwCompleted,
-			Rt:        rtCompleted,  //TODO change
-			BatchRt:   brtCompleted, //TODO change
+			Rt:        rtCompleted,
+			BatchRt:   brtCompleted,
 			Mode:      mode,
 		}
 

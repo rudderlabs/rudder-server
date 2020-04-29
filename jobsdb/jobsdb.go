@@ -102,6 +102,14 @@ type dataSetRangeT struct {
 	ds        dataSetT
 }
 
+//MigrationState maintains the state required during the migration process
+type MigrationState struct {
+	sequenceProvider *SequenceProvider
+	dsForNewEvents   dataSetT
+	dsForImport      dataSetT
+	lastDsForExport  dataSetT
+}
+
 /*
 HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
@@ -1483,17 +1491,17 @@ func (jd *HandleT) mainCheckLoop() {
 		}
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
-		if jd.migrationState.DsForImport.Index != "" {
-			if jd.checkIfFullDS(jd.migrationState.DsForImport) {
+		if jd.migrationState.dsForImport.Index != "" {
+			if jd.checkIfFullDS(jd.migrationState.dsForImport) {
 				//Adding a new DS updates the list
 				//Doesn't move any data so we only
 				//take the list lock
 				jd.dsListLock.Lock()
 				logger.Info("Main check:NewDS")
 				//TODO: Single transaction for addNewDs and Checkpoint
-				jd.migrationState.DsForImport = jd.addNewDS(false, jd.migrationState.DsForNewEvents)
+				jd.migrationState.dsForImport = jd.addNewDS(false, jd.migrationState.dsForNewEvents)
 				setupCheckpoint := jd.GetSetupCheckpoint(ImportOp)
-				payloadBytes, _ := json.Marshal(jd.migrationState.DsForImport)
+				payloadBytes, _ := json.Marshal(jd.migrationState.dsForImport)
 				setupCheckpoint.Payload = string(payloadBytes)
 				jd.Checkpoint(setupCheckpoint)
 				jd.dsListLock.Unlock()
@@ -1673,6 +1681,23 @@ func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
 		Config:   filemanager.GetProviderConfigFromEnv(),
 	})
 
+}
+
+func (jd *HandleT) isEmpty(ds dataSetT) bool {
+	var count sql.NullInt64
+	sqlStatement := fmt.Sprintf(`SELECT count(*) from %s`, ds.JobTable)
+	row := jd.dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&count)
+	jd.assertError(err)
+	if count.Valid {
+		return int64(count.Int64) == int64(0)
+	}
+	panic("Unable to get count on this dataset")
+}
+
+//GetTablePrefix returns the table prefix of the jobsdb
+func (jd *HandleT) GetTablePrefix() string {
+	return jd.tablePrefix
 }
 
 func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable bool) (success bool, err error) {

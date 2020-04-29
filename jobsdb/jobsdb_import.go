@@ -9,8 +9,14 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
+//SetupForImport is used to setup jobsdb for export or for import or for both
+func (jd *HandleT) SetupForImport() {
+	jd.migrationState.dsForNewEvents = jd.findOrCreateDsFromSetupCheckpoint(AcceptNewEventsOp, jd.getDsForNewEvents)
+	logger.Infof("Ds for new events :%v", jd.migrationState.dsForNewEvents)
+}
+
 func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
-	ds := jd.addNewDS(false, jd.migrationState.DsForNewEvents)
+	ds := jd.addNewDS(false, jd.migrationState.dsForNewEvents)
 	logger.Infof("Should Checkpoint Import Setup event for the new ds : %v", ds)
 	return ds
 }
@@ -60,12 +66,12 @@ func getNewVersion() int {
 
 //StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
 func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent *MigrationEvent) {
-	if jd.migrationState.DsForImport.Index == "" {
-		jd.migrationState.DsForImport = jd.findOrCreateDsFromSetupCheckpoint(ImportOp, jd.getDsForImport)
-		jd.setupSequenceProvider(jd.migrationState.DsForImport)
+	if jd.migrationState.dsForImport.Index == "" {
+		jd.migrationState.dsForImport = jd.findOrCreateDsFromSetupCheckpoint(ImportOp, jd.getDsForImport)
+		jd.setupSequenceProvider(jd.migrationState.dsForImport)
 	}
 
-	if jd.migrationState.DsForImport.Index == "" {
+	if jd.migrationState.dsForImport.Index == "" {
 		panic("dsForImportEvents was not setup. Go debug")
 	}
 
@@ -85,8 +91,8 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 
 	//TODO: get minimal functions for the below and put them both in a transaction
 	logger.Infof("[JobsDB Import] :: Writing jobs from file:%s to db", fileName)
-	jd.storeJobsDS(jd.migrationState.DsForImport, true, false, jobList)
-	jd.updateJobStatusDS(jd.migrationState.DsForImport, statusList, []string{}, []ParameterFilterT{})
+	jd.storeJobsDS(jd.migrationState.dsForImport, true, false, jobList)
+	jd.updateJobStatusDS(jd.migrationState.dsForImport, statusList, []string{}, []ParameterFilterT{})
 }
 
 func (jd *HandleT) getStartJobID(count int, migrationEvent *MigrationEvent) int64 {

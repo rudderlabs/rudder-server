@@ -234,24 +234,47 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		}
 
 		logger.Info("Setting up migrators")
-		var gatewayMigrator migrator.Migrator
-		var routerMigrator migrator.Migrator
-		var batchRouterMigrator migrator.Migrator
+		var gatewayExporter migrator.Exporter
+		var gatewayImporter migrator.Importer
+
+		var routerExporter migrator.Exporter
+		var routerImporter migrator.Importer
+
+		var batchRouterExporter migrator.Exporter
+		var batchRouterImporter migrator.Importer
 
 		var wg sync.WaitGroup
 		wg.Add(3)
 		rruntime.Go(func() {
-			gatewayMigrator.Setup(&gatewayDB, pf, forExport, forImport, migratorPort, &wg)
+			if forExport {
+				gatewayExporter.Setup(&gatewayDB, pf, migratorPort)
+			}
+			if forImport {
+				gatewayImporter.Setup(&gatewayDB, migratorPort)
+			}
+			wg.Done()
 		})
 		rruntime.Go(func() {
-			routerMigrator.Setup(&routerDB, pf, forExport, forImport, migratorPort, &wg)
+			if forExport {
+				routerExporter.Setup(&routerDB, pf, migratorPort)
+			}
+			if forImport {
+				routerImporter.Setup(&routerDB, migratorPort)
+			}
+			wg.Done()
 		})
 		rruntime.Go(func() {
-			batchRouterMigrator.Setup(&batchRouterDB, pf, forExport, forImport, migratorPort, &wg)
+			if forExport {
+				batchRouterExporter.Setup(&batchRouterDB, pf, migratorPort)
+			}
+			if forImport {
+				batchRouterImporter.Setup(&batchRouterDB, migratorPort)
+			}
+			wg.Done()
 		})
 		wg.Wait()
 
-		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)
+		go migrator.StartWebHandler(migratorPort, &gatewayExporter, &gatewayImporter, &routerExporter, &routerImporter, &batchRouterExporter, &batchRouterImporter)
 	}
 
 	if enableRouter {

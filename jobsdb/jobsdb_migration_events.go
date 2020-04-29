@@ -32,15 +32,14 @@ const (
 
 //ENUM Values for Status
 const (
-	Exported               = "exported"
-	Notified               = "notified"
-	Acknowledged           = "acknowledged"
-	Imported               = "imported"
-	PreparedForImport      = "prepared_for_import"
-	PreparedForExport      = "prepared_for_export"
-	SetupForImport         = "setup_for_import"
-	SetupForExport         = "setup_for_export"
+	SetupForExport = "setup_for_export"
+	Exported       = "exported"
+	Notified       = "notified"
+
 	SetupToAcceptNewEvents = "setup_to_accept_new_events"
+	SetupForImport         = "setup_for_import"
+	PreparedForImport      = "prepared_for_import"
+	Imported               = "imported"
 )
 
 //Checkpoint writes a migration event if id is passed as 0. Else it will update status and start_sequence
