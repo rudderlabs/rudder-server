@@ -119,7 +119,7 @@ func NewBatchDestStat(Name string, StatType string, destID string, destType stri
 	defer batchDestClientsMapLock.Unlock()
 	if _, found := batchDestClientsMap[destID]; !found {
 		var err error
-		batchDestClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destID", destID, "destType", destType, "destName", destName))
+		batchDestClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destID", destID, "destType", destType, "destName", destName, "batchRtDest", "batchRtDest"))
 		if err != nil {
 			logger.Error(err)
 		}
@@ -130,6 +130,40 @@ func NewBatchDestStat(Name string, StatType string, destID string, destType stri
 		DestID:   destID,
 		DestType: destType,
 		Client:   batchDestClientsMap[destID],
+	}
+}
+
+func NewBatchRtDestWithParamStat(Name string, StatType string, paramName string, paramValue string) (rStats *RudderStats) {
+	jobsdbClientsMapLock.Lock()
+	defer jobsdbClientsMapLock.Unlock()
+	if _, found := jobsdbClientsMap[paramValue]; !found {
+		var err error
+		jobsdbClientsMap[paramValue], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, paramName, paramValue, "batchRtDest", "batchRtDest"))
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+	return &RudderStats{
+		Name:     Name,
+		StatType: StatType,
+		Client:   jobsdbClientsMap[paramValue],
+	}
+}
+
+func NewRtDestWithParamStat(Name string, StatType string, paramName string, paramValue string) (rStats *RudderStats) {
+	jobsdbClientsMapLock.Lock()
+	defer jobsdbClientsMapLock.Unlock()
+	if _, found := jobsdbClientsMap[paramValue]; !found {
+		var err error
+		jobsdbClientsMap[paramValue], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, paramName, paramValue, "rtDest", "rtDest"))
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+	return &RudderStats{
+		Name:     Name,
+		StatType: StatType,
+		Client:   jobsdbClientsMap[paramValue],
 	}
 }
 
