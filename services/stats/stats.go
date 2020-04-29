@@ -150,6 +150,25 @@ func NewBatchRtDestWithParamStat(Name string, StatType string, paramName string,
 	}
 }
 
+func NewRtDestStat(Name string, StatType string, destID string, destType string, destName string) *RudderStats {
+	destClientsMapLock.Lock()
+	defer destClientsMapLock.Unlock()
+	if _, found := destClientsMap[destID]; !found {
+		var err error
+		destClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destType", destType, "destID", destID, "destName", destName, "rtDest", "rtDest"))
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+	return &RudderStats{
+		Name:        Name,
+		StatType:    StatType,
+		DestType:    destType,
+		Client:      destClientsMap[destID],
+		dontProcess: false,
+	}
+}
+
 func NewRtDestWithParamStat(Name string, StatType string, paramName string, paramValue string) (rStats *RudderStats) {
 	jobsdbClientsMapLock.Lock()
 	defer jobsdbClientsMapLock.Unlock()
