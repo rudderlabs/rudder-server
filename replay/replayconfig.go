@@ -1,21 +1,54 @@
-package processor
+package replay
 
 import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/gateway"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
+var (
+	processReplays []replayT
+
+	loopSleep            time.Duration
+	maxLoopSleep         time.Duration
+	dbReadBatchSize      int
+	configSubscriberLock sync.RWMutex
+)
+
+func init() {
+	config.Initialize()
+	loadConfig()
+}
+
+func loadConfig() {
+	processReplays = []replayT{}
+	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 10000)
+	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
+	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
+}
+
 type ReplayProcessorT struct {
-	dbHandle *sql.DB
+	gatewayDB *jobsdb.HandleT
+	dbHandle  *sql.DB
+}
+
+type replayT struct {
+	sourceID      string
+	destinationID string
+	notifyURL     string
 }
 
 type replayConfigT struct {
@@ -38,7 +71,9 @@ func (r *ReplayProcessorT) getDBConnectionString() string {
 		host, port, user, password, dbname)
 }
 
-func (r *ReplayProcessorT) Setup() {
+func (r *ReplayProcessorT) Setup(gatewayDB *jobsdb.HandleT) {
+	r.gatewayDB = gatewayDB
+
 	dbHandle, err := sql.Open("postgres", r.getDBConnectionString())
 	if err != nil {
 		panic(err)
@@ -52,9 +87,102 @@ func (r *ReplayProcessorT) Setup() {
 	}
 
 	r.createTableIfNotExists()
+
+	rruntime.Go(func() {
+		r.backendConfigSubscriber()
+	})
+
+	r.crashRecover()
+
+	rruntime.Go(func() {
+		r.mainLoop()
+	})
 }
 
-func (r *ReplayProcessorT) CrashRecover() {
+func (r *ReplayProcessorT) mainLoop() {
+
+	logger.Info("Replay Processor loop started")
+	currLoopSleep := time.Duration(0)
+
+	for {
+
+		toQuery := dbReadBatchSize
+		//Should not have any failure while processing (in v0) so
+		//retryList should be empty. Remove the assert
+		retryList := r.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
+		toQuery -= len(retryList)
+		unprocessedList := r.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
+
+		if len(unprocessedList)+len(retryList) == 0 {
+			currLoopSleep = 2*currLoopSleep + loopSleep
+			if currLoopSleep > maxLoopSleep {
+				currLoopSleep = maxLoopSleep
+			}
+
+			time.Sleep(currLoopSleep)
+			continue
+		} else {
+			currLoopSleep = time.Duration(0)
+		}
+
+		combinedList := append(unprocessedList, retryList...)
+		//Sort by JOBID
+		sort.Slice(combinedList, func(i, j int) bool {
+			return combinedList[i].JobID < combinedList[j].JobID
+		})
+
+		// Need to process minJobID and new destinations at once
+		r.handleReplay(combinedList)
+	}
+}
+
+func (r *ReplayProcessorT) backendConfigSubscriber() {
+	ch := make(chan utils.DataEvent)
+	backendconfig.Subscribe(ch, "processConfig")
+	for {
+		config := <-ch
+		configSubscriberLock.Lock()
+		sources := config.Data.(backendconfig.SourcesT)
+		for _, source := range sources.Sources {
+			var replays = []replayT{}
+			for _, dest := range source.Destinations {
+				if dest.Config.(map[string]interface{})["Replay"] == true {
+					notifyURL, ok := dest.Config.(map[string]interface{})["ReplayURL"].(string)
+					if !ok {
+						notifyURL = ""
+					}
+					replays = append(replays, replayT{sourceID: source.ID, destinationID: dest.ID, notifyURL: notifyURL})
+				}
+			}
+
+			if len(replays) > 0 {
+				processReplays = r.GetReplaysToProcess(replays)
+			}
+		}
+		configSubscriberLock.Unlock()
+	}
+}
+
+/*
+ * If there is a new replay destination, compute the min JobID that the data plane would be routing for that source
+ */
+func (r *ReplayProcessorT) handleReplay(combinedList []*jobsdb.JobT) {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+
+	if len(processReplays) > 0 {
+		maxDSIndex := r.gatewayDB.GetMaxDSIndex()
+		if len(combinedList) <= 0 {
+			panic(fmt.Errorf("len(combinedList):%d <= 0", len(combinedList)))
+		}
+		replayMinJobID := combinedList[0].JobID
+
+		r.ProcessNewReplays(processReplays, replayMinJobID, maxDSIndex)
+		processReplays = []replayT{}
+	}
+}
+
+func (r *ReplayProcessorT) crashRecover() {
 	sqlStatement := fmt.Sprintf("SELECT source_id, destination_id, notify_url, config FROM replay_config WHERE notified=false")
 	rows, err := r.dbHandle.Query(sqlStatement)
 	if err != nil {
@@ -206,10 +334,6 @@ func (r *ReplayProcessorT) CreateReplayConfig(replayConfig replayConfigT) error 
 		panic(err)
 	}
 	return err
-}
-
-func NewReplayProcessor() (replay *ReplayProcessorT) {
-	return &ReplayProcessorT{}
 }
 
 func NewReplayConfig(sourceID string, destinationID string, minJobID int64, maxDSIndex int64, notifyURL string) replayConfigT {

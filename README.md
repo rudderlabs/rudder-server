@@ -22,7 +22,7 @@ You can use the [hosted][dashboard-on] RudderStack instance to experience the pr
 
 # Features
 
-1. **Production Ready:** Multiple companies from startups to large engerprieses are running RudderStack for collecting events.
+1. **Production Ready:** Multiple companies from startups to large enterprises are running RudderStack for collecting events.
 2. **Extreme Scale:** One of our largest installations is sending **300M events/day** with peak of **40K req/sec** via a multi-node RudderStack setup.
 3. **Segment API Compatibile:** RudderStack is Segment API and library compatible so don't need to change your app if you are using Segment.
 4. **Cloud Destinations:** Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations.
@@ -41,23 +41,6 @@ We are building RudderStack because we believe open-source and cloud-prem is imp
 2. **Processing Flexibility:** You should be able to enhance OR transform your event data by combining it with your other _internal_ data, e.g. stored in your transactional systems. RudderStack makes that possible because it provides a powerful JS-based event transformation framework. Furthermore, since RudderStack runs _inside_ your cloud or on-prem environment, you can access your production data to join with the event data.
 
 3. **Unlimited Events:** Event volume-based pricing of most commercial systems is broken. You should be able to collect as much data as possible without worrying about overrunning event budgets. RudderStack's core BE is open-source and free to use.
-
-# Telemetry
-
-To help us improve RudderStack, we collect performance and diagnostic metrics about how you use it and how it's working. No customer data is present in the metrics.
-
-The metrics collection can be disabled by setting the variable `enableDiagnostics` to false in `config/config.toml`
-
-Following are the metrics that are being collected. They are listed in `config/config.toml` under the Diagnostics section.
-
-1. _enableServerStartMetric_: Tracks every time when server starts
-2. _enableConfigIdentifyMetric_: Tracks when the config is fetched for the first time from control-plane
-3. _enableServerStartedMetric_: Tracks when the server is ready to accept requests
-4. _enableConfigProcessedMetric_: Tracks when the config is changed
-5. _enableGatewayMetric_: Tracks no. of success/failed requests
-6. _enableRouterMetric_: Tracks no. of success/aborted/retries requests for every router destination
-7. _enableBatchRouterMetric_: Tracks no. of success/failed requests for every batch router destination
-8. _enableDestinationFailuresMetric_: Tracks destination failures
 
 # Contribution
 
@@ -124,7 +107,7 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 1. Install Golang 1.13 or above. [Download Here][golang]
 2. Install NodeJS 10.6 or above. [Download Here][node]
-3. Install PostgreSQL 10 or above and set up the DB
+3. Install PostgreSQL 10 or above and set up the DB. If you are on a linux distribution, you have to switch to postgres user `sudo su - postgres` before running the below commands.
 
 ```
 psql -c "CREATE DATABASE jobsdb"
@@ -134,13 +117,16 @@ psql "jobsdb" -c "GRANT ALL PRIVILEGES ON DATABASE jobsdb to rudder";
 ```
 
 4. Go to the [dashboard][dashboard] and set up your account. Copy your workspace token from top of the home page
-5. Clone this repository. Run `git submodule init` and `git submodule update` to fetch the rudder-transformer repo.
-   and navigate to the transformer directory `cd rudder-transformer`
-6. Install dependencies `npm i` and start the destination transformer `node destTransformer.js`
-7. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
-8. Update the `WORKSPACE_TOKEN` environment variable with the token fetched in step 4
-9. Run the backend server `go run -mod=vendor main.go`
-10. Follow (Send Test Events) instructions below to send test event.
+5. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
+
+   (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
+   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule init && git submodule update`
+6. Navigate to the transformer directory `cd rudder-transformer`
+7. Install dependencies `npm i` and start the destination transformer `node destTransformer.js`
+8. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
+9. Update the `WORKSPACE_TOKEN` environment variable with the token fetched in step 4
+10. Run the backend server `go run -mod=vendor main.go`
+11. Follow (Send Test Events) instructions below to send test event.
 
 ---
 

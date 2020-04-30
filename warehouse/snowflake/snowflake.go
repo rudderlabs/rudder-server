@@ -32,7 +32,21 @@ type HandleT struct {
 	CurrentSchema map[string]map[string]string
 	Warehouse     warehouseutils.WarehouseT
 	Upload        warehouseutils.UploadT
+	CloudProvider string
+	ObjectStorage string
 }
+
+// String constants for snowflake destination config
+const (
+	AWSAccessKey       = "accessKey"
+	AWSAccessSecret    = "accessKeyID"
+	StorageIntegration = "storageIntegration"
+	SFAccount          = "account"
+	SFWarehouse        = "warehouse"
+	SFDbName           = "database"
+	SFUserName         = "user"
+	SFPassword         = "password"
+)
 
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
@@ -44,8 +58,15 @@ var dataTypesMap = map[string]string{
 }
 
 var primaryKeyMap = map[string]string{
-	"users":      "ID",
-	"identifies": "ID",
+	"USERS":      "ID",
+	"IDENTIFIES": "ID",
+	strings.ToUpper(warehouseutils.DiscardsTable): "ROW_ID",
+}
+
+var partitionKeyMap = map[string]string{
+	"USERS":      "ID",
+	"IDENTIFIES": "ID",
+	strings.ToUpper(warehouseutils.DiscardsTable): "ROW_ID, COLUMN_NAME, TABLE_NAME",
 }
 
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
@@ -126,8 +147,12 @@ func (sf *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 		if len(columnMap) > 0 {
 			for columnName, columnType := range columnMap {
 				err := sf.addColumn(tableName, columnName, columnType)
-				if !checkAndIgnoreAlreadyExistError(err) {
-					return nil, err
+				if err != nil {
+					if checkAndIgnoreAlreadyExistError(err) {
+						logger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, sf.Namespace, tableName, err)
+					} else {
+						return nil, err
+					}
 				}
 			}
 		}
@@ -137,6 +162,7 @@ func (sf *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 
 func checkAndIgnoreAlreadyExistError(err error) bool {
 	if err != nil {
+		// TODO: throw error if column already exists but of different type
 		if e, ok := err.(*snowflake.SnowflakeError); ok {
 			if e.SQLState == "42601" {
 				return true
@@ -147,10 +173,24 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
-func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, accessKeyID, accessKey string) (err error) {
+func (sf *HandleT) authString() string {
+	var auth string
+	if sf.CloudProvider == "AWS" && warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse) == "" {
+		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s')`, warehouseutils.GetConfigValue(AWSAccessSecret, sf.Warehouse), warehouseutils.GetConfigValue(AWSAccessKey, sf.Warehouse))
+	} else {
+		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse))
+	}
+	return auth
+}
+
+func (sf *HandleT) loadTable(tableName string, columnMap map[string]string) (err error) {
 	status, err := warehouseutils.GetTableUploadStatus(sf.Upload.ID, tableName, sf.DbHandle)
 	if status == warehouseutils.ExportedDataState {
 		logger.Infof("SF: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
+		return
+	}
+	if !warehouseutils.HasLoadFiles(sf.DbHandle, sf.Warehouse.Source.ID, sf.Warehouse.Destination.ID, tableName, sf.Upload.StartLoadFileID, sf.Upload.EndLoadFileID) {
+		warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, sf.Upload.ID, tableName, sf.DbHandle)
 		return
 	}
 	logger.Infof("SF: Starting load for table:%s\n", tableName)
@@ -196,10 +236,10 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 	if err != nil {
 		panic(err)
 	}
-	loadFolder := warehouseutils.GetS3LocationFolder(csvObjectLocation)
+	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, csvObjectLocation)
 
-	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s') PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, accessKeyID, accessKey)
+	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, sf.authString())
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
@@ -221,6 +261,11 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 		primaryKey = column
 	}
 
+	partitionKey := "ID"
+	if column, ok := partitionKeyMap[tableName]; ok {
+		partitionKey = column
+	}
+
 	var columnNames, stagingColumnNames, columnsWithValues string
 	for idx, str := range strkeys {
 		columnNames += fmt.Sprintf(`%s`, str)
@@ -233,17 +278,22 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 		}
 	}
 
+	var additionalJoinClause string
+	if tableName == strings.ToUpper(warehouseutils.DiscardsTable) {
+		additionalJoinClause = fmt.Sprintf(`AND original.%[1]s = staging.%[1]s`, "TABLE_NAME")
+	}
+
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY %[3]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
+											SELECT *, row_number() OVER (PARTITION BY %[8]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
-									ON original.%[3]s = staging.%[3]s
+									ON (original.%[3]s = staging.%[3]s %[7]s)
 									WHEN MATCHED THEN
 									UPDATE SET %[6]s
 									WHEN NOT MATCHED THEN
-									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues)
+									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey)
 	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -259,15 +309,6 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, acce
 }
 
 func (sf *HandleT) load() (errList []error) {
-	var accessKeyID, accessKey string
-	config := sf.Warehouse.Destination.Config.(map[string]interface{})
-	if config["accessKeyID"] != nil {
-		accessKeyID = config["accessKeyID"].(string)
-	}
-	if config["accessKey"] != nil {
-		accessKey = config["accessKey"].(string)
-	}
-
 	logger.Infof("SF: Starting load for all %v tables\n", len(sf.Upload.Schema))
 	var wg sync.WaitGroup
 	wg.Add(len(sf.Upload.Schema))
@@ -277,7 +318,7 @@ func (sf *HandleT) load() (errList []error) {
 		cMap := columnMap
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
-			loadError := sf.loadTable(tName, cMap, accessKeyID, accessKey)
+			loadError := sf.loadTable(tName, cMap)
 			if loadError != nil {
 				errList = append(errList, loadError)
 			}
@@ -398,11 +439,11 @@ type OptionalCredsT struct {
 
 func (sf *HandleT) getConnectionCredentials(opts OptionalCredsT) SnowflakeCredentialsT {
 	return SnowflakeCredentialsT{
-		account:    sf.Warehouse.Destination.Config.(map[string]interface{})["account"].(string),
-		whName:     sf.Warehouse.Destination.Config.(map[string]interface{})["warehouse"].(string),
-		dbName:     sf.Warehouse.Destination.Config.(map[string]interface{})["database"].(string),
-		username:   sf.Warehouse.Destination.Config.(map[string]interface{})["user"].(string),
-		password:   sf.Warehouse.Destination.Config.(map[string]interface{})["password"].(string),
+		account:    warehouseutils.GetConfigValue(SFAccount, sf.Warehouse),
+		whName:     warehouseutils.GetConfigValue(SFWarehouse, sf.Warehouse),
+		dbName:     warehouseutils.GetConfigValue(SFDbName, sf.Warehouse),
+		username:   warehouseutils.GetConfigValue(SFUserName, sf.Warehouse),
+		password:   warehouseutils.GetConfigValue(SFPassword, sf.Warehouse),
 		schemaName: opts.schemaName,
 	}
 }
@@ -411,6 +452,8 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	sf.DbHandle = config.DbHandle
 	sf.Warehouse = config.Warehouse
 	sf.Upload = config.Upload
+	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(config.Warehouse.Destination.Config)
+	sf.ObjectStorage = warehouseutils.ObjectStorageType("SNOWFLAKE", config.Warehouse.Destination.Config)
 
 	currSchema, err := warehouseutils.GetCurrentSchema(sf.DbHandle, sf.Warehouse)
 	if err != nil {

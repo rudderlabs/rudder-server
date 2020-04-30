@@ -40,6 +40,18 @@ type HandleT struct {
 	Upload        warehouseutils.UploadT
 }
 
+// String constants for redshift destination config
+const (
+	AWSAccessKey        = "accessKey"
+	AWSAccessSecret     = "accessKeyID"
+	AWSBucketNameConfig = "bucketName"
+	RSHost              = "host"
+	RSPort              = "port"
+	RSDbName            = "database"
+	RSUserName          = "user"
+	RSPassword          = "password"
+)
+
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
 	"int":      "bigint",
@@ -50,8 +62,15 @@ var dataTypesMap = map[string]string{
 }
 
 var primaryKeyMap = map[string]string{
-	"users":      "id",
-	"identifies": "id",
+	"users":                      "id",
+	"identifies":                 "id",
+	warehouseutils.DiscardsTable: "row_id",
+}
+
+var partitionKeyMap = map[string]string{
+	"users":                      "id",
+	"identifies":                 "id",
+	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
@@ -132,8 +151,12 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 		if len(columnMap) > 0 {
 			for columnName, columnType := range columnMap {
 				err := rs.addColumn(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName, columnType)
-				if !checkAndIgnoreAlreadyExistError(err) {
-					return nil, err
+				if err != nil {
+					if checkAndIgnoreAlreadyExistError(err) {
+						logger.Infof("RS: Column %s already exists on %s.%s \nResponse: %v", columnName, rs.Namespace, tableName, err)
+					} else {
+						return nil, err
+					}
 				}
 			}
 		}
@@ -162,12 +185,12 @@ type S3ManifestT struct {
 	Entries []S3ManifestEntryT `json:"entries"`
 }
 
-func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[string]string, accessKeyID, accessKey string) (string, error) {
+func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
 	csvObjectLocations, err := warehouseutils.GetLoadFileLocations(rs.DbHandle, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, tableName, rs.Upload.StartLoadFileID, rs.Upload.EndLoadFileID)
 	if err != nil {
 		panic(err)
 	}
-	csvS3Locations, err := warehouseutils.GetS3Locations(csvObjectLocations)
+	csvS3Locations := warehouseutils.GetS3Locations(csvObjectLocations)
 	var manifest S3ManifestT
 	for _, location := range csvS3Locations {
 		manifest.Entries = append(manifest.Entries, S3ManifestEntryT{Url: location, Mandatory: true})
@@ -196,7 +219,11 @@ func (rs *HandleT) generateManifest(bucketName, tableName string, columnMap map[
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
-		Config:   map[string]interface{}{"bucketName": bucketName, "accessKeyID": accessKeyID, "accessKey": accessKey},
+		Config: map[string]interface{}{
+			"bucketName":  warehouseutils.GetConfigValue(AWSBucketNameConfig, rs.Warehouse),
+			"accessKeyID": warehouseutils.GetConfigValue(AWSAccessSecret, rs.Warehouse),
+			"accessKey":   warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse),
+		},
 	})
 
 	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
@@ -218,10 +245,14 @@ func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
-func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, bucketName, accessKeyID, accessKey string) (err error) {
+func (rs *HandleT) loadTable(tableName string, columnMap map[string]string) (err error) {
 	status, err := warehouseutils.GetTableUploadStatus(rs.Upload.ID, tableName, rs.DbHandle)
 	if status == warehouseutils.ExportedDataState {
 		logger.Infof("RS: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
+		return
+	}
+	if !warehouseutils.HasLoadFiles(rs.DbHandle, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, tableName, rs.Upload.StartLoadFileID, rs.Upload.EndLoadFileID) {
+		warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, rs.Upload.ID, tableName, rs.DbHandle)
 		return
 	}
 
@@ -230,7 +261,7 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, buck
 
 	timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
 	timer.Start()
-	manifestLocation, err := rs.generateManifest(bucketName, tableName, columnMap, accessKeyID, accessKey)
+	manifestLocation, err := rs.generateManifest(tableName, columnMap)
 	timer.End()
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
@@ -261,7 +292,7 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, buck
 	}
 	defer rs.dropStagingTables([]string{stagingTableName})
 
-	region, manifestS3Location := warehouseutils.GetS3Location(manifestLocation)
+	manifestS3Location, region := warehouseutils.GetS3Location(manifestLocation)
 	if region == "" {
 		region = "us-east-1"
 	}
@@ -273,7 +304,7 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, buck
 		return
 	}
 
-	sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, accessKeyID, accessKey, region)
+	sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, warehouseutils.GetConfigValue(AWSAccessSecret, rs.Warehouse), warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse), region)
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
@@ -296,7 +327,17 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, buck
 		primaryKey = column
 	}
 
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Namespace, tableName, stagingTableName, primaryKey)
+	partitionKey := "id"
+	if column, ok := partitionKeyMap[tableName]; ok {
+		partitionKey = column
+	}
+
+	var additionalJoinClause string
+	if tableName == warehouseutils.DiscardsTable {
+		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]s.%[2]s.%[3]s`, rs.Namespace, tableName, "table_name")
+	}
+
+	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s)`, rs.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
 	logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
@@ -314,7 +355,7 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, buck
 		}
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, primaryKey)
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	logger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 
@@ -338,18 +379,6 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, buck
 }
 
 func (rs *HandleT) load() (errList []error) {
-	var accessKeyID, accessKey, bucketName string
-	config := rs.Warehouse.Destination.Config.(map[string]interface{})
-	if config["accessKeyID"] != nil {
-		accessKeyID = config["accessKeyID"].(string)
-	}
-	if config["accessKey"] != nil {
-		accessKey = config["accessKey"].(string)
-	}
-	if config["bucketName"] != nil {
-		bucketName = config["bucketName"].(string)
-	}
-
 	logger.Infof("RS: Starting load for all %v tables\n", len(rs.Upload.Schema))
 	var wg sync.WaitGroup
 	wg.Add(len(rs.Upload.Schema))
@@ -359,7 +388,7 @@ func (rs *HandleT) load() (errList []error) {
 		cMap := columnMap
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
-			err := rs.loadTable(tName, cMap, bucketName, accessKeyID, accessKey)
+			err := rs.loadTable(tName, cMap)
 			if err != nil {
 				errList = append(errList, err)
 			}
@@ -400,7 +429,7 @@ func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder-staging-"
-	maxParallelLoads = config.GetInt("Warehose.redshift.maxParallelLoads", 3)
+	maxParallelLoads = config.GetInt("Warehouse.redshift.maxParallelLoads", 3)
 }
 
 func init() {
@@ -497,11 +526,11 @@ func (rs *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	rs.DbHandle = config.DbHandle
 	rs.Warehouse = config.Warehouse
 	rs.Db, err = connect(RedshiftCredentialsT{
-		host:     rs.Warehouse.Destination.Config.(map[string]interface{})["host"].(string),
-		port:     rs.Warehouse.Destination.Config.(map[string]interface{})["port"].(string),
-		dbName:   rs.Warehouse.Destination.Config.(map[string]interface{})["database"].(string),
-		username: rs.Warehouse.Destination.Config.(map[string]interface{})["user"].(string),
-		password: rs.Warehouse.Destination.Config.(map[string]interface{})["password"].(string),
+		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
+		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
+		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
+		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
+		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
 	})
 	if err != nil {
 		return err
@@ -521,11 +550,11 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	rs.Warehouse = config.Warehouse
 	rs.Upload = config.Upload
 	rs.Db, err = connect(RedshiftCredentialsT{
-		host:     rs.Warehouse.Destination.Config.(map[string]interface{})["host"].(string),
-		port:     rs.Warehouse.Destination.Config.(map[string]interface{})["port"].(string),
-		dbName:   rs.Warehouse.Destination.Config.(map[string]interface{})["database"].(string),
-		username: rs.Warehouse.Destination.Config.(map[string]interface{})["user"].(string),
-		password: rs.Warehouse.Destination.Config.(map[string]interface{})["password"].(string),
+		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
+		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
+		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
+		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
+		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
 	})
 	if err != nil {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
