@@ -412,7 +412,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]warehouseutils.UploadT, bool) {
 
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, timings FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s' AND %[1]s.status!='%[5]s') ORDER BY id asc`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s' AND %[1]s.status!='%[5]s') ORDER BY id asc`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
 
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
@@ -426,16 +426,12 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 	var uploads []warehouseutils.UploadT
 	for rows.Next() {
 		var upload warehouseutils.UploadT
-		var schema, timings json.RawMessage
-		err := rows.Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error, &timings)
+		var schema json.RawMessage
+		err := rows.Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
 		if err != nil {
 			panic(err)
 		}
 		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
-		err = json.Unmarshal(timings, &upload.Timings)
-		if err != nil {
-			panic(err)
-		}
 		uploads = append(uploads, upload)
 	}
 
