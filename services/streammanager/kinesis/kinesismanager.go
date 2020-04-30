@@ -63,7 +63,11 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
-	userID := parsedJSON.Get("userId").Value().(string)
+	var userID string
+	var ok bool
+	if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
+		userID=fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
+	}
 
 	partitionKey := aws.String(userID)
 
@@ -80,6 +84,7 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 	if err != nil {
 		logger.Errorf("error in kinesis :: %v", err.Error())
 		statusCode := GetStatusCodeFromError(err)
+
 		return statusCode, err.Error(), err.Error()
 	}
 	message := fmt.Sprintf("Message delivered at SequenceNumber: %v , shard Id: %v", putOutput.SequenceNumber, putOutput.ShardId)
