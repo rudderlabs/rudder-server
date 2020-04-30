@@ -128,7 +128,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 		}
 
 		for _, ev := range batchedEvent.Batch {
-			filterValues(&ev)
+			//filterValues(&ev)
 
 			//updating originalTimestamp in the event using the formula
 			//receivedAt - (sentAt - originalTimeStamp)
@@ -194,6 +194,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 	}
 }
 
+// filterValues removes the values of the event properties and just sends only the keys of the event properties
 func filterValues(message *EventUploadT) {
 	if message.Properties == nil {
 		message.Properties = make([]string, 0)
