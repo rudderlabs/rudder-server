@@ -890,6 +890,12 @@ func (wh *HandleT) initWorkers() {
 					whOneFullPassTimer := warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", processStagingFilesJobList[0].Warehouse.Destination.ID)
 					whOneFullPassTimer.Start()
 					for _, job := range processStagingFilesJobList {
+						if len(job.List) == 0 {
+							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
+							warehouseutils.SetUploadError(job.Upload, errors.New("no staging files found"), warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
+							wh.recordDeliveryStatus(job.Upload.ID)
+							break
+						}
 						// consolidate schema if not already done
 						if len(job.Upload.Schema) == 0 {
 							// merge schemas over all staging files in this batch
