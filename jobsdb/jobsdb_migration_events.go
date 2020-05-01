@@ -1,7 +1,6 @@
 package jobsdb
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -14,15 +13,15 @@ import (
 
 //MigrationEvent captures an event of export/import to recover from incase of a crash during migration
 type MigrationEvent struct {
-	ID            int64     `json:"ID"`
-	MigrationType string    `json:"MigrationType"` //ENUM : export, import, acceptNewEvents
-	FromNode      string    `json:"FromNode"`
-	ToNode        string    `json:"ToNode"`
-	FileLocation  string    `json:"FileLocation"`
-	Status        string    `json:"Status"` //ENUM : Look up 'Values for Status'
-	StartSeq      int64     `json:"StartSeq"`
-	Payload       string    `json:"Payload"`
-	TimeStamp     time.Time `json:"TimeStamp"`
+	ID            int64           `json:"ID"`
+	MigrationType string          `json:"MigrationType"` //ENUM : export, import, acceptNewEvents
+	FromNode      string          `json:"FromNode"`
+	ToNode        string          `json:"ToNode"`
+	FileLocation  string          `json:"FileLocation"`
+	Status        string          `json:"Status"` //ENUM : Look up 'Values for Status'
+	StartSeq      int64           `json:"StartSeq"`
+	Payload       json.RawMessage `json:"Payload"`
+	TimeStamp     time.Time       `json:"TimeStamp"`
 }
 
 //ENUM Values for MigrationType
@@ -55,11 +54,11 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 	var sqlStatement string
 	var checkpointType string
 	if migrationEvent.ID > 0 {
-		sqlStatement = fmt.Sprintf(`UPDATE %s_migration_checkpoints SET status = $1, start_sequence = $2 WHERE id = $3 RETURNING id`, jd.GetTablePrefix())
+		sqlStatement = fmt.Sprintf(`UPDATE %s SET status = $1, start_sequence = $2 WHERE id = $3 RETURNING id`, jd.getCheckPointTableName())
 		checkpointType = "update"
 	} else {
-		sqlStatement = fmt.Sprintf(`INSERT INTO %s_migration_checkpoints (migration_type, from_node, to_node, file_location, status, start_sequence, payload, time_stamp)
-									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (file_location) DO UPDATE SET status=EXCLUDED.status RETURNING id`, jd.GetTablePrefix())
+		sqlStatement = fmt.Sprintf(`INSERT INTO %s (migration_type, from_node, to_node, file_location, status, start_sequence, payload, time_stamp)
+									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (file_location) DO UPDATE SET status=EXCLUDED.status RETURNING id`, jd.getCheckPointTableName())
 		checkpointType = "insert"
 	}
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
@@ -110,12 +109,12 @@ func NewSetupCheckpointEvent(migrationType string, node string) MigrationEvent {
 
 //NewMigrationEvent is a constructor for MigrationEvent struct
 func NewMigrationEvent(migrationType string, fromNode string, toNode string, fileLocation string, status string, startSeq int64) MigrationEvent {
-	return MigrationEvent{0, migrationType, fromNode, toNode, fileLocation, status, startSeq, "{}", time.Now()}
+	return MigrationEvent{0, migrationType, fromNode, toNode, fileLocation, status, startSeq, json.RawMessage{}, time.Now()}
 }
 
 //SetupCheckpointTable creates a table
 func (jd *HandleT) SetupCheckpointTable() {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s_migration_checkpoints (
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id BIGSERIAL PRIMARY KEY,
 		migration_type varchar(20) NOT NULL,
 		from_node varchar(64) NOT NULL,
@@ -123,39 +122,51 @@ func (jd *HandleT) SetupCheckpointTable() {
 		file_location TEXT UNIQUE,
 		status varchar(64),
 		start_sequence BIGINT,
-		payload TEXT,
-		time_stamp TIMESTAMP NOT NULL DEFAULT NOW());`, jd.GetTablePrefix())
+		payload JSONB,
+		time_stamp TIMESTAMP NOT NULL DEFAULT NOW());`, jd.getCheckPointTableName())
 
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
-	logger.Infof("Migration: %s_migration_checkpoints table created", jd.GetTablePrefix())
+	logger.Infof("%s-Migration: %s table created", jd.GetTablePrefix(), jd.getCheckPointTableName())
+}
+
+func (jd *HandleT) getCheckPointTableName() string {
+	return fmt.Sprintf("%s_%d_%d_migration_checkpoints", jd.GetTablePrefix(), misc.GetMigratingFromVersion(), misc.GetMigratingToVersion())
 }
 
 //findOrCreateDsFromSetupCheckpoint is boiler plate code for setting up for different scenarios
-func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string, findOrCreateDs func([]dataSetT) dataSetT) dataSetT {
+func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string) dataSetT {
 	jd.dsListLock.Lock()
 	defer jd.dsListLock.Unlock()
 
-	var ds dataSetT
+	dsList := jd.getDSList(true)
 	setupEvent := jd.GetSetupCheckpoint(migrationType)
 	if setupEvent == nil {
 		me := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
-		me.Payload = "{}"
-		setupEvent = &me
-	}
-	json.Unmarshal([]byte(setupEvent.Payload), &ds)
 
-	dsList := jd.getDSList(true)
-	if setupEvent.Payload == "{}" {
-		ds = findOrCreateDs(dsList)
-		payloadBytes, err := json.Marshal(ds)
+		var payload dataSetT
+		switch migrationType {
+		case ExportOp:
+			payload = jd.getLastDsForExport(dsList)
+		case AcceptNewEventsOp:
+			payload = jd.getDsForNewEvents(dsList)
+		case ImportOp:
+			payload = jd.getDsForImport(dsList)
+		}
+
+		var err error
+		me.Payload, err = json.Marshal(payload)
 		if err != nil {
 			panic("Unable to Marshal")
 		}
-		setupEvent.Payload = string(payloadBytes)
-		jd.Checkpoint(setupEvent)
+		//TODO: Should add a transaction around possible addNewDs above and this checkpoint
+		jd.Checkpoint(&me)
+		setupEvent = &me
 	}
-	return ds
+	payload := dataSetT{}
+	err := json.Unmarshal(setupEvent.Payload, &payload)
+	jd.assertError(err)
+	return payload
 }
 
 func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType string) int64 {
@@ -164,7 +175,7 @@ func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType stri
 		fmt.Sprintf("MigrationType: %s is not a supported operation. Should be %s or %s",
 			migrationType, ExportOp, ImportOp))
 
-	sqlStatement := fmt.Sprintf(`SELECT start_sequence from %s_migration_checkpoints WHERE file_location = $1 AND migration_type = $2 ORDER BY id DESC`, jd.GetTablePrefix())
+	sqlStatement := fmt.Sprintf(`SELECT start_sequence from %s WHERE file_location = $1 AND migration_type = $2 ORDER BY id DESC`, jd.getCheckPointTableName())
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	defer stmt.Close()
 	jd.assertError(err)
@@ -196,7 +207,7 @@ func (jd *HandleT) GetSetupCheckpoint(migrationType string) *MigrationEvent {
 	case ImportOp:
 		setupStatus = SetupForImport
 	}
-	setupEvents := jd.getCheckpoints(migrationType, fmt.Sprintf(`SELECT * FROM %s_migration_checkpoints WHERE migration_type = $1 AND status = '%s' ORDER BY ID ASC`, jd.GetTablePrefix(), setupStatus))
+	setupEvents := jd.getCheckpoints(migrationType, fmt.Sprintf(`SELECT * FROM %s WHERE migration_type = $1 AND status = '%s' ORDER BY ID ASC`, jd.getCheckPointTableName(), setupStatus))
 
 	switch len(setupEvents) {
 	case 0:
@@ -210,8 +221,9 @@ func (jd *HandleT) GetSetupCheckpoint(migrationType string) *MigrationEvent {
 }
 
 //GetCheckpoints gets all checkpoints and
+//TODO specialize it for non setup and finish events
 func (jd *HandleT) GetCheckpoints(migrationType string) []*MigrationEvent {
-	return jd.getCheckpoints(migrationType, fmt.Sprintf(`SELECT * from %s_migration_checkpoints WHERE migration_type = $1 ORDER BY ID ASC`, jd.GetTablePrefix()))
+	return jd.getCheckpoints(migrationType, fmt.Sprintf(`SELECT * from %s WHERE migration_type = $1 ORDER BY ID ASC`, jd.getCheckPointTableName()))
 }
 
 func (jd *HandleT) getCheckpoints(migrationType string, query string) []*MigrationEvent {
@@ -230,17 +242,11 @@ func (jd *HandleT) getCheckpoints(migrationType string, query string) []*Migrati
 	for rows.Next() {
 		migrationEvent := MigrationEvent{}
 
-		var payload sql.NullString
 		err = rows.Scan(&migrationEvent.ID, &migrationEvent.MigrationType, &migrationEvent.FromNode,
 			&migrationEvent.ToNode, &migrationEvent.FileLocation, &migrationEvent.Status,
-			&migrationEvent.StartSeq, &payload, &migrationEvent.TimeStamp)
+			&migrationEvent.StartSeq, &migrationEvent.Payload, &migrationEvent.TimeStamp)
 		if err != nil {
 			panic(fmt.Sprintf("query result pares issue : %s", err.Error()))
-		}
-		if payload.Valid {
-			migrationEvent.Payload = payload.String
-		} else {
-			migrationEvent.Payload = "{}"
 		}
 		migrationEvents = append(migrationEvents, &migrationEvent)
 	}

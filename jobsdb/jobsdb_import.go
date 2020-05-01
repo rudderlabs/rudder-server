@@ -5,19 +5,19 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //SetupForImport is used to setup jobsdb for export or for import or for both
 func (jd *HandleT) SetupForImport() {
-	jd.migrationState.dsForNewEvents = jd.findOrCreateDsFromSetupCheckpoint(AcceptNewEventsOp, jd.getDsForNewEvents)
-	logger.Infof("Ds for new events :%v", jd.migrationState.dsForNewEvents)
+	jd.migrationState.dsForNewEvents = jd.findOrCreateDsFromSetupCheckpoint(AcceptNewEventsOp)
+	logger.Infof("[[ %s-JobsDB Import ]] Ds for new events :%v", jd.GetTablePrefix(), jd.migrationState.dsForNewEvents)
 }
 
 func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
 	ds := jd.addNewDS(false, jd.migrationState.dsForNewEvents)
-	logger.Infof("Should Checkpoint Import Setup event for the new ds : %v", ds)
+	logger.Infof("[[ %s-JobsDB Import ]] Should Checkpoint Import Setup event for the new ds : %v", jd.GetTablePrefix(), ds)
 	return ds
 }
 
@@ -28,7 +28,6 @@ func (jd *HandleT) setupSequenceProvider(ds dataSetT) {
 	if jd.migrationState.sequenceProvider == nil || !jd.migrationState.sequenceProvider.IsInitialized() {
 		dsList := jd.getDSList(true)
 		importDSMin := jd.getMaxIDForDs(ds)
-		//TODO: Get sequence number from checkpoints and pick the greatest for importDSMin
 
 		if importDSMin == 0 {
 			for idx, dataSet := range dsList {
@@ -62,21 +61,17 @@ func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 		ds = dsForNewEvents
 	}
 
-	seqNoForNewDS := int64(getNewVersion())*int64(math.Pow10(13)) + 1
+	seqNoForNewDS := int64(misc.GetMigratingToVersion())*int64(math.Pow10(13)) + 1
 	jd.updateSequenceNumber(ds, seqNoForNewDS)
-	logger.Infof("Jobsdb: New dataSet %s is prepared with start sequence : %d", ds, seqNoForNewDS)
+	logger.Infof("[[ %sJobsDB Import ]] New dataSet %s is prepared with start sequence : %d", jd.GetTablePrefix(), ds, seqNoForNewDS)
 	return ds
-}
-
-func getNewVersion() int {
-	//TODO: revisit this
-	return config.GetRequiredEnvAsInt("CLUSTER_VERSION")
 }
 
 //StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
 func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent *MigrationEvent) {
+	// This if block should be idempotent. It is currently good. But if it changes we need to add separate locks outside
 	if jd.migrationState.dsForImport.Index == "" {
-		jd.migrationState.dsForImport = jd.findOrCreateDsFromSetupCheckpoint(ImportOp, jd.getDsForImport)
+		jd.migrationState.dsForImport = jd.findOrCreateDsFromSetupCheckpoint(ImportOp)
 		jd.setupSequenceProvider(jd.migrationState.dsForImport)
 	}
 
@@ -96,20 +91,21 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 		}
 	}
 
-	//TODO: modify storeJobsDS and updateJobStatusDS to accept an additional bool to support "on conflict do nothing"
-
 	//TODO: get minimal functions for the below and put them both in a transaction
-	logger.Infof("[JobsDB Import] :: Writing jobs from file:%s to db", fileName)
+	logger.Infof("[[ %s-JobsDB Import ]] Writing jobs from file:%s to db", jd.GetTablePrefix(), fileName)
+	logger.Infof("[[ %s-JobsDB Import ]] %d jobs found in file:%s. Writing to db", jd.GetTablePrefix(), len(jobList), fileName)
 	jd.storeJobsDS(jd.migrationState.dsForImport, true, false, jobList)
+	logger.Infof("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), fileName)
 	jd.updateJobStatusDS(jd.migrationState.dsForImport, statusList, []string{}, []ParameterFilterT{})
+	migrationEvent.Status = Imported
+	jd.Checkpoint(migrationEvent)
 }
 
 func (jd *HandleT) getStartJobID(count int, migrationEvent *MigrationEvent) int64 {
 	var sequenceNumber int64
-	sequenceNumber = 0
-	sequenceNumber = jd.getSeqNoForFileFromDB(migrationEvent.FileLocation, ImportOp)
+	sequenceNumber = migrationEvent.StartSeq
 	if sequenceNumber == 0 {
-		sequenceNumber = jd.migrationState.sequenceProvider.ReserveIds(count)
+		sequenceNumber = jd.migrationState.sequenceProvider.ReserveIdsAndProvideStartSequence(count)
 		migrationEvent.StartSeq = sequenceNumber
 		jd.Checkpoint(migrationEvent)
 	}

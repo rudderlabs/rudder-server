@@ -234,9 +234,9 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 		logger.Info("Setting up migrators")
 		var (
-			gatewayMigrator     migrator.Transporter
-			routerMigrator      migrator.Transporter
-			batchRouterMigrator migrator.Transporter
+			gatewayMigrator     migrator.Migrator
+			routerMigrator      migrator.Migrator
+			batchRouterMigrator migrator.Migrator
 		)
 
 		var wg sync.WaitGroup

@@ -3,6 +3,7 @@ package migrator
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/pathfinder"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //Migrator is a handle to this object used in main.go
@@ -22,31 +24,28 @@ type Migrator struct {
 	fileManager        filemanager.FileManager
 	fromClusterVersion int
 	toClusterVersion   int
-}
-
-//Transporter interface for export and import implementations
-type Transporter interface {
-	Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder)
-	ImportHandler(w http.ResponseWriter, r *http.Request)
-	ImportStatusHandler() bool
-	ExportStatusHandler() bool
+	importer           *Importer
+	exporter           *Exporter
 }
 
 //New gives a transporter of type export, import or export-import
-func New(migrationMode string, jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) Transporter {
+func New(migrationMode string, jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) Migrator {
+	migrator := Migrator{}
 	switch migrationMode {
 	case "export":
-		exporter := &Exporter{}
-		exporter.Setup(jobsDB, pf)
-		return exporter
+		migrator.exporter = &Exporter{}
+		migrator.exporter.Setup(jobsDB, pf)
+		return migrator
 	case "import":
-		importer := &Importer{}
-		importer.Setup(jobsDB, pf)
-		return importer
+		migrator.importer = &Importer{}
+		migrator.importer.Setup(jobsDB)
+		return migrator
 	case "import-export":
-		exportImporter := &ExportImporter{}
-		exportImporter.Setup(jobsDB, pf)
-		return exportImporter
+		migrator.exporter = &Exporter{}
+		migrator.exporter.Setup(jobsDB, pf)
+		migrator.importer = &Importer{}
+		migrator.importer.Setup(jobsDB)
+		return migrator
 	}
 	panic(fmt.Sprintf("Unknown Migration Mode : %s", migrationMode))
 }
@@ -61,10 +60,10 @@ func (migrator *Migrator) Setup(jobsDB *jobsdb.HandleT) {
 	logger.Infof("Migrator: Setting up migrator for %s jobsdb", jobsDB.GetTablePrefix())
 
 	migrator.jobsDB = jobsDB
-	migrator.fileManager = migrator.setupFileManager()
+	migrator.fromClusterVersion = misc.GetMigratingFromVersion()
+	migrator.toClusterVersion = misc.GetMigratingToVersion()
 
-	migrator.fromClusterVersion = config.GetRequiredEnvAsInt("MIGRATING_FROM_CLUSTER_VERSION")
-	migrator.toClusterVersion = config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
+	migrator.fileManager = migrator.setupFileManager()
 
 	migrator.jobsDB.SetupCheckpointTable()
 }
@@ -87,17 +86,17 @@ type StatusResponseT struct {
 }
 
 //StartWebHandler starts the webhandler for internal communication and status
-func StartWebHandler(migratorPort int, gatewayMigrator *Transporter, routerMigrator *Transporter, batchRouterMigrator *Transporter) {
+func StartWebHandler(migratorPort int, gatewayMigrator *Migrator, routerMigrator *Migrator, batchRouterMigrator *Migrator) {
 	logger.Infof("Migrator: Starting migrationWebHandler on port %d", migratorPort)
 
-	http.HandleFunc("/gw/fileToImport", (*gatewayMigrator).ImportHandler)
-	http.HandleFunc("/rt/fileToImport", (*routerMigrator).ImportHandler)
-	http.HandleFunc("/batch_rt/fileToImport", (*batchRouterMigrator).ImportHandler)
+	http.HandleFunc("/gw/fileToImport", importRequestHandler((*gatewayMigrator).importer.importHandler))
+	http.HandleFunc("/rt/fileToImport", importRequestHandler((*routerMigrator).importer.importHandler))
+	http.HandleFunc("/batch_rt/fileToImport", importRequestHandler((*batchRouterMigrator).importer.importHandler))
 
 	http.HandleFunc("/export/status", func(w http.ResponseWriter, r *http.Request) {
-		gwCompleted := (*gatewayMigrator).ExportStatusHandler()
-		rtCompleted := (*routerMigrator).ExportStatusHandler()
-		brtCompleted := (*batchRouterMigrator).ExportStatusHandler()
+		gwCompleted := (*gatewayMigrator).exporter.exportStatusHandler()
+		rtCompleted := (*routerMigrator).exporter.exportStatusHandler()
+		brtCompleted := (*batchRouterMigrator).exporter.exportStatusHandler()
 		completed := gwCompleted && rtCompleted && brtCompleted
 		// completed := gwCompleted
 		mode := "export"
@@ -118,9 +117,9 @@ func StartWebHandler(migratorPort int, gatewayMigrator *Transporter, routerMigra
 	})
 
 	http.HandleFunc("/import/status", func(w http.ResponseWriter, r *http.Request) {
-		gwCompleted := (*gatewayMigrator).ImportStatusHandler()
-		rtCompleted := (*routerMigrator).ImportStatusHandler()
-		brtCompleted := (*batchRouterMigrator).ImportStatusHandler()
+		gwCompleted := (*gatewayMigrator).importer.importStatusHandler()
+		rtCompleted := (*routerMigrator).importer.importStatusHandler()
+		brtCompleted := (*batchRouterMigrator).importer.importStatusHandler()
 		completed := gwCompleted && rtCompleted && brtCompleted
 		// completed := gwCompleted
 		mode := "import"
@@ -147,6 +146,21 @@ func StartWebHandler(migratorPort int, gatewayMigrator *Transporter, routerMigra
 	})
 
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(migratorPort), c.Handler(bugsnag.Handler(nil))))
+}
+
+func importRequestHandler(importHandler func(jobsdb.MigrationEvent)) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, _ := ioutil.ReadAll(r.Body)
+		r.Body.Close()
+		migrationEvent := jobsdb.MigrationEvent{}
+		err := json.Unmarshal(body, &migrationEvent)
+		if err != nil {
+			panic(err)
+		}
+		importHandler(migrationEvent)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	}
 }
 
 func (migrator *Migrator) setupFileManager() filemanager.FileManager {

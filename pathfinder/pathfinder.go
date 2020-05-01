@@ -66,7 +66,15 @@ func Setup(backendNodeCount int, version int, dnsPattern string, instanceIDPatte
 
 //Setup sets the cluster state based on which users are routed to corresponding nodes
 func (pf *Pathfinder) Setup(clusterState []NodeMeta, version int) {
-	//TODO: Look for duplicate nodeIds
+
+	mapForCheckingDuplicates := make(map[string]NodeMeta)
+	for _, nMeta := range clusterState {
+		if _, present := mapForCheckingDuplicates[nMeta.GetNodeID()]; present {
+			panic("the node ids should be unique through out the cluster")
+		} else {
+			mapForCheckingDuplicates[nMeta.GetNodeID()] = nMeta
+		}
+	}
 
 	sort.Slice(clusterState, func(i, j int) bool {
 		return clusterState[i].nodeID < clusterState[j].nodeID

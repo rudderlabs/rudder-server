@@ -350,9 +350,6 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	dList := jd.getDSList(false)
 	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
 
-	//TODO: Alter exising job_status table. job_id datatype from INT to BIGINT
-	//TODO: Alter exising job_state_type. migrated, wont_migrate types to be added.
-
 	if jd.BackupSettings.BackupEnabled {
 		jd.jobsFileUploader, err = jd.getFileUploader()
 		jd.assertError(err)
@@ -1498,11 +1495,13 @@ func (jd *HandleT) mainCheckLoop() {
 				//take the list lock
 				jd.dsListLock.Lock()
 				logger.Info("Main check:NewDS")
-				//TODO: Single transaction for addNewDs and Checkpoint
+				//TODO: Single transaction for addNewDs and Checkpoint.
 				jd.migrationState.dsForImport = jd.addNewDS(false, jd.migrationState.dsForNewEvents)
 				setupCheckpoint := jd.GetSetupCheckpoint(ImportOp)
-				payloadBytes, _ := json.Marshal(jd.migrationState.dsForImport)
-				setupCheckpoint.Payload = string(payloadBytes)
+				var payload dataSetT
+				payload = jd.migrationState.dsForImport
+				payloadBytes, _ := json.Marshal(payload)
+				setupCheckpoint.Payload = payloadBytes
 				jd.Checkpoint(setupCheckpoint)
 				jd.dsListLock.Unlock()
 			}

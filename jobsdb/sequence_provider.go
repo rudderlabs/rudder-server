@@ -19,8 +19,8 @@ func NewSequenceProvider(startValue int64) *SequenceProvider {
 	return &sequenceProvider
 }
 
-//ReserveIds returns a sequence number (seq) and the user can use ids from seq to seq + count -1
-func (sequenceProvider *SequenceProvider) ReserveIds(count int) int64 {
+//ReserveIdsAndProvideStartSequence returns a sequence number (seq) and the user can use ids from seq to seq + count -1
+func (sequenceProvider *SequenceProvider) ReserveIdsAndProvideStartSequence(count int) int64 {
 	sequenceProvider.sequenceAssignerLock.Lock()
 	defer sequenceProvider.sequenceAssignerLock.Unlock()
 	sequenceIDToReturn := sequenceProvider.sequenceID

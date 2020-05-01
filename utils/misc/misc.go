@@ -707,7 +707,6 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 	dataJSON, _ := json.Marshal(data)
 	request, err := http.NewRequest("POST", backendURL, bytes.NewBuffer(dataJSON))
 	if err != nil {
-		logger.Errorf("misc.MakePostRequest: Failed to make request: %s, Error: %s", backendURL, err.Error())
 		return []byte{}, 0
 	}
 
@@ -716,17 +715,25 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 	resp, err := client.Do(request)
 	//TODO: Check this. Not handling errors when sending alert to victorops
 	if err != nil {
-		logger.Errorf("misc.MakePostRequest: Failed to make request: %s, Error: %s", backendURL, err.Error())
 		return []byte{}, 0
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		logger.Errorf("misc.MakePostRequest: Got error response %d", resp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
-	logger.Debugf("ConfigBackend: Successful %s", string(body))
+	logger.Debugf("Post request: Successful %s", string(body))
 	return body, resp.StatusCode
+}
+
+//GetMigratingFromVersion gives the from version during migration
+func GetMigratingFromVersion() int {
+	return config.GetRequiredEnvAsInt("MIGRATING_FROM_CLUSTER_VERSION")
+}
+
+//GetMigratingToVersion gives the from version during migration
+func GetMigratingToVersion() int {
+	return config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
 }

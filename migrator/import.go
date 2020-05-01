@@ -5,15 +5,12 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/pathfinder"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -26,7 +23,8 @@ type Importer struct {
 }
 
 //Setup sets up importer with underlying-migrator  and initializes importQueues
-func (importer *Importer) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) {
+func (importer *Importer) Setup(jobsDB *jobsdb.HandleT) {
+	logger.Infof("[[ %s-Import-Migrator ]] setup for jobsdb", jobsDB.GetTablePrefix())
 	importer.importQueues = make(map[string]chan *jobsdb.MigrationEvent)
 	importer.migrator = &Migrator{}
 	importer.migrator.Setup(jobsDB)
@@ -36,15 +34,9 @@ func (importer *Importer) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder
 	})
 }
 
-func (importer *Importer) ImportHandler(w http.ResponseWriter, r *http.Request) {
-	body, _ := ioutil.ReadAll(r.Body)
-	r.Body.Close()
-	migrationEvent := jobsdb.MigrationEvent{}
-	err := json.Unmarshal(body, &migrationEvent)
-	if err != nil {
-		panic(err)
-	}
-	logger.Infof("Import-migrator: Request received to import %s", migrationEvent.FileLocation)
+//importHandler accepts a request from an export node and checkpoints it for readFromCheckPointAndTriggerImport go routine to process each
+func (importer *Importer) importHandler(migrationEvent jobsdb.MigrationEvent) {
+	logger.Infof("[[ %s-Import-migrator ]] Request received to import %s", importer.migrator.jobsDB.GetTablePrefix(), migrationEvent.FileLocation)
 	if migrationEvent.ToNode != "All" {
 		if migrationEvent.MigrationType == jobsdb.ExportOp {
 			migrationEvent.MigrationType = jobsdb.ImportOp
@@ -53,15 +45,12 @@ func (importer *Importer) ImportHandler(w http.ResponseWriter, r *http.Request) 
 			migrationEvent.TimeStamp = time.Now()
 			migrationEvent.ID = importer.migrator.jobsDB.Checkpoint(&migrationEvent)
 		} else {
-			logger.Errorf("Import-migrator: Wrong migration event received. Only export type events are expected. migrationType: %s, migrationEvent: %v", migrationEvent.MigrationType, migrationEvent)
+			logger.Errorf("[[ %s-Import-migrator ]] Wrong migration event received. Only export type events are expected. migrationType: %s, migrationEvent: %v", importer.migrator.jobsDB.GetTablePrefix(), migrationEvent.MigrationType, migrationEvent)
 		}
 	}
-	logger.Debug("Import-migrator: Ack: %v", migrationEvent)
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
+	logger.Debug(" %s-Import-migrator: Ack: %v", importer.migrator.jobsDB.GetTablePrefix(), migrationEvent)
 }
 
-//TODO: Verify: this is similar to getDumpQForNode. Should we write a single function for both. How to do it?
 func (importer *Importer) getImportQForNode(nodeID string) (chan *jobsdb.MigrationEvent, bool) {
 	isNewChannel := false
 	if _, ok := importer.importQueues[nodeID]; !ok {
@@ -97,7 +86,7 @@ func (importer *Importer) processImport(importQ chan *jobsdb.MigrationEvent) {
 	tmpDirPath, err := misc.CreateTMPDIR()
 	for {
 		migrationEvent := <-importQ
-		logger.Infof("Import-migrator: Downloading file:%s for import", migrationEvent.FileLocation)
+		logger.Infof("[[ %s-Import-migrator ]] Downloading file:%s for import", importer.migrator.jobsDB.GetTablePrefix(), migrationEvent.FileLocation)
 
 		filePathSlice := strings.Split(migrationEvent.FileLocation, "/")
 		fileName := filePathSlice[len(filePathSlice)-1]
@@ -124,9 +113,10 @@ func (importer *Importer) processImport(importQ chan *jobsdb.MigrationEvent) {
 			panic(err)
 		}
 
-		importer.readFromFileAndWriteToDB(rawf, migrationEvent)
-		migrationEvent.Status = jobsdb.Imported
-		importer.migrator.jobsDB.Checkpoint(migrationEvent)
+		err = importer.readFromFileAndWriteToDB(rawf, migrationEvent)
+		if err != nil {
+			panic(err)
+		}
 
 		rawf.Close()
 		os.Remove(jsonPath)
@@ -134,7 +124,7 @@ func (importer *Importer) processImport(importQ chan *jobsdb.MigrationEvent) {
 }
 
 func (importer *Importer) readFromFileAndWriteToDB(file *os.File, migrationEvent *jobsdb.MigrationEvent) error {
-	logger.Infof("Import-migrator: Parsing the file:%s for import and passing it to jobsDb", migrationEvent.FileLocation)
+	logger.Infof("[[ %s-Import-migrator ]] Parsing the file:%s for import and passing it to jobsDb", importer.migrator.jobsDB.GetTablePrefix(), migrationEvent.FileLocation)
 
 	reader, err := gzip.NewReader(file)
 	if err != nil {
@@ -155,8 +145,7 @@ func (importer *Importer) readFromFileAndWriteToDB(file *os.File, migrationEvent
 	}
 	reader.Close()
 	importer.migrator.jobsDB.StoreImportedJobsAndJobStatuses(jobList, file.Name(), migrationEvent)
-	logger.Infof("Import-migrator: Done importing file %s", file.Name())
-	//TODO: check if Scan() finished because of error or because it reached end of file
+	logger.Infof("[[ %s-Import-migrator ]] Done importing file %s", importer.migrator.jobsDB.GetTablePrefix(), file.Name())
 	return sc.Err()
 }
 
@@ -170,7 +159,8 @@ func (importer *Importer) processSingleLine(line []byte) (jobsdb.JobT, bool) {
 	return job, true
 }
 
-func (importer *Importer) ImportStatusHandler() bool {
+//ImportStatusHandler checks if there are no more prepared_for_import events are left and returns true. This indicates import finish only if all exports are finished.
+func (importer *Importer) importStatusHandler() bool {
 	migrationStates := importer.migrator.jobsDB.GetCheckpoints(jobsdb.ImportOp)
 	if len(migrationStates) > 1 {
 		for _, migrationState := range migrationStates {
@@ -180,8 +170,4 @@ func (importer *Importer) ImportStatusHandler() bool {
 		}
 	}
 	return true
-}
-
-func (importer *Importer) ExportStatusHandler() bool {
-	return false
 }
