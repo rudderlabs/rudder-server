@@ -412,7 +412,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]warehouseutils.UploadT, bool) {
 
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, timings FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s' AND %[1]s.status!='%[5]s') ORDER BY id asc`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s' AND %[1]s.status!='%[5]s') ORDER BY id asc`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
 
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
@@ -426,16 +426,12 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 	var uploads []warehouseutils.UploadT
 	for rows.Next() {
 		var upload warehouseutils.UploadT
-		var schema, timings json.RawMessage
-		err := rows.Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error, &timings)
+		var schema json.RawMessage
+		err := rows.Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
 		if err != nil {
 			panic(err)
 		}
 		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
-		err = json.Unmarshal(timings, &upload.Timings)
-		if err != nil {
-			panic(err)
-		}
 		uploads = append(uploads, upload)
 	}
 
@@ -804,7 +800,9 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 	}
 	if stateErr, ok := errJson[status]; ok {
 		if attempt, ok := stateErr["attempt"]; ok {
-			attemptNum = attemptNum + int(attempt.(float64))
+			if floatAttempt, ok := attempt.(float64); ok {
+				attemptNum = attemptNum + int(floatAttempt)
+			}
 		}
 	}
 	if attemptNum == 0 {
@@ -1223,11 +1221,18 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 					continue
 				}
 				columnType, ok := columns[columnName].(string)
+				if !ok {
+					continue
+				}
 				// json.Unmarshal returns int as float
 				// convert int's back to int to avoid writing integers like 123456789 as 1.23456789e+08
 				// most warehouses only support scientific notation only for floats and not integers
 				if columnType == "int" || columnType == "bigint" {
-					columnData[columnName] = int(columnVal.(float64))
+					floatVal, ok := columnVal.(float64)
+					if !ok {
+						continue
+					}
+					columnData[columnName] = int(floatVal)
 				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
@@ -1238,7 +1243,11 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 					} else if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
 					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
-						columnData[columnName] = int(columnVal.(float64))
+						floatVal, ok := columnVal.(float64)
+						if !ok {
+							continue
+						}
+						columnData[columnName] = int(floatVal)
 					} else {
 						columnData[columnName] = nil
 						rowID, hasID := columnData[warehouseutils.ToCase(job.DestinationType, "id")]
@@ -1297,11 +1306,20 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				}
 
 				columnType, ok := columns[columnName].(string)
+				if !ok {
+					csvRow = append(csvRow, "")
+					continue
+				}
 				// json.Unmarshal returns int as float
 				// convert int's back to int to avoid writing integers like 123456789 as 1.23456789e+08
 				// most warehouses only support scientific notation only for floats and not integers
 				if columnType == "int" || columnType == "bigint" {
-					columnVal = int(columnVal.(float64))
+					floatVal, ok := columnVal.(float64)
+					if !ok {
+						csvRow = append(csvRow, "")
+						continue
+					}
+					columnVal = int(floatVal)
 				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
@@ -1311,7 +1329,12 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 					} else if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
 					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
-						columnVal = int(columnVal.(float64))
+						floatVal, ok := columnVal.(float64)
+						if !ok {
+							csvRow = append(csvRow, "")
+							continue
+						}
+						columnVal = int(floatVal)
 					} else {
 						csvRow = append(csvRow, "")
 						rowID, hasID := columnData[warehouseutils.ToCase(job.DestinationType, "id")]
