@@ -241,11 +241,6 @@ func (exporter *Exporter) getNotifyQForNode(nodeID string) (chan *jobsdb.Migrati
 }
 
 func (exporter *Exporter) notify(nMeta pathfinder.NodeMeta, notifyQ chan *jobsdb.MigrationEvent) {
-	//TODO: Instead of this block, differentiate the events and not pass "All" events here
-	if nMeta.GetNodeID() == "" {
-		return
-	}
-
 	for {
 		checkPoint := <-notifyQ
 		statusCode := 0
@@ -261,7 +256,7 @@ func (exporter *Exporter) notify(nMeta pathfinder.NodeMeta, notifyQ chan *jobsdb
 func (exporter *Exporter) postExport() {
 	logger.Infof("[[ %s-Export-migrator ]] postExport", exporter.migrator.jobsDB.GetTablePrefix())
 	exporter.migrator.jobsDB.PostExportCleanup()
-	migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", jobsdb.Exported, jobsdb.Exported, 0)
+	migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", jobsdb.Completed, jobsdb.Completed, 0)
 	exporter.migrator.jobsDB.Checkpoint(&migrationEvent)
 }
 
@@ -271,7 +266,7 @@ func (exporter *Exporter) isExportDone() bool {
 	migrationStates := exporter.migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp)
 	if len(migrationStates) > 1 {
 		lastExportMigrationState := migrationStates[len(migrationStates)-1]
-		if lastExportMigrationState.ToNode == "All" && (lastExportMigrationState.Status == jobsdb.Exported || lastExportMigrationState.Status == jobsdb.Notified) {
+		if lastExportMigrationState.ToNode == "All" && lastExportMigrationState.Status == jobsdb.Completed {
 			return true
 		}
 	}

@@ -37,6 +37,7 @@ const (
 	SetupForExport = "setup_for_export"
 	Exported       = "exported"
 	Notified       = "notified"
+	Completed      = "completed"
 
 	SetupToAcceptNewEvents = "setup_to_accept_new_events"
 	SetupForImport         = "setup_for_import"
