@@ -455,16 +455,35 @@ func IsThisInThatSliceString(smallSlice []string, bigSlice []string) bool {
 	return true
 }
 
-func FetchUpdateState(dbHandle *sql.DB, warehouseUploadsTable string, sourceID string, destinationID string, destinationType string) (string, string) {
-	row:=dbHandle.QueryRow(fmt.Sprintf(`select namespace, status from %s where source_id='%s' and destination_id='%s' and destination_type = '%s' order by updated_at desc limit 1`, warehouseUploadsTable, sourceID, destinationID, destinationType))
+func FetchUpdateState(dbHandle *sql.DB, warehouseUploadsTable string, sourceID string, destinationID string, destinationType string) ( int64, string, string) {
+	row:=dbHandle.QueryRow(fmt.Sprintf(`select id, namespace, status from %s where source_id='%s' and destination_id='%s' and destination_type = '%s' order by updated_at desc limit 1`, warehouseUploadsTable, sourceID, destinationID, destinationType))
+	var id int64
 	var state string
 	var namespace string
-	err:=row.Scan(&namespace, &state)
+	err:=row.Scan(&id, &namespace, &state)
 	if err != nil && err!= sql.ErrNoRows {
 		panic(err)
 	}
-	return namespace, state
+	return id, namespace, state
 }
+
+func VerifyUpdatdTables(dbHandle *sql.DB, warehouseTableUploadsTable string, uploadId int64, exportedDataState string ) []string {
+	rows, err :=dbHandle.Query(fmt.Sprintf(`select table_name from %s where uploadId=%d and status ='%s'`,warehouseTableUploadsTable, uploadId, exportedDataState))
+	if err != nil {
+		panic(err)
+	}
+	var tables []string
+	for rows.Next() {
+		var table string
+		if err:=rows.Scan(&table); err != nil {
+			panic(err)
+		}
+		tables = append(tables,table)
+	}
+	return tables
+}
+
+
 
 func QueryWarehouseWithAnonymusID(anonymousId string, eventName string, namespace string, destType string, destConfig interface{}) QueryTrackPayload {
 	if destType == "BQ" {
