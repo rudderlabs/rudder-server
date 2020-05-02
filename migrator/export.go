@@ -107,7 +107,7 @@ func (exporter *Exporter) filterByNode(jobList []*jobsdb.JobT) map[pathfinder.No
 	filteredData := make(map[pathfinder.NodeMeta][]*jobsdb.JobT)
 	for _, job := range jobList {
 		userID := exporter.migrator.jobsDB.GetUserID(job)
-		nodeMeta := exporter.pf.GetNodeFromID(userID)
+		nodeMeta := exporter.pf.GetNodeFromUserID(userID)
 		filteredData[nodeMeta] = append(filteredData[nodeMeta], job)
 	}
 	return filteredData
@@ -225,7 +225,7 @@ func (exporter *Exporter) readFromCheckpointAndNotify() {
 				notifyQ, isNew := exporter.getNotifyQForNode(checkPoint.ToNode)
 				if isNew {
 					rruntime.Go(func() {
-						exporter.notify(exporter.pf.GetNodeFromID(checkPoint.ToNode), notifyQ)
+						exporter.notify(exporter.pf.GetNodeFromNodeID(checkPoint.ToNode), notifyQ)
 					})
 				}
 				notifyQ <- checkPoint
@@ -246,6 +246,11 @@ func (exporter *Exporter) getNotifyQForNode(nodeID string) (chan *jobsdb.Migrati
 }
 
 func (exporter *Exporter) notify(nMeta pathfinder.NodeMeta, notifyQ chan *jobsdb.MigrationEvent) {
+	//TODO: Instead of this block, differentiate the events and not pass "All" events here
+	if nMeta.GetNodeID() == "" {
+		return
+	}
+
 	for {
 		checkPoint := <-notifyQ
 		statusCode := 0

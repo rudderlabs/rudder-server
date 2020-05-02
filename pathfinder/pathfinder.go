@@ -88,7 +88,17 @@ func (pf *Pathfinder) getNodeFromHash(hash uint32) NodeMeta {
 	return pf.clusterState[int(hash)%len(pf.clusterState)]
 }
 
-//GetNodeFromID hashes the ID using murmur3 and uses getNodeFromHash to return the appropriate Node
-func (pf *Pathfinder) GetNodeFromID(id string) NodeMeta {
-	return pf.getNodeFromHash(murmur3.Sum32([]byte(id)))
+//GetNodeFromUserID hashes the ID using murmur3 and uses getNodeFromHash to return the appropriate Node
+func (pf *Pathfinder) GetNodeFromUserID(userID string) NodeMeta {
+	return pf.getNodeFromHash(murmur3.Sum32([]byte(userID)))
+}
+
+//GetNodeFromNodeID iterates over cluster state and returns the node meta corresponding to the nodeID given
+func (pf *Pathfinder) GetNodeFromNodeID(nodeID string) NodeMeta {
+	for _, nMeta := range pf.clusterState {
+		if nMeta.GetNodeID() == nodeID {
+			return nMeta
+		}
+	}
+	return NodeMeta{}
 }
