@@ -224,7 +224,7 @@ func (jd *HandleT) GetSetupCheckpoint(migrationType string) *MigrationEvent {
 	case ImportOp:
 		setupStatus = SetupForImport
 	}
-	setupEvents := jd.getCheckpoints(migrationType, fmt.Sprintf(`SELECT * FROM %s WHERE migration_type = $1 AND status = '%s' ORDER BY ID ASC`, jd.getCheckPointTableName(), setupStatus))
+	setupEvents := jd.GetCheckpoints(migrationType, setupStatus)
 
 	switch len(setupEvents) {
 	case 0:
@@ -239,17 +239,13 @@ func (jd *HandleT) GetSetupCheckpoint(migrationType string) *MigrationEvent {
 
 //GetCheckpoints gets all checkpoints and
 //TODO specialize it for non setup and finish events
-func (jd *HandleT) GetCheckpoints(migrationType string) []*MigrationEvent {
-	return jd.getCheckpoints(migrationType, fmt.Sprintf(`SELECT * from %s WHERE migration_type = $1 ORDER BY ID ASC`, jd.getCheckPointTableName()))
-}
-
-func (jd *HandleT) getCheckpoints(migrationType string, query string) []*MigrationEvent {
-	sqlStatement := query
+func (jd *HandleT) GetCheckpoints(migrationType string, status string) []*MigrationEvent {
+	sqlStatement := fmt.Sprintf(`SELECT * from %s WHERE migration_type = $1 AND status = $2 ORDER BY ID ASC`, jd.getCheckPointTableName())
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
 
-	rows, err := stmt.Query(migrationType)
+	rows, err := stmt.Query(migrationType, status)
 	if err != nil {
 		panic("Unable to query")
 	}

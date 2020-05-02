@@ -64,10 +64,10 @@ func (importer *Importer) getImportQForNode(nodeID string) (chan *jobsdb.Migrati
 func (importer *Importer) readFromCheckPointAndTriggerImport() {
 	importTriggeredCheckpoints := make(map[int64]*jobsdb.MigrationEvent)
 	for {
-		checkPoints := importer.migrator.jobsDB.GetCheckpoints(jobsdb.ImportOp)
+		checkPoints := importer.migrator.jobsDB.GetCheckpoints(jobsdb.ImportOp, jobsdb.PreparedForImport)
 		for _, checkPoint := range checkPoints {
 			_, found := importTriggeredCheckpoints[checkPoint.ID]
-			if checkPoint.Status == jobsdb.PreparedForImport && !found {
+			if !found {
 				importQ, isNew := importer.getImportQForNode(checkPoint.FromNode)
 				if isNew {
 					rruntime.Go(func() {
@@ -161,13 +161,5 @@ func (importer *Importer) processSingleLine(line []byte) (jobsdb.JobT, bool) {
 
 //ImportStatusHandler checks if there are no more prepared_for_import events are left and returns true. This indicates import finish only if all exports are finished.
 func (importer *Importer) importStatusHandler() bool {
-	migrationStates := importer.migrator.jobsDB.GetCheckpoints(jobsdb.ImportOp)
-	if len(migrationStates) > 1 {
-		for _, migrationState := range migrationStates {
-			if migrationState.Status == jobsdb.PreparedForImport {
-				return false
-			}
-		}
-	}
-	return true
+	return len(importer.migrator.jobsDB.GetCheckpoints(jobsdb.ImportOp, jobsdb.PreparedForImport)) == 0
 }

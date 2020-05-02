@@ -51,19 +51,11 @@ func loadConfig() {
 
 func (exporter *Exporter) waitForExportDone() {
 	logger.Infof("[[%s-Export-migrator ]] All jobs have been queried. Waiting for the same to be exported and acknowledged on notification", exporter.migrator.jobsDB.GetTablePrefix())
-	isExportInProgress := true
-	for ok := true; ok; ok = isExportInProgress {
+	isExportDone := false
+	for ok := true; ok; ok = !isExportDone {
 		time.Sleep(exportDoneCheckSleepDuration)
-		exportEvents := exporter.migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp)
-		isExportInProgress = false
-		for _, exportEvent := range exportEvents {
-			if exportEvent.Status == jobsdb.Exported {
-				isExportInProgress = true
-			}
-		}
-		if !isExportInProgress {
-			isExportInProgress = exporter.migrator.jobsDB.IsMigrating()
-		}
+		exportEvents := exporter.migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp, jobsdb.Exported)
+		isExportDone = (len(exportEvents) == 0) && !exporter.migrator.jobsDB.IsMigrating()
 	}
 }
 
@@ -213,10 +205,10 @@ func (exporter *Exporter) upload(file *os.File, nMeta pathfinder.NodeMeta) filem
 func (exporter *Exporter) readFromCheckpointAndNotify() {
 	notifiedCheckpoints := make(map[int64]*jobsdb.MigrationEvent)
 	for {
-		checkPoints := exporter.migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp)
+		checkPoints := exporter.migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp, jobsdb.Exported)
 		for _, checkPoint := range checkPoints {
 			_, found := notifiedCheckpoints[checkPoint.ID]
-			if checkPoint.Status == jobsdb.Exported && !found {
+			if !found {
 				notifyQ, isNew := exporter.getNotifyQForNode(checkPoint.ToNode)
 				if isNew {
 					rruntime.Go(func() {
@@ -263,14 +255,13 @@ func (exporter *Exporter) postExport() {
 //ShouldExport tells if export should happen in migration
 func (exporter *Exporter) isExportDone() bool {
 	//Instead of this write a query to get a single checkpoint directly
-	migrationStates := exporter.migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp)
-	if len(migrationStates) > 1 {
-		lastExportMigrationState := migrationStates[len(migrationStates)-1]
-		if lastExportMigrationState.ToNode == "All" && lastExportMigrationState.Status == jobsdb.Completed {
-			return true
-		}
+	migrationStates := exporter.migrator.jobsDB.GetCheckpoints(jobsdb.ExportOp, jobsdb.Completed)
+	if len(migrationStates) == 1 {
+		return true
+	} else if len(migrationStates) == 0 {
+		return false
 	}
-	return false
+	panic("More than 1 completed events found. This should not happen. Go debug")
 }
 
 //ExportStatusHandler returns true if export for this jobsdb is finished

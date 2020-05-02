@@ -39,7 +39,7 @@ func (jd *HandleT) setupSequenceProvider(ds dataSetT) {
 			}
 		}
 
-		importCheckpoints := jd.GetCheckpoints(ImportOp)
+		importCheckpoints := jd.GetCheckpoints(ImportOp, PreparedForImport)
 		for _, checkpoint := range importCheckpoints {
 			lastJobIDForCheckpoint := checkpoint.getLastJobID()
 			if lastJobIDForCheckpoint > importDSMin {
