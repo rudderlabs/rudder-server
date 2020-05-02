@@ -185,12 +185,7 @@ func (exporter *Exporter) writeToFileAndUpload(nMeta pathfinder.NodeMeta, ch cha
 				panic(err)
 			}
 			uploadOutput := exporter.upload(file, nMeta)
-			//TODO: txn start
-			migrationEvent := jobsdb.NewMigrationEvent("export", misc.GetNodeID(), nMeta.GetNodeID(), uploadOutput.Location, jobsdb.Exported, 0)
-			migrationEvent.ID = exporter.migrator.jobsDB.Checkpoint(&migrationEvent)
-
-			exporter.migrator.jobsDB.UpdateJobStatus(statusList, []string{}, []jobsdb.ParameterFilterT{})
-			//TODO: txn end
+			exporter.migrator.jobsDB.UpdateJobStatusAndCheckpoint(statusList, misc.GetNodeID(), nMeta.GetNodeID(), uploadOutput.Location)
 			file.Close()
 
 			os.Remove(path)

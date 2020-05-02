@@ -91,14 +91,18 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 		}
 	}
 
-	//TODO: get minimal functions for the below and put them both in a transaction
 	logger.Infof("[[ %s-JobsDB Import ]] Writing jobs from file:%s to db", jd.GetTablePrefix(), fileName)
 	logger.Infof("[[ %s-JobsDB Import ]] %d jobs found in file:%s. Writing to db", jd.GetTablePrefix(), len(jobList), fileName)
-	jd.storeJobsDS(jd.migrationState.dsForImport, true, false, jobList)
 	logger.Infof("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), fileName)
-	jd.updateJobStatusDS(jd.migrationState.dsForImport, statusList, []string{}, []ParameterFilterT{})
+
+	txn, err := jd.dbHandle.Begin()
+	jd.assertError(err)
+	defer txn.Rollback() //TODO: Review this. In a successful case rollback will be called after commit. In a failure case there will be a panic and a dangling db connection may be left
+	jd.storeJobsDSInTxn(txn, jd.migrationState.dsForImport, true, false, jobList)
+	jd.updateJobStatusDSInTxn(txn, jd.migrationState.dsForImport, statusList, []string{}, []ParameterFilterT{})
 	migrationEvent.Status = Imported
-	jd.Checkpoint(migrationEvent)
+	jd.CheckpointInTxn(txn, migrationEvent)
+	txn.Commit()
 }
 
 func (jd *HandleT) getStartJobID(count int, migrationEvent *MigrationEvent) int64 {
