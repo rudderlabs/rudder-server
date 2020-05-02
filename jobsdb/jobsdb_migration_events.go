@@ -109,7 +109,7 @@ func NewSetupCheckpointEvent(migrationType string, node string) MigrationEvent {
 
 //NewMigrationEvent is a constructor for MigrationEvent struct
 func NewMigrationEvent(migrationType string, fromNode string, toNode string, fileLocation string, status string, startSeq int64) MigrationEvent {
-	return MigrationEvent{0, migrationType, fromNode, toNode, fileLocation, status, startSeq, json.RawMessage{}, time.Now()}
+	return MigrationEvent{0, migrationType, fromNode, toNode, fileLocation, status, startSeq, []byte("{}"), time.Now()}
 }
 
 //SetupCheckpointTable creates a table
