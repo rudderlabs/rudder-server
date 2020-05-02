@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -45,6 +46,12 @@ const (
 
 //Checkpoint writes a migration event if id is passed as 0. Else it will update status and start_sequence
 func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
+	return jd.CheckpointInTxn(nil, migrationEvent)
+}
+
+//CheckpointInTxn writes a migration event if id is passed as 0. Else it will update status and start_sequence
+// If txn is passed, it will run the statement in that txn, otherwise it will execute without a transaction
+func (jd *HandleT) CheckpointInTxn(txn *sql.Tx, migrationEvent *MigrationEvent) int64 {
 	jd.assert(migrationEvent.MigrationType == ExportOp ||
 		migrationEvent.MigrationType == ImportOp ||
 		migrationEvent.MigrationType == AcceptNewEventsOp,
@@ -61,7 +68,16 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (file_location) DO UPDATE SET status=EXCLUDED.status RETURNING id`, jd.getCheckPointTableName())
 		checkpointType = "insert"
 	}
-	stmt, err := jd.dbHandle.Prepare(sqlStatement)
+
+	var (
+		stmt *sql.Stmt
+		err  error
+	)
+	if txn != nil {
+		stmt, err = txn.Prepare(sqlStatement)
+	} else {
+		stmt, err = jd.dbHandle.Prepare(sqlStatement)
+	}
 	jd.assertError(err)
 	defer stmt.Close()
 
@@ -78,8 +94,8 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 			migrationEvent.Payload,
 			time.Now()).Scan(&meID)
 	}
-	if err != nil {
-		panic(err)
+	if txn == nil {
+		jd.assertError(err)
 	}
 	logger.Infof("%s-Migration: %s checkpoint %s from %s to %s. file: %s, status: %s for checkpointId: %d",
 		jd.tablePrefix,

@@ -997,6 +997,10 @@ a given dataset. The names should be self explainatory
 */
 
 func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
+	return jd.storeJobsDSInTxn(nil, ds, copyID, retryEach, jobList)
+}
+
+func (jd *HandleT) storeJobsDSInTxn(txn *sql.Tx, ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
 	queryStat := stats.NewJobsDBStat("store_jobs", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
@@ -1005,8 +1009,11 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 	var err error
 
 	//Using transactions for bulk copying
-	txn, err := jd.dbHandle.Begin()
-	jd.assertError(err)
+	isTxnPassed := txn != nil
+	if !isTxnPassed {
+		txn, err = jd.dbHandle.Begin()
+		jd.assertError(err)
+	}
 
 	errorMessagesMap = make(map[uuid.UUID]string)
 
@@ -1033,15 +1040,19 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 		jd.assertError(err)
 	}
 	_, err = stmt.Exec()
-	if err != nil && retryEach {
-		txn.Rollback() // rollback started txn, to prevent dangling db connection
-		for _, job := range jobList {
-			errorMessage := jd.storeJobDS(ds, job)
-			errorMessagesMap[job.UUID] = errorMessage
+	if !isTxnPassed {
+		if err != nil && retryEach {
+			txn.Rollback() // rollback started txn, to prevent dangling db connection
+			for _, job := range jobList {
+				errorMessage := jd.storeJobDS(ds, job)
+				errorMessagesMap[job.UUID] = errorMessage
+			}
+		} else {
+			jd.assertError(err)
+			err = txn.Commit()
+			jd.assertError(err)
 		}
 	} else {
-		jd.assertError(err)
-		err = txn.Commit()
 		jd.assertError(err)
 	}
 
@@ -1399,13 +1410,20 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 }
 
 func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
+	return jd.updateJobStatusDSInTxn(nil, ds, statusList, customValFilters, parameterFilters)
+}
+
+func (jd *HandleT) updateJobStatusDSInTxn(txn *sql.Tx, ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
 
 	if len(statusList) == 0 {
 		return nil
 	}
 
-	txn, err := jd.dbHandle.Begin()
-	jd.assertError(err)
+	isTxnPassed := txn != nil
+	if !isTxnPassed {
+		txn, err = jd.dbHandle.Begin()
+		jd.assertError(err)
+	}
 
 	stmt, err := txn.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
 		"retry_time", "error_code", "error_response"))
@@ -1424,9 +1442,10 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 	_, err = stmt.Exec()
 	jd.assertError(err)
 
-	err = txn.Commit()
-	jd.assertError(err)
-
+	if !isTxnPassed {
+		err = txn.Commit()
+		jd.assertError(err)
+	}
 	//Get all the states and clear from empty cache
 	stateFiltersMap := map[string]bool{}
 	for _, st := range statusList {
@@ -2118,6 +2137,15 @@ customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
 func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) {
+	jd.UpdateJobStatusInTxn(nil, statusList, customValFilters, parameterFilters)
+}
+
+/*
+UpdateJobStatusInTxn updates the status of a batch of jobs
+customValFilters[] is passed so we can efficinetly mark empty cache
+Later we can move this to query
+*/
+func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) {
 
 	if len(statusList) == 0 {
 		return
@@ -2154,7 +2182,12 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 					logger.Debug("Range:", ds, statusList[lastPos].JobID,
 						statusList[i-1].JobID, lastPos, i-1)
 				}
-				err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
+				var err error
+				if txn == nil {
+					err = jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
+				} else {
+					err = jd.updateJobStatusDSInTxn(txn, ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
+				}
 				jd.assertError(err)
 				lastPos = i
 				break
@@ -2163,7 +2196,12 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		//Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
 			logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
-			err := jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
+			var err error
+			if txn == nil {
+				err = jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
+			} else {
+				err = jd.updateJobStatusDSInTxn(txn, ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
+			}
 			jd.assertError(err)
 			lastPos = i
 			break
@@ -2177,7 +2215,12 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 		jd.assert(len(dsRangeList) == len(dsList)-1, fmt.Sprintf("len(dsRangeList):%d != len(dsList):%d-1", len(dsRangeList), len(dsList)))
 		//Update status in the last element
 		logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
-		err := jd.updateJobStatusDS(dsList[len(dsList)-1], statusList[lastPos:], customValFilters, parameterFilters)
+		var err error
+		if txn == nil {
+			err = jd.updateJobStatusDS(dsList[len(dsList)-1], statusList[lastPos:], customValFilters, parameterFilters)
+		} else {
+			err = jd.updateJobStatusDSInTxn(txn, dsList[len(dsList)-1], statusList[lastPos:], customValFilters, parameterFilters)
+		}
 		jd.assertError(err)
 	}
 
