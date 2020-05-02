@@ -199,7 +199,6 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	routerDB.Setup(*clearDB, "rt", routerDBRetention)
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
 
-	//TODO fill the if/else blocks properly
 	enableMigrator := false
 	migrationMode := getMigrationMode()
 	shouldStartGateWay := true

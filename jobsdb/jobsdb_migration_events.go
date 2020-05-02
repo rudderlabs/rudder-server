@@ -176,7 +176,6 @@ func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string) dataS
 		if err != nil {
 			panic("Unable to Marshal")
 		}
-		//TODO: Should add a transaction around possible addNewDs above and this checkpoint
 		jd.Checkpoint(&me)
 		setupEvent = &me
 	}
@@ -238,7 +237,6 @@ func (jd *HandleT) GetSetupCheckpoint(migrationType string) *MigrationEvent {
 }
 
 //GetCheckpoints gets all checkpoints and
-//TODO specialize it for non setup and finish events
 func (jd *HandleT) GetCheckpoints(migrationType string, status string) []*MigrationEvent {
 	sqlStatement := fmt.Sprintf(`SELECT * from %s WHERE migration_type = $1 AND status = $2 ORDER BY ID ASC`, jd.getCheckPointTableName())
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)

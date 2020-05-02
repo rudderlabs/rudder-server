@@ -1514,7 +1514,6 @@ func (jd *HandleT) mainCheckLoop() {
 				//take the list lock
 				jd.dsListLock.Lock()
 				logger.Info("Main check:NewDS")
-				//TODO: Single transaction for addNewDs and Checkpoint.
 				jd.migrationState.dsForImport = jd.addNewDS(false, jd.migrationState.dsForNewEvents)
 				setupCheckpoint := jd.GetSetupCheckpoint(ImportOp)
 				var payload dataSetT
