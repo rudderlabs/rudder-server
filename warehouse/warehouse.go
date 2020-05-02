@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -502,6 +503,9 @@ func NewWhManager(destType string) (WarehouseManager, error) {
 	case "SNOWFLAKE":
 		var sf snowflake.HandleT
 		return &sf, nil
+	case "POSTGRES":
+		var pg postgres.HandleT
+		return &pg, nil
 	}
 	return nil, errors.New("No provider configured for WarehouseManager")
 }
