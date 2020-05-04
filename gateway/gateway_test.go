@@ -93,9 +93,9 @@ func (c *context) Setup() {
 	// During Setup, gateway subscribes to backend config and waits until it is received.
 	c.mockBackendConfig.EXPECT().WaitForConfig().Return().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
-		Do(func(channel chan utils.DataEvent, topic string) {
+		Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 			// on Subscribe, emulate a backend configuration event
-			go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: topic} }()
+			go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
 		}).
 		Do(c.asyncHelper.ExpectAndNotifyCallback()).
 		Return().Times(1)

@@ -76,7 +76,7 @@ func (mr *MockBackendConfigMockRecorder) SetUp() *gomock.Call {
 }
 
 // Subscribe mocks base method
-func (m *MockBackendConfig) Subscribe(arg0 chan utils.DataEvent, arg1 string) {
+func (m *MockBackendConfig) Subscribe(arg0 chan utils.DataEvent, arg1 backendconfig.Topic) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Subscribe", arg0, arg1)
 }
