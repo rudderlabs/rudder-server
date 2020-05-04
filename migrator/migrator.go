@@ -86,12 +86,19 @@ type StatusResponseT struct {
 }
 
 //StartWebHandler starts the webhandler for internal communication and status
-func StartWebHandler(migratorPort int, gatewayMigrator *Migrator, routerMigrator *Migrator, batchRouterMigrator *Migrator) {
+func StartWebHandler(migratorPort int, gatewayMigrator *Migrator, routerMigrator *Migrator, batchRouterMigrator *Migrator,
+	StartProcessor func(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT),
+	StartRouter func(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT)) {
 	logger.Infof("Migrator: Starting migrationWebHandler on port %d", migratorPort)
 
 	http.HandleFunc("/gw/fileToImport", importRequestHandler((*gatewayMigrator).importer.importHandler))
 	http.HandleFunc("/rt/fileToImport", importRequestHandler((*routerMigrator).importer.importHandler))
 	http.HandleFunc("/batch_rt/fileToImport", importRequestHandler((*batchRouterMigrator).importer.importHandler))
+
+	http.HandleFunc("/postImport", func(w http.ResponseWriter, r *http.Request) {
+		StartProcessor(config.GetBool("enableProcessor", true), gatewayMigrator.jobsDB, routerMigrator.jobsDB, batchRouterMigrator.jobsDB)
+		StartRouter(config.GetBool("enableRouter", true), routerMigrator.jobsDB, batchRouterMigrator.jobsDB)
+	})
 
 	http.HandleFunc("/export/status", func(w http.ResponseWriter, r *http.Request) {
 		gwCompleted := (*gatewayMigrator).exporter.exportStatusHandler()
