@@ -56,6 +56,9 @@ var (
 	clusterVersion                   int
 	instanceIDPattern                string
 	migrationModeFlag                string
+	moduleLoadLock                   sync.Mutex
+	routerLoaded                     bool
+	processorLoaded                  bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -254,17 +257,11 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		})
 		wg.Wait()
 
-		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator)
+		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator, StartProcessor, StartRouter)
 	}
 
-	if enableRouter {
-		go monitorDestRouters(&routerDB, &batchRouterDB)
-	}
-
-	if enableProcessor {
-		var processor processor.HandleT
-		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
-	}
+	StartRouter(enableRouter, &routerDB, &batchRouterDB)
+	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB)
 
 	if shouldStartGateWay {
 		var gateway gateway.HandleT
@@ -273,6 +270,35 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		gateway.Setup(&gatewayDB, &rateLimiter, clearDB)
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+}
+
+func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
+	moduleLoadLock.Lock()
+	defer moduleLoadLock.Unlock()
+
+	if routerLoaded {
+		return
+	}
+
+	if enableRouter {
+		go monitorDestRouters(routerDB, batchRouterDB)
+		routerLoaded = true
+	}
+}
+
+func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT) {
+	moduleLoadLock.Lock()
+	defer moduleLoadLock.Unlock()
+
+	if processorLoaded {
+		return
+	}
+
+	if enableProcessor {
+		var processor processor.HandleT
+		processor.Setup(gatewayDB, routerDB, batchRouterDB)
+		processorLoaded = true
+	}
 }
 
 func canStartServer() bool {
