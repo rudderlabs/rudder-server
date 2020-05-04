@@ -24,12 +24,16 @@ type GatewayEventBatchT struct {
 
 //EventUploadT is a structure to hold actual event data
 type EventUploadT struct {
-	Event             string      `json:"event"`
-	Integrations      interface{} `json:"integrations"`
-	Properties        interface{} `json:"properties"`
-	OriginalTimestamp string      `json:"originalTimestamp"`
-	SentAt            string      `json:"sentAt"`
-	Type              string      `json:"type"`
+	Event             string      `json:"event,omitempty"`
+	Integrations      interface{} `json:"integrations,omitempty"`
+	Properties        interface{} `json:"properties,omitempty"`
+	OriginalTimestamp string      `json:"originalTimestamp,omitempty"`
+	AnonymousID       string      `json:"anonymousId,omitempty"`
+	UserID            string      `json:"userId,omitempty"`
+	MessageID         string      `json:"messageId,omitempty"`
+	Name              string      `json:"name,omitempty"`
+	SentAt            string      `json:"sentAt,omitempty"`
+	Type              string      `json:"type,omitempty"`
 }
 
 //EventUploadBatchT is a structure to hold batch of events
@@ -128,7 +132,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 		}
 
 		for _, ev := range batchedEvent.Batch {
-			filterValues(&ev)
+			//filterValues(&ev)
 
 			//updating originalTimestamp in the event using the formula
 			//receivedAt - (sentAt - originalTimeStamp)
@@ -194,6 +198,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 	}
 }
 
+// filterValues removes the values of the event properties and just sends only the keys of the event properties
 func filterValues(message *EventUploadT) {
 	if message.Properties == nil {
 		message.Properties = make([]string, 0)

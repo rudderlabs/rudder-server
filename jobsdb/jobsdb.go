@@ -43,8 +43,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	. "github.com/onsi/ginkgo"
-
 	"github.com/lib/pq"
 	uuid "github.com/satori/go.uuid"
 )
@@ -988,7 +986,6 @@ a given dataset. The names should be self explainatory
 */
 
 func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
-	defer GinkgoRecover()
 	queryStat := stats.NewJobsDBStat("store_jobs", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()

@@ -58,35 +58,36 @@ func (c *context) Setup() {
 	c.mockStats = mocksStats.NewMockStats(c.mockCtrl)
 
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
-		Do(func(channel chan utils.DataEvent, topic string) {
+		Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 			// on Subscribe, emulate a backend configuration event
 			go func() {
-				println("Sending config")
-				channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: topic}
-				println("Send config")
+				channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 			}()
 		}).
 		Do(c.asyncHelper.ExpectAndNotifyCallback()).
 		Return().Times(1)
 
-	registerStat := func(name string, statType string) *mocksStats.MockRudderStats {
+	registerStatMocks := func(name string, statType string) *mocksStats.MockRudderStats {
 		stat := mocksStats.NewMockRudderStats(c.mockCtrl)
 		c.mockStats.EXPECT().NewStat(name, statType).Return(stat).Times(1)
 		return stat
 	}
 
-	registerDestStat := func(destID string) *DestStatT {
+	registerDestStatMocks := func(destID string) *DestStatT {
 		numEvents := mocksStats.NewMockRudderStats(c.mockCtrl)
 		numOutputEvents := mocksStats.NewMockRudderStats(c.mockCtrl)
 		sessionTransform := mocksStats.NewMockRudderStats(c.mockCtrl)
 		userTransform := mocksStats.NewMockRudderStats(c.mockCtrl)
 		destTransform := mocksStats.NewMockRudderStats(c.mockCtrl)
 
-		c.mockStats.EXPECT().NewDestStat("proc_num_events", stats.CountType, destID).Return(numEvents).Times(1)
-		c.mockStats.EXPECT().NewDestStat("proc_num_output_events", stats.CountType, destID).Return(numEvents).Times(1)
-		c.mockStats.EXPECT().NewDestStat("proc_session_transform", stats.TimerType, destID).Return(numEvents).Times(1)
-		c.mockStats.EXPECT().NewDestStat("proc_user_transform", stats.TimerType, destID).Return(numEvents).Times(1)
-		c.mockStats.EXPECT().NewDestStat("proc_dest_transform", stats.TimerType, destID).Return(numEvents).Times(1)
+		// These are registered asynchronously when a new backend config is received
+		c.asyncHelper.RegisterCalls(
+			c.mockStats.EXPECT().NewDestStat("proc_num_events", stats.CountType, destID).Return(numEvents).Times(1),
+			c.mockStats.EXPECT().NewDestStat("proc_num_output_events", stats.CountType, destID).Return(numOutputEvents).Times(1),
+			c.mockStats.EXPECT().NewDestStat("proc_session_transform", stats.TimerType, destID).Return(sessionTransform).Times(1),
+			c.mockStats.EXPECT().NewDestStat("proc_user_transform", stats.TimerType, destID).Return(userTransform).Times(1),
+			c.mockStats.EXPECT().NewDestStat("proc_dest_transform", stats.TimerType, destID).Return(destTransform).Times(1),
+		)
 
 		return &DestStatT{
 			id:               destID,
@@ -98,22 +99,24 @@ func (c *context) Setup() {
 		}
 	}
 
-	c.mockStatGatewayDBRead = registerStat("processor.gateway_db_read", stats.CountType)
-	c.mockStatGatewayDBWrite = registerStat("processor.gateway_db_write", stats.CountType)
-	c.mockStatRouterDBWrite = registerStat("processor.router_db_write", stats.CountType)
-	c.mockStatBatchRouterDBWrite = registerStat("processor.batch_router_db_write", stats.CountType)
-	c.mockStatActiveUsers = registerStat("processor.active_users", stats.GaugeType)
-	c.mockStatGatewayDBReadTime = registerStat("processor.gateway_db_read_time", stats.TimerType)
-	c.mockStatGatewayDBWriteTime = registerStat("processor.gateway_db_write_time", stats.TimerType)
-	c.mockStatLoopTime = registerStat("processor.loop_time", stats.TimerType)
-	c.mockStatSessionTransformTime = registerStat("processor.session_transform_time", stats.TimerType)
-	c.mockStatUserTransformTime = registerStat("processor.user_transform_time", stats.TimerType)
-	c.mockStatDestTransformTime = registerStat("processor.dest_transform_time", stats.TimerType)
-	c.mockStatJobListSort = registerStat("processor.job_list_sort", stats.TimerType)
-	c.mockStatMarshalSingularEvents = registerStat("processor.marshal_singular_events", stats.TimerType)
-	c.mockStatDestProcessing = registerStat("processor.dest_processing", stats.TimerType)
+	c.mockStatGatewayDBRead = registerStatMocks("processor.gateway_db_read", stats.CountType)
+	c.mockStatGatewayDBWrite = registerStatMocks("processor.gateway_db_write", stats.CountType)
+	c.mockStatRouterDBWrite = registerStatMocks("processor.router_db_write", stats.CountType)
+	c.mockStatBatchRouterDBWrite = registerStatMocks("processor.batch_router_db_write", stats.CountType)
+	c.mockStatActiveUsers = registerStatMocks("processor.active_users", stats.GaugeType)
+	c.mockStatGatewayDBReadTime = registerStatMocks("processor.gateway_db_read_time", stats.TimerType)
+	c.mockStatGatewayDBWriteTime = registerStatMocks("processor.gateway_db_write_time", stats.TimerType)
+	c.mockStatLoopTime = registerStatMocks("processor.loop_time", stats.TimerType)
+	c.mockStatSessionTransformTime = registerStatMocks("processor.session_transform_time", stats.TimerType)
+	c.mockStatUserTransformTime = registerStatMocks("processor.user_transform_time", stats.TimerType)
+	c.mockStatDestTransformTime = registerStatMocks("processor.dest_transform_time", stats.TimerType)
+	c.mockStatJobListSort = registerStatMocks("processor.job_list_sort", stats.TimerType)
+	c.mockStatMarshalSingularEvents = registerStatMocks("processor.marshal_singular_events", stats.TimerType)
+	c.mockStatDestProcessing = registerStatMocks("processor.dest_processing", stats.TimerType)
 
-	registerDestStat(DestinationIDEnabled)
+	registerDestStatMocks(DestinationIDEnabled)
+	registerDestStatMocks(DestinationIDDisabled)
+	registerDestStatMocks(DestinationIDDisabledProcessor)
 }
 
 func (c *context) Finish() {
@@ -124,8 +127,6 @@ func (c *context) Finish() {
 const (
 	WriteKeyEnabled                = "enabled-write-key"
 	WriteKeyDisabled               = "disabled-write-key"
-	WriteKeyInvalid                = "invalid-write-key"
-	WriteKeyEmpty                  = ""
 	SourceIDEnabled                = "enabled-source"
 	SourceIDDisabled               = "disabled-source"
 	DestinationIDEnabled           = "enabled-destination"

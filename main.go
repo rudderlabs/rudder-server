@@ -305,6 +305,16 @@ func main() {
 		os.Exit(1)
 	}()
 
+	serverMode := os.Getenv("RSERVER_MODE")
+
+	if serverMode == "normal" {
+		*normalMode = true
+	} else if serverMode == "degraded" {
+		*degradedMode = true
+	} else if serverMode == "maintenance" {
+		*maintenanceMode = true
+	}
+
 	if canStartServer() {
 		rruntime.Go(func() {
 			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)

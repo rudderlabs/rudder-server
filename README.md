@@ -22,7 +22,7 @@ You can use the [hosted][dashboard-on] RudderStack instance to experience the pr
 
 # Features
 
-1. **Production Ready:** Multiple companies from startups to large engerprieses are running RudderStack for collecting events.
+1. **Production Ready:** Multiple companies from startups to large enterprises are running RudderStack for collecting events.
 2. **Extreme Scale:** One of our largest installations is sending **300M events/day** with peak of **40K req/sec** via a multi-node RudderStack setup.
 3. **Segment API Compatibile:** RudderStack is Segment API and library compatible so don't need to change your app if you are using Segment.
 4. **Cloud Destinations:** Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations.
@@ -93,15 +93,13 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 # Setup Instructions (Kubernetes)
 
-**Note:** This is the recommended way of installing RudderStack for running in production. Our hosted deployment runs on Kubernetes so we maintain/patch much more frequently. 
+**Note:** This is the recommended way of installing RudderStack for running in production. Our hosted deployment runs on Kubernetes so we maintain/patch much more frequently.
 
 1. Go to the [dashboard][dashboad-on] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
 
 2. Our helm scripts and instructions are in a separate repo - [Download Here][helm-scripts-git-repo]
 
 ---
-
-
 
 # Setup Instructions (Native Installation)
 

@@ -707,12 +707,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				// This way all the events of a user session are never broken into separate batches
 				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
 				destStat.sessionTransform.Start()
-				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, true)
+				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, true)
 				destStat.sessionTransform.End()
 			} else {
 				// We need not worry about breaking up a single user sessions in this case
 				destStat.userTransform.Start()
-				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, false)
+				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, false)
 				destStat.userTransform.End()
 			}
 			for _, userTransformedEvent := range response.Events {
@@ -867,7 +867,6 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 }
 
 func (proc *HandleT) mainLoop() {
-
 	logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
 

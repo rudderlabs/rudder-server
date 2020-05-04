@@ -166,8 +166,12 @@ func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 			var err error
 			for columnName, columnType := range columnMap {
 				err = bq.addColumn(tableName, columnName, columnType)
-				if !checkAndIgnoreAlreadyExistError(err) {
-					return nil, err
+				if err != nil {
+					if checkAndIgnoreAlreadyExistError(err) {
+						logger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnName, bq.Namespace, tableName, err)
+					} else {
+						return nil, err
+					}
 				}
 			}
 		}
@@ -259,7 +263,7 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
-	maxParallelLoads = config.GetInt("Warehose.bigquery.maxParallelLoads", 20)
+	maxParallelLoads = config.GetInt("Warehouse.bigquery.maxParallelLoads", 20)
 }
 
 func init() {

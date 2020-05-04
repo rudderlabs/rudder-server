@@ -43,12 +43,15 @@ var (
 
 var Eb = new(utils.EventBus)
 
+// Topic refers to a subset of backend config's updates, received after subscribing using the backend config's Subscribe function.
+type Topic string
+
 const (
 	/*TopicBackendConfig topic provides updates on full backend config, via Subscribe function */
-	TopicBackendConfig = "backendConfig"
+	TopicBackendConfig Topic = "backendConfig"
 
 	/*TopicProcessConfig topic provides updates on backend config of processor enabled destinations, via Subscribe function */
-	TopicProcessConfig = "processConfig"
+	TopicProcessConfig Topic = "processConfig"
 )
 
 type DestinationDefinitionT struct {
@@ -101,7 +104,7 @@ type BackendConfig interface {
 	Get() (SourcesT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 	WaitForConfig()
-	Subscribe(channel chan utils.DataEvent, topic string)
+	Subscribe(channel chan utils.DataEvent, topic Topic)
 }
 
 type CommonBackendConfig struct {
@@ -223,8 +226,8 @@ func pollConfigUpdate() {
 			curSourceJSONLock.Unlock()
 			initialized = true
 			LastSync = time.Now().Format(time.RFC3339)
-			Eb.Publish(TopicProcessConfig, filteredSourcesJSON)
-			Eb.Publish(TopicBackendConfig, sourceJSON)
+			Eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
+			Eb.Publish(string(TopicBackendConfig), sourceJSON)
 		}
 		time.Sleep(time.Duration(pollInterval))
 	}
@@ -242,7 +245,7 @@ func GetWorkspaceIDForWriteKey(writeKey string) string {
 Subscribe subscribes a channel to a specific topic of backend config updates.
 Deprecated: Use an instance of BackendConfig instead of static function
 */
-func Subscribe(channel chan utils.DataEvent, topic string) {
+func Subscribe(channel chan utils.DataEvent, topic Topic) {
 	backendConfig.Subscribe(channel, topic)
 }
 
@@ -254,15 +257,15 @@ Available topics are:
 - TopicBackendConfig: Will receive complete backend configuration
 - TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
 */
-func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic string) {
-	Eb.Subscribe(topic, channel)
+func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic Topic) {
+	Eb.Subscribe(string(topic), channel)
 	curSourceJSONLock.RLock()
 
 	if topic == TopicProcessConfig {
 		filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
-		Eb.PublishToChannel(channel, topic, filteredSourcesJSON)
+		Eb.PublishToChannel(channel, string(topic), filteredSourcesJSON)
 	} else if topic == TopicBackendConfig {
-		Eb.PublishToChannel(channel, topic, curSourceJSON)
+		Eb.PublishToChannel(channel, string(topic), curSourceJSON)
 	}
 	curSourceJSONLock.RUnlock()
 }
