@@ -696,14 +696,22 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 				levelsPre, levelPreVals := jd.mapDSToLevel(dsPre)
 				//Some sanity checks (see comment above)
 				//Insert before is never required on level2.
+				//We do require now. In the context of scale-up/down migrations
+				//TODO: Review this carefully
 				//The level0 must be different by one
-				jd.assert(levels == 1, fmt.Sprintf("levels:%d != 1", levels))
-				jd.assert(levelVals[0] == levelPreVals[0]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
+				//jd.assert(levels == 1, fmt.Sprintf("levels:%d != 1", levels))
+				//jd.assert(levelVals[0] == levelPreVals[0]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
 				if levelsPre == 1 {
 					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], 1)
-				} else {
+				} else if levelsPre == 2 && levels == 1 {
 					jd.assert(levelsPre == 2, fmt.Sprintf("levelsPre:%d != 2", levelsPre))
 					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
+				} else if levelsPre == 2 && levels == 2 {
+					newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], 1)
+				} else if levelsPre == 3 && levels == 2 {
+					newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], levelPreVals[2]+1)
+				} else {
+					jd.assert(false, fmt.Sprintf("Unplanned scenario: levelsPre:%d, levels:%d", levelsPre, levels))
 				}
 			}
 
