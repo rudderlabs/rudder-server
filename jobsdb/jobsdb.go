@@ -655,7 +655,7 @@ func (jd *HandleT) mapDSToLevel(ds dataSetT) (int, []int) {
 		jd.assertError(err)
 		return 2, []int{indexLevel0, indexLevel1}
 	}
-	jd.assert(len(indexStr) == 2, fmt.Sprintf("len(indexStr): %d != 2", len(indexStr)))
+	jd.assert(len(indexStr) == 3, fmt.Sprintf("len(indexStr): %d != 2", len(indexStr)))
 	indexLevel0, err := strconv.Atoi(indexStr[0])
 	jd.assertError(err)
 	indexLevel1, err := strconv.Atoi(indexStr[1])
