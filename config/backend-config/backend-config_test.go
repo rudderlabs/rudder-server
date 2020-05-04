@@ -215,8 +215,8 @@ var _ = Describe("BackendConfig", func() {
 			mockLogger.EXPECT().Info(gomock.Any()).Times(1)
 			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
-			mockPubSub.EXPECT().Publish(TopicProcessConfig, gomock.Eq(SampleFilteredSources)).Times(1)
-			mockPubSub.EXPECT().Publish(TopicBackendConfig, SampleBackendConfig).Times(1)
+			mockPubSub.EXPECT().Publish(string(TopicProcessConfig), gomock.Eq(SampleFilteredSources)).Times(1)
+			mockPubSub.EXPECT().Publish(string(TopicBackendConfig), SampleBackendConfig).Times(1)
 			configUpdate(statConfigBackendError)
 			Expect(initialized).To(BeTrue())
 			Eb = originalMockPubSub
@@ -246,16 +246,16 @@ var _ = Describe("BackendConfig", func() {
 			curSourceJSON = SampleBackendConfig
 			mockLogger.EXPECT().Debug("processor Enabled", " IsProcessorEnabled: ", true).Times(1)
 			mockLogger.EXPECT().Debug("processor Disabled", " IsProcessorEnabled: ", false).Times(1)
-			mockPubSub.EXPECT().Subscribe(TopicProcessConfig, gomock.AssignableToTypeOf(ch)).Times(1)
-			mockPubSub.EXPECT().PublishToChannel(gomock.AssignableToTypeOf(ch), TopicProcessConfig, gomock.Eq(SampleFilteredSources)).Times(1)
+			mockPubSub.EXPECT().Subscribe(string(TopicProcessConfig), gomock.AssignableToTypeOf(ch)).Times(1)
+			mockPubSub.EXPECT().PublishToChannel(gomock.AssignableToTypeOf(ch), string(TopicProcessConfig), gomock.Eq(SampleFilteredSources)).Times(1)
 			backendConfig.Subscribe(ch, TopicProcessConfig)
 
 		})
 		It("Expect make the correct actions for backendConfig topic", func() {
 			ch := make(chan utils.DataEvent)
 			curSourceJSON = SampleBackendConfig
-			mockPubSub.EXPECT().Subscribe(TopicBackendConfig, gomock.AssignableToTypeOf(ch)).Times(1)
-			mockPubSub.EXPECT().PublishToChannel(gomock.AssignableToTypeOf(ch), TopicBackendConfig, SampleBackendConfig).Times(1)
+			mockPubSub.EXPECT().Subscribe(string(TopicBackendConfig), gomock.AssignableToTypeOf(ch)).Times(1)
+			mockPubSub.EXPECT().PublishToChannel(gomock.AssignableToTypeOf(ch), string(TopicBackendConfig), SampleBackendConfig).Times(1)
 			backendConfig.Subscribe(ch, TopicBackendConfig)
 		})
 	})
