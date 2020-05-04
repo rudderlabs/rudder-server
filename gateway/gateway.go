@@ -194,10 +194,10 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			newAnonymousID := uuid.NewV4().String()
 			var reqMessageIDs [][]byte
 			result.ForEach(func(_, _ gjson.Result) bool {
-				if !gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).Exists() {
+				if strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).String()) == "" {
 					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index), newAnonymousID)
 				}
-				if !gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).Exists() {
+				if strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String()) == "" {
 					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index), uuid.NewV4().String())
 				}
 				if enableDedup {

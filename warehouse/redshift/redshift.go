@@ -151,8 +151,12 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 		if len(columnMap) > 0 {
 			for columnName, columnType := range columnMap {
 				err := rs.addColumn(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName, columnType)
-				if !checkAndIgnoreAlreadyExistError(err) {
-					return nil, err
+				if err != nil {
+					if checkAndIgnoreAlreadyExistError(err) {
+						logger.Infof("RS: Column %s already exists on %s.%s \nResponse: %v", columnName, rs.Namespace, tableName, err)
+					} else {
+						return nil, err
+					}
 				}
 			}
 		}
@@ -425,7 +429,7 @@ func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder-staging-"
-	maxParallelLoads = config.GetInt("Warehose.redshift.maxParallelLoads", 3)
+	maxParallelLoads = config.GetInt("Warehouse.redshift.maxParallelLoads", 3)
 }
 
 func init() {

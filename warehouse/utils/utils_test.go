@@ -124,4 +124,60 @@ var _ = Describe("Utils", func() {
 			})
 		})
 	})
+
+	Describe("Compare Schemas", func() {
+		Context("GetSchemaDiff", func() {
+			var currentSchema map[string]map[string]string
+			BeforeEach(func() {
+				currentSchema = map[string]map[string]string{
+					"table_1": {
+						"col_1": "string",
+						"col_2": "int",
+						"col_3": "bool",
+					},
+					"table_2": {
+						"col_1": "string",
+						"col_2": "int",
+						"col_3": "bool",
+					},
+				}
+			})
+
+			It("Should add new columns to existing table", func() {
+				uploadSchema := map[string]map[string]string{
+					"table_1": {
+						"col_4": "float",
+					},
+				}
+				columnMap := currentSchema["table_1"]
+				columnMap["col_4"] = "float"
+				diff := GetSchemaDiff(currentSchema, uploadSchema)
+				Expect(diff.UpdatedSchema["table_1"]).To(Equal(columnMap))
+			})
+
+			It("Should add new tables to existing schema", func() {
+				uploadSchema := map[string]map[string]string{
+					"new_table": {
+						"col_1": "float",
+					},
+				}
+				newColumnMap := map[string]string{
+					"col_1": "float",
+				}
+				diff := GetSchemaDiff(currentSchema, uploadSchema)
+				Expect(diff.UpdatedSchema["new_table"]).To(Equal(newColumnMap))
+			})
+
+			It("Should not alter tables that are not being updated", func() {
+				uploadSchema := map[string]map[string]string{
+					"table_1": {
+						"col_4": "float",
+					},
+				}
+				columnMap := currentSchema["table_2"]
+				diff := GetSchemaDiff(currentSchema, uploadSchema)
+				Expect(diff.UpdatedSchema["table_2"]).To(Equal(columnMap))
+			})
+		})
+	})
 })

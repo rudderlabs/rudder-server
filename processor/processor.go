@@ -55,7 +55,6 @@ type HandleT struct {
 	userToSessionIDMap    map[string]string
 	userJobPQ             pqT
 	userPQLock            sync.Mutex
-	replayProcessor       *ReplayProcessorT
 }
 
 type DestStatT struct {
@@ -148,19 +147,10 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.destProcessing = stats.NewStat("processor.dest_processing", stats.TimerType)
 	proc.destStats = make(map[string]*DestStatT)
 
-	if !isReplayServer {
-		proc.replayProcessor = NewReplayProcessor()
-		proc.replayProcessor.Setup()
-	}
-
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
 	proc.transformer.Setup()
-
-	if !isReplayServer {
-		proc.replayProcessor.CrashRecover()
-	}
 
 	proc.crashRecover()
 
@@ -189,7 +179,6 @@ var (
 	destinationTransformationEnabledMap map[string]bool
 	rawDataDestinations                 []string
 	configSubscriberLock                sync.RWMutex
-	processReplays                      []replayT
 	isReplayServer                      bool
 )
 
@@ -207,15 +196,8 @@ func loadConfig() {
 	maxRetry = config.GetInt("Processor.maxRetry", 30)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE"}
-	processReplays = []replayT{}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
-}
-
-type replayT struct {
-	sourceID      string
-	destinationID string
-	notifyURL     string
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -239,25 +221,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 						proc.destStats[destination.ID] = newDestinationStat(destination.ID)
 					}
 				}
-			}
-
-			if isReplayServer {
-				continue
-			}
-
-			var replays = []replayT{}
-			for _, dest := range source.Destinations {
-				if dest.Config.(map[string]interface{})["Replay"] == true {
-					notifyURL, ok := dest.Config.(map[string]interface{})["ReplayURL"].(string)
-					if !ok {
-						notifyURL = ""
-					}
-					replays = append(replays, replayT{sourceID: source.ID, destinationID: dest.ID, notifyURL: notifyURL})
-				}
-			}
-
-			if len(replays) > 0 {
-				processReplays = proc.replayProcessor.GetReplaysToProcess(replays)
 			}
 		}
 		configSubscriberLock.Unlock()
@@ -736,12 +699,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				// This way all the events of a user session are never broken into separate batches
 				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
 				destStat.sessionTransform.Start()
-				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, true)
+				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, true)
 				destStat.sessionTransform.End()
 			} else {
 				// We need not worry about breaking up a single user sessions in this case
 				destStat.userTransform.Start()
-				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, false)
+				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, false)
 				destStat.userTransform.End()
 			}
 			for _, userTransformedEvent := range response.Events {
@@ -831,29 +794,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Print()
 }
 
-/*
- * If there is a new replay destination, compute the min JobID that the data plane would be routing for that source
- */
-func (proc *HandleT) handleReplay(combinedList []*jobsdb.JobT) {
-	if isReplayServer {
-		return
-	}
-
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
-
-	if len(processReplays) > 0 {
-		maxDSIndex := proc.gatewayDB.GetMaxDSIndex()
-		if len(combinedList) <= 0 {
-			panic(fmt.Errorf("len(combinedList):%d <= 0", len(combinedList)))
-		}
-		replayMinJobID := combinedList[0].JobID
-
-		proc.replayProcessor.ProcessNewReplays(processReplays, replayMinJobID, maxDSIndex)
-		processReplays = []replayT{}
-	}
-}
-
 func (proc *HandleT) mainLoop() {
 
 	logger.Info("Processor loop started")
@@ -901,8 +841,6 @@ func (proc *HandleT) mainLoop() {
 			return combinedList[i].JobID < combinedList[j].JobID
 		})
 
-		// Need to process minJobID and new destinations at once
-		proc.handleReplay(combinedList)
 		proc.statListSort.End()
 
 		if processSessions {
