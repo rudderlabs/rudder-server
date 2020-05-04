@@ -23,11 +23,10 @@ type Importer struct {
 }
 
 //Setup sets up importer with underlying-migrator  and initializes importQueues
-func (importer *Importer) Setup(jobsDB *jobsdb.HandleT) {
-	logger.Infof("[[ %s-Import-Migrator ]] setup for jobsdb", jobsDB.GetTablePrefix())
+func (importer *Importer) Setup(migrator *Migrator) {
+	logger.Infof("[[ %s-Import-Migrator ]] setup for jobsdb", migrator.jobsDB.GetTablePrefix())
 	importer.importQueues = make(map[string]chan *jobsdb.MigrationEvent)
-	importer.migrator = &Migrator{}
-	importer.migrator.Setup(jobsDB)
+	importer.migrator = migrator
 	importer.migrator.jobsDB.SetupForImport()
 	rruntime.Go(func() {
 		importer.readFromCheckPointAndTriggerImport()

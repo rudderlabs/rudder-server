@@ -686,7 +686,7 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 				// We do now.
 				//TODO: Review this carefully
 				// jd.assert(idx > 0, fmt.Sprintf("idx: %d <= 0", idx))
-				levels, levelVals := jd.mapDSToLevel(ds)
+				levels, _ := jd.mapDSToLevel(ds)
 				var dsPre dataSetT
 				if idx == 0 {
 					dsPre = dataSetT{"", "", "0"}

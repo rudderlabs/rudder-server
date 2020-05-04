@@ -31,13 +31,12 @@ var (
 )
 
 //Setup sets up exporter with underlying-migrator, pathfinder and initializes dumpQueus and notifyQueuss
-func (exporter *Exporter) Setup(jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) {
-	logger.Infof("[[ %s-Export-Migrator ]] setup for jobsdb", jobsDB.GetTablePrefix())
+func (exporter *Exporter) Setup(migrator *Migrator, pf pathfinder.Pathfinder) {
+	logger.Infof("[[ %s-Export-Migrator ]] setup for jobsdb", migrator.jobsDB.GetTablePrefix())
 	exporter.pf = pf
 	exporter.dumpQueues = make(map[string]chan []*jobsdb.JobT)
 	exporter.notifyQueues = make(map[string]chan *jobsdb.MigrationEvent)
-	exporter.migrator = &Migrator{}
-	exporter.migrator.Setup(jobsDB)
+	exporter.migrator = migrator
 	exporter.migrator.jobsDB.SetupForExport()
 	rruntime.Go(func() {
 		exporter.export()

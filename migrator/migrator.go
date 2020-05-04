@@ -31,20 +31,22 @@ type Migrator struct {
 //New gives a transporter of type export, import or export-import
 func New(migrationMode string, jobsDB *jobsdb.HandleT, pf pathfinder.Pathfinder) Migrator {
 	migrator := Migrator{}
+	migrator.Setup(jobsDB)
+
 	switch migrationMode {
 	case "export":
 		migrator.exporter = &Exporter{}
-		migrator.exporter.Setup(jobsDB, pf)
+		migrator.exporter.Setup(&migrator, pf)
 		return migrator
 	case "import":
 		migrator.importer = &Importer{}
-		migrator.importer.Setup(jobsDB)
+		migrator.importer.Setup(&migrator)
 		return migrator
 	case "import-export":
 		migrator.exporter = &Exporter{}
-		migrator.exporter.Setup(jobsDB, pf)
+		migrator.exporter.Setup(&migrator, pf)
 		migrator.importer = &Importer{}
-		migrator.importer.Setup(jobsDB)
+		migrator.importer.Setup(&migrator)
 		return migrator
 	}
 	panic(fmt.Sprintf("Unknown Migration Mode : %s", migrationMode))
