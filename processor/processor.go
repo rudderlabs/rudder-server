@@ -25,10 +25,11 @@ import (
 
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
+	backendConfig         backendconfig.BackendConfig
+	stats                 stats.Stats
 	gatewayDB             jobsdb.JobsDB
 	routerDB              jobsdb.JobsDB
 	batchRouterDB         jobsdb.JobsDB
-	backendConfig         backendconfig.BackendConfig
 	transformer           *transformerHandleT
 	pStatsJobs            *misc.PerfStats
 	pStatsDBR             *misc.PerfStats
@@ -67,12 +68,12 @@ type DestStatT struct {
 	destTransform    stats.RudderStats
 }
 
-func newDestinationStat(destID string) *DestStatT {
-	numEvents := stats.NewDestStat("proc_num_events", stats.CountType, destID)
-	numOutputEvents := stats.NewDestStat("proc_num_output_events", stats.CountType, destID)
-	sessionTransform := stats.NewDestStat("proc_session_transform", stats.TimerType, destID)
-	userTransform := stats.NewDestStat("proc_user_transform", stats.TimerType, destID)
-	destTransform := stats.NewDestStat("proc_dest_transform", stats.TimerType, destID)
+func (proc *HandleT) newDestinationStat(destID string) *DestStatT {
+	numEvents := proc.stats.NewDestStat("proc_num_events", stats.CountType, destID)
+	numOutputEvents := proc.stats.NewDestStat("proc_num_output_events", stats.CountType, destID)
+	sessionTransform := proc.stats.NewDestStat("proc_session_transform", stats.TimerType, destID)
+	userTransform := proc.stats.NewDestStat("proc_user_transform", stats.TimerType, destID)
+	destTransform := proc.stats.NewDestStat("proc_dest_transform", stats.TimerType, destID)
 	return &DestStatT{
 		id:               destID,
 		numEvents:        numEvents,
@@ -114,8 +115,10 @@ func init() {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB) {
+func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, s stats.Stats) {
 	proc.backendConfig = backendConfig
+	proc.stats = s
+
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
@@ -132,21 +135,20 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pStatsDBR.Setup("ProcessorDBRead")
 	proc.pStatsDBW.Setup("ProcessorDBWrite")
 
-	proc.statGatewayDBR = stats.NewStat("processor.gateway_db_read", stats.CountType)
-	proc.statGatewayDBW = stats.NewStat("processor.gateway_db_write", stats.CountType)
-	proc.statRouterDBW = stats.NewStat("processor.router_db_write", stats.CountType)
-	proc.statBatchRouterDBW = stats.NewStat("processor.batch_router_db_write", stats.CountType)
-	proc.statActiveUsers = stats.NewStat("processor.active_users", stats.GaugeType)
-	proc.statDBR = stats.NewStat("processor.gateway_db_read_time", stats.TimerType)
-	proc.statDBW = stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
-	proc.statLoopTime = stats.NewStat("processor.loop_time", stats.TimerType)
-	proc.statSessionTransform = stats.NewStat("processor.session_transform_time", stats.TimerType)
-	proc.statUserTransform = stats.NewStat("processor.user_transform_time", stats.TimerType)
-	proc.statDestTransform = stats.NewStat("processor.dest_transform_time", stats.TimerType)
-
-	proc.statListSort = stats.NewStat("processor.job_list_sort", stats.TimerType)
-	proc.marshalSingularEvents = stats.NewStat("processor.marshal_singular_events", stats.TimerType)
-	proc.destProcessing = stats.NewStat("processor.dest_processing", stats.TimerType)
+	proc.statGatewayDBR = proc.stats.NewStat("processor.gateway_db_read", stats.CountType)
+	proc.statGatewayDBW = proc.stats.NewStat("processor.gateway_db_write", stats.CountType)
+	proc.statRouterDBW = proc.stats.NewStat("processor.router_db_write", stats.CountType)
+	proc.statBatchRouterDBW = proc.stats.NewStat("processor.batch_router_db_write", stats.CountType)
+	proc.statActiveUsers = proc.stats.NewStat("processor.active_users", stats.GaugeType)
+	proc.statDBR = proc.stats.NewStat("processor.gateway_db_read_time", stats.TimerType)
+	proc.statDBW = proc.stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
+	proc.statLoopTime = proc.stats.NewStat("processor.loop_time", stats.TimerType)
+	proc.statSessionTransform = proc.stats.NewStat("processor.session_transform_time", stats.TimerType)
+	proc.statUserTransform = proc.stats.NewStat("processor.user_transform_time", stats.TimerType)
+	proc.statDestTransform = proc.stats.NewStat("processor.dest_transform_time", stats.TimerType)
+	proc.statListSort = proc.stats.NewStat("processor.job_list_sort", stats.TimerType)
+	proc.marshalSingularEvents = proc.stats.NewStat("processor.marshal_singular_events", stats.TimerType)
+	proc.destProcessing = proc.stats.NewStat("processor.dest_processing", stats.TimerType)
 	proc.destStats = make(map[string]*DestStatT)
 
 	rruntime.Go(func() {
@@ -155,10 +157,14 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.transformer.Setup()
 
 	proc.crashRecover()
+}
 
+// Start starts this processor's main loops.
+func (proc *HandleT) Start() {
 	rruntime.Go(func() {
 		proc.mainLoop()
 	})
+
 	if processSessions {
 		logger.Info("Starting session processor")
 		rruntime.Go(func() {
@@ -220,7 +226,7 @@ func (proc *HandleT) backendConfigSubscriber() {
 					destinationTransformationEnabledMap[destination.ID] = len(destination.Transformations) > 0
 					_, ok := proc.destStats[destination.ID]
 					if !ok {
-						proc.destStats[destination.ID] = newDestinationStat(destination.ID)
+						proc.destStats[destination.ID] = proc.newDestinationStat(destination.ID)
 					}
 				}
 			}
@@ -796,76 +802,86 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Print()
 }
 
+// handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
+// Returns true if any job is handled, otherwise returns false.
+func (proc *HandleT) handlePendingGatewayJobs() bool {
+	proc.statLoopTime.Start()
+	proc.pStatsDBR.Start()
+	proc.statDBR.Start()
+
+	toQuery := dbReadBatchSize
+	//Should not have any failure while processing (in v0) so
+	//retryList should be empty. Remove the assert
+	retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
+	toQuery -= len(retryList)
+	unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
+
+	proc.statDBR.End()
+
+	// check if there is work to be done
+	if len(unprocessedList)+len(retryList) == 0 {
+		logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
+		proc.pStatsDBR.End(0)
+		return false
+	}
+
+	// handle pending jobs
+	proc.statListSort.Start()
+	combinedList := append(unprocessedList, retryList...)
+	logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total: %v", len(retryList), len(unprocessedList), len(combinedList))
+	proc.pStatsDBR.End(len(combinedList))
+	proc.statGatewayDBR.Count(len(combinedList))
+
+	proc.pStatsDBR.Print()
+
+	//Sort by JOBID
+	sort.Slice(combinedList, func(i, j int) bool {
+		return combinedList[i].JobID < combinedList[j].JobID
+	})
+
+	proc.statListSort.End()
+
+	if processSessions {
+		//Mark all as executing so next query doesn't pick it up
+		var statusList []*jobsdb.JobStatusT
+		for _, batchEvent := range combinedList {
+			newStatus := jobsdb.JobStatusT{
+				JobID:         batchEvent.JobID,
+				JobState:      jobsdb.ExecutingState,
+				AttemptNum:    1,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "200",
+				ErrorResponse: []byte(`{"success":"OK"}`),
+			}
+			statusList = append(statusList, &newStatus)
+		}
+		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+		proc.addJobsToSessions(combinedList)
+	} else {
+		proc.processJobsForDest(combinedList, nil)
+	}
+	proc.statLoopTime.End()
+
+	return true
+}
+
 func (proc *HandleT) mainLoop() {
 
 	logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
 
 	for {
-
-		proc.statLoopTime.Start()
-		proc.pStatsDBR.Start()
-		proc.statDBR.Start()
-
-		toQuery := dbReadBatchSize
-		//Should not have any failure while processing (in v0) so
-		//retryList should be empty. Remove the assert
-		retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
-		toQuery -= len(retryList)
-		unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
-
-		proc.statDBR.End()
-		if len(unprocessedList)+len(retryList) == 0 {
-			logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
-			proc.pStatsDBR.End(0)
-
+		if proc.handlePendingGatewayJobs() {
 			currLoopSleep = 2*currLoopSleep + loopSleep
 			if currLoopSleep > maxLoopSleep {
 				currLoopSleep = maxLoopSleep
 			}
 
 			time.Sleep(currLoopSleep)
-			continue
 		} else {
 			currLoopSleep = time.Duration(0)
 		}
-
-		proc.statListSort.Start()
-		combinedList := append(unprocessedList, retryList...)
-		logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total: %v", len(retryList), len(unprocessedList), len(combinedList))
-		proc.pStatsDBR.End(len(combinedList))
-		proc.statGatewayDBR.Count(len(combinedList))
-
-		proc.pStatsDBR.Print()
-
-		//Sort by JOBID
-		sort.Slice(combinedList, func(i, j int) bool {
-			return combinedList[i].JobID < combinedList[j].JobID
-		})
-
-		proc.statListSort.End()
-
-		if processSessions {
-			//Mark all as executing so next query doesn't pick it up
-			var statusList []*jobsdb.JobStatusT
-			for _, batchEvent := range combinedList {
-				newStatus := jobsdb.JobStatusT{
-					JobID:         batchEvent.JobID,
-					JobState:      jobsdb.ExecutingState,
-					AttemptNum:    1,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
-					ErrorCode:     "200",
-					ErrorResponse: []byte(`{"success":"OK"}`),
-				}
-				statusList = append(statusList, &newStatus)
-			}
-			proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
-			proc.addJobsToSessions(combinedList)
-		} else {
-			proc.processJobsForDest(combinedList, nil)
-		}
-		proc.statLoopTime.End()
 	}
 }
 
