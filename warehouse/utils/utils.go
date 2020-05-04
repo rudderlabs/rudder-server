@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -15,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 )
 
 const (
@@ -30,6 +30,8 @@ const (
 	ExportingDataFailedState      = "exporting_data_failed"
 	ExportedDataState             = "exported_data"
 	AbortedState                  = "aborted"
+	GeneratingStagingFileFailed   = "generating_staging_file_failed"
+	GeneratedStagingFile          = "generated_staging_file"
 )
 
 const (
@@ -42,6 +44,18 @@ const (
 
 const (
 	DiscardsTable = "rudder_discards"
+	SyncFrequency = "syncFrequency"
+	SyncStartAt   = "syncStartAt"
+)
+
+const (
+	UploadStatusField          = "status"
+	UploadStartLoadFileIDField = "start_load_file_id"
+	UploadEndLoadFileIDField   = "end_load_file_id"
+	UploadUpdatedAtField       = "updated_at"
+	UploadTimingsField         = "timings"
+	UploadSchemaField          = "schema"
+	UploadLastExecAtField      = "last_exec_at"
 )
 
 var (
@@ -109,6 +123,7 @@ type UploadT struct {
 	Status             string
 	Schema             map[string]map[string]string
 	Error              json.RawMessage
+	Timings            []map[string]string
 }
 
 type CurrentSchemaT struct {
@@ -120,6 +135,9 @@ type StagingFileT struct {
 	Schema           map[string]map[string]interface{}
 	BatchDestination DestinationT
 	Location         string
+	FirstEventAt     string
+	LastEventAt      string
+	TotalEvents      int
 }
 
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, error) {
@@ -165,6 +183,13 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 		ColumnMaps:    make(map[string]map[string]string),
 		UpdatedSchema: make(map[string]map[string]string),
 	}
+	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
+	for tableName, columnMap := range currentSchema {
+		diff.UpdatedSchema[tableName] = make(map[string]string)
+		for columnName, columnType := range columnMap {
+			diff.UpdatedSchema[tableName][columnName] = columnType
+		}
+	}
 	for tableName, uploadColumnMap := range uploadSchema {
 		currentColumnsMap, ok := currentSchema[tableName]
 		if !ok {
@@ -172,7 +197,6 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 			diff.ColumnMaps[tableName] = uploadColumnMap
 			diff.UpdatedSchema[tableName] = uploadColumnMap
 		} else {
-			diff.UpdatedSchema[tableName] = currentSchema[tableName]
 			diff.ColumnMaps[tableName] = make(map[string]string)
 			for columnName, columnVal := range uploadColumnMap {
 				if _, ok := currentColumnsMap[columnName]; !ok {
@@ -185,10 +209,71 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 	return
 }
 
-func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error) {
+type UploadColumnT struct {
+	Column string
+	Value  interface{}
+}
+
+// GetUploadTimings returns timings json column
+// eg. timings: [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
+func GetUploadTimings(upload UploadT, dbHandle *sql.DB) (timings []map[string]string) {
+	var rawJSON json.RawMessage
+	sqlStatement := fmt.Sprintf(`SELECT timings FROM %s WHERE id=%d`, warehouseUploadsTable, upload.ID)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&rawJSON)
+	if err != nil {
+		return
+	}
+	err = json.Unmarshal(rawJSON, &timings)
+	return
+}
+
+// GetNewTimings appends current status with current time to timings column
+// eg. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
+func GetNewTimings(upload UploadT, dbHandle *sql.DB, status string) []byte {
+	timings := GetUploadTimings(upload, dbHandle)
+	timing := map[string]string{status: timeutil.Now().Format(misc.RFC3339Milli)}
+	timings = append(timings, timing)
+	marshalledTimings, err := json.Marshal(timings)
+	if err != nil {
+		panic(err)
+	}
+	return marshalledTimings
+}
+
+func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB, additionalFields ...UploadColumnT) (err error) {
 	logger.Infof("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=$3`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), upload.ID)
+	marshalledTimings := GetNewTimings(upload, dbHandle, status)
+	opts := []UploadColumnT{
+		{Column: UploadStatusField, Value: status},
+		{Column: UploadTimingsField, Value: marshalledTimings},
+		{Column: UploadUpdatedAtField, Value: timeutil.Now()},
+	}
+
+	additionalFields = append(additionalFields, opts...)
+
+	SetUploadColumns(
+		upload,
+		dbHandle,
+		additionalFields...,
+	)
+	return
+}
+
+// SetUploadColumns sets any column values passed as args in UploadColumnT format for warehouseUploadsTable
+func SetUploadColumns(upload UploadT, dbHandle *sql.DB, fields ...UploadColumnT) (err error) {
+	var columns string
+	values := []interface{}{upload.ID}
+	// setting values using syntax $n since Exec can correctly format time.Time strings
+	for idx, f := range fields {
+		// start with $2 as $1 is upload.ID
+		columns += fmt.Sprintf(`%s=$%d`, f.Column, idx+2)
+		if idx < len(fields)-1 {
+			columns += ","
+		}
+		values = append(values, f.Value)
+	}
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, warehouseUploadsTable, columns)
+	_, err = dbHandle.Exec(sqlStatement, values...)
 	if err != nil {
 		panic(err)
 	}
@@ -197,7 +282,7 @@ func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error
 
 func SetUploadError(upload UploadT, statusError error, state string, dbHandle *sql.DB) (err error) {
 	logger.Errorf("WH: Failed during %s stage: %v\n", state, statusError.Error())
-	SetUploadStatus(upload, ExportingDataFailedState, dbHandle)
+	SetUploadStatus(upload, state, dbHandle)
 	var e map[string]map[string]interface{}
 	json.Unmarshal(upload.Error, &e)
 	if e == nil {
@@ -225,7 +310,7 @@ func SetUploadError(upload UploadT, statusError error, state string, dbHandle *s
 	}
 	serializedErr, _ := json.Marshal(&e)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement, state, serializedErr, time.Now(), upload.ID)
+	_, err = dbHandle.Exec(sqlStatement, state, serializedErr, timeutil.Now(), upload.ID)
 	if err != nil {
 		panic(err)
 	}
@@ -234,7 +319,7 @@ func SetUploadError(upload UploadT, statusError error, state string, dbHandle *s
 
 func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err error) {
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), pq.Array(ids))
+	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), pq.Array(ids))
 	if err != nil {
 		panic(err)
 	}
@@ -244,7 +329,7 @@ func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err er
 func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusError error) (err error) {
 	logger.Errorf("WH: Failed processing staging files: %v", statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement, status, statusError.Error(), time.Now(), pq.Array(ids))
+	_, err = dbHandle.Exec(sqlStatement, status, statusError.Error(), timeutil.Now(), pq.Array(ids))
 	if err != nil {
 		panic(err)
 	}
@@ -252,9 +337,17 @@ func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusEr
 }
 
 func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHandle *sql.DB) (err error) {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, last_exec_time=$2 WHERE wh_upload_id=$3 AND table_name=$4`, warehouseTableUploadsTable)
+	// set last_exec_time only if status is executing
+	execValues := []interface{}{status, timeutil.Now(), uploadID, tableName}
+	var lastExec string
+	if status == ExecutingState {
+		// setting values using syntax $n since Exec can correctlt format time.Time strings
+		lastExec = fmt.Sprintf(`, last_exec_time=$%d`, len(execValues)+1)
+		execValues = append(execValues, timeutil.Now())
+	}
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 %s WHERE wh_upload_id=$3 AND table_name=$4`, warehouseTableUploadsTable, lastExec)
 	logger.Infof("WH: Setting table upload status: %v", sqlStatement)
-	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), uploadID, tableName)
+	_, err = dbHandle.Exec(sqlStatement, execValues...)
 	if err != nil {
 		panic(err)
 	}
@@ -265,7 +358,7 @@ func SetTableUploadError(status string, uploadID int64, tableName string, status
 	logger.Errorf("WH: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, error=$3 WHERE wh_upload_id=$4 AND table_name=$5`, warehouseTableUploadsTable)
 	logger.Infof("WH: Setting table upload error: %v", sqlStatement)
-	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), statusError.Error(), uploadID, tableName)
+	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), statusError.Error(), uploadID, tableName)
 	if err != nil {
 		panic(err)
 	}
@@ -289,7 +382,7 @@ func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, curren
 		}
 		defer stmt.Close()
 
-		_, err = stmt.Exec(uploadID, wh.Source.ID, namespace, wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, time.Now())
+		_, err = stmt.Exec(uploadID, wh.Source.ID, namespace, wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, timeutil.Now())
 	} else {
 		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3`, warehouseSchemasTable)
 		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, wh.Source.ID, wh.Destination.ID)

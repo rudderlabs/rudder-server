@@ -55,7 +55,7 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 	if err != nil {
 		return UploadOutput{}, err
 	}
-	return UploadOutput{Location: objectURL(attrs)}, err
+	return UploadOutput{Location: objectURL(attrs), ObjectName: fileName}, err
 }
 
 func (manager *GCSManager) Download(output *os.File, key string) error {
