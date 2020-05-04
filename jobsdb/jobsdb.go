@@ -648,12 +648,21 @@ func (jd *HandleT) mapDSToLevel(ds dataSetT) (int, []int) {
 		jd.assertError(err)
 		return 1, []int{indexLevel0}
 	}
+	if len(indexStr) == 2 {
+		indexLevel0, err := strconv.Atoi(indexStr[0])
+		jd.assertError(err)
+		indexLevel1, err := strconv.Atoi(indexStr[1])
+		jd.assertError(err)
+		return 2, []int{indexLevel0, indexLevel1}
+	}
 	jd.assert(len(indexStr) == 2, fmt.Sprintf("len(indexStr): %d != 2", len(indexStr)))
 	indexLevel0, err := strconv.Atoi(indexStr[0])
 	jd.assertError(err)
 	indexLevel1, err := strconv.Atoi(indexStr[1])
 	jd.assertError(err)
-	return 2, []int{indexLevel0, indexLevel1}
+	indexLevel2, err := strconv.Atoi(indexStr[2])
+	jd.assertError(err)
+	return 3, []int{indexLevel0, indexLevel1, indexLevel2}
 }
 
 func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
