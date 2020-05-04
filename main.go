@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -297,6 +298,12 @@ func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jo
 	if enableProcessor {
 		var processor processor.HandleT
 		processor.Setup(gatewayDB, routerDB, batchRouterDB)
+
+		if !isReplayServer {
+			var replay replay.ReplayProcessorT
+			replay.Setup(gatewayDB)
+		}
+
 		processorLoaded = true
 	}
 }
@@ -401,6 +408,16 @@ func main() {
 		stats.StopRuntimeStats()
 		os.Exit(1)
 	}()
+
+	serverMode := os.Getenv("RSERVER_MODE")
+
+	if serverMode == "normal" {
+		*normalMode = true
+	} else if serverMode == "degraded" {
+		*degradedMode = true
+	} else if serverMode == "maintenance" {
+		*maintenanceMode = true
+	}
 
 	if canStartServer() {
 		rruntime.Go(func() {
