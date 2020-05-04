@@ -85,13 +85,19 @@ func queryRS(anonymousId string, table string, namespace string, destConfig inte
 	if err!=nil {
 		panic(err)
 	}
-	row:=db.QueryRow(fmt.Sprintf(`select label from %s where anonymous_id='%s'`,fmt.Sprintf("%s.%s",namespace,table), anonymousId))
-	var label string
-	err = row.Scan(&label)
-	fmt.Println(err)
-	if err !=nil {
+	row:=db.QueryRow(fmt.Sprintf(`select label, category, property1, property2, property3, property4, property5 from %s where anonymous_id='%s'`,fmt.Sprintf("%s.%s",namespace,table), anonymousId))
+	var label, category, property1, property2, property3,property4,property5 string
+	err = row.Scan(&label,&category,&property1,&property2,&property3,&property4,&property5)
+	if err !=nil && err != sql.ErrNoRows {
 		panic(err)
 	}
-	fmt.Println(label)
-	return QueryTrackPayload{Label: label}
+	return QueryTrackPayload{
+		Label: label,
+		Category:category,
+		Property1:property1,
+		Property2:property2,
+		Property3:property3,
+		Property4:property4,
+		Property5:property5,
+	}
 }

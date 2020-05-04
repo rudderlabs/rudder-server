@@ -34,7 +34,7 @@ type EventOptsT struct {
 
 type QueryTrackPayload struct{
 	Label string `json:"label"`
-	Text string `json:"text"`
+	Category string `json:"category"`
 	Property1 string `json:"property1"`
 	Property2 string `json:"property2"`
 	Property3 string `json:"property3"`
@@ -323,9 +323,9 @@ func GetLoadFileTableName(dbHandle *sql.DB, warehouseLoadFilesTable string, sour
 	return tableNames
 }
 
-func GetWarehouseSchema(dbHandle *sql.DB, warehouseSchemaTable string, sourceID string, destinationID string) map[string]map[string]string {
+func GetWarehouseSchema(dbHandle *sql.DB, warehouseSchemaTable string, uploadId int64, sourceID string, destinationID string) map[string]map[string]string {
 	var rawSchema json.RawMessage
-	err := dbHandle.QueryRow(fmt.Sprintf(`SELECT schema FROM %s where source_id='%s'and destination_id='%s'`, warehouseSchemaTable, sourceID, destinationID)).Scan(&rawSchema)
+	err := dbHandle.QueryRow(fmt.Sprintf(`SELECT schema FROM %s where wh_upload_id = %d and source_id='%s'and destination_id='%s'`, warehouseSchemaTable, uploadId, sourceID, destinationID)).Scan(&rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil
@@ -352,9 +352,6 @@ func GetWarehouseSchema(dbHandle *sql.DB, warehouseSchemaTable string, sourceID 
 	return schema
 }
 
-type warehouseHandle interface {
-	DownloadObject(location string, bucket string, file *os.File)
-}
 func GetEventLoadFileData(dbHandle *sql.DB, warehouseLoadFilesTable string, eventName string, sourceId string, destinationId string, destType string, destConfig interface{}) string {
 	row := dbHandle.QueryRow(fmt.Sprintf(` select location from %s where table_name='%s' and source_id='%s' and destination_id='%s' order by updated_at desc`, warehouseLoadFilesTable, eventName, sourceId, destinationId))
 	var location string
@@ -467,8 +464,8 @@ func FetchUpdateState(dbHandle *sql.DB, warehouseUploadsTable string, sourceID s
 	return id, namespace, state
 }
 
-func VerifyUpdatdTables(dbHandle *sql.DB, warehouseTableUploadsTable string, uploadId int64, exportedDataState string ) []string {
-	rows, err :=dbHandle.Query(fmt.Sprintf(`select table_name from %s where uploadId=%d and status ='%s'`,warehouseTableUploadsTable, uploadId, exportedDataState))
+func VerifyUpdatedTables(dbHandle *sql.DB, warehouseTableUploadsTable string, uploadId int64, exportedDataState string ) []string {
+	rows, err :=dbHandle.Query(fmt.Sprintf(`select table_name from %s where wh_upload_id=%d and status ='%s'`,warehouseTableUploadsTable, uploadId, exportedDataState))
 	if err != nil {
 		panic(err)
 	}
