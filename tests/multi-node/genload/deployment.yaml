@@ -5,7 +5,7 @@ metadata:
   labels:
     app: genload
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app: genload
@@ -21,7 +21,7 @@ spec:
             - containerPort: 8080
           env:
             - name: TEST_NAME
-              value: "Test2"
+              value: "t8-1s-3g"
             - name: REDIS_SERVER
               value: "172.20.234.206:6379"
             - name: WRITE_KEY

@@ -39,8 +39,6 @@ var randomErrorCodes = []int{200, 200, 200, 200, 200, 200, 200, 200, 400, 500}
 var errorCounts = make(map[string]uint64)
 var errorMutex sync.Mutex
 
-var testResultlogs []string
-
 var timeOfStart = time.Now()
 var limitRate = 100
 var limitBurst = 1000
@@ -246,9 +244,11 @@ type ResponseT struct {
 
 func handleTestResults(rw http.ResponseWriter, req *http.Request) {
 	test := req.URL.Query().Get("test")
-	success := computeTestResults(test)
 
-	resp := ResponseT{Status: success, Logs: testResultlogs}
+	t := &TesterT{testName: test}
+	success := t.computeTestResults()
+
+	resp := ResponseT{Status: success, Logs: t.logs}
 	respJSON, err := json.Marshal(resp)
 	if err != nil {
 		panic(err.Error())
@@ -258,8 +258,19 @@ func handleTestResults(rw http.ResponseWriter, req *http.Request) {
 	rw.Write(respJSON)
 }
 
-func logMessage(log string) {
-	testResultlogs = append(testResultlogs, log)
+func handleFlushDB(rw http.ResponseWriter, req *http.Request) {
+	redisClient := getRedisClient()
+	redisClient.FlushAll()
+	rw.Write([]byte("OK"))
+}
+
+type TesterT struct {
+	testName string
+	logs     []string
+}
+
+func (t *TesterT) logMessage(log string) {
+	t.logs = append(t.logs, log)
 	fmt.Println(log)
 }
 
@@ -270,8 +281,9 @@ func logMessage(log string) {
 // <test_name>_user_src == Set of all source users
 // <test_name>_user_dst == Set of all destination users
 
-func computeTestResults(test string) bool {
+func (t *TesterT) computeTestResults() bool {
 
+	test := t.testName
 	redisClient := getRedisClient()
 
 	var redisSrcUserSet = fmt.Sprintf("%s_user_src", test)
@@ -284,23 +296,23 @@ func computeTestResults(test string) bool {
 
 	// Verify if same set of users
 
-	logMessage(fmt.Sprintf("Source User len: %v", redisClient.SCard(redisSrcUserSet)))
-	logMessage(fmt.Sprintf("Dest User len: %v", redisClient.SCard(redisDestUserSet)))
+	t.logMessage(fmt.Sprintf("Source User len: %v", redisClient.SCard(redisSrcUserSet)))
+	t.logMessage(fmt.Sprintf("Dest User len: %v", redisClient.SCard(redisDestUserSet)))
 	differedUsers := redisClient.SDiff(redisSrcUserSet, redisDestUserSet).Val()
 	if len(differedUsers) > 0 {
-		logMessage(fmt.Sprintf("List of differed users: %v\n", differedUsers))
+		t.logMessage(fmt.Sprintf("List of differed users: %v\n", differedUsers))
 	} else {
-		logMessage("Success: Users Matched!!")
+		t.logMessage("Success: Users Matched!!")
 	}
 
 	// Verify if same set of events
-	logMessage(fmt.Sprintf("Source Event len: %v", redisClient.SCard(redisSrcEventSet)))
-	logMessage(fmt.Sprintf("Dest Event len: %v", redisClient.SCard(redisDestEventSet)))
+	t.logMessage(fmt.Sprintf("Source Event len: %v", redisClient.SCard(redisSrcEventSet)))
+	t.logMessage(fmt.Sprintf("Dest Event len: %v", redisClient.SCard(redisDestEventSet)))
 	differedEvents := redisClient.SDiff(redisSrcEventSet, redisDestEventSet).Val()
 	if len(differedEvents) > 0 {
-		logMessage(fmt.Sprintf("List of differed events: %v\n", differedEvents))
+		t.logMessage(fmt.Sprintf("List of differed events: %v\n", differedEvents))
 	} else {
-		logMessage("Success: Events Matched!!")
+		t.logMessage("Success: Events Matched!!")
 	}
 
 	//Verify if the order of the events is same - This isn't working (ksuid check failed??)
@@ -330,7 +342,7 @@ func computeTestResults(test string) bool {
 		numSrcEvents := redisClient.LLen(userSrcEventListKey).Val()
 
 		if numSrcEvents != numDstEvents {
-			logMessage(fmt.Sprintf("User: %s, Src Events: %d, Dest Events: %d", user, numSrcEvents, numDstEvents))
+			t.logMessage(fmt.Sprintf("User: %s, Src Events: %d, Dest Events: %d", user, numSrcEvents, numDstEvents))
 			inOrder = false
 		} else {
 			// Batching for larger data sets
@@ -343,18 +355,18 @@ func computeTestResults(test string) bool {
 				for j := 0; j < len(dstEvents); j++ {
 					if dstEvents[j] != srcEvents[j] {
 						inOrder = false
-						logMessage(fmt.Sprintf("Did not match: index: %d, Source Event: %s, Destination event: %s", i, srcEvents[j], dstEvents[j]))
+						t.logMessage(fmt.Sprintf("Did not match: index: %d, Source Event: %s, Destination event: %s", i, srcEvents[j], dstEvents[j]))
 						break
 					}
 				}
 			}
 		}
 	}
-	if inOrder {
-		logMessage("Success: Events Ordering Matched!!")
+	if inOrder && len(differedUsers) == 0 {
+		t.logMessage("Success: Events Ordering Matched!!")
 		return true
 	}
-	logMessage("Failure: Events Ordering Missed")
+	t.logMessage("Failure: Events Ordering Missed")
 	return false
 }
 
@@ -377,6 +389,7 @@ func main() {
 
 		go redisLoop()
 		http.HandleFunc("/testResult", handleTestResults)
+		http.HandleFunc("/flushdb", handleFlushDB)
 	}
 
 	http.HandleFunc("/", handleReq)
