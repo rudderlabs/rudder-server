@@ -113,6 +113,9 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 			return true
 		}
 	} else {
+		if warehouseSyncFreqIgnore {
+			syncFrequency = ""
+		}
 		return !uploadFrequencyExceeded(warehouse, syncFrequency)
 	}
 	return false
