@@ -75,7 +75,7 @@ type ObjectStorageT struct {
 
 func (brt *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -115,7 +115,7 @@ type ErrorResponseT struct {
 }
 
 func updateDestStatusStats(id string, count int, isSuccess bool) {
-	var destStatsD *stats.RudderStats
+	var destStatsD stats.RudderStats
 	if isSuccess {
 		destStatsD = stats.NewBatchDestStat("batch_router.dest_successful_events", stats.CountType, id)
 	} else {

@@ -1,5 +1,7 @@
 package ratelimiter
 
+//go:generate mockgen -destination=../mocks/rate-limiter/mock_ratelimiter.go -package=mocks_ratelimiter github.com/rudderlabs/rudder-server/rate-limiter RateLimiter
+
 import (
 	"time"
 
@@ -13,6 +15,11 @@ var (
 	rateLimitWindowInMins time.Duration
 	noOfBucketsInWindow   int
 )
+
+//RateLimiter is an interface for rate limiting functions
+type RateLimiter interface {
+	LimitReached(key string) bool
+}
 
 //HandleT is a Handle for event limiter
 type HandleT struct {
