@@ -19,3 +19,8 @@ spec:
           image: rudderstack/genload:latest
           ports:
             - containerPort: 8080
+          env:
+            - name: REDIS_SERVER
+              value: "172.20.234.206"
+            - name: TEST_NAME
+              value: "Test1"
