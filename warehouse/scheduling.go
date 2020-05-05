@@ -104,6 +104,9 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) (
 func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
+	if warehouseSyncFreqIgnore {
+		return !uploadFrequencyExceeded(warehouse, "")
+	}
 	if syncFrequency != "" && syncStartAt != "" {
 		prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
 		lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
@@ -113,9 +116,6 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 			return true
 		}
 	} else {
-		if warehouseSyncFreqIgnore {
-			syncFrequency = ""
-		}
 		return !uploadFrequencyExceeded(warehouse, syncFrequency)
 	}
 	return false
