@@ -57,6 +57,37 @@ var dataTypesMap = map[string]string{
 	"datetime": "timestamp",
 }
 
+var dataTypesMapToRudder = map[string]string{
+	"NUMBER":           "int",
+	"DECIMAL":          "int",
+	"NUMERIC":          "int",
+	"INT":              "int",
+	"INTEGER":          "int",
+	"BIGINT":           "int",
+	"SMALLINT":         "int",
+	"FLOAT":            "float",
+	"FLOAT4":           "float",
+	"FLOAT8":           "float",
+	"DOUBLE":           "float",
+	"REAL":             "float",
+	"DOUBLE PRECISION": "float",
+	"BOOLEAN":          "boolean",
+	"TEXT":             "string",
+	"VARCHAR":          "string",
+	"CHAR":             "string",
+	"CHARACTER":        "string",
+	"STRING":           "string",
+	"BINARY":           "string",
+	"VARBINARY":        "string",
+	"TIMESTAMP_NTZ":    "datetime",
+	"DATE":             "datetime",
+	"DATETIME":         "datetime",
+	"TIME":             "datetime",
+	"TIMESTAMP":        "datetime",
+	"TIMESTAMP_LTZ":    "datetime",
+	"TIMESTAMP_TZ":     "datetime",
+}
+
 var primaryKeyMap = map[string]string{
 	"USERS":      "ID",
 	"IDENTIFIES": "ID",
@@ -155,6 +186,47 @@ func (sf *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 					}
 				}
 			}
+		}
+	}
+	return
+}
+
+// FetchSchema queries snowflake and returns the schema assoiciated with provided namespace
+func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
+	sf.Warehouse = warehouse
+	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	if err != nil {
+		return
+	}
+
+	schema = make(map[string]map[string]string)
+	sqlStatement := fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
+									FROM INFORMATION_SCHEMA.TABLES as t
+									JOIN INFORMATION_SCHEMA.COLUMNS as c
+									ON t.table_schema = c.table_schema and t.table_name = c.table_name
+									WHERE t.table_schema = '%s'`, namespace)
+
+	rows, err := sf.Db.Query(sqlStatement)
+	if err != nil && err != sql.ErrNoRows {
+		logger.Errorf("SF: Error in fetching schema from snowflake destination:%v, query: %v", sf.Warehouse.Destination.ID, sqlStatement)
+		return
+	}
+	if err == sql.ErrNoRows {
+		return schema, nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var tName, cName, cType string
+		err = rows.Scan(&tName, &cName, &cType)
+		if err != nil {
+			logger.Errorf("SF: Error in processing fetched schema from snowflake destination:%v", sf.Warehouse.Destination.ID)
+			return
+		}
+		if _, ok := schema[tName]; !ok {
+			schema[tName] = make(map[string]string)
+		}
+		if datatype, ok := dataTypesMapToRudder[cType]; ok {
+			schema[tName][cName] = datatype
 		}
 	}
 	return
@@ -392,7 +464,7 @@ func (sf *HandleT) MigrateSchema() (err error) {
 	if err != nil {
 		panic(err)
 	}
-	err = warehouseutils.UpdateCurrentSchema(sf.Namespace, sf.Warehouse, sf.Upload.ID, sf.CurrentSchema, updatedSchema, sf.DbHandle)
+	err = warehouseutils.UpdateCurrentSchema(sf.Namespace, sf.Warehouse, sf.Upload.ID, updatedSchema, sf.DbHandle)
 	timer.End()
 	if err != nil {
 		warehouseutils.SetUploadError(sf.Upload, err, warehouseutils.UpdatingSchemaFailedState, sf.DbHandle)

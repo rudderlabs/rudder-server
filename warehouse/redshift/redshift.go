@@ -61,6 +61,31 @@ var dataTypesMap = map[string]string{
 	"datetime": "timestamp",
 }
 
+var dataTypesMapToRudder = map[string]string{
+	"int":                         "int",
+	"int2":                        "int",
+	"int4":                        "int",
+	"int8":                        "int",
+	"bigint":                      "int",
+	"float":                       "float",
+	"float4":                      "float",
+	"float8":                      "float",
+	"numeric":                     "float",
+	"double precision":            "float",
+	"boolean":                     "boolean",
+	"bool":                        "boolean",
+	"text":                        "string",
+	"character varying":           "string",
+	"nchar":                       "string",
+	"bpchar":                      "string",
+	"character":                   "string",
+	"nvarchar":                    "string",
+	"string":                      "string",
+	"date":                        "datetime",
+	"timestamp without time zone": "datetime",
+	"timestamp with time zone":    "datetime",
+}
+
 var primaryKeyMap = map[string]string{
 	"users":                      "id",
 	"identifies":                 "id",
@@ -159,6 +184,51 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 					}
 				}
 			}
+		}
+	}
+	return
+}
+
+// FetchSchema queries redshift and returns the schema assoiciated with provided namespace
+func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
+	rs.Warehouse = warehouse
+	rs.Db, err = connect(RedshiftCredentialsT{
+		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
+		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
+		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
+		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
+		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
+	})
+	if err != nil {
+		return
+	}
+
+	schema = make(map[string]map[string]string)
+	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type
+									FROM INFORMATION_SCHEMA.COLUMNS
+									WHERE table_schema = '%s' and table_name not like '%s%s'`, namespace, stagingTablePrefix, "%")
+
+	rows, err := rs.Db.Query(sqlStatement)
+	if err != nil && err != sql.ErrNoRows {
+		logger.Errorf("RS: Error in fetching schema from redshift destination:%v, query: %v", rs.Warehouse.Destination.ID, sqlStatement)
+		return
+	}
+	if err == sql.ErrNoRows {
+		return schema, nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var tName, cName, cType string
+		err = rows.Scan(&tName, &cName, &cType)
+		if err != nil {
+			logger.Errorf("RS: Error in processing fetched schema from redshift destination:%v", rs.Warehouse.Destination.ID)
+			return
+		}
+		if _, ok := schema[tName]; !ok {
+			schema[tName] = make(map[string]string)
+		}
+		if datatype, ok := dataTypesMapToRudder[cType]; ok {
+			schema[tName][cName] = datatype
 		}
 	}
 	return
@@ -287,6 +357,10 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 	stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
 	err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), rs.Upload.Schema[tableName])
 	if err != nil {
+		fmt.Println("*************")
+		fmt.Println("*************")
+		fmt.Println("*************")
+		fmt.Println("*************")
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 		return
 	}
@@ -451,7 +525,7 @@ func (rs *HandleT) MigrateSchema() (err error) {
 	if err != nil {
 		panic(err)
 	}
-	err = warehouseutils.UpdateCurrentSchema(rs.Namespace, rs.Warehouse, rs.Upload.ID, rs.CurrentSchema, updatedSchema, rs.DbHandle)
+	err = warehouseutils.UpdateCurrentSchema(rs.Namespace, rs.Warehouse, rs.Upload.ID, updatedSchema, rs.DbHandle)
 	timer.End()
 	if err != nil {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)

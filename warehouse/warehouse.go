@@ -535,6 +535,7 @@ func setLastExec(warehouse warehouseutils.WarehouseT) {
 type WarehouseManager interface {
 	Process(config warehouseutils.ConfigT) error
 	CrashRecover(config warehouseutils.ConfigT) (err error)
+	FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (map[string]map[string]string, error)
 }
 
 func NewWhManager(destType string) (WarehouseManager, error) {
@@ -902,7 +903,35 @@ func (wh *HandleT) initWorkers() {
 							break
 						}
 						// consolidate schema if not already done
-						if len(job.Upload.Schema) == 0 {
+						schemaInDB, err := warehouseutils.GetCurrentSchema(wh.dbHandle, job.Warehouse)
+						whManager, err := NewWhManager(wh.destType)
+						if err != nil {
+							panic(err)
+						}
+
+						namespace := schemaInDB.Namespace
+						if namespace == "" {
+							namespace = job.Upload.Namespace
+						}
+
+						syncedSchema, err := whManager.FetchSchema(job.Warehouse, namespace)
+						if err != nil {
+							logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
+							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
+							warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
+							wh.recordDeliveryStatus(job.Upload.ID)
+							break
+						}
+
+						hasSchemaChanged := !warehouseutils.CompareSchema(schemaInDB.Schema, syncedSchema)
+						if hasSchemaChanged {
+							err = warehouseutils.UpdateCurrentSchema(namespace, job.Warehouse, job.Upload.ID, syncedSchema, wh.dbHandle)
+							if err != nil {
+								panic(err)
+							}
+						}
+
+						if len(job.Upload.Schema) == 0 || hasSchemaChanged {
 							// merge schemas over all staging files in this batch
 							consolidatedSchema := wh.consolidateSchema(job.Warehouse, job.List)
 							marshalledSchema, err := json.Marshal(consolidatedSchema)
@@ -936,7 +965,7 @@ func (wh *HandleT) initWorkers() {
 							wh.dbHandle,
 							warehouseutils.UploadColumnT{Column: warehouseutils.UploadLastExecAtField, Value: timeutil.Now()},
 						)
-						if job.Upload.StartLoadFileID == 0 {
+						if job.Upload.StartLoadFileID == 0 || hasSchemaChanged {
 							warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
 							err := wh.createLoadFiles(&job)
 							if err != nil {
@@ -947,7 +976,7 @@ func (wh *HandleT) initWorkers() {
 								break
 							}
 						}
-						err := wh.SyncLoadFilesToWarehouse(&job)
+						err = wh.SyncLoadFilesToWarehouse(&job)
 						wh.recordDeliveryStatus(job.Upload.ID)
 
 						createPlusUploadTimer.End()
