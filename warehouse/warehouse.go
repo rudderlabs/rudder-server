@@ -71,6 +71,7 @@ var (
 	warehouseSchemasTable      string
 	warehouseMode              string
 	warehouseSyncPreFetchCount int
+	warehouseSyncFreqIgnore    bool
 )
 var (
 	host, user, password, dbname string
@@ -159,6 +160,7 @@ func loadConfig() {
 	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
+	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore",false)
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
