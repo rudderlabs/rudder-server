@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genload-deployment
+  labels:
+    app: genload
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: genload
+  template:
+    metadata:
+      labels:
+        app: genload
+    spec:
+      containers:
+        - name: genload
+          image: rudderstack/genload:latest
+          ports:
+            - containerPort: 8080

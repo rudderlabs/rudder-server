@@ -1,0 +1,22 @@
+# github.com/bugsnag/bugsnag-go v1.5.3
+github.com/bugsnag/bugsnag-go
+github.com/bugsnag/bugsnag-go/device
+github.com/bugsnag/bugsnag-go/errors
+github.com/bugsnag/bugsnag-go/headers
+github.com/bugsnag/bugsnag-go/sessions
+# github.com/bugsnag/panicwrap v1.2.0
+github.com/bugsnag/panicwrap
+# github.com/go-redis/redis v6.15.7+incompatible
+github.com/go-redis/redis
+github.com/go-redis/redis/internal
+github.com/go-redis/redis/internal/consistenthash
+github.com/go-redis/redis/internal/hashtag
+github.com/go-redis/redis/internal/pool
+github.com/go-redis/redis/internal/proto
+github.com/go-redis/redis/internal/util
+# github.com/gofrs/uuid v3.3.0+incompatible
+github.com/gofrs/uuid
+# github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
+github.com/kardianos/osext
+# golang.org/x/time v0.0.0-20200416051211-89c76fbcd5d1
+golang.org/x/time/rate

@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sink-deployment
+  labels:
+    app: sink
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sink
+  template:
+    metadata:
+      labels:
+        app: sink
+    spec:
+      containers:
+        - name: sink
+          image: rudderstack/sink-webhook:latest
+          ports:
+            - containerPort: 8181
