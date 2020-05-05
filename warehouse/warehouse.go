@@ -45,32 +45,33 @@ import (
 )
 
 var (
-	webPort                    int
-	dbHandle                   *sql.DB
-	notifier                   pgnotifier.PgNotifierT
-	warehouseDestinations      []string
-	jobQueryBatchSize          int
-	noOfWorkers                int
-	noOfSlaveWorkerRoutines    int
-	slaveWorkerRoutineBusy     []bool //Busy-true
-	uploadFreqInS              int64
-	mainLoopSleep              time.Duration
-	stagingFilesBatchSize      int
-	configSubscriberLock       sync.RWMutex
-	availableWarehouses        []string
-	crashRecoverWarehouses     []string
-	inProgressMap              map[string]bool
-	inRecoveryMap              map[string]bool
-	inProgressMapLock          sync.RWMutex
-	lastExecMap                map[string]int64
-	lastExecMapLock            sync.RWMutex
-	warehouseLoadFilesTable    string
-	warehouseStagingFilesTable string
-	warehouseUploadsTable      string
-	warehouseTableUploadsTable string
-	warehouseSchemasTable      string
-	warehouseMode              string
-	warehouseSyncPreFetchCount int
+	webPort                          int
+	dbHandle                         *sql.DB
+	notifier                         pgnotifier.PgNotifierT
+	warehouseDestinations            []string
+	jobQueryBatchSize                int
+	noOfWorkers                      int
+	noOfSlaveWorkerRoutines          int
+	slaveWorkerRoutineBusy           []bool //Busy-true
+	uploadFreqInS                    int64
+	mainLoopSleep                    time.Duration
+	stagingFilesBatchSize            int
+	stagingFilesSchemaPaginationSize int
+	configSubscriberLock             sync.RWMutex
+	availableWarehouses              []string
+	crashRecoverWarehouses           []string
+	inProgressMap                    map[string]bool
+	inRecoveryMap                    map[string]bool
+	inProgressMapLock                sync.RWMutex
+	lastExecMap                      map[string]int64
+	lastExecMapLock                  sync.RWMutex
+	warehouseLoadFilesTable          string
+	warehouseStagingFilesTable       string
+	warehouseUploadsTable            string
+	warehouseTableUploadsTable       string
+	warehouseSchemasTable            string
+	warehouseMode                    string
+	warehouseSyncPreFetchCount       int
 )
 var (
 	host, user, password, dbname string
@@ -159,6 +160,7 @@ func loadConfig() {
 	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
+	stagingFilesSchemaPaginationSize = config.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100)
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
@@ -298,10 +300,9 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 	}
 	currSchema := schemaInDB.Schema
 
-	batchSize := 100
 	count := 0
 	for {
-		lastIndex := count + batchSize
+		lastIndex := count + stagingFilesSchemaPaginationSize
 		if lastIndex >= len(jsonUploadsList) {
 			lastIndex = len(jsonUploadsList)
 		}
@@ -336,7 +337,7 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 
 		currSchema = mergeSchema(currSchema, schemas)
 
-		count += batchSize
+		count += stagingFilesSchemaPaginationSize
 		if count >= len(jsonUploadsList) {
 			break
 		}
