@@ -632,37 +632,40 @@ becomes full OR in between during migration. DataSets are assigned numbers
 monotonically when added  to end. So, with just add to end, numbers would be
 like 1,2,3,4, and so on. Theese are called level0 datasets. And the Index is
 called level0 Index
-During migration, we add datasets in between. In the example above, if we migrate
+During internal migration, we add datasets in between. In the example above, if we migrate
 1 & 2, we would need to create a new DS between 2 & 3. This is assigned the
 the number 2_1. This is called a level1 dataset and the Index (2_1) is called level1
 Index. We may migrate 2_1 into 2_2 and so on so there may be multiple level 1 datasets.
 
 Immediately after creating a level_1 dataset (2_1 above), everything prior to it is
 deleted. Hence there should NEVER be any requirement for having more than two levels.
+
+There is an exception to this. In case of cross node migration during a scale up/down,
+we continue to accept new events in level0 datasets. To maintain the ordering guarantee,
+we write the imported jobs to the previous level1 datasets. Now if an internal migration
+is to happen on one of the level1 dataset, we ahve to migrate them to level2 dataset
+
+Eg. When the node has 1, 2, 3, 4 data sets and an import is triggered, new events start
+going to 5, 6, 7... so on. And the imported data start going to 4_1, 4_2, 4_3... so on
+Now if an internal migration is to happen and we migrate 1, 2, 3, 4, 4_1, we need to
+create a newDS between 4_1 and 4_2. This is assigned to 4_1_1, 4_1_2 and so on.
 */
 
 func (jd *HandleT) mapDSToLevel(ds dataSetT) (int, []int) {
 	indexStr := strings.Split(ds.Index, "_")
-	if len(indexStr) == 1 {
-		indexLevel0, err := strconv.Atoi(indexStr[0])
+	//Currently we don't have a scenario where we need more than 3 levels.
+	jd.assert(len(indexStr) > 3, fmt.Sprintf("len(indexStr): %d > 3", len(indexStr)))
+	var (
+		levelVals []int
+		levelInt  int
+		err       error
+	)
+	for _, str := range indexStr {
+		levelInt, err = strconv.Atoi(str)
 		jd.assertError(err)
-		return 1, []int{indexLevel0}
+		levelVals = append(levelVals, levelInt)
 	}
-	if len(indexStr) == 2 {
-		indexLevel0, err := strconv.Atoi(indexStr[0])
-		jd.assertError(err)
-		indexLevel1, err := strconv.Atoi(indexStr[1])
-		jd.assertError(err)
-		return 2, []int{indexLevel0, indexLevel1}
-	}
-	jd.assert(len(indexStr) == 3, fmt.Sprintf("len(indexStr): %d != 2", len(indexStr)))
-	indexLevel0, err := strconv.Atoi(indexStr[0])
-	jd.assertError(err)
-	indexLevel1, err := strconv.Atoi(indexStr[1])
-	jd.assertError(err)
-	indexLevel2, err := strconv.Atoi(indexStr[2])
-	jd.assertError(err)
-	return 3, []int{indexLevel0, indexLevel1, indexLevel2}
+	return len(levelVals), levelVals
 }
 
 func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
@@ -688,14 +691,15 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 			newDSIdx = fmt.Sprintf("%d", levelVals[0]+1)
 		}
 	} else {
-		jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
+		jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0. Use addNewDS with appendLast = true instead", len(dList)))
 		for idx, ds := range dList {
+			jd.assert(insertBeforeDS.Index != "", fmt.Sprintf("DS : %v is not available in dsList", insertBeforeDS))
 			if ds.Index == insertBeforeDS.Index {
 				// We never insert before the first element
 				// We do now.
 				//TODO: Review this carefully
 				// jd.assert(idx > 0, fmt.Sprintf("idx: %d <= 0", idx))
-				levels, _ := jd.mapDSToLevel(ds)
+				levels, levelVals := jd.mapDSToLevel(ds)
 				var dsPre dataSetT
 				if idx == 0 {
 					dsPre = dataSetT{"", "", "0"}
@@ -707,20 +711,34 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 				//Insert before is never required on level2.
 				//We do require now. In the context of scale-up/down migrations
 				//TODO: Review this carefully
-				//The level0 must be different by one
-				//jd.assert(levels == 1, fmt.Sprintf("levels:%d != 1", levels))
-				//jd.assert(levelVals[0] == levelPreVals[0]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
-				if levelsPre == 1 {
-					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], 1)
-				} else if levelsPre == 2 && levels == 1 {
-					jd.assert(levelsPre == 2, fmt.Sprintf("levelsPre:%d != 2", levelsPre))
-					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
-				} else if levelsPre == 2 && levels == 2 {
-					newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], 1)
-				} else if levelsPre == 3 && levels == 2 {
-					newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], levelPreVals[2]+1)
+				if levelsPre > levels {
+					for i := 0; i < levelsPre-1; i++ {
+						newDSIdx += fmt.Sprintf("%d_", levelPreVals[i])
+					}
+					newDSIdx += fmt.Sprintf("%d", levelPreVals[levelsPre-1]+1)
 				} else {
-					jd.assert(false, fmt.Sprintf("Unplanned scenario: levelsPre:%d, levels:%d", levelsPre, levels))
+					jd.assert(levels >= 3, "Already at level 3 or greater, additional levels should not be required")
+					if levelsPre == levels {
+						if levels == 1 {
+							jd.assert(levelVals[0] > 0, "First ds should never be a level0 dataset with index 0")
+						}
+						for i := 0; i < levelsPre-1; i++ {
+							jd.assert(levelPreVals[i] == levelVals[i], fmt.Sprintf("levelVal at index:%d doesn't match. All levels should match ds:%s nextDs:%s", i, dsPre, insertBeforeDS))
+						}
+						jd.assert(levelPreVals[levelsPre-1] == levelVals[levels]-1, fmt.Sprintf("levelVal at last level should be exactly 1 more than that of the next ds index. All levels should match ds:%s nextDs:%s", dsPre, insertBeforeDS))
+
+						newDSIdx = dsPre.Index + "_1"
+					} else {
+						//When levelsPre < levels
+						for i := 0; i < levels; i++ {
+							if i < levelsPre {
+								newDSIdx += fmt.Sprintf("%d_", levelPreVals[i])
+							} else {
+								newDSIdx += fmt.Sprintf("%d_", 0)
+							}
+						}
+						newDSIdx += "1"
+					}
 				}
 			}
 
