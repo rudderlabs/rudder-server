@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -37,6 +38,8 @@ var randomError = false
 var randomErrorCodes = []int{200, 200, 200, 200, 200, 200, 200, 200, 400, 500}
 var errorCounts = make(map[string]uint64)
 var errorMutex sync.Mutex
+
+var testResultlogs []string
 
 var timeOfStart = time.Now()
 var limitRate = 100
@@ -235,14 +238,29 @@ func redisLoop() {
 		}
 	}
 }
+
+type ResponseT struct {
+	Status bool
+	Logs   []string
+}
+
 func handleTestResults(rw http.ResponseWriter, req *http.Request) {
 	test := req.URL.Query().Get("test")
 	success := computeTestResults(test)
-	if success {
-		rw.Write([]byte("success"))
-	} else {
-		rw.Write([]byte("failed"))
+
+	resp := ResponseT{Status: success, Logs: testResultlogs}
+	respJSON, err := json.Marshal(resp)
+	if err != nil {
+		panic(err.Error())
 	}
+
+	rw.Header().Set("Content-Type", "application/json")
+	rw.Write(respJSON)
+}
+
+func logMessage(log string) {
+	testResultlogs = append(testResultlogs, log)
+	fmt.Println(log)
 }
 
 // Source User Set should match Dest user set
@@ -265,23 +283,24 @@ func computeTestResults(test string) bool {
 	// var redisDestEventTimeHash = fmt.Sprintf("%s_event_dst_timestamp", test)
 
 	// Verify if same set of users
-	fmt.Println("Source User len: ", redisClient.SCard(redisSrcUserSet))
-	fmt.Println("Dest User len: ", redisClient.SCard(redisDestUserSet))
+
+	logMessage(fmt.Sprintf("Source User len: %v", redisClient.SCard(redisSrcUserSet)))
+	logMessage(fmt.Sprintf("Dest User len: %v", redisClient.SCard(redisDestUserSet)))
 	differedUsers := redisClient.SDiff(redisSrcUserSet, redisDestUserSet).Val()
 	if len(differedUsers) > 0 {
-		fmt.Printf("List of differed users: %v\n", differedUsers)
+		logMessage(fmt.Sprintf("List of differed users: %v\n", differedUsers))
 	} else {
-		fmt.Println("Success: Users Matched!!")
+		logMessage("Success: Users Matched!!")
 	}
 
 	// Verify if same set of events
-	fmt.Println("Source Event len: ", redisClient.SCard(redisSrcEventSet))
-	fmt.Println("Dest Event len: ", redisClient.SCard(redisDestEventSet))
+	logMessage(fmt.Sprintf("Source Event len: %v", redisClient.SCard(redisSrcEventSet)))
+	logMessage(fmt.Sprintf("Dest Event len: %v", redisClient.SCard(redisDestEventSet)))
 	differedEvents := redisClient.SDiff(redisSrcEventSet, redisDestEventSet).Val()
 	if len(differedEvents) > 0 {
-		fmt.Printf("List of differed events: %v\n", differedEvents)
+		logMessage(fmt.Sprintf("List of differed events: %v\n", differedEvents))
 	} else {
-		fmt.Println("Success: Events Matched!!")
+		logMessage("Success: Events Matched!!")
 	}
 
 	//Verify if the order of the events is same - This isn't working (ksuid check failed??)
@@ -311,7 +330,7 @@ func computeTestResults(test string) bool {
 		numSrcEvents := redisClient.LLen(userSrcEventListKey).Val()
 
 		if numSrcEvents != numDstEvents {
-			fmt.Printf("User: %s, Src Events: %d, Dest Events: %d \n", user, numSrcEvents, numDstEvents)
+			logMessage(fmt.Sprintf("User: %s, Src Events: %d, Dest Events: %d", user, numSrcEvents, numDstEvents))
 			inOrder = false
 		} else {
 			// Batching for larger data sets
@@ -324,7 +343,7 @@ func computeTestResults(test string) bool {
 				for j := 0; j < len(dstEvents); j++ {
 					if dstEvents[j] != srcEvents[j] {
 						inOrder = false
-						fmt.Printf("Did not match: index: %d, Source Event: %s, Destination event: %s", i, srcEvents[j], dstEvents[j])
+						logMessage(fmt.Sprintf("Did not match: index: %d, Source Event: %s, Destination event: %s", i, srcEvents[j], dstEvents[j]))
 						break
 					}
 				}
@@ -332,10 +351,10 @@ func computeTestResults(test string) bool {
 		}
 	}
 	if inOrder {
-		fmt.Println("Success: Events Ordering Matched!!")
+		logMessage("Success: Events Ordering Matched!!")
 		return true
 	}
-	fmt.Println("Failure: Events Ordering Missed")
+	logMessage("Failure: Events Ordering Missed")
 	return false
 }
 
