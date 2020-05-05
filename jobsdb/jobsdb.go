@@ -654,7 +654,7 @@ create a newDS between 4_1 and 4_2. This is assigned to 4_1_1, 4_1_2 and so on.
 func (jd *HandleT) mapDSToLevel(ds dataSetT) (int, []int) {
 	indexStr := strings.Split(ds.Index, "_")
 	//Currently we don't have a scenario where we need more than 3 levels.
-	jd.assert(len(indexStr) > 3, fmt.Sprintf("len(indexStr): %d > 3", len(indexStr)))
+	jd.assert(len(indexStr) <= 3, fmt.Sprintf("len(indexStr): %d > 3", len(indexStr)))
 	var (
 		levelVals []int
 		levelInt  int
