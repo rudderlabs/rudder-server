@@ -47,6 +47,9 @@ var (
 	uploadedRawDataJobsCache           map[string]map[string]bool
 	warehouseURL                       string
 	warehouseMode                      string
+	warehouseServiceFailedTime         time.Time
+	warehouseServiceFailedTimeLock     sync.RWMutex
+	warehouseServiceMaxRetryTimeinHr   time.Duration
 )
 
 type HandleT struct {
@@ -216,7 +219,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		})
 		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
 	}
-	_, err = uploader.Upload(outputFile, keyPrefixes...)
+	uploadOutput, err := uploader.Upload(outputFile, keyPrefixes...)
 
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to %s: Error: %v", provider, err)
@@ -228,7 +231,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 	return StorageUploadOutput{
 		Config:         batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
-		Key:            strings.Join(keyPrefixes, "/") + "/" + fileName,
+		Key:            uploadOutput.ObjectName,
 		LocalFilePaths: []string{gzipFilePath},
 		JournalOpID:    opID,
 		FirstEventAt:   firstEventAt,
@@ -282,7 +285,7 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 	return
 }
 
-func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err error) {
+func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err error, postToWarehouseErr bool) {
 	var (
 		batchJobState string
 		errorResp     []byte
@@ -306,11 +309,32 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	brt.trackRequestMetrics(batchReqMetric)
 	var statusList []*jobsdb.JobStatusT
 
+	if isWarehouse && postToWarehouseErr {
+		warehouseServiceFailedTimeLock.Lock()
+		if warehouseServiceFailedTime.IsZero() {
+			warehouseServiceFailedTime = time.Now()
+		}
+		warehouseServiceFailedTimeLock.Unlock()
+	} else if isWarehouse {
+		warehouseServiceFailedTimeLock.Lock()
+		warehouseServiceFailedTime = time.Time{}
+		warehouseServiceFailedTimeLock.Unlock()
+	}
+
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
-		// do not abort if job is meant for warehouse
-		if jobState == jobsdb.FailedState && job.LastJobStatus.AttemptNum >= maxFailedCountForJob && !isWarehouse {
+
+		if jobState == jobsdb.FailedState && job.LastJobStatus.AttemptNum >= maxFailedCountForJob && !postToWarehouseErr {
 			jobState = jobsdb.AbortedState
+		} else {
+			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
+			if jobState == jobsdb.FailedState && isWarehouse && postToWarehouseErr {
+				warehouseServiceFailedTimeLock.RLock()
+				if time.Now().Sub(warehouseServiceFailedTime) > warehouseServiceMaxRetryTimeinHr {
+					jobState = jobsdb.AbortedState
+				}
+				warehouseServiceFailedTimeLock.RUnlock()
+			}
 		}
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
@@ -408,8 +432,8 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
-							brt.setJobStatus(batchJobs, false, output.Error)
 							brt.recordDeliveryStatus(batchJobs.BatchDestination, output.Error, false)
+							brt.setJobStatus(batchJobs, false, output.Error, false)
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 							if output.JournalOpID > 0 {
 								brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
@@ -421,13 +445,17 @@ func (brt *HandleT) initWorkers() {
 							destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 							destUploadStat.Start()
 							output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
+							postToWarehouseErr := false
 							if output.Error == nil && output.Key != "" {
 								output.Error = brt.postToWarehouse(batchJobs, output)
+								if output.Error != nil {
+									postToWarehouseErr = true
+								}
 								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
 								warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
 							}
 							brt.recordDeliveryStatus(batchJobs.BatchDestination, output.Error, true)
-							brt.setJobStatus(batchJobs, true, output.Error)
+							brt.setJobStatus(batchJobs, true, output.Error, postToWarehouseErr)
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 							destUploadStat.End()
 							setDestInProgress(batchJobs.BatchDestination, false)
