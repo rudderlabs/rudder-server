@@ -546,6 +546,10 @@ func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 	return replacedStr, nil
 }
 
+func IntArrayToString(a []int64, delim string) string {
+	return strings.Trim(strings.Replace(fmt.Sprint(a), " ", delim, -1), "[]")
+}
+
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number
 // of garage collection cycles completed.
 func PrintMemUsage() {

@@ -147,8 +147,12 @@ func (sf *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 		if len(columnMap) > 0 {
 			for columnName, columnType := range columnMap {
 				err := sf.addColumn(tableName, columnName, columnType)
-				if !checkAndIgnoreAlreadyExistError(err) {
-					return nil, err
+				if err != nil {
+					if checkAndIgnoreAlreadyExistError(err) {
+						logger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, sf.Namespace, tableName, err)
+					} else {
+						return nil, err
+					}
 				}
 			}
 		}
@@ -158,6 +162,7 @@ func (sf *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 
 func checkAndIgnoreAlreadyExistError(err error) bool {
 	if err != nil {
+		// TODO: throw error if column already exists but of different type
 		if e, ok := err.(*snowflake.SnowflakeError); ok {
 			if e.SQLState == "42601" {
 				return true
