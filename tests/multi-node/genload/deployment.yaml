@@ -20,7 +20,17 @@ spec:
           ports:
             - containerPort: 8080
           env:
-            - name: REDIS_SERVER
-              value: "172.20.234.206"
             - name: TEST_NAME
-              value: "Test1"
+              value: "Test2"
+            - name: REDIS_SERVER
+              value: "172.20.234.206:6379"
+            - name: WRITE_KEY
+              value: "1bDmtEPvrr1movV9G51HaaXszQN"
+            - name: DATA_PLANE_URL
+              value: "http://b7c8c602-multinodetest-sum-6ca4-1007205241.us-east-1.elb.amazonaws.com"
+            - name: NUM_USERS
+              value: "25"
+            - name: TEST_DURATION_SEC
+              value: "30"
+            - name: EVENT_DELAY_MSEC
+              value: "1000"

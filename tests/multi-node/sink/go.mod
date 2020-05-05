@@ -8,7 +8,7 @@ require (
 	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/gofrs/uuid v3.3.0+incompatible // indirect
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
-	github.com/prometheus/common v0.9.1 // indirect
+	github.com/prometheus/common v0.9.1
 	github.com/tidwall/gjson v1.6.0
 	golang.org/x/time v0.0.0-20200416051211-89c76fbcd5d1
 )

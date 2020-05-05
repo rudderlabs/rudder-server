@@ -17,10 +17,11 @@ spec:
       containers:
         - name: sink
           image: rudderstack/sink-webhook:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8181
           env:
             - name: REDIS_SERVER
-              value: "172.20.234.206"
+              value: "172.20.234.206:6379"
             - name: TEST_NAME
-              value: "Test1"
+              value: "Test2"

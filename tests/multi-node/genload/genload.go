@@ -339,4 +339,6 @@ func main() {
 
 	fmt.Println("Event Generation complete.")
 
+	var ch chan int
+	<-ch
 }
