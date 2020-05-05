@@ -3,6 +3,7 @@ package misc
 import (
 	"database/sql"
 	"fmt"
+	"github.com/lib/pq"
 	"strconv"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -58,4 +59,8 @@ func ReplaceDB(dbName, targetName string) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func QuoteLiteral(literal string) string{
+	return pq.QuoteLiteral(literal)
 }
