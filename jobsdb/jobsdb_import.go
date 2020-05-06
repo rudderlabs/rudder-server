@@ -16,7 +16,7 @@ func (jd *HandleT) SetupForImport() {
 }
 
 func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
-	ds := jd.addNewDS(false, jd.migrationState.dsForNewEvents)
+	ds := jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
 	logger.Infof("[[ %s-JobsDB Import ]] Should Checkpoint Import Setup event for the new ds : %v", jd.GetTablePrefix(), ds)
 	return ds
 }
@@ -57,7 +57,7 @@ func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 	if jd.isEmpty(dsList[dsListLen-1]) {
 		ds = dsList[dsListLen-1]
 	} else {
-		dsForNewEvents := jd.addNewDS(true, dataSetT{})
+		dsForNewEvents := jd.addNewDS(appendToDsList, dataSetT{})
 		ds = dsForNewEvents
 	}
 

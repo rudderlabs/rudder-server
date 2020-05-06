@@ -245,6 +245,13 @@ var (
 	backupRowsBatchSize                        int64
 )
 
+//Different scenarios for addNewDS
+const (
+	appendToDsList     = "appendToDsList"
+	insertForMigration = "insertForMigration"
+	insertForImport    = "insertForImport"
+)
+
 // Loads db config and migration related config from config file
 func loadConfig() {
 	host = config.GetEnv("JOBS_DB_HOST", "localhost")
@@ -343,7 +350,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	//If no DS present, add one
 	if len(jd.datasetList) == 0 {
-		jd.addNewDS(true, dataSetT{})
+		jd.addNewDS(appendToDsList, dataSetT{})
 	}
 
 	// Schema Migration: Created_at column should have a default now()
@@ -674,71 +681,27 @@ func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
 	return jobTable, jobStatusTable
 }
 
-func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
-	newDSIdx := jd.computeNewIdx(appendLast, insertBeforeDS)
-	jd.assert(newDSIdx != "", fmt.Sprintf("newDSIdx is empty"))
-	newDS := jd.createDS(appendLast, newDSIdx)
-	newDSWithSeqNumber := jd.setSequenceNumber(newDSIdx, appendLast)
-	if appendLast {
-		return newDSWithSeqNumber
-	}
-	//This is the migration case. We don't yet update the in-memory list till
-	//we finish the migration
-	return newDS
-}
+func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT {
+	var newDSIdx string
+	appendLast := newDSType == appendToDsList
 
-func (jd *HandleT) computeNewIdx(appendLast bool, insertBeforeDS dataSetT) string {
 	queryStat := stats.NewJobsDBStat("add_new_ds", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
-	//Get the max index
-	dList := jd.getDSList(true)
-	newDSIdx := ""
-	if appendLast {
-		if len(dList) == 0 {
-			newDSIdx = "1"
-		} else {
-			//Last one can only be Level0
-			levels, levelVals := jd.mapDSToLevel(dList[len(dList)-1])
-			jd.assert(levels == 1, fmt.Sprintf("levels:%d != 1", levels))
-			newDSIdx = fmt.Sprintf("%d", levelVals[0]+1)
-		}
-	} else {
-		jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
-		for idx, ds := range dList {
-			if ds.Index == insertBeforeDS.Index {
-				//We never insert before the first element
-				jd.assert(idx > 0, fmt.Sprintf("idx: %d <= 0", idx))
-				levels, levelVals := jd.mapDSToLevel(ds)
-				levelsPre, levelPreVals := jd.mapDSToLevel(dList[idx-1])
-				//Some sanity checks (see comment above)
-				//Insert before is never required on level2.
-				//The level0 must be different by one
-				jd.assert(levels == 1, fmt.Sprintf("levels:%d != 1", levels))
-				jd.assert(levelVals[0] == levelPreVals[0]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
-				if levelsPre == 1 {
-					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], 1)
-				} else {
-					jd.assert(levelsPre == 2, fmt.Sprintf("levelsPre:%d != 2", levelsPre))
-					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
-				}
-			}
 
-		}
+	switch newDSType {
+	case appendToDsList:
+		newDSIdx = jd.computeNewIdxForAppend()
+	case insertForMigration:
+		newDSIdx = jd.computeNewIdxForInsert(newDSType, insertBeforeDS)
+	case insertForImport:
+		newDSIdx = jd.computeNewIdxForInsert(newDSType, insertBeforeDS)
+	default:
+		panic("Unknown usage for newDSType : " + newDSType)
+
 	}
-	return newDSIdx
-}
+	jd.assert(newDSIdx != "", fmt.Sprintf("newDSIdx is empty"))
 
-func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
-	var newDS dataSetT
-	newDS.JobTable, newDS.JobStatusTable = jd.createTableNames(newDSIdx)
-	newDS.Index = newDSIdx
-
-	//Mark the start of operation. If we crash somewhere here, we delete the
-	//DS being added
-	opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
-	jd.assertError(err)
-	opID := jd.JournalMarkStart(addDSOperation, opPayload)
 	defer func() {
 		if appendLast {
 			// Tracking time interval between new ds creations. Hence calling end before start
@@ -749,6 +712,97 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 			jd.isStatNewDSPeriodInitialized = true
 		}
 	}()
+	newDS := jd.createDS(newDSIdx)
+	if appendLast {
+		newDSWithSeqNumber := jd.setSequenceNumber(newDSIdx)
+		return newDSWithSeqNumber
+	}
+	//This is the migration case. We don't yet update the in-memory list till
+	//we finish the migration
+	return newDS
+}
+
+func (jd *HandleT) computeNewIdxForAppend() string {
+	dList := jd.getDSList(true)
+	newDSIdx := ""
+	if len(dList) == 0 {
+		newDSIdx = "1"
+	} else {
+		//Last one can only be Level0
+		levels, levelVals := jd.mapDSToLevel(dList[len(dList)-1])
+		jd.assert(levels == 1, fmt.Sprintf("levels:%d != 1", levels))
+		newDSIdx = fmt.Sprintf("%d", levelVals[0]+1)
+	}
+	return newDSIdx
+}
+
+func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataSetT) string {
+	dList := jd.getDSList(true)
+	newDSIdx := ""
+	jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
+	for idx, ds := range dList {
+		if ds.Index == insertBeforeDS.Index {
+			levels, levelVals := jd.mapDSToLevel(ds)
+			var (
+				levelsPre    int
+				levelPreVals []int
+			)
+			if idx == 0 && newDSType == insertForImport {
+				levelsPre = 1
+				levelPreVals = []int{0}
+			} else {
+				//We never insert before the first element
+				jd.assert(idx > 0, fmt.Sprintf("idx: %d <= 0", idx))
+				levelsPre, levelPreVals = jd.mapDSToLevel(dList[idx-1])
+			}
+			//Some sanity checks (see comment above)
+			//Insert before is never required on level3 or above.
+			jd.assert(levels <= 2, fmt.Sprintf("levels:%d  > 2", levels))
+			if levelsPre == 1 {
+				//dsPre.Index 		1
+				//ds.Index 			2
+				//The level0 must be different by one
+				jd.assert(levelVals[0] == levelPreVals[0]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
+				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], 1)
+			} else if levelsPre == 2 && levels == 1 {
+				//dsPre.Index 		1_1
+				//ds.Index 			2
+				//The level0 must be different by one
+				jd.assert(levelVals[0] == levelPreVals[0]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
+				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
+			} else if levelsPre == 2 && levels == 2 {
+				jd.assert(levelVals[0] == 0 && levelPreVals[0] == 0, fmt.Sprintf("levelsPre:%d != 3", levelsPre))
+				//dsPre.Index 		0_1
+				//ds.Index 			0_2
+				//The level1 must be different by one
+				jd.assert(levelVals[1] == levelPreVals[1]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
+				newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], 1)
+			} else if levelsPre == 3 && levels == 2 {
+				jd.assert(levelVals[0] == 0 && levelPreVals[0] == 0, fmt.Sprintf("levelsPre:%d != 3", levelsPre))
+				//dsPre.Index 		0_1_2
+				//ds.Index 			0_2
+				//The level1 must be different by one
+				jd.assert(levelVals[1] == levelPreVals[1]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
+				newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], levelPreVals[2]+1)
+			} else {
+				jd.assert(false, fmt.Sprintf("Unexpected insert between %s and %s", dList[idx-1].Index, ds.Index))
+			}
+		}
+
+	}
+	return newDSIdx
+}
+
+func (jd *HandleT) createDS(newDSIdx string) dataSetT {
+	var newDS dataSetT
+	newDS.JobTable, newDS.JobStatusTable = jd.createTableNames(newDSIdx)
+	newDS.Index = newDSIdx
+
+	//Mark the start of operation. If we crash somewhere here, we delete the
+	//DS being added
+	opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
+	jd.assertError(err)
+	opID := jd.JournalMarkStart(addDSOperation, opPayload)
 
 	//Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
@@ -781,30 +835,27 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	return newDS
 }
 
-func (jd *HandleT) setSequenceNumber(newDSIdx string, appendLast bool) dataSetT {
-	if appendLast {
-		//Refresh the in-memory list. We only need to refresh the
-		//last DS, not the entire but we do it anyway.
-		//For the range list, we use the cached data. Internally
-		//it queries the new dataset which was added.
-		dList := jd.getDSList(true)
-		dRangeList := jd.getDSRangeList(true)
+func (jd *HandleT) setSequenceNumber(newDSIdx string) dataSetT {
+	//Refresh the in-memory list. We only need to refresh the
+	//last DS, not the entire but we do it anyway.
+	//For the range list, we use the cached data. Internally
+	//it queries the new dataset which was added.
+	dList := jd.getDSList(true)
+	dRangeList := jd.getDSRangeList(true)
 
-		//We should not have range values for the last element (the new DS)
-		jd.assert(len(dList) == len(dRangeList)+1, fmt.Sprintf("len(dList):%d != len(dRangeList):%d+1", len(dList), len(dRangeList)))
+	//We should not have range values for the last element (the new DS)
+	jd.assert(len(dList) == len(dRangeList)+1, fmt.Sprintf("len(dList):%d != len(dRangeList):%d+1", len(dList), len(dRangeList)))
 
-		//Now set the min JobID for the new DS just added to be 1 more than previous max
-		if len(dRangeList) > 0 {
-			newDSMin := dRangeList[len(dRangeList)-1].maxJobID
-			jd.assert(newDSMin > 0, fmt.Sprintf("newDSMin:%d <= 0", newDSMin))
-			sqlStatement := fmt.Sprintf(`SELECT setval('%s_jobs_%s_job_id_seq', %d)`,
-				jd.tablePrefix, newDSIdx, newDSMin)
-			_, err := jd.dbHandle.Exec(sqlStatement)
-			jd.assertError(err)
-		}
-		return dList[len(dList)-1]
+	//Now set the min JobID for the new DS just added to be 1 more than previous max
+	if len(dRangeList) > 0 {
+		newDSMin := dRangeList[len(dRangeList)-1].maxJobID
+		jd.assert(newDSMin > 0, fmt.Sprintf("newDSMin:%d <= 0", newDSMin))
+		sqlStatement := fmt.Sprintf(`SELECT setval('%s_jobs_%s_job_id_seq', %d)`,
+			jd.tablePrefix, newDSIdx, newDSMin)
+		_, err := jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
 	}
-	return dataSetT{}
+	return dList[len(dList)-1]
 }
 
 /*
@@ -1523,7 +1574,7 @@ func (jd *HandleT) mainCheckLoop() {
 			//take the list lock
 			jd.dsListLock.Lock()
 			logger.Info("Main check:NewDS")
-			jd.addNewDS(true, dataSetT{})
+			jd.addNewDS(appendToDsList, dataSetT{})
 			jd.dsListLock.Unlock()
 		}
 
@@ -1535,7 +1586,7 @@ func (jd *HandleT) mainCheckLoop() {
 				//take the list lock
 				jd.dsListLock.Lock()
 				logger.Info("Main check:NewDS")
-				jd.migrationState.dsForImport = jd.addNewDS(false, jd.migrationState.dsForNewEvents)
+				jd.migrationState.dsForImport = jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
 				setupCheckpoint := jd.GetSetupCheckpoint(ImportOp)
 				var payload dataSetT
 				payload = jd.migrationState.dsForImport
@@ -1572,7 +1623,7 @@ func (jd *HandleT) mainCheckLoop() {
 		if len(migrateFrom) > 0 {
 			if liveCount > 0 {
 				jd.dsListLock.Lock()
-				migrateTo := jd.addNewDS(false, insertBeforeDS)
+				migrateTo := jd.addNewDS(insertForMigration, insertBeforeDS)
 				jd.dsListLock.Unlock()
 
 				logger.Info("Migrate from:", migrateFrom)
@@ -2582,7 +2633,7 @@ func (jd *HandleT) dynamicDSTestMigrate() {
 	testEndPoint := "4"
 
 	for i := 0; i < testRuns; i++ {
-		jd.addNewDS(true, dataSetT{})
+		jd.addNewDS(appendToDsList, dataSetT{})
 		var jobList []*JobT
 		for i := 0; i < testNumRecs; i++ {
 			id := uuid.NewV4()
