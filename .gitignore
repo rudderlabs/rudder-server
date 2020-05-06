@@ -2,6 +2,7 @@
 rudder-server
 .env
 .vscode
+*.coverprofile
 runtime.log
 dist/*
 workspaceConfig.json
