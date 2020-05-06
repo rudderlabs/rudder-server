@@ -5,7 +5,7 @@ metadata:
   labels:
     app: genload
 spec:
-  replicas: 3
+  replicas: 10
   selector:
     matchLabels:
       app: genload
@@ -21,16 +21,16 @@ spec:
             - containerPort: 8080
           env:
             - name: TEST_NAME
-              value: "t8-1s-3g"
+              value: "t0-1s-10g"
             - name: REDIS_SERVER
               value: "172.20.234.206:6379"
             - name: WRITE_KEY
               value: "1bDmtEPvrr1movV9G51HaaXszQN"
             - name: DATA_PLANE_URL
-              value: "http://b7c8c602-multinodetest-sum-6ca4-1007205241.us-east-1.elb.amazonaws.com"
+              value: "https://sumanth-mnt-dataplane.dev.rudderlabs.com"
             - name: NUM_USERS
-              value: "25"
+              value: "100"
             - name: TEST_DURATION_SEC
               value: "30"
             - name: EVENT_DELAY_MSEC
-              value: "1000"
+              value: "500"

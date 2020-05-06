@@ -167,7 +167,7 @@ func generateEvents(userID string, eventDelay int) {
 			return true // keep iterating
 		})
 
-		success := sendToRudderGateway(fileData)
+		success := sendToRudderGateway(fileData, userID)
 		if success {
 			redisChan <- fileData
 		}
@@ -179,9 +179,10 @@ func generateEvents(userID string, eventDelay int) {
 	done <- true
 }
 
-func sendToRudderGateway(jsonPayload []byte) bool {
+func sendToRudderGateway(jsonPayload []byte, userID string) bool {
 	req, err := http.NewRequest("POST", dataPlaneURL, bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("anonymousId", userID)
 	req.SetBasicAuth(writeKey, "")
 
 	client := &http.Client{}

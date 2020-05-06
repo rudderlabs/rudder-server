@@ -24,4 +24,4 @@ spec:
             - name: REDIS_SERVER
               value: "172.20.234.206:6379"
             - name: TEST_NAME
-              value: "t8-1s-3g"
+              value: "t0-1s-10g"
