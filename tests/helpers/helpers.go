@@ -2,13 +2,11 @@ package helpers
 
 import (
 	"bytes"
-	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -352,61 +350,6 @@ func GetWarehouseSchema(dbHandle *sql.DB, warehouseSchemaTable string, uploadId 
 	return schema
 }
 
-func GetEventLoadFileData(dbHandle *sql.DB, warehouseLoadFilesTable string, eventName string, sourceId string, destinationId string, destType string, destConfig interface{}) string {
-	row := dbHandle.QueryRow(fmt.Sprintf(` select location from %s where table_name='%s' and source_id='%s' and destination_id='%s' order by updated_at desc`, warehouseLoadFilesTable, eventName, sourceId, destinationId))
-	var location string
-	if err := row.Scan(&location); err != nil {
-			panic(err)
-	}
-	var data []byte
-	if destType == "BQ" {
-		jsonPath := "loadfile.json.gz"
-		jsonFile, err := os.Create(jsonPath)
-		if err != nil {
-			panic(err)
-		}
-		defer jsonFile.Close()
-		defer os.Remove(jsonPath)
-		DownloadObjectFromGCS(location, destConfig, jsonFile)
-		rawf, err := os.Open(jsonPath)
-		if err != nil {
-			panic(err)
-		}
-		reader, err := gzip.NewReader(rawf)
-		if err != nil {
-			panic(err)
-		}
-		data, err = ioutil.ReadAll(reader)
-		if err != nil {
-			panic(err)
-		}
-	}
-	if destType == "SNOWFLAKE" && destType == "RS" {
-		csvPath := "loadfile.csv.gz"
-		csvFile, err := os.Create(csvPath)
-		if err != nil {
-			panic(err)
-		}
-		defer csvFile.Close()
-		defer os.Remove(csvPath)
-		DownloadObjectFromS3(location, destConfig, csvFile)
-		rawf, err := os.Open(csvPath)
-		if err != nil {
-			panic(err)
-		}
-		reader, err := gzip.NewReader(rawf)
-		if err != nil {
-			panic(err)
-		}
-		data, err = ioutil.ReadAll(reader)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-
-	return string(data)
-}
 func DeleteRowsInTables(dbHandle *sql.DB, tables []string){
 	for _,table := range tables{
 		DeleteRowsInTable(dbHandle, table)
