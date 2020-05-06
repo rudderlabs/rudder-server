@@ -1,0 +1,8 @@
+DO $$
+BEGIN
+  ALTER TABLE wh_uploads
+    ADD COLUMN IF NOT EXISTS first_event_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS last_event_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS last_exec_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS timings JSONB;
+END $$

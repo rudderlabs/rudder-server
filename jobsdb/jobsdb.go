@@ -152,6 +152,14 @@ type ParameterFilterT struct {
 	Optional bool
 }
 
+type ConnectionInfoT struct {
+	Host     string
+	Database string
+	Port     int
+	User     string
+	Password string
+}
+
 var dbErrorMap = map[string]string{
 	"Invalid JSON":             "22P02",
 	"Invalid Unicode":          "22P05",
@@ -279,6 +287,16 @@ func GetConnectionString() string {
 		"password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
 
+}
+
+func GetConnectionInfo() ConnectionInfoT {
+	return ConnectionInfoT{
+		Host:     host,
+		Database: dbname,
+		Port:     port,
+		User:     user,
+		Password: password,
+	}
 }
 
 func (jd *HandleT) GetDBHandle() *sql.DB {

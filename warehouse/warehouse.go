@@ -22,6 +22,12 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
+	"github.com/golang-migrate/migrate/v4"
+
+	// import file source support for golang-migrate
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	// import postgres db driver for golang-migrate
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/iancoleman/strcase"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -1511,248 +1517,6 @@ func monitorDestRouters() {
 	}
 }
 
-func setupTables(dbHandle *sql.DB) {
-	sqlStatement := `DO $$ BEGIN
-                                CREATE TYPE wh_staging_state_type
-                                     AS ENUM(
-                                              'waiting',
-                                              'executing',
-											  'failed',
-											  'succeeded');
-                                     EXCEPTION
-                                        WHEN duplicate_object THEN null;
-                            END $$;`
-
-	_, err := dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-                                      id BIGSERIAL PRIMARY KEY,
-									  location TEXT NOT NULL,
-									  source_id VARCHAR(64) NOT NULL,
-									  destination_id VARCHAR(64) NOT NULL,
-									  schema JSONB NOT NULL,
-									  error TEXT,
-									  status wh_staging_state_type,
-									  first_event_at TIMESTAMP,
-									  last_event_at TIMESTAMP,
-									  total_events BIGINT,
-									  created_at TIMESTAMP NOT NULL,
-									  updated_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS first_event_at TIMESTAMP, ADD COLUMN IF NOT EXISTS last_event_at TIMESTAMP, ADD COLUMN IF NOT EXISTS total_events BIGINT`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on source_id, destination_id combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_id_index ON %[1]s (source_id, destination_id);`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-									  id BIGSERIAL PRIMARY KEY,
-									  staging_file_id BIGINT,
-									  location TEXT NOT NULL,
-									  source_id VARCHAR(64) NOT NULL,
-									  destination_id VARCHAR(64) NOT NULL,
-									  destination_type VARCHAR(64) NOT NULL,
-									  table_name TEXT NOT NULL,
-									  total_events BIGINT,
-									  created_at TIMESTAMP NOT NULL);`, warehouseLoadFilesTable)
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// change table_name type to text to support table_names upto length 127
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, warehouseLoadFilesTable, "table_name")
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS total_events BIGINT`, warehouseLoadFilesTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on source_id, destination_id, table_name combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_table_name_index ON %[1]s (source_id, destination_id, table_name);`, warehouseLoadFilesTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = `DO $$ BEGIN
-                                CREATE TYPE wh_upload_state_type
-                                     AS ENUM(
-										 	  'waiting',
-											  'generating_load_file',
-											  'generating_load_file_failed',
-											  'generated_load_file',
-											  'updating_schema',
-											  'updating_schema_failed',
-											  'updated_schema',
-											  'exporting_data',
-											  'exporting_data_failed',
-											  'exported_data',
-											  'aborted');
-                                     EXCEPTION
-                                        WHEN duplicate_object THEN null;
-                            END $$;`
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'waiting';`
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'aborted';`
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-                                      id BIGSERIAL PRIMARY KEY,
-									  source_id VARCHAR(64) NOT NULL,
-									  namespace VARCHAR(64) NOT NULL,
-									  destination_id VARCHAR(64) NOT NULL,
-									  destination_type VARCHAR(64) NOT NULL,
-									  start_staging_file_id BIGINT,
-									  end_staging_file_id BIGINT,
-									  start_load_file_id BIGINT,
-									  end_load_file_id BIGINT,
-									  status wh_upload_state_type NOT NULL,
-									  schema JSONB NOT NULL,
-									  error JSONB,
-									  first_event_at TIMESTAMP,
-									  last_event_at TIMESTAMP,
-									  last_exec_at TIMESTAMP,
-									  timings JSONB,
-									  created_at TIMESTAMP NOT NULL,
-									  updated_at TIMESTAMP NOT NULL);`, warehouseUploadsTable)
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS first_event_at TIMESTAMP, ADD COLUMN IF NOT EXISTS last_event_at TIMESTAMP, ADD COLUMN IF NOT EXISTS last_exec_at TIMESTAMP, ADD COLUMN IF NOT EXISTS timings JSONB`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on status
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_index ON %[1]s (status);`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on source_id, destination_id combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = `DO $$ BEGIN
-                                CREATE TYPE wh_table_upload_state_type
-                                     AS ENUM(
-											  'waiting',
-											  'executing',
-											  'exporting_data',
-											  'exporting_data_failed',
-											  'exported_data',
-											  'aborted');
-                                     EXCEPTION
-                                        WHEN duplicate_object THEN null;
-                            END $$;`
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-                                      id BIGSERIAL PRIMARY KEY,
-									  wh_upload_id BIGSERIAL NOT NULL,
-									  table_name TEXT,
-									  status wh_table_upload_state_type NOT NULL,
-									  error TEXT,
-									  last_exec_time TIMESTAMP,
-									  total_events TEXT,
-									  created_at TIMESTAMP NOT NULL,
-									  updated_at TIMESTAMP NOT NULL);`, warehouseTableUploadsTable)
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS total_events BIGINT`, warehouseTableUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// change error type to text
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, warehouseTableUploadsTable, "error")
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on source_id, destination_id combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_wh_upload_id_table_name_index ON %[1]s (wh_upload_id, table_name);`, warehouseTableUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-									  id BIGSERIAL PRIMARY KEY,
-									  wh_upload_id BIGSERIAL,
-									  source_id VARCHAR(64) NOT NULL,
-									  namespace VARCHAR(64) NOT NULL,
-									  destination_id VARCHAR(64) NOT NULL,
-									  destination_type VARCHAR(64) NOT NULL,
-									  schema JSONB NOT NULL,
-									  error TEXT,
-									  created_at TIMESTAMP NOT NULL);`, warehouseSchemasTable)
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on source_id, destination_id combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseSchemasTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-}
-
 func CheckPGHealth() bool {
 	rows, err := dbHandle.Query(fmt.Sprintf(`SELECT 'Rudder Warehouse DB Health Check'::text as message`))
 	if err != nil {
@@ -1817,6 +1581,14 @@ func getConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
+}
+
+func getConnectionURL() string {
+	if warehouseMode == config.EmbeddedMode {
+		i := jobsdb.GetConnectionInfo()
+		return fmt.Sprintf(`postgres://%s:%s@%s:%d/%s?sslmode=disable`, i.User, i.Password, i.Host, i.Port, i.Database)
+	}
+	return fmt.Sprintf(`postgres://%s:%s@%s:%d/%s?sslmode=disable`, user, password, host, port, dbname)
 }
 
 func startWebHandler() {
@@ -1917,11 +1689,21 @@ func Start() {
 		panic(err)
 	}
 
+	m, err := migrate.New(
+		"file://warehouse/db/migrations",
+		getConnectionURL())
+	if err != nil {
+		panic(err)
+	}
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		panic(err)
+	}
+
 	dbHandle, err = sql.Open("postgres", psqlInfo)
 	if err != nil {
 		panic(err)
 	}
-	setupTables(dbHandle)
+
 	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {
 		panic(err)
