@@ -1052,7 +1052,7 @@ func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 		if jd.BackupSettings.BackupEnabled {
 			jd.renameDS(ds, false)
 		} else {
-			jd.dropDS(ds, false)
+			jd.renameDS(ds, false)
 		}
 	}
 
