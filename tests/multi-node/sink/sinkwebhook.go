@@ -87,6 +87,10 @@ type EventT struct {
 	sentAt    string
 }
 
+func handleRoot(rw http.ResponseWriter, req *http.Request) {
+	rw.Write([]byte("OK"))
+}
+
 func handleReq(rw http.ResponseWriter, req *http.Request) {
 	if showPayload {
 		requestDump, _ := httputil.DumpRequest(req, true)
@@ -367,7 +371,7 @@ func (t *TesterT) computeTestResults() bool {
 				for j := 0; j < len(dstEvents); j++ {
 					if dstEvents[j] != srcEvents[j] {
 						inOrder = false
-						t.logMessage(fmt.Sprintf("Did not match: index: %d, Source Event: %s, Destination event: %s", i, srcEvents[j], dstEvents[j]))
+						t.logMessage(fmt.Sprintf("Did not match: userID: %s, index: %d, Source Event: %s, Destination event: %s", user, i, srcEvents[j], dstEvents[j]))
 						break
 					}
 				}
@@ -404,6 +408,7 @@ func main() {
 		http.HandleFunc("/flushdb", handleFlushDB)
 	}
 
-	http.HandleFunc("/", handleReq)
+	http.HandleFunc("/", handleRoot)
+	http.HandleFunc("/webhook", handleReq)
 	log.Fatal(http.ListenAndServe(":8181", bugsnag.Handler(nil)))
 }
