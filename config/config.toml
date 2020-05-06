@@ -87,7 +87,7 @@ backupRowsBatchSize = 10000
 enabled = false
 
 [JobsDB.backup.gw]
-enabled=true
+enabled=false
 pathPrefix=""
 
 [JobsDB.backup.rt]
