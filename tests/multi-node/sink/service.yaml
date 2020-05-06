@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sink-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: sink
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8181
