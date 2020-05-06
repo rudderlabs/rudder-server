@@ -1978,6 +1978,7 @@ We keep a journal of all the operations. The journal helps
 const (
 	addDSOperation             = "ADD_DS"
 	migrateCopyOperation       = "MIGRATE_COPY"
+	migrateImportOperation     = "MIGRATE_IMPORT"
 	postMigrateDSOperation     = "POST_MIGRATE_DS_OP"
 	backupDSOperation          = "BACKUP_DS"
 	backupDropDSOperation      = "BACKUP_DROP_DS"
@@ -2032,6 +2033,7 @@ func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) in
 
 	jd.assert(opType == addDSOperation ||
 		opType == migrateCopyOperation ||
+		opType == migrateImportOperation ||
 		opType == postMigrateDSOperation ||
 		opType == backupDSOperation ||
 		opType == backupDropDSOperation ||
@@ -2095,7 +2097,7 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 	var opTypes []string
 	switch goRoutineType {
 	case mainGoRoutine:
-		opTypes = []string{addDSOperation, migrateCopyOperation, postMigrateDSOperation, dropDSOperation}
+		opTypes = []string{addDSOperation, migrateCopyOperation, migrateImportOperation, postMigrateDSOperation, dropDSOperation}
 	case backupGoRoutine:
 		opTypes = []string{backupDSOperation, backupDropDSOperation}
 	}
@@ -2156,6 +2158,11 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		//redo the migration
 		logger.Info("Recovering migrateCopy operation", migrateDest)
 		jd.dropDS(migrateDest, true)
+		undoOp = true
+	case migrateImportOperation:
+		var importDest dataSetT
+		json.Unmarshal(opPayload, &importDest)
+		jd.dropDS(importDest, true)
 		undoOp = true
 	case postMigrateDSOperation:
 		//Some of the source datasets would have been
