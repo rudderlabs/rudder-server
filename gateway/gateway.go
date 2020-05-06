@@ -476,6 +476,14 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(healthVal))
 }
 
+func (gateway *HandleT) printStackHandler(w http.ResponseWriter, r *http.Request) {
+	byteArr := make([]byte, 2048*1024)
+	_ = runtime.Stack(byteArr, true)
+	// stackTrace := string(byteArr[:n])
+	// fmt.Println(stackTrace)
+	w.Write(byteArr)
+}
+
 func reflectOrigin(origin string) bool {
 	return true
 }
@@ -497,6 +505,7 @@ func (gateway *HandleT) StartWebHandler() {
 	http.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler))
 	http.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
 	http.HandleFunc("/health", gateway.healthHandler)
+	http.HandleFunc("/debugStack", gateway.printStackHandler)
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
