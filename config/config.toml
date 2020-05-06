@@ -84,7 +84,7 @@ backupCheckSleepDurationIns = 5
 backupRowsBatchSize = 10000
 
 [JobsDB.backup]
-enabled = true
+enabled = false
 
 [JobsDB.backup.gw]
 enabled=true
