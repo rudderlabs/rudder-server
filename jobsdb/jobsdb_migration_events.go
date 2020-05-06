@@ -152,23 +152,25 @@ func (jd *HandleT) getCheckPointTableName() string {
 }
 
 //findOrCreateDsFromSetupCheckpoint is boiler plate code for setting up for different scenarios
-func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string) dataSetT {
+func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string) (dataSetT, bool) {
 	jd.dsListLock.Lock()
 	defer jd.dsListLock.Unlock()
 
 	dsList := jd.getDSList(true)
 	setupEvent := jd.GetSetupCheckpoint(migrationType)
+	var isNewDS bool
+
 	if setupEvent == nil {
 		me := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
 
 		var payload dataSetT
 		switch migrationType {
 		case ExportOp:
-			payload = jd.getLastDsForExport(dsList)
+			payload, isNewDS = jd.getLastDsForExport(dsList)
 		case AcceptNewEventsOp:
-			payload = jd.getDsForNewEvents(dsList)
+			payload, isNewDS = jd.getDsForNewEvents(dsList)
 		case ImportOp:
-			payload = jd.getDsForImport(dsList)
+			payload, isNewDS = jd.getDsForImport(dsList)
 		}
 
 		var err error
@@ -182,7 +184,7 @@ func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string) dataS
 	payload := dataSetT{}
 	err := json.Unmarshal(setupEvent.Payload, &payload)
 	jd.assertError(err)
-	return payload
+	return payload, isNewDS
 }
 
 func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType string) int64 {

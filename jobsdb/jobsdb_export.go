@@ -10,11 +10,11 @@ import (
 
 //SetupForExport is used to setup jobsdb for export or for import or for both
 func (jd *HandleT) SetupForExport() {
-	jd.migrationState.lastDsForExport = jd.findOrCreateDsFromSetupCheckpoint(ExportOp)
+	jd.migrationState.lastDsForExport, _ = jd.findOrCreateDsFromSetupCheckpoint(ExportOp)
 	logger.Infof("[[ %s-JobsDB Export ]] Last ds for export : %v", jd.GetTablePrefix(), jd.migrationState.lastDsForExport)
 }
 
-func (jd *HandleT) getLastDsForExport(dsList []dataSetT) dataSetT {
+func (jd *HandleT) getLastDsForExport(dsList []dataSetT) (dataSetT, bool) {
 	dsListLen := len(dsList)
 	var ds dataSetT
 	if !jd.isEmpty(dsList[dsListLen-1]) {
@@ -23,7 +23,7 @@ func (jd *HandleT) getLastDsForExport(dsList []dataSetT) dataSetT {
 		ds = dsList[dsListLen-2]
 	}
 
-	return ds
+	return ds, false
 }
 
 //GetNonMigratedAndMarkThemMigrating all jobs with no filters
