@@ -296,20 +296,32 @@ func (t *TesterT) computeTestResults() bool {
 
 	// Verify if same set of users
 
-	t.logMessage(fmt.Sprintf("Source User len: %v", redisClient.SCard(redisSrcUserSet)))
-	t.logMessage(fmt.Sprintf("Dest User len: %v", redisClient.SCard(redisDestUserSet)))
-	differedUsers := redisClient.SDiff(redisSrcUserSet, redisDestUserSet).Val()
-	if len(differedUsers) > 0 {
+	var differedUsers []string
+	numSrcUsers := redisClient.SCard(redisSrcUserSet).Val()
+	numDestUsers := redisClient.SCard(redisDestUserSet).Val()
+	t.logMessage(fmt.Sprintf("Source User len: %v", numSrcUsers))
+	t.logMessage(fmt.Sprintf("Dest User len: %v", numDestUsers))
+	if numSrcUsers > numDestUsers {
+		differedUsers = redisClient.SDiff(redisSrcUserSet, redisDestUserSet).Val()
+		t.logMessage(fmt.Sprintf("List of differed users: %v\n", differedUsers))
+	} else if numSrcUsers < numDestUsers {
+		differedUsers = redisClient.SDiff(redisDestUserSet, redisSrcUserSet).Val()
 		t.logMessage(fmt.Sprintf("List of differed users: %v\n", differedUsers))
 	} else {
 		t.logMessage("Success: Users Matched!!")
 	}
 
 	// Verify if same set of events
-	t.logMessage(fmt.Sprintf("Source Event len: %v", redisClient.SCard(redisSrcEventSet)))
-	t.logMessage(fmt.Sprintf("Dest Event len: %v", redisClient.SCard(redisDestEventSet)))
-	differedEvents := redisClient.SDiff(redisSrcEventSet, redisDestEventSet).Val()
-	if len(differedEvents) > 0 {
+	var differedEvents []string
+	numSrcEvents := redisClient.SCard(redisSrcEventSet).Val()
+	numDestEvents := redisClient.SCard(redisDestEventSet).Val()
+	t.logMessage(fmt.Sprintf("Source Event len: %v", numSrcEvents))
+	t.logMessage(fmt.Sprintf("Dest Event len: %v", numDestEvents))
+	if numSrcEvents > numDestEvents {
+		differedEvents = redisClient.SDiff(redisSrcEventSet, redisDestEventSet).Val()
+		t.logMessage(fmt.Sprintf("List of differed events: %v\n", differedEvents))
+	} else if numSrcEvents < numDestEvents {
+		differedEvents = redisClient.SDiff(redisDestEventSet, redisSrcEventSet).Val()
 		t.logMessage(fmt.Sprintf("List of differed events: %v\n", differedEvents))
 	} else {
 		t.logMessage("Success: Events Matched!!")
