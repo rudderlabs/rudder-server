@@ -4,29 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
-	"strings"
 
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
-	"runtime/pprof"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go"
+
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
-	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/migrator"
-	"github.com/rudderlabs/rudder-server/pathfinder"
 	"github.com/rudderlabs/rudder-server/processor"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
@@ -41,9 +38,13 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse"
+
+	// This is necessary for compatibility with enterprise features
+	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
 var (
+	application                      app.Interface
 	warehouseMode                    string
 	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
@@ -53,10 +54,7 @@ var (
 	configSubscriberLock             sync.RWMutex
 	objectStorageDestinations        []string
 	warehouseDestinations            []string
-	pf                               pathfinder.Pathfinder
 	clusterVersion                   int
-	instanceIDPattern                string
-	migrationModeFlag                string
 	moduleLoadLock                   sync.Mutex
 	routerLoaded                     bool
 	processorLoaded                  bool
@@ -76,7 +74,6 @@ func loadConfig() {
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	clusterVersion = config.GetEnvAsInt("CLUSTER_VERSION", 1)
-	instanceIDPattern = config.GetEnv("INSTANCE_ID_PATTERN", "hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>")
 }
 
 // Test Function
@@ -155,15 +152,6 @@ func startWarehouseService() {
 	warehouse.Start()
 }
 
-// flag -migration-mode overrides MIGRATION_MODE env.
-func getMigrationMode() string {
-	if migrationModeFlag != "" {
-		return migrationModeFlag
-	}
-
-	return config.GetEnv("MIGRATION_MODE", "")
-}
-
 func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintenanceMode bool) {
 	logger.Info("Main starting")
 
@@ -204,7 +192,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
 
 	enableMigrator := false
-	migrationMode := getMigrationMode()
+	migrationMode := application.GetMigrationMode()
 	shouldStartGateWay := true
 	if migrationMode == "import" {
 		enableMigrator = true
@@ -223,42 +211,10 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		shouldStartGateWay = true
 	}
 
-	if enableMigrator {
-		logger.Info("Shanmukh Debug: migrator is enabled")
-		migratorPort := config.GetEnvAsInt("MIGRATOR_PORT", 8084)
-		dnsPattern := config.GetEnv("URL_PATTERN", "http://backend-<CLUSTER_VERSION><NODENUM>")
-		forExport := strings.Contains(migrationMode, "export")
-
-		if forExport {
-			backendCount := config.GetRequiredEnvAsInt("MIGRATING_TO_BACKEND_COUNT")
-			nextclusterVersion := config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
-			pf.Setup(pathfinder.Setup(backendCount, nextclusterVersion, dnsPattern, instanceIDPattern, migratorPort), nextclusterVersion)
+	if application.Features().Migrator != nil {
+		if enableMigrator {
+			application.Features().Migrator.Setup(application, &gatewayDB, &routerDB, &batchRouterDB, StartProcessor, StartRouter)
 		}
-
-		logger.Info("Setting up migrators")
-		var (
-			gatewayMigrator     migrator.Migrator
-			routerMigrator      migrator.Migrator
-			batchRouterMigrator migrator.Migrator
-		)
-
-		var wg sync.WaitGroup
-		wg.Add(3)
-		rruntime.Go(func() {
-			gatewayMigrator = migrator.New(migrationMode, &gatewayDB, pf)
-			wg.Done()
-		})
-		rruntime.Go(func() {
-			routerMigrator = migrator.New(migrationMode, &routerDB, pf)
-			wg.Done()
-		})
-		rruntime.Go(func() {
-			batchRouterMigrator = migrator.New(migrationMode, &batchRouterDB, pf)
-			wg.Done()
-		})
-		wg.Wait()
-
-		go migrator.StartWebHandler(migratorPort, &gatewayMigrator, &routerMigrator, &batchRouterMigrator, StartProcessor, StartRouter)
 	}
 
 	StartRouter(enableRouter, &routerDB, &batchRouterDB)
@@ -348,59 +304,24 @@ func main() {
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 
-	normalMode := flag.Bool("normal-mode", false, "a bool")
-	degradedMode := flag.Bool("degraded-mode", false, "a bool")
-	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
-
-	flag.StringVar(&migrationModeFlag, "migration-mode", "", "mode of migration. import/export/import-export")
-
-	clearDB := flag.Bool("cleardb", false, "a bool")
-	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
-	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
-	versionFlag := flag.Bool("v", false, "Print the current version and exit")
-
-	flag.Parse()
-	if *versionFlag {
+	options := app.LoadOptions()
+	if options.VersionFlag {
 		printVersion()
 		return
 	}
+
+	application = app.New(options)
+
 	http.HandleFunc("/version", versionHandler)
 
-	var f *os.File
-	if *cpuprofile != "" {
-		var err error
-		f, err = os.Create(*cpuprofile)
-		if err != nil {
-			panic(err)
-		}
-		runtime.SetBlockProfileRate(1)
-		err = pprof.StartCPUProfile(f)
-		if err != nil {
-			panic(err)
-		}
-	}
+	application.Setup()
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		if *cpuprofile != "" {
-			logger.Info("Stopping CPU profile")
-			pprof.StopCPUProfile()
-			f.Close()
-		}
-		if *memprofile != "" {
-			f, err := os.Create(*memprofile)
-			if err != nil {
-				panic(err)
-			}
-			defer f.Close()
-			runtime.GC() // get up-to-date statistics
-			err = pprof.WriteHeapProfile(f)
-			if err != nil {
-				panic(err)
-			}
-		}
+		application.Stop()
+
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
 			logger.Log.Sync()
@@ -409,19 +330,9 @@ func main() {
 		os.Exit(1)
 	}()
 
-	serverMode := os.Getenv("RSERVER_MODE")
-
-	if serverMode == "normal" {
-		*normalMode = true
-	} else if serverMode == "degraded" {
-		*degradedMode = true
-	} else if serverMode == "maintenance" {
-		*maintenanceMode = true
-	}
-
 	if canStartServer() {
 		rruntime.Go(func() {
-			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+			startRudderCore(&options.ClearDB, options.NormalMode, options.DegradedMode, options.MaintenanceMode)
 		})
 	}
 
