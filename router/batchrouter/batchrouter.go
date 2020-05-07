@@ -75,7 +75,7 @@ type ObjectStorageT struct {
 
 func (brt *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
@@ -115,7 +115,7 @@ type ErrorResponseT struct {
 }
 
 func updateDestStatusStats(id string, count int, isSuccess bool) {
-	var destStatsD *stats.RudderStats
+	var destStatsD stats.RudderStats
 	if isSuccess {
 		destStatsD = stats.NewBatchDestStat("batch_router.dest_successful_events", stats.CountType, id)
 	} else {
@@ -219,7 +219,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		})
 		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
 	}
-	_, err = uploader.Upload(outputFile, keyPrefixes...)
+	uploadOutput, err := uploader.Upload(outputFile, keyPrefixes...)
 
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to %s: Error: %v", provider, err)
@@ -231,7 +231,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 	return StorageUploadOutput{
 		Config:         batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
-		Key:            strings.Join(keyPrefixes, "/") + "/" + fileName,
+		Key:            uploadOutput.ObjectName,
 		LocalFilePaths: []string{gzipFilePath},
 		JournalOpID:    opID,
 		FirstEventAt:   firstEventAt,

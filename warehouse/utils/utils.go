@@ -329,7 +329,7 @@ func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err er
 func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusError error) (err error) {
 	logger.Errorf("WH: Failed processing staging files: %v", statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement, status, statusError.Error(), timeutil.Now(), pq.Array(ids))
+	_, err = dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), pq.Array(ids))
 	if err != nil {
 		panic(err)
 	}
@@ -358,7 +358,7 @@ func SetTableUploadError(status string, uploadID int64, tableName string, status
 	logger.Errorf("WH: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, error=$3 WHERE wh_upload_id=$4 AND table_name=$5`, warehouseTableUploadsTable)
 	logger.Infof("WH: Setting table upload error: %v", sqlStatement)
-	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), statusError.Error(), uploadID, tableName)
+	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), misc.QuoteLiteral(statusError.Error()), uploadID, tableName)
 	if err != nil {
 		panic(err)
 	}
@@ -564,7 +564,7 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	return schema
 }
 
-func DestStat(statType string, statName string, id string) *stats.RudderStats {
+func DestStat(statType string, statName string, id string) stats.RudderStats {
 	return stats.NewBatchDestStat(fmt.Sprintf("warehouse.%s", statName), statType, id)
 }
 
