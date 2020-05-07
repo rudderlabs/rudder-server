@@ -3,6 +3,8 @@ package app
 import (
 	"flag"
 	"os"
+
+	"github.com/rudderlabs/rudder-server/config"
 )
 
 // Options contains application's initialisation options
@@ -23,7 +25,7 @@ func LoadOptions() *Options {
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
 	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
-	migrationMode := flag.String("migration-mode", "", "mode of migration. import/export/import-export")
+	migrationModeFlag := flag.String("migration-mode", "", "mode of migration. import/export/import-export")
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
@@ -44,10 +46,18 @@ func LoadOptions() *Options {
 		NormalMode:      *normalMode,
 		DegradedMode:    *degradedMode,
 		MaintenanceMode: *maintenanceMode,
-		MigrationMode:   *migrationMode,
+		MigrationMode:   getMigrationMode(*migrationModeFlag),
 		ClearDB:         *clearDB,
 		Cpuprofile:      *cpuprofile,
 		Memprofile:      *memprofile,
 		VersionFlag:     *versionFlag,
 	}
+}
+
+func getMigrationMode(flag string) string {
+	if flag != "" {
+		return flag
+	}
+
+	return config.GetEnv("MIGRATION_MODE", "")
 }

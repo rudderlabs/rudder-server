@@ -5,7 +5,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -19,9 +18,8 @@ type App struct {
 
 // Interface of a rudder-server application
 type Interface interface {
-	Setup() // Initializes application
-	Stop()  // Stop application
-	GetMigrationMode() string
+	Setup()              // Initializes application
+	Stop()               // Stop application
 	Options() *Options   // Get this application's options
 	Features() *Features // Get this application's enterprise features
 }
@@ -96,15 +94,4 @@ func New(options *Options) Interface {
 	return &App{
 		options: options,
 	}
-}
-
-// GetMigrationMode returns the application's migration mode.
-// Migration mode can be set either by MIGRATION_MODE environmental variable,
-// or by the -migration-mode flag, which takes precedence.
-func (a *App) GetMigrationMode() string {
-	if a.options.MigrationMode != "" {
-		return a.options.MigrationMode
-	}
-
-	return config.GetEnv("MIGRATION_MODE", "")
 }

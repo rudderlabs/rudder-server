@@ -192,7 +192,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
 
 	enableMigrator := false
-	migrationMode := application.GetMigrationMode()
+	migrationMode := application.Options().MigrationMode
 	shouldStartGateWay := true
 	if migrationMode == "import" {
 		enableMigrator = true
