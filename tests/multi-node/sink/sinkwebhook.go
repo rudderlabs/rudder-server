@@ -229,7 +229,7 @@ func redisLoop() {
 						break
 					}
 					errCount++
-					time.Sleep(2 * errCount * time.Second)
+					time.Sleep(2 * time.Duration(errCount) * time.Second)
 					if errCount == 5 {
 						panic(err.Error())
 					}
