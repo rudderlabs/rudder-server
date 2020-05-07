@@ -97,6 +97,7 @@ func loadConfig() {
 type WarehouseT struct {
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
+	Namespace   string
 }
 
 type DestinationT struct {
@@ -128,7 +129,6 @@ type UploadT struct {
 }
 
 type CurrentSchemaT struct {
-	Namespace string
 	Schema    map[string]map[string]string
 }
 
@@ -141,14 +141,13 @@ type StagingFileT struct {
 	TotalEvents      int
 }
 
-func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, error) {
+func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
 	var rawSchema json.RawMessage
-	var namespace string
-	sqlStatement := fmt.Sprintf(`SELECT namespace, schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace, &rawSchema)
+	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[3]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Destination.ID, warehouse.Namespace)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return CurrentSchemaT{}, nil
+			return nil, nil
 		}
 		if err != nil {
 			panic(err)
@@ -168,8 +167,7 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, e
 		}
 		schema[key] = y
 	}
-	currentSchema := CurrentSchemaT{Namespace: namespace, Schema: schema}
-	return currentSchema, nil
+	return schema, nil
 }
 
 type SchemaDiffT struct {
