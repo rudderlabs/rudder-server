@@ -190,9 +190,9 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB ", *clearDB)
 
+	backendconfig.Setup()
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
-	backendconfig.Setup()
 
 	//Forcing enableBackup false for gatewaydb if this server is for handling replayed events
 	if isReplayServer {
