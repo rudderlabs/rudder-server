@@ -213,7 +213,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 	if application.Features().Migrator != nil {
 		if enableMigrator {
-			application.Features().Migrator.Setup(application, &gatewayDB, &routerDB, &batchRouterDB, StartProcessor, StartRouter)
+			application.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, StartProcessor, StartRouter)
 		}
 	}
 

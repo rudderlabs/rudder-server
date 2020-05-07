@@ -6,7 +6,7 @@ import (
 
 // MigratorFeature handles migration of nodes during cluster's scale up/down.
 type MigratorFeature interface {
-	Setup(Interface, *jobsdb.HandleT, *jobsdb.HandleT, *jobsdb.HandleT,
+	Setup(*jobsdb.HandleT, *jobsdb.HandleT, *jobsdb.HandleT,
 		func(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT),
 		func(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT))
 }

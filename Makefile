@@ -3,7 +3,7 @@
 GO=go
 GINKGO=ginkgo
 
-all: run
+all: build
 
 mocks:
 	$(GO) generate ./...
@@ -17,6 +17,9 @@ prepare-enterprise:
 
 test: prepare-enterprise mocks
 	$(GINKGO) --randomizeAllSpecs -p --skipPackage=tests ./...
+
+build: prepare-enterprise
+	$(GO) build -o bin/rudder-server main.go
 
 run: prepare-enterprise
 	$(GO) run -mod=vendor main.go
