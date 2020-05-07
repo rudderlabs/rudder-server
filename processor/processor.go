@@ -677,92 +677,101 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.destProcessing.Start()
 	logger.Debug("[Processor: processJobsForDest] calling transformations")
-	for destID, destEventList := range eventsByDestID {
-		//Call transform for this destination. Returns
-		//the JSON we can send to the destination
-		destStat := proc.destStats[destID]
-		destStat.numEvents.Count(len(destEventList))
 
-		configSubscriberLock.RLock()
-		destType := destinationIDtoTypeMap[destID]
-		transformationEnabled := destinationTransformationEnabledMap[destID]
-		configSubscriberLock.RUnlock()
+	// transform the events grouped by destination id conncurrently
+	var wg sync.WaitGroup
+	wg.Add(len(eventsByDestID))
+	for id, list := range eventsByDestID {
+		destID := id
+		destEventList := list
+		rruntime.Go(func() {
+			defer wg.Done()
+			//Call transform for this destination. Returns
+			//the JSON we can send to the destination
+			destStat := proc.destStats[destID]
+			destStat.numEvents.Count(len(destEventList))
 
-		url := integrations.GetDestinationURL(destType)
-		var response ResponseT
-		var eventsToTransform []interface{}
-		// Send to custom transformer only if the destination has a transformer enabled
-		if transformationEnabled {
-			logger.Debug("Custom Transform input size", len(destEventList))
-			if processSessions {
-				// If processSessions is true, Transform should break into a new batch only when user changes.
-				// This way all the events of a user session are never broken into separate batches
-				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
-				destStat.sessionTransform.Start()
-				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, true)
-				destStat.sessionTransform.End()
+			configSubscriberLock.RLock()
+			destType := destinationIDtoTypeMap[destID]
+			transformationEnabled := destinationTransformationEnabledMap[destID]
+			configSubscriberLock.RUnlock()
+
+			url := integrations.GetDestinationURL(destType)
+			var response ResponseT
+			var eventsToTransform []interface{}
+			// Send to custom transformer only if the destination has a transformer enabled
+			if transformationEnabled {
+				logger.Debug("Custom Transform input size", len(destEventList))
+				if processSessions {
+					// If processSessions is true, Transform should break into a new batch only when user changes.
+					// This way all the events of a user session are never broken into separate batches
+					// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
+					destStat.sessionTransform.Start()
+					response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, true)
+					destStat.sessionTransform.End()
+				} else {
+					// We need not worry about breaking up a single user sessions in this case
+					destStat.userTransform.Start()
+					response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, false)
+					destStat.userTransform.End()
+				}
+				for _, userTransformedEvent := range response.Events {
+					eventsToTransform = append(eventsToTransform, userTransformedEvent.(map[string]interface{})["output"])
+				}
+				logger.Debug("Custom Transform output size", len(eventsToTransform))
 			} else {
-				// We need not worry about breaking up a single user sessions in this case
-				destStat.userTransform.Start()
-				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, false)
-				destStat.userTransform.End()
+				logger.Debug("No custom transformation")
+				eventsToTransform = destEventList
 			}
-			for _, userTransformedEvent := range response.Events {
-				eventsToTransform = append(eventsToTransform, userTransformedEvent.(map[string]interface{})["output"])
-			}
-			logger.Debug("Custom Transform output size", len(eventsToTransform))
-		} else {
-			logger.Debug("No custom transformation")
-			eventsToTransform = destEventList
-		}
-		logger.Debug("Dest Transform input size", len(eventsToTransform))
-		destStat.destTransform.Start()
-		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
-		destStat.destTransform.End()
+			logger.Debug("Dest Transform input size", len(eventsToTransform))
+			destStat.destTransform.Start()
+			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+			destStat.destTransform.End()
 
-		destTransformEventList := response.Events
-		logger.Debug("Dest Transform output size", len(destTransformEventList))
-		if !response.Success {
-			logger.Debug("[Processor: processJobsForDest] Request to transformer not a success ", response.Events)
-			continue
-		}
-		destStat.numOutputEvents.Count(len(destTransformEventList))
+			destTransformEventList := response.Events
+			logger.Debug("Dest Transform output size", len(destTransformEventList))
+			if !response.Success {
+				logger.Debug("[Processor: processJobsForDest] Request to transformer not a success ", response.Events)
+				return
+			}
+			destStat.numOutputEvents.Count(len(destTransformEventList))
 
-		//Save the JSON in DB. This is what the rotuer uses
-		for _, destEvent := range destTransformEventList {
-			destEventJSON, err := json.Marshal(destEvent.(map[string]interface{})["output"])
-			//Should be a valid JSON since its our transformation
-			//but we handle anyway
-			if err != nil {
-				continue
-			}
+			//Save the JSON in DB. This is what the rotuer uses
+			for _, destEvent := range destTransformEventList {
+				destEventJSON, err := json.Marshal(destEvent.(map[string]interface{})["output"])
+				//Should be a valid JSON since its our transformation
+				//but we handle anyway
+				if err != nil {
+					continue
+				}
 
-			//Need to replace UUID his with messageID from client
-			id := uuid.NewV4()
-			// read source_id from metadata that is replayed back from transformer
-			// in case of custom transformations metadata of first event is returned along with all events in session
-			// source_id will be same for all events belong to same user in a session
-			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
-			destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
-			if !ok {
-				logger.Errorf("Error retrieving source_id from transformed event: %+v", destEvent)
+				//Need to replace UUID his with messageID from client
+				id := uuid.NewV4()
+				// read source_id from metadata that is replayed back from transformer
+				// in case of custom transformations metadata of first event is returned along with all events in session
+				// source_id will be same for all events belong to same user in a session
+				sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
+				destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
+				if !ok {
+					logger.Errorf("Error retrieving source_id from transformed event: %+v", destEvent)
+				}
+				newJob := jobsdb.JobT{
+					UUID:         id,
+					Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
+					CreatedAt:    time.Now(),
+					ExpireAt:     time.Now(),
+					CustomVal:    destType,
+					EventPayload: destEventJSON,
+				}
+				if misc.Contains(rawDataDestinations, newJob.CustomVal) {
+					batchDestJobs = append(batchDestJobs, &newJob)
+				} else {
+					destJobs = append(destJobs, &newJob)
+				}
 			}
-			newJob := jobsdb.JobT{
-				UUID:         id,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
-				CustomVal:    destType,
-				EventPayload: destEventJSON,
-			}
-			if misc.Contains(rawDataDestinations, newJob.CustomVal) {
-				batchDestJobs = append(batchDestJobs, &newJob)
-			} else {
-				destJobs = append(destJobs, &newJob)
-			}
-		}
+		})
 	}
-
+	wg.Wait()
 	proc.destProcessing.End()
 	if len(statusList) != len(jobList) {
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
