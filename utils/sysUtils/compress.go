@@ -30,7 +30,7 @@ type GZipI interface {
 type GZip struct{}
 
 // NewZip returns a Zip instance
-func NewGZip() *GZip {
+func NewGZip() GZipI {
 	return &GZip{}
 }
 

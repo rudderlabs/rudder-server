@@ -36,7 +36,7 @@ type OsI interface {
 type Os struct{}
 
 // NewZip returns a Os instance
-func NewOs() *Os {
+func NewOs() OsI {
 	return &Os{}
 }
 

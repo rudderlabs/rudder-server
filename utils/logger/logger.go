@@ -11,7 +11,7 @@ var	log logger.LoggerI = logger.NewLogger()
 
 ...
 
-log.Setup()
+log.Error(...)
 */
 //go:generate mockgen -destination=../../mocks/utils/logger/mock_logger.go -package mock_logger github.com/rudderlabs/rudder-server/utils/logger LoggerI
 package logger
@@ -104,19 +104,14 @@ func loadConfig() {
 
 var options []zap.Option
 
-func NewLogger() *LoggerT {
+func NewLogger() LoggerI {
 	return &LoggerT{}
 }
 
 // Setup sets up the logger initially
-func (l *LoggerT) Setup() {
+func Setup() {
 	loadConfig()
 	Log = configureLogger()
-}
-
-// Deprecated! Use instance of LoggerT instead
-func Setup() {
-	log.Setup()
 }
 
 //IsDebugLevel Returns true is debug lvl is enabled

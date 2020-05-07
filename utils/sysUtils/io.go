@@ -33,7 +33,7 @@ type IoI interface {
 type Io struct{}
 
 // NewIo returns an Io instance
-func NewIo() *Io {
+func NewIo() IoI {
 	return &Io{}
 }
 
@@ -63,7 +63,7 @@ type IoUtilI interface {
 type IoUtil struct{}
 
 // NewIo returns an Io instance
-func NewIoUtil() *IoUtil {
+func NewIoUtil() IoUtilI {
 	return &IoUtil{}
 }
 
