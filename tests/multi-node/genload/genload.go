@@ -258,9 +258,17 @@ func redisLoop() {
 			newEventsAdded = true
 		case <-time.After(batchTimeout):
 			if newEventsAdded {
-				_, err := pipe.Exec()
-				if err != nil {
-					panic(err)
+				errCount := 0
+				for {
+					_, err := pipe.Exec()
+					if err == nil {
+						break
+					}
+					errCount++
+					time.Sleep(2 * time.Duration(errCount) * time.Second)
+					if errCount == 5 {
+						panic(err.Error())
+					}
 				}
 				newEventsAdded = false
 			} else {
