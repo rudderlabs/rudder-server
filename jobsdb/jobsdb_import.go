@@ -107,6 +107,8 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	}
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
+	//TODO REMOVE
+	logger.Debug("[DEFER StoreImportedJobsAndJobStatuses] rolling back transaction")
 	defer txn.Rollback() //TODO: Review this. In a successful case rollback will be called after commit. In a failure case there will be a panic and a dangling db connection may be left
 	jd.storeJobsDSInTxn(txn, jd.migrationState.dsForImport, true, false, jobList)
 	jd.updateJobStatusDSInTxn(txn, jd.migrationState.dsForImport, statusList, []string{}, []ParameterFilterT{})

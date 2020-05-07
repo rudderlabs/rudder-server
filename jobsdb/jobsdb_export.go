@@ -163,6 +163,8 @@ func (jd *HandleT) getNonMigratedJobsAndMarkThemMigratingDS(ds dataSetT, count i
 func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNodeID string, toNodeID string, uploadLocation string) {
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
+	//TODO REMOVE
+	logger.Debug("[DEFER UpdateJobStatusAndCheckpoint] rolling back transaction")
 	defer txn.Rollback() //TODO: Review this. In a successful case rollback will be called after commit. In a failure case there will be a panic and a dangling db connection may be left
 	jd.UpdateJobStatusInTxn(txn, statusList, []string{}, []ParameterFilterT{})
 	migrationEvent := NewMigrationEvent("export", fromNodeID, toNodeID, uploadLocation, Exported, 0)

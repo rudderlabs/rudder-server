@@ -1114,6 +1114,8 @@ func (jd *HandleT) storeJobsDSInTxn(txn *sql.Tx, ds dataSetT, copyID bool, retry
 	_, err = stmt.Exec()
 	if !isTxnPassed {
 		if err != nil && retryEach {
+			//TODO REMOVE
+			logger.Debug("[storeJobsDSInTxn] rolling back transaction")
 			txn.Rollback() // rollback started txn, to prevent dangling db connection
 			for _, job := range jobList {
 				errorMessage := jd.storeJobDS(ds, job)
