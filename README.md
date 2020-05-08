@@ -18,7 +18,7 @@ Questions? Read our [Docs][docs] OR join our [Discord][discord] channel. Or plea
 
 # Try RudderStack?
 
-You can use the [hosted][dashboard-on] RudderStack instance to experience the product. Click [here][dashboard-on].
+You can use the [cloud hosted][dashboard-intro] RudderStack instance to experience the product. Click [here][dashboard-intro].
 
 # Features
 
@@ -65,7 +65,7 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 
 # Setup Instructions (Hosted Demo Account)
 
-1. Go to the [dashboard][dashboard-on] and set up your account.
+1. Go to the [dashboard][dashboard-setup] and set up your account.
 2. Select `RudderStack Hosted Service` from the top right corner after you login.
 3. Follow (Send Test Events) instructions below to send test event.
 
@@ -75,7 +75,7 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 
 The docker setup is the easiest & fastest way to try out RudderStack.
 
-1. Go to the [dashboard][dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
+1. Go to the [dashboard][dashboard-docker] `https://app.rudderstack.com` and set up your account. Copy your workspace token from top of the home page.
 
    (Note) Instead of our full featured hosted UI, you can also use the open-source [config-generator-UI][config-generator-section] to create the source & destination configs and pass it to RudderStack.
 
@@ -95,7 +95,7 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 **Note:** This is the recommended way of installing RudderStack for running in production. Our hosted deployment runs on Kubernetes so we maintain/patch much more frequently.
 
-1. Go to the [dashboard][dashboad-on] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
+1. Go to the [dashboard][dashboard-k8s] `https://app.rudderstack.com` and set up your account. Copy your workspace token from top of the home page.
 
 2. Our helm scripts and instructions are in a separate repo - [Download Here][helm-scripts-git-repo]
 
@@ -116,7 +116,7 @@ psql "jobsdb" -c "ALTER USER rudder WITH ENCRYPTED PASSWORD 'rudder'";
 psql "jobsdb" -c "GRANT ALL PRIVILEGES ON DATABASE jobsdb to rudder";
 ```
 
-4. Go to the [dashboard][dashboard] and set up your account. Copy your workspace token from top of the home page
+4. Go to the [dashboard][dashboard-native] and set up your account. Copy your workspace token from top of the home page
 5. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
 
    (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
@@ -251,8 +251,13 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 [go-report-card]: https://go-report-card.com/report/github.com/rudderlabs/rudder-server
 [go-report-card-badge]: https://go-report-card.com/badge/github.com/rudderlabs/rudder-server
 [ssh]: https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls
-[dashboard]: https://app.rudderlabs.com
+[dashboard]: https://app.rudderstack.com
 [dashboard-on]: https://app.rudderstack.com/signup?type=freetrial
+[dashboard-intro]: https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro
+[dashboard-setup]: https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=setup-instructions
+[dashboard-docker]: https://app.rudderstack.com/signup?utm_source=github&utm_medium=rdr-srv&utm_campaign=selfhosted&utm_content=docker
+[dashboard-k8s]: https://app.rudderstack.com/signup?utm_source=github&utm_medium=rdr-srv&utm_campaign=selfhosted&utm_content=k8s
+[dashboard-native]: https://app.rudderstack.com/signup?utm_source=github&utm_medium=rdr-srv&utm_campaign=selfhosted&utm_content=native
 [agplv3_license]: https://www.gnu.org/licenses/agpl-3.0-standalone.html
 [sspl_license]: https://www.mongodb.com/licensing/server-side-public-license
 [hackernews]: https://news.ycombinator.com/item?id=21081756
