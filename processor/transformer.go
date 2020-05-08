@@ -199,6 +199,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 				batchCount++
 				inputIdx++
 			}
+			logger.Infof(`[Transfomer]: %d bytes sent in transformer request`, toSendDataSize)
 			toSendData = clientBatch
 			toSendDataSize = 0
 			trans.sentStat.Count(len(clientBatch))
