@@ -141,7 +141,7 @@ type ResponseT struct {
 //instance is shared between both user specific transformation
 //code and destination transformation code.
 func (trans *transformerHandleT) Transform(clientEvents []interface{},
-	url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT {
+	url string, batchSize int, batchSizeInBytes int, breakIntoBatchWhenUserChanges bool) ResponseT {
 
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
@@ -165,11 +165,16 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		if reqQ != nil && toSendData == nil {
 			clientBatch := make([]interface{}, 0)
 			batchCount := 0
+			toSendDataSize := 0
+
 			for {
-				if (batchCount >= batchSize || inputIdx >= len(clientEvents)) && inputIdx != 0 {
+				if inputIdx >= len(clientEvents) {
+					break
+				}
+				if (batchCount >= batchSize || toSendDataSize >= transformBatchSizeInBytes) && inputIdx != 0 {
 					// If processSessions is false or if dest transformer is being called, break using just the batchSize.
 					// Otherwise break when userId changes. This makes sure all events of a session go together as a batch
-					if !breakIntoBatchWhenUserChanges || inputIdx >= len(clientEvents) {
+					if !breakIntoBatchWhenUserChanges {
 						break
 					}
 					prevUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx-1].(map[string]interface{})["message"])
@@ -185,14 +190,17 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 						break
 					}
 				}
-				if inputIdx >= len(clientEvents) {
-					break
-				}
 				clientBatch = append(clientBatch, clientEvents[inputIdx])
+				eventBytes, err := json.Marshal(clientEvents[inputIdx])
+				if err != nil {
+					panic(err)
+				}
+				toSendDataSize += len(eventBytes)
 				batchCount++
 				inputIdx++
 			}
 			toSendData = clientBatch
+			toSendDataSize = 0
 			trans.sentStat.Count(len(clientBatch))
 		}
 

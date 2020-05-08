@@ -169,6 +169,7 @@ var (
 	loopSleep                           time.Duration
 	maxLoopSleep                        time.Duration
 	dbReadBatchSize                     int
+	transformBatchSizeInBytes           int
 	transformBatchSize                  int
 	userTransformBatchSize              int
 	sessionInactivityThreshold          time.Duration
@@ -186,8 +187,9 @@ func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
 	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
 	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 10000)
-	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
-	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
+	transformBatchSizeInBytes = config.GetInt("Processor.transformBatchSizeInBytes", 5000000)
+	transformBatchSize = config.GetInt("Processor.transformBatchSize", 2500)
+	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 2500)
 	sessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	processSessions = config.GetBool("Processor.processSessions", false)
@@ -707,12 +709,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					// This way all the events of a user session are never broken into separate batches
 					// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
 					destStat.sessionTransform.Start()
-					response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, true)
+					response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, transformBatchSizeInBytes, true)
 					destStat.sessionTransform.End()
 				} else {
 					// We need not worry about breaking up a single user sessions in this case
 					destStat.userTransform.Start()
-					response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, false)
+					response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, transformBatchSizeInBytes, false)
 					destStat.userTransform.End()
 				}
 				for _, userTransformedEvent := range response.Events {
@@ -725,7 +727,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			}
 			logger.Debug("Dest Transform input size", len(eventsToTransform))
 			destStat.destTransform.Start()
-			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, transformBatchSizeInBytes, false)
 			destStat.destTransform.End()
 
 			destTransformEventList := response.Events
