@@ -790,9 +790,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			logger.Infof(`[Processor] Time taken to transform events for %s: %v`, destID, elapsed)
 		})
 	}
+	wg.Wait()
 	elapsed := time.Since(start)
 	logger.Infof(`[Processor] Time taken to transform all events: %v`, elapsed)
-	wg.Wait()
 	proc.destProcessing.End()
 	if len(statusList) != len(jobList) {
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
