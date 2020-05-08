@@ -593,6 +593,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.marshalSingularEvents.Start()
 	for idx, batchEvent := range jobList {
 
+		// fmt.Println("%%%%%%%%")
+		// logger.Infof(`Total no of jobs: %d`, len(jobList))
+		// fmt.Println("%%%%%%%%")
+
 		var eventList []interface{}
 		var ok bool
 		if parsedEventList == nil {
@@ -630,10 +634,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					}
 					enabledDestinationsMap[destType] = enabledDestinationsList
 					// Adding a singular event multiple times if there are multiple destinations of same type
-					if len(destTypes) == 0 {
-						logger.Debugf("No enabled destinations for type %v", destType)
-						continue
-					}
 					for _, destination := range enabledDestinationsList {
 						shallowEventCopy := make(map[string]interface{})
 						singularEventMap, ok := singularEvent.(map[string]interface{})
@@ -654,6 +654,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						}
 						eventsByDestID[destination.ID] = append(eventsByDestID[destination.ID],
 							shallowEventCopy)
+						// logger.Infof(`Added event of type %s %s`, destination.Name, destination.ID)
+						// logger.Infof(`%d`, len(eventsByDestID[destination.ID]))
 					}
 				}
 			}
@@ -680,13 +682,26 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.destProcessing.Start()
 	logger.Debug("[Processor: processJobsForDest] calling transformations")
 
+	// fmt.Println("@@@@@@@@@@@@")
+	// for desttype, evs := range eventsByDestID {
+	// 	x, err := json.Marshal(evs)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	fmt.Printf("%v : %v\n", desttype, len(x))
+	// }
+	// fmt.Println("@@@@@@@@@@@@")
+
 	// transform the events grouped by destination id conncurrently
+	start := time.Now()
 	var wg sync.WaitGroup
 	wg.Add(len(eventsByDestID))
 	for id, list := range eventsByDestID {
 		destID := id
 		destEventList := list
 		rruntime.Go(func() {
+			start := time.Now()
+
 			defer wg.Done()
 			//Call transform for this destination. Returns
 			//the JSON we can send to the destination
@@ -771,8 +786,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					destJobs = append(destJobs, &newJob)
 				}
 			}
+			elapsed := time.Since(start)
+			logger.Infof(`[Processor] Time taken to transform events for %s: %v`, destID, elapsed)
 		})
 	}
+	elapsed := time.Since(start)
+	logger.Infof(`[Processor] Time taken to transform all events: %v`, elapsed)
 	wg.Wait()
 	proc.destProcessing.End()
 	if len(statusList) != len(jobList) {

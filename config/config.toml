@@ -154,7 +154,7 @@ sessionThresholdEvents = 100
 sessionInactivityThresholdInS = 120
 maxChanSize = 2048
 processSessions = false
-numTransformWorker = 8
+numTransformWorker = 64
 maxRetry = 30
 retrySleepInMS = 100
 
