@@ -6,5 +6,4 @@ runtime.log
 dist/*
 workspaceConfig.json
 **/node_modules
-enterprise
 imports/enterprise.go

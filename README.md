@@ -79,10 +79,10 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
    (Note) Instead of our full featured hosted UI, you can also use the open-source [config-generator-UI][config-generator-section] to create the source & destination configs and pass it to RudderStack.
 
-2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
+2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule update --init rudder-transformer`
 
    (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
-   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule init && git submodule update`
+   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule update --init rudder-transformer`
 
 3. Replace `<your_workspace_token>` in `build/docker.env` with the above token.
 4. (Optional) Uncomment and set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `build/docker.env` if you want to add S3 as a destination on the UI.
@@ -117,10 +117,10 @@ psql "jobsdb" -c "GRANT ALL PRIVILEGES ON DATABASE jobsdb to rudder";
 ```
 
 4. Go to the [dashboard][dashboard] and set up your account. Copy your workspace token from top of the home page
-5. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
+5. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule update --init rudder-transformer`
 
    (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
-   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule init && git submodule update`
+   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule update --init rudder-transformer`
 6. Navigate to the transformer directory `cd rudder-transformer`
 7. Install dependencies `npm i` and start the destination transformer `node destTransformer.js`
 8. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`

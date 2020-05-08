@@ -1,3 +1,7 @@
 [submodule "rudder-transformer"]
 	path = rudder-transformer
 	url = git@github.com:rudderlabs/rudder-transformer.git
+[submodule "enterprise"]
+	path = enterprise
+	url = git@github.com:rudderlabs/rudder-server-enterprise.git
+
