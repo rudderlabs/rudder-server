@@ -195,7 +195,7 @@ func loadConfig() {
 	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
 	maxRetry = config.GetInt("Processor.maxRetry", 30)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE"}
+	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES"}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }

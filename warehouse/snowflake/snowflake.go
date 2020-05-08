@@ -206,7 +206,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 	}
 	defer dbHandle.Close()
 
-	// sort columnnames
+	// sort column names
 	keys := reflect.ValueOf(columnMap).MapKeys()
 	strkeys := make([]string, len(keys))
 	for i := 0; i < len(keys); i++ {

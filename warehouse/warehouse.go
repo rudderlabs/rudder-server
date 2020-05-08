@@ -59,7 +59,6 @@ var (
 	mainLoopSleep                    time.Duration
 	stagingFilesBatchSize            int
 	configSubscriberLock             sync.RWMutex
-	availableWarehouses              []string
 	crashRecoverWarehouses           []string
 	inProgressMap                    map[string]bool
 	inRecoveryMap                    map[string]bool
@@ -138,7 +137,7 @@ func init() {
 func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
@@ -150,7 +149,6 @@ func loadConfig() {
 	warehouseTableUploadsTable = config.GetString("Warehouse.tableUploadsTable", "wh_table_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
 	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 60) * time.Second
-	availableWarehouses = []string{"RS", "BQ", "SNOWFLAKE"}
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
@@ -586,7 +584,6 @@ func (wh *HandleT) mainLoop() {
 				}
 				delete(inRecoveryMap, warehouse.Destination.ID)
 			}
-
 			// fetch any pending wh_uploads records (query for not successful/aborted uploads)
 			pendingUploads, ok := wh.getPendingUploads(warehouse)
 			if ok {
@@ -695,6 +692,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 		if err != nil {
 			panic(err)
 		}
+		fmt.Println(payloadJSON)
 		message := pgnotifier.MessageT{
 			Payload: payloadJSON,
 		}
@@ -1155,6 +1153,7 @@ var loadFileFormatMap = map[string]string{
 	"BQ":        "json",
 	"RS":        "csv",
 	"SNOWFLAKE": "csv",
+	"POSTGRES":  "csv",
 }
 
 func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
@@ -1449,6 +1448,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	for tableName, outputFile := range outputFileMap {
 		outputFile.CloseGZ()
 		file, err := os.Open(outputFile.File.Name())
+		fmt.Println(outputFile.File.Name())
 		defer os.Remove(outputFile.File.Name())
 		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
 		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.BatchID, tableName))

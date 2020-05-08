@@ -63,7 +63,7 @@ func loadConfig() {
 	enableRouter = config.GetBool("enableRouter", true)
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 }
 

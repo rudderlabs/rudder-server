@@ -78,6 +78,12 @@ var SnowflakeStorageMap = map[string]string{
 	"GCP":   "GCS",
 	"AZURE": "AZURE_BLOB",
 }
+var PostgresStorageMap = map[string]string{
+	"AWS":   "S3",
+	"GCP":   "GCS",
+	"AZURE": "AZURE_BLOB",
+	"MINIO": "MINIO",
+}
 
 func init() {
 	config.Initialize()
@@ -638,6 +644,14 @@ func GetSlaveWorkerId(workerIdx int, slaveID string) string {
 	return fmt.Sprintf("%v-%v-%v", GetIP(), workerIdx, slaveID)
 }
 
+func PostgresCloudProvider(config interface{}) string {
+	c := config.(map[string]interface{})
+	provider, ok := c["cloudProvider"].(string)
+	if provider == "" || !ok {
+		provider = "MINIO"
+	}
+	return provider
+}
 func SnowflakeCloudProvider(config interface{}) string {
 	c := config.(map[string]interface{})
 	provider, ok := c["cloudProvider"].(string)
@@ -648,8 +662,13 @@ func SnowflakeCloudProvider(config interface{}) string {
 }
 
 func ObjectStorageType(destType string, config interface{}) string {
-	if destType != "SNOWFLAKE" {
+	if destType != "SNOWFLAKE" && destType != "POSTGRES" {
 		return ObjectStorageMap[destType]
+	}
+	if destType == "POSTGRES" {
+		c := config.(map[string]interface{})
+		provider, _:= c["cloudProvider"].(string)
+		return PostgresStorageMap[provider]
 	}
 	c := config.(map[string]interface{})
 	provider, ok := c["cloudProvider"].(string)

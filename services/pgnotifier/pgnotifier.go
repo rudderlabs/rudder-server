@@ -74,7 +74,7 @@ type ClaimResponseT struct {
 }
 
 func New(connectionInfo string) (notifier PgNotifierT, err error) {
-	logger.Infof("PgNotifier: Initializaing PgNotifier...")
+	logger.Infof("PgNotifier: Initializing PgNotifier...")
 	dbHandle, err := sql.Open("postgres", connectionInfo)
 	if err != nil {
 		return
