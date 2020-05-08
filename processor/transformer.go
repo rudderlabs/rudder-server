@@ -200,7 +200,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 				batchCount++
 				inputIdx++
 			}
-			logger.Infof(`[Transfomer]: %d bytes sent in transformer request for %d events out of %d, Current %d/%d`, toSendDataSize, inputIdx-start, len(clientEvents), inputIdx, len(clientEvents))
+			logger.Debugf(`[Transfomer]: %d bytes sent in transformer request for %d events out of %d, Current %d/%d`, toSendDataSize, inputIdx-start, len(clientEvents), inputIdx, len(clientEvents))
 			toSendData = clientBatch
 			toSendDataSize = 0
 			trans.sentStat.Count(len(clientBatch))
@@ -209,7 +209,6 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		select {
 		//In case of batch event, index is the next Index
 		case reqQ <- &transformMessageT{index: inputIdx, data: toSendData, url: url}:
-			logger.Infof(`Sent request to %s: inputIdx: %v`, url, inputIdx)
 			totalSent++
 			toSendData = nil
 			if inputIdx == len(clientEvents) {
