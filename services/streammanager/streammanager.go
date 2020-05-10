@@ -13,28 +13,44 @@ type StreamProducer struct {
 	Producer interface{}
 }
 
-func GetProducer(jsonData json.RawMessage, destination string) (interface{}, error) {
+// GetProducer delegates the call to the appropriate based on parameter destination for creating producer
+func GetProducer(destinationConfig interface{}, destination string) (interface{}, error) {
 
 	switch destination {
 	case "KINESIS":
 		return nil, nil //kinesis.Produce(jsonData)
 	case "KAFKA":
-		producer, err := kafka.NewProducer(jsonData)
-		return StreamProducer{Producer: producer}, err
+		producer, err := kafka.NewProducer(destinationConfig)
+		return producer, err
 	default:
 		return nil, fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
 	}
 
 }
 
+// CloseProducer delegates the call to the appropriate manager based on parameter destination to close a given producer
+func CloseProducer(producer interface{}, destination string) error {
+
+	switch destination {
+	case "KINESIS":
+		return nil //kinesis.Produce(jsonData)
+	case "KAFKA":
+		err := kafka.CloseProducer(producer)
+		return err
+	default:
+		return fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
+	}
+
+}
+
 // Produce delegates call to appropriate manager based on parameter destination
-func Produce(jsonData json.RawMessage, destination string, sourceID string, destinationID string) (int, string, string) {
+func Produce(jsonData json.RawMessage, destination string, producer interface{}, config interface{}) (int, string, string) {
 
 	switch destination {
 	case "KINESIS":
 		return kinesis.Produce(jsonData)
 	case "KAFKA":
-		return kafka.Produce(jsonData, sourceID, destinationID)
+		return kafka.Produce(jsonData, producer, config)
 	default:
 		return 404, "No provider configured for StreamManager", ""
 	}

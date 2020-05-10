@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"reflect"
 
 	"github.com/Shopify/sarama"
 	"github.com/rudderlabs/rudder-server/config"
@@ -22,21 +21,19 @@ type Config struct {
 	CACertificate string
 }
 
-type ProducerConfig struct {
+/* type ProducerConfig struct {
 	Config   Config
 	Producer sarama.SyncProducer
-}
+} */
 
 var (
 	clientCertFile, clientKeyFile string
 	certificate                   tls.Certificate
-	destinationConfigProducerMap  map[string]ProducerConfig
 )
 
 func init() {
 	loadConfig()
 	loadCertificate()
-	destinationConfigProducerMap = make(map[string]ProducerConfig)
 }
 
 func loadConfig() {
@@ -55,45 +52,33 @@ func loadCertificate() {
 	}
 }
 
-func NewProducer(jsonData json.RawMessage) (sarama.SyncProducer, error) {
-
-	parsedJSON := gjson.ParseBytes(jsonData)
-	if parsedJSON.Get("output").Exists() {
-		parsedJSON = parsedJSON.Get("output")
+func getConfig(config map[string]interface{}) Config {
+	var topic, hostName, port, caCertificate string
+	var sslEnabled bool
+	if config["topic"] != nil {
+		topic = config["topic"].(string)
 	}
-	configFromJSON, err := json.Marshal(parsedJSON.Get("config").Value())
-	if err != nil {
-		panic(fmt.Errorf("error getting config from payload"))
+	if config["hostName"] != nil {
+		hostName = config["hostName"].(string)
 	}
-
-	var destConfig Config
-	json.Unmarshal(configFromJSON, &destConfig)
-
-	hostName := destConfig.HostName + ":" + destConfig.Port
-	isSslEnabled := destConfig.SslEnabled
-
-	hosts := []string{hostName}
-
-	config := sarama.NewConfig()
-	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
-	config.Producer.RequiredAcks = sarama.WaitForAll
-	config.Producer.Return.Successes = true
-
-	if isSslEnabled {
-		caCertificate := destConfig.CACertificate
-		tlsConfig := NewTLSConfig(caCertificate)
-		if tlsConfig != nil {
-			config.Net.TLS.Config = tlsConfig
-			config.Net.TLS.Enable = true
-		}
+	if config["port"] != nil {
+		port = config["port"].(string)
 	}
-
-	producer, err := sarama.NewSyncProducer(hosts, config)
-
-	return producer, err
+	if config["sslEnabled"] != nil {
+		sslEnabled = config["sslEnabled"].(bool)
+	}
+	if config["caCertificate"] != nil {
+		caCertificate = config["caCertificate"].(string)
+	}
+	return Config{Topic: topic, HostName: hostName, Port: port, SslEnabled: sslEnabled, CACertificate: caCertificate}
 }
 
-func newProducer(destConfig Config) (sarama.SyncProducer, error) {
+// NewProducer creates a producer based on destination config
+func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
+
+	var destConfig Config
+	destConfig = getConfig(destinationConfig.(map[string]interface{})) //destinationConfig.(Config)
+
 	hostName := destConfig.HostName + ":" + destConfig.Port
 	isSslEnabled := destConfig.SslEnabled
 
@@ -144,7 +129,7 @@ func NewTLSConfig(caCertFile string) *tls.Config {
 	return &tlsConfig
 }
 
-func GetProducer(destID string, destConfig Config) (sarama.SyncProducer, error) {
+/* func GetProducer(destID string, destConfig Config) (sarama.SyncProducer, error) {
 	//producer := nil
 	if destinationConfigProducerMap[destID] != (ProducerConfig{}) {
 		producer := destinationConfigProducerMap[destID].Producer
@@ -163,45 +148,46 @@ func GetProducer(destID string, destConfig Config) (sarama.SyncProducer, error) 
 		logger.Infof("created new producer: %v for destination: ", producer, destID)
 	}
 	return producer, err
+} */
+
+// CloseProducer closes a given producer
+func CloseProducer(producer interface{}) error {
+	kafkaProducer, ok := producer.(sarama.SyncProducer)
+	if ok {
+		kafkaProducer.Close()
+		return nil
+	}
+	return fmt.Errorf("error while closing producer")
+
 }
 
 // Produce creates a producer and send data to Kafka.
-func Produce(jsonData json.RawMessage, sourceID string, destinationID string) (int, string, string) {
+func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string) {
 
-	parsedJSON := gjson.ParseBytes(jsonData)
-	if parsedJSON.Get("output").Exists() {
-		parsedJSON = parsedJSON.Get("output")
+	kafkaProducer, ok := producer.(sarama.SyncProducer)
+	if !ok {
+		return 400, "Could not create producer", "Could not create producer"
 	}
-	configFromJSON, err := json.Marshal(parsedJSON.Get("config").Value())
-	if err != nil {
-		panic(fmt.Errorf("error getting config from payload"))
-	}
-	// messageID := parsedJSON.Get("message").Get("messageId").Value().(string)
-	userID := parsedJSON.Get("userId").Value().(string)
 
-	var config Config
-	json.Unmarshal(configFromJSON, &config)
-
-	logger.Info("in Kafka produce")
-
-	producer, err := GetProducer(destinationID, config) //newProducer(config)
-	if err != nil {
-		logger.Errorf("Could not create producer: ", err)
-		return 400, "Could not create producer", err.Error()
-	}
+	config := getConfig(destConfig.(map[string]interface{})) //destConfig.(Config)
 
 	//logger.Infof("Created Producer %v\n", producer)
 
 	topic := config.Topic
 
+	parsedJSON := gjson.ParseBytes(jsonData)
+	if parsedJSON.Get("output").Exists() {
+		parsedJSON = parsedJSON.Get("output")
+	}
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
+	userID := parsedJSON.Get("userId").Value().(string)
 	message := prepareMessage(topic, userID, value)
 
 	var returnMessage string
 	var statusCode int
 	var errorMessage string
-	partition, offset, err := producer.SendMessage(message)
+	partition, offset, err := kafkaProducer.SendMessage(message)
 	if err != nil {
 		returnMessage = fmt.Sprintf("%s error occured.", err)
 		statusCode = 400

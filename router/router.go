@@ -7,13 +7,16 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"reflect"
 	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/utils"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -68,6 +71,11 @@ type workerT struct {
 	failedJobIDMutex sync.RWMutex      //lock to protect structure above
 }
 
+type ProducerConfig struct {
+	Config   interface{}
+	Producer interface{}
+}
+
 var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
 	maxFailedCountForJob                                                           int
@@ -75,7 +83,8 @@ var (
 	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
 	customDestinations                                                             []string
-	destinationConfigProducerMap                                                   map[string]interface{}
+	destinationConfigProducerMap                                                   map[string]ProducerConfig
+	configSubscriberLock                                                           sync.RWMutex
 )
 
 type requestMetric struct {
@@ -107,7 +116,7 @@ func loadConfig() {
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
 	customDestinations = []string{"KINESIS", "KAFKA"}
-	destinationConfigProducerMap = make(map[string]interface{})
+	destinationConfigProducerMap = make(map[string]ProducerConfig)
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -193,24 +202,14 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 
 			deliveryTimeStat.Start()
 			if misc.ContainsString(customDestinations, job.CustomVal) {
-				respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal, paramaters.SourceID, paramaters.DestinationID)
-				/* destID := paramaters.DestinationID
-				if destinationProducerMap[destID] != (interface{}) {
-					producer := destinationConfigProducerMap[destID].Producer
-					config := destinationConfigProducerMap[destID].Config
-					if reflect.DeepEqual(config, destConfig) {
-						logger.Infof("returning existing producer: %v for destination: %v", producer, destID)
-						return producer, nil
-					}
-					logger.Infof("=========config changed ======== closing existing producer ======= for destination: %v", destID)
-					producer.Close()
-				}
-				producer, err := customdestinationmanager.GetProducer(destinationConfigProducerMap, job.EventPayload, job.CustomVal)
-				if producer != nil {
-					respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal, paramaters.SourceID, paramaters.DestinationID)
+				key := paramaters.SourceID + "-" + paramaters.DestinationID
+				if destinationConfigProducerMap[key] != (ProducerConfig{}) {
+					producer := destinationConfigProducerMap[key].Producer
+					config := destinationConfigProducerMap[key].Config
+					respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal, producer, config)
 				} else {
-					respStatusCode, respStatus, respBody = 400, err.Error(), err.Error()
-				} */
+					respStatusCode, respStatus, respBody = 500, "Producer not found in router", ""
+				}
 			} else {
 				respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
 			}
@@ -722,29 +721,48 @@ func init() {
 	loadConfig()
 }
 
-/* func (rt *HandleT) backendConfigSubscriber() {
+func (rt *HandleT) backendConfigSubscriber(destType string) {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, "backendConfig")
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
 		//rt.batchDestinations = []DestinationT{}
-		rt.destinationConfigMap = make(map[string]interface{})
+		// destinationConfigProducerMap = make(map[string]interface{})
 		allSources := config.Data.(backendconfig.SourcesT)
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if destination.DestinationDefinition.Name == rt.destID {
+					if destination.DestinationDefinition.Name == rt.destID && misc.ContainsString(customDestinations, destType) {
 						//brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
 						key := source.ID + "-" + destination.ID
-						rt.destinationConfigMap[key] = destination.Config
+						// producer := customdestinationmanager.GetProducer(destinationConfig, destType)
+						// destinationConfigProducerMap[key] = destination.Config
+						destConfig := destination.Config
+						if destinationConfigProducerMap[key] != (ProducerConfig{}) {
+							producer := destinationConfigProducerMap[key].Producer
+							config := destinationConfigProducerMap[key].Config
+							if reflect.DeepEqual(config, destConfig) {
+								continue
+							}
+							logger.Infof("=========config changed ======== closing existing producer ======= for destination: %v and source: %v", destination.Name, source.Name)
+							customdestinationmanager.CloseProducer(producer, destType)
+						}
+						producer, err := customdestinationmanager.GetProducer(destConfig, destType)
+						if err == nil {
+							producerConfig := ProducerConfig{Config: destConfig, Producer: producer}
+							destinationConfigProducerMap[key] = producerConfig
+							logger.Infof("created new producer: %v for destination: %v and source %v", producer, destination.Name, source.Name)
+						} else {
+							logger.Errorf("error while creating producer for destination: %v with error %v ", destination.Name, err)
+						}
 					}
 				}
 			}
 		}
 		configSubscriberLock.Unlock()
 	}
-} */
+}
 
 //Setup initializes this module
 func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
@@ -762,9 +780,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destID)
 	rt.initWorkers()
-	/* rruntime.Go(func() {
-		rt.backendConfigSubscriber()
-	}) */
+	rruntime.Go(func() {
+		rt.backendConfigSubscriber(destID)
+	})
 	rruntime.Go(func() {
 		rt.collectMetrics()
 	})
