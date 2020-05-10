@@ -45,6 +45,9 @@ const (
 	Imported               = "imported"
 )
 
+//MigrationCheckpointSuffix : Suffix for checkpoints table
+const MigrationCheckpointSuffix = "migration_checkpoints"
+
 //Checkpoint writes a migration event if id is passed as 0. Else it will update status and start_sequence
 func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 	return jd.CheckpointInTxn(nil, migrationEvent)
@@ -148,7 +151,7 @@ func (jd *HandleT) SetupCheckpointTable() {
 }
 
 func (jd *HandleT) getCheckPointTableName() string {
-	return fmt.Sprintf("%s_%d_%d_migration_checkpoints", jd.GetTablePrefix(), misc.GetMigratingFromVersion(), misc.GetMigratingToVersion())
+	return fmt.Sprintf("%s_%d_%d_%s", jd.GetTablePrefix(), misc.GetMigratingFromVersion(), misc.GetMigratingToVersion(), MigrationCheckpointSuffix)
 }
 
 //findOrCreateDsFromSetupCheckpoint is boiler plate code for setting up for different scenarios

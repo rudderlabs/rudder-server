@@ -336,6 +336,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		jd.dropAllDS()
 		jd.delJournal()
 		jd.dropAllBackupDS()
+		jd.dropMigrationCheckpointTables()
 	}
 
 	jd.setupEnumTypes()
@@ -982,6 +983,23 @@ func (jd *HandleT) dropAllBackupDS() error {
 		jd.dropDS(ds, false)
 	}
 	return nil
+}
+
+func (jd *HandleT) dropMigrationCheckpointTables() {
+	tableNames := jd.getAllTableNames()
+
+	var migrationCheckPointTables []string
+	for _, t := range tableNames {
+		if strings.HasPrefix(t, jd.tablePrefix) && strings.HasSuffix(t, MigrationCheckpointSuffix) {
+			migrationCheckPointTables = append(migrationCheckPointTables, t)
+		}
+	}
+
+	for _, tableName := range migrationCheckPointTables {
+		sqlStatement := fmt.Sprintf(`DROP TABLE %s`, tableName)
+		_, err := jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
+	}
 }
 
 func (jd *HandleT) dropAllDS() error {
