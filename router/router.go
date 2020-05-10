@@ -43,6 +43,7 @@ type HandleT struct {
 	requestsMetricLock    sync.RWMutex
 	diagnosisTicker       *time.Ticker
 	requestsMetric        []requestMetric
+	// destinationConfigMap  map[string]interface{}
 }
 
 type jobResponseT struct {
@@ -74,6 +75,7 @@ var (
 	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
 	customDestinations                                                             []string
+	destinationConfigProducerMap                                                   map[string]interface{}
 )
 
 type requestMetric struct {
@@ -105,6 +107,7 @@ func loadConfig() {
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
 	customDestinations = []string{"KINESIS", "KAFKA"}
+	destinationConfigProducerMap = make(map[string]interface{})
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -150,6 +153,12 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			continue
 		}
 
+		var paramaters ParametersT
+		err := json.Unmarshal(job.Parameters, &paramaters)
+		if err != nil {
+			logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+		}
+
 		//If there is a failed jobID from this user, we cannot pass future jobs
 		worker.failedJobIDMutex.RLock()
 		previousFailedJobID, isPrevFailedUser := worker.failedJobIDMap[userID]
@@ -184,7 +193,24 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 
 			deliveryTimeStat.Start()
 			if misc.ContainsString(customDestinations, job.CustomVal) {
-				respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal)
+				respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal, paramaters.SourceID, paramaters.DestinationID)
+				/* destID := paramaters.DestinationID
+				if destinationProducerMap[destID] != (interface{}) {
+					producer := destinationConfigProducerMap[destID].Producer
+					config := destinationConfigProducerMap[destID].Config
+					if reflect.DeepEqual(config, destConfig) {
+						logger.Infof("returning existing producer: %v for destination: %v", producer, destID)
+						return producer, nil
+					}
+					logger.Infof("=========config changed ======== closing existing producer ======= for destination: %v", destID)
+					producer.Close()
+				}
+				producer, err := customdestinationmanager.GetProducer(destinationConfigProducerMap, job.EventPayload, job.CustomVal)
+				if producer != nil {
+					respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal, paramaters.SourceID, paramaters.DestinationID)
+				} else {
+					respStatusCode, respStatus, respBody = 400, err.Error(), err.Error()
+				} */
 			} else {
 				respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
 			}
@@ -299,11 +325,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		}
 
 		//Sending destination response to config backend
-		var paramaters ParametersT
-		err := json.Unmarshal(job.Parameters, &paramaters)
-		if err != nil {
-			logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
-		}
+
 		deliveryStatus := destinationdebugger.DeliveryStatusT{
 			DestinationID: paramaters.DestinationID,
 			SourceID:      paramaters.SourceID,
@@ -700,6 +722,30 @@ func init() {
 	loadConfig()
 }
 
+/* func (rt *HandleT) backendConfigSubscriber() {
+	ch := make(chan utils.DataEvent)
+	backendconfig.Subscribe(ch, "backendConfig")
+	for {
+		config := <-ch
+		configSubscriberLock.Lock()
+		//rt.batchDestinations = []DestinationT{}
+		rt.destinationConfigMap = make(map[string]interface{})
+		allSources := config.Data.(backendconfig.SourcesT)
+		for _, source := range allSources.Sources {
+			if len(source.Destinations) > 0 {
+				for _, destination := range source.Destinations {
+					if destination.DestinationDefinition.Name == rt.destID {
+						//brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
+						key := source.ID + "-" + destination.ID
+						rt.destinationConfigMap[key] = destination.Config
+					}
+				}
+			}
+		}
+		configSubscriberLock.Unlock()
+	}
+} */
+
 //Setup initializes this module
 func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	logger.Info("Router started")
@@ -716,6 +762,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destID)
 	rt.initWorkers()
+	/* rruntime.Go(func() {
+		rt.backendConfigSubscriber()
+	}) */
 	rruntime.Go(func() {
 		rt.collectMetrics()
 	})
