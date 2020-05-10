@@ -45,6 +45,9 @@ const (
 	Imported               = "imported"
 )
 
+//MigrationCheckpointSuffix : Suffix for checkpoints table
+const MigrationCheckpointSuffix = "migration_checkpoints"
+
 //Checkpoint writes a migration event if id is passed as 0. Else it will update status and start_sequence
 func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 	return jd.CheckpointInTxn(nil, migrationEvent)
@@ -133,11 +136,11 @@ func NewMigrationEvent(migrationType string, fromNode string, toNode string, fil
 func (jd *HandleT) SetupCheckpointTable() {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id BIGSERIAL PRIMARY KEY,
-		migration_type varchar(20) NOT NULL,
-		from_node varchar(64) NOT NULL,
-		to_node VARCHAR(64) NOT NULL,
+		migration_type TEXT NOT NULL,
+		from_node TEXT NOT NULL,
+		to_node TEXT NOT NULL,
 		file_location TEXT UNIQUE,
-		status varchar(64),
+		status TEXT,
 		start_sequence BIGINT,
 		payload JSONB,
 		time_stamp TIMESTAMP NOT NULL DEFAULT NOW());`, jd.getCheckPointTableName())
@@ -148,7 +151,7 @@ func (jd *HandleT) SetupCheckpointTable() {
 }
 
 func (jd *HandleT) getCheckPointTableName() string {
-	return fmt.Sprintf("%s_%d_%d_migration_checkpoints", jd.GetTablePrefix(), misc.GetMigratingFromVersion(), misc.GetMigratingToVersion())
+	return fmt.Sprintf("%s_%d_%d_%s", jd.GetTablePrefix(), misc.GetMigratingFromVersion(), misc.GetMigratingToVersion(), MigrationCheckpointSuffix)
 }
 
 func (jd *HandleT) findDsFromSetupCheckpoint(migrationType string) (dataSetT, bool) {

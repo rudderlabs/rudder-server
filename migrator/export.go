@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	backoff "github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/pathfinder"
@@ -79,7 +80,7 @@ func (exporter *Exporter) export() {
 	for {
 		toQuery := dbReadBatchSize
 
-		jobList := exporter.migrator.jobsDB.GetNonMigratedAndMarkThemMigrating(toQuery)
+		jobList := exporter.migrator.jobsDB.GetJobsToMigrate(toQuery)
 		if len(jobList) == 0 {
 			break
 		}
@@ -145,7 +146,7 @@ func (exporter *Exporter) writeToFileAndUpload(nMeta pathfinder.NodeMeta, ch cha
 
 		var statusList []*jobsdb.JobStatusT
 		if writeToFile {
-			path := fmt.Sprintf(`%v%s_%s_%s_%d_%d.gz`, tmpDirPath+backupPathDirName, exporter.migrator.jobsDB.GetTablePrefix(), misc.GetNodeID(), nMeta.GetNodeID(), jobList[0].JobID, len(jobList))
+			path := fmt.Sprintf(`%v%s_%s_%s_%d_%d_%d.gz`, tmpDirPath+backupPathDirName, exporter.migrator.jobsDB.GetTablePrefix(), misc.GetNodeID(), nMeta.GetNodeID(), jobList[0].JobID, jobList[len(jobList)-1].JobID, len(jobList))
 
 			err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 			if err != nil {
@@ -190,13 +191,22 @@ func (exporter *Exporter) writeToFileAndUpload(nMeta pathfinder.NodeMeta, ch cha
 }
 
 func (exporter *Exporter) upload(file *os.File, nMeta pathfinder.NodeMeta) filemanager.UploadOutput {
-	var (
-		uploadOutput filemanager.UploadOutput
-		err          error
-	)
-	for ok := true; ok; ok = (err != nil) {
-		uploadOutput, err = exporter.migrator.fileManager.Upload(file)
+	var uploadOutput filemanager.UploadOutput
+
+	operation := func() error {
+		var uploadError error
+		uploadOutput, uploadError = exporter.migrator.fileManager.Upload(file)
+		return uploadError
 	}
+
+	for {
+		err := backoff.Retry(operation, backoff.NewExponentialBackOff())
+		if err == nil {
+			break
+		}
+		logger.Errorf("[[ %s-Export-migrator ]] Failed to export file to %s", exporter.migrator.jobsDB.GetTablePrefix(), uploadOutput.Location)
+	}
+
 	logger.Infof("[[ %s-Export-migrator ]] Uploaded an export file to %s", exporter.migrator.jobsDB.GetTablePrefix(), uploadOutput.Location)
 	return uploadOutput
 }
@@ -234,20 +244,23 @@ func (exporter *Exporter) getNotifyQForNode(nodeID string) (chan *jobsdb.Migrati
 func (exporter *Exporter) notify(nMeta pathfinder.NodeMeta, notifyQ chan *jobsdb.MigrationEvent) {
 	for {
 		checkPoint := <-notifyQ
-		statusCode := 0
-		for ok := true; ok; ok = (statusCode != 200) {
-			_, statusCode = misc.MakePostRequest(nMeta.GetNodeConnectionString(), exporter.migrator.getURI("/fileToImport"), checkPoint)
+		for {
+			_, statusCode, err := misc.MakeRetryablePostRequest(nMeta.GetNodeConnectionString(), exporter.migrator.getURI("/fileToImport"), checkPoint)
+			if err == nil && statusCode == 200 {
+				logger.Infof("[[ %s-Export-migrator ]] Notified destination node %s to download and import file from %s.", exporter.migrator.jobsDB.GetTablePrefix(), checkPoint.ToNode, checkPoint.FileLocation)
+				checkPoint.Status = jobsdb.Notified
+				exporter.migrator.jobsDB.Checkpoint(checkPoint)
+				break
+			}
+			logger.Errorf("[[ %s-Export-migrator ]] Failed to Notify: %s, Checkpoint: %+v, Error: %v, status: %d", nMeta.GetNodeConnectionString(), checkPoint, err, statusCode)
 		}
-		logger.Infof("[[ %s-Export-migrator ]] Notified destination node %s to download and import file from %s. Responded with statusCode: %d", exporter.migrator.jobsDB.GetTablePrefix(), checkPoint.ToNode, checkPoint.FileLocation, statusCode)
-		checkPoint.Status = jobsdb.Notified
-		exporter.migrator.jobsDB.Checkpoint(checkPoint)
 	}
 }
 
 func (exporter *Exporter) postExport() {
 	logger.Infof("[[ %s-Export-migrator ]] postExport", exporter.migrator.jobsDB.GetTablePrefix())
 	exporter.migrator.jobsDB.PostExportCleanup()
-	migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", jobsdb.Completed, jobsdb.Completed, 0)
+	migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", "", jobsdb.Completed, 0)
 	exporter.migrator.jobsDB.Checkpoint(&migrationEvent)
 }
 
