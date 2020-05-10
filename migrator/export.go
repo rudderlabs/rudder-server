@@ -234,20 +234,23 @@ func (exporter *Exporter) getNotifyQForNode(nodeID string) (chan *jobsdb.Migrati
 func (exporter *Exporter) notify(nMeta pathfinder.NodeMeta, notifyQ chan *jobsdb.MigrationEvent) {
 	for {
 		checkPoint := <-notifyQ
-		statusCode := 0
-		for ok := true; ok; ok = (statusCode != 200) {
-			_, statusCode = misc.MakePostRequest(nMeta.GetNodeConnectionString(), exporter.migrator.getURI("/fileToImport"), checkPoint)
+		for {
+			_, statusCode, err := misc.MakeRetryablePostRequest(nMeta.GetNodeConnectionString(), exporter.migrator.getURI("/fileToImport"), checkPoint)
+			if err != nil || statusCode != 200 {
+				logger.Errorf("[[ %s-Export-migrator ]] Failed to Notify: %s, Checkpoint: %+v, Error: %v, status: %d", nMeta.GetNodeConnectionString(), checkPoint, err, statusCode)
+				continue
+			}
+			logger.Infof("[[ %s-Export-migrator ]] Notified destination node %s to download and import file from %s. Responded with statusCode: %d", exporter.migrator.jobsDB.GetTablePrefix(), checkPoint.ToNode, checkPoint.FileLocation, statusCode)
+			checkPoint.Status = jobsdb.Notified
+			exporter.migrator.jobsDB.Checkpoint(checkPoint)
 		}
-		logger.Infof("[[ %s-Export-migrator ]] Notified destination node %s to download and import file from %s. Responded with statusCode: %d", exporter.migrator.jobsDB.GetTablePrefix(), checkPoint.ToNode, checkPoint.FileLocation, statusCode)
-		checkPoint.Status = jobsdb.Notified
-		exporter.migrator.jobsDB.Checkpoint(checkPoint)
 	}
 }
 
 func (exporter *Exporter) postExport() {
 	logger.Infof("[[ %s-Export-migrator ]] postExport", exporter.migrator.jobsDB.GetTablePrefix())
 	exporter.migrator.jobsDB.PostExportCleanup()
-	migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", jobsdb.Completed, jobsdb.Completed, 0)
+	migrationEvent := jobsdb.NewMigrationEvent(jobsdb.ExportOp, misc.GetNodeID(), "All", "", jobsdb.Completed, 0)
 	exporter.migrator.jobsDB.Checkpoint(&migrationEvent)
 }
 

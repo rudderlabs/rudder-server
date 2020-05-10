@@ -3,7 +3,6 @@ package misc
 import (
 	"archive/zip"
 	"bufio"
-	"bytes"
 	"compress/gzip"
 	"crypto/md5"
 	"database/sql"
@@ -25,6 +24,7 @@ import (
 	//"runtime/debug"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/thoas/go-funk"
@@ -700,34 +700,25 @@ func GetNodeID() string {
 	return nodeID
 }
 
-//MakePostRequest is Util function to make a post request. //TODO: copied from backend-config.go. try to centralize it?
-func MakePostRequest(url string, endpoint string, data interface{}) (response []byte, statusCode int) {
-	client := &http.Client{}
+//MakeRetryablePostRequest is Util function to make a post request.
+func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (response []byte, statusCode int, err error) {
 	backendURL := fmt.Sprintf("%s%s", url, endpoint)
-	dataJSON, _ := json.Marshal(data)
-	request, err := http.NewRequest("POST", backendURL, bytes.NewBuffer(dataJSON))
+	dataJSON, err := json.Marshal(data)
+
+	resp, err := retryablehttp.Post(backendURL, "application/json", dataJSON)
+
 	if err != nil {
-		return []byte{}, 0
-	}
-
-	request.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(request)
-	//TODO: Check this. Not handling errors when sending alert to victorops
-	if err != nil {
-		return []byte{}, 0
-	}
-
-	if resp.StatusCode != 200 && resp.StatusCode != 202 {
+		return nil, -1, err
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
 	logger.Debugf("Post request: Successful %s", string(body))
-	return body, resp.StatusCode
+	return body, resp.StatusCode, nil
 }
 
+//TODO: Move to migrator
 //GetMigratingFromVersion gives the from version during migration
 func GetMigratingFromVersion() int {
 	return config.GetRequiredEnvAsInt("MIGRATING_FROM_CLUSTER_VERSION")
