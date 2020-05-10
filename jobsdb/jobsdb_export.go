@@ -26,8 +26,8 @@ func (jd *HandleT) getLastDsForExport(dsList []dataSetT) (dataSetT, bool) {
 	return ds, false
 }
 
-//GetNonMigratedAndMarkThemMigrating all jobs with no filters
-func (jd *HandleT) GetNonMigratedAndMarkThemMigrating(count int) []*JobT {
+//GetJobsToMigrate all jobs with no filters
+func (jd *HandleT) GetJobsToMigrate(count int) []*JobT {
 	logger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated waiting for locks", jd.GetTablePrefix())
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
