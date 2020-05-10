@@ -108,6 +108,7 @@ type MigrationState struct {
 	dsForNewEvents   dataSetT
 	dsForImport      dataSetT
 	lastDsForExport  dataSetT
+	importLock       sync.RWMutex
 }
 
 /*
@@ -1580,21 +1581,6 @@ func (jd *HandleT) mainCheckLoop() {
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		if jd.migrationState.dsForImport.Index != "" {
-			if jd.checkIfFullDS(jd.migrationState.dsForImport) {
-				//Adding a new DS updates the list
-				//Doesn't move any data so we only
-				//take the list lock
-				jd.dsListLock.Lock()
-				logger.Info("Main check:NewDS")
-				jd.migrationState.dsForImport = jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
-				setupCheckpoint := jd.GetSetupCheckpoint(ImportOp)
-				var payload dataSetT
-				payload = jd.migrationState.dsForImport
-				payloadBytes, _ := json.Marshal(payload)
-				setupCheckpoint.Payload = payloadBytes
-				jd.Checkpoint(setupCheckpoint)
-				jd.dsListLock.Unlock()
-			}
 			continue
 		}
 
@@ -2207,6 +2193,7 @@ const (
 func (jd *HandleT) recoverFromJournal() {
 	jd.recoverFromCrash(mainGoRoutine)
 	jd.recoverFromCrash(backupGoRoutine)
+	jd.recoverFromImportCrash() //TODO: implement this guy
 }
 
 /*

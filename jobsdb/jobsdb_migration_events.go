@@ -151,40 +151,49 @@ func (jd *HandleT) getCheckPointTableName() string {
 	return fmt.Sprintf("%s_%d_%d_migration_checkpoints", jd.GetTablePrefix(), misc.GetMigratingFromVersion(), misc.GetMigratingToVersion())
 }
 
-//findOrCreateDsFromSetupCheckpoint is boiler plate code for setting up for different scenarios
-func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string) (dataSetT, bool) {
+func (jd *HandleT) findDsFromSetupCheckpoint(migrationType string) (dataSetT, bool) {
+	setupEvent := jd.GetSetupCheckpoint(migrationType)
+	if setupEvent == nil {
+		return dataSetT{}, false
+	}
+	ds := dataSetT{}
+	err := json.Unmarshal(setupEvent.Payload, &ds)
+	jd.assertError(err)
+	return ds, true
+}
+
+func (jd *HandleT) createSetupCheckpointAndGetDs(migrationType string) dataSetT {
 	jd.dsListLock.Lock()
 	defer jd.dsListLock.Unlock()
 
 	dsList := jd.getDSList(true)
-	setupEvent := jd.GetSetupCheckpoint(migrationType)
-	var isNewDS bool
+	me := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
 
-	if setupEvent == nil {
-		me := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
-
-		var payload dataSetT
-		switch migrationType {
-		case ExportOp:
-			payload, isNewDS = jd.getLastDsForExport(dsList)
-		case AcceptNewEventsOp:
-			payload, isNewDS = jd.getDsForNewEvents(dsList)
-		case ImportOp:
-			payload, isNewDS = jd.getDsForImport(dsList)
-		}
-
-		var err error
-		me.Payload, err = json.Marshal(payload)
-		if err != nil {
-			panic("Unable to Marshal")
-		}
-		jd.Checkpoint(&me)
-		setupEvent = &me
+	var ds dataSetT
+	switch migrationType {
+	case ExportOp:
+		ds = jd.getLastDsForExport(dsList)
+	case AcceptNewEventsOp:
+		ds = jd.getDsForNewEvents(dsList)
+	case ImportOp:
+		ds = jd.getDsForImport(dsList)
 	}
-	payload := dataSetT{}
-	err := json.Unmarshal(setupEvent.Payload, &payload)
-	jd.assertError(err)
-	return payload, isNewDS
+
+	var err error
+	me.Payload, err = json.Marshal(ds)
+	if err != nil {
+		panic("Unable to Marshal")
+	}
+	jd.Checkpoint(&me)
+	return ds
+}
+
+func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string) dataSetT {
+	ds, found := jd.findDsFromSetupCheckpoint(migrationType)
+	if !found {
+		ds = jd.createSetupCheckpointAndGetDs(migrationType)
+	}
+	return ds
 }
 
 func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType string) int64 {

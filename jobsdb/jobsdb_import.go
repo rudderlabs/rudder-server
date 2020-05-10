@@ -12,14 +12,14 @@ import (
 
 //SetupForImport is used to setup jobsdb for export or for import or for both
 func (jd *HandleT) SetupForImport() {
-	jd.migrationState.dsForNewEvents, _ = jd.findOrCreateDsFromSetupCheckpoint(AcceptNewEventsOp)
+	jd.migrationState.dsForNewEvents = jd.findOrCreateDsFromSetupCheckpoint(AcceptNewEventsOp)
 	logger.Infof("[[ %s-JobsDB Import ]] Ds for new events :%v", jd.GetTablePrefix(), jd.migrationState.dsForNewEvents)
 }
 
-func (jd *HandleT) getDsForImport(dsList []dataSetT) (dataSetT, bool) {
+func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
 	ds := jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
 	logger.Infof("[[ %s-JobsDB Import ]] Should Checkpoint Import Setup event for the new ds : %v", jd.GetTablePrefix(), ds)
-	return ds, true
+	return ds
 }
 
 func (jd *HandleT) setupSequenceProvider(ds dataSetT) {
@@ -52,36 +52,66 @@ func (jd *HandleT) setupSequenceProvider(ds dataSetT) {
 	}
 }
 
-func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) (dataSetT, bool) {
+func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 	dsListLen := len(dsList)
 	var ds dataSetT
-	var isNewDS bool
 	if jd.isEmpty(dsList[dsListLen-1]) {
 		ds = dsList[dsListLen-1]
 	} else {
-		dsForNewEvents := jd.addNewDS(appendToDsList, dataSetT{})
-		ds = dsForNewEvents
-		isNewDS = true
+		ds = jd.addNewDS(appendToDsList, dataSetT{})
 	}
 
 	seqNoForNewDS := int64(misc.GetMigratingToVersion())*int64(math.Pow10(13)) + 1
 	jd.updateSequenceNumber(ds, seqNoForNewDS)
 	logger.Infof("[[ %sJobsDB Import ]] New dataSet %s is prepared with start sequence : %d", jd.GetTablePrefix(), ds, seqNoForNewDS)
-	return ds, isNewDS
+	return ds
+}
+
+func (jd *HandleT) rollOverDsForImportIfRequired() {
+	if jd.checkIfFullDS(jd.migrationState.dsForImport) {
+		//Adding a new DS updates the list
+		//Doesn't move any data so we only
+		//take the list lock
+		jd.dsListLock.Lock()
+		logger.Info("Main check:NewDS")
+		jd.migrationState.dsForImport = jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
+		setupCheckpoint := jd.GetSetupCheckpoint(ImportOp)
+		var payload dataSetT
+		payload = jd.migrationState.dsForImport
+		payloadBytes, _ := json.Marshal(payload)
+		setupCheckpoint.Payload = payloadBytes
+		jd.Checkpoint(setupCheckpoint)
+		jd.dsListLock.Unlock()
+	}
+
 }
 
 //StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
 func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent *MigrationEvent) {
 	// This if block should be idempotent. It is currently good. But if it changes we need to add separate locks outside
-	var isNewDS bool
-	if jd.migrationState.dsForImport.Index == "" {
-		jd.migrationState.dsForImport, isNewDS = jd.findOrCreateDsFromSetupCheckpoint(ImportOp)
-		jd.setupSequenceProvider(jd.migrationState.dsForImport)
+	var found bool
+	jd.migrationState.importLock.Lock()
+
+	jd.migrationState.dsForImport, found = jd.findDsFromSetupCheckpoint(ImportOp)
+	var opID int64
+	if !found {
+		jd.migrationState.dsForImport = jd.createSetupCheckpointAndGetDs(ImportOp)
+		defer jd.migrationState.importLock.Unlock()
+		opPayload, err := json.Marshal(&jd.migrationState.dsForImport)
+		jd.assertError(err)
+		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
+	} else {
+		jd.migrationState.importLock.Unlock()
 	}
+
+	jd.setupSequenceProvider(jd.migrationState.dsForImport)
 
 	if jd.migrationState.dsForImport.Index == "" {
 		panic("dsForImportEvents was not setup. Go debug")
 	}
+
+	//TODO: Since this is called concurrently, its a bad idea.
+	jd.rollOverDsForImportIfRequired()
 
 	startJobID := jd.getStartJobID(len(jobList), migrationEvent)
 	statusList := []*JobStatusT{}
@@ -99,12 +129,6 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	logger.Infof("[[ %s-JobsDB Import ]] %d jobs found in file:%s. Writing to db", jd.GetTablePrefix(), len(jobList), fileName)
 	logger.Infof("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), fileName)
 
-	var opID int64
-	if isNewDS {
-		opPayload, err := json.Marshal(&jd.migrationState.dsForImport)
-		jd.assertError(err)
-		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
-	}
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 	defer txn.Rollback() //TODO: Review this. In a successful case rollback will be called after commit. In a failure case there will be a panic and a dangling db connection may be left
@@ -113,7 +137,7 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	migrationEvent.Status = Imported
 	jd.CheckpointInTxn(txn, migrationEvent)
 	txn.Commit()
-	if isNewDS {
+	if opID != 0 {
 		jd.JournalMarkDone(opID)
 	}
 }
