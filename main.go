@@ -205,23 +205,12 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 	enableMigrator := false
 	migrationMode := getMigrationMode()
-	shouldStartGateWay := true
-	if migrationMode == "import" {
+	if migrationMode == "import" || migrationMode == "export" || migrationMode == "import-export" {
 		enableMigrator = true
 		enableRouter = false
 		enableProcessor = false
-		shouldStartGateWay = true
-	} else if migrationMode == "export" {
-		enableMigrator = true
-		enableRouter = false
-		enableProcessor = false
-		shouldStartGateWay = false
-	} else if migrationMode == "import-export" {
-		enableMigrator = true
-		enableRouter = false
-		enableProcessor = false
-		shouldStartGateWay = true
 	}
+	shouldStartGateWay := (migrationMode != "export")
 
 	if enableMigrator {
 		logger.Info("Shanmukh Debug: migrator is enabled")

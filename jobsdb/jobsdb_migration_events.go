@@ -136,11 +136,11 @@ func NewMigrationEvent(migrationType string, fromNode string, toNode string, fil
 func (jd *HandleT) SetupCheckpointTable() {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id BIGSERIAL PRIMARY KEY,
-		migration_type varchar(20) NOT NULL,
-		from_node varchar(64) NOT NULL,
-		to_node VARCHAR(64) NOT NULL,
+		migration_type TEXT NOT NULL,
+		from_node TEXT NOT NULL,
+		to_node TEXT NOT NULL,
 		file_location TEXT UNIQUE,
-		status varchar(64),
+		status TEXT,
 		start_sequence BIGINT,
 		payload JSONB,
 		time_stamp TIMESTAMP NOT NULL DEFAULT NOW());`, jd.getCheckPointTableName())
