@@ -67,36 +67,30 @@ func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 	return ds
 }
 
-func (jd *HandleT) rollOverDsForImportIfRequired() {
-	if jd.checkIfFullDS(jd.migrationState.dsForImport) {
-		//Adding a new DS updates the list
-		//Doesn't move any data so we only
-		//take the list lock
-		jd.dsListLock.Lock()
-		logger.Info("Main check:NewDS")
-		jd.migrationState.dsForImport = jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
-		setupCheckpoint := jd.GetSetupCheckpoint(ImportOp)
-		var payload dataSetT
-		payload = jd.migrationState.dsForImport
-		payloadBytes, _ := json.Marshal(payload)
-		setupCheckpoint.Payload = payloadBytes
-		jd.Checkpoint(setupCheckpoint)
-		jd.dsListLock.Unlock()
-	}
-
-}
-
 //StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
 func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent *MigrationEvent) {
 	// This if block should be idempotent. It is currently good. But if it changes we need to add separate locks outside
 	var found bool
+	var opID int64
 	jd.migrationState.importLock.Lock()
 
+	//TODO: Shouldn't it ideally be in a single routine, instead of everybody trying to do it. Refer next TODO
+	//Also need to factor in the jd.migrationState.dsForImport == "" condition
 	jd.migrationState.dsForImport, found = jd.findDsFromSetupCheckpoint(ImportOp)
-	var opID int64
 	if !found {
-		jd.migrationState.dsForImport = jd.createSetupCheckpointAndGetDs(ImportOp)
 		defer jd.migrationState.importLock.Unlock()
+		jd.migrationState.dsForImport = jd.createSetupCheckpointAndGetDs(ImportOp)
+		opPayload, err := json.Marshal(&jd.migrationState.dsForImport)
+		jd.assertError(err)
+		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
+	} else if jd.checkIfFullDS(jd.migrationState.dsForImport) {//TODO: This method/func is supposed to be run concurrently. This is not the right place to checkIfFullDS. 
+		defer jd.migrationState.importLock.Unlock()
+		jd.dsListLock.Lock()
+		jd.migrationState.dsForImport = jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
+		setupCheckpoint := jd.GetSetupCheckpoint(ImportOp)
+		setupCheckpoint.Payload, _ = json.Marshal(jd.migrationState.dsForImport)
+		jd.Checkpoint(setupCheckpoint)
+		jd.dsListLock.Unlock()
 		opPayload, err := json.Marshal(&jd.migrationState.dsForImport)
 		jd.assertError(err)
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
@@ -109,9 +103,6 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	if jd.migrationState.dsForImport.Index == "" {
 		panic("dsForImportEvents was not setup. Go debug")
 	}
-
-	//TODO: Since this is called concurrently, its a bad idea.
-	jd.rollOverDsForImportIfRequired()
 
 	startJobID := jd.getStartJobID(len(jobList), migrationEvent)
 	statusList := []*JobStatusT{}

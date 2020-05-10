@@ -2078,6 +2078,10 @@ func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 	return
 }
 
+func (jd *HandleT) recoverFromImportCrash() {
+	//TODO: Implement this guy based on the solution for addNewDS
+}
+
 func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 
 	var opTypes []string
