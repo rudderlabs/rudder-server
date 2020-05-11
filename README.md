@@ -22,7 +22,7 @@ You can use the [cloud hosted][dashboard-intro] RudderStack instance to experien
 
 # Features
 
-1. **Production Ready:** Multiple companies from startups to large enterprises are running RudderStack for collecting events.
+1. **Production Ready:** Multiple companies (e.g. MatterMost, IFTTT, Grofers, 1mg are few of them) are running RudderStack for collecting events.
 2. **Extreme Scale:** One of our largest installations is sending **300M events/day** with peak of **40K req/sec** via a multi-node RudderStack setup.
 3. **Segment API Compatibile:** RudderStack is Segment API and library compatible so don't need to change your app if you are using Segment.
 4. **Cloud Destinations:** Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations.
