@@ -7,3 +7,4 @@ dist/*
 workspaceConfig.json
 **/node_modules
 imports/enterprise.go
+enterprise
