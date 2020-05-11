@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/Shopify/sarama"
 	"github.com/rudderlabs/rudder-server/config"
@@ -145,8 +146,8 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	var errorMessage string
 	partition, offset, err := kafkaProducer.SendMessage(message)
 	if err != nil {
-		returnMessage = fmt.Sprintf("%s error occured.", err)
-		statusCode = 400
+		returnMessage = fmt.Sprintf("%s error occured.", err.Error())
+		statusCode = GetStatusCodeFromError(err) //400
 		errorMessage = err.Error()
 		logger.Error(returnMessage)
 	} else {
@@ -158,4 +159,20 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	//producer.Close()
 
 	return statusCode, returnMessage, errorMessage
+}
+
+// GetStatusCodeFromError parses the error and returns the status so that event gets retried or failed.
+func GetStatusCodeFromError(err error) int {
+	statusCode := 500
+
+	errorString := err.Error()
+
+	for _, s := range abortableErrors {
+		if strings.Contains(errorString, s) {
+			statusCode = 400
+			break
+		}
+	}
+
+	return statusCode
 }

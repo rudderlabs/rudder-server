@@ -206,9 +206,23 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				if destinationConfigProducerMap[key] != (ProducerConfig{}) {
 					producer := destinationConfigProducerMap[key].Producer
 					config := destinationConfigProducerMap[key].Config
-					respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal, producer, config)
+					if producer != nil {
+						respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal, producer, config)
+					} else {
+						producer, err := customdestinationmanager.GetProducer(config, rt.destID)
+						producerConfig := ProducerConfig{Config: config, Producer: producer}
+						destinationConfigProducerMap[key] = producerConfig
+						logger.Infof("created new producer: %v for destination: %v and source %v", producer, paramaters.DestinationID, paramaters.SourceID)
+						if err == nil {
+							respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal, producer, config)
+						} else {
+							respStatusCode, respStatus, respBody = 500, "Producer not found in router", "Producer could not be created"
+						}
+
+					}
+
 				} else {
-					respStatusCode, respStatus, respBody = 500, "Producer not found in router", ""
+					respStatusCode, respStatus, respBody = 500, "Producer not found in router", "Producer could not be created"
 				}
 			} else {
 				respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
@@ -721,7 +735,7 @@ func init() {
 	loadConfig()
 }
 
-func (rt *HandleT) backendConfigSubscriber(destType string) {
+func (rt *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, "backendConfig")
 	for {
@@ -733,7 +747,7 @@ func (rt *HandleT) backendConfigSubscriber(destType string) {
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if destination.DestinationDefinition.Name == rt.destID && misc.ContainsString(customDestinations, destType) {
+					if destination.DestinationDefinition.Name == rt.destID && misc.ContainsString(customDestinations, rt.destID) {
 						//brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
 						key := source.ID + "-" + destination.ID
 						// producer := customdestinationmanager.GetProducer(destinationConfig, destType)
@@ -743,18 +757,28 @@ func (rt *HandleT) backendConfigSubscriber(destType string) {
 							producer := destinationConfigProducerMap[key].Producer
 							config := destinationConfigProducerMap[key].Config
 							if reflect.DeepEqual(config, destConfig) {
+								if !destination.Enabled {
+									logger.Infof("======== closing existing producer as destination disabled for destination: %v and source: %v", destination.Name, source.Name)
+									customdestinationmanager.CloseProducer(producer, rt.destID)
+									delete(destinationConfigProducerMap, key)
+								}
 								continue
 							}
 							logger.Infof("=========config changed ======== closing existing producer ======= for destination: %v and source: %v", destination.Name, source.Name)
-							customdestinationmanager.CloseProducer(producer, destType)
+							customdestinationmanager.CloseProducer(producer, rt.destID)
+							delete(destinationConfigProducerMap, key)
 						}
-						producer, err := customdestinationmanager.GetProducer(destConfig, destType)
-						if err == nil {
+						if destination.Enabled {
+							producer, err := customdestinationmanager.GetProducer(destConfig, rt.destID)
 							producerConfig := ProducerConfig{Config: destConfig, Producer: producer}
 							destinationConfigProducerMap[key] = producerConfig
-							logger.Infof("created new producer: %v for destination: %v and source %v", producer, destination.Name, source.Name)
-						} else {
-							logger.Errorf("error while creating producer for destination: %v with error %v ", destination.Name, err)
+							if err == nil {
+								logger.Infof("created new producer: %v for destination: %v and source %v", producer, destination.Name, source.Name)
+							} else {
+								producerConfig := ProducerConfig{Config: destConfig, Producer: producer}
+								destinationConfigProducerMap[key] = producerConfig
+								logger.Errorf("error while creating producer for destination: %v with error %v ", destination.Name, err)
+							}
 						}
 					}
 				}
@@ -781,7 +805,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.perfStats.Setup("StatsUpdate:" + destID)
 	rt.initWorkers()
 	rruntime.Go(func() {
-		rt.backendConfigSubscriber(destID)
+		rt.backendConfigSubscriber()
 	})
 	rruntime.Go(func() {
 		rt.collectMetrics()
