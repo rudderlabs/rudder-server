@@ -867,6 +867,9 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 }
 
 func (proc *HandleT) mainLoop() {
+	//waiting till the backend config is received
+	backendconfig.WaitForConfig()
+
 	logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
 

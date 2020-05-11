@@ -219,7 +219,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		})
 		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
 	}
-	_, err = uploader.Upload(outputFile, keyPrefixes...)
+	uploadOutput, err := uploader.Upload(outputFile, keyPrefixes...)
 
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to %s: Error: %v", provider, err)
@@ -231,7 +231,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 	return StorageUploadOutput{
 		Config:         batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
-		Key:            strings.Join(keyPrefixes, "/") + "/" + fileName,
+		Key:            uploadOutput.ObjectName,
 		LocalFilePaths: []string{gzipFilePath},
 		JournalOpID:    opID,
 		FirstEventAt:   firstEventAt,
