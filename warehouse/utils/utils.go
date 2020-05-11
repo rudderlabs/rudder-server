@@ -4,7 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -484,6 +487,18 @@ func GetObjectFolder(provider string, location string) (folder string) {
 	return
 }
 
+func GetObjectName(providerConfig interface{}, location string) (key string, err error) {
+	config := providerConfig.(map[string]interface{})
+	fm, err := filemanager.New(&filemanager.SettingsT{
+		Provider: config["cloudProvider"].(string),
+		Config:   config,
+	})
+	if err != nil {
+		return "", err
+	}
+	return fm.GetObjectNameFromLocation(location), nil
+}
+
 // GetS3Location parses path-style location http url to return in s3:// format
 // https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetS3Location(location string) (s3Location string, region string) {
@@ -667,7 +682,7 @@ func ObjectStorageType(destType string, config interface{}) string {
 	}
 	if destType == "POSTGRES" {
 		c := config.(map[string]interface{})
-		provider, _:= c["cloudProvider"].(string)
+		provider, _ := c["cloudProvider"].(string)
 		return PostgresStorageMap[provider]
 	}
 	c := config.(map[string]interface{})
@@ -684,4 +699,14 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 		val, _ = config[key].(string)
 	}
 	return val
+}
+
+func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
+	keys := reflect.ValueOf(columnMap).MapKeys()
+	columnKeys := make([]string, len(keys))
+	for i := 0; i < len(keys); i++ {
+		columnKeys[i] = keys[i].String()
+	}
+	sort.Strings(columnKeys)
+	return columnKeys
 }

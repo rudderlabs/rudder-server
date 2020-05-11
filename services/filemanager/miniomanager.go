@@ -59,6 +59,18 @@ func (manager *MinioManager) Download(file *os.File, key string) error {
 	return err
 }
 
+func (manager *MinioManager) GetObjectNameFromLocation(location string) string {
+	var baseUrl string
+	if manager.Config.UseSSL {
+		baseUrl += "https://"
+	} else {
+		baseUrl += "http://"
+	}
+	baseUrl += manager.Config.EndPoint + "/"
+	baseUrl += manager.Config.Bucket + "/"
+	return location[len(baseUrl):]
+}
+
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey string
 	var useSSL bool

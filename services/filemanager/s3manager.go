@@ -90,6 +90,14 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 	return err
 }
 
+func (manager *S3Manager) GetObjectNameFromLocation(location string) string {
+	var baseUrl string
+	baseUrl += "https://"
+	baseUrl += manager.Config.Bucket + "."
+	baseUrl += "s3.amazonaws.com" + "/"
+	return location[len(baseUrl):]
+}
+
 type S3Object struct {
 	Key              string
 	LastModifiedTime time.Time

@@ -9,7 +9,7 @@ import (
 )
 
 type UploadOutput struct {
-	Location string
+	Location   string
 	ObjectName string
 }
 
@@ -17,6 +17,7 @@ type UploadOutput struct {
 type FileManager interface {
 	Upload(*os.File, ...string) (UploadOutput, error)
 	Download(*os.File, string) error
+	GetObjectNameFromLocation(string) string
 }
 
 // SettingsT sets configuration for FileManager
