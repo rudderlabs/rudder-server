@@ -80,7 +80,7 @@ func (exporter *Exporter) export() {
 	for {
 		toQuery := dbReadBatchSize
 
-		jobList := exporter.migrator.jobsDB.GetJobsToMigrate(toQuery)
+		jobList := exporter.migrator.jobsDB.GetNonMigratedAndMarkMigrating(toQuery)
 		if len(jobList) == 0 {
 			break
 		}

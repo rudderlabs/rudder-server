@@ -26,8 +26,8 @@ func (jd *HandleT) getLastDsForExport(dsList []dataSetT) dataSetT {
 	return ds
 }
 
-//GetJobsToMigrate all jobs with no filters
-func (jd *HandleT) GetJobsToMigrate(count int) []*JobT {
+//GetNonMigratedAndMarkMigrating all jobs with no filters
+func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	logger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated waiting for locks", jd.GetTablePrefix())
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -52,7 +52,7 @@ func (jd *HandleT) GetJobsToMigrate(count int) []*JobT {
 
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
-		jobs, err := jd.getNonMigratedJobsAndMarkThemMigratingDS(ds, count)
+		jobs, err := jd.getNonMigratedJobsAndMarkMigratingDS(ds, count)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
@@ -95,7 +95,7 @@ type SQLJobStatusT struct {
 	ErrorResponse sql.NullString
 }
 
-func (jd *HandleT) getNonMigratedJobsAndMarkThemMigratingDS(ds dataSetT, count int) ([]*JobT, error) {
+func (jd *HandleT) getNonMigratedJobsAndMarkMigratingDS(ds dataSetT, count int) ([]*JobT, error) {
 	var rows *sql.Rows
 	var err error
 
