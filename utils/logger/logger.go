@@ -103,7 +103,7 @@ func loadConfig() {
 
 var options []zap.Option
 
-func NewLogger() *LoggerT {
+func NewLogger() LoggerI {
 	return &LoggerT{}
 }
 
@@ -111,11 +111,6 @@ func NewLogger() *LoggerT {
 func (l *LoggerT) Setup() {
 	loadConfig()
 	Log = configureLogger()
-}
-
-// Deprecated! Use instance of LoggerT instead
-func Setup() {
-	log.Setup()
 }
 
 //IsDebugLevel Returns true is debug lvl is enabled
