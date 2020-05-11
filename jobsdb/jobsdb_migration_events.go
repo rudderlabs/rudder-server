@@ -69,7 +69,7 @@ func (jd *HandleT) CheckpointInTxn(txn *sql.Tx, migrationEvent *MigrationEvent) 
 		checkpointType = "update"
 	} else {
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (migration_type, from_node, to_node, file_location, status, start_sequence, payload, time_stamp)
-									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (file_location) DO UPDATE SET status=EXCLUDED.status RETURNING id`, jd.getCheckPointTableName())
+									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT ON CONSTRAINT %s_unique_checkpoint DO UPDATE SET status=EXCLUDED.status RETURNING id`, jd.getCheckPointTableName(), jd.GetTablePrefix())
 		checkpointType = "insert"
 	}
 
@@ -117,11 +117,11 @@ func (jd *HandleT) CheckpointInTxn(txn *sql.Tx, migrationEvent *MigrationEvent) 
 func NewSetupCheckpointEvent(migrationType string, node string) MigrationEvent {
 	switch migrationType {
 	case ExportOp:
-		return NewMigrationEvent(migrationType, node, "All", SetupForExport, SetupForExport, 0)
+		return NewMigrationEvent(migrationType, node, "All", "", SetupForExport, 0)
 	case AcceptNewEventsOp:
-		return NewMigrationEvent(migrationType, "All", node, SetupToAcceptNewEvents, SetupToAcceptNewEvents, 0)
+		return NewMigrationEvent(migrationType, "All", node, "", SetupToAcceptNewEvents, 0)
 	case ImportOp:
-		return NewMigrationEvent(migrationType, "All", node, SetupForImport, SetupForImport, 0)
+		return NewMigrationEvent(migrationType, "All", node, "", SetupForImport, 0)
 	default:
 		panic("Illegal usage")
 	}
@@ -139,11 +139,13 @@ func (jd *HandleT) SetupCheckpointTable() {
 		migration_type TEXT NOT NULL,
 		from_node TEXT NOT NULL,
 		to_node TEXT NOT NULL,
-		file_location TEXT UNIQUE,
+		file_location TEXT,
 		status TEXT,
 		start_sequence BIGINT,
 		payload JSONB,
-		time_stamp TIMESTAMP NOT NULL DEFAULT NOW());`, jd.getCheckPointTableName())
+		time_stamp TIMESTAMP NOT NULL DEFAULT NOW(),
+		CONSTRAINT %s_unique_checkpoint UNIQUE(migration_type, from_node, to_node, file_location, status)
+		);`, jd.getCheckPointTableName(), jd.GetTablePrefix())
 
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)

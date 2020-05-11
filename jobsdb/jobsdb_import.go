@@ -74,7 +74,6 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	var opID int64
 	jd.migrationState.importLock.Lock()
 
-	//TODO: Shouldn't it ideally be in a single routine, instead of everybody trying to do it. Refer next TODO
 	//Also need to factor in the jd.migrationState.dsForImport == "" condition
 	jd.migrationState.dsForImport, found = jd.findDsFromSetupCheckpoint(ImportOp)
 	if !found {
@@ -83,7 +82,7 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 		opPayload, err := json.Marshal(&jd.migrationState.dsForImport)
 		jd.assertError(err)
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
-	} else if jd.checkIfFullDS(jd.migrationState.dsForImport) {//TODO: This method/func is supposed to be run concurrently. This is not the right place to checkIfFullDS. 
+	} else if jd.checkIfFullDS(jd.migrationState.dsForImport) {
 		defer jd.migrationState.importLock.Unlock()
 		jd.dsListLock.Lock()
 		jd.migrationState.dsForImport = jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)

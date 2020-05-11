@@ -2098,18 +2098,16 @@ func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 	return
 }
 
-func (jd *HandleT) recoverFromImportCrash() {
-	//TODO: Implement this guy based on the solution for addNewDS
-}
-
 func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 
 	var opTypes []string
 	switch goRoutineType {
 	case mainGoRoutine:
-		opTypes = []string{addDSOperation, migrateCopyOperation, migrateImportOperation, postMigrateDSOperation, dropDSOperation}
+		opTypes = []string{addDSOperation, migrateCopyOperation, postMigrateDSOperation, dropDSOperation}
 	case backupGoRoutine:
 		opTypes = []string{backupDSOperation, backupDropDSOperation}
+	case migratorRoutine:
+		opTypes = []string{migrateImportOperation}
 	}
 
 	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
@@ -2212,12 +2210,13 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 const (
 	mainGoRoutine   = "main"
 	backupGoRoutine = "backup"
+	migratorRoutine = "migrator"
 )
 
 func (jd *HandleT) recoverFromJournal() {
 	jd.recoverFromCrash(mainGoRoutine)
 	jd.recoverFromCrash(backupGoRoutine)
-	jd.recoverFromImportCrash() //TODO: implement this guy
+	jd.recoverFromCrash(migratorRoutine)
 }
 
 /*
