@@ -45,6 +45,9 @@ const (
 	Imported               = "imported"
 )
 
+//MigrationCheckpointSuffix : Suffix for checkpoints table
+const MigrationCheckpointSuffix = "migration_checkpoints"
+
 //Checkpoint writes a migration event if id is passed as 0. Else it will update status and start_sequence
 func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
 	return jd.CheckpointInTxn(nil, migrationEvent)
@@ -66,7 +69,7 @@ func (jd *HandleT) CheckpointInTxn(txn *sql.Tx, migrationEvent *MigrationEvent) 
 		checkpointType = "update"
 	} else {
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (migration_type, from_node, to_node, file_location, status, start_sequence, payload, time_stamp)
-									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (file_location) DO UPDATE SET status=EXCLUDED.status RETURNING id`, jd.getCheckPointTableName())
+									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT ON CONSTRAINT %s_unique_checkpoint DO UPDATE SET status=EXCLUDED.status RETURNING id`, jd.getCheckPointTableName(), jd.GetTablePrefix())
 		checkpointType = "insert"
 	}
 
@@ -114,11 +117,11 @@ func (jd *HandleT) CheckpointInTxn(txn *sql.Tx, migrationEvent *MigrationEvent) 
 func NewSetupCheckpointEvent(migrationType string, node string) MigrationEvent {
 	switch migrationType {
 	case ExportOp:
-		return NewMigrationEvent(migrationType, node, "All", SetupForExport, SetupForExport, 0)
+		return NewMigrationEvent(migrationType, node, "All", "", SetupForExport, 0)
 	case AcceptNewEventsOp:
-		return NewMigrationEvent(migrationType, "All", node, SetupToAcceptNewEvents, SetupToAcceptNewEvents, 0)
+		return NewMigrationEvent(migrationType, "All", node, "", SetupToAcceptNewEvents, 0)
 	case ImportOp:
-		return NewMigrationEvent(migrationType, "All", node, SetupForImport, SetupForImport, 0)
+		return NewMigrationEvent(migrationType, "All", node, "", SetupForImport, 0)
 	default:
 		panic("Illegal usage")
 	}
@@ -133,14 +136,16 @@ func NewMigrationEvent(migrationType string, fromNode string, toNode string, fil
 func (jd *HandleT) SetupCheckpointTable() {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id BIGSERIAL PRIMARY KEY,
-		migration_type varchar(20) NOT NULL,
-		from_node varchar(64) NOT NULL,
-		to_node VARCHAR(64) NOT NULL,
-		file_location TEXT UNIQUE,
-		status varchar(64),
+		migration_type TEXT NOT NULL,
+		from_node TEXT NOT NULL,
+		to_node TEXT NOT NULL,
+		file_location TEXT,
+		status TEXT,
 		start_sequence BIGINT,
 		payload JSONB,
-		time_stamp TIMESTAMP NOT NULL DEFAULT NOW());`, jd.getCheckPointTableName())
+		time_stamp TIMESTAMP NOT NULL DEFAULT NOW(),
+		CONSTRAINT %s_unique_checkpoint UNIQUE(migration_type, from_node, to_node, file_location, status)
+		);`, jd.getCheckPointTableName(), jd.GetTablePrefix())
 
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
@@ -148,43 +153,52 @@ func (jd *HandleT) SetupCheckpointTable() {
 }
 
 func (jd *HandleT) getCheckPointTableName() string {
-	return fmt.Sprintf("%s_%d_%d_migration_checkpoints", jd.GetTablePrefix(), misc.GetMigratingFromVersion(), misc.GetMigratingToVersion())
+	return fmt.Sprintf("%s_%d_%d_%s", jd.GetTablePrefix(), misc.GetMigratingFromVersion(), misc.GetMigratingToVersion(), MigrationCheckpointSuffix)
 }
 
-//findOrCreateDsFromSetupCheckpoint is boiler plate code for setting up for different scenarios
-func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string) (dataSetT, bool) {
+func (jd *HandleT) findDsFromSetupCheckpoint(migrationType string) (dataSetT, bool) {
+	setupEvent := jd.GetSetupCheckpoint(migrationType)
+	if setupEvent == nil {
+		return dataSetT{}, false
+	}
+	ds := dataSetT{}
+	err := json.Unmarshal(setupEvent.Payload, &ds)
+	jd.assertError(err)
+	return ds, true
+}
+
+func (jd *HandleT) createSetupCheckpointAndGetDs(migrationType string) dataSetT {
 	jd.dsListLock.Lock()
 	defer jd.dsListLock.Unlock()
 
 	dsList := jd.getDSList(true)
-	setupEvent := jd.GetSetupCheckpoint(migrationType)
-	var isNewDS bool
+	me := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
 
-	if setupEvent == nil {
-		me := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
-
-		var payload dataSetT
-		switch migrationType {
-		case ExportOp:
-			payload, isNewDS = jd.getLastDsForExport(dsList)
-		case AcceptNewEventsOp:
-			payload, isNewDS = jd.getDsForNewEvents(dsList)
-		case ImportOp:
-			payload, isNewDS = jd.getDsForImport(dsList)
-		}
-
-		var err error
-		me.Payload, err = json.Marshal(payload)
-		if err != nil {
-			panic("Unable to Marshal")
-		}
-		jd.Checkpoint(&me)
-		setupEvent = &me
+	var ds dataSetT
+	switch migrationType {
+	case ExportOp:
+		ds = jd.getLastDsForExport(dsList)
+	case AcceptNewEventsOp:
+		ds = jd.getDsForNewEvents(dsList)
+	case ImportOp:
+		ds = jd.getDsForImport(dsList)
 	}
-	payload := dataSetT{}
-	err := json.Unmarshal(setupEvent.Payload, &payload)
-	jd.assertError(err)
-	return payload, isNewDS
+
+	var err error
+	me.Payload, err = json.Marshal(ds)
+	if err != nil {
+		panic("Unable to Marshal")
+	}
+	jd.Checkpoint(&me)
+	return ds
+}
+
+func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType string) dataSetT {
+	ds, found := jd.findDsFromSetupCheckpoint(migrationType)
+	if !found {
+		ds = jd.createSetupCheckpointAndGetDs(migrationType)
+	}
+	return ds
 }
 
 func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType string) int64 {

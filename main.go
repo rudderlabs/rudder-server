@@ -178,9 +178,9 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB ", *clearDB)
 
+	backendconfig.Setup()
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
-	backendconfig.Setup()
 
 	//Forcing enableBackup false for gatewaydb if this server is for handling replayed events
 	if isReplayServer {
@@ -193,23 +193,12 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 
 	enableMigrator := false
 	migrationMode := application.Options().MigrationMode
-	shouldStartGateWay := true
-	if migrationMode == "import" {
+	if migrationMode == "import" || migrationMode == "export" || migrationMode == "import-export" {
 		enableMigrator = true
 		enableRouter = false
 		enableProcessor = false
-		shouldStartGateWay = true
-	} else if migrationMode == "export" {
-		enableMigrator = true
-		enableRouter = false
-		enableProcessor = false
-		shouldStartGateWay = false
-	} else if migrationMode == "import-export" {
-		enableMigrator = true
-		enableRouter = false
-		enableProcessor = false
-		shouldStartGateWay = true
 	}
+	shouldStartGateWay := (migrationMode != "export")
 
 	if application.Features().Migrator != nil {
 		if enableMigrator {

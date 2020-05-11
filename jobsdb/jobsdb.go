@@ -108,6 +108,7 @@ type MigrationState struct {
 	dsForNewEvents   dataSetT
 	dsForImport      dataSetT
 	lastDsForExport  dataSetT
+	importLock       sync.RWMutex
 }
 
 /*
@@ -336,6 +337,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		jd.dropAllDS()
 		jd.delJournal()
 		jd.dropAllBackupDS()
+		jd.dropMigrationCheckpointTables()
 	}
 
 	jd.setupEnumTypes()
@@ -984,6 +986,23 @@ func (jd *HandleT) dropAllBackupDS() error {
 	return nil
 }
 
+func (jd *HandleT) dropMigrationCheckpointTables() {
+	tableNames := jd.getAllTableNames()
+
+	var migrationCheckPointTables []string
+	for _, t := range tableNames {
+		if strings.HasPrefix(t, jd.tablePrefix) && strings.HasSuffix(t, MigrationCheckpointSuffix) {
+			migrationCheckPointTables = append(migrationCheckPointTables, t)
+		}
+	}
+
+	for _, tableName := range migrationCheckPointTables {
+		sqlStatement := fmt.Sprintf(`DROP TABLE %s`, tableName)
+		_, err := jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
+	}
+}
+
 func (jd *HandleT) dropAllDS() error {
 
 	jd.dsListLock.Lock()
@@ -1114,6 +1133,8 @@ func (jd *HandleT) storeJobsDSInTxn(txn *sql.Tx, ds dataSetT, copyID bool, retry
 	_, err = stmt.Exec()
 	if !isTxnPassed {
 		if err != nil && retryEach {
+			//TODO REMOVE
+			logger.Debug("[storeJobsDSInTxn] rolling back transaction")
 			txn.Rollback() // rollback started txn, to prevent dangling db connection
 			for _, job := range jobList {
 				errorMessage := jd.storeJobDS(ds, job)
@@ -1580,21 +1601,6 @@ func (jd *HandleT) mainCheckLoop() {
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		if jd.migrationState.dsForImport.Index != "" {
-			if jd.checkIfFullDS(jd.migrationState.dsForImport) {
-				//Adding a new DS updates the list
-				//Doesn't move any data so we only
-				//take the list lock
-				jd.dsListLock.Lock()
-				logger.Info("Main check:NewDS")
-				jd.migrationState.dsForImport = jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
-				setupCheckpoint := jd.GetSetupCheckpoint(ImportOp)
-				var payload dataSetT
-				payload = jd.migrationState.dsForImport
-				payloadBytes, _ := json.Marshal(payload)
-				setupCheckpoint.Payload = payloadBytes
-				jd.Checkpoint(setupCheckpoint)
-				jd.dsListLock.Unlock()
-			}
 			continue
 		}
 
@@ -2097,9 +2103,11 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 	var opTypes []string
 	switch goRoutineType {
 	case mainGoRoutine:
-		opTypes = []string{addDSOperation, migrateCopyOperation, migrateImportOperation, postMigrateDSOperation, dropDSOperation}
+		opTypes = []string{addDSOperation, migrateCopyOperation, postMigrateDSOperation, dropDSOperation}
 	case backupGoRoutine:
 		opTypes = []string{backupDSOperation, backupDropDSOperation}
+	case migratorRoutine:
+		opTypes = []string{migrateImportOperation}
 	}
 
 	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
@@ -2202,11 +2210,13 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 const (
 	mainGoRoutine   = "main"
 	backupGoRoutine = "backup"
+	migratorRoutine = "migrator"
 )
 
 func (jd *HandleT) recoverFromJournal() {
 	jd.recoverFromCrash(mainGoRoutine)
 	jd.recoverFromCrash(backupGoRoutine)
+	jd.recoverFromCrash(migratorRoutine)
 }
 
 /*

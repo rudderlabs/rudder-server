@@ -589,6 +589,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//Event count for performance stat monitoring
 	totalEvents := 0
 
+	//TODO REMOVE
+	logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
+
 	proc.marshalSingularEvents.Start()
 	for idx, batchEvent := range jobList {
 
@@ -781,9 +784,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Start()
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
+		//TODO REMOVE
+		logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 		proc.routerDB.Store(destJobs)
 	}
 	if len(batchDestJobs) > 0 {
+		//TODO REMOVE
+		logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 		proc.batchRouterDB.Store(batchDestJobs)
 	}
 
@@ -804,6 +811,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 }
 
 func (proc *HandleT) mainLoop() {
+	//waiting till the backend config is received
+	backendconfig.WaitForConfig()
 
 	logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)

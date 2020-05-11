@@ -10,11 +10,11 @@ import (
 
 //SetupForExport is used to setup jobsdb for export or for import or for both
 func (jd *HandleT) SetupForExport() {
-	jd.migrationState.lastDsForExport, _ = jd.findOrCreateDsFromSetupCheckpoint(ExportOp)
+	jd.migrationState.lastDsForExport = jd.findOrCreateDsFromSetupCheckpoint(ExportOp)
 	logger.Infof("[[ %s-JobsDB Export ]] Last ds for export : %v", jd.GetTablePrefix(), jd.migrationState.lastDsForExport)
 }
 
-func (jd *HandleT) getLastDsForExport(dsList []dataSetT) (dataSetT, bool) {
+func (jd *HandleT) getLastDsForExport(dsList []dataSetT) dataSetT {
 	dsListLen := len(dsList)
 	var ds dataSetT
 	if !jd.isEmpty(dsList[dsListLen-1]) {
@@ -23,11 +23,11 @@ func (jd *HandleT) getLastDsForExport(dsList []dataSetT) (dataSetT, bool) {
 		ds = dsList[dsListLen-2]
 	}
 
-	return ds, false
+	return ds
 }
 
-//GetNonMigratedAndMarkThemMigrating all jobs with no filters
-func (jd *HandleT) GetNonMigratedAndMarkThemMigrating(count int) []*JobT {
+//GetNonMigratedAndMarkMigrating all jobs with no filters
+func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	logger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated waiting for locks", jd.GetTablePrefix())
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -52,7 +52,7 @@ func (jd *HandleT) GetNonMigratedAndMarkThemMigrating(count int) []*JobT {
 
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
-		jobs, err := jd.getNonMigratedJobsAndMarkThemMigratingDS(ds, count)
+		jobs, err := jd.getNonMigratedJobsAndMarkMigratingDS(ds, count)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
@@ -95,7 +95,7 @@ type SQLJobStatusT struct {
 	ErrorResponse sql.NullString
 }
 
-func (jd *HandleT) getNonMigratedJobsAndMarkThemMigratingDS(ds dataSetT, count int) ([]*JobT, error) {
+func (jd *HandleT) getNonMigratedJobsAndMarkMigratingDS(ds dataSetT, count int) ([]*JobT, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -163,6 +163,8 @@ func (jd *HandleT) getNonMigratedJobsAndMarkThemMigratingDS(ds dataSetT, count i
 func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNodeID string, toNodeID string, uploadLocation string) {
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
+	//TODO REMOVE
+	logger.Debug("[DEFER UpdateJobStatusAndCheckpoint] rolling back transaction")
 	defer txn.Rollback() //TODO: Review this. In a successful case rollback will be called after commit. In a failure case there will be a panic and a dangling db connection may be left
 	jd.UpdateJobStatusInTxn(txn, statusList, []string{}, []ParameterFilterT{})
 	migrationEvent := NewMigrationEvent("export", fromNodeID, toNodeID, uploadLocation, Exported, 0)
