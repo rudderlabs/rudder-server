@@ -36,7 +36,6 @@ We use 4 logging levels here Debug, Info, Error and Fatal.
 */
 
 type LoggerI interface {
-	Setup()
 	IsDebugLevel() bool
 	Debug(args ...interface{})
 	Info(args ...interface{})
