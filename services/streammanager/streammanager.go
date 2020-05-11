@@ -8,17 +8,13 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
 )
 
-type StreamProducer struct {
-	//Produce(jsonData json.RawMessage, destination string, sourceID string, destinationID string) (int, string, string)
-	Producer interface{}
-}
-
 // GetProducer delegates the call to the appropriate based on parameter destination for creating producer
 func GetProducer(destinationConfig interface{}, destination string) (interface{}, error) {
 
 	switch destination {
 	case "KINESIS":
-		return nil, nil //kinesis.Produce(jsonData)
+		producer, err := kinesis.NewProducer(destinationConfig)
+		return producer, err
 	case "KAFKA":
 		producer, err := kafka.NewProducer(destinationConfig)
 		return producer, err
@@ -33,7 +29,7 @@ func CloseProducer(producer interface{}, destination string) error {
 
 	switch destination {
 	case "KINESIS":
-		return nil //kinesis.Produce(jsonData)
+		return nil
 	case "KAFKA":
 		err := kafka.CloseProducer(producer)
 		return err
@@ -48,7 +44,7 @@ func Produce(jsonData json.RawMessage, destination string, producer interface{},
 
 	switch destination {
 	case "KINESIS":
-		return kinesis.Produce(jsonData)
+		return kinesis.Produce(jsonData, producer, config)
 	case "KAFKA":
 		return kafka.Produce(jsonData, producer, config)
 	default:

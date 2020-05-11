@@ -21,11 +21,6 @@ type Config struct {
 	CACertificate string
 }
 
-/* type ProducerConfig struct {
-	Config   Config
-	Producer sarama.SyncProducer
-} */
-
 var (
 	clientCertFile, clientKeyFile string
 	certificate                   tls.Certificate
@@ -52,32 +47,12 @@ func loadCertificate() {
 	}
 }
 
-func getConfig(config map[string]interface{}) Config {
-	var topic, hostName, port, caCertificate string
-	var sslEnabled bool
-	if config["topic"] != nil {
-		topic = config["topic"].(string)
-	}
-	if config["hostName"] != nil {
-		hostName = config["hostName"].(string)
-	}
-	if config["port"] != nil {
-		port = config["port"].(string)
-	}
-	if config["sslEnabled"] != nil {
-		sslEnabled = config["sslEnabled"].(bool)
-	}
-	if config["caCertificate"] != nil {
-		caCertificate = config["caCertificate"].(string)
-	}
-	return Config{Topic: topic, HostName: hostName, Port: port, SslEnabled: sslEnabled, CACertificate: caCertificate}
-}
-
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 
-	var destConfig Config
-	destConfig = getConfig(destinationConfig.(map[string]interface{})) //destinationConfig.(Config)
+	var destConfig = Config{}
+	jsonConfig, err := json.Marshal(destinationConfig)
+	err = json.Unmarshal(jsonConfig, &destConfig)
 
 	hostName := destConfig.HostName + ":" + destConfig.Port
 	isSslEnabled := destConfig.SslEnabled
@@ -129,27 +104,6 @@ func NewTLSConfig(caCertFile string) *tls.Config {
 	return &tlsConfig
 }
 
-/* func GetProducer(destID string, destConfig Config) (sarama.SyncProducer, error) {
-	//producer := nil
-	if destinationConfigProducerMap[destID] != (ProducerConfig{}) {
-		producer := destinationConfigProducerMap[destID].Producer
-		config := destinationConfigProducerMap[destID].Config
-		if reflect.DeepEqual(config, destConfig) {
-			logger.Infof("returning existing producer: %v for destination: %v", producer, destID)
-			return producer, nil
-		}
-		logger.Infof("=========config changed ======== closing existing producer ======= for destination: %v", destID)
-		producer.Close()
-	}
-	producer, err := newProducer(destConfig)
-	if err == nil {
-		producerConfig := ProducerConfig{Config: destConfig, Producer: producer}
-		destinationConfigProducerMap[destID] = producerConfig
-		logger.Infof("created new producer: %v for destination: ", producer, destID)
-	}
-	return producer, err
-} */
-
 // CloseProducer closes a given producer
 func CloseProducer(producer interface{}) error {
 	kafkaProducer, ok := producer.(sarama.SyncProducer)
@@ -169,7 +123,9 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		return 400, "Could not create producer", "Could not create producer"
 	}
 
-	config := getConfig(destConfig.(map[string]interface{})) //destConfig.(Config)
+	var config = Config{}
+	jsonConfig, err := json.Marshal(destConfig)
+	err = json.Unmarshal(jsonConfig, &config)
 
 	//logger.Infof("Created Producer %v\n", producer)
 
