@@ -487,10 +487,17 @@ func GetObjectFolder(provider string, location string) (folder string) {
 	return
 }
 
+var cloudProviderToStorageMap = map[string]string{
+	"AWS":   "S3",
+	"GCP":   "GCS",
+	"AZURE": "AZURE_BLOB",
+	"MINIO": "MINIO",
+}
+
 func GetObjectName(providerConfig interface{}, location string) (key string, err error) {
 	config := providerConfig.(map[string]interface{})
 	fm, err := filemanager.New(&filemanager.SettingsT{
-		Provider: config["cloudProvider"].(string),
+		Provider: cloudProviderToStorageMap[config["cloudProvider"].(string)],
 		Config:   config,
 	})
 	if err != nil {
@@ -701,11 +708,14 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 	return val
 }
 
-func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
+func SortColumnKeysFromColumnMap(columnMap map[string]string, warehouseDestinationType string) []string {
 	keys := reflect.ValueOf(columnMap).MapKeys()
 	columnKeys := make([]string, len(keys))
 	for i := 0; i < len(keys); i++ {
 		columnKeys[i] = keys[i].String()
+		if warehouseDestinationType == "POSTGRES" {
+			columnKeys[i] = strings.ToLower(columnKeys[i])
+		}
 	}
 	sort.Strings(columnKeys)
 	return columnKeys

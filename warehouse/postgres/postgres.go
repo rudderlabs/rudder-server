@@ -3,8 +3,10 @@ package postgres
 import (
 	"compress/gzip"
 	"database/sql"
+	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -69,7 +71,7 @@ type optionalCredsT struct {
 }
 
 func connect(cred credentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=disable",
+	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=require", // TODO: support for ssl
 		cred.user,
 		cred.password,
 		cred.host,
@@ -145,6 +147,42 @@ func (pg *HandleT) Export() (err error) {
 	return
 }
 
+func (pg *HandleT) DownloadLoadFile(tableName string) (*os.File, error) {
+	objectLocation, _ := warehouseutils.GetLoadFileLocation(pg.DbHandle, pg.Warehouse.Source.ID, pg.Warehouse.Destination.ID, tableName, pg.Upload.StartLoadFileID, pg.Upload.EndLoadFileID)
+	object, err := warehouseutils.GetObjectName(pg.Warehouse.Destination.Config, objectLocation)
+	if err != nil {
+		logger.Errorf("PG: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
+		return nil, err
+	}
+	dirName := "/rudder-warehouse-load-uploads-tmp/" //TODO: have a config a variable
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		logger.Errorf("PG: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+		return nil, err
+	}
+	ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%s/`, pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.ID, pg.Upload.Status) + object
+	err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
+	if err != nil {
+		logger.Errorf("PG: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, objectLocation, err)
+		return nil, err
+	}
+	objectFile, err := os.Create(ObjectPath)
+	if err != nil {
+		logger.Errorf("PG: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+		return nil, err
+	}
+	downloader, err := filemanager.New(&filemanager.SettingsT{
+		Provider: warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config),
+		Config:   pg.Warehouse.Destination.Config.(map[string]interface{}),
+	})
+	err = downloader.Download(objectFile, object)
+	if err != nil {
+		logger.Errorf("PG: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+		return nil, err
+	}
+	return objectFile, nil
+}
+
 func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err error) {
 	status, err := warehouseutils.GetTableUploadStatus(pg.Upload.ID, tableName, pg.DbHandle)
 	if status == warehouseutils.ExportedDataState {
@@ -159,6 +197,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, pg.Upload.ID, tableName, pg.DbHandle)
 	timer := warehouseutils.DestStat(stats.TimerType, "single_table_upload_time", pg.Warehouse.Destination.ID)
 	timer.Start()
+	defer timer.End()
 
 	dbHandle, err := connect(pg.getConnectionCredentials(optionalCredsT{schemaName: pg.Namespace}))
 	if err != nil {
@@ -167,106 +206,109 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		return
 	}
 	defer dbHandle.Close()
-
-	csvObjectLocation, _ := warehouseutils.GetLoadFileLocation(pg.DbHandle, pg.Warehouse.Source.ID, pg.Warehouse.Destination.ID, tableName, pg.Upload.StartLoadFileID, pg.Upload.EndLoadFileID)
-	csvObject, err := warehouseutils.GetObjectName(pg.Warehouse.Destination.Config, csvObjectLocation)
+	objectFile, err := pg.DownloadLoadFile(tableName)
 	if err != nil {
-		logger.Errorf("PG: Error in converting object location to object key for table:%s: %s, %v", tableName, csvObjectLocation, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 	}
-	dirName := "/rudder-warehouse-json-uploads-tmp/"
-	tmpDirPath, err := misc.CreateTMPDIR()
-	if err != nil {
-		panic(err)
-	}
-	csvObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%s/`, pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.ID, pg.Upload.Status) + csvObject
-	err = os.MkdirAll(filepath.Dir(csvObjectPath), os.ModePerm)
-	if err != nil { //TODO: Handle error, log error
-		panic(err)
-	}
-	defer os.Remove(csvObjectPath)
-	csvObjectFile, err := os.Create(csvObjectPath)
-	if err != nil { //TODO: Handle error, log error
-		panic(err)
-	}
-	defer csvObjectFile.Close()
-	downloader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config),
-		Config:   pg.Warehouse.Destination.Config.(map[string]interface{}),
-	})
-	err = downloader.Download(csvObjectFile, csvObject)
-	if err != nil {
-		panic(err)
-	}
+	defer objectFile.Close()
+	//pg.ExtractDownloadFile
 
 	//
-	csvString := tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.ID) + strings.Replace(csvObject, ".gz", "", 1)
-	err = os.MkdirAll(filepath.Dir(csvString), os.ModePerm)
-	if err != nil { //TODO: Handle error, log error
-		panic(err)
-	}
-	defer os.Remove(csvString)
-	csvFile, err := os.Create(csvString)
+	//csvString := tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.ID) + strings.Replace(csvObject, ".gz", "", 1)
+	//err = os.MkdirAll(filepath.Dir(csvString), os.ModePerm)
+	//if err != nil { //TODO: Handle error, log error
+	//	panic(err)
+	//}
+	//defer os.Remove(csvString)
+	//csvFile, err := os.Create(csvString)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//defer csvFile.Close()
+	//_, err = io.Copy(csvFile, gzipReader)
+	//if err != nil {
+	//	panic(err)
+	//}
+
+	gzipFile, err := os.Open(objectFile.Name())
 	if err != nil {
+		logger.Errorf("WH: Error opening file using os.Open for file:%s while loading to table %s", objectFile.Name(), tableName)
 		panic(err)
 	}
-	gzipCsvFile, err := os.Open(csvObjectFile.Name())
-	if err != nil {
-		logger.Errorf("WH: Error opening file using os.Open at path:%s downloaded from %s", csvObjectFile, csvObject)
-		panic(err)
-	}
-	defer gzipCsvFile.Close()
-	gzipReader, err := gzip.NewReader(gzipCsvFile)
+	defer gzipFile.Close()
+	gzipReader, err := gzip.NewReader(gzipFile)
 	if err != nil {
 		if err.Error() == "EOF" {
-			//panic(err)
+			logger.Infof("WH: EOF while reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
 		} else {
-			logger.Errorf("WH: Error reading file using gzip.NewReader at path:%s downloaded from %s", csvString, csvObjectLocation)
-			panic(err)
+			logger.Errorf("WH: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+			return
+
 		}
 
 	}
 
-	_, err = io.Copy(csvFile, gzipReader)
-	if err != nil {
-		panic(err)
-	}
-
 	// sort column names
-	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(columnMap)
-	sortedColumnsString := strings.Join(sortedColumnKeys, ", ")
-	sqlStatement := fmt.Sprintf(`copy %s (%s) from '%s' with delimiter ',' csv`, tableName, sortedColumnsString, csvString)
-	_, err = pg.Db.Query(sqlStatement)
-	if err != nil {
-		logger.Error(err)
-	}
-	timer.End()
-	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, pg.Upload.ID, tableName, pg.DbHandle)
-	logger.Infof("PG: Complete load for table:%s\n", tableName)
-	//txn, err := pg.Db.Begin()
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(columnMap, pg.Warehouse.Destination.DestinationDefinition.Name)
+	//sortedColumnsString := strings.Join(sortedColumnKeys, ", ")
+	//sqlStatement := fmt.Sprintf(`copy %s (%s) from '%s' with delimiter ',' csv`, tableName, sortedColumnsString, csvString)
+	//_, err = pg.Db.Query(sqlStatement)
 	//if err != nil {
-	//	panic(err)
-	//}
-	//stmt, err := txn.Prepare(pq.CopyIn(tableName, columnString...))
-	//if err != nil {
-	//	panic(err)
-	//}
-	//for {
-	//	csvReader := csv.NewReader(gzipReader)
-	//	record, err := csvReader.Read()
-	//	if err != nil {
-	//		if err == io.EOF {
-	//			break
-	//		}
-	//		panic(err)
-	//	}
-	//	_, err = stmt.Exec(record)
-	//	if err != nil {
-	//		panic(err)
-	//	}
+	//	logger.Error(err)
 	//}
 
+	txn, err := pg.Db.Begin()
+	if err != nil {
+		logger.Errorf("PG: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+		return
+	}
+	stmt, err := txn.Prepare(pq.CopyInSchema(pg.Namespace, tableName, sortedColumnKeys...))
+	if err != nil {
+		logger.Errorf("PG: Error while preparing statement for  transaction in db for loading in table:%s: %v", tableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+		return
+	}
+	count := 0
+	csvReader := csv.NewReader(gzipReader)
+	for {
+		record, err := csvReader.Read()
+		count++
+		if err != nil {
+			if err == io.EOF {
+				logger.Infof("PG: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFile.Name())
+				break
+			} else {
+				logger.Errorf("PG: Error while reading csv file for loading in table:%s: %v", tableName, err)
+				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+				return err
+			}
+
+		}
+		var recordInterface []interface{}
+		for _, value := range record {
+			recordInterface = append(recordInterface, value)
+		}
+		_, err = stmt.Exec(recordInterface...)
+	}
+	fmt.Println(count)
+	_, err = stmt.Exec()
+	if err != nil {
+		txn.Rollback()
+		logger.Errorf("PG: Rollback transaction as there was error while loading table:%s: %v", tableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+		return
+
+	}
+	if err = txn.Commit(); err != nil {
+		logger.Errorf("PG: Error while committing transaction as there was error while loading table:%s: %v", tableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+		return
+	}
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, pg.Upload.ID, tableName, pg.DbHandle)
+	logger.Infof("PG: Complete load for table:%s", tableName)
 	return err
 }
 
@@ -342,7 +384,7 @@ func (pg *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 		}
 	}
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
-	sqlStatement := fmt.Sprintf(`SET serach_path to "%s"`, pg.Namespace)
+	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
 	_, err = pg.Db.Exec(sqlStatement)
 	if err != nil {
 		return nil, err
@@ -390,6 +432,7 @@ func (pg *HandleT) MigrateSchema() (err error) {
 	warehouseutils.SetUploadStatus(pg.Upload, warehouseutils.UpdatingSchemaState, pg.DbHandle)
 	logger.Infof("PG: Updating schema for postgres schema name: %s", pg.Namespace)
 	updatedSchema, err := pg.updateSchema()
+	fmt.Println(err)
 	if err != nil {
 		warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
 		return
@@ -419,10 +462,10 @@ func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		panic(err)
 	}
 	pg.CurrentSchema = currSchema.Schema
-	pg.Namespace = strings.ToUpper(currSchema.Namespace)
+	pg.Namespace = strings.ToLower(currSchema.Namespace)
 	if pg.Namespace == "" {
-		logger.Infof("pg: Namespace not found in currentschema for pg:%s, setting from upload: %s", pg.Warehouse.Destination.ID, pg.Upload.Namespace)
-		pg.Namespace = strings.ToUpper(pg.Upload.Namespace)
+		logger.Infof("pg: Namespace not found in current schema for pg:%s, setting from upload: %s", pg.Warehouse.Destination.ID, pg.Upload.Namespace)
+		pg.Namespace = strings.ToLower(pg.Upload.Namespace)
 	}
 
 	pg.Db, err = connect(pg.getConnectionCredentials(optionalCredsT{}))
@@ -430,8 +473,7 @@ func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
 		return err
 	}
-
-	if err := pg.MigrateSchema(); err != nil { //TODO: log error
+	if err := pg.MigrateSchema(); err == nil { //TODO: log error
 		pg.Export()
 	}
 	pg.Db.Close()
