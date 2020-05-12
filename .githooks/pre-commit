@@ -1,0 +1,15 @@
+#!/bin/sh
+
+# Check enterprise repo is loaded
+if [ ! -d "./enterprise" ]; then
+  exit 0;
+fi
+
+ENTERPRISECOMMITFILE=.enterprise-commit
+
+STOREDCOMMIT=`cat $ENTERPRISECOMMITFILE`
+ENTERPRISECOMMIT=`cd ./enterprise; git rev-parse HEAD`
+
+echo $ENTERPRISECOMMIT > $ENTERPRISECOMMITFILE
+
+git add $ENTERPRISECOMMITFILE

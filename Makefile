@@ -8,6 +8,14 @@ all: build
 mocks:
 	$(GO) generate ./...
 
+checkout-enterprise:
+	@if [ ! -d "./enterprise" ]; then \
+	  git clone git@github.com:rudderlabs/rudder-server-enterprise.git enterprise; \
+	fi
+	@if [ -f ".enterprise-commit" ]; then \
+	  cd ./enterprise; git checkout `cat ../.enterprise-commit`; \
+	fi
+
 prepare-enterprise:
 	@if [ -d "./enterprise" ]; then \
 		enterprise/import.sh ./enterprise > ./imports/enterprise.go; \
