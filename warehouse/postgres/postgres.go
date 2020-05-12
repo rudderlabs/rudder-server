@@ -287,14 +287,15 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 
 		}
 		var recordInterface []interface{}
-		fmt.Println("**************************")
+		fmt.Println(tableName, "**************************")
+		fmt.Println(tableName, sortedColumnKeys)
 		fmt.Println(record)
-		fmt.Println("+++++++++++++++++++++++++++")
+		fmt.Println(tableName, "+++++++++++++++++++++++++++")
 		for _, value := range record {
 			recordInterface = append(recordInterface, value)
 		}
 		fmt.Println(recordInterface)
-		fmt.Println("---------------------------")
+		fmt.Println(tableName, "---------------------------")
 		_, err = stmt.Exec(recordInterface...)
 		fmt.Println(err)
 	}

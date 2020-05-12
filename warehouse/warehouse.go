@@ -1199,7 +1199,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	warehouseutils.DestStat(stats.CountType, "downloaded_staging_file_size", job.DestinationID).Count(int(fileSize))
 
 	sortedTableColumnMap := make(map[string][]string)
-	// sort columns per table so as to maintaing same order in load file (needed in case of csv load file)
+	// sort columns per table so as to maintaining same order in load file (needed in case of csv load file)
 	for tableName, columnMap := range job.Schema {
 		sortedTableColumnMap[tableName] = []string{}
 		for k := range columnMap {

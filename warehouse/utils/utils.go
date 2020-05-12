@@ -192,7 +192,7 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 		ColumnMaps:    make(map[string]map[string]string),
 		UpdatedSchema: make(map[string]map[string]string),
 	}
-	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
+	// deep copy current schema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
 	for tableName, columnMap := range currentSchema {
 		diff.UpdatedSchema[tableName] = make(map[string]string)
 		for columnName, columnType := range columnMap {
