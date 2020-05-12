@@ -45,7 +45,7 @@ import (
 func main() {
 	endpoint := "play.min.io"
 	accessKeyID := "Q3AM3UQ867SPQQA43P2F"
-	secretAccessKey := "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+	secretAccessKey := "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG"
 	useSSL := true
 
 	// 初使化 minio client对象。
@@ -75,7 +75,7 @@ import (
 func main() {
 	endpoint := "play.min.io"
 	accessKeyID := "Q3AM3UQ867SPQQA43P2F"
-	secretAccessKey := "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+	secretAccessKey := "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG"
 	useSSL := true
 
 	// 初使化minio client对象。
