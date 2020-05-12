@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -251,8 +253,9 @@ func redisLoop() {
 }
 
 type ResponseT struct {
-	Status bool
-	Logs   []string
+	Status  bool
+	Logs    []string
+	Metrics map[int]ResponseMetrics
 }
 
 func handleTestResults(rw http.ResponseWriter, req *http.Request) {
@@ -260,8 +263,9 @@ func handleTestResults(rw http.ResponseWriter, req *http.Request) {
 
 	t := &TesterT{testName: test}
 	success := t.computeTestResults()
+	t.computeMetrics()
 
-	resp := ResponseT{Status: success, Logs: t.logs}
+	resp := ResponseT{Status: success, Logs: t.logs, Metrics: t.metrics}
 	respJSON, err := json.Marshal(resp)
 	if err != nil {
 		panic(err.Error())
@@ -280,11 +284,58 @@ func handleFlushDB(rw http.ResponseWriter, req *http.Request) {
 type TesterT struct {
 	testName string
 	logs     []string
+	metrics  map[int]ResponseMetrics
+}
+
+type ResponseMetrics struct {
+	Count                int64
+	RespMessages         []string `json:"-"`
+	DistinctRespMessages []string
 }
 
 func (t *TesterT) logMessage(log string) {
 	t.logs = append(t.logs, log)
 	fmt.Println(log)
+}
+
+func (t *TesterT) computeMetrics() {
+	test := t.testName
+	redisClient := getRedisClient()
+	t.metrics = make(map[int]ResponseMetrics)
+
+	statusCodesSetKey := fmt.Sprintf("%s:statuscodes", test)
+	allStatusCodeKeys := redisClient.SMembers(statusCodesSetKey).Val()
+
+	for _, statusCodeKey := range allStatusCodeKeys {
+		numReqs := redisClient.LLen(statusCodeKey).Val()
+
+		var responseMetrics ResponseMetrics
+		statusCodeKeyTokens := strings.Split(statusCodeKey, ":")
+		statusCode, err := strconv.Atoi(statusCodeKeyTokens[1])
+		if err != nil {
+			panic(err)
+		}
+
+		responseMetrics.Count = redisClient.LLen(statusCodeKey).Val()
+
+		// Batching for larger data sets
+		var batchSize int64 = 10000
+		var currStart int64
+		for i := currStart; i < (numReqs/batchSize)+1; i++ {
+			respMessages := redisClient.LRange(statusCodeKey, currStart, currStart+batchSize).Val()
+			for j := 0; j < len(respMessages); j++ {
+				responseMetrics.RespMessages = append(responseMetrics.RespMessages, respMessages[j])
+			}
+		}
+
+		distinctRespMessagesSet := fmt.Sprintf("%s:respMessages", statusCodeKey)
+		allDistinctRespMessages := redisClient.SMembers(distinctRespMessagesSet).Val()
+		for _, respMessage := range allDistinctRespMessages {
+			responseMetrics.DistinctRespMessages = append(responseMetrics.DistinctRespMessages, respMessage)
+		}
+
+		t.metrics[statusCode] = responseMetrics
+	}
 }
 
 // Source User Set should match Dest user set

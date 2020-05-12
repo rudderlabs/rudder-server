@@ -41,11 +41,26 @@ var (
 	failCount    uint64
 )
 
+type EventStatus struct {
+	data     []byte
+	response *ResponseStatus
+}
+
+type ResponseStatus struct {
+	code    int
+	message string
+}
+
+type MessageIDsT struct {
+	MessageIDs  []string
+	RespMessage string
+}
+
 var startTime time.Time
 
 var testTimeUp bool
 var done chan bool
-var redisChan chan []byte
+var redisChan chan *EventStatus
 
 var eventsStopped bool
 var eventCheckLock sync.RWMutex
@@ -167,10 +182,8 @@ func generateEvents(userID string, eventDelay int) {
 			return true // keep iterating
 		})
 
-		success := sendToRudderGateway(fileData, userID)
-		if success {
-			redisChan <- fileData
-		}
+		response := sendToRudderGateway(fileData, userID)
+		redisChan <- &EventStatus{data: fileData, response: response}
 
 		if eventDelay > 0 {
 			time.Sleep(time.Duration(eventDelay) * time.Millisecond)
@@ -179,7 +192,7 @@ func generateEvents(userID string, eventDelay int) {
 	done <- true
 }
 
-func sendToRudderGateway(jsonPayload []byte, userID string) bool {
+func sendToRudderGateway(jsonPayload []byte, userID string) *ResponseStatus {
 	req, err := http.NewRequest("POST", dataPlaneURL, bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("anonymousId", userID)
@@ -190,18 +203,18 @@ func sendToRudderGateway(jsonPayload []byte, userID string) bool {
 	atomic.AddUint64(&totalCount, 1)
 	if err != nil {
 		atomic.AddUint64(&failCount, 1)
-		return false
+		return &ResponseStatus{code: -1, message: err.Error()}
 	}
 	defer resp.Body.Close()
 
 	ioutil.ReadAll(resp.Body)
 	if resp.StatusCode == 200 {
 		atomic.AddUint64(&successCount, 1)
-		return true
 	} else {
 		atomic.AddUint64(&failCount, 1)
-		return false
 	}
+
+	return &ResponseStatus{code: resp.StatusCode, message: resp.Status}
 }
 
 type BatchEvent struct {
@@ -235,12 +248,13 @@ func redisLoop() {
 
 	for {
 		select {
-		case events := <-redisChan:
+		case eventStatus := <-redisChan:
 			var batchEvent BatchEvent
-			err := json.Unmarshal(events, &batchEvent)
+			err := json.Unmarshal(eventStatus.data, &batchEvent)
 			if err != nil {
 				panic(err)
 			}
+			var messageIDsInBatch MessageIDsT
 			for _, event := range batchEvent.Batch {
 				messageID, ok := event.(map[string]interface{})["messageId"].(string)
 				userID, ok := event.(map[string]interface{})["anonymousId"].(string)
@@ -249,12 +263,30 @@ func redisLoop() {
 					panic(errors.New("Invalid event ID"))
 				}
 
-				pipe.RPush(testName+":"+userID+":src_list", messageID)
-				pipe.SAdd(redisUserSet, userID)
-				pipe.SAdd(redisEventSet, messageID)
+				messageIDsInBatch.MessageIDs = append(messageIDsInBatch.MessageIDs, messageID)
 
-				pipe.HSet(redisEventTimeHash, messageID, timeStamp)
+				if eventStatus.response.code == 200 {
+					pipe.RPush(testName+":"+userID+":src_list", messageID)
+					pipe.SAdd(redisUserSet, userID)
+					pipe.SAdd(redisEventSet, messageID)
+
+					pipe.HSet(redisEventTimeHash, messageID, timeStamp)
+				}
 			}
+
+			messageIDsInBatch.RespMessage = eventStatus.response.message
+			b, err := json.Marshal(messageIDsInBatch)
+			if err != nil {
+				panic(err)
+			}
+			statusCodeKey := fmt.Sprintf("%s:%d", testName, eventStatus.response.code)
+			pipe.RPush(statusCodeKey, string(b))
+
+			statusCodeSet := fmt.Sprintf("%s:statuscodes", testName)
+			distinctRespMessagesSet := fmt.Sprintf("%s:%d:respMessages", testName, eventStatus.response.code)
+			pipe.SAdd(statusCodeSet, statusCodeKey)
+			pipe.SAdd(distinctRespMessagesSet, eventStatus.response.message)
+
 			newEventsAdded = true
 		case <-time.After(batchTimeout):
 			if newEventsAdded {
@@ -285,7 +317,7 @@ func main() {
 
 	startTime = time.Now()
 	done = make(chan bool)
-	redisChan = make(chan []byte)
+	redisChan = make(chan *EventStatus)
 	var err error
 
 	numUsers := 10
