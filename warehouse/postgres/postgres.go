@@ -39,7 +39,7 @@ const (
 )
 
 var dataTypesMap = map[string]string{
-	"int":      "integer",
+	"int":      "bigint",
 	"float":    "numeric",
 	"string":   "text",
 	"datetime": "timestamp",
