@@ -265,17 +265,16 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 	}
+	fmt.Println(pq.CopyInSchema(pg.Namespace, tableName, sortedColumnKeys...))
 	stmt, err := txn.Prepare(pq.CopyInSchema(pg.Namespace, tableName, sortedColumnKeys...))
 	if err != nil {
 		logger.Errorf("PG: Error while preparing statement for  transaction in db for loading in table:%s: %v", tableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 	}
-	count := 0
 	csvReader := csv.NewReader(gzipReader)
 	for {
 		record, err := csvReader.Read()
-		count++
 		if err != nil {
 			if err == io.EOF {
 				logger.Infof("PG: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFile.Name())
@@ -288,12 +287,17 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 
 		}
 		var recordInterface []interface{}
+		fmt.Println("**************************")
+		fmt.Println(record)
+		fmt.Println("+++++++++++++++++++++++++++")
 		for _, value := range record {
 			recordInterface = append(recordInterface, value)
 		}
+		fmt.Println(recordInterface)
+		fmt.Println("---------------------------")
 		_, err = stmt.Exec(recordInterface...)
+		fmt.Println(err)
 	}
-	fmt.Println(count)
 	_, err = stmt.Exec()
 	if err != nil {
 		txn.Rollback()
@@ -432,7 +436,6 @@ func (pg *HandleT) MigrateSchema() (err error) {
 	warehouseutils.SetUploadStatus(pg.Upload, warehouseutils.UpdatingSchemaState, pg.DbHandle)
 	logger.Infof("PG: Updating schema for postgres schema name: %s", pg.Namespace)
 	updatedSchema, err := pg.updateSchema()
-	fmt.Println(err)
 	if err != nil {
 		warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
 		return
