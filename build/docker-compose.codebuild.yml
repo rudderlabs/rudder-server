@@ -26,11 +26,11 @@ services:
       - docker.env
     environment:
       - JOBS_DB_HOST=db
-      - WORKSPACE_TOKEN=$INTEGRATION_TESTS_WORKSPACE_TOKEN
+      - WORKSPACE_TOKEN=${INTEGRATION_TESTS_WORKSPACE_TOKEN}
 
   d-transformer:
     build:
-      context: "${CODEBUILD_SRC_DIR_transformer_source_output}"
+      context: "${CODEBUILD_SRC_DIR}/rudder-transformer/"
       dockerfile: Dockerfile
     ports:
       - "9090:9090"
