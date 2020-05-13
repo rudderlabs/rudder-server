@@ -28,14 +28,12 @@ var (
 )
 
 const (
-	AWSAccessKey       = "accessKey"
-	AWSAccessSecret    = "accessKeyID"
-	StorageIntegration = "storageIntegration"
-	host               = "host"
-	dbName             = "database"
-	user               = "user"
-	password           = "password"
-	port               = "port"
+	host     = "host"
+	dbName   = "database"
+	user     = "user"
+	password = "password"
+	port     = "port"
+	sslMode  = "sslMode"
 )
 
 var dataTypesMap = map[string]string{
@@ -64,6 +62,7 @@ type credentialsT struct {
 	password   string
 	schemaName string
 	port       string
+	sslMode    string
 }
 
 type optionalCredsT struct {
@@ -71,12 +70,13 @@ type optionalCredsT struct {
 }
 
 func connect(cred credentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=require", // TODO: support for ssl
+	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
 		cred.user,
 		cred.password,
 		cred.host,
 		cred.port,
-		cred.dbName)
+		cred.dbName,
+		cred.sslMode)
 
 	var err error
 	var db *sql.DB
@@ -103,6 +103,7 @@ func (pg *HandleT) getConnectionCredentials(opts optionalCredsT) credentialsT {
 		user:       warehouseutils.GetConfigValue(user, pg.Warehouse),
 		password:   warehouseutils.GetConfigValue(password, pg.Warehouse),
 		port:       warehouseutils.GetConfigValue(port, pg.Warehouse),
+		sslMode:    warehouseutils.GetConfigValue(sslMode, pg.Warehouse),
 		schemaName: opts.schemaName,
 	}
 }
@@ -265,7 +266,6 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 	}
-	fmt.Println(pq.CopyInSchema(pg.Namespace, tableName, sortedColumnKeys...))
 	stmt, err := txn.Prepare(pq.CopyInSchema(pg.Namespace, tableName, sortedColumnKeys...))
 	if err != nil {
 		logger.Errorf("PG: Error while preparing statement for  transaction in db for loading in table:%s: %v", tableName, err)
@@ -287,12 +287,9 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 
 		}
 		var recordInterface []interface{}
-		fmt.Println(tableName, "**************************")
-		for i, value := range record {
-			fmt.Println(sortedColumnKeys[i], value)
+		for _, value := range record {
 			recordInterface = append(recordInterface, value)
 		}
-		fmt.Println(tableName, "---------------------------")
 		_, err = stmt.Exec(recordInterface...)
 	}
 	_, err = stmt.Exec()
@@ -473,7 +470,7 @@ func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
 		return err
 	}
-	if err := pg.MigrateSchema(); err == nil { //TODO: log error
+	if err := pg.MigrateSchema(); err == nil {
 		pg.Export()
 	}
 	pg.Db.Close()

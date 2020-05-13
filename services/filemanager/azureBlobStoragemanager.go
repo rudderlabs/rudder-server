@@ -124,9 +124,9 @@ func (manager *AzureBlobStorageManager) Download(output *os.File, key string) er
 
 func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location string) string { //TODO: changes need to be done
 	var baseUrl string
-	//baseUrl+= "https://"
-	//baseUrl+= manager.Config.Container + "."
-	//baseUrl+= "s3.amazonaws.com" + "/"
+	baseUrl += "https://"
+	baseUrl += manager.Config.AccountName + ".blob.core.windows.net/"
+	baseUrl += manager.Config.Container + "/"
 	return location[len(baseUrl):]
 }
 
