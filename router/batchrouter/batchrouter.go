@@ -754,6 +754,7 @@ func loadConfig() {
 	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
+	warehouseServiceMaxRetryTimeinHr =  config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
 }
 
 func init() {
