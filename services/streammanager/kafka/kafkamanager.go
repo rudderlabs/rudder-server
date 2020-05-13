@@ -141,6 +141,7 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 		returnMessage = fmt.Sprintf("Message delivered at Offset: %v , Partition: %v", offset, partition)
 		statusCode = 200
 		errorMessage = returnMessage
+		logger.Infof(returnMessage)
 	}
 	producer.Close()
 
