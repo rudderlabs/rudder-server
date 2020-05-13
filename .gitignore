@@ -7,3 +7,4 @@ runtime.log
 dist/*
 workspaceConfig.json
 **/node_modules
+junit*.xml
