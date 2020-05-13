@@ -24,16 +24,16 @@ type GatewayEventBatchT struct {
 
 //EventUploadT is a structure to hold actual event data
 type EventUploadT struct {
-	Event             string      `json:"event,omitempty"`
+	Event             interface{} `json:"event,omitempty"`
 	Integrations      interface{} `json:"integrations,omitempty"`
 	Properties        interface{} `json:"properties,omitempty"`
 	OriginalTimestamp string      `json:"originalTimestamp,omitempty"`
-	AnonymousID       string      `json:"anonymousId,omitempty"`
-	UserID            string      `json:"userId,omitempty"`
-	MessageID         string      `json:"messageId,omitempty"`
-	Name              string      `json:"name,omitempty"`
+	AnonymousID       interface{} `json:"anonymousId,omitempty"`
+	UserID            interface{} `json:"userId,omitempty"`
+	MessageID         interface{} `json:"messageId,omitempty"`
+	Name              interface{} `json:"name,omitempty"`
 	SentAt            string      `json:"sentAt,omitempty"`
-	Type              string      `json:"type,omitempty"`
+	Type              interface{} `json:"type,omitempty"`
 }
 
 //EventUploadBatchT is a structure to hold batch of events
