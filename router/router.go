@@ -773,7 +773,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 							producerConfig := ProducerConfig{Config: destConfig, Producer: producer}
 							destinationConfigProducerMap[key] = producerConfig
 							if err == nil {
-								logger.Infof("created new producer: %v for destination: %v and source %v", producer, destination.Name, source.Name)
+								logger.Infof("========== created new producer: %v for destination: %v and source %v", producer, destination.Name, source.Name)
 							} else {
 								producerConfig := ProducerConfig{Config: destConfig, Producer: producer}
 								destinationConfigProducerMap[key] = producerConfig

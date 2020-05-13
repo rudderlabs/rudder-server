@@ -180,6 +180,7 @@ var (
 	rawDataDestinations                 []string
 	configSubscriberLock                sync.RWMutex
 	isReplayServer                      bool
+	customDestinations                  []string
 )
 
 func loadConfig() {
@@ -196,6 +197,7 @@ func loadConfig() {
 	maxRetry = config.GetInt("Processor.maxRetry", 30)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE"}
+	customDestinations = []string{"KAFKA"}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }
@@ -639,7 +641,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 							panic(fmt.Errorf("typecast of singularEvent to map[string]interface{} failed"))
 						}
 						shallowEventCopy["message"] = singularEventMap
-						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
+
+						if !misc.ContainsString(customDestinations, destType) {
+							shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
+						}
+
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
 
 						enhanceWithTimeFields(shallowEventCopy, singularEventMap, receivedAt)
