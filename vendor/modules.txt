@@ -126,6 +126,8 @@ github.com/gogo/protobuf/sortkeys
 github.com/golang/glog
 # github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
 github.com/golang/groupcache/lru
+# github.com/golang/mock v1.4.3
+github.com/golang/mock/gomock
 # github.com/golang/protobuf v1.3.4
 github.com/golang/protobuf/proto
 github.com/golang/protobuf/protoc-gen-go
@@ -225,14 +227,14 @@ github.com/onsi/ginkgo/internal/spec
 github.com/onsi/ginkgo/internal/specrunner
 github.com/onsi/ginkgo/reporters/stenographer/support/go-isatty
 # github.com/onsi/gomega v1.7.0
+github.com/onsi/gomega/format
+github.com/onsi/gomega/types
 github.com/onsi/gomega
 github.com/onsi/gomega/internal/assertion
 github.com/onsi/gomega/internal/asyncassertion
 github.com/onsi/gomega/internal/testingtsupport
 github.com/onsi/gomega/matchers
-github.com/onsi/gomega/types
 github.com/onsi/gomega/internal/oraclematcher
-github.com/onsi/gomega/format
 github.com/onsi/gomega/matchers/support/goraph/bipartitegraph
 github.com/onsi/gomega/matchers/support/goraph/edge
 github.com/onsi/gomega/matchers/support/goraph/node
@@ -338,12 +340,12 @@ golang.org/x/net/proxy
 golang.org/x/net/internal/timeseries
 golang.org/x/net/idna
 golang.org/x/net/internal/socks
+golang.org/x/net/html/charset
 golang.org/x/net/context
 golang.org/x/net/http/httpproxy
 golang.org/x/net/context/ctxhttp
 golang.org/x/net/http2
 golang.org/x/net/http2/hpack
-golang.org/x/net/html/charset
 golang.org/x/net/html
 golang.org/x/net/html/atom
 # golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
@@ -405,8 +407,8 @@ golang.org/x/xerrors
 golang.org/x/xerrors/internal
 # google.golang.org/api v0.19.0
 google.golang.org/api/option
-google.golang.org/api/googleapi
 google.golang.org/api/iterator
+google.golang.org/api/googleapi
 google.golang.org/api/storage/v1
 google.golang.org/api/transport/http
 google.golang.org/api/internal

@@ -75,9 +75,8 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
 	var userID string
-	var ok bool
 	if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
-		userID=fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
+		userID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
 
 	partitionKey := aws.String(userID)
