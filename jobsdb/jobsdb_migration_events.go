@@ -12,8 +12,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-//MigrationEvent captures an event of export/import to recover from incase of a crash during migration
-type MigrationEvent struct {
+//MigrationEventT captures an event of export/import to recover from incase of a crash during migration
+type MigrationEventT struct {
 	ID            int64           `json:"ID"`
 	MigrationType string          `json:"MigrationType"` //ENUM : export, import, acceptNewEvents
 	FromNode      string          `json:"FromNode"`
@@ -49,13 +49,13 @@ const (
 const MigrationCheckpointSuffix = "migration_checkpoints"
 
 //Checkpoint writes a migration event if id is passed as 0. Else it will update status and start_sequence
-func (jd *HandleT) Checkpoint(migrationEvent *MigrationEvent) int64 {
+func (jd *HandleT) Checkpoint(migrationEvent *MigrationEventT) int64 {
 	return jd.CheckpointInTxn(nil, migrationEvent)
 }
 
 //CheckpointInTxn writes a migration event if id is passed as 0. Else it will update status and start_sequence
 // If txn is passed, it will run the statement in that txn, otherwise it will execute without a transaction
-func (jd *HandleT) CheckpointInTxn(txn *sql.Tx, migrationEvent *MigrationEvent) int64 {
+func (jd *HandleT) CheckpointInTxn(txn *sql.Tx, migrationEvent *MigrationEventT) int64 {
 	jd.assert(migrationEvent.MigrationType == ExportOp ||
 		migrationEvent.MigrationType == ImportOp ||
 		migrationEvent.MigrationType == AcceptNewEventsOp,
@@ -114,7 +114,7 @@ func (jd *HandleT) CheckpointInTxn(txn *sql.Tx, migrationEvent *MigrationEvent) 
 }
 
 //NewSetupCheckpointEvent returns a new migration event that captures setup for export, import of new event acceptance
-func NewSetupCheckpointEvent(migrationType string, node string) MigrationEvent {
+func NewSetupCheckpointEvent(migrationType string, node string) MigrationEventT {
 	switch migrationType {
 	case ExportOp:
 		return NewMigrationEvent(migrationType, node, "All", "", SetupForExport, 0)
@@ -128,8 +128,8 @@ func NewSetupCheckpointEvent(migrationType string, node string) MigrationEvent {
 }
 
 //NewMigrationEvent is a constructor for MigrationEvent struct
-func NewMigrationEvent(migrationType string, fromNode string, toNode string, fileLocation string, status string, startSeq int64) MigrationEvent {
-	return MigrationEvent{0, migrationType, fromNode, toNode, fileLocation, status, startSeq, []byte("{}"), time.Now()}
+func NewMigrationEvent(migrationType string, fromNode string, toNode string, fileLocation string, status string, startSeq int64) MigrationEventT {
+	return MigrationEventT{0, migrationType, fromNode, toNode, fileLocation, status, startSeq, []byte("{}"), time.Now()}
 }
 
 //SetupCheckpointTable creates a table
@@ -230,7 +230,7 @@ func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType stri
 }
 
 //GetSetupCheckpoint gets all checkpoints and picks out the setup event for that type
-func (jd *HandleT) GetSetupCheckpoint(migrationType string) *MigrationEvent {
+func (jd *HandleT) GetSetupCheckpoint(migrationType string) *MigrationEventT {
 	var setupStatus string
 	switch migrationType {
 	case ExportOp:
@@ -254,7 +254,7 @@ func (jd *HandleT) GetSetupCheckpoint(migrationType string) *MigrationEvent {
 }
 
 //GetCheckpoints gets all checkpoints and
-func (jd *HandleT) GetCheckpoints(migrationType string, status string) []*MigrationEvent {
+func (jd *HandleT) GetCheckpoints(migrationType string, status string) []*MigrationEventT {
 	sqlStatement := fmt.Sprintf(`SELECT * from %s WHERE migration_type = $1 AND status = $2 ORDER BY ID ASC`, jd.getCheckPointTableName())
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
@@ -266,9 +266,9 @@ func (jd *HandleT) GetCheckpoints(migrationType string, status string) []*Migrat
 	}
 	defer rows.Close()
 
-	migrationEvents := []*MigrationEvent{}
+	migrationEvents := []*MigrationEventT{}
 	for rows.Next() {
-		migrationEvent := MigrationEvent{}
+		migrationEvent := MigrationEventT{}
 
 		err = rows.Scan(&migrationEvent.ID, &migrationEvent.MigrationType, &migrationEvent.FromNode,
 			&migrationEvent.ToNode, &migrationEvent.FileLocation, &migrationEvent.Status,
@@ -291,7 +291,7 @@ func fileLocationSplitter(r rune) bool {
 	return r == '_' || r == '.'
 }
 
-func (migrationEvent *MigrationEvent) getLastJobID() int64 {
+func (migrationEvent *MigrationEventT) getLastJobID() int64 {
 	if migrationEvent.StartSeq == 0 {
 		return int64(0)
 	}
