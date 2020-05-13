@@ -129,6 +129,8 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	migrationEvent.Status = Imported
 	jd.CheckpointInTxn(txn, migrationEvent)
 	txn.Commit()
+
+	//TODO what happens if it crashes here? Data loss?
 	if opID != 0 {
 		jd.JournalMarkDone(opID)
 	}

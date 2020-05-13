@@ -181,6 +181,7 @@ func (jd *HandleT) createSetupCheckpointAndGetDs(migrationType string) dataSetT 
 	case AcceptNewEventsOp:
 		ds = jd.getDsForNewEvents(dsList)
 	case ImportOp:
+		//TODO If addNewDS is done and crashed, then goes into crashloop
 		ds = jd.getDsForImport(dsList)
 	}
 

@@ -1599,6 +1599,8 @@ func (jd *HandleT) mainCheckLoop() {
 			jd.dsListLock.Unlock()
 		}
 
+		//TODO need to put a better condition to check if migration is in progess.
+		//jd.migrationState.dsForImport.Index: this gets set only upon import request from export node.
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		if jd.migrationState.dsForImport.Index != "" {
 			continue
