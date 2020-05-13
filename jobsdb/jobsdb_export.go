@@ -189,7 +189,7 @@ func (jd *HandleT) IsMigrating() bool {
 		return false
 	}
 
-	//This can be optimized by keeping 0 count ds in memory and avoid querying on them.
+	//TODO: This can be optimized by keeping 0 count ds in memory and avoid querying on them.
 	for _, ds := range dsList {
 		nonExportedCount := jd.getNonExportedJobsCountDS(ds)
 		if nonExportedCount > 0 {

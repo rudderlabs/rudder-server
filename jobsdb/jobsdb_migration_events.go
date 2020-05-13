@@ -159,7 +159,7 @@ func (jd *HandleT) getCheckPointTableName() string {
 func (jd *HandleT) findDsFromSetupCheckpoint(migrationType string) (dataSetT, bool) {
 	setupEvent := jd.GetSetupCheckpoint(migrationType)
 	if setupEvent == nil {
-		return dataSetT{}, false
+		return dataSetT{}, false //TODO return nil?
 	}
 	ds := dataSetT{}
 	err := json.Unmarshal(setupEvent.Payload, &ds)
