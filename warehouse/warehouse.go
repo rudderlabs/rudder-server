@@ -177,7 +177,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == wh.destType {
-						namespace:= getNamespaceFromDestinationConfig(destination.Config, source.Name, wh.destType)
+						namespace := getNamespaceFromDestinationConfig(destination.Config, source.Name, wh.destType)
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace})
 						if destination.Config != nil && destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
 							sourceID := source.ID
@@ -209,13 +209,13 @@ func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string
 		wh.recordDeliveryStatus(uploadID)
 	}
 }
-func getNamespaceFromDestinationConfig(config interface{}, sourceName string, destType string) string{
+func getNamespaceFromDestinationConfig(config interface{}, sourceName string, destType string) string {
 	configMap := config.(map[string]interface{})
 	var namespace string
-	if configMap["namespace"]!=nil{
+	if configMap["namespace"] != nil {
 		namespace = configMap["namespace"].(string)
 	}
-	if len(strings.TrimSpace(namespace))>0 {
+	if len(strings.TrimSpace(namespace)) > 0 {
 		namespace = misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(destType, namespace))), 127)
 	} else {
 		namespace = misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(destType, sourceName))), 127)
@@ -924,8 +924,6 @@ func (wh *HandleT) initWorkers() {
 							panic(err)
 						}
 
-
-
 						syncedSchema, err := whManager.FetchSchema(job.Warehouse, job.Warehouse.Namespace)
 						if err != nil {
 							logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
@@ -1012,7 +1010,6 @@ func (wh *HandleT) initWorkers() {
 func getBucketFolder(batchID string, tableName string) string {
 	return fmt.Sprintf(`%v-%v`, batchID, tableName)
 }
-
 
 //Enable enables a router :)
 func (wh *HandleT) Enable() {

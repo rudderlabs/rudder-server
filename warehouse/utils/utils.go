@@ -129,7 +129,7 @@ type UploadT struct {
 }
 
 type CurrentSchemaT struct {
-	Schema    map[string]map[string]string
+	Schema map[string]map[string]string
 }
 
 type StagingFileT struct {
