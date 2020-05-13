@@ -609,8 +609,8 @@ func (rs *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	if err != nil {
 		panic(err)
 	}
-	rs.CurrentSchema = currSchema.Schema
-	rs.Namespace = currSchema.Namespace
+	rs.CurrentSchema = currSchema
+	rs.Namespace = rs.Upload.Namespace
 	rs.dropDanglingStagingTables()
 	return
 }
@@ -634,8 +634,8 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	if err != nil {
 		panic(err)
 	}
-	rs.CurrentSchema = currSchema.Schema
-	rs.Namespace = currSchema.Namespace
+	rs.CurrentSchema = currSchema
+	rs.Namespace = rs.Upload.Namespace
 	if rs.Namespace == "" {
 		logger.Infof("Namespace not found in currentschema for RS:%s, setting from upload: %s", rs.Warehouse.Destination.ID, rs.Upload.Namespace)
 		rs.Namespace = rs.Upload.Namespace

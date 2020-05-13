@@ -531,12 +531,8 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	if err != nil {
 		panic(err)
 	}
-	sf.CurrentSchema = currSchema.Schema
-	sf.Namespace = strings.ToUpper(currSchema.Namespace)
-	if sf.Namespace == "" {
-		logger.Infof("SF: Namespace not found in currentschema for SF:%s, setting from upload: %s", sf.Warehouse.Destination.ID, sf.Upload.Namespace)
-		sf.Namespace = strings.ToUpper(sf.Upload.Namespace)
-	}
+	sf.CurrentSchema = currSchema
+	sf.Namespace = strings.ToUpper(sf.Upload.Namespace)
 
 	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {

@@ -418,11 +418,8 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	if err != nil {
 		panic(err)
 	}
-	bq.CurrentSchema = currSchema.Schema
-	bq.Namespace = currSchema.Namespace
-	if bq.Namespace == "" {
-		bq.Namespace = bq.Upload.Namespace
-	}
+	bq.CurrentSchema = currSchema
+	bq.Namespace = bq.Upload.Namespace
 
 	if config.Stage == "ExportData" {
 		err = bq.Export()
