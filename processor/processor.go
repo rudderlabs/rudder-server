@@ -248,7 +248,7 @@ func (proc *HandleT) backendConfigSubscriber() {
 
 func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 
-	logger.Debug("[Processor: addJobsToSessions] adding jobs to session")
+	log.Debug("[Processor: addJobsToSessions] adding jobs to session")
 	proc.userPQLock.Lock()
 
 	//List of users whose jobs need to be processed
@@ -259,12 +259,12 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
 		if !ok {
 			//bad event
-			logger.Debug("[Processor: addJobsToSessions] bad event")
+			log.Debug("[Processor: addJobsToSessions] bad event")
 			continue
 		}
 		userID, ok := misc.GetAnonymousID(eventList[0])
 		if !ok {
-			logger.Error("[Processor: addJobsToSessions] Failed to get userID for job")
+			log.Error("[Processor: addJobsToSessions] Failed to get userID for job")
 			continue
 		}
 
@@ -277,7 +277,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			proc.userEventsMap[userID] = make([]types.SingularEventT, 0)
 		}
 		// Adding a new session id for the user, if not present
-		logger.Debug("[Processor: addJobsToSessions] Adding a new session id for the user")
+		log.Debug("[Processor: addJobsToSessions] Adding a new session id for the user")
 		_, ok = proc.userToSessionIDMap[userID]
 		if !ok {
 			proc.userToSessionIDMap[userID] = uuid.NewV4().String()
@@ -319,7 +319,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		userEventsToProcess := make(map[string][]types.SingularEventT)
 		userToSessionMap := make(map[string]string)
 
-		logger.Debug("Post Add Processing")
+		log.Debug("Post Add Processing")
 		proc.Print()
 
 		//We clear the data structure for these users
@@ -331,7 +331,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			delete(proc.userEventsMap, userID)
 			delete(proc.userToSessionIDMap, userID)
 		}
-		logger.Debug("Processing")
+		log.Debug("Processing")
 		proc.Print()
 		//We release the lock before actually processing
 		proc.userPQLock.Unlock()
@@ -427,7 +427,7 @@ func createUserTransformedJobsFromEvents(transformUserEventList [][]types.Singul
 }
 
 func (proc *HandleT) createSessions() {
-	logger.Debug("[Processor: createSessions] starting sessions")
+	log.Debug("[Processor: createSessions] starting sessions")
 	for {
 		proc.userPQLock.Lock()
 		//Now jobs
@@ -443,7 +443,7 @@ func (proc *HandleT) createSessions() {
 		if time.Since(oldestItem.lastTS) < time.Duration(sessionInactivityThreshold) {
 			proc.userPQLock.Unlock()
 			sleepTime := time.Duration(sessionInactivityThreshold) - time.Since(oldestItem.lastTS)
-			logger.Debug("Sleeping", sleepTime)
+			log.Debug("Sleeping", sleepTime)
 			time.Sleep(sleepTime)
 			continue
 		}
@@ -484,7 +484,7 @@ func (proc *HandleT) createSessions() {
 		proc.Print()
 		proc.userPQLock.Unlock()
 		if len(userJobsToProcess) > 0 {
-			logger.Debug("Processing Session Check")
+			log.Debug("Processing Session Check")
 			proc.Print()
 			proc.processUserJobs(userJobsToProcess, userEventsToProcess, userToSessionMap)
 		}
@@ -745,20 +745,20 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				}
 				eventsToTransform = append(eventsToTransform, updatedEvent)
 			}
-			logger.Debug("Custom Transform output size", len(eventsToTransform))
+			log.Debug("Custom Transform output size", len(eventsToTransform))
 		} else {
 			logger.Debug("No custom transformation")
 			eventsToTransform = eventList
 		}
-		logger.Debug("Dest Transform input size", len(eventsToTransform))
+		log.Debug("Dest Transform input size", len(eventsToTransform))
 		destStat.destTransform.Start()
 		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 		destStat.destTransform.End()
 
 		destTransformEventList := response.Events
-		logger.Debug("Dest Transform output size", len(destTransformEventList))
+		log.Debug("Dest Transform output size", len(destTransformEventList))
 		if !response.Success {
-			logger.Debug("[Processor: processJobsForDest] Request to transformer not a success ", response.Events)
+			log.Debug("[Processor: processJobsForDest] Request to transformer not a success ", response.Events)
 			continue
 		}
 		destStat.numOutputEvents.Count(len(destTransformEventList))
@@ -818,7 +818,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
 	proc.statDBW.End()
 
-	logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
+	log.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
 	proc.pStatsDBW.End(len(statusList))
 	proc.pStatsJobs.End(totalEvents)
@@ -899,7 +899,7 @@ func (proc *HandleT) mainLoop() {
 	//waiting till the backend config is received
 	backendconfig.WaitForConfig()
 
-	logger.Info("Processor loop started")
+	log.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
 
 	for {
@@ -924,7 +924,7 @@ func (proc *HandleT) crashRecover() {
 		if len(execList) == 0 {
 			break
 		}
-		logger.Debug("Processor crash recovering", len(execList))
+		log.Debug("Processor crash recovering", len(execList))
 
 		var statusList []*jobsdb.JobStatusT
 
