@@ -104,7 +104,7 @@ type dataSetRangeT struct {
 
 //MigrationState maintains the state required during the migration process
 type MigrationState struct {
-	sequenceProvider *SequenceProvider
+	sequenceProvider *SequenceProviderT
 	dsForNewEvents   dataSetT
 	dsForImport      dataSetT
 	lastDsForExport  dataSetT
