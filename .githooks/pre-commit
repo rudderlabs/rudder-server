@@ -32,11 +32,12 @@ if [ -z "$ENTERPRISE_REMOTE_EXISTS" ]; then
 fi
 
 # check if enterprise repo has unpushed commits
-ENTERPRISE_CHANGES=`cd $ENTERPRISE_REPO; git cherry -v $ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH`
-if [ ! -z "$ENTERPRISE_CHANGES" ]; then
-  echo "ERROR: There are unpushed changes in enterprise repo branch '$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH'. Please, commit and push them first."
-  echo "Unpushed changes:"
-  echo $ENTERPRISE_CHANGES
+ENTERPRISE_DIFF=`cd $ENTERPRISE_REPO; git rev-list --left-right $ENTERPRISE_BRANCH...$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH`
+
+if [ ! -z "$ENTERPRISE_DIFF" ]; then
+  echo "ERROR: There are either unpushed changes, or current branch '$ENTERPRISE_BRANCH' is behind '$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH'. Please, update your branch, commit and push your changes."
+  echo "Remote branch differences:"
+  echo $ENTERPRISE_DIFF
   exit 1
 fi
 
