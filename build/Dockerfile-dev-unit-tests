@@ -1,0 +1,12 @@
+FROM golang:1.13-alpine
+ENV GO111MODULE=on
+
+RUN mkdir /app
+ADD . /app
+WORKDIR /app
+RUN ls
+
+RUN apk add git gcc musl-dev
+RUN go get github.com/onsi/ginkgo/ginkgo && go get -u github.com/onsi/gomega/...
+
+ENTRYPOINT ["ginkgo", "--randomizeAllSpecs", "-p", "--skipPackage=tests", "./..."]

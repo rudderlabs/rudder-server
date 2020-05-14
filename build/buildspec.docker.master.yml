@@ -27,13 +27,13 @@ phases:
 
       - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/sessions/config_overrides.toml > tests/e2e/sessions/config.toml
       - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/sessions\/config.toml/' build/docker.env
-      - docker-compose -f build/docker-compose.codebuild-integration-tests.yml up -d
-      - docker-compose -f build/docker-compose.codebuild-integration-tests.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e/sessions"
+      - docker-compose -f build/docker-compose.codebuild.yml up -d
+      - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e/sessions"
       
       - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/migrations/config_overrides.toml > tests/e2e/migrations/config.toml
       - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/migrations\/config.toml/' build/docker.env
-      - docker-compose -f build/docker-compose.codebuild-integration-tests.yml up -d
-      - docker-compose -f build/docker-compose.codebuild-integration-tests.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e/migrations"
+      - docker-compose -f build/docker-compose.codebuild.yml up -d
+      - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e/migrations"
 
       - docker-compose -f build/docker-compose.codebuild-unit-tests.yml up -d
   post_build:
@@ -41,10 +41,6 @@ phases:
       - echo build Docker image complete `date`
       - echo push latest Docker images to docker hub...
       - docker push rudderlabs/develop-rudder-server:$VERSION
-reports:
-  GinkgoUnitTestReports:
-    files:
-      - '**/junit_*.xml'
 artifacts:
   files:
     - "**/*"
