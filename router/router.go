@@ -46,7 +46,6 @@ type HandleT struct {
 	requestsMetricLock    sync.RWMutex
 	diagnosisTicker       *time.Ticker
 	requestsMetric        []requestMetric
-	// destinationConfigMap  map[string]interface{}
 }
 
 type jobResponseT struct {
@@ -71,6 +70,7 @@ type workerT struct {
 	failedJobIDMutex sync.RWMutex      //lock to protect structure above
 }
 
+//ProducerConfig keeps the config of a destination and corresponding producer for a stream destination
 type ProducerConfig struct {
 	Config   interface{}
 	Producer interface{}
@@ -85,6 +85,7 @@ var (
 	customDestinations                                                             []string
 	destinationConfigProducerMap                                                   map[string]ProducerConfig
 	configSubscriberLock                                                           sync.RWMutex
+	producerCreationLock                                                           sync.RWMutex
 )
 
 type requestMetric struct {
@@ -209,20 +210,25 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 					if producer != nil {
 						respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal, producer, config)
 					} else {
+						/* As the producers are created when the server gets up or workspace config changes, it may happen that initially
+						the destinatin, such as Kafka server was not up, so, producer could not be created. But, after sometime it becomes reachable,
+						so, while sending the event if the producer is not creatd alrady, then it tries to create it. */
+						producerCreationLock.Lock()
 						producer, err := customdestinationmanager.GetProducer(config, rt.destID)
 						producerConfig := ProducerConfig{Config: config, Producer: producer}
 						destinationConfigProducerMap[key] = producerConfig
+						producerCreationLock.Unlock()
 						logger.Infof("created new producer: %v for destination: %v and source %v", producer, paramaters.DestinationID, paramaters.SourceID)
 						if err == nil {
 							respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal, producer, config)
 						} else {
-							respStatusCode, respStatus, respBody = 500, "Producer not found in router", "Producer could not be created"
+							respStatusCode, respStatus, respBody = 400, "Producer not found in router", "Producer could not be created"
 						}
 
 					}
 
 				} else {
-					respStatusCode, respStatus, respBody = 500, "Producer not found in router", "Producer could not be created"
+					respStatusCode, respStatus, respBody = 400, "Producer not found in router", "Producer could not be created"
 				}
 			} else {
 				respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
@@ -741,17 +747,14 @@ func (rt *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
-		//rt.batchDestinations = []DestinationT{}
-		// destinationConfigProducerMap = make(map[string]interface{})
 		allSources := config.Data.(backendconfig.SourcesT)
+
+		// Producers of stream destinations are created or closed while server starts up or workspace config gets changed
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == rt.destID && misc.ContainsString(customDestinations, rt.destID) {
-						//brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
 						key := source.ID + "-" + destination.ID
-						// producer := customdestinationmanager.GetProducer(destinationConfig, destType)
-						// destinationConfigProducerMap[key] = destination.Config
 						destConfig := destination.Config
 						if destinationConfigProducerMap[key] != (ProducerConfig{}) {
 							producer := destinationConfigProducerMap[key].Producer
