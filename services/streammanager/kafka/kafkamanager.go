@@ -152,7 +152,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		logger.Error(returnMessage)
 	} else {
 		returnMessage = fmt.Sprintf("Message delivered at Offset: %v , Partition: %v for topic: %v", offset, partition, topic)
-		logger.Info(returnMessage)
+		//logger.Info(returnMessage)
 		statusCode = 200
 		errorMessage = returnMessage
 	}
