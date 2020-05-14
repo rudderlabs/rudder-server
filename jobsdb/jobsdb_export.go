@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -28,6 +29,10 @@ func (jd *HandleT) getLastDsForExport(dsList []dataSetT) dataSetT {
 
 //GetNonMigratedAndMarkMigrating all jobs with no filters
 func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
+	queryStat := stats.NewJobsDBStat("get_for_export_and_update_status", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
+
 	logger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated waiting for locks", jd.GetTablePrefix())
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -96,6 +101,10 @@ type SQLJobStatusT struct {
 }
 
 func (jd *HandleT) getNonMigratedJobsAndMarkMigratingDS(ds dataSetT, count int) ([]*JobT, error) {
+	queryStat := stats.NewJobsDBStat("get_for_export_and_update_status_ds", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
+
 	var rows *sql.Rows
 	var err error
 
@@ -161,6 +170,9 @@ func (jd *HandleT) getNonMigratedJobsAndMarkMigratingDS(ds dataSetT, count int) 
 
 //UpdateJobStatusAndCheckpoint does update job status and checkpoint in a single transaction
 func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNodeID string, toNodeID string, uploadLocation string) {
+	queryStat := stats.NewJobsDBStat("update_status_and_checkpoint", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 	//TODO REMOVE
@@ -174,6 +186,9 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 
 //IsMigrating returns true if there are non zero jobs with status = 'migrating'
 func (jd *HandleT) IsMigrating() bool {
+	queryStat := stats.NewJobsDBStat("is_migrating_check", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -203,6 +218,10 @@ func (jd *HandleT) IsMigrating() bool {
 }
 
 func (jd *HandleT) getNonExportedJobsCountDS(ds dataSetT) int64 {
+	queryStat := stats.NewJobsDBStat("get_non_exported_job_count", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
+
 	var sqlStatement string
 
 	sqlStatement = fmt.Sprintf(`
@@ -231,6 +250,9 @@ func (jd *HandleT) getNonExportedJobsCountDS(ds dataSetT) int64 {
 
 //PreExportCleanup removes all the entries from job_status_tables that are of state 'migrating'
 func (jd *HandleT) PreExportCleanup() {
+	queryStat := stats.NewJobsDBStat("pre_export_cleanup", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
@@ -243,6 +265,9 @@ func (jd *HandleT) PreExportCleanup() {
 
 //PostExportCleanup removes all the entries from job_status_tables that are of state 'wont_migrate' or 'migrating'
 func (jd *HandleT) PostExportCleanup() {
+	queryStat := stats.NewJobsDBStat("post_export_cleanup", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 

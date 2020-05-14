@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -69,6 +70,10 @@ func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 
 //StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
 func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent *MigrationEventT) {
+	queryStat := stats.NewJobsDBStat("store_imported_jobs_and_statuses", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
+
 	// This if block should be idempotent. It is currently good. But if it changes we need to add separate locks outside
 	var found bool
 	var opID int64
@@ -137,6 +142,9 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 }
 
 func (jd *HandleT) getStartJobID(count int, migrationEvent *MigrationEventT) int64 {
+	queryStat := stats.NewJobsDBStat("get_start_job_id", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 	var sequenceNumber int64
 	sequenceNumber = migrationEvent.StartSeq
 	if sequenceNumber == 0 {
