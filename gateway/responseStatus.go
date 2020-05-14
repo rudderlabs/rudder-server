@@ -19,8 +19,8 @@ const (
 	RequestBodyTooLarge = "Request size exceeds max limit"
 	//InvalidWriteKey - Invalid Write Key
 	InvalidWriteKey = "Invalid Write Key"
-	//InvalidJson - Invalid JSON
-	InvalidJson = "Invalid JSON"
+	//InvalidJSON - Invalid JSON
+	InvalidJSON = "Invalid JSON"
 )
 
 var (
@@ -42,7 +42,7 @@ func loadStatusMap() {
 	statusMap[RequestBodyReadFailed] = ResponseStatus{message: RequestBodyReadFailed, code: http.StatusBadRequest}
 	statusMap[RequestBodyTooLarge] = ResponseStatus{message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge}
 	statusMap[InvalidWriteKey] = ResponseStatus{message: InvalidWriteKey, code: http.StatusUnauthorized}
-	statusMap[InvalidJson] = ResponseStatus{message: InvalidJson, code: http.StatusBadRequest}
+	statusMap[InvalidJSON] = ResponseStatus{message: InvalidJSON, code: http.StatusBadRequest}
 }
 
 func getStatus(key string) string {

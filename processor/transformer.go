@@ -30,10 +30,10 @@ type transformerHandleT struct {
 	responseQ          chan *transformMessageT
 	accessLock         sync.Mutex
 	perfStats          *misc.PerfStats
-	sentStat           *stats.RudderStats
-	receivedStat       *stats.RudderStats
-	failedStat         *stats.RudderStats
-	transformTimerStat *stats.RudderStats
+	sentStat           stats.RudderStats
+	receivedStat       stats.RudderStats
+	failedStat         stats.RudderStats
+	transformTimerStat stats.RudderStats
 }
 
 var (

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -96,6 +97,7 @@ func loadConfig() {
 type WarehouseT struct {
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
+	Namespace   string
 }
 
 type DestinationT struct {
@@ -127,8 +129,7 @@ type UploadT struct {
 }
 
 type CurrentSchemaT struct {
-	Namespace string
-	Schema    map[string]map[string]string
+	Schema map[string]map[string]string
 }
 
 type StagingFileT struct {
@@ -140,14 +141,13 @@ type StagingFileT struct {
 	TotalEvents      int
 }
 
-func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, error) {
+func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
 	var rawSchema json.RawMessage
-	var namespace string
-	sqlStatement := fmt.Sprintf(`SELECT namespace, schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace, &rawSchema)
+	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[3]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Destination.ID, warehouse.Namespace)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return CurrentSchemaT{}, nil
+			return nil, nil
 		}
 		if err != nil {
 			panic(err)
@@ -167,8 +167,7 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, e
 		}
 		schema[key] = y
 	}
-	currentSchema := CurrentSchemaT{Namespace: namespace, Schema: schema}
-	return currentSchema, nil
+	return schema, nil
 }
 
 type SchemaDiffT struct {
@@ -207,6 +206,11 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 		}
 	}
 	return
+}
+
+func CompareSchema(sch1, sch2 map[string]map[string]string) bool {
+	eq := reflect.DeepEqual(sch1, sch2)
+	return eq
 }
 
 type UploadColumnT struct {
@@ -371,9 +375,16 @@ func GetTableUploadStatus(uploadID int64, tableName string, dbHandle *sql.DB) (s
 	return
 }
 
-func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, currentSchema, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
+func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
+	var count int
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE source_id='%s' AND destination_id='%s' AND namespace='%s'`, warehouseSchemasTable, wh.Source.ID, wh.Destination.ID, namespace)
+	err = dbHandle.QueryRow(sqlStatement).Scan(&count)
+	if err != nil {
+		panic(err)
+	}
+
 	marshalledSchema, err := json.Marshal(schema)
-	if len(currentSchema) == 0 {
+	if count == 0 {
 		sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_upload_id, source_id, namespace, destination_id, destination_type, schema, created_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $7)`, warehouseSchemasTable)
 		stmt, err := dbHandle.Prepare(sqlStatement)
@@ -384,8 +395,8 @@ func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, curren
 
 		_, err = stmt.Exec(uploadID, wh.Source.ID, namespace, wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, timeutil.Now())
 	} else {
-		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3`, warehouseSchemasTable)
-		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, wh.Source.ID, wh.Destination.ID)
+		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3 AND namespace=$4`, warehouseSchemasTable)
+		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, wh.Source.ID, wh.Destination.ID, namespace)
 	}
 	if err != nil {
 		panic(err)
@@ -564,7 +575,7 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	return schema
 }
 
-func DestStat(statType string, statName string, id string) *stats.RudderStats {
+func DestStat(statType string, statName string, id string) stats.RudderStats {
 	return stats.NewBatchDestStat(fmt.Sprintf("warehouse.%s", statName), statType, id)
 }
 
