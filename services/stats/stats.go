@@ -22,6 +22,7 @@ var writeKeyClientsMap = make(map[string]*statsd.Client)
 var batchDestClientsMap = make(map[string]*statsd.Client)
 var destClientsMap = make(map[string]*statsd.Client)
 var jobsdbClientsMap = make(map[string]*statsd.Client)
+var migratorsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
 var statsdServerURL string
 var instanceID string
@@ -30,6 +31,7 @@ var writeKeyClientsMapLock sync.Mutex
 var batchDestClientsMapLock sync.Mutex
 var destClientsMapLock sync.Mutex
 var jobsdbClientsMapLock sync.Mutex
+var migratorsMapLock sync.Mutex
 var enabled bool
 var statsCollectionInterval int64
 var enableCPUStats bool
@@ -148,6 +150,24 @@ func NewJobsDBStat(Name string, StatType string, customVal string) *RudderStats 
 		Name:     Name,
 		StatType: StatType,
 		Client:   jobsdbClientsMap[customVal],
+	}
+
+}
+
+func NewMigratorStat(Name string, StatType string, customVal string) *RudderStats {
+	migratorsMapLock.Lock()
+	defer migratorsMapLock.Unlock()
+	if _, found := migratorsMap[customVal]; !found {
+		var err error
+		migratorsMap[customVal], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "customVal", customVal))
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+	return &RudderStats{
+		Name:     Name,
+		StatType: StatType,
+		Client:   migratorsMap[customVal],
 	}
 
 }
