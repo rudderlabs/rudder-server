@@ -1,15 +1,48 @@
 #!/bin/sh
 
+ENTERPRISE_COMMIT_FILE=.enterprise-commit
+ENTERPRISE_REPO=./enterprise
+
 # Check enterprise repo is loaded
-if [ ! -d "./enterprise" ]; then
-  exit 0;
+if [ ! -d "$ENTERPRISE_REPO" ]; then
+  exit 0
 fi
 
-ENTERPRISECOMMITFILE=.enterprise-commit
+# check if enterprise repo has any unstaged changes
+ENTERPRISE_UNSTAGED=`cd $ENTERPRISE_REPO; git status -s -uall`
+if [ ! -z "$ENTERPRISE_UNSTAGED" ]; then
+  echo "ERROR: There are unstaged changes in enterprise repo. Please, commit and push them first."
+  echo "git status of $ENTERPRISE_RERO"
+  (cd $ENTERPRISE_REPO; git status)
+  exit 1
+fi
 
-STOREDCOMMIT=`cat $ENTERPRISECOMMITFILE`
-ENTERPRISECOMMIT=`cd ./enterprise; git rev-parse HEAD`
+# check if enterprise repo has no remote
+ENTERPRISE_BRANCH=`cd $ENTERPRISE_REPO; git name-rev --name-only HEAD`
+ENTERPRISE_REMOTE=`cd $ENTERPRISE_REPO; git config branch.$ENTERPRISE_BRANCH.remote`
+if [ -z "$ENTERPRISE_REMOTE" ]; then
+  echo "ERROR: Current enterprise repo branch '$ENTERPRISE_BRANCH' has no remote. Please, push your enterprise changes first."
+  exit 1
+fi
 
-echo $ENTERPRISECOMMIT > $ENTERPRISECOMMITFILE
+ENTERPRISE_REMOTE_EXISTS=`cd $ENTERPRISE_REPO; git branch -a | grep remotes/$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH`
+if [ -z "$ENTERPRISE_REMOTE_EXISTS" ]; then
+  echo "ERROR: Enterprise repo remote branch '$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH' does not yet exist. Please, push your enterprise changes first."
+  exit 1
+fi
 
-git add $ENTERPRISECOMMITFILE
+# check if enterprise repo has unpushed commits
+ENTERPRISE_CHANGES=`cd $ENTERPRISE_REPO; git cherry -v $ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH`
+if [ ! -z "$ENTERPRISE_CHANGES" ]; then
+  echo "ERROR: There are unpushed changes in enterprise repo branch '$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH'. Please, commit and push them first."
+  echo "Unpushed changes:"
+  echo $ENTERPRISE_CHANGES
+  exit 1
+fi
+
+# Refresh and add the enterprise commit file. This should have no effect if the commit hasn't changed.
+STORED_COMMIT=`cat $ENTERPRISE_COMMIT_FILE`
+ENTERPRISE_COMMIT=`cd $ENTERPRISE_REPO; git rev-parse HEAD`
+
+echo $ENTERPRISE_COMMIT > $ENTERPRISE_COMMIT_FILE
+git add $ENTERPRISE_COMMIT_FILE
