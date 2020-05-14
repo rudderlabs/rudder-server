@@ -1605,7 +1605,7 @@ func (jd *HandleT) mainCheckLoop() {
 		//TODO need to put a better condition to check if migration is in progess.
 		//jd.migrationState.dsForImport.Index: this gets set only upon import request from export node.
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
-		if jd.migrationState.dsForImport.Index != "" {
+		if misc.GetMigrationMode() != "" {
 			continue
 		}
 
@@ -2066,8 +2066,16 @@ func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) in
 }
 
 func (jd *HandleT) JournalMarkDone(opID int64) {
+	jd.JournalMarkDoneInTxn(jd.dbHandle, opID)
+}
+
+type transactionHandler interface {
+	Exec(string, ...interface{}) (sql.Result, error)
+}
+
+func (jd *HandleT) JournalMarkDoneInTxn(txHandler transactionHandler, opID int64) {
 	sqlStatement := fmt.Sprintf(`UPDATE %s_journal SET done=$2, end_time=$3 WHERE id=$1`, jd.tablePrefix)
-	_, err := jd.dbHandle.Exec(sqlStatement, opID, true, time.Now())
+	_, err := txHandler.Exec(sqlStatement, opID, true, time.Now())
 	jd.assertError(err)
 }
 

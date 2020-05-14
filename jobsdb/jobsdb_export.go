@@ -204,9 +204,14 @@ func (jd *HandleT) IsMigrating() bool {
 		return false
 	}
 
-	//TODO: This can be optimized by keeping 0 count ds in memory and avoid querying on them.
+	dsCounts := make(map[string]int64)
+
 	for _, ds := range dsList {
-		nonExportedCount := jd.getNonExportedJobsCountDS(ds)
+		nonExportedCount, found := dsCounts[ds.Index]
+		if !found || nonExportedCount > 0 {
+			nonExportedCount = jd.getNonExportedJobsCountDS(ds)
+			dsCounts[ds.Index] = nonExportedCount
+		}
 		if nonExportedCount > 0 {
 			return true
 		}

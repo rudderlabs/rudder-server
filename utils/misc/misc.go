@@ -728,3 +728,8 @@ func GetMigratingFromVersion() int {
 func GetMigratingToVersion() int {
 	return config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
 }
+
+//GetMigrationMode gives the migration-mode value passed as a flag
+func GetMigrationMode() string {
+	return config.GetString("migrationMode", "")
+}

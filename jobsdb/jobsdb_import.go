@@ -133,12 +133,10 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	jd.updateJobStatusDSInTxn(txn, jd.migrationState.dsForImport, statusList, []string{}, []ParameterFilterT{})
 	migrationEvent.Status = Imported
 	jd.CheckpointInTxn(txn, migrationEvent)
-	txn.Commit()
-
-	//TODO what happens if it crashes here? Data loss?
 	if opID != 0 {
-		jd.JournalMarkDone(opID)
+		jd.JournalMarkDoneInTxn(txn, opID)
 	}
+	txn.Commit()
 }
 
 func (jd *HandleT) getStartJobID(count int, migrationEvent *MigrationEventT) int64 {
