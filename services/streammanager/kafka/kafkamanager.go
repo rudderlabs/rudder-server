@@ -135,9 +135,6 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	topic := config.Topic
 
 	parsedJSON := gjson.ParseBytes(jsonData)
-	if parsedJSON.Get("output").Exists() {
-		parsedJSON = parsedJSON.Get("output")
-	}
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
 	userID := parsedJSON.Get("userId").Value().(string)

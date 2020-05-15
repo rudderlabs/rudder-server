@@ -23,7 +23,6 @@ func init() {
 
 func loadConfig() {
 	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	customDestination = []string{"KINESIS", "KAFKA"}
 }
 
 const (
@@ -95,7 +94,7 @@ func GetPostInfoNew(transformRaw json.RawMessage) PostParameterNewT {
 	}
 	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
 	if !ok {
-		postInfo.UserID=fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
+		postInfo.UserID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
 	postInfo.Body, ok = parsedJSON.Get("body").Value().(interface{})
 	if !ok {
@@ -127,7 +126,7 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	}
 	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
 	if !ok {
-		postInfo.UserID=fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
+		postInfo.UserID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
 	postInfo.Payload, ok = parsedJSON.Get("payload").Value().(interface{})
 	if !ok {
@@ -144,38 +143,14 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	return postInfo
 }
 
-// GetUserIDForStreamDestination parses the payload to get userId
-func GetUserIDForStreamDestination(jsonData json.RawMessage) string {
-	var userID string
-	parsedJSON := gjson.ParseBytes(jsonData)
-	if parsedJSON.Get("output").Exists() {
-		parsedJSON = parsedJSON.Get("output")
-		var ok bool
-		if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
-			userID=fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
-		}
-	}
-	return userID
-}
-
 // GetUserIDFromTransformerResponse parses the payload to get userId
-func GetUserIDFromTransformerResponse(transformRaw json.RawMessage, destination string) string {
+func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) string {
 
-	if misc.ContainsString(customDestination, destination) {
-		return GetUserIDForStreamDestination(transformRaw)
-	}
-	// Get response version
-	version := GetResponseVersion(transformRaw)
 	var userID string
-	switch version {
-	case "0":
-		response := GetPostInfo(transformRaw)
-		userID = response.UserID
-	case "-1", "1":
-		response := GetPostInfoNew(transformRaw)
-		userID = response.UserID
-	default:
-		panic(fmt.Errorf("version: %s is not supported", version))
+	parsedJSON := gjson.ParseBytes(transformRaw)
+	var ok bool
+	if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
+		userID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
 	return userID
 }

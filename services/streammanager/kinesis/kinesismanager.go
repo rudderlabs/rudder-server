@@ -56,9 +56,6 @@ func NewProducer(destinationConfig interface{}) (kinesis.Kinesis, error) {
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string) {
 
 	parsedJSON := gjson.ParseBytes(jsonData)
-	if parsedJSON.Get("output").Exists() {
-		parsedJSON = parsedJSON.Get("output")
-	}
 
 	kc, ok := producer.(kinesis.Kinesis)
 	if !ok {
