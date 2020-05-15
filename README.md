@@ -1,33 +1,40 @@
 ![Build Status][build status]
 [![Release]][release]
 
-# ![RudderStack][rudder-logo]
+![RudderStack](https://github.com/ameypv-rudder/rudder-server/blob/readme-update/resources/RudderStack.png)
 
 # What is RudderStack?
 
-RudderStack is an **open-source**, **enterprise-ready** platform for collecting, storing and routing customer event data **securely** to your data warehouse and dozens of other tools. It provides a powerful transformation framework to process your event data on the fly.
+[RudderStack](https://rudderstack.com/) is an **open-source**, **enterprise-ready** platform for collecting, storing and routing customer event data **securely** to your data warehouse and dozens of other tools. It provides a powerful transformation framework to process your event data on the fly.
 
 RudderStack's backend is written in Go, with a rich UI written in React.js.
 
-# License
+You can use the [cloud-hosted](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) RudderStack instance to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro).
 
-RudderStack server is released under the [AGPLv3 License][agplv3_license]
+# Why Use RudderStack?
+- **Production-ready**: Companies like **MatterMost**, **IFTTT**, **Grofers**, and **1mg** use RudderStack for collecting their events
 
-# Why RudderStack?
+- **Extreme Scale**: One of our largest installations currently sends **300 Million** events/day with peak of **40K** req/sec, via a multi-node RudderStack setup
 
-- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
+- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool
+
+- **Seamless Integration**: RudderStack currently supports integration with over 30 popular destination platforms such as Google Analytics, Amplitude, Mixpanel, Amazon S3,and more. Moreover, it also supports integration with popular data warehouses such as Snowflake, Redshift, and Google BigQuery
+
+- **Client-side SDK Support**: RudderStack offers client-side SDKs for [JavaScript](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-javascript-sdk), [Android](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-android-sdk), [iOS](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-ios-sdk), and [Unity](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-unity-sdk)
+
+- **User-specified Transformation**: RudderStack gives you the power to filter or transform your events before sending them to the desired destinations
+
+# Key Features
+
+- **Segment API Compatible**: RudderStack is Segment API and library compatible. So you don't need to change your app if you are using Segment
 
 - **Processing Flexibility**: With RudderStack's powerful JavaScript-based event transformation framework, you can enhance or transform your event data by combining it with your other internal data. Furthermore, since RudderStack runs inside your cloud or on-premise environment, you can easily access your production data to join with the event data.
 
 - **Unlimited Events**: Event volume-based pricing of most of the commercial systems is broken. With RudderStack, you are be able to collect as much data as possible without worrying about overrunning event budgets.
 
-- **Stand-alone system**: RudderStack runs as a single Go binary with the only dependency being on the PostgreSQL database. There is no other dependency required to use RudderStack.
-
-- **Seamless integration**: RudderStack currently supports integration with over 30 popular destination platforms such as Google Analytics, Amplitude, Mixpanel, Amazon S3 and more. Moreover, it also supports integration with popular data warehouses such as Snowflake, Redshift and Google BigQuery.
+- **Stand-alone System**: RudderStack runs as a single Go binary with the only dependency being on the PostgreSQL database. There is no other dependency required to use RudderStack.
 
 - **High Performance**: On a single m4.2xlarge, RudderStack can process 3000 events/second
-
-- **Client-side SDK support**: RudderStack offers client-side SDKs for JavaScript, Android, iOS, and Unity.
 
 # Install RudderStack
 
@@ -39,21 +46,29 @@ You can go through our [detailed documentation](https://docs.rudderstack.com/) t
 - [Native Installation](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-a-native-installation)
 - [Developer Machine Setup](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack/developer-machine-setup)
 
-Once you have installed and set up RudderStack, learn [how to send test events](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#how-to-send-test-events)
+Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#how-to-send-test-events) to verify the setup.
+
+# License
+
+RudderStack server is released under the [AGPLv3 License][agplv3_license]
 
 # Contribute
 
-We would love to see you contribute to RudderStack. See [CONTRIBUTING.md](CONTRIBUTING.md) for more information on how to contribute.
+We would love to see you contribute to RudderStack. Get more information on how to contribute [here](CONTRIBUTING.md).
+
+# Wiki
+
+For more information on RudderStack's features and functionalities, make sure you check out our [Wiki]() page
 
 # Stay Connected
 
 - See the [HackerNews][hackernews] discussion around RudderStack.
 - Join our [Discord][discord] channel
-- Follow us [RudderStack][twitter]
+- Follow us on [Twitter][twitter]
 - Get the latest news from the [RudderStack blog][rudderstack-blog]
 - Subscribe to our newsletter
 
-<!----variable's---->
+<!----variables---->
 
 [build status]: https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master
 [release]: https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver
