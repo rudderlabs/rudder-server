@@ -13,9 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/utils"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -30,21 +28,22 @@ import (
 
 //HandleT is the handle to this module.
 type HandleT struct {
-	requestQ              chan *jobsdb.JobT
-	responseQ             chan jobResponseT
-	jobsDB                *jobsdb.HandleT
-	netHandle             *NetHandleT
-	destID                string
-	workers               []*workerT
-	perfStats             *misc.PerfStats
-	successCount          uint64
-	failCount             uint64
-	isEnabled             bool
-	toClearFailJobIDMutex sync.Mutex
-	toClearFailJobIDMap   map[int][]string
-	requestsMetricLock    sync.RWMutex
-	diagnosisTicker       *time.Ticker
-	requestsMetric        []requestMetric
+	requestQ                 chan *jobsdb.JobT
+	responseQ                chan jobResponseT
+	jobsDB                   *jobsdb.HandleT
+	netHandle                *NetHandleT
+	destID                   string
+	workers                  []*workerT
+	perfStats                *misc.PerfStats
+	successCount             uint64
+	failCount                uint64
+	isEnabled                bool
+	toClearFailJobIDMutex    sync.Mutex
+	toClearFailJobIDMap      map[int][]string
+	requestsMetricLock       sync.RWMutex
+	diagnosisTicker          *time.Ticker
+	requestsMetric           []requestMetric
+	customDestinationManager customdestinationmanager.DestinationManager
 }
 
 type jobResponseT struct {
@@ -76,8 +75,6 @@ var (
 	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
 	customDestinations                                                             []string
-	destinationConfigProducerMap                                                   map[string]interface{}
-	producerCreationLock                                                           sync.RWMutex
 )
 
 type requestMetric struct {
@@ -109,7 +106,6 @@ func loadConfig() {
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
 	customDestinations = []string{"KINESIS", "KAFKA"}
-	destinationConfigProducerMap = make(map[string]interface{})
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -194,14 +190,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", rt.destID, attempts, ser)
 
 			deliveryTimeStat.Start()
-			if misc.ContainsString(customDestinations, job.CustomVal) {
-				sendDataConfig := &customdestinationmanager.DataConfigT{
-					SourceID:                     paramaters.SourceID,
-					DestinationID:                paramaters.DestinationID,
-					DestinationConfigProducerMap: destinationConfigProducerMap,
-					ProducerCreationLock:         &producerCreationLock,
-				}
-				respStatusCode, respStatus, respBody = customdestinationmanager.SendData(job.EventPayload, job.CustomVal, sendDataConfig)
+
+			if rt.customDestinationManager != nil {
+				respStatusCode, respStatus, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
 			} else {
 				respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
 			}
@@ -713,33 +704,6 @@ func init() {
 	loadConfig()
 }
 
-func (rt *HandleT) backendConfigSubscriber() {
-	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
-	for {
-		config := <-ch
-		allSources := config.Data.(backendconfig.SourcesT)
-
-		for _, source := range allSources.Sources {
-			if len(source.Destinations) > 0 {
-				for _, destination := range source.Destinations {
-					if destination.DestinationDefinition.Name == rt.destID && misc.ContainsString(customDestinations, rt.destID) {
-						sendDataConfig := &customdestinationmanager.DataConfigT{
-							SourceID:                     source.ID,
-							DestinationID:                destination.ID,
-							DestinationConfigProducerMap: destinationConfigProducerMap,
-						}
-						producerCreationLock.Lock()
-						// Producers of stream destinations are created or closed while server starts up or workspace config gets changed
-						customdestinationmanager.CreateUpdateProducer(sendDataConfig, rt.destID, source.Name, destination)
-						producerCreationLock.Unlock()
-					}
-				}
-			}
-		}
-	}
-}
-
 //Setup initializes this module
 func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	logger.Info("Router started")
@@ -755,10 +719,8 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.netHandle.Setup(destID)
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destID)
+	rt.customDestinationManager = customdestinationmanager.New(destID)
 	rt.initWorkers()
-	rruntime.Go(func() {
-		rt.backendConfigSubscriber()
-	})
 	rruntime.Go(func() {
 		rt.collectMetrics()
 	})

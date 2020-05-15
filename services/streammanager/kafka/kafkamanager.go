@@ -110,7 +110,7 @@ func CloseProducer(producer interface{}) error {
 	if ok {
 		err := kafkaProducer.Close()
 		if err != nil {
-			logger.Errorf("error in closing Kafka producer: %v", err.Error())
+			logger.Errorf("error in closing Kafka producer: %s", err.Error())
 		}
 		return err
 	}
@@ -150,7 +150,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		errorMessage = err.Error()
 		logger.Error(returnMessage)
 	} else {
-		returnMessage = fmt.Sprintf("Message delivered at Offset: %v , Partition: %v for topic: %v", offset, partition, topic)
+		returnMessage = fmt.Sprintf("Message delivered at Offset: %v , Partition: %v for topic: %s", offset, partition, topic)
 		//logger.Info(returnMessage)
 		statusCode = 200
 		errorMessage = returnMessage
