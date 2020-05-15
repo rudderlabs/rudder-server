@@ -13,38 +13,40 @@ fi
 STORED_COMMIT=`cat $ENTERPRISE_COMMIT_FILE`
 CURRENT_COMMIT=`cd $ENTERPRISE_DIR; git rev-parse HEAD`
 
-# check if enterprise repo has any unstaged changes
-ENTERPRISE_UNSTAGED=`cd $ENTERPRISE_DIR; git status -s -uall`
-if [ ! -z "$ENTERPRISE_UNSTAGED" ]; then
-  echo "WARNING: There are unstaged changes in enterprise repo."
-  HAS_WARNING=true
-fi
-
 # check if enterprise repo has no remote
 ENTERPRISE_BRANCH=`cd $ENTERPRISE_DIR; git name-rev --name-only HEAD`
 ENTERPRISE_REMOTE=`cd $ENTERPRISE_DIR; git config branch.$ENTERPRISE_BRANCH.remote`
 if [ -z "$ENTERPRISE_REMOTE" ]; then
-  echo "WARNING: Current enterprise repo branch '$ENTERPRISE_BRANCH' has no remote."
-  HAS_WARNING=true
+  echo "ERROR: Current enterprise repo branch '$ENTERPRISE_BRANCH' has no remote."
+  exit 1
 fi
 
 # check if enterprise remote repo exists
-if [ ! -z "$ENTERPRISE_REMOTE" ]; then
-  ENTERPRISE_REMOTE_EXISTS=`cd $ENTERPRISE_DIR; git branch -a | grep remotes/$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH`
-  if [ -z "$ENTERPRISE_REMOTE_EXISTS" ]; then
-    echo "WARNING: Enterprise repo remote branch '$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH' does not yet exist."
-      HAS_WARNING=true
-  fi
+ENTERPRISE_REMOTE_EXISTS=`cd $ENTERPRISE_DIR; git branch -a | grep remotes/$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH`
+if [ -z "$ENTERPRISE_REMOTE_EXISTS" ]; then
+  echo "ERROR: Enterprise repo remote branch '$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH' does not yet exist."
+  exit 1
 fi
 
 
 # check if enterprise repo has unpushed commits
-if [ ! -z "$ENTERPRISE_REMOTE" ]; then
-  ENTERPRISE_DIFF=`cd $ENTERPRISE_DIR; git rev-list --left-right $ENTERPRISE_BRANCH...$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH`
-  if [ ! -z "$ENTERPRISE_DIFF" ]; then
-    echo "WARNING: There are either unpushed changes, or current branch '$ENTERPRISE_BRANCH' is behind '$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH'"
-      HAS_WARNING=true
-  fi
+ENTERPRISE_UNPUSHED_COMMITS=`cd $ENTERPRISE_DIR; git log $ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH..HEAD`
+if [ ! -z "$ENTERPRISE_UNPUSHED_COMMITS" ]; then
+  echo "ERROR: There are unpushed commits on current branch '$ENTERPRISE_BRANCH'. Please, push your commits first."
+  exit 1
+fi
+
+# check if enterprise repo has any unstaged changes
+ENTERPRISE_UNSTAGED=`cd $ENTERPRISE_DIR; git status -s -uall`
+if [ ! -z "$ENTERPRISE_UNSTAGED" ]; then
+  echo "ERROR: There are unstaged changes in enterprise repo. Please, commit or stash first."
+  exit 1
+fi
+
+ENTERPRISE_DIFF=`cd $ENTERPRISE_DIR; git rev-list --left-right $ENTERPRISE_BRANCH...$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH`
+if [ ! -z "$ENTERPRISE_DIFF" ]; then
+  echo "WARNING: Local branch '$ENTERPRISE_BRANCH' is behind '$ENTERPRISE_REMOTE/$ENTERPRISE_BRANCH'"
+  HAS_WARNING=true
 fi
 
 if [ "$STORED_COMMIT" = "$CURRENT_COMMIT" ]; then
