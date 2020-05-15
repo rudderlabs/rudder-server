@@ -1,4 +1,6 @@
-package processor
+package transformer
+
+//go:generate mockgen -destination=../../mocks/processor/transformer/mock_transformer.go -package=mocks_transformer github.com/rudderlabs/rudder-server/processor/transformer Transformer
 
 import (
 	"bytes"
@@ -11,13 +13,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-//Structure which is used to pass message to the transformer workers
+//transformMessageT is used to pass message to the transformer workers
 type transformMessageT struct {
 	index int
 	data  interface{}
@@ -25,7 +28,7 @@ type transformMessageT struct {
 }
 
 //HandleT is the handle for this class
-type transformerHandleT struct {
+type HandleT struct {
 	requestQ           chan *transformMessageT
 	responseQ          chan *transformMessageT
 	accessLock         sync.Mutex
@@ -36,12 +39,35 @@ type transformerHandleT struct {
 	transformTimerStat stats.RudderStats
 }
 
+//Transformer provides methods to transform events
+type Transformer interface {
+	Setup()
+	Transform(clientEvents []interface{}, url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT
+}
+
+//NewTransformer creates a new transformer
+func NewTransformer() *HandleT {
+	return &HandleT{}
+}
+
 var (
 	maxChanSize, numTransformWorker, maxRetry int
 	retrySleep                                time.Duration
 )
 
-func (trans *transformerHandleT) transformWorker() {
+func loadConfig() {
+	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
+	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
+	maxRetry = config.GetInt("Processor.maxRetry", 30)
+	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
+}
+
+func init() {
+	config.Initialize()
+	loadConfig()
+}
+
+func (trans *HandleT) transformWorker() {
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
 	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
@@ -110,7 +136,7 @@ func (trans *transformerHandleT) transformWorker() {
 }
 
 //Setup initializes this class
-func (trans *transformerHandleT) Setup() {
+func (trans *HandleT) Setup() {
 	trans.requestQ = make(chan *transformMessageT, maxChanSize)
 	trans.responseQ = make(chan *transformMessageT, maxChanSize)
 	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
@@ -127,6 +153,7 @@ func (trans *transformerHandleT) Setup() {
 	}
 }
 
+//ResponseT represents a Transformer response
 type ResponseT struct {
 	Events  []interface{}
 	Success bool
@@ -140,7 +167,7 @@ type ResponseT struct {
 //are big enough to saturate NodeJS. Right now the transformer
 //instance is shared between both user specific transformation
 //code and destination transformation code.
-func (trans *transformerHandleT) Transform(clientEvents []interface{},
+func (trans *HandleT) Transform(clientEvents []interface{},
 	url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT {
 
 	trans.accessLock.Lock()

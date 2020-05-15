@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -30,7 +31,7 @@ type HandleT struct {
 	gatewayDB             jobsdb.JobsDB
 	routerDB              jobsdb.JobsDB
 	batchRouterDB         jobsdb.JobsDB
-	transformer           *transformerHandleT
+	transformer           *transformer.HandleT
 	pStatsJobs            *misc.PerfStats
 	pStatsDBR             *misc.PerfStats
 	statGatewayDBR        stats.RudderStats
@@ -122,7 +123,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
-	proc.transformer = &transformerHandleT{}
+	proc.transformer = &transformer.HandleT{}
 	proc.pStatsJobs = &misc.PerfStats{}
 	proc.pStatsDBR = &misc.PerfStats{}
 	proc.pStatsDBW = &misc.PerfStats{}
@@ -199,10 +200,6 @@ func loadConfig() {
 	sessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	processSessions = config.GetBool("Processor.processSessions", false)
-	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
-	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
-	maxRetry = config.GetInt("Processor.maxRetry", 30)
-	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE"}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
@@ -697,7 +694,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		configSubscriberLock.RUnlock()
 
 		url := integrations.GetDestinationURL(destType)
-		var response ResponseT
+		var response transformer.ResponseT
 		var eventsToTransform []interface{}
 		// Send to custom transformer only if the destination has a transformer enabled
 		if transformationEnabled {
