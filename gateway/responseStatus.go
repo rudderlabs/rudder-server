@@ -15,6 +15,10 @@ const (
 	NoWriteKeyInBasicAuth = "Failed to read writeKey from header"
 	//RequestBodyReadFailed - Failed to read body from request
 	RequestBodyReadFailed = "Failed to read body from request"
+	//SourceTrasnformerResponseReadFailed - Failed to read body from source transformer response
+	SourceTrasnformerResponseReadFailed = "Failed to read body from source transformer response"
+	//SourceTransformerFailed - Internal server error in source transformer
+	SourceTransformerFailed = "Internal server error in source transformer"
 	//RequestBodyTooLarge - Request size exceeds max limit
 	RequestBodyTooLarge = "Request size exceeds max limit"
 	//InvalidWriteKey - Invalid Write Key
@@ -40,6 +44,7 @@ func loadStatusMap() {
 	statusMap[TooManyRequests] = ResponseStatus{message: TooManyRequests, code: http.StatusTooManyRequests}
 	statusMap[NoWriteKeyInBasicAuth] = ResponseStatus{message: NoWriteKeyInBasicAuth, code: http.StatusUnauthorized}
 	statusMap[RequestBodyReadFailed] = ResponseStatus{message: RequestBodyReadFailed, code: http.StatusBadRequest}
+	statusMap[SourceTransformationFailed] = ResponseStatus{message: SourceTransformationFailed, code: http.StatusBadRequest}
 	statusMap[RequestBodyTooLarge] = ResponseStatus{message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge}
 	statusMap[InvalidWriteKey] = ResponseStatus{message: InvalidWriteKey, code: http.StatusUnauthorized}
 	statusMap[InvalidJSON] = ResponseStatus{message: InvalidJSON, code: http.StatusBadRequest}

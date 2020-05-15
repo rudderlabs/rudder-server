@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -55,6 +56,7 @@ var (
 	webPort, maxBatchSize, maxDBWriterProcess int
 	batchTimeout                              time.Duration
 	enabledWriteKeysSourceMap                 map[string]string
+	enabledWriteKeySourceDefMap               map[string]string
 	configSubscriberLock                      sync.RWMutex
 	maxReqSize                                int
 	enableDedup                               bool
@@ -102,9 +104,24 @@ func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket
 	}
 }
 
+func parseWriteKey(req *webRequestT) (writeKey string, found bool) {
+	if req.reqType == "source.batch" {
+		queryParams := req.request.URL.Query()
+		writeKeys, ok := queryParams["writeKey"]
+		if ok {
+			return writeKeys[0], ok
+		}
+		return
+	}
+	writeKey, _, found = req.request.BasicAuth()
+	return
+}
+
 //Function to process the batch requests. It saves data in DB and
 //sends and ACK on the done channel which unblocks the HTTP handler
 func (gateway *HandleT) webRequestBatchDBWriter(process int) {
+	client := &http.Client{}
+	sourceTransformerURL := config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090") + "/v0/sources"
 	for breq := range gateway.batchRequestQ {
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
@@ -125,7 +142,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		gateway.batchTimeStat.Start()
 		var allMessageIds [][]byte
 		for _, req := range breq.batchRequest {
-			writeKey, _, ok := req.request.BasicAuth()
+			writeKey, ok := parseWriteKey(req)
 			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if !ok || writeKey == "" {
 				req.done <- getStatus(NoWriteKeyInBasicAuth)
@@ -133,15 +150,6 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
 				continue
 			}
-
-			ipAddr := misc.GetIPFromReq(req.request)
-			if req.request.Body == nil {
-				req.done <- getStatus(RequestBodyNil)
-				preDbStoreCount++
-				continue
-			}
-			body, err := ioutil.ReadAll(req.request.Body)
-			req.request.Body.Close()
 
 			if enableRateLimit {
 				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
@@ -154,18 +162,23 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				}
 			}
 
+			ipAddr := misc.GetIPFromReq(req.request)
+			if req.request.Body == nil {
+				req.done <- getStatus(RequestBodyNil)
+				preDbStoreCount++
+				continue
+			}
+
+			body, err := ioutil.ReadAll(req.request.Body)
+			req.request.Body.Close()
+
 			if err != nil {
 				req.done <- getStatus(RequestBodyReadFailed)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
 			}
-			if !gjson.ValidBytes(body) {
-				req.done <- getStatus(InvalidJSON)
-				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
-				continue
-			}
+
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(writeKeyEventStats, writeKey, totalEventsInReq)
 			if len(body) > maxReqSize {
@@ -183,8 +196,49 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				continue
 			}
 
+			if strings.HasPrefix(req.reqType, "source") {
+				// TODO: take lock on enabledWriteKeySourceDefMap
+				sourceDefName := enabledWriteKeySourceDefMap[writeKey]
+				url := sourceTransformerURL + "/" + strings.ToLower(sourceDefName)
+				resp, err := client.Post(url, "application/json; charset=utf-8",
+					bytes.NewBuffer(body))
+
+				if err != nil {
+					// TODO: change status type
+					req.done <- getStatus(SourceTransformerFailed)
+					preDbStoreCount++
+					misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+					continue
+				}
+				body, err = ioutil.ReadAll(resp.Body)
+				resp.Body.Close()
+				if err != nil {
+					// TODO: change status type
+					req.done <- getStatus(SourceTrasnformerResponseReadFailed)
+					preDbStoreCount++
+					misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+					continue
+				}
+				if resp.StatusCode != 200 {
+					req.done <- string(body)
+					preDbStoreCount++
+					misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+					continue
+				}
+
+			}
+
+			if !gjson.ValidBytes(body) {
+				req.done <- getStatus(InvalidJSON)
+				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+				continue
+			}
+
 			if req.reqType != "batch" {
-				body, _ = sjson.SetBytes(body, "type", req.reqType)
+				if !strings.HasPrefix(req.reqType, "source") {
+					body, _ = sjson.SetBytes(body, "type", req.reqType)
+				}
 				body, _ = sjson.SetRawBytes(batchEvent, "batch.0", body)
 			}
 
@@ -382,6 +436,10 @@ func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) 
 	gateway.webHandler(w, r, "batch")
 }
 
+func (gateway *HandleT) webSourceBatchHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "source.batch")
+}
+
 func (gateway *HandleT) webIdentifyHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webHandler(w, r, "identify")
 }
@@ -504,6 +562,7 @@ func (gateway *HandleT) StartWebHandler() {
 	http.HandleFunc("/v1/screen", gateway.stat(gateway.webScreenHandler))
 	http.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler))
 	http.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
+	http.HandleFunc("/v1/source", gateway.stat(gateway.webSourceBatchHandler))
 	http.HandleFunc("/health", gateway.healthHandler)
 	http.HandleFunc("/debugStack", gateway.printStackHandler)
 
@@ -528,10 +587,12 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		configSubscriberLock.Lock()
 		enabledWriteKeysSourceMap = map[string]string{}
+		enabledWriteKeySourceDefMap = map[string]string{}
 		sources := config.Data.(backendconfig.SourcesT)
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				enabledWriteKeysSourceMap[source.WriteKey] = source.ID
+				enabledWriteKeySourceDefMap[source.WriteKey] = source.SourceDefinition.Name
 			}
 		}
 		configSubscriberLock.Unlock()
