@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -62,6 +63,7 @@ var (
 	enableDedup                               bool
 	enableRateLimit                           bool
 	dedupWindow, diagnosisTickerTime          time.Duration
+	sourceTransformerURL                      string
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -117,11 +119,35 @@ func parseWriteKey(req *webRequestT) (writeKey string, found bool) {
 	return
 }
 
+func transformSourceReq(payload []byte, writeKey string, httpClient *http.Client) ([]byte, error) {
+	configSubscriberLock.RLock()
+	sourceDefName, ok := enabledWriteKeySourceDefMap[writeKey]
+	configSubscriberLock.RUnlock()
+	if !ok {
+		return nil, errors.New(getStatus(InvalidWriteKey))
+	}
+	url := fmt.Sprintf(`%s/%s`, sourceTransformerURL, strings.ToLower(sourceDefName))
+	resp, err := httpClient.Post(url, "application/json; charset=utf-8",
+		bytes.NewBuffer(payload))
+
+	if err != nil {
+		return nil, errors.New(getStatus(SourceTransformerFailed))
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, errors.New(getStatus(SourceTrasnformerResponseReadFailed))
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.New(string(body))
+	}
+	return body, nil
+}
+
 //Function to process the batch requests. It saves data in DB and
 //sends and ACK on the done channel which unblocks the HTTP handler
 func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 	client := &http.Client{}
-	sourceTransformerURL := config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090") + "/v0/sources"
 	for breq := range gateway.batchRequestQ {
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
@@ -180,6 +206,9 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
+			if totalEventsInReq == 0 {
+				totalEventsInReq = 1
+			}
 			misc.IncrementMapByKey(writeKeyEventStats, writeKey, totalEventsInReq)
 			if len(body) > maxReqSize {
 				req.done <- getStatus(RequestBodyTooLarge)
@@ -197,44 +226,16 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 
 			if strings.HasPrefix(req.reqType, "source") {
-				// TODO: take lock on enabledWriteKeySourceDefMap
-				configSubscriberLock.RLock()
-				sourceDefName, ok := enabledWriteKeySourceDefMap[writeKey]
-				configSubscriberLock.RUnlock()
-				if !ok {
-					req.done <- getStatus(InvalidWriteKey)
+				transformedBody, err := transformSourceReq(body, writeKey, client)
+				if err != nil {
+					req.done <- err.Error()
 					preDbStoreCount++
 					misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 					misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
 					continue
 				}
-				url := sourceTransformerURL + "/" + strings.ToLower(sourceDefName)
-				resp, err := client.Post(url, "application/json; charset=utf-8",
-					bytes.NewBuffer(body))
-
-				if err != nil {
-					// TODO: change status type
-					req.done <- getStatus(SourceTransformerFailed)
-					preDbStoreCount++
-					misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
-					continue
-				}
-				body, err = ioutil.ReadAll(resp.Body)
-				resp.Body.Close()
-				if err != nil {
-					// TODO: change status type
-					req.done <- getStatus(SourceTrasnformerResponseReadFailed)
-					preDbStoreCount++
-					misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
-					continue
-				}
-				if resp.StatusCode != 200 {
-					req.done <- string(body)
-					preDbStoreCount++
-					misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
-					continue
-				}
-
+				fmt.Println(transformedBody)
+				body = transformedBody
 			}
 
 			if !gjson.ValidBytes(body) {

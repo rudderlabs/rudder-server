@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -30,6 +31,8 @@ func loadConfig() {
 	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
+	// URL for source transformer
+	sourceTransformerURL = strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/sources"
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers
