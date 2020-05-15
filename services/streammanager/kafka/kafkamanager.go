@@ -33,16 +33,15 @@ func init() {
 }
 
 func loadConfig() {
-	clientCertFile = config.GetEnv("SSL_CERTIFICATE_FILE_PATH", "")
-	clientKeyFile = config.GetEnv("SSL_KEY_FILE_PATH", "")
+	clientCertFile = config.GetEnv("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
+	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
 }
 
 func loadCertificate() {
 	if clientCertFile != "" && clientKeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
 		if err != nil {
-			logger.Errorf("error loading certificate: ", err)
-			return
+			panic(fmt.Errorf("error loading certificate: %v", err))
 		}
 		certificate = cert
 	}
@@ -89,7 +88,7 @@ func prepareMessage(topic string, key string, message []byte) *sarama.ProducerMe
 	return msg
 }
 
-// NewTLSConfig generates a TLS configuration used to authenticate on server withccertificates.
+// NewTLSConfig generates a TLS configuration used to authenticate on server with certificates.
 func NewTLSConfig(caCertFile string) *tls.Config {
 
 	tlsConfig := tls.Config{}
@@ -109,8 +108,11 @@ func NewTLSConfig(caCertFile string) *tls.Config {
 func CloseProducer(producer interface{}) error {
 	kafkaProducer, ok := producer.(sarama.SyncProducer)
 	if ok {
-		kafkaProducer.Close()
-		return nil
+		err := kafkaProducer.Close()
+		if err != nil {
+			logger.Errorf("error in closing Kafka producer: %v", err.Error())
+		}
+		return err
 	}
 	return fmt.Errorf("error while closing producer")
 

@@ -3,7 +3,7 @@ package kafka
 var abortableErrors []string = []string{errOutOfBrokers, errNotConnected, errInsufficientData, errInvalidMessage, errUnknownTopicOrPartition,
 	errInvalidMessageSize, errNotLeaderForPartition, errRequestTimedOut, errBrokerNotAvailable, errMessageSizeTooLarge, errOffsetMetadataTooLarge,
 	errInvalidTopic, errNotEnoughReplicas, errNotEnoughReplicasAfterAppend, errInvalidSessionTimeout, errInvalidGroupID, errUnknownMemberID,
-	errTopicAuthorizationFailed, errGroupAuthorizationFailed, errClusterAuthorizationFailed, errInvalidConfig, errInvalidRequest,
+	errTopicAuthorizationFailed, errGroupAuthorizationFailed, errClusterAuthorizationFailed, errInvalidConfig, errInvalidRequest, errCircuitBreakerIsOpen,
 }
 
 const (
@@ -72,4 +72,5 @@ const (
 	errNonEmptyGroup                      string = "kafka server: The group is not empty."
 	errGroupIDNotFound                    string = "kafka server: The group id does not exist."
 	errListenerNotFound                   string = "kafka server: There is no listener on the leader broker that matches the listener on which metadata request was processed."
+	errCircuitBreakerIsOpen               string = "circuit breaker is open"
 )
