@@ -76,7 +76,7 @@ var (
 	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
 	customDestinations                                                             []string
-	destinationConfigProducerMap                                                   map[string]customdestinationmanager.ProducerConfig
+	destinationConfigProducerMap                                                   map[string]interface{}
 	producerCreationLock                                                           sync.RWMutex
 )
 
@@ -109,7 +109,7 @@ func loadConfig() {
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
 	customDestinations = []string{"KINESIS", "KAFKA"}
-	destinationConfigProducerMap = make(map[string]customdestinationmanager.ProducerConfig)
+	destinationConfigProducerMap = make(map[string]interface{})
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {

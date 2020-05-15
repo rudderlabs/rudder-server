@@ -27,7 +27,7 @@ type ProducerConfig struct {
 type DataConfigT struct {
 	SourceID                     string
 	DestinationID                string
-	DestinationConfigProducerMap map[string]ProducerConfig
+	DestinationConfigProducerMap map[string]interface{}
 	ProducerCreationLock         *sync.RWMutex
 }
 
@@ -86,9 +86,11 @@ func SendData(jsonData json.RawMessage, destination string, dataConfig *DataConf
 	destinationConfigProducerMap := dataConfig.DestinationConfigProducerMap
 	producerCreationLock := &dataConfig.ProducerCreationLock
 	key := sourceID + "-" + destID
-	if destinationConfigProducerMap[key] != (ProducerConfig{}) {
-		producer := destinationConfigProducerMap[key].Producer
-		config := destinationConfigProducerMap[key].Config
+
+	if destinationConfigProducerMap[key] != nil {
+		producerConfigFromMap := (destinationConfigProducerMap[key]).(ProducerConfig)
+		producer := producerConfigFromMap.Producer
+		config := producerConfigFromMap.Config
 		if producer != nil {
 			respStatusCode, respStatus, respBody = Send(jsonData, destination, producer, config)
 		} else {
@@ -123,10 +125,12 @@ func CreateUpdateProducer(dataConfig *DataConfigT, destType string, sourceName s
 	// producerCreationLock := &dataConfig.ProducerCreationLock
 	key := sourceID + "-" + destID
 	destConfig := destination.Config
-	if destinationConfigProducerMap[key] != (ProducerConfig{}) {
-		//if destinationConfigProducerMap[key] != nil {
-		producer := destinationConfigProducerMap[key].Producer
-		config := destinationConfigProducerMap[key].Config
+
+	//if producerConfigFromMap != (ProducerConfig{}) {
+	if destinationConfigProducerMap[key] != nil {
+		producerConfigFromMap := (destinationConfigProducerMap[key]).(ProducerConfig)
+		producer := producerConfigFromMap.Producer
+		config := producerConfigFromMap.Config
 		if reflect.DeepEqual(config, destConfig) {
 			if !destination.Enabled {
 				logger.Infof("======== closing existing producer as destination disabled for destination: %v and source: %v", destination.Name, sourceName)
