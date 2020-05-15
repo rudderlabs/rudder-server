@@ -36,6 +36,22 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 
 - **High Performance**: On a single m4.2xlarge, RudderStack can process 3000 events/second.
 
+# Telemetry for Measuring Performance and Diagnostics
+To help us improve RudderStack, we collect performance and diagnostic metrics about how you use it and how it is working. **No customer data is present in the metrics**.
+
+The metrics collection can be disabled by setting the variable `enableDiagnostics` to false in `config/config.toml`
+
+The following are the metrics that are being collected. They are listed in `config/config.toml` under the **Diagnostics** section.
+
+- `enableServerStartMetric`: Tracks when the server starts
+- `enableConfigIdentifyMetric`: Tracks when the configuration is fetched for the first time from the Control Plane
+- `enableServerStartedMetric`: Tracks when the server is ready to accept requests
+- `enableConfigProcessedMetric`: Tracks when the configuration is changed
+- `enableGatewayMetric`: Tracks the number of successful/failed requests
+- `enableRouterMetric`: Tracks the number of successful/aborted/retries requests for every router destination
+- `enableBatchRouterMetric`: Tracks the number of successful/failed requests for every batch router destination
+- `enableDestinationFailuresMetric`: Tracks the destination failures
+
 # Install RudderStack
 
 You can go through our [detailed documentation](https://docs.rudderstack.com/) to get up and running with RudderStack on your platform of choice:
