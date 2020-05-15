@@ -26,7 +26,7 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 
 # Key Features
 
-- **Segment API Compatible**: RudderStack is Segment API and library compatible. So you don't need to change your app if you are using Segment
+- **Segment API Compatible**: RudderStack is Segment API and library compatible. So you don't need to change your app if you are using Segment.
 
 - **Processing Flexibility**: With RudderStack's powerful JavaScript-based event transformation framework, you can enhance or transform your event data by combining it with your other internal data. Furthermore, since RudderStack runs inside your cloud or on-premise environment, you can easily access your production data to join with the event data.
 
@@ -34,7 +34,7 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 
 - **Stand-alone System**: RudderStack runs as a single Go binary with the only dependency being on the PostgreSQL database. There is no other dependency required to use RudderStack.
 
-- **High Performance**: On a single m4.2xlarge, RudderStack can process 3000 events/second
+- **High Performance**: On a single m4.2xlarge, RudderStack can process 3000 events/second.
 
 # Install RudderStack
 
@@ -50,7 +50,7 @@ Once you have installed RudderStack, [send test events](https://docs.rudderstack
 
 # License
 
-RudderStack server is released under the [AGPLv3 License][agplv3_license]
+RudderStack server is released under the [AGPLv3 License][agplv3_license].
 
 # Contribute
 
