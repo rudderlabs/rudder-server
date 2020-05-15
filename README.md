@@ -9,8 +9,6 @@
 
 RudderStack's backend is written in Go, with a rich UI written in React.js.
 
-This repository contains the core backend and the transformation modules of RudderStack.
-
 You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) RudderStack instance to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro).
 
 # Why Use RudderStack?
