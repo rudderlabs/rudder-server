@@ -198,7 +198,16 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 
 			if strings.HasPrefix(req.reqType, "source") {
 				// TODO: take lock on enabledWriteKeySourceDefMap
-				sourceDefName := enabledWriteKeySourceDefMap[writeKey]
+				configSubscriberLock.RLock()
+				sourceDefName, ok := enabledWriteKeySourceDefMap[writeKey]
+				configSubscriberLock.RUnlock()
+				if !ok {
+					req.done <- getStatus(InvalidWriteKey)
+					preDbStoreCount++
+					misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+					misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
+					continue
+				}
 				url := sourceTransformerURL + "/" + strings.ToLower(sourceDefName)
 				resp, err := client.Post(url, "application/json; charset=utf-8",
 					bytes.NewBuffer(body))
