@@ -14,11 +14,13 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	uuid "github.com/satori/go.uuid"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -40,7 +42,7 @@ var dataTypesMap = map[string]string{
 	"int":      "bigint",
 	"float":    "numeric",
 	"string":   "text",
-	"datetime": "timestamp",
+	"datetime": "timestamp with time zone",
 	"boolean":  "boolean",
 }
 
@@ -67,6 +69,17 @@ type credentialsT struct {
 
 type optionalCredsT struct {
 	schemaName string
+}
+
+var primaryKeyMap = map[string]string{
+	"users":                      "id",
+	"identifies":                 "id",
+	warehouseutils.DiscardsTable: "row_id",
+}
+var partitionKeyMap = map[string]string{
+	"users":                      "id",
+	"identifies":                 "id",
+	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
 func connect(cred credentialsT) (*sql.DB, error) {
@@ -148,29 +161,29 @@ func (pg *HandleT) Export() (err error) {
 	return
 }
 
-func (pg *HandleT) DownloadLoadFile(tableName string) (*os.File, error) {
+func (pg *HandleT) DownloadLoadFile(tableName string) (string, error) {
 	objectLocation, _ := warehouseutils.GetLoadFileLocation(pg.DbHandle, pg.Warehouse.Source.ID, pg.Warehouse.Destination.ID, tableName, pg.Upload.StartLoadFileID, pg.Upload.EndLoadFileID)
 	object, err := warehouseutils.GetObjectName(pg.Warehouse.Destination.Config, objectLocation)
 	if err != nil {
 		logger.Errorf("PG: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
-		return nil, err
+		return "", err
 	}
-	dirName := "/rudder-warehouse-load-uploads-tmp/" //TODO: have a config a variable
+	dirName := "/rudder-warehouse-load-uploads-tmp/"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		logger.Errorf("PG: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
-		return nil, err
+		return "", err
 	}
-	ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%s/`, pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.ID, pg.Upload.Status) + object
+	ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.ID, time.Now().Unix()) + object
 	err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
 	if err != nil {
 		logger.Errorf("PG: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, objectLocation, err)
-		return nil, err
+		return "", err
 	}
 	objectFile, err := os.Create(ObjectPath)
 	if err != nil {
 		logger.Errorf("PG: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
-		return nil, err
+		return "", err
 	}
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config),
@@ -179,9 +192,14 @@ func (pg *HandleT) DownloadLoadFile(tableName string) (*os.File, error) {
 	err = downloader.Download(objectFile, object)
 	if err != nil {
 		logger.Errorf("PG: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
-		return nil, err
+		return "", err
 	}
-	return objectFile, nil
+	fileName := objectFile.Name()
+	if err = objectFile.Close(); err != nil {
+		logger.Errorf("PG: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+		return "", err
+	}
+	return fileName, nil
 }
 
 func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err error) {
@@ -207,35 +225,18 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		return
 	}
 	defer dbHandle.Close()
-	objectFile, err := pg.DownloadLoadFile(tableName)
+	objectFileName, err := pg.DownloadLoadFile(tableName)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 	}
-	defer objectFile.Close()
-	//pg.ExtractDownloadFile
 
-	//
-	//csvString := tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.ID) + strings.Replace(csvObject, ".gz", "", 1)
-	//err = os.MkdirAll(filepath.Dir(csvString), os.ModePerm)
-	//if err != nil { //TODO: Handle error, log error
-	//	panic(err)
-	//}
-	//defer os.Remove(csvString)
-	//csvFile, err := os.Create(csvString)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//defer csvFile.Close()
-	//_, err = io.Copy(csvFile, gzipReader)
-	//if err != nil {
-	//	panic(err)
-	//}
-
-	gzipFile, err := os.Open(objectFile.Name())
+	gzipFile, err := os.Open(objectFileName)
 	if err != nil {
-		logger.Errorf("WH: Error opening file using os.Open for file:%s while loading to table %s", objectFile.Name(), tableName)
-		panic(err)
+		logger.Errorf("WH: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+		return
+
 	}
 	defer gzipFile.Close()
 	gzipReader, err := gzip.NewReader(gzipFile)
@@ -253,12 +254,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(columnMap, pg.Warehouse.Destination.DestinationDefinition.Name)
-	//sortedColumnsString := strings.Join(sortedColumnKeys, ", ")
-	//sqlStatement := fmt.Sprintf(`copy %s (%s) from '%s' with delimiter ',' csv`, tableName, sortedColumnsString, csvString)
-	//_, err = pg.Db.Query(sqlStatement)
-	//if err != nil {
-	//	logger.Error(err)
-	//}
+	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
 	txn, err := pg.Db.Begin()
 	if err != nil {
@@ -266,9 +262,20 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 	}
-	stmt, err := txn.Prepare(pq.CopyInSchema(pg.Namespace, tableName, sortedColumnKeys...))
+	// create temporary table
+	stagingTableName := fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%[2]s" (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
+	logger.Infof("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
+	_, err = txn.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("PG: Error while preparing statement for  transaction in db for loading in table:%s: %v", tableName, err)
+		logger.Errorf("PG: Error creating temporary table for table:%s: %v\n", tableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+		return
+	}
+
+	stmt, err := txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
+	if err != nil {
+		logger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v", stagingTableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 	}
@@ -277,10 +284,10 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		record, err := csvReader.Read()
 		if err != nil {
 			if err == io.EOF {
-				logger.Infof("PG: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFile.Name())
+				logger.Infof("PG: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
 				break
 			} else {
-				logger.Errorf("PG: Error while reading csv file for loading in table:%s: %v", tableName, err)
+				logger.Errorf("PG: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
 				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 				return err
 			}
@@ -295,16 +302,50 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 	_, err = stmt.Exec()
 	if err != nil {
 		txn.Rollback()
-		logger.Errorf("PG: Rollback transaction as there was error while loading table:%s: %v", tableName, err)
+		logger.Errorf("PG: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 
 	}
-	if err = txn.Commit(); err != nil {
-		logger.Errorf("PG: Error while committing transaction as there was error while loading table:%s: %v", tableName, err)
+	// deduplication process
+	primaryKey := "id"
+	if column, ok := primaryKeyMap[tableName]; ok {
+		primaryKey = column
+	}
+	partitionKey := "id"
+	if column, ok := partitionKeyMap[tableName]; ok {
+		partitionKey = column
+	}
+	var additionalJoinClause string
+	if tableName == warehouseutils.DiscardsTable {
+		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = "%[1]s"."%[2]s"."%[3]s"`, pg.Namespace, tableName, "table_name")
+	}
+	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" USING "%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, pg.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
+	logger.Infof("PG: Deduplicate records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	_, err = txn.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
+		txn.Rollback()
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 	}
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[4]s" ) AS _ where _rudder_staging_row_number = 1`, pg.Namespace, tableName, sortedColumnString, stagingTableName, partitionKey)
+	logger.Infof("PG: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	_, err = txn.Exec(sqlStatement)
+
+	if err != nil {
+		logger.Errorf("PG: Error inserting into original table: %v\n", err)
+		txn.Rollback()
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+		return
+	}
+
+	if err = txn.Commit(); err != nil {
+		logger.Errorf("PG: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+		return
+	}
+
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, pg.Upload.ID, tableName, pg.DbHandle)
 	logger.Infof("PG: Complete load for table:%s", tableName)
 	return err
@@ -349,7 +390,7 @@ func (pg *HandleT) createSchema() (err error) {
 }
 
 func (pg *HandleT) createTable(name string, columns map[string]string) (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v )`, name, columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, name, columnsWithDataTypes(columns, ""))
 	logger.Infof("Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
@@ -387,6 +428,7 @@ func (pg *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	if err != nil {
 		return nil, err
 	}
+	logger.Infof("Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
 
 	processedTables := make(map[string]bool)
 	for _, tableName := range diff.Tables {
