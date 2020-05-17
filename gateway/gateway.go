@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -97,6 +98,7 @@ type HandleT struct {
 	trackFailureCount                         int
 	requestMetricLock                         sync.RWMutex
 	diagnosisTicker                           *time.Ticker
+	transformerClient                         *retryablehttp.Client
 }
 
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -104,19 +106,6 @@ func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket
 		writeKeyStatsD := gateway.stats.NewWriteKeyStat(bucket, stats.CountType, writeKey)
 		writeKeyStatsD.Count(count)
 	}
-}
-
-func parseWriteKey(req *webRequestT) (writeKey string, found bool) {
-	if req.reqType == "source.batch" {
-		queryParams := req.request.URL.Query()
-		writeKeys, ok := queryParams["writeKey"]
-		if ok {
-			return writeKeys[0], ok
-		}
-		return
-	}
-	writeKey, _, found = req.request.BasicAuth()
-	return
 }
 
 func transformSourceReq(payload []byte, writeKey string, httpClient *http.Client) ([]byte, error) {
@@ -147,7 +136,6 @@ func transformSourceReq(payload []byte, writeKey string, httpClient *http.Client
 //Function to process the batch requests. It saves data in DB and
 //sends and ACK on the done channel which unblocks the HTTP handler
 func (gateway *HandleT) webRequestBatchDBWriter(process int) {
-	client := &http.Client{}
 	for breq := range gateway.batchRequestQ {
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
@@ -168,7 +156,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		gateway.batchTimeStat.Start()
 		var allMessageIds [][]byte
 		for _, req := range breq.batchRequest {
-			writeKey, ok := parseWriteKey(req)
+			writeKey, _, ok := req.request.BasicAuth()
 			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if !ok || writeKey == "" {
 				req.done <- getStatus(NoWriteKeyInBasicAuth)
@@ -176,6 +164,15 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
 				continue
 			}
+
+			ipAddr := misc.GetIPFromReq(req.request)
+			if req.request.Body == nil {
+				req.done <- getStatus(RequestBodyNil)
+				preDbStoreCount++
+				continue
+			}
+			body, err := ioutil.ReadAll(req.request.Body)
+			req.request.Body.Close()
 
 			if enableRateLimit {
 				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
@@ -188,27 +185,19 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				}
 			}
 
-			ipAddr := misc.GetIPFromReq(req.request)
-			if req.request.Body == nil {
-				req.done <- getStatus(RequestBodyNil)
-				preDbStoreCount++
-				continue
-			}
-
-			body, err := ioutil.ReadAll(req.request.Body)
-			req.request.Body.Close()
-
 			if err != nil {
 				req.done <- getStatus(RequestBodyReadFailed)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
 			}
-
-			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
-			if totalEventsInReq == 0 {
-				totalEventsInReq = 1
+			if !gjson.ValidBytes(body) {
+				req.done <- getStatus(InvalidJSON)
+				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+				continue
 			}
+			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(writeKeyEventStats, writeKey, totalEventsInReq)
 			if len(body) > maxReqSize {
 				req.done <- getStatus(RequestBodyTooLarge)
@@ -225,30 +214,8 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				continue
 			}
 
-			if strings.HasPrefix(req.reqType, "source") {
-				transformedBody, err := transformSourceReq(body, writeKey, client)
-				if err != nil {
-					req.done <- err.Error()
-					preDbStoreCount++
-					misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
-					misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
-					continue
-				}
-				fmt.Println(transformedBody)
-				body = transformedBody
-			}
-
-			if !gjson.ValidBytes(body) {
-				req.done <- getStatus(InvalidJSON)
-				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
-				continue
-			}
-
 			if req.reqType != "batch" {
-				if !strings.HasPrefix(req.reqType, "source") {
-					body, _ = sjson.SetBytes(body, "type", req.reqType)
-				}
+				body, _ = sjson.SetBytes(body, "type", req.reqType)
 				body, _ = sjson.SetRawBytes(batchEvent, "batch.0", body)
 			}
 
@@ -446,10 +413,6 @@ func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) 
 	gateway.webHandler(w, r, "batch")
 }
 
-func (gateway *HandleT) webSourceBatchHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.webHandler(w, r, "source.batch")
-}
-
 func (gateway *HandleT) webIdentifyHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webHandler(w, r, "identify")
 }
@@ -479,6 +442,37 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	atomic.AddUint64(&gateway.recvCount, 1)
 	done := make(chan string)
 	req := webRequestT{request: r, writer: &w, done: done, reqType: reqType}
+	gateway.webRequestQ <- &req
+
+	//Wait for batcher process to be done
+	errorMessage := <-done
+	atomic.AddUint64(&gateway.ackCount, 1)
+	gateway.trackRequestMetrics(errorMessage)
+	if errorMessage != "" {
+		logger.Debug(errorMessage)
+		http.Error(w, errorMessage, 400)
+	} else {
+		logger.Debug(getStatus(Ok))
+		w.Write([]byte(getStatus(Ok)))
+	}
+}
+
+func (gateway *HandleT) webSourceBatchHandler(w http.ResponseWriter, r *http.Request) {
+	logger.LogRequest(r)
+	atomic.AddUint64(&gateway.recvCount, 1)
+	resp, err := gateway.sourceTransform(r)
+	if err != nil {
+		logger.Debug(err.Error())
+		http.Error(w, err.Error(), 400)
+	}
+
+	rudderEvent, _ := sjson.SetRawBytes(batchEvent, "batch.0", resp.event)
+	// repalce body with transformed event in rudder event form
+	r.Body = ioutil.NopCloser(bytes.NewReader(rudderEvent))
+	// set write key in basic auth header
+	r.SetBasicAuth(resp.writeKey, "")
+	done := make(chan string)
+	req := webRequestT{request: r, writer: &w, done: done, reqType: "batch"}
 	gateway.webRequestQ <- &req
 
 	//Wait for batcher process to be done
@@ -671,6 +665,11 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB
+	gateway.transformerClient = retryablehttp.NewClient()
+	gateway.transformerClient.Logger = nil
+	gateway.transformerClient.RetryWaitMax = 10 * time.Second
+	gateway.transformerClient.RetryMax = 5
+
 	rruntime.Go(func() {
 		gateway.webRequestBatcher()
 	})

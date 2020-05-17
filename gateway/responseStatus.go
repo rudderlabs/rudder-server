@@ -13,6 +13,8 @@ const (
 	TooManyRequests = "Max Events Limit reached. Dropping Events."
 	//NoWriteKeyInBasicAuth - Failed to read writeKey from header
 	NoWriteKeyInBasicAuth = "Failed to read writeKey from header"
+	//NoWriteKeyInQueryParams - Failed to read writeKey from query params
+	NoWriteKeyInQueryParams = "Failed to read writeKey from query params"
 	//RequestBodyReadFailed - Failed to read body from request
 	RequestBodyReadFailed = "Failed to read body from request"
 	//SourceTrasnformerResponseReadFailed - Failed to read body from source transformer response
