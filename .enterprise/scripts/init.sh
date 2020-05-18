@@ -1,7 +1,7 @@
 #!/bin/sh
 
 cd `dirname $0`/../..
-source .enterprise/env
+. .enterprise/env
 
 if [ ! -d "$ENTERPRISE_DIR" ]; then
     echo "Cloning enterprise repo at '$ENTERPRISE_DIR'"
