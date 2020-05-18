@@ -28,7 +28,7 @@ func parseWriteKey(req *http.Request) (writeKey string, found bool) {
 func (gateway *HandleT) sourceTransform(req *http.Request) (sourceTransformRespT, error) {
 	writeKey, ok := parseWriteKey(req)
 	if !ok {
-		return sourceTransformRespT{}, errors.New(NoWriteKeyInBasicAuth)
+		return sourceTransformRespT{}, errors.New(NoWriteKeyInQueryParams)
 	}
 	configSubscriberLock.RLock()
 	sourceDefName, ok := enabledWriteKeySourceDefMap[writeKey]

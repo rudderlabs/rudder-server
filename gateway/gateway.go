@@ -464,8 +464,8 @@ func (gateway *HandleT) webSourceBatchHandler(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		logger.Debug(err.Error())
 		http.Error(w, err.Error(), 400)
+		// return
 	}
-
 	rudderEvent, _ := sjson.SetRawBytes(batchEvent, "batch.0", resp.event)
 	// repalce body with transformed event in rudder event form
 	r.Body = ioutil.NopCloser(bytes.NewReader(rudderEvent))
