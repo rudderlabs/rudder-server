@@ -46,7 +46,10 @@ const (
 )
 
 //MigrationCheckpointSuffix : Suffix for checkpoints table
-const MigrationCheckpointSuffix = "migration_checkpoints"
+const (
+	MigrationCheckpointSuffix = "migration_checkpoints"
+	UniqueConstraintSuffix    = "unique_checkpoint"
+)
 
 //Checkpoint writes a migration event if id is passed as 0. Else it will update status and start_sequence
 func (jd *HandleT) Checkpoint(migrationEvent *MigrationEventT) int64 {
@@ -65,11 +68,11 @@ func (jd *HandleT) CheckpointInTxn(txn *sql.Tx, migrationEvent *MigrationEventT)
 	var sqlStatement string
 	var checkpointType string
 	if migrationEvent.ID > 0 {
-		sqlStatement = fmt.Sprintf(`UPDATE %s SET status = $1, start_sequence = $2 WHERE id = $3 RETURNING id`, jd.getCheckPointTableName())
+		sqlStatement = fmt.Sprintf(`UPDATE %s SET status = $1, start_sequence = $2, payload = $3 WHERE id = $4 RETURNING id`, jd.getCheckPointTableName())
 		checkpointType = "update"
 	} else {
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (migration_type, from_node, to_node, file_location, status, start_sequence, payload, time_stamp)
-									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT ON CONSTRAINT %s_unique_checkpoint DO UPDATE SET status=EXCLUDED.status RETURNING id`, jd.getCheckPointTableName(), jd.GetTablePrefix())
+									VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT ON CONSTRAINT %s DO UPDATE SET status=EXCLUDED.status RETURNING id`, jd.getCheckPointTableName(), jd.getUniqueConstraintName())
 		checkpointType = "insert"
 	}
 
@@ -87,7 +90,7 @@ func (jd *HandleT) CheckpointInTxn(txn *sql.Tx, migrationEvent *MigrationEventT)
 
 	var meID int64
 	if migrationEvent.ID > 0 {
-		err = stmt.QueryRow(migrationEvent.Status, migrationEvent.StartSeq, migrationEvent.ID).Scan(&meID)
+		err = stmt.QueryRow(migrationEvent.Status, migrationEvent.StartSeq, migrationEvent.Payload, migrationEvent.ID).Scan(&meID)
 	} else {
 		err = stmt.QueryRow(migrationEvent.MigrationType,
 			migrationEvent.FromNode,
@@ -144,8 +147,8 @@ func (jd *HandleT) SetupCheckpointTable() {
 		start_sequence BIGINT,
 		payload JSONB,
 		time_stamp TIMESTAMP NOT NULL DEFAULT NOW(),
-		CONSTRAINT %s_unique_checkpoint UNIQUE(migration_type, from_node, to_node, file_location, status)
-		);`, jd.getCheckPointTableName(), jd.GetTablePrefix())
+		CONSTRAINT %s UNIQUE(migration_type, from_node, to_node, file_location, status)
+		);`, jd.getCheckPointTableName(), jd.getUniqueConstraintName())
 
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
@@ -154,6 +157,10 @@ func (jd *HandleT) SetupCheckpointTable() {
 
 func (jd *HandleT) getCheckPointTableName() string {
 	return fmt.Sprintf("%s_%d_%d_%s", jd.GetTablePrefix(), misc.GetMigratingFromVersion(), misc.GetMigratingToVersion(), MigrationCheckpointSuffix)
+}
+
+func (jd *HandleT) getUniqueConstraintName() string {
+	return fmt.Sprintf("%s_%d_%d_%s", jd.GetTablePrefix(), misc.GetMigratingFromVersion(), misc.GetMigratingToVersion(), UniqueConstraintSuffix)
 }
 
 func (jd *HandleT) findDsFromSetupCheckpoint(migrationType string) (dataSetT, bool) {

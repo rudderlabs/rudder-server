@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/enterprise/pathfinder"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -110,6 +111,7 @@ type HandleT struct {
 	badgerDB                                  *badger.DB
 	ackCount                                  uint64
 	recvCount                                 uint64
+	pf                                        pathfinder.PathfinderT
 	rateLimiter                               *ratelimiter.HandleT
 	batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
 	trackSuccessCount                         int
@@ -257,6 +259,11 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 				EventPayload: []byte(body),
 			}
 			jobList = append(jobList, &newJob)
+
+			if computedNode := gateway.pf.GetNodeFromUserID(newJob.UserID); computedNode.GetNodeID() != misc.GetNodeID() {
+				logger.Infof("Gateway: I am %s, but I have received an event that belongs to %s. event.UserID is %s", misc.GetNodeID(), computedNode.GetNodeID(), newJob.UserID)
+			}
+
 			jobIDReqMap[newJob.UUID] = req
 			jobWriteKeyMap[newJob.UUID] = writeKey
 			jobEventCountMap[newJob.UUID] = totalEventsInReq
@@ -598,7 +605,7 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.H
 	gateway.latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
 	gateway.batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
 	gateway.batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
-
+	gateway.pf = pathfinder.Default()
 	if enableDedup {
 		gateway.openBadger(clearDB)
 		defer gateway.badgerDB.Close()

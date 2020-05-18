@@ -80,7 +80,11 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	jd.migrationState.importLock.Lock()
 
 	//Also need to factor in the jd.migrationState.dsForImport == "" condition
-	jd.migrationState.dsForImport, found = jd.findDsFromSetupCheckpoint(ImportOp)
+	if jd.migrationState.dsForImport.Index == "" {
+		jd.migrationState.dsForImport, found = jd.findDsFromSetupCheckpoint(ImportOp)
+	} else {
+		found = true
+	}
 	if !found {
 		defer jd.migrationState.importLock.Unlock()
 		jd.migrationState.dsForImport = jd.createSetupCheckpointAndGetDs(ImportOp)

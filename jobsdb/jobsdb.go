@@ -2065,6 +2065,7 @@ func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) in
 
 }
 
+//JournalMarkDone marks the end of a journal action
 func (jd *HandleT) JournalMarkDone(opID int64) {
 	jd.JournalMarkDoneInTxn(jd.dbHandle, opID)
 }
@@ -2073,6 +2074,7 @@ type transactionHandler interface {
 	Exec(string, ...interface{}) (sql.Result, error)
 }
 
+//JournalMarkDoneInTxn marks the end of a journal action in a transaction
 func (jd *HandleT) JournalMarkDoneInTxn(txHandler transactionHandler, opID int64) {
 	sqlStatement := fmt.Sprintf(`UPDATE %s_journal SET done=$2, end_time=$3 WHERE id=$1`, jd.tablePrefix)
 	_, err := txHandler.Exec(sqlStatement, opID, true, time.Now())
