@@ -1,10 +1,13 @@
 package gateway
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strconv"
 	"strings"
@@ -412,6 +415,14 @@ func (gateway *HandleT) webGroupHandler(w http.ResponseWriter, r *http.Request) 
 	gateway.webHandler(w, r, "group")
 }
 
+func (gateway *HandleT) pixelPageHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.pixelHandler(w, r, "page")
+}
+
+func (gateway *HandleT) pixelTrackHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.pixelHandler(w, r, "track")
+}
+
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
@@ -427,6 +438,60 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	} else {
 		logger.Debug(getStatus(Ok))
 		w.Write([]byte(getStatus(Ok)))
+	}
+}
+
+func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values ,reqType string) {
+	// add default fields to body
+	body := []byte(`{"channel": "web","userId": "","integrations": {"All": true}}`)
+	currentTime := time.Now()
+	body, _ = sjson.SetBytes(body, "originalTimestamp", currentTime)
+	body, _ = sjson.SetBytes(body, "sentAt", currentTime)
+
+	// add queryParams to body
+	for key := range qp {
+		body, _ = sjson.SetBytes(body, key, qp[key][0])
+	}
+	
+	// add request specific fields to body
+	body, _ = sjson.SetBytes(body, "type", reqType)
+	switch reqType {
+	case "page":
+		if pageName, ok := qp["name"]; ok {
+			body, _ = sjson.SetBytes(body, "name", pageName[0])
+		}
+	case "track":
+		if evName, ok := qp["event"]; ok {
+			body, _ = sjson.SetBytes(body, "event", evName[0])
+		}
+	}
+
+	// add body to request
+	jsonValue, err := json.Marshal(body)
+	misc.AssertError(err)
+	r.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
+}
+
+func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, reqType string) {
+	if r.Method == http.MethodGet {
+		queryParams := r.URL.Query()
+		if writeKey, present := queryParams["writeKey"]; present{
+			req, _ := http.NewRequest(http.MethodPost, "", nil)
+
+			// set basic auth header
+			req.SetBasicAuth(writeKey[0], "")
+			delete(queryParams, "writeKey")
+
+			// get web payload
+			gateway.setWebPayload(req, queryParams, reqType)
+
+			// send req to webHandler
+			gateway.webHandler(w, req, reqType)
+		} else {
+			http.Error(w, NoWriteKeyInQueryParams, http.StatusUnauthorized)
+		}
+	} else {
+		http.Error(w, InvalidRequestMethod, http.StatusBadRequest)
 	}
 }
 
@@ -459,6 +524,8 @@ func (gateway *HandleT) startWebHandler() {
 	http.HandleFunc("/v1/alias", stat(gateway.webAliasHandler))
 	http.HandleFunc("/v1/group", stat(gateway.webGroupHandler))
 	http.HandleFunc("/health", gateway.healthHandler)
+	http.HandleFunc("pixel/v1/track", stat(gateway.pixelTrackHandler))
+	http.HandleFunc("/pixel/v1/page", stat(gateway.pixelPageHandler))
 
 	backendconfig.WaitForConfig()
 
