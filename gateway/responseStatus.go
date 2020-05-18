@@ -27,6 +27,8 @@ const (
 	InvalidWriteKey = "Invalid Write Key"
 	//InvalidJSON - Invalid JSON
 	InvalidJSON = "Invalid JSON"
+	//InvalidWebhookSource - Source does not accept webhook events
+	InvalidWebhookSource = "Source does not accept webhook events"
 )
 
 var (
@@ -47,9 +49,11 @@ func loadStatusMap() {
 	statusMap[NoWriteKeyInBasicAuth] = ResponseStatus{message: NoWriteKeyInBasicAuth, code: http.StatusUnauthorized}
 	statusMap[RequestBodyReadFailed] = ResponseStatus{message: RequestBodyReadFailed, code: http.StatusBadRequest}
 	statusMap[SourceTransformerFailed] = ResponseStatus{message: SourceTransformerFailed, code: http.StatusBadRequest}
+	statusMap[SourceTrasnformerResponseReadFailed] = ResponseStatus{message: SourceTrasnformerResponseReadFailed, code: http.StatusBadRequest}
 	statusMap[RequestBodyTooLarge] = ResponseStatus{message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge}
 	statusMap[InvalidWriteKey] = ResponseStatus{message: InvalidWriteKey, code: http.StatusUnauthorized}
 	statusMap[InvalidJSON] = ResponseStatus{message: InvalidJSON, code: http.StatusBadRequest}
+	statusMap[InvalidWebhookSource] = ResponseStatus{message: InvalidWebhookSource, code: http.StatusBadRequest}
 }
 
 func getStatus(key string) string {

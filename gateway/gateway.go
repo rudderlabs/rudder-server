@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -44,14 +42,17 @@ import (
  */
 
 type webRequestT struct {
-	request *http.Request
-	writer  *http.ResponseWriter
-	done    chan<- string
-	reqType string
+	request    *http.Request
+	writer     *http.ResponseWriter
+	done       chan<- string
+	reqType    string
+	sourceType string
+	writeKey   string
 }
 
 type batchWebRequestT struct {
 	batchRequest []*webRequestT
+	sourceType   string
 }
 
 var (
@@ -65,6 +66,7 @@ var (
 	enableRateLimit                           bool
 	dedupWindow, diagnosisTickerTime          time.Duration
 	sourceTransformerURL                      string
+	webhookSources                            []string
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -85,7 +87,9 @@ func init() {
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
 	webRequestQ                               chan *webRequestT
+	sourceRequestQ                            map[string]chan *webRequestT
 	batchRequestQ                             chan *batchWebRequestT
+	sourceBatchRequestQ                       chan *batchWebRequestT
 	jobsDB                                    jobsdb.JobsDB
 	badgerDB                                  *badger.DB
 	ackCount                                  uint64
@@ -106,31 +110,6 @@ func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket
 		writeKeyStatsD := gateway.stats.NewWriteKeyStat(bucket, stats.CountType, writeKey)
 		writeKeyStatsD.Count(count)
 	}
-}
-
-func transformSourceReq(payload []byte, writeKey string, httpClient *http.Client) ([]byte, error) {
-	configSubscriberLock.RLock()
-	sourceDefName, ok := enabledWriteKeySourceDefMap[writeKey]
-	configSubscriberLock.RUnlock()
-	if !ok {
-		return nil, errors.New(getStatus(InvalidWriteKey))
-	}
-	url := fmt.Sprintf(`%s/%s`, sourceTransformerURL, strings.ToLower(sourceDefName))
-	resp, err := httpClient.Post(url, "application/json; charset=utf-8",
-		bytes.NewBuffer(payload))
-
-	if err != nil {
-		return nil, errors.New(getStatus(SourceTransformerFailed))
-	}
-	body, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		return nil, errors.New(getStatus(SourceTrasnformerResponseReadFailed))
-	}
-	if resp.StatusCode != 200 {
-		return nil, errors.New(string(body))
-	}
-	return body, nil
 }
 
 //Function to process the batch requests. It saves data in DB and
@@ -457,37 +436,6 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	}
 }
 
-func (gateway *HandleT) webSourceBatchHandler(w http.ResponseWriter, r *http.Request) {
-	logger.LogRequest(r)
-	atomic.AddUint64(&gateway.recvCount, 1)
-	resp, err := gateway.sourceTransform(r)
-	if err != nil {
-		logger.Debug(err.Error())
-		http.Error(w, err.Error(), 400)
-		// return
-	}
-	rudderEvent, _ := sjson.SetRawBytes(batchEvent, "batch.0", resp.event)
-	// repalce body with transformed event in rudder event form
-	r.Body = ioutil.NopCloser(bytes.NewReader(rudderEvent))
-	// set write key in basic auth header
-	r.SetBasicAuth(resp.writeKey, "")
-	done := make(chan string)
-	req := webRequestT{request: r, writer: &w, done: done, reqType: "batch"}
-	gateway.webRequestQ <- &req
-
-	//Wait for batcher process to be done
-	errorMessage := <-done
-	atomic.AddUint64(&gateway.ackCount, 1)
-	gateway.trackRequestMetrics(errorMessage)
-	if errorMessage != "" {
-		logger.Debug(errorMessage)
-		http.Error(w, errorMessage, 400)
-	} else {
-		logger.Debug(getStatus(Ok))
-		w.Write([]byte(getStatus(Ok)))
-	}
-}
-
 func (gateway *HandleT) trackRequestMetrics(errorMessage string) {
 	if diagnostics.EnableGatewayMetric {
 		gateway.requestMetricLock.Lock()
@@ -598,6 +546,14 @@ func (gateway *HandleT) backendConfigSubscriber() {
 				enabledWriteKeysSourceMap[source.WriteKey] = source.ID
 				enabledWriteKeySourceDefMap[source.WriteKey] = source.SourceDefinition.Name
 			}
+			if misc.ContainsString(webhookSources, source.SourceDefinition.Name) {
+				if _, ok := gateway.sourceRequestQ[source.SourceDefinition.Name]; !ok {
+					gateway.sourceRequestQ[source.SourceDefinition.Name] = make(chan *webRequestT)
+					rruntime.Go(func() {
+						gateway.sourceRequestBatcher(source.SourceDefinition.Name)
+					})
+				}
+			}
 		}
 		configSubscriberLock.Unlock()
 	}
@@ -664,6 +620,8 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 	gateway.rateLimiter = rateLimiter
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
+	gateway.sourceRequestQ = make(map[string](chan *webRequestT))
+	gateway.sourceBatchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB
 	gateway.transformerClient = retryablehttp.NewClient()
 	gateway.transformerClient.Logger = nil
@@ -680,6 +638,12 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 		j := i
 		rruntime.Go(func() {
 			gateway.webRequestBatchDBWriter(j)
+		})
+	}
+	for i := 0; i < maxDBWriterProcess; i++ {
+		j := i
+		rruntime.Go(func() {
+			gateway.sourceRequestBatchDBWriter(j)
 		})
 	}
 	gateway.backendConfig.WaitForConfig()
