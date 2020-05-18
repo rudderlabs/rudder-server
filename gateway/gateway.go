@@ -571,7 +571,7 @@ func (gateway *HandleT) StartWebHandler() {
 	http.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
 	http.HandleFunc("/health", gateway.healthHandler)
 	http.HandleFunc("/debugStack", gateway.printStackHandler)
-	http.HandleFunc("pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
+	http.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
 	http.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
 
 	backendconfig.WaitForConfig()
