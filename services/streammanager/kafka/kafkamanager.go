@@ -100,7 +100,8 @@ func NewTLSConfig(caCertFile string) *tls.Config {
 	caCertPool.AppendCertsFromPEM(caCert)
 	tlsConfig.RootCAs = caCertPool
 
-	tlsConfig.BuildNameToCertificate()
+	//tlsConfig.BuildNameToCertificate()
+	tlsConfig.InsecureSkipVerify = true
 	return &tlsConfig
 }
 
