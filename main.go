@@ -187,7 +187,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	}
 
 	if enableProcessor {
-		var processor processor.HandleT
+		var processor = processor.NewProcessor()
 		processor.Setup(backendconfig.DefaultBackendConfig, &gatewayDB, &routerDB, &batchRouterDB, stats.DefaultStats)
 		processor.Start()
 

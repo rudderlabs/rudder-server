@@ -31,7 +31,7 @@ type HandleT struct {
 	gatewayDB             jobsdb.JobsDB
 	routerDB              jobsdb.JobsDB
 	batchRouterDB         jobsdb.JobsDB
-	transformer           *transformer.HandleT
+	transformer           transformer.Transformer
 	pStatsJobs            *misc.PerfStats
 	pStatsDBR             *misc.PerfStats
 	statGatewayDBR        stats.RudderStats
@@ -115,6 +115,13 @@ func init() {
 	loadConfig()
 }
 
+// NewProcessor creates a new Processor intanstace
+func NewProcessor() *HandleT {
+	return &HandleT{
+		transformer: transformer.NewTransformer(),
+	}
+}
+
 //Setup initializes the module
 func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, s stats.Stats) {
 	proc.backendConfig = backendConfig
@@ -123,7 +130,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
-	proc.transformer = &transformer.HandleT{}
 	proc.pStatsJobs = &misc.PerfStats{}
 	proc.pStatsDBR = &misc.PerfStats{}
 	proc.pStatsDBW = &misc.PerfStats{}
@@ -733,7 +739,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		destStat.numOutputEvents.Count(len(destTransformEventList))
 
-		//Save the JSON in DB. This is what the rotuer uses
+		//Save the JSON in DB. This is what the router uses
 		for _, destEvent := range destTransformEventList {
 			destEventJSON, err := json.Marshal(destEvent.(map[string]interface{})["output"])
 			//Should be a valid JSON since its our transformation
@@ -748,10 +754,15 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			// in case of custom transformations metadata of first event is returned along with all events in session
 			// source_id will be same for all events belong to same user in a session
 			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
+			if !ok {
+				logger.Errorf("Error retrieving 'metadata.sourceId' from transformed event: %+v", destEvent)
+			}
+
 			destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
 			if !ok {
-				logger.Errorf("Error retrieving source_id from transformed event: %+v", destEvent)
+				logger.Errorf("Error retrieving 'metadata.destinationId' from transformed event: %+v", destEvent)
 			}
+
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
