@@ -570,8 +570,6 @@ func (gateway *HandleT) StartWebHandler() {
 	http.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
 	http.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
 
-	backendconfig.WaitForConfig()
-
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
