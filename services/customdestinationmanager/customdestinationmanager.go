@@ -16,9 +16,9 @@ import (
 )
 
 var (
-	objectStreamDestinations     []string
-	destinationConfigProducerMap map[string]ProducerConfig
-	producerCreationLock         sync.RWMutex
+	objectStreamDestinations []string
+	streamDestinationsMap    map[string]StreamDestination
+	producerCreationLock     sync.RWMutex
 )
 
 // DestinationManager implements the method to send the events to custom destinations
@@ -31,18 +31,10 @@ type CustomManagerT struct {
 	destination string
 }
 
-//ProducerConfig keeps the config of a destination and corresponding producer for a stream destination
-type ProducerConfig struct {
+//StreamDestination keeps the config of a destination and corresponding producer for a stream destination
+type StreamDestination struct {
 	Config   interface{}
 	Producer interface{}
-}
-
-// DataConfigT a structure to hold data required for sending events to custom destinations
-type DataConfigT struct {
-	SourceID                     string
-	DestinationID                string
-	DestinationConfigProducerMap map[string]ProducerConfig
-	ProducerCreationLock         *sync.RWMutex
 }
 
 func init() {
@@ -51,7 +43,7 @@ func init() {
 
 func loadConfig() {
 	objectStreamDestinations = []string{"KINESIS", "KAFKA"}
-	destinationConfigProducerMap = make(map[string]ProducerConfig)
+	streamDestinationsMap = make(map[string]StreamDestination)
 }
 
 // newProducer delegates the call to the appropriate manager based on parameter destination for creating producer
@@ -89,7 +81,7 @@ func send(jsonData json.RawMessage, destination string, producer interface{}, co
 
 }
 
-// SendData gets the producer from destinationConfigProducerMap and sends data
+// SendData gets the producer from streamDestinationsMap and sends data
 func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string, string) {
 
 	var respStatusCode int
@@ -98,31 +90,31 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 	destination := customManager.destination
 	key := sourceID + "-" + destID
 
-	producerConfig := ProducerConfig{}
+	streamDestination := StreamDestination{}
 
 	producerCreationLock.RLock()
-	if destinationConfigProducerMap[key] != (ProducerConfig{}) {
+	if streamDestinationsMap[key] != (StreamDestination{}) {
 
-		producerConfigFromMap := destinationConfigProducerMap[key]
-		producer := producerConfigFromMap.Producer
-		config := producerConfigFromMap.Config
+		streamDestinationFromMap := streamDestinationsMap[key]
+		producer := streamDestinationFromMap.Producer
+		config := streamDestinationFromMap.Config
 		producerCreationLock.RUnlock()
 		if producer != nil {
-			producerConfig = producerConfigFromMap
+			streamDestination = streamDestinationFromMap
 		} else {
 			/* As the producers are created when the server gets up or workspace config changes, it may happen that initially
 			the destinatin, such as Kafka server was not up, so, producer could not be created. But, after sometime it becomes reachable,
 			so, while sending the event if the producer is not creatd alrady, then it tries to create it. */
 			producerCreationLock.Lock()
-			producerConfigFromMap := destinationConfigProducerMap[key]
-			producer = producerConfigFromMap.Producer
-			config = producerConfigFromMap.Config
+			streamDestinationFromMap := streamDestinationsMap[key]
+			producer = streamDestinationFromMap.Producer
+			config = streamDestinationFromMap.Config
 			if producer != nil {
-				producerConfig = producerConfigFromMap
+				streamDestination = streamDestinationFromMap
 			} else {
 				producer, err := newProducer(config, destination)
-				producerConfig = ProducerConfig{Config: config, Producer: producer}
-				destinationConfigProducerMap[key] = producerConfig
+				streamDestination = StreamDestination{Config: config, Producer: producer}
+				streamDestinationsMap[key] = streamDestination
 				if err != nil {
 					logger.Errorf("[%s Destination manager] error while creating producer for destination: %s with error %v ", customManager.destination, destID, err)
 				} else {
@@ -135,8 +127,8 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 		producerCreationLock.RUnlock()
 	}
 
-	if producerConfig != (ProducerConfig{}) || producerConfig.Producer != nil {
-		respStatusCode, respStatus, respBody = send(jsonData, destination, producerConfig.Producer, producerConfig.Config)
+	if streamDestination != (StreamDestination{}) || streamDestination.Producer != nil {
+		respStatusCode, respStatus, respBody = send(jsonData, destination, streamDestination.Producer, streamDestination.Config)
 	} else {
 		respStatusCode, respStatus, respBody = 400, "Producer not found in router", "Producer could not be created"
 	}
@@ -144,31 +136,31 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 	return respStatusCode, respStatus, respBody
 }
 
-// createOrUpdateProducer creates or updates producer based on destination config and updates destinationConfigProducerMap
+// createOrUpdateProducer creates or updates producer based on destination config and updates streamDestinationsMap
 func createOrUpdateProducer(sourceID string, destID string, destType string, sourceName string, destination backendconfig.DestinationT) {
 	key := sourceID + "-" + destID
 	destConfig := destination.Config
 
-	if destinationConfigProducerMap[key] != (ProducerConfig{}) {
-		producerConfigFromMap := (destinationConfigProducerMap[key])
-		producer := producerConfigFromMap.Producer
-		config := producerConfigFromMap.Config
+	if streamDestinationsMap[key] != (StreamDestination{}) {
+		streamDestinationFromMap := (streamDestinationsMap[key])
+		producer := streamDestinationFromMap.Producer
+		config := streamDestinationFromMap.Config
 		if reflect.DeepEqual(config, destConfig) {
 			if !destination.Enabled {
 				logger.Infof("[%s Destination manager] closing existing producer as destination disabled for destination: %s and source: %s", destType, destination.Name, sourceName)
 				closeProducer(producer, destType)
-				delete(destinationConfigProducerMap, key)
+				delete(streamDestinationsMap, key)
 			}
 			return
 		}
 		logger.Infof("[%s Destination manager] config changed closing existing producer for destination: %s and source: %s", destType, destination.Name, sourceName)
 		closeProducer(producer, destType)
-		delete(destinationConfigProducerMap, key)
+		delete(streamDestinationsMap, key)
 	}
 	if destination.Enabled {
 		producer, err := newProducer(destConfig, destType)
-		producerConfig := ProducerConfig{Config: destConfig, Producer: producer}
-		destinationConfigProducerMap[key] = producerConfig
+		streamDestination := StreamDestination{Config: destConfig, Producer: producer}
+		streamDestinationsMap[key] = streamDestination
 		if err == nil {
 			logger.Infof("[%s Destination manager] created new producer: %v for destination: %s and source %s", destType, producer, destination.Name, sourceName)
 		} else {

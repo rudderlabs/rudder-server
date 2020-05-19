@@ -643,6 +643,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy["message"] = singularEventMap
 						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
 
+						/* Stream destinations does not need config in transformer. As the Kafka destination config
+						holds the ca-certificate and it depends on user input, it may happen that they provide entire
+						certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
+						it may result into payload larger than accepted by transformer. So, discarding destination config from being
+						sent to transformer for such destination. */
 						if misc.ContainsString(customDestinations, destType) {
 							dest := shallowEventCopy["destination"].(backendconfig.DestinationT)
 							dest.Config = nil
