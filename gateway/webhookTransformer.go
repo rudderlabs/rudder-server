@@ -22,10 +22,10 @@ type transformerBatchResponseT struct {
 	responses  []transformerResponseT
 }
 
-func (gateway *HandleT) sourceTransform(events [][]byte, sourceType string) transformerBatchResponseT {
+func (webhook *webhookHandleT) transform(events [][]byte, sourceType string) transformerBatchResponseT {
 	payload := misc.MakeJSONArray(events)
 	url := fmt.Sprintf(`%s/%s`, sourceTransformerURL, strings.ToLower(sourceType))
-	resp, err := gateway.transformerClient.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(payload))
+	resp, err := webhook.netClient.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(payload))
 
 	if err != nil {
 		logger.Error(err)

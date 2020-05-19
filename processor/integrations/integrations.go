@@ -95,7 +95,7 @@ func GetPostInfoNew(transformRaw json.RawMessage) PostParameterNewT {
 	}
 	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
 	if !ok {
-		postInfo.UserID=fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
+		postInfo.UserID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
 	postInfo.Body, ok = parsedJSON.Get("body").Value().(interface{})
 	if !ok {
@@ -127,7 +127,7 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	}
 	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
 	if !ok {
-		postInfo.UserID=fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
+		postInfo.UserID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
 	postInfo.Payload, ok = parsedJSON.Get("payload").Value().(interface{})
 	if !ok {
@@ -152,7 +152,7 @@ func GetUserIDForStreamDestination(jsonData json.RawMessage) string {
 		parsedJSON = parsedJSON.Get("output")
 		var ok bool
 		if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
-			userID=fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
+			userID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 		}
 	}
 	return userID

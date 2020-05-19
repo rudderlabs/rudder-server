@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -65,7 +64,6 @@ var (
 	enableDedup                               bool
 	enableRateLimit                           bool
 	dedupWindow, diagnosisTickerTime          time.Duration
-	sourceTransformerURL                      string
 	webhookSources                            []string
 )
 
@@ -87,9 +85,7 @@ func init() {
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
 	webRequestQ                               chan *webRequestT
-	sourceRequestQ                            map[string]chan *webRequestT
 	batchRequestQ                             chan *batchWebRequestT
-	sourceBatchRequestQ                       chan *batchWebRequestT
 	jobsDB                                    jobsdb.JobsDB
 	badgerDB                                  *badger.DB
 	ackCount                                  uint64
@@ -102,7 +98,7 @@ type HandleT struct {
 	trackFailureCount                         int
 	requestMetricLock                         sync.RWMutex
 	diagnosisTicker                           *time.Ticker
-	transformerClient                         *retryablehttp.Client
+	webhookHandler                            *webhookHandleT
 }
 
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -514,7 +510,7 @@ func (gateway *HandleT) StartWebHandler() {
 	http.HandleFunc("/v1/screen", gateway.stat(gateway.webScreenHandler))
 	http.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler))
 	http.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
-	http.HandleFunc("/v1/source", gateway.stat(gateway.webSourceBatchHandler))
+	http.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.batchHandler))
 	http.HandleFunc("/health", gateway.healthHandler)
 	http.HandleFunc("/debugStack", gateway.printStackHandler)
 
@@ -547,12 +543,7 @@ func (gateway *HandleT) backendConfigSubscriber() {
 				enabledWriteKeySourceDefMap[source.WriteKey] = source.SourceDefinition.Name
 			}
 			if misc.ContainsString(webhookSources, source.SourceDefinition.Name) {
-				if _, ok := gateway.sourceRequestQ[source.SourceDefinition.Name]; !ok {
-					gateway.sourceRequestQ[source.SourceDefinition.Name] = make(chan *webRequestT)
-					rruntime.Go(func() {
-						gateway.sourceRequestBatcher(source.SourceDefinition.Name)
-					})
-				}
+				gateway.webhookHandler.register(source.SourceDefinition.Name)
 			}
 		}
 		configSubscriberLock.Unlock()
@@ -620,13 +611,7 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 	gateway.rateLimiter = rateLimiter
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
-	gateway.sourceRequestQ = make(map[string](chan *webRequestT))
-	gateway.sourceBatchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB
-	gateway.transformerClient = retryablehttp.NewClient()
-	gateway.transformerClient.Logger = nil
-	gateway.transformerClient.RetryWaitMax = 10 * time.Second
-	gateway.transformerClient.RetryMax = 5
 
 	rruntime.Go(func() {
 		gateway.webRequestBatcher()
@@ -640,12 +625,7 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 			gateway.webRequestBatchDBWriter(j)
 		})
 	}
-	for i := 0; i < maxDBWriterProcess; i++ {
-		j := i
-		rruntime.Go(func() {
-			gateway.sourceRequestBatchDBWriter(j)
-		})
-	}
+	gateway.webhookHandler = gateway.setupWebhookHandler()
 	gateway.backendConfig.WaitForConfig()
 	rruntime.Go(func() {
 		gateway.printStats()

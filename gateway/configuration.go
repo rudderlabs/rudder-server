@@ -18,7 +18,7 @@ func loadConfig() {
 	//are available
 	batchTimeout = (config.GetDuration("Gateway.batchTimeoutInMS", time.Duration(20)) * time.Millisecond)
 	//Multiple DB writers are used to write data to DB
-	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess", 4)
+	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess", 64)
 	// CustomVal is used as a key in the jobsDB customval column
 	CustomVal = config.GetString("Gateway.CustomVal", "GW")
 	// Maximum request size to gateway
@@ -35,6 +35,16 @@ func loadConfig() {
 	sourceTransformerURL = strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/sources"
 	// webhook sources
 	webhookSources = []string{"Customerio"}
+	// Number of incoming webhooks that are batched before caliing source transformer
+	maxWebhookBatchSize = config.GetInt("Gateway.webhook.maxBatchSize", 32)
+	// Timeout after which batch is formed anyway with whatever webhooks are available
+	webhookBatchTimeout = (config.GetDuration("Gateway.webhook.batchTimeoutInMS", time.Duration(20)) * time.Millisecond)
+	// Multiple source transformers are used to generate rudder events from webhooks
+	maxTransformerProcess = config.GetInt("Gateway.webhook.maxTransformerProcess", 64)
+	// Max time till when retries to source transformer are done
+	webhookRetryWaitMax = (config.GetDuration("Gateway.webhook.maxRetryTimeInS", time.Duration(10)) * time.Second)
+	// Max retry attempts to source transformer
+	webhookRetryMax = config.GetInt("Gateway.webhook.maxRetry", 5)
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers
