@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -469,7 +468,7 @@ func (gateway *HandleT) collectMetrics() {
 	}
 }
 
-func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values ,reqType string) {
+func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType string) {
 	// add default fields to body
 	body := []byte(`{"channel": "web","userId": "","integrations": {"All": true}}`)
 	currentTime := time.Now()
@@ -480,7 +479,7 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values ,reqType st
 	for key := range qp {
 		body, _ = sjson.SetBytes(body, key, qp[key][0])
 	}
-	
+
 	// add request specific fields to body
 	body, _ = sjson.SetBytes(body, "type", reqType)
 	switch reqType {
@@ -493,17 +492,14 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values ,reqType st
 			body, _ = sjson.SetBytes(body, "event", evName[0])
 		}
 	}
-
 	// add body to request
-	jsonValue, err := json.Marshal(body)
-	misc.AssertError(err)
-	r.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
+	r.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
 
 func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	if r.Method == http.MethodGet {
 		queryParams := r.URL.Query()
-		if writeKey, present := queryParams["writeKey"]; present{
+		if writeKey, present := queryParams["writeKey"]; present {
 			req, _ := http.NewRequest(http.MethodPost, "", nil)
 
 			// set basic auth header
