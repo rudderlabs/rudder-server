@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/sjson"
@@ -42,6 +43,20 @@ type webhookHandleT struct {
 	batchRequestQ chan *batchWebhookT
 	netClient     *retryablehttp.Client
 	gwHandle      *HandleT
+	// stats
+	perfStats          *misc.PerfStats
+	sentStat           stats.RudderStats
+	receivedStat       stats.RudderStats
+	failedStat         stats.RudderStats
+	transformTimerStat stats.RudderStats
+	sourceStats        map[string]*WebhookStatT
+}
+
+type WebhookStatT struct {
+	id              string
+	numEvents       stats.RudderStats
+	numOutputEvents stats.RudderStats
+	sourceTransform stats.RudderStats
 }
 
 func parseWriteKey(req *http.Request) (writeKey string, found bool) {
@@ -55,7 +70,7 @@ func parseWriteKey(req *http.Request) (writeKey string, found bool) {
 	return
 }
 
-func (webhook *webhookHandleT) failWebhookRequest(w http.ResponseWriter, r *http.Request, reason string, stat string) {
+func (webhook *webhookHandleT) failRequest(w http.ResponseWriter, r *http.Request, reason string, stat string) {
 	var writeKeyFailStats = make(map[string]int)
 	misc.IncrementMapByKey(writeKeyFailStats, stat, 1)
 	webhook.gwHandle.updateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
@@ -70,7 +85,7 @@ func (webhook *webhookHandleT) batchHandler(w http.ResponseWriter, r *http.Reque
 
 	writeKey, ok := parseWriteKey(r)
 	if !ok {
-		webhook.failWebhookRequest(w, r, getStatus(InvalidWriteKey), "noWriteKey")
+		webhook.failRequest(w, r, getStatus(InvalidWriteKey), "noWriteKey")
 		return
 	}
 
@@ -78,11 +93,11 @@ func (webhook *webhookHandleT) batchHandler(w http.ResponseWriter, r *http.Reque
 	sourceDefName, ok := enabledWriteKeySourceDefMap[writeKey]
 	configSubscriberLock.RUnlock()
 	if !ok {
-		webhook.failWebhookRequest(w, r, getStatus(InvalidWriteKey), writeKey)
+		webhook.failRequest(w, r, getStatus(InvalidWriteKey), writeKey)
 		return
 	}
 	if !misc.ContainsString(webhookSources, sourceDefName) {
-		webhook.failWebhookRequest(w, r, getStatus(InvalidWebhookSource), writeKey)
+		webhook.failRequest(w, r, getStatus(InvalidWebhookSource), writeKey)
 		return
 	}
 
@@ -150,7 +165,17 @@ func (webhook *webhookHandleT) batchTransform(process int) {
 			continue
 		}
 
+		// stats
+		webhook.perfStats.Start()
+		webhook.sourceStats[breq.sourceType].numEvents.Count(len(payloadArr))
+		webhook.sourceStats[breq.sourceType].sourceTransform.Start()
+
 		batchResponse := webhook.transform(payloadArr, breq.sourceType)
+
+		// stats
+		webhook.sourceStats[breq.sourceType].sourceTransform.End()
+		webhook.perfStats.End(len(payloadArr))
+		webhook.perfStats.Print()
 
 		if batchResponse.batchError != nil {
 			for _, req := range breq.batchRequest {
@@ -162,6 +187,8 @@ func (webhook *webhookHandleT) batchTransform(process int) {
 		if len(batchResponse.responses) != len(payloadArr) {
 			panic("webhook.transform() response events size does not equal sent events size")
 		}
+
+		webhook.sourceStats[breq.sourceType].numOutputEvents.Count(len(batchResponse.responses))
 
 		for idx, resp := range batchResponse.responses {
 			webRequest := webRequests[idx]
@@ -195,9 +222,22 @@ func (webhook *webhookHandleT) enqueueToWebRequestQ(req *webhookT, payload []byt
 func (webhook *webhookHandleT) register(name string) {
 	if _, ok := webhook.requestQ[name]; !ok {
 		webhook.requestQ[name] = make(chan *webhookT)
+		webhook.sourceStats[name] = newWebhookStat(name)
 		rruntime.Go(func() {
 			webhook.batcher(name)
 		})
+	}
+}
+
+func newWebhookStat(destID string) *WebhookStatT {
+	numEvents := stats.NewDestStat("webhook_num_events", stats.CountType, destID)
+	numOutputEvents := stats.NewDestStat("webhook_num_output_events", stats.CountType, destID)
+	sourceTransform := stats.NewDestStat("webhook_dest_transform", stats.TimerType, destID)
+	return &WebhookStatT{
+		id:              destID,
+		numEvents:       numEvents,
+		numOutputEvents: numOutputEvents,
+		sourceTransform: sourceTransform,
 	}
 }
 
@@ -215,5 +255,13 @@ func (gateway *HandleT) setupWebhookHandler() (webhook *webhookHandleT) {
 			webhook.batchTransform(j)
 		})
 	}
+
+	webhook.sentStat = stats.NewStat("webhook.transformer_sent", stats.CountType)
+	webhook.receivedStat = stats.NewStat("webhook.transformer_received", stats.CountType)
+	webhook.failedStat = stats.NewStat("webhook.transformer_failed", stats.CountType)
+	webhook.transformTimerStat = stats.NewStat("webhook.transformation_time", stats.TimerType)
+	webhook.perfStats = &misc.PerfStats{}
+	webhook.perfStats.Setup("Webhook")
+	webhook.sourceStats = make(map[string]*WebhookStatT)
 	return webhook
 }
