@@ -75,9 +75,9 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 
 The docker setup is the easiest & fastest way to try out RudderStack.
 
-1. Go to the [dashboard][dashboard-docker] `https://app.rudderstack.com` and set up your account. Copy your workspace token from top of the home page.
+1. Go to the [dashboard][dashboard-docker] `https://app.rudderstack.com` and set up your account. Copy your workspace token from top of the home page. The Hosted Control plane is FREE (and will always be) for open-source users.
 
-   (Note) Instead of our full featured hosted UI, you can also use the open-source [config-generator-UI][config-generator-section] to create the source & destination configs and pass it to RudderStack.
+   (Note) You can also use the open-source [config-generator-UI][config-generator-section] to create the source & destination configs and pass it to RudderStack in case you don't want to use the hosted control plane. The open-source generator however does not have certain features like Transformations or Live Event Debugger
 
 2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
 
