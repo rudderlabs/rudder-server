@@ -164,12 +164,14 @@ func (webhook *webhookHandleT) batchTransform(process int) {
 		}
 
 		for idx, resp := range batchResponse.responses {
+			webRequest := webRequests[idx]
+			output := resp.output
 			if resp.err != "" {
 				webRequests[idx].done <- resp.err
 				continue
 			}
 			rruntime.Go(func() {
-				webhook.enqueueToWebRequestQ(webRequests[idx], resp.output)
+				webhook.enqueueToWebRequestQ(webRequest, output)
 			})
 		}
 	}
