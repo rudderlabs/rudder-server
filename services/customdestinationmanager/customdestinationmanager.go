@@ -54,20 +54,20 @@ func loadConfig() {
 	destinationConfigProducerMap = make(map[string]ProducerConfig)
 }
 
-// GetProducer delegates the call to the appropriate manager based on parameter destination for creating producer
-func GetProducer(destinationConfig interface{}, destination string) (interface{}, error) {
+// newProducer delegates the call to the appropriate manager based on parameter destination for creating producer
+func newProducer(destinationConfig interface{}, destination string) (interface{}, error) {
 
 	switch {
 	case misc.ContainsString(objectStreamDestinations, destination):
-		return streammanager.GetProducer(destinationConfig, destination)
+		return streammanager.NewProducer(destinationConfig, destination)
 	default:
 		return nil, fmt.Errorf("No provider configured for StreamManager")
 	}
 
 }
 
-// CloseProducer delegates the call to the appropriate manager based on parameter destination to close a given producer
-func CloseProducer(producer interface{}, destination string) error {
+// closeProducer delegates the call to the appropriate manager based on parameter destination to close a given producer
+func closeProducer(producer interface{}, destination string) error {
 	switch {
 	case misc.ContainsString(objectStreamDestinations, destination):
 		streammanager.CloseProducer(producer, destination)
@@ -78,8 +78,7 @@ func CloseProducer(producer interface{}, destination string) error {
 
 }
 
-// Send delegates call to appropriate manager based on parameter destination
-func Send(jsonData json.RawMessage, destination string, producer interface{}, config interface{}) (int, string, string) {
+func send(jsonData json.RawMessage, destination string, producer interface{}, config interface{}) (int, string, string) {
 
 	switch {
 	case misc.ContainsString(objectStreamDestinations, destination):
@@ -121,7 +120,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 			if producer != nil {
 				producerConfig = producerConfigFromMap
 			} else {
-				producer, err := GetProducer(config, destination)
+				producer, err := newProducer(config, destination)
 				producerConfig = ProducerConfig{Config: config, Producer: producer}
 				destinationConfigProducerMap[key] = producerConfig
 				if err != nil {
@@ -137,7 +136,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 	}
 
 	if producerConfig != (ProducerConfig{}) || producerConfig.Producer != nil {
-		respStatusCode, respStatus, respBody = Send(jsonData, destination, producerConfig.Producer, producerConfig.Config)
+		respStatusCode, respStatus, respBody = send(jsonData, destination, producerConfig.Producer, producerConfig.Config)
 	} else {
 		respStatusCode, respStatus, respBody = 400, "Producer not found in router", "Producer could not be created"
 	}
@@ -145,8 +144,8 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 	return respStatusCode, respStatus, respBody
 }
 
-// CreateOrUpdateProducer creates or updates producer based on destination config
-func CreateOrUpdateProducer(sourceID string, destID string, destType string, sourceName string, destination backendconfig.DestinationT) {
+// createOrUpdateProducer creates or updates producer based on destination config and updates destinationConfigProducerMap
+func createOrUpdateProducer(sourceID string, destID string, destType string, sourceName string, destination backendconfig.DestinationT) {
 	key := sourceID + "-" + destID
 	destConfig := destination.Config
 
@@ -157,17 +156,17 @@ func CreateOrUpdateProducer(sourceID string, destID string, destType string, sou
 		if reflect.DeepEqual(config, destConfig) {
 			if !destination.Enabled {
 				logger.Infof("[%s Destination manager] closing existing producer as destination disabled for destination: %s and source: %s", destType, destination.Name, sourceName)
-				CloseProducer(producer, destType)
+				closeProducer(producer, destType)
 				delete(destinationConfigProducerMap, key)
 			}
 			return
 		}
-		logger.Infof("[%s Destination manager] config changed ======== closing existing producer ======= for destination: %s and source: %s", destType, destination.Name, sourceName)
-		CloseProducer(producer, destType)
+		logger.Infof("[%s Destination manager] config changed closing existing producer for destination: %s and source: %s", destType, destination.Name, sourceName)
+		closeProducer(producer, destType)
 		delete(destinationConfigProducerMap, key)
 	}
 	if destination.Enabled {
-		producer, err := GetProducer(destConfig, destType)
+		producer, err := newProducer(destConfig, destType)
 		producerConfig := ProducerConfig{Config: destConfig, Producer: producer}
 		destinationConfigProducerMap[key] = producerConfig
 		if err == nil {
@@ -204,7 +203,7 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == customManager.destination && misc.ContainsString(objectStreamDestinations, customManager.destination) {
 						producerCreationLock.Lock()
 						// Producers of stream destinations are created or closed while server starts up or workspace config gets changed
-						CreateOrUpdateProducer(source.ID, destination.ID, customManager.destination, source.Name, destination)
+						createOrUpdateProducer(source.ID, destination.ID, customManager.destination, source.Name, destination)
 						producerCreationLock.Unlock()
 					}
 				}

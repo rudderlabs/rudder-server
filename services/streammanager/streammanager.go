@@ -8,8 +8,8 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
 )
 
-// GetProducer delegates the call to the appropriate based on parameter destination for creating producer
-func GetProducer(destinationConfig interface{}, destination string) (interface{}, error) {
+// NewProducer delegates the call to the appropriate based on parameter destination for creating producer
+func NewProducer(destinationConfig interface{}, destination string) (interface{}, error) {
 
 	switch destination {
 	case "KINESIS":

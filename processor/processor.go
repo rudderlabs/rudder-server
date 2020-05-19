@@ -641,9 +641,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 							panic(fmt.Errorf("typecast of singularEvent to map[string]interface{} failed"))
 						}
 						shallowEventCopy["message"] = singularEventMap
+						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
 
-						if !misc.ContainsString(customDestinations, destType) {
-							shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
+						if misc.ContainsString(customDestinations, destType) {
+							dest := shallowEventCopy["destination"].(backendconfig.DestinationT)
+							dest.Config = nil
+							shallowEventCopy["destination"] = dest
 						}
 
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
