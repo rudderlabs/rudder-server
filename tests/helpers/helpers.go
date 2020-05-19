@@ -2,13 +2,11 @@ package helpers
 
 import (
 	"bytes"
-	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -30,6 +28,16 @@ type EventOptsT struct {
 	ID           string
 	MessageID    string
 	GaVal        int
+}
+
+type QueryTrackPayload struct{
+	Label string `json:"label"`
+	Category string `json:"category"`
+	Property1 string `json:"property1"`
+	Property2 string `json:"property2"`
+	Property3 string `json:"property3"`
+	Property4 string `json:"property4"`
+	Property5 string `json:"property5"`
 }
 
 //RemoveKeyFromJSON returns the json with keys removed from the input json
@@ -295,9 +303,9 @@ func GetJobStatus(dbHandle *sql.DB, prefix string, limit int, jobState string) [
 	return jobStatusList
 }
 
-// GetLoadFileTableName quereis table column form the warehouseLoadFilesTable provided
-func GetLoadFileTableName(dbHandle *sql.DB, warehouseLoadFilesTable string) []string {
-	rows, err := dbHandle.Query(fmt.Sprintf(`SELECT table_name FROM %s`, warehouseLoadFilesTable))
+// GetLoadFileTableName queries table column form the warehouseLoadFilesTable provided
+func GetLoadFileTableName(dbHandle *sql.DB, warehouseLoadFilesTable string, sourceId string, destinationId string, destinationType string) []string {
+	rows, err := dbHandle.Query(fmt.Sprintf(`SELECT table_name FROM %s where source_id='%s' and destination_id='%s' and destination_type='%s'`, warehouseLoadFilesTable, sourceId, destinationId, destinationType))
 	if err != nil {
 		panic(err)
 	}
@@ -311,12 +319,11 @@ func GetLoadFileTableName(dbHandle *sql.DB, warehouseLoadFilesTable string) []st
 		tableNames = append(tableNames, tableName)
 	}
 	return tableNames
-
 }
 
-func GetWarehouseSchema(dbHandle *sql.DB, warehouseSchemaTable string, sourceID string, destinationID string) map[string]map[string]string {
+func GetWarehouseSchema(dbHandle *sql.DB, warehouseSchemaTable string, uploadId int64, sourceID string, destinationID string) map[string]map[string]string {
 	var rawSchema json.RawMessage
-	err := dbHandle.QueryRow(fmt.Sprintf(`SELECT schema FROM %s where source_id='%s'and destination_id='%s'`, warehouseSchemaTable, sourceID, destinationID)).Scan(&rawSchema)
+	err := dbHandle.QueryRow(fmt.Sprintf(`SELECT schema FROM %s where wh_upload_id = %d and source_id='%s'and destination_id='%s'`, warehouseSchemaTable, uploadId, sourceID, destinationID)).Scan(&rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil
@@ -343,38 +350,10 @@ func GetWarehouseSchema(dbHandle *sql.DB, warehouseSchemaTable string, sourceID 
 	return schema
 }
 
-func GetEventLoadFileData(dbHandle *sql.DB, warehouseLoadFilesTable string, eventName string, bucket string) string {
-	rows, err := dbHandle.Query(fmt.Sprintf(` select location from %s where table_name='%s' limit 1`, warehouseLoadFilesTable, eventName))
-	if err != nil {
-		panic(err)
+func DeleteRowsInTables(dbHandle *sql.DB, tables []string){
+	for _,table := range tables{
+		DeleteRowsInTable(dbHandle, table)
 	}
-	var location string
-	for rows.Next() {
-		if err := rows.Scan(&location); err != nil {
-			panic(err)
-		}
-	}
-	jsonPath := "loadfile.json.gz"
-	jsonFile, err := os.Create(jsonPath)
-	if err != nil {
-		panic(err)
-	}
-	defer jsonFile.Close()
-	defer os.Remove(jsonPath)
-	DownloadObject(location, bucket, jsonFile)
-	rawf, err := os.Open(jsonPath)
-	if err != nil {
-		panic(err)
-	}
-	reader, err := gzip.NewReader(rawf)
-	if err != nil {
-		panic(err)
-	}
-	jsonByte, err := ioutil.ReadAll(reader)
-	if err != nil {
-		panic(err)
-	}
-	return string(jsonByte)
 }
 
 func DeleteRowsInTable(dbHandle *sql.DB, table string) {
@@ -414,4 +393,48 @@ func IsThisInThatSliceString(smallSlice []string, bigSlice []string) bool {
 		}
 	}
 	return true
+}
+
+func FetchUpdateState(dbHandle *sql.DB, warehouseUploadsTable string, sourceID string, destinationID string, destinationType string) ( int64, string, string) {
+	row:=dbHandle.QueryRow(fmt.Sprintf(`select id, namespace, status from %s where source_id='%s' and destination_id='%s' and destination_type = '%s' order by updated_at desc limit 1`, warehouseUploadsTable, sourceID, destinationID, destinationType))
+	var id int64
+	var state string
+	var namespace string
+	err:=row.Scan(&id, &namespace, &state)
+	if err != nil && err!= sql.ErrNoRows {
+		panic(err)
+	}
+	return id, namespace, state
+}
+
+func VerifyUpdatedTables(dbHandle *sql.DB, warehouseTableUploadsTable string, uploadId int64, exportedDataState string ) []string {
+	rows, err :=dbHandle.Query(fmt.Sprintf(`select table_name from %s where wh_upload_id=%d and status ='%s'`,warehouseTableUploadsTable, uploadId, exportedDataState))
+	if err != nil {
+		panic(err)
+	}
+	var tables []string
+	for rows.Next() {
+		var table string
+		if err:=rows.Scan(&table); err != nil {
+			panic(err)
+		}
+		tables = append(tables,table)
+	}
+	return tables
+}
+
+
+
+func QueryWarehouseWithAnonymusID(anonymousId string, eventName string, namespace string, destType string, destConfig interface{}) QueryTrackPayload {
+	if destType == "BQ" {
+		return queryBQ(anonymousId, eventName, namespace, destConfig)
+	}
+	if destType == "SNOWFLAKE" {
+		 return querySnowflake(anonymousId, eventName, namespace, destConfig)
+	}
+
+	if destType == "RS" {
+		return queryRS(anonymousId, eventName, namespace, destConfig)
+	}
+	return QueryTrackPayload{}
 }

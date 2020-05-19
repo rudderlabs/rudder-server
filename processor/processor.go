@@ -180,6 +180,7 @@ var (
 	rawDataDestinations                 []string
 	configSubscriberLock                sync.RWMutex
 	isReplayServer                      bool
+	customDestinations                  []string
 )
 
 func loadConfig() {
@@ -196,6 +197,7 @@ func loadConfig() {
 	maxRetry = config.GetInt("Processor.maxRetry", 30)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES"}
+	customDestinations = []string{"KAFKA", "KINESIS"}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }
@@ -640,6 +642,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						}
 						shallowEventCopy["message"] = singularEventMap
 						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
+
+						/* Stream destinations does not need config in transformer. As the Kafka destination config
+						holds the ca-certificate and it depends on user input, it may happen that they provide entire
+						certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
+						it may result into payload larger than accepted by transformer. So, discarding destination config from being
+						sent to transformer for such destination. */
+						if misc.ContainsString(customDestinations, destType) {
+							dest := shallowEventCopy["destination"].(backendconfig.DestinationT)
+							dest.Config = nil
+							shallowEventCopy["destination"] = dest
+						}
+
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
 
 						enhanceWithTimeFields(shallowEventCopy, singularEventMap, receivedAt)
@@ -795,6 +809,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 }
 
 func (proc *HandleT) mainLoop() {
+	//waiting till the backend config is received
+	backendconfig.WaitForConfig()
 
 	logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
