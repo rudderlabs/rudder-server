@@ -5,7 +5,7 @@
 
 # What is RudderStack?
 
-[RudderStack](https://rudderstack.com/) is an **open-source**, **enterprise-ready** platform for collecting, storing and routing customer event data **securely** to your data warehouse and dozens of other tools. It provides a powerful transformation framework to process your event data on the fly.
+[RudderStack](https://rudderstack.com/) is an **open-source Segment alternative**  for collecting, storing and routing customer event data **securely** to your data warehouse and dozens of other tools. It is **enterprise-ready**, and provides a powerful transformation framework to process your event data on the fly.
 
 RudderStack's backend is written in Go, with a rich UI written in React.js.
 
@@ -36,21 +36,8 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 
 - **High Performance**: On a single m4.2xlarge, RudderStack can process 3000 events/second.
 
-# Telemetry for Measuring Performance and Diagnostics
-To help us improve RudderStack, we collect performance and diagnostic metrics about how you use it and how it is working. **No customer data is present in the metrics**.
+- **Enhanced Telemetry**: To help us improve RudderStack, we collect performance and diagnostic metrics about how you use RudderStack, and how it is working. **No customer data is present in the metrics**.
 
-The metrics collection can be disabled by setting the variable `enableDiagnostics` to false in `config/config.toml`
-
-The following are the metrics that are being collected. They are listed in `config/config.toml` under the **Diagnostics** section.
-
-- `enableServerStartMetric`: Tracks when the server starts
-- `enableConfigIdentifyMetric`: Tracks when the configuration is fetched for the first time from the Control Plane
-- `enableServerStartedMetric`: Tracks when the server is ready to accept requests
-- `enableConfigProcessedMetric`: Tracks when the configuration is changed
-- `enableGatewayMetric`: Tracks the number of successful/failed requests
-- `enableRouterMetric`: Tracks the number of successful/aborted/retries requests for every router destination
-- `enableBatchRouterMetric`: Tracks the number of successful/failed requests for every batch router destination
-- `enableDestinationFailuresMetric`: Tracks the destination failures
 
 # Install RudderStack
 
@@ -63,6 +50,18 @@ You can go through our [detailed documentation](https://docs.rudderstack.com/) t
 - [Developer Machine Setup](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack/developer-machine-setup)
 
 Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#how-to-send-test-events) to verify the setup.
+
+You can also learn more about the [RudderStack Config Generator](https://github.com/ameypv-rudder/rudder-server/wiki/RudderStack-Config-Generator) which allows you to manage your source and destination configurations without using our hosted services.
+
+# UI Pages
+
+### Connections Page
+
+![Connections Page](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-M7WR4_0fzJ-eVn7ZeOE%2F-M7WTXFwcky90UyQmwuq%2FConnections.png?alt=media&token=99ff7da7-f172-486c-9e05-1f113ffcfeef)
+
+### Events Page
+
+![Events Page](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-M7WR4_0fzJ-eVn7ZeOE%2F-M7WU8HlfCDWIB6jHkWl%2FEvents.png?alt=media&token=c332f302-1862-45c2-bf84-dbeca07f4f82)
 
 # License
 
