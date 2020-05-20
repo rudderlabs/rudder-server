@@ -187,11 +187,10 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		config.SetBool("JobsDB.backup.gw.enabled", false)
 	}
 	migrationMode := application.Options().MigrationMode
-	config.SetString("migrationMode", migrationMode)
 
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode)
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode)
 
 	enableMigrator := false
 	if migrationMode == "import" || migrationMode == "export" || migrationMode == "import-export" {

@@ -85,6 +85,8 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 	} else {
 		found = true
 	}
+	jd.printLists(true)
+	logger.Infof("import setup checkpoint: %+v", jd.GetSetupCheckpoint(ImportOp))
 	if !found {
 		defer jd.migrationState.importLock.Unlock()
 		jd.migrationState.dsForImport = jd.createSetupCheckpointAndGetDs(ImportOp)
