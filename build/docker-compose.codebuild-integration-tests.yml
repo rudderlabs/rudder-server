@@ -11,7 +11,7 @@ services:
   backend:
     depends_on:
       - db
-      # - d-transformer
+      - d-transformer
     build:
       context: ../
       dockerfile: build/Dockerfile-dev
@@ -28,11 +28,11 @@ services:
       - JOBS_DB_HOST=db
       - WORKSPACE_TOKEN=${INTEGRATION_TESTS_WORKSPACE_TOKEN}
 
-  # d-transformer:
-  #   build:
-  #     context: ../rudder-transformer/
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "9090:9090"
-  #   env_file:
-  #     - docker.env
+  d-transformer:
+    build:
+      context: ../rudder-transformer/
+      dockerfile: Dockerfile
+    ports:
+      - "9090:9090"
+    env_file:
+      - docker.env

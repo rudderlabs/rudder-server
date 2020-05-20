@@ -1,43 +1,52 @@
 version: 0.2
 env:
   parameter-store:
+    ssh_key: "/codebuild/github/ssh-key"
     dockerhub_passwd: "/dev/codebuild/dockerhub-password"
 phases:
   install:
     runtime-versions:
       golang: 1.13
     commands: 
-      - git init
-      - git remote add origin git://github.com/rudderlabs/rudder-server.git
-      - git fetch
-      - git checkout $CODEBUILD_RESOLVED_SOURCE_VERSION
-      - sed -i.bak 's|git@github.com:|git://github.com/|g' .gitmodules
-      - git submodule init
-      - git submodule update --recursive
+      - mkdir -p ~/.ssh
+      - echo "$ssh_key" > ~/.ssh/id_rsa
+      - chmod 600 ~/.ssh/id_rsa
+      - ssh-keygen -F github.com || ssh-keyscan github.com >>~/.ssh/known_hosts
+      # - git config --global url."git@github.com:".insteadOf "https://github.com/"
+      # - mkdir app
+      # - cd app
+      # - git clone --recurse-submodules git@github.com:rudderlabs/rudder-server.git
+      # - cd rudder-server
+      # - git checkout $CODEBUILD_RESOLVED_SOURCE_VERSION
+      - git submodule init && git submodule update
   pre_build:
     commands:
       - docker login --username rudderlabs --password $dockerhub_passwd
   build:
     commands:
+      - ls
       - export GO111MODULE=on
       - DATE=$(date "+%F,%T")
       - VERSION=$(echo $GIT_BRANCH | tr "/" .)
       - CGO_ENABLED=0 GOOS=linux go build -mod vendor -a -installsuffix cgo -ldflags="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID "
 
       - go get github.com/onsi/ginkgo/ginkgo
-      - ginkgo --randomizeAllSpecs -p --skipPackage=tests ./...
+      - ginkgo --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --progress -p --skipPackage=tests ./...
 
-      - echo build Docker image on `date`
-      - docker build -t rudderlabs/develop-rudder-server:$VERSION -f build/Dockerfile-aws .
+      # - echo build Docker image on `date`
+      # - docker build -t rudderlabs/develop-rudder-server:$VERSION -f build/Dockerfile-aws .
+      - ls -list
+      - ls rudder-transformer
+      - pwd
 
-
-      - sed -i -e 's/^CONFIG_BACKEND_URL=.*$/CONFIG_BACKEND_URL=https:\/\/api.rudderlabs.com/' build/docker.env
-      - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/config_overrides.toml > tests/e2e/config.toml
-      - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' build/docker.env
-      - cat build/docker.env
-      - cat tests/e2e/config.toml
-      - docker-compose -f build/docker-compose.codebuild-integration-tests.yml up -d
-      - docker-compose -f build/docker-compose.codebuild-integration-tests.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e"
+      # - sed -i -e 's/^CONFIG_BACKEND_URL=.*$/CONFIG_BACKEND_URL=https:\/\/api.rudderlabs.com/' build/docker.env
+      # - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/config_overrides.toml > tests/e2e/config.toml
+      # - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' build/docker.env
+      # - cat build/docker.env
+      # - cat tests/e2e/config.toml
+      # - ls build
+      # - docker-compose -f build/docker-compose.codebuild-integration-tests.yml up -d
+      # - docker-compose -f build/docker-compose.codebuild-integration-tests.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e"
 
       - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/sessions/config_overrides.toml > tests/e2e/sessions/config.toml
       - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/sessions\/config.toml/' build/docker.env
@@ -56,9 +65,9 @@ phases:
 
   post_build:
     commands:
-      - echo build Docker image complete `date`
-      - echo push latest Docker images to docker hub...
-      - docker push rudderlabs/develop-rudder-server:$VERSION
+      # - echo build Docker image complete `date`
+      # - echo push latest Docker images to docker hub...
+      # - docker push rudderlabs/develop-rudder-server:$VERSION
 reports:
   GinkgoUnitTestReports:
     files:
