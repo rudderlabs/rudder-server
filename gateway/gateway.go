@@ -506,6 +506,9 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 			req.SetBasicAuth(writeKey[0], "")
 			delete(queryParams, "writeKey")
 
+			// set X-Forwarded-For header
+			req.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
+
 			// get web payload
 			gateway.setWebPayload(req, queryParams, reqType)
 
