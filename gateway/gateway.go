@@ -468,7 +468,7 @@ func (gateway *HandleT) collectMetrics() {
 	}
 }
 
-func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType string) {
+func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType string) string{
 	// add default fields to body
 	body := []byte(`{"channel": "web","userId": "","integrations": {"All": true}}`)
 	currentTime := time.Now()
@@ -485,21 +485,28 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType st
 	switch reqType {
 	case "page":
 		if pageName, ok := qp["name"]; ok {
+			if pageName[0] == "" {
+				pageName[0] = "Unknown Page"
+			}
 			body, _ = sjson.SetBytes(body, "name", pageName[0])
 		}
 	case "track":
 		if evName, ok := qp["event"]; ok {
+			if evName[0] == "" {
+				return "track: Mandatory field 'event' missing"
+			}
 			body, _ = sjson.SetBytes(body, "event", evName[0])
 		}
 	}
 	// add body to request
 	r.Body = ioutil.NopCloser(bytes.NewReader(body))
+	return Ok
 }
 
 func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	if r.Method == http.MethodGet {
 		queryParams := r.URL.Query()
-		if writeKey, present := queryParams["writeKey"]; present {
+		if writeKey, present := queryParams["writeKey"]; present && writeKey[0] != ""{
 			req, _ := http.NewRequest(http.MethodPost, "", nil)
 
 			// set basic auth header
@@ -510,7 +517,11 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 			req.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
 
 			// get web payload
-			gateway.setWebPayload(req, queryParams, reqType)
+			err := gateway.setWebPayload(req, queryParams, reqType)
+			if err != Ok {
+				http.Error(w, err, http.StatusBadRequest)
+				return
+			}
 
 			// send req to webHandler
 			gateway.webHandler(w, req, reqType)
