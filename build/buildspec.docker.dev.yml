@@ -5,8 +5,13 @@ phases:
     runtime-versions:
       golang: 1.13
     commands: 
-      - git submodule init 
-      - git submodule update
+      - git init
+      - git remote add origin git@github.com:rudderlabs/rudder-server.git
+      - git fetch
+      - git checkout -t origin/master
+      - git submodule init
+      - git submodule update --recursive
+  pre_build:
   pre_build:
     commands:
       - docker login --username rudderlabs --password $DOCKERHUB_PASSWORD
