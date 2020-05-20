@@ -167,7 +167,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		})
 	}
 
-	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, misc.AppStartTime)
+	migrationMode := application.Options().MigrationMode
+	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, migrationMode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
 
@@ -186,7 +187,6 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	if isReplayServer {
 		config.SetBool("JobsDB.backup.gw.enabled", false)
 	}
-	migrationMode := application.Options().MigrationMode
 	config.SetString("migrationMode", migrationMode)
 
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
@@ -194,12 +194,12 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
 
 	enableMigrator := false
-	if migrationMode == "import" || migrationMode == "export" || migrationMode == "import-export" {
+	if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 		enableMigrator = true
 		enableRouter = false
 		enableProcessor = false
 	}
-	shouldStartGateWay := (migrationMode != "export")
+	shouldStartGateWay := (migrationMode != db.EXPORT)
 
 	if application.Features().Migrator != nil {
 		if enableMigrator {
