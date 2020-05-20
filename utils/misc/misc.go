@@ -558,6 +558,10 @@ func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 	return replacedStr, nil
 }
 
+func IntArrayToString(a []int64, delim string) string {
+	return strings.Trim(strings.Replace(fmt.Sprint(a), " ", delim, -1), "[]")
+}
+
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number
 // of garage collection cycles completed.
 func PrintMemUsage() {
@@ -727,4 +731,30 @@ func GetMigratingFromVersion() int {
 //GetMigratingToVersion gives the from version during migration
 func GetMigratingToVersion() int {
 	return config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
+}
+
+/*
+RunWithTimeout runs provided function f until provided timeout d.
+If the timeout is reached, onTimeout callback will be called.
+*/
+func RunWithTimeout(f func(), onTimeout func(), d time.Duration) {
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		f()
+	}()
+
+	select {
+	case <-c:
+	case <-time.After(d):
+		onTimeout()
+	}
+}
+
+/*
+IsValidUUID will check if provided string is a valid UUID
+*/
+func IsValidUUID(uuid string) bool {
+	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
+	return r.MatchString(uuid)
 }

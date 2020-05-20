@@ -31,26 +31,26 @@ type HandleT struct {
 	transformer           *transformerHandleT
 	pStatsJobs            *misc.PerfStats
 	pStatsDBR             *misc.PerfStats
-	statGatewayDBR        *stats.RudderStats
+	statGatewayDBR        stats.RudderStats
 	pStatsDBW             *misc.PerfStats
-	statGatewayDBW        *stats.RudderStats
-	statRouterDBW         *stats.RudderStats
-	statBatchRouterDBW    *stats.RudderStats
-	statActiveUsers       *stats.RudderStats
+	statGatewayDBW        stats.RudderStats
+	statRouterDBW         stats.RudderStats
+	statBatchRouterDBW    stats.RudderStats
+	statActiveUsers       stats.RudderStats
 	userJobListMap        map[string][]*jobsdb.JobT
 	userEventsMap         map[string][]interface{}
 	userPQItemMap         map[string]*pqItemT
-	statJobs              *stats.RudderStats
-	statDBR               *stats.RudderStats
-	statDBW               *stats.RudderStats
-	statLoopTime          *stats.RudderStats
-	statSessionTransform  *stats.RudderStats
-	statUserTransform     *stats.RudderStats
-	statDestTransform     *stats.RudderStats
-	statListSort          *stats.RudderStats
-	marshalSingularEvents *stats.RudderStats
-	destProcessing        *stats.RudderStats
-	statNumDests          *stats.RudderStats
+	statJobs              stats.RudderStats
+	statDBR               stats.RudderStats
+	statDBW               stats.RudderStats
+	statLoopTime          stats.RudderStats
+	statSessionTransform  stats.RudderStats
+	statUserTransform     stats.RudderStats
+	statDestTransform     stats.RudderStats
+	statListSort          stats.RudderStats
+	marshalSingularEvents stats.RudderStats
+	destProcessing        stats.RudderStats
+	statNumDests          stats.RudderStats
 	destStats             map[string]*DestStatT
 	userToSessionIDMap    map[string]string
 	userJobPQ             pqT
@@ -59,11 +59,11 @@ type HandleT struct {
 
 type DestStatT struct {
 	id               string
-	numEvents        *stats.RudderStats
-	numOutputEvents  *stats.RudderStats
-	sessionTransform *stats.RudderStats
-	userTransform    *stats.RudderStats
-	destTransform    *stats.RudderStats
+	numEvents        stats.RudderStats
+	numOutputEvents  stats.RudderStats
+	sessionTransform stats.RudderStats
+	userTransform    stats.RudderStats
+	destTransform    stats.RudderStats
 }
 
 func newDestinationStat(destID string) *DestStatT {
@@ -180,6 +180,7 @@ var (
 	rawDataDestinations                 []string
 	configSubscriberLock                sync.RWMutex
 	isReplayServer                      bool
+	customDestinations                  []string
 )
 
 func loadConfig() {
@@ -196,6 +197,7 @@ func loadConfig() {
 	maxRetry = config.GetInt("Processor.maxRetry", 30)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE"}
+	customDestinations = []string{"KAFKA", "KINESIS"}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }
@@ -644,6 +646,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						}
 						shallowEventCopy["message"] = singularEventMap
 						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
+
+						/* Stream destinations does not need config in transformer. As the Kafka destination config
+						holds the ca-certificate and it depends on user input, it may happen that they provide entire
+						certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
+						it may result into payload larger than accepted by transformer. So, discarding destination config from being
+						sent to transformer for such destination. */
+						if misc.ContainsString(customDestinations, destType) {
+							dest := shallowEventCopy["destination"].(backendconfig.DestinationT)
+							dest.Config = nil
+							shallowEventCopy["destination"] = dest
+						}
+
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
 
 						enhanceWithTimeFields(shallowEventCopy, singularEventMap, receivedAt)

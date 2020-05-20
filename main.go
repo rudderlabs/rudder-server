@@ -92,7 +92,7 @@ func readIOforResume(router router.HandleT) {
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	// dstToWhRouter := make(map[string]*warehouse.HandleT)
@@ -213,7 +213,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		var gateway gateway.HandleT
 		var rateLimiter ratelimiter.HandleT
 		rateLimiter.SetUp()
-		gateway.Setup(&gatewayDB, &rateLimiter, clearDB)
+		gateway.Setup(backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, stats.DefaultStats, clearDB)
+		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }

@@ -17,6 +17,8 @@ mostly serviced from memory cache.
 
 package jobsdb
 
+//go:generate mockgen -destination=../mocks/jobsdb/mock_jobsdb.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb JobsDB
+
 import (
 	"bytes"
 	"database/sql"
@@ -52,6 +54,14 @@ type BackupSettingsT struct {
 	BackupEnabled bool
 	FailedOnly    bool
 	PathPrefix    string
+}
+
+/*
+JobsDB interface contains public methods to access JobsDB data
+*/
+type JobsDB interface {
+	Store(jobList []*JobT) map[uuid.UUID]string
+	CheckPGHealth() bool
 }
 
 /*
@@ -127,12 +137,12 @@ type HandleT struct {
 	dsCacheLock                   sync.Mutex
 	BackupSettings                *BackupSettingsT
 	jobsFileUploader              filemanager.FileManager
-	statTableCount                *stats.RudderStats
-	statNewDSPeriod               *stats.RudderStats
+	statTableCount                stats.RudderStats
+	statNewDSPeriod               stats.RudderStats
 	isStatNewDSPeriodInitialized  bool
-	statDropDSPeriod              *stats.RudderStats
+	statDropDSPeriod              stats.RudderStats
 	isStatDropDSPeriodInitialized bool
-	jobsdbQueryTimeStat           *stats.RudderStats
+	jobsdbQueryTimeStat           stats.RudderStats
 	migrationState                MigrationState
 }
 
@@ -1310,7 +1320,7 @@ parameterFilters do a AND query on values included in the map
 */
 func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []string,
 	customValFilters []string, limitCount int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
-	var queryStat *stats.RudderStats
+	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
@@ -1432,7 +1442,7 @@ parameterFilters do a AND query on values included in the map
 */
 func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	order bool, count int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
-	var queryStat *stats.RudderStats
+	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
@@ -2352,7 +2362,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
-	var queryStat *stats.RudderStats
+	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
@@ -2398,7 +2408,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
-	var queryStat *stats.RudderStats
+	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"

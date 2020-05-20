@@ -5,9 +5,11 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
 func TestUtils(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Warehouse Utils Suite")
+	RunSpecsWithDefaultAndCustomReporters(t, "Warehouse Utils Suite", []Reporter{testutils.NewJUnitReporter()})
 }

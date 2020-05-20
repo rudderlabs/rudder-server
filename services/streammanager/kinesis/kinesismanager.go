@@ -31,20 +31,12 @@ func init() {
 		"ResourceNotFoundException", "UnrecognizedClientException", "ValidationError"}
 }
 
-// Produce creates a producer and send data to Kinesis.
-func Produce(jsonData json.RawMessage) (int, string, string) {
+// NewProducer creates a producer based on destination config
+func NewProducer(destinationConfig interface{}) (kinesis.Kinesis, error) {
+	config := Config{}
 
-	parsedJSON := gjson.ParseBytes(jsonData)
-	if parsedJSON.Get("output").Exists() {
-		parsedJSON = parsedJSON.Get("output")
-	}
-	configFromJSON, err := json.Marshal(parsedJSON.Get("config").Value())
-	if err != nil {
-		panic(fmt.Errorf("error getting config from payload"))
-	}
-
-	var config Config
-	json.Unmarshal(configFromJSON, &config)
+	jsonConfig, err := json.Marshal(destinationConfig)
+	err = json.Unmarshal(jsonConfig, &config)
 
 	var s *session.Session
 	if config.AccessKeyID == "" || config.AccessKey == "" {
@@ -56,17 +48,32 @@ func Produce(jsonData json.RawMessage) (int, string, string) {
 			Region:      aws.String(config.Region),
 			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")}))
 	}
+	var kc *kinesis.Kinesis = kinesis.New(s)
+	return *kc, err
+}
 
-	kc := kinesis.New(s)
+// Produce creates a producer and send data to Kinesis.
+func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string) {
+
+	parsedJSON := gjson.ParseBytes(jsonData)
+
+	kc, ok := producer.(kinesis.Kinesis)
+	if !ok {
+		return 400, "Could not create producer", "Could not create producer"
+	}
+
+	config := Config{}
+
+	jsonConfig, err := json.Marshal(destConfig)
+	err = json.Unmarshal(jsonConfig, &config)
 
 	streamName := aws.String(config.Stream)
 
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
 	var userID string
-	var ok bool
 	if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
-		userID=fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
+		userID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
 
 	partitionKey := aws.String(userID)

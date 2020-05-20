@@ -135,6 +135,7 @@ noOfSlaveWorkerRoutines = 4
 mainLoopSleepInS = 60
 maxRetry = 3
 warehouseSyncPreFetchCount = 10
+warehouseSyncFreqIgnore=false
 stagingFilesBatchSize = 240
     [Warehouse.redshift]
     maxParallelLoads = 3

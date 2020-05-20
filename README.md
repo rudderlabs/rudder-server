@@ -18,11 +18,11 @@ Questions? Read our [Docs][docs] OR join our [Discord][discord] channel. Or plea
 
 # Try RudderStack?
 
-You can use the [hosted][dashboard-on] RudderStack instance to experience the product. Click [here][dashboard-on].
+You can use the [cloud hosted][dashboard-intro] RudderStack instance to experience the product. Click [here][dashboard-intro].
 
 # Features
 
-1. **Production Ready:** Multiple companies from startups to large enterprises are running RudderStack for collecting events.
+1. **Production Ready:** Multiple companies (e.g. **MatterMost**, **IFTTT**, **Grofers**, **1mg** and more) are running RudderStack for collecting events.
 2. **Extreme Scale:** One of our largest installations is sending **300M events/day** with peak of **40K req/sec** via a multi-node RudderStack setup.
 3. **Segment API Compatibile:** RudderStack is Segment API and library compatible so don't need to change your app if you are using Segment.
 4. **Cloud Destinations:** Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations.
@@ -36,7 +36,7 @@ You can use the [hosted][dashboard-on] RudderStack instance to experience the pr
 
 We are building RudderStack because we believe open-source and cloud-prem is important for three main reasons
 
-1. **Privacy & Security:** You should be able to collect and store your customer data without sending everything to a 3rd party vendor or embedding proprietary SDKs. With RudderStack, the event data is always in your control. Besides, RudderStack gives you fine-grained control over what data to forward to what analytical tool.
+1. **Privacy & Security:** You should be able to collect and store your customer data without sending everything to a 3rd party vendor or embedding proprietary SDKs (and getting blocked by ad-blockers). With RudderStack, the event data is always in your control. Besides, RudderStack gives you fine-grained control over what data to forward to what analytical tool.
 
 2. **Processing Flexibility:** You should be able to enhance OR transform your event data by combining it with your other _internal_ data, e.g. stored in your transactional systems. RudderStack makes that possible because it provides a powerful JS-based event transformation framework. Furthermore, since RudderStack runs _inside_ your cloud or on-prem environment, you can access your production data to join with the event data.
 
@@ -65,7 +65,7 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 
 # Setup Instructions (Hosted Demo Account)
 
-1. Go to the [dashboard][dashboard-on] and set up your account.
+1. Go to the [dashboard][dashboard-setup] and set up your account.
 2. Select `RudderStack Hosted Service` from the top right corner after you login.
 3. Follow (Send Test Events) instructions below to send test event.
 
@@ -75,14 +75,14 @@ We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](C
 
 The docker setup is the easiest & fastest way to try out RudderStack.
 
-1. Go to the [dashboard][dashboard] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
+1. Go to the [dashboard][dashboard-docker] `https://app.rudderstack.com` and set up your account. Copy your workspace token from top of the home page. The Hosted Control plane is FREE (and will always be) for open-source users.
 
-   (Note) Instead of our full featured hosted UI, you can also use the open-source [config-generator-UI][config-generator-section] to create the source & destination configs and pass it to RudderStack.
+   (Note) You can also use the open-source [config-generator-UI][config-generator-section] to create the source & destination configs and pass it to RudderStack in case you don't want to use the hosted control plane. The open-source generator however does not have certain features like Transformations or Live Event Debugger
 
-2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule update --init rudder-transformer`
+2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
 
    (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
-   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule update --init rudder-transformer`
+   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule init && git submodule update`
 
 3. Replace `<your_workspace_token>` in `build/docker.env` with the above token.
 4. (Optional) Uncomment and set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `build/docker.env` if you want to add S3 as a destination on the UI.
@@ -95,7 +95,7 @@ The docker setup is the easiest & fastest way to try out RudderStack.
 
 **Note:** This is the recommended way of installing RudderStack for running in production. Our hosted deployment runs on Kubernetes so we maintain/patch much more frequently.
 
-1. Go to the [dashboard][dashboad-on] `https://app.rudderlabs.com` and set up your account. Copy your workspace token from top of the home page.
+1. Go to the [dashboard][dashboard-k8s] `https://app.rudderstack.com` and set up your account. Copy your workspace token from top of the home page.
 
 2. Our helm scripts and instructions are in a separate repo - [Download Here][helm-scripts-git-repo]
 
@@ -116,11 +116,11 @@ psql "jobsdb" -c "ALTER USER rudder WITH ENCRYPTED PASSWORD 'rudder'";
 psql "jobsdb" -c "GRANT ALL PRIVILEGES ON DATABASE jobsdb to rudder";
 ```
 
-4. Go to the [dashboard][dashboard] and set up your account. Copy your workspace token from top of the home page
-5. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule update --init rudder-transformer`
+4. Go to the [dashboard][dashboard-native] and set up your account. Copy your workspace token from top of the home page
+5. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
 
    (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
-   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule update --init rudder-transformer`
+   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule init && git submodule update`
 6. Navigate to the transformer directory `cd rudder-transformer`
 7. Install dependencies `npm i` and start the destination transformer `node destTransformer.js`
 8. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
@@ -251,8 +251,13 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 [go-report-card]: https://go-report-card.com/report/github.com/rudderlabs/rudder-server
 [go-report-card-badge]: https://go-report-card.com/badge/github.com/rudderlabs/rudder-server
 [ssh]: https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls
-[dashboard]: https://app.rudderlabs.com
+[dashboard]: https://app.rudderstack.com
 [dashboard-on]: https://app.rudderstack.com/signup?type=freetrial
+[dashboard-intro]: https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro
+[dashboard-setup]: https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=setup-instructions
+[dashboard-docker]: https://app.rudderstack.com/signup?utm_source=github&utm_medium=rdr-srv&utm_campaign=selfhosted&utm_content=docker
+[dashboard-k8s]: https://app.rudderstack.com/signup?utm_source=github&utm_medium=rdr-srv&utm_campaign=selfhosted&utm_content=k8s
+[dashboard-native]: https://app.rudderstack.com/signup?utm_source=github&utm_medium=rdr-srv&utm_campaign=selfhosted&utm_content=native
 [agplv3_license]: https://www.gnu.org/licenses/agpl-3.0-standalone.html
 [sspl_license]: https://www.mongodb.com/licensing/server-side-public-license
 [hackernews]: https://news.ycombinator.com/item?id=21081756
