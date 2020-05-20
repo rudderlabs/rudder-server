@@ -44,6 +44,7 @@ type HandleT struct {
 const (
 	AWSAccessKey        = "accessKey"
 	AWSAccessSecret     = "accessKeyID"
+	AWSARN              = "arn"
 	AWSBucketNameConfig = "bucketName"
 	RSHost              = "host"
 	RSPort              = "port"
@@ -373,15 +374,20 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 		return
 	}
+	var sqlStatement string
+	if arn := strings.TrimSpace(warehouseutils.GetConfigValue(AWSARN, rs.Warehouse)); arn != "" {
+		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP IAM_ROLE '%s'  REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, arn, region)
+		logger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sqlStatement)
+	} else {
+		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, warehouseutils.GetConfigValue(AWSAccessSecret, rs.Warehouse), warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse), region)
 
-	sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, warehouseutils.GetConfigValue(AWSAccessSecret, rs.Warehouse), warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse), region)
-
-	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
-		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
-		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
-	})
-	if regexErr == nil {
-		logger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
+		sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
+			"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
+			"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+		})
+		if regexErr == nil {
+			logger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
+		}
 	}
 
 	_, err = tx.Exec(sqlStatement)
