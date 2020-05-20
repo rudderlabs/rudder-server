@@ -33,6 +33,7 @@ import (
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"regexp"
 )
 
 /*
@@ -475,6 +476,11 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType st
 	body, _ = sjson.SetBytes(body, "originalTimestamp", currentTime)
 	body, _ = sjson.SetBytes(body, "sentAt", currentTime)
 
+	// make sure anonymousId is in correct format
+	if anonymousID, ok := qp["anonymousId"]; ok {
+		qp["anonymousId"][0] = regexp.MustCompile(`^"(.*)"$`).ReplaceAllString(anonymousID[0], `$1`)
+	}
+	
 	// add queryParams to body
 	for key := range qp {
 		body, _ = sjson.SetBytes(body, key, qp[key][0])
