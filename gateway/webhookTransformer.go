@@ -13,13 +13,15 @@ import (
 )
 
 type transformerResponseT struct {
-	output []byte
-	err    string
+	output     []byte
+	err        string
+	statusCode int
 }
 
 type transformerBatchResponseT struct {
 	batchError error
 	responses  []transformerResponseT
+	statusCode int
 }
 
 func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string) transformerBatchResponseT {
@@ -48,6 +50,13 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	var responses []interface{}
 	err = json.Unmarshal(respBody, &responses)
 
+	if err != nil {
+		return transformerBatchResponseT{
+			batchError: errors.New(getStatus(SourceTransformerInvalidResponseFormat)),
+			statusCode: getStatusCode(SourceTransformerInvalidResponseFormat),
+		}
+	}
+
 	batchResponse := transformerBatchResponseT{responses: make([]transformerResponseT, len(events))}
 
 	if len(responses) != len(events) {
@@ -59,24 +68,34 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 		if castOk {
 			outputInterface, ok := respElemMap["output"]
 			if !ok {
-				batchResponse.responses[idx] = transformerResponseT{err: getStatus(SourceTrasnformerResponseReadFailed)}
+				batchResponse.responses[idx] = transformerResponseT{
+					err:        getStatus(SourceTransformerFailedToReadOutput),
+					statusCode: getStatusCode(SourceTransformerFailedToReadOutput),
+				}
 				bt.stats.failedStat.Count(1)
 				continue
 			}
 
 			output, ok := outputInterface.(map[string]interface{})
 			if !ok {
-				batchResponse.responses[idx] = transformerResponseT{err: getStatus(SourceTrasnformerResponseReadFailed)}
+				batchResponse.responses[idx] = transformerResponseT{
+					err:        getStatus(SourceTransformerInvalidOutputFormatInResponse),
+					statusCode: getStatusCode(SourceTransformerInvalidOutputFormatInResponse),
+				}
 				bt.stats.failedStat.Count(1)
 				continue
 			}
 
-			if statusCode, found := output["statusCode"]; found && fmt.Sprintf("%v", statusCode) == "400" {
+			if statusCode, found := output["statusCode"]; found && fmt.Sprintf("%v", statusCode) != "200" {
 				var errorMessage interface{}
+				code, _ := statusCode.(int)
 				if errorMessage, ok = output["error"]; !ok {
-					errorMessage = getStatus(SourceTrasnformerResponseReadFailed)
+					errorMessage = getStatus(SourceTrasnformerResponseErrorReadFailed)
 				}
-				batchResponse.responses[idx] = transformerResponseT{err: fmt.Sprintf("%v", errorMessage)}
+				batchResponse.responses[idx] = transformerResponseT{
+					err:        fmt.Sprintf("%v", errorMessage),
+					statusCode: code,
+				}
 				bt.stats.failedStat.Count(1)
 				continue
 			}
@@ -84,7 +103,10 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 			marshalledOutput, _ := json.Marshal(output)
 			batchResponse.responses[idx] = transformerResponseT{output: marshalledOutput}
 		} else {
-			batchResponse.responses[idx] = transformerResponseT{err: getStatus(SourceTrasnformerResponseReadFailed)}
+			batchResponse.responses[idx] = transformerResponseT{
+				err:        getStatus(SourceTransformerInvalidResponseFormat),
+				statusCode: getStatusCode(SourceTransformerInvalidResponseFormat),
+			}
 			bt.stats.failedStat.Count(1)
 		}
 	}

@@ -27,7 +27,7 @@ var (
 type webhookT struct {
 	request    *http.Request
 	writer     *http.ResponseWriter
-	done       chan<- string
+	done       chan<- webhookErrorRespT
 	reqType    string
 	sourceType string
 	writeKey   string
@@ -67,10 +67,15 @@ type batchWebhookTransformerT struct {
 	stats   *webhookStatsT
 }
 
+type webhookErrorRespT struct {
+	err        string
+	statusCode int
+}
+
 func parseWriteKey(req *http.Request) (writeKey string, found bool) {
 	queryParams := req.URL.Query()
 	writeKeys, found := queryParams["writeKey"]
-	if found {
+	if found && writeKeys[0] != "" {
 		writeKey = writeKeys[0]
 	} else {
 		writeKey, _, found = req.BasicAuth()
@@ -78,12 +83,16 @@ func parseWriteKey(req *http.Request) (writeKey string, found bool) {
 	return
 }
 
-func (webhook *webhookHandleT) failRequest(w http.ResponseWriter, r *http.Request, reason string, stat string) {
+func (webhook *webhookHandleT) failRequest(w http.ResponseWriter, r *http.Request, reason string, code int, stat string) {
 	var writeKeyFailStats = make(map[string]int)
 	misc.IncrementMapByKey(writeKeyFailStats, stat, 1)
 	webhook.gwHandle.updateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
 	logger.Debug(reason)
-	http.Error(w, reason, 400)
+	statusCode := 400
+	if code != 0 {
+		statusCode = code
+	}
+	http.Error(w, reason, statusCode)
 	atomic.AddUint64(&webhook.gwHandle.ackCount, 1)
 }
 
@@ -94,7 +103,7 @@ func (webhook *webhookHandleT) batchHandler(w http.ResponseWriter, r *http.Reque
 
 	writeKey, ok := parseWriteKey(r)
 	if !ok {
-		webhook.failRequest(w, r, getStatus(InvalidWriteKey), "noWriteKey")
+		webhook.failRequest(w, r, getStatus(NoWriteKeyInQueryParams), getStatusCode(NoWriteKeyInQueryParams), "noWriteKey")
 		atomic.AddUint64(&webhook.ackCount, 1)
 		return
 	}
@@ -103,28 +112,32 @@ func (webhook *webhookHandleT) batchHandler(w http.ResponseWriter, r *http.Reque
 	sourceDefName, ok := enabledWriteKeySourceDefMap[writeKey]
 	configSubscriberLock.RUnlock()
 	if !ok {
-		webhook.failRequest(w, r, getStatus(InvalidWriteKey), writeKey)
+		webhook.failRequest(w, r, getStatus(InvalidWriteKey), getStatusCode(InvalidWriteKey), writeKey)
 		atomic.AddUint64(&webhook.ackCount, 1)
 		return
 	}
 	if !misc.ContainsString(webhookSources, sourceDefName) {
-		webhook.failRequest(w, r, getStatus(InvalidWebhookSource), writeKey)
+		webhook.failRequest(w, r, getStatus(InvalidWebhookSource), getStatusCode(InvalidWebhookSource), writeKey)
 		atomic.AddUint64(&webhook.ackCount, 1)
 		return
 	}
 
-	done := make(chan string)
+	done := make(chan webhookErrorRespT)
 	req := webhookT{request: r, writer: &w, done: done, sourceType: sourceDefName, writeKey: writeKey}
 	webhook.requestQ[sourceDefName] <- &req
 
 	//Wait for batcher process to be done
-	errorMessage := <-done
+	resp := <-done
 	atomic.AddUint64(&webhook.gwHandle.ackCount, 1)
 	atomic.AddUint64(&webhook.ackCount, 1)
-	webhook.gwHandle.trackRequestMetrics(errorMessage)
-	if errorMessage != "" {
-		logger.Debug(errorMessage)
-		http.Error(w, errorMessage, 400)
+	webhook.gwHandle.trackRequestMetrics(resp.err)
+	if resp.err != "" {
+		code := 400
+		if resp.statusCode != 0 {
+			code = resp.statusCode
+		}
+		logger.Debug(resp.err)
+		http.Error(w, resp.err, code)
 	} else {
 		logger.Debug(getStatus(Ok))
 		w.Write([]byte(getStatus(Ok)))
@@ -166,7 +179,7 @@ func (bt *batchWebhookTransformerT) batchTransform() {
 			req.request.Body.Close()
 
 			if err != nil {
-				req.done <- getStatus(RequestBodyReadFailed)
+				req.done <- webhookErrorRespT{err: getStatus(RequestBodyReadFailed)}
 				continue
 			}
 
@@ -192,8 +205,12 @@ func (bt *batchWebhookTransformerT) batchTransform() {
 		bt.stats.sourceStats[breq.sourceType].sourceTransform.End()
 
 		if batchResponse.batchError != nil {
+			statusCode := 500
+			if batchResponse.statusCode != 0 {
+				statusCode = batchResponse.statusCode
+			}
 			for _, req := range breq.batchRequest {
-				req.done <- batchResponse.batchError.Error()
+				req.done <- webhookErrorRespT{statusCode: statusCode, err: batchResponse.batchError.Error()}
 			}
 			continue
 		}
@@ -208,7 +225,7 @@ func (bt *batchWebhookTransformerT) batchTransform() {
 			webRequest := webRequests[idx]
 			output := resp.output
 			if resp.err != "" {
-				webRequests[idx].done <- resp.err
+				webRequests[idx].done <- webhookErrorRespT{err: resp.err, statusCode: resp.statusCode}
 				continue
 			}
 			rruntime.Go(func() {
@@ -230,7 +247,7 @@ func (webhook *webhookHandleT) enqueueToWebRequestQ(req *webhookT, payload []byt
 
 	//Wait for batcher process to be done
 	errorMessage := <-done
-	req.done <- errorMessage
+	req.done <- webhookErrorRespT{err: errorMessage}
 }
 
 func (webhook *webhookHandleT) register(name string) {
