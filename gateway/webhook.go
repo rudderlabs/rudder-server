@@ -43,20 +43,28 @@ type webhookHandleT struct {
 	batchRequestQ chan *batchWebhookT
 	netClient     *retryablehttp.Client
 	gwHandle      *HandleT
-	// stats
-	perfStats          *misc.PerfStats
-	sentStat           stats.RudderStats
-	receivedStat       stats.RudderStats
-	failedStat         stats.RudderStats
-	transformTimerStat stats.RudderStats
-	sourceStats        map[string]*WebhookStatT
+	ackCount      uint64
+	recvCount     uint64
 }
 
-type WebhookStatT struct {
+type webhookSourceStatT struct {
 	id              string
 	numEvents       stats.RudderStats
 	numOutputEvents stats.RudderStats
 	sourceTransform stats.RudderStats
+}
+
+type webhookStatsT struct {
+	sentStat           stats.RudderStats
+	receivedStat       stats.RudderStats
+	failedStat         stats.RudderStats
+	transformTimerStat stats.RudderStats
+	sourceStats        map[string]*webhookSourceStatT
+}
+
+type batchWebhookTransformerT struct {
+	webhook *webhookHandleT
+	stats   *webhookStatsT
 }
 
 func parseWriteKey(req *http.Request) (writeKey string, found bool) {
@@ -82,10 +90,12 @@ func (webhook *webhookHandleT) failRequest(w http.ResponseWriter, r *http.Reques
 func (webhook *webhookHandleT) batchHandler(w http.ResponseWriter, r *http.Request) {
 	logger.LogRequest(r)
 	atomic.AddUint64(&webhook.gwHandle.recvCount, 1)
+	atomic.AddUint64(&webhook.recvCount, 1)
 
 	writeKey, ok := parseWriteKey(r)
 	if !ok {
 		webhook.failRequest(w, r, getStatus(InvalidWriteKey), "noWriteKey")
+		atomic.AddUint64(&webhook.ackCount, 1)
 		return
 	}
 
@@ -94,10 +104,12 @@ func (webhook *webhookHandleT) batchHandler(w http.ResponseWriter, r *http.Reque
 	configSubscriberLock.RUnlock()
 	if !ok {
 		webhook.failRequest(w, r, getStatus(InvalidWriteKey), writeKey)
+		atomic.AddUint64(&webhook.ackCount, 1)
 		return
 	}
 	if !misc.ContainsString(webhookSources, sourceDefName) {
 		webhook.failRequest(w, r, getStatus(InvalidWebhookSource), writeKey)
+		atomic.AddUint64(&webhook.ackCount, 1)
 		return
 	}
 
@@ -108,6 +120,7 @@ func (webhook *webhookHandleT) batchHandler(w http.ResponseWriter, r *http.Reque
 	//Wait for batcher process to be done
 	errorMessage := <-done
 	atomic.AddUint64(&webhook.gwHandle.ackCount, 1)
+	atomic.AddUint64(&webhook.ackCount, 1)
 	webhook.gwHandle.trackRequestMetrics(errorMessage)
 	if errorMessage != "" {
 		logger.Debug(errorMessage)
@@ -144,8 +157,8 @@ func (webhook *webhookHandleT) batcher(sourceDef string) {
 	}
 }
 
-func (webhook *webhookHandleT) batchTransform(process int) {
-	for breq := range webhook.batchRequestQ {
+func (bt *batchWebhookTransformerT) batchTransform() {
+	for breq := range bt.webhook.batchRequestQ {
 		payloadArr := [][]byte{}
 		webRequests := []*webhookT{}
 		for _, req := range breq.batchRequest {
@@ -165,17 +178,18 @@ func (webhook *webhookHandleT) batchTransform(process int) {
 			continue
 		}
 
-		// stats
-		webhook.perfStats.Start()
-		webhook.sourceStats[breq.sourceType].numEvents.Count(len(payloadArr))
-		webhook.sourceStats[breq.sourceType].sourceTransform.Start()
-
-		batchResponse := webhook.transform(payloadArr, breq.sourceType)
+		if _, ok := bt.stats.sourceStats[breq.sourceType]; !ok {
+			bt.stats.sourceStats[breq.sourceType] = newWebhookStat(breq.sourceType)
+		}
 
 		// stats
-		webhook.sourceStats[breq.sourceType].sourceTransform.End()
-		webhook.perfStats.End(len(payloadArr))
-		webhook.perfStats.Print()
+		bt.stats.sourceStats[breq.sourceType].numEvents.Count(len(payloadArr))
+		bt.stats.sourceStats[breq.sourceType].sourceTransform.Start()
+
+		batchResponse := bt.transform(payloadArr, breq.sourceType)
+
+		// stats
+		bt.stats.sourceStats[breq.sourceType].sourceTransform.End()
 
 		if batchResponse.batchError != nil {
 			for _, req := range breq.batchRequest {
@@ -185,10 +199,10 @@ func (webhook *webhookHandleT) batchTransform(process int) {
 		}
 
 		if len(batchResponse.responses) != len(payloadArr) {
-			panic("webhook.transform() response events size does not equal sent events size")
+			panic("webhook batchtransform response events size does not equal sent events size")
 		}
 
-		webhook.sourceStats[breq.sourceType].numOutputEvents.Count(len(batchResponse.responses))
+		bt.stats.sourceStats[breq.sourceType].numOutputEvents.Count(len(batchResponse.responses))
 
 		for idx, resp := range batchResponse.responses {
 			webRequest := webRequests[idx]
@@ -198,7 +212,7 @@ func (webhook *webhookHandleT) batchTransform(process int) {
 				continue
 			}
 			rruntime.Go(func() {
-				webhook.enqueueToWebRequestQ(webRequest, output)
+				bt.webhook.enqueueToWebRequestQ(webRequest, output)
 			})
 		}
 	}
@@ -222,22 +236,34 @@ func (webhook *webhookHandleT) enqueueToWebRequestQ(req *webhookT, payload []byt
 func (webhook *webhookHandleT) register(name string) {
 	if _, ok := webhook.requestQ[name]; !ok {
 		webhook.requestQ[name] = make(chan *webhookT)
-		webhook.sourceStats[name] = newWebhookStat(name)
+		// webhook.sourceStats[name] = newWebhookStat(name)
 		rruntime.Go(func() {
 			webhook.batcher(name)
 		})
 	}
 }
 
-func newWebhookStat(destID string) *WebhookStatT {
+func newWebhookStat(destID string) *webhookSourceStatT {
 	numEvents := stats.NewDestStat("webhook_num_events", stats.CountType, destID)
 	numOutputEvents := stats.NewDestStat("webhook_num_output_events", stats.CountType, destID)
 	sourceTransform := stats.NewDestStat("webhook_dest_transform", stats.TimerType, destID)
-	return &WebhookStatT{
+	return &webhookSourceStatT{
 		id:              destID,
 		numEvents:       numEvents,
 		numOutputEvents: numOutputEvents,
 		sourceTransform: sourceTransform,
+	}
+}
+
+func (webhook *webhookHandleT) printStats() {
+	var lastRecvCount, lastAckCount uint64
+	for {
+		time.Sleep(10 * time.Second)
+		if lastRecvCount != webhook.recvCount || lastAckCount != webhook.ackCount {
+			lastRecvCount = webhook.recvCount
+			lastAckCount = webhook.ackCount
+			logger.Info("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
+		}
 	}
 }
 
@@ -250,18 +276,22 @@ func (gateway *HandleT) setupWebhookHandler() (webhook *webhookHandleT) {
 	webhook.netClient.RetryWaitMax = webhookRetryWaitMax
 	webhook.netClient.RetryMax = webhookRetryMax
 	for i := 0; i < maxTransformerProcess; i++ {
-		j := i
 		rruntime.Go(func() {
-			webhook.batchTransform(j)
+			wStats := webhookStatsT{}
+			wStats.sentStat = stats.NewStat("webhook.transformer_sent", stats.CountType)
+			wStats.receivedStat = stats.NewStat("webhook.transformer_received", stats.CountType)
+			wStats.failedStat = stats.NewStat("webhook.transformer_failed", stats.CountType)
+			wStats.transformTimerStat = stats.NewStat("webhook.transformation_time", stats.TimerType)
+			wStats.sourceStats = make(map[string]*webhookSourceStatT)
+			bt := batchWebhookTransformerT{
+				webhook: webhook,
+				stats:   &wStats,
+			}
+			bt.batchTransform()
 		})
 	}
-
-	webhook.sentStat = stats.NewStat("webhook.transformer_sent", stats.CountType)
-	webhook.receivedStat = stats.NewStat("webhook.transformer_received", stats.CountType)
-	webhook.failedStat = stats.NewStat("webhook.transformer_failed", stats.CountType)
-	webhook.transformTimerStat = stats.NewStat("webhook.transformation_time", stats.TimerType)
-	webhook.perfStats = &misc.PerfStats{}
-	webhook.perfStats.Setup("Webhook")
-	webhook.sourceStats = make(map[string]*WebhookStatT)
+	rruntime.Go(func() {
+		webhook.printStats()
+	})
 	return webhook
 }
