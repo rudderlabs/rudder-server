@@ -8,13 +8,13 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-	"regexp"
 
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
@@ -470,7 +470,7 @@ func (gateway *HandleT) collectMetrics() {
 	}
 }
 
-func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType string) error{
+func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType string) error {
 	// add default fields to body
 	body := []byte(`{"channel": "web","integrations": {"All": true}}`)
 	currentTime := time.Now()
@@ -481,7 +481,7 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType st
 	if anonymousID, ok := qp["anonymousId"]; ok {
 		qp["anonymousId"][0] = regexp.MustCompile(`^"(.*)"$`).ReplaceAllString(anonymousID[0], `$1`)
 	}
-	
+
 	// add queryParams to body
 	for key := range qp {
 		body, _ = sjson.SetBytes(body, key, qp[key][0])
@@ -507,13 +507,13 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType st
 	}
 	// add body to request
 	r.Body = ioutil.NopCloser(bytes.NewReader(body))
-	return errors.New(Ok)
+	return nil
 }
 
 func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	if r.Method == http.MethodGet {
 		queryParams := r.URL.Query()
-		if writeKey, present := queryParams["writeKey"]; present && writeKey[0] != ""{
+		if writeKey, present := queryParams["writeKey"]; present && writeKey[0] != "" {
 			// make a new request
 			req, _ := http.NewRequest(http.MethodPost, "", nil)
 
@@ -526,7 +526,7 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 
 			// convert the pixel request(r) to a web request(req)
 			err := gateway.setWebPayload(req, queryParams, reqType)
-			if err.Error() != Ok {
+			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
