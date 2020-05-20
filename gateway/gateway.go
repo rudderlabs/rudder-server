@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"regexp"
 
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
@@ -33,7 +35,6 @@ import (
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
-	"regexp"
 )
 
 /*
@@ -469,7 +470,7 @@ func (gateway *HandleT) collectMetrics() {
 	}
 }
 
-func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType string) string{
+func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType string) error{
 	// add default fields to body
 	body := []byte(`{"channel": "web","userId": "","integrations": {"All": true}}`)
 	currentTime := time.Now()
@@ -499,20 +500,21 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType st
 	case "track":
 		if evName, ok := qp["event"]; ok {
 			if evName[0] == "" {
-				return "track: Mandatory field 'event' missing"
+				return errors.New("track: Mandatory field 'event' missing")
 			}
 			body, _ = sjson.SetBytes(body, "event", evName[0])
 		}
 	}
 	// add body to request
 	r.Body = ioutil.NopCloser(bytes.NewReader(body))
-	return Ok
+	return errors.New(Ok)
 }
 
 func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	if r.Method == http.MethodGet {
 		queryParams := r.URL.Query()
 		if writeKey, present := queryParams["writeKey"]; present && writeKey[0] != ""{
+			// make a new request
 			req, _ := http.NewRequest(http.MethodPost, "", nil)
 
 			// set basic auth header
@@ -522,10 +524,10 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 			// set X-Forwarded-For header
 			req.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
 
-			// get web payload
+			// convert the pixel request(r) to a web request(req)
 			err := gateway.setWebPayload(req, queryParams, reqType)
-			if err != Ok {
-				http.Error(w, err, http.StatusBadRequest)
+			if err.Error() != Ok {
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 
