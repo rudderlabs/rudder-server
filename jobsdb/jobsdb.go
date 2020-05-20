@@ -134,6 +134,7 @@ type HandleT struct {
 	isStatDropDSPeriodInitialized bool
 	jobsdbQueryTimeStat           *stats.RudderStats
 	migrationState                MigrationState
+	migrationMode                 string
 }
 
 //The struct which is written to the journal
@@ -307,9 +308,10 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration) {
+func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string) {
 
 	var err error
+	jd.migrationMode = migrationMode
 	psqlInfo := GetConnectionString()
 	jd.assert(tablePrefix != "", "tablePrefix received is empty")
 	jd.tablePrefix = tablePrefix
@@ -739,7 +741,9 @@ func (jd *HandleT) computeNewIdxForAppend() string {
 }
 
 func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataSetT) string {
+	logger.Infof("newDSType : %s, insertBeforeDS : %v", newDSType, insertBeforeDS)
 	dList := jd.getDSList(true)
+	logger.Infof("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
 	newDSIdx := ""
 	jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
 	for idx, ds := range dList {
@@ -750,9 +754,11 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 				levelPreVals []int
 			)
 			if idx == 0 && newDSType == insertForImport {
+				logger.Infof("idx = 0 case with insertForImport and ds at idx0 is %v", ds)
 				levelsPre = 1
-				levelPreVals = []int{0}
+				levelPreVals = []int{levelVals[0] - 1}
 			} else {
+				logger.Infof("ds to insert before found in dList is %v", ds)
 				//We never insert before the first element
 				jd.assert(idx > 0, fmt.Sprintf("idx: %d <= 0", idx))
 				levelsPre, levelPreVals = jd.mapDSToLevel(dList[idx-1])
@@ -787,6 +793,7 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 				jd.assert(levelVals[1] == levelPreVals[1]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
 				newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], levelPreVals[2]+1)
 			} else {
+				logger.Infof("Unhandled scenario. levelsPre : %v and levels : %v", levelsPre, levels)
 				jd.assert(false, fmt.Sprintf("Unexpected insert between %s and %s", dList[idx-1].Index, ds.Index))
 			}
 		}
@@ -1605,9 +1612,13 @@ func (jd *HandleT) mainCheckLoop() {
 		//TODO need to put a better condition to check if migration is in progess.
 		//jd.migrationState.dsForImport.Index: this gets set only upon import request from export node.
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
-		if misc.GetMigrationMode() != "" {
+		logger.Infof("[[ MainCheckLoop ]]: migration mode = %s", jd.migrationMode)
+		if jd.migrationMode != "" {
+			logger.Infof("[[ MainCheckLoop ]]: migration mode = %s is non empty so skipping internal migrations", jd.migrationMode)
 			continue
 		}
+
+		logger.Infof("[[ MainCheckLoop ]]: This shouldn't be logged in multi-node migration mode")
 
 		//Take the lock and run actual migration
 		jd.dsMigrationLock.Lock()
@@ -2186,6 +2197,8 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		var importDest dataSetT
 		json.Unmarshal(opPayload, &importDest)
 		jd.dropDS(importDest, true)
+		checkPoint := jd.GetSetupCheckpoint(ImportOp)
+		jd.deleteCheckPoint(checkPoint)
 		undoOp = true
 	case postMigrateDSOperation:
 		//Some of the source datasets would have been

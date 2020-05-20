@@ -56,6 +56,13 @@ func (jd *HandleT) Checkpoint(migrationEvent *MigrationEventT) int64 {
 	return jd.CheckpointInTxn(nil, migrationEvent)
 }
 
+func (jd *HandleT) deleteCheckpoint(migrationEvent *MigrationEventT) {
+	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE id = %s`, migrationEvent.ID)
+	stmt, err := jd.dbHandle.Prepare(sqlStatement)
+	_, err = stmt.Exec()
+	jd.assertError(err)
+}
+
 //CheckpointInTxn writes a migration event if id is passed as 0. Else it will update status and start_sequence
 // If txn is passed, it will run the statement in that txn, otherwise it will execute without a transaction
 func (jd *HandleT) CheckpointInTxn(txn *sql.Tx, migrationEvent *MigrationEventT) int64 {
@@ -80,6 +87,7 @@ func (jd *HandleT) CheckpointInTxn(txn *sql.Tx, migrationEvent *MigrationEventT)
 		stmt *sql.Stmt
 		err  error
 	)
+	logger.Infof("Checkpointing with query : %s with migrationEvent %+v", sqlStatement, migrationEvent)
 	if txn != nil {
 		stmt, err = txn.Prepare(sqlStatement)
 	} else {
