@@ -4,13 +4,6 @@ phases:
   install:
     runtime-versions:
       golang: 1.13
-    commands: 
-      - git init
-      - git remote add origin git@github.com:rudderlabs/rudder-server.git
-      - git fetch
-      - git checkout -t origin/master
-      - git submodule init
-      - git submodule update --recursive
   pre_build:
     commands:
       - docker login --username rudderlabs --password $DOCKERHUB_PASSWORD
@@ -24,15 +17,11 @@ phases:
       - echo build Docker image on `date`
       - docker build -t rudderlabs/develop-rudder-server:$VERSION -f build/Dockerfile-aws .
 
-      - sed -i -e 's/^CONFIG_BACKEND_URL=.*$/CONFIG_BACKEND_URL=https:\/\/api.rudderlabs.com/' build/docker.env
-      - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/config_overrides.toml > tests/e2e/config.toml
-      - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' build/docker.env
-      - cat build/docker.env
-      - cat tests/e2e/config.toml
-      - docker-compose -f build/docker-compose.codebuild-integration-tests.yml up -d
-      - docker-compose -f build/docker-compose.codebuild-integration-tests.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e"
+      - mkdir /app
+      - cd /app
+      - GO111MODULE=on go get github.com/onsi/ginkgo/ginkgo
+      - ginkgo --randomizeAllSpecs -p --skipPackage=tests ./...
 
-      - docker-compose -f build/docker-compose.codebuild-unit-tests.yml up -d
   post_build:
     commands:
       - echo build Docker image complete `date`
