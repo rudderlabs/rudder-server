@@ -64,7 +64,6 @@ var (
 	enableDedup                               bool
 	enableRateLimit                           bool
 	dedupWindow, diagnosisTickerTime          time.Duration
-	webhookSources                            []string
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -542,7 +541,7 @@ func (gateway *HandleT) backendConfigSubscriber() {
 				enabledWriteKeysSourceMap[source.WriteKey] = source.ID
 				enabledWriteKeySourceDefMap[source.WriteKey] = source.SourceDefinition.Name
 			}
-			if misc.ContainsString(webhookSources, source.SourceDefinition.Name) {
+			if source.SourceDefinition.Category == "webhook" {
 				gateway.webhookHandler.register(source.SourceDefinition.Name)
 			}
 		}
