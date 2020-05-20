@@ -12,7 +12,6 @@ phases:
       - git submodule init
       - git submodule update --recursive
   pre_build:
-  pre_build:
     commands:
       - docker login --username rudderlabs --password $DOCKERHUB_PASSWORD
   build:
