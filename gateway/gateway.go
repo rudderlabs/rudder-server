@@ -472,7 +472,7 @@ func (gateway *HandleT) collectMetrics() {
 
 func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType string) error{
 	// add default fields to body
-	body := []byte(`{"channel": "web","userId": "","integrations": {"All": true}}`)
+	body := []byte(`{"channel": "web","integrations": {"All": true}}`)
 	currentTime := time.Now()
 	body, _ = sjson.SetBytes(body, "originalTimestamp", currentTime)
 	body, _ = sjson.SetBytes(body, "sentAt", currentTime)
