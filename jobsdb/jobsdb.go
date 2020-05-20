@@ -2198,7 +2198,7 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		json.Unmarshal(opPayload, &importDest)
 		jd.dropDS(importDest, true)
 		checkPoint := jd.GetSetupCheckpoint(ImportOp)
-		jd.deleteCheckPoint(checkPoint)
+		jd.DeleteCheckpoint(checkPoint)
 		undoOp = true
 	case postMigrateDSOperation:
 		//Some of the source datasets would have been
