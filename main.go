@@ -16,10 +16,10 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 
-	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -92,7 +92,7 @@ func readIOforResume(router router.HandleT) {
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	// dstToWhRouter := make(map[string]*warehouse.HandleT)
@@ -216,7 +216,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		var gateway gateway.HandleT
 		var rateLimiter ratelimiter.HandleT
 		rateLimiter.SetUp()
-		gateway.Setup(&gatewayDB, &rateLimiter, clearDB)
+		gateway.Setup(backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, stats.DefaultStats, clearDB)
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
@@ -301,7 +301,6 @@ func main() {
 		printVersion()
 		return
 	}
-
 	application = app.New(options)
 
 	http.HandleFunc("/version", versionHandler)
@@ -313,7 +312,6 @@ func main() {
 	go func() {
 		<-c
 		application.Stop()
-
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
 			logger.Log.Sync()

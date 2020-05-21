@@ -12,6 +12,7 @@ import (
 
 //MultiWorkspaceConfig is a struct to hold variables necessary for supporting multiple workspaces.
 type MultiWorkspaceConfig struct {
+	CommonBackendConfig
 	writeKeyToWorkspaceIDMap  map[string]string
 	workspaceWriteKeysMapLock sync.RWMutex
 }

@@ -102,6 +102,9 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) (
 
 // canStartUpload indicates if a upload can be started now for the warehouse based on its configured schedule
 func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
+	if warehouseSyncFreqIgnore {
+		return !uploadFrequencyExceeded(warehouse, "")
+	}
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
 	if syncFrequency != "" && syncStartAt != "" {

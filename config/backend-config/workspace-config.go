@@ -10,6 +10,7 @@ import (
 )
 
 type WorkspaceConfig struct {
+	CommonBackendConfig
 }
 
 func (workspaceConfig *WorkspaceConfig) SetUp() {

@@ -2,6 +2,7 @@
 rudder-server
 .env
 .vscode
+*.coverprofile
 runtime.log
 dist/*
 workspaceConfig.json
@@ -9,3 +10,4 @@ workspaceConfig.json
 imports/enterprise.go
 enterprise
 *.coverprofile
+junit*.xml

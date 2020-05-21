@@ -163,64 +163,7 @@ var ScreenPayload = `
 }
 `
 
-var BQBatchPayload = `
-{
-	"batch": [
-		{
-		"anonymousId": "49e4bdd1c280bc00",
-		"messageId": "msgasdfadsf2er34adfsdf1",
-		"channel": "android-sdk",
-		"destination_props": {
-			"AF": {
-			"af_uid": "1566363489499-3377330514807116178"
-			}
-		},
-		"context": {
-			"app": {
-			"build": "1",
-			"name": "SELECT",
-			"namespace": "com.rudderlabs.android.sdk",
-			"version": "1.0"
-			},
-			"device": {
-			"id": "49e4bdd1c280bc00",
-			"manufacturer": "Google",
-			"model": "Omega",
-			"name": "generic_x86"
-			},
-			"locale": "en-US",
-			"network": {
-			"carrier": "Nokia"
-			},
-			"screen": {
-			"density": 420,
-			"height": 1794,
-			"width": 1080
-			},
-			"traits": {
-			"anonymousId": "49e4bdd1c280bc00"
-			},
-			"user_agent": "Black Mamba"
-		},
-		"event": "JOIN",
-		"integrations": {
-			"All": true
-		},
-		"properties": {
-			"MERGE": "LIMIT",
-			"NATURAL": "TRUE",
-			"HAVING": "BETWEEN",
-			"WHERE":"HERE"
-		},
-		"type": "track",
-		"originalTimestamp": "2019-08-12T05:08:30.909Z",
-		"sentAt": "2019-08-12T05:08:30.909Z"
-		}
-	]
-}
-`
-
-var DiffStringFormatBatchPayload = `
+var WarehouseBatchPayload = `
 {
 	"batch": [
 		{
@@ -267,7 +210,11 @@ var DiffStringFormatBatchPayload = `
 			"label": "Demo Label",
 			"category": "Demo Category",
 			"value": 5,
-			"text": "Ken\"ny\"s iPh'o\"ne5\",6"
+			"property1":"test",
+			"property2":"test",
+			"property3":"test",
+			"property4":"test",
+			"property5":"test"
 		},
 		"type": "track",
 		"originalTimestamp": "2019-08-12T05:08:30.909Z",
@@ -276,215 +223,467 @@ var DiffStringFormatBatchPayload = `
 	]
 }
 `
-var DTBatchPayload = `
-{
-	"batch": [
-		{
-		"anonymousId": "49e4bdd1c280bc00",
-		"messageId": "msgasdfadsf2er34adfsdf1",
-		"channel": "android-sdk",
-		"destination_props": {
-			"AF": {
-			"af_uid": "1566363489499-3377330514807116178"
-			}
-		},
-		"context": {
-			"app": {
-			"build": "1",
-			"name": "RudderAndroidClient",
-			"namespace": "com.rudderlabs.android.sdk",
-			"version": "1.0"
-			},
-			"device": {
-			"id": "49e4bdd1c280bc00",
-			"manufacturer": "Google",
-			"model": "Android SDK built for x86",
-			"name": "generic_x86"
-			},
-			"locale": "en-US",
-			"network": {
-			"carrier": "Android"
-			},
-			"screen": {
-			"density": 420,
-			"height": 1794,
-			"width": 1080
-			},
-			"traits": {
-			"anonymousId": "49e4bdd1c280bc00"
-			},
-			"user_agent": "Dalvik/2.1.0 (Linux; U; An  droid 9; Android SDK built for x86 Build/PSR1.180720.075)"
-		},
-		"event": "Demo Track",
-		"integrations": {
-			"All": true
-		},
-		"properties": {
-			"label": "Demo Label",
-			"category": "Demo Category",
-			"value": 5
-		},
-		"type": "track",
-		"originalTimestamp": "2019-08-12T05:08:30.909Z",
-		"sentAt": "2019-08-12T05:08:30.909Z"
-		},
-		{
-		"anonymousId": "49e4bdd1c280bc00",
-		"messageId": "msgasdfadsf2er34adfsdf1",
-		"channel": "android-sdk",
-		"destination_props": {
-			"AF": {
-			"af_uid": "1566363489499-3377330514807116178"
-			}
-		},
-		"context": {
-			"app": {
-			"build": 0.9.8,
-			"name": "RudderAndroidClient",
-			"namespace": "com.rudderlabs.android.sdk",
-			"version": "1.0"
-			},
-			"device": {
-			"id": "49e4bdd1c280bc00",
-			"manufacturer": "Google",
-			"model": "Android SDK built for x86",
-			"name": "generic_x86"
-			},
-			"locale": "en-US",
-			"network": {
-			"carrier": "Android"
-			},
-			"screen": {
-			"density": 420,
-			"height": 1794,
-			"width": 1080
-			},
-			"traits": {
-			"anonymousId": "49e4bdd1c280bc00"
-			},
-			"user_agent": 1
-		},
-		"event": "Demo Track",
-		"integrations": {
-			"All": true
-		},
-		"properties": {
-			"label": "Demo Label",
-			"category": "Demo Category",
-			"value": 5.09
-		},
-		"type": "track",
-		"originalTimestamp": "2019-08-12T05:08:30.909Z",
-		"sentAt": "2019-08-12T05:08:30.909Z"
-		},{
-		"anonymousId": "49e4bdd1c280bc00",
-		"messageId": "msgasdfadsf2er34adfsdf1",
-		"channel": "android-sdk",
-		"destination_props": {
-			"AF": {
-			"af_uid": "1566363489499-3377330514807116178"
-			}
-		},
-		"context": {
-			"app": {
-			"build": "1",
-			"name": "RudderAndroidClient",
-			"namespace": "com.rudderlabs.android.sdk",
-			"version": 1.0
-			},
-			"device": {
-			"id": "49e4bdd1c280bc00",
-			"manufacturer": "Google",
-			"model": "Android SDK built for x86",
-			"name": "generic_x86"
-			},
-			"locale": "en-US",
-			"network": {
-			"carrier": "Android"
-			},
-			"screen": {
-			"density": 420,
-			"height": "1794",
-			"width": 1080
-			},
-			"traits": {
-			"anonymousId": "49e4bdd1c280bc00"
-			},
-			"user_agent": "Dalvik/2.1.0 (Linux; U; An  droid 9; Android SDK built for x86 Build/PSR1.180720.075)"
-		},
-		"event": "Demo Track",
-		"integrations": {
-			"All": true
-		},
-		"properties": {
-			"label": "Demo Label",
-			"category": "Demo Category",
-			"value": 5.0
-		},
-		"type": "track",
-		"originalTimestamp": "2019-08-12T05:08:30.909Z",
-		"sentAt": "2019-08-12T05:08:30.909Z"
-		}
 
-	]
+
+var RedshiftSchema= map[string]map[string]string {
+  "ginkgo": {
+    "id": "string",
+    "event": "string",
+    "label": "string",
+    "value": "int",
+    "channel": "string",
+    "sent_at": "datetime",
+    "uuid_ts": "datetime",
+    "category": "string",
+    "property1": "string",
+    "property2": "string",
+    "property3": "string",
+    "property4": "string",
+    "property5": "string",
+    "_timestamp": "datetime",
+    "context_ip": "string",
+    "event_text": "string",
+    "received_at": "datetime",
+    "anonymous_id": "string",
+    "context_locale": "string",
+    "context_app_name": "string",
+    "context_app_build": "string",
+    "context_device_id": "string",
+    "context_user_agent": "string",
+    "original_timestamp": "datetime",
+    "context_app_version": "string",
+    "context_device_name": "string",
+    "context_device_model": "string",
+    "context_screen_width": "int",
+    "context_app_namespace": "string",
+    "context_screen_height": "int",
+    "context_screen_density": "int",
+    "context_network_carrier": "string",
+    "context_traits_anonymousId": "string",
+    "context_device_manufacturer": "string",
+  },
+  "tracks": {
+    "id": "string",
+    "event": "string",
+    "channel": "string",
+    "sent_at": "datetime",
+    "uuid_ts": "datetime",
+    "_timestamp": "datetime",
+    "context_ip": "string",
+    "event_text": "string",
+    "received_at": "datetime",
+    "anonymous_id": "string",
+    "context_locale": "string",
+    "context_app_name": "string",
+    "context_app_build": "string",
+    "context_device_id": "string",
+    "context_user_agent": "string",
+    "original_timestamp": "datetime",
+    "context_app_version": "string",
+    "context_device_name": "string",
+    "context_device_model": "string",
+    "context_screen_width": "int",
+    "context_app_namespace": "string",
+    "context_screen_height": "int",
+    "context_screen_density": "int",
+    "context_network_carrier": "string",
+    "context_traits_anonymousId": "string",
+    "context_device_manufacturer": "string",
+  },
+  "rudder_discards": {
+    "row_id": "string",
+    "uuid_ts": "datetime",
+    "table_name": "string",
+    "column_name": "string",
+    "received_at": "datetime",
+    "column_value": "string",
+  },
 }
-`
-var DTSchema = map[string]map[string]string{
+var ReservedKeywordsRedshiftSchema= map[string]map[string]string {
 	"ginkgo": {
-		"id":                          "string",
-		"event":                       "string",
-		"label":                       "string",
-		"value":                       "int",
-		"sent_at":                     "datetime",
-		"uuid_ts":                     "datetime",
-		"category":                    "string",
-		"timestamp":                   "datetime",
-		"context_ip":                  "string",
-		"event_text":                  "string",
-		"received_at":                 "datetime",
-		"anonymous_id":                "string",
-		"context_locale":              "string",
-		"context_app_name":            "string",
-		"context_app_build":           "string",
-		"context_device_id":           "string",
-		"context_user_agent":          "string",
-		"original_timestamp":          "datetime",
-		"context_app_version":         "string",
-		"context_device_name":         "string",
-		"context_device_model":        "string",
-		"context_screen_width":        "int",
-		"context_app_namespace":       "string",
-		"context_screen_height":       "int",
-		"context_screen_density":      "int",
-		"context_network_carrier":     "string",
-		"context_traits_anonymousId":  "string",
+		"id": "string",
+		"_from": "string",
+		"_join": "string",
+		"event": "string",
+		"label": "string",
+		"value": "int",
+		"_order": "string",
+		"_where": "string",
+		"_select": "string",
+		"channel": "string",
+		"sent_at": "datetime",
+		"uuid_ts": "datetime",
+		"category": "string",
+		"property1": "string",
+		"property2": "string",
+		"property3": "string",
+		"property4": "string",
+		"property5": "string",
+		"_timestamp": "datetime",
+		"context_ip": "string",
+		"event_text": "string",
+		"received_at": "datetime",
+		"anonymous_id": "string",
+		"context_locale": "string",
+		"context_app_name": "string",
+		"context_app_build": "string",
+		"context_device_id": "string",
+		"context_user_agent": "string",
+		"original_timestamp": "datetime",
+		"context_app_version": "string",
+		"context_device_name": "string",
+		"context_device_model": "string",
+		"context_screen_width": "int",
+		"context_app_namespace": "string",
+		"context_screen_height": "int",
+		"context_screen_density": "int",
+		"context_network_carrier": "string",
+		"context_traits_anonymousId": "string",
 		"context_device_manufacturer": "string",
 	},
 	"tracks": {
-		"id":                          "string",
-		"event":                       "string",
-		"sent_at":                     "datetime",
-		"uuid_ts":                     "datetime",
-		"timestamp":                   "datetime",
-		"context_ip":                  "string",
-		"event_text":                  "string",
-		"received_at":                 "datetime",
-		"anonymous_id":                "string",
-		"context_locale":              "string",
-		"context_app_name":            "string",
-		"context_app_build":           "string",
-		"context_device_id":           "string",
-		"context_user_agent":          "string",
-		"original_timestamp":          "datetime",
-		"context_app_version":         "string",
-		"context_device_name":         "string",
-		"context_device_model":        "string",
-		"context_screen_width":        "int",
-		"context_app_namespace":       "string",
-		"context_screen_height":       "int",
-		"context_screen_density":      "int",
-		"context_network_carrier":     "string",
-		"context_traits_anonymousId":  "string",
+		"id": "string",
+		"event": "string",
+		"channel": "string",
+		"sent_at": "datetime",
+		"uuid_ts": "datetime",
+		"_timestamp": "datetime",
+		"context_ip": "string",
+		"event_text": "string",
+		"received_at": "datetime",
+		"anonymous_id": "string",
+		"context_locale": "string",
+		"context_app_name": "string",
+		"context_app_build": "string",
+		"context_device_id": "string",
+		"context_user_agent": "string",
+		"original_timestamp": "datetime",
+		"context_app_version": "string",
+		"context_device_name": "string",
+		"context_device_model": "string",
+		"context_screen_width": "int",
+		"context_app_namespace": "string",
+		"context_screen_height": "int",
+		"context_screen_density": "int",
+		"context_network_carrier": "string",
+		"context_traits_anonymousId": "string",
 		"context_device_manufacturer": "string",
 	},
+	"rudder_discards": {
+		"row_id": "string",
+		"uuid_ts": "datetime",
+		"table_name": "string",
+		"column_name": "string",
+		"received_at": "datetime",
+		"column_value": "string",
+	},
 }
+
+var BigQuerySchema = map[string]map[string]string {
+  "ginkgo": {
+    "id": "string",
+    "event": "string",
+    "label": "string",
+    "value": "int",
+    "channel": "string",
+    "sent_at": "datetime",
+    "uuid_ts": "datetime",
+    "category": "string",
+    "property1": "string",
+    "property2": "string",
+    "property3": "string",
+    "property4": "string",
+    "property5": "string",
+    "timestamp": "datetime",
+    "context_ip": "string",
+    "event_text": "string",
+    "received_at": "datetime",
+    "anonymous_id": "string",
+    "context_locale": "string",
+    "context_app_name": "string",
+    "context_app_build": "string",
+    "context_device_id": "string",
+    "context_user_agent": "string",
+    "original_timestamp": "datetime",
+    "context_app_version": "string",
+    "context_device_name": "string",
+    "context_device_model": "string",
+    "context_screen_width": "int",
+    "context_app_namespace": "string",
+    "context_screen_height": "int",
+    "context_screen_density": "int",
+    "context_network_carrier": "string",
+    "context_traits_anonymousId": "string",
+    "context_device_manufacturer": "string",
+  },
+  "tracks": {
+    "id": "string",
+    "event": "string",
+    "channel": "string",
+    "sent_at": "datetime",
+    "uuid_ts": "datetime",
+    "timestamp": "datetime",
+    "context_ip": "string",
+    "event_text": "string",
+    "received_at": "datetime",
+    "anonymous_id": "string",
+    "context_locale": "string",
+    "context_app_name": "string",
+    "context_app_build": "string",
+    "context_device_id": "string",
+    "context_user_agent": "string",
+    "original_timestamp": "datetime",
+    "context_app_version": "string",
+    "context_device_name": "string",
+    "context_device_model": "string",
+    "context_screen_width": "int",
+    "context_app_namespace": "string",
+    "context_screen_height": "int",
+    "context_screen_density": "int",
+    "context_network_carrier": "string",
+    "context_traits_anonymousId": "string",
+    "context_device_manufacturer": "string",
+  },
+  "rudder_discards": {
+    "row_id": "string",
+    "uuid_ts": "datetime",
+    "table_name": "string",
+    "column_name": "string",
+    "received_at": "datetime",
+    "column_value": "string",
+  },
+}
+var ReserverKeyWordsBigQuerySchema = map[string]map[string]string {
+	"ginkgo": {
+		"id": "string",
+		"_from": "string",
+		"_join": "string",
+		"event": "string",
+		"label": "string",
+		"value": "int",
+		"_order": "string",
+		"_where": "string",
+		"_select": "string",
+		"channel": "string",
+		"sent_at": "datetime",
+		"uuid_ts": "datetime",
+		"category": "string",
+		"property1": "string",
+		"property2": "string",
+		"property3": "string",
+		"property4": "string",
+		"property5": "string",
+		"timestamp": "datetime",
+		"context_ip": "string",
+		"event_text": "string",
+		"received_at": "datetime",
+		"anonymous_id": "string",
+		"context_locale": "string",
+		"context_app_name": "string",
+		"context_app_build": "string",
+		"context_device_id": "string",
+		"context_user_agent": "string",
+		"original_timestamp": "datetime",
+		"context_app_version": "string",
+		"context_device_name": "string",
+		"context_device_model": "string",
+		"context_screen_width": "int",
+		"context_app_namespace": "string",
+		"context_screen_height": "int",
+		"context_screen_density": "int",
+		"context_network_carrier": "string",
+		"context_traits_anonymousId": "string",
+		"context_device_manufacturer": "string",
+	},
+	"tracks": {
+		"id": "string",
+		"event": "string",
+		"channel": "string",
+		"sent_at": "datetime",
+		"uuid_ts": "datetime",
+		"timestamp": "datetime",
+		"context_ip": "string",
+		"event_text": "string",
+		"received_at": "datetime",
+		"anonymous_id": "string",
+		"context_locale": "string",
+		"context_app_name": "string",
+		"context_app_build": "string",
+		"context_device_id": "string",
+		"context_user_agent": "string",
+		"original_timestamp": "datetime",
+		"context_app_version": "string",
+		"context_device_name": "string",
+		"context_device_model": "string",
+		"context_screen_width": "int",
+		"context_app_namespace": "string",
+		"context_screen_height": "int",
+		"context_screen_density": "int",
+		"context_network_carrier": "string",
+		"context_traits_anonymousId": "string",
+		"context_device_manufacturer": "string",
+	},
+	"rudder_discards": {
+		"row_id": "string",
+		"uuid_ts": "datetime",
+		"table_name": "string",
+		"column_name": "string",
+		"received_at": "datetime",
+		"column_value": "string",
+	},
+}
+
+var SnowflakeSchema = map[string]map[string]string {
+  "GINKGO": {
+    "ID": "string",
+    "EVENT": "string",
+    "LABEL": "string",
+    "VALUE": "int",
+    "CHANNEL": "string",
+    "SENT_AT": "datetime",
+    "UUID_TS": "datetime",
+    "CATEGORY": "string",
+    "PROPERTY1": "string",
+    "PROPERTY2": "string",
+    "PROPERTY3": "string",
+    "PROPERTY4": "string",
+    "PROPERTY5": "string",
+    "TIMESTAMP": "datetime",
+    "CONTEXT_IP": "string",
+    "EVENT_TEXT": "string",
+    "RECEIVED_AT": "datetime",
+    "ANONYMOUS_ID": "string",
+    "CONTEXT_LOCALE": "string",
+    "CONTEXT_APP_NAME": "string",
+    "CONTEXT_APP_BUILD": "string",
+    "CONTEXT_DEVICE_ID": "string",
+    "CONTEXT_USER_AGENT": "string",
+    "ORIGINAL_TIMESTAMP": "datetime",
+    "CONTEXT_APP_VERSION": "string",
+    "CONTEXT_DEVICE_NAME": "string",
+    "CONTEXT_DEVICE_MODEL": "string",
+    "CONTEXT_SCREEN_WIDTH": "int",
+    "CONTEXT_APP_NAMESPACE": "string",
+    "CONTEXT_SCREEN_HEIGHT": "int",
+    "CONTEXT_SCREEN_DENSITY": "int",
+    "CONTEXT_NETWORK_CARRIER": "string",
+    "CONTEXT_TRAITS_ANONYMOUSID": "string",
+    "CONTEXT_DEVICE_MANUFACTURER": "string",
+  },
+  "TRACKS": {
+    "ID": "string",
+    "EVENT": "string",
+    "CHANNEL": "string",
+    "SENT_AT": "datetime",
+    "UUID_TS": "datetime",
+    "TIMESTAMP": "datetime",
+    "CONTEXT_IP": "string",
+    "EVENT_TEXT": "string",
+    "RECEIVED_AT": "datetime",
+    "ANONYMOUS_ID": "string",
+    "CONTEXT_LOCALE": "string",
+    "CONTEXT_APP_NAME": "string",
+    "CONTEXT_APP_BUILD": "string",
+    "CONTEXT_DEVICE_ID": "string",
+    "CONTEXT_USER_AGENT": "string",
+    "ORIGINAL_TIMESTAMP": "datetime",
+    "CONTEXT_APP_VERSION": "string",
+    "CONTEXT_DEVICE_NAME": "string",
+    "CONTEXT_DEVICE_MODEL": "string",
+    "CONTEXT_SCREEN_WIDTH": "int",
+    "CONTEXT_APP_NAMESPACE": "string",
+    "CONTEXT_SCREEN_HEIGHT": "int",
+    "CONTEXT_SCREEN_DENSITY": "int",
+    "CONTEXT_NETWORK_CARRIER": "string",
+    "CONTEXT_TRAITS_ANONYMOUSID": "string",
+    "CONTEXT_DEVICE_MANUFACTURER": "string",
+  },
+  "RUDDER_DISCARDS": {
+    "ROW_ID": "string",
+    "UUID_TS": "datetime",
+    "TABLE_NAME": "string",
+    "COLUMN_NAME": "string",
+    "RECEIVED_AT": "datetime",
+    "COLUMN_VALUE": "string",
+  },
+}
+var ReservedKeywordsSnowflakeSchema = map[string]map[string]string {
+	"GINKGO": {
+		"ID": "string",
+		"EVENT": "string",
+		"LABEL": "string",
+		"VALUE": "int",
+		"_FROM": "string",
+		"_JOIN": "string",
+		"_ORDER": "string",
+		"_WHERE": "string",
+		"CHANNEL": "string",
+		"SENT_AT": "datetime",
+		"UUID_TS": "datetime",
+		"_SELECT": "string",
+		"CATEGORY": "string",
+		"PROPERTY1": "string",
+		"PROPERTY2": "string",
+		"PROPERTY3": "string",
+		"PROPERTY4": "string",
+		"PROPERTY5": "string",
+		"TIMESTAMP": "datetime",
+		"CONTEXT_IP": "string",
+		"EVENT_TEXT": "string",
+		"RECEIVED_AT": "datetime",
+		"ANONYMOUS_ID": "string",
+		"CONTEXT_LOCALE": "string",
+		"CONTEXT_APP_NAME": "string",
+		"CONTEXT_APP_BUILD": "string",
+		"CONTEXT_DEVICE_ID": "string",
+		"CONTEXT_USER_AGENT": "string",
+		"ORIGINAL_TIMESTAMP": "datetime",
+		"CONTEXT_APP_VERSION": "string",
+		"CONTEXT_DEVICE_NAME": "string",
+		"CONTEXT_DEVICE_MODEL": "string",
+		"CONTEXT_SCREEN_WIDTH": "int",
+		"CONTEXT_APP_NAMESPACE": "string",
+		"CONTEXT_SCREEN_HEIGHT": "int",
+		"CONTEXT_SCREEN_DENSITY": "int",
+		"CONTEXT_NETWORK_CARRIER": "string",
+		"CONTEXT_TRAITS_ANONYMOUSID": "string",
+		"CONTEXT_DEVICE_MANUFACTURER": "string",
+	},
+	"TRACKS": {
+		"ID": "string",
+		"EVENT": "string",
+		"CHANNEL": "string",
+		"SENT_AT": "datetime",
+		"UUID_TS": "datetime",
+		"TIMESTAMP": "datetime",
+		"CONTEXT_IP": "string",
+		"EVENT_TEXT": "string",
+		"RECEIVED_AT": "datetime",
+		"ANONYMOUS_ID": "string",
+		"CONTEXT_LOCALE": "string",
+		"CONTEXT_APP_NAME": "string",
+		"CONTEXT_APP_BUILD": "string",
+		"CONTEXT_DEVICE_ID": "string",
+		"CONTEXT_USER_AGENT": "string",
+		"ORIGINAL_TIMESTAMP": "datetime",
+		"CONTEXT_APP_VERSION": "string",
+		"CONTEXT_DEVICE_NAME": "string",
+		"CONTEXT_DEVICE_MODEL": "string",
+		"CONTEXT_SCREEN_WIDTH": "int",
+		"CONTEXT_APP_NAMESPACE": "string",
+		"CONTEXT_SCREEN_HEIGHT": "int",
+		"CONTEXT_SCREEN_DENSITY": "int",
+		"CONTEXT_NETWORK_CARRIER": "string",
+		"CONTEXT_TRAITS_ANONYMOUSID": "string",
+		"CONTEXT_DEVICE_MANUFACTURER": "string",
+	},
+	"RUDDER_DISCARDS": {
+		"ROW_ID": "string",
+		"UUID_TS": "datetime",
+		"TABLE_NAME": "string",
+		"COLUMN_NAME": "string",
+		"RECEIVED_AT": "datetime",
+		"COLUMN_VALUE": "string",
+	},
+}
+
