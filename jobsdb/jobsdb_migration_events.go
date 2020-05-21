@@ -13,7 +13,7 @@ import (
 )
 
 //MigrationEventT captures an event of export/import to recover from incase of a crash during migration
-type MigrationEventT struct {
+type MigrationEventT struct { //TODO: Rename it to migrationCheckpoint
 	ID            int64           `json:"ID"`
 	MigrationType string          `json:"MigrationType"` //ENUM : export, import, acceptNewEvents
 	FromNode      string          `json:"FromNode"`
@@ -25,8 +25,8 @@ type MigrationEventT struct {
 	TimeStamp     time.Time       `json:"TimeStamp"`
 }
 
-//ENUM Values for MigrationType
-const (
+//ENUM Values for MigrationType 
+const (//TODO: use a custom type
 	ExportOp          = "export"
 	ImportOp          = "import"
 	AcceptNewEventsOp = "acceptNewEvents"

@@ -100,7 +100,7 @@ type SQLJobStatusT struct {
 	ErrorResponse sql.NullString
 }
 
-func (jd *HandleT) getNonMigratedJobsAndMarkMigratingDS(ds dataSetT, count int) ([]*JobT, error) {
+func (jd *HandleT) getNonMigratedJobsAndMarkMigratingDS(ds dataSetT, count int) ([]*JobT, error) { //TODO: make it fromDS for readability
 	queryStat := stats.NewJobsDBStat("get_for_export_and_update_status_ds", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
