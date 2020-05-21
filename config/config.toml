@@ -52,7 +52,7 @@ CustomVal = "GW"
 maxBatchSize = 32
 batchTimeoutInMS = 20
 maxReqSizeInKB = 100000
-enableDedup = false
+enableDedup = true
 enableRateLimit = false
 dedupWindowInS = 86400
 
