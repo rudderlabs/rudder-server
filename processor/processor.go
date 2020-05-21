@@ -195,6 +195,7 @@ var (
 	rawDataDestinations                 []string
 	configSubscriberLock                sync.RWMutex
 	isReplayServer                      bool
+	customDestinations                  []string
 )
 
 func loadConfig() {
@@ -207,6 +208,7 @@ func loadConfig() {
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	processSessions = config.GetBool("Processor.processSessions", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE"}
+	customDestinations = []string{"KAFKA", "KINESIS"}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }
@@ -651,6 +653,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						}
 						shallowEventCopy["message"] = singularEventMap
 						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
+
+						/* Stream destinations does not need config in transformer. As the Kafka destination config
+						holds the ca-certificate and it depends on user input, it may happen that they provide entire
+						certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
+						it may result into payload larger than accepted by transformer. So, discarding destination config from being
+						sent to transformer for such destination. */
+						if misc.ContainsString(customDestinations, destType) {
+							dest := shallowEventCopy["destination"].(backendconfig.DestinationT)
+							dest.Config = nil
+							shallowEventCopy["destination"] = dest
+						}
+
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
 
 						enhanceWithTimeFields(shallowEventCopy, singularEventMap, receivedAt)

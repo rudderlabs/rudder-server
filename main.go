@@ -4,14 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
-	"runtime/pprof"
 	"sync"
 	"syscall"
 	"time"
@@ -20,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -38,9 +37,13 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse"
+
+	// This is necessary for compatibility with enterprise features
+	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
 var (
+	application                      app.Interface
 	warehouseMode                    string
 	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
@@ -246,57 +249,22 @@ func main() {
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 
-	normalMode := flag.Bool("normal-mode", false, "a bool")
-	degradedMode := flag.Bool("degraded-mode", false, "a bool")
-	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
-
-	clearDB := flag.Bool("cleardb", false, "a bool")
-	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
-	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
-	versionFlag := flag.Bool("v", false, "Print the current version and exit")
-
-	flag.Parse()
-	if *versionFlag {
+	options := app.LoadOptions()
+	if options.VersionFlag {
 		printVersion()
 		return
 	}
+	application = app.New(options)
+
 	http.HandleFunc("/version", versionHandler)
 
-	var f *os.File
-	if *cpuprofile != "" {
-		var err error
-		f, err = os.Create(*cpuprofile)
-		if err != nil {
-			panic(err)
-		}
-		runtime.SetBlockProfileRate(1)
-		err = pprof.StartCPUProfile(f)
-		if err != nil {
-			panic(err)
-		}
-	}
+	application.Setup()
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		if *cpuprofile != "" {
-			logger.Info("Stopping CPU profile")
-			pprof.StopCPUProfile()
-			f.Close()
-		}
-		if *memprofile != "" {
-			f, err := os.Create(*memprofile)
-			if err != nil {
-				panic(err)
-			}
-			defer f.Close()
-			runtime.GC() // get up-to-date statistics
-			err = pprof.WriteHeapProfile(f)
-			if err != nil {
-				panic(err)
-			}
-		}
+		application.Stop()
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
 			logger.Log.Sync()
@@ -305,19 +273,9 @@ func main() {
 		os.Exit(1)
 	}()
 
-	serverMode := os.Getenv("RSERVER_MODE")
-
-	if serverMode == "normal" {
-		*normalMode = true
-	} else if serverMode == "degraded" {
-		*degradedMode = true
-	} else if serverMode == "maintenance" {
-		*maintenanceMode = true
-	}
-
 	if canStartServer() {
 		rruntime.Go(func() {
-			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+			startRudderCore(&options.ClearDB, options.NormalMode, options.DegradedMode, options.MaintenanceMode)
 		})
 	}
 
