@@ -20,14 +20,19 @@ import (
 //Structure which is used to pass message to the transformer workers
 type transformMessageT struct {
 	index int
-	data  interface{}
+	data  []transformerEventT
 	url   string
+}
+
+type transformedMessageT struct {
+	index int
+	data  []transformerResponseT
 }
 
 //HandleT is the handle for this class
 type transformerHandleT struct {
 	requestQ           chan *transformMessageT
-	responseQ          chan *transformMessageT
+	responseQ          chan *transformedMessageT
 	accessLock         sync.Mutex
 	perfStats          *misc.PerfStats
 	sentStat           stats.RudderStats
@@ -40,6 +45,11 @@ var (
 	maxChanSize, numTransformWorker, maxRetry int
 	retrySleep                                time.Duration
 )
+
+type transformerResponseT struct {
+	Output   map[string]interface{} `json:"output"`
+	Metadata metadataT              `json:"metadata"`
+}
 
 func (trans *transformerHandleT) transformWorker() {
 	tr := &http.Transport{}
@@ -88,13 +98,13 @@ func (trans *transformerHandleT) transformWorker() {
 			logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
 		}
 
-		var toSendData interface{}
+		var transformerResponses []transformerResponseT
 		if resp.StatusCode == http.StatusOK {
 			respData, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
 				panic(err)
 			}
-			err = json.Unmarshal(respData, &toSendData)
+			err = json.Unmarshal(respData, &transformerResponses)
 			//This is returned by our JS engine so should  be parsable
 			//but still handling it
 			if err != nil {
@@ -105,14 +115,14 @@ func (trans *transformerHandleT) transformWorker() {
 		}
 		resp.Body.Close()
 
-		trans.responseQ <- &transformMessageT{data: toSendData, index: job.index}
+		trans.responseQ <- &transformedMessageT{data: transformerResponses, index: job.index}
 	}
 }
 
 //Setup initializes this class
 func (trans *transformerHandleT) Setup() {
 	trans.requestQ = make(chan *transformMessageT, maxChanSize)
-	trans.responseQ = make(chan *transformMessageT, maxChanSize)
+	trans.responseQ = make(chan *transformedMessageT, maxChanSize)
 	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
 	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
 	trans.failedStat = stats.NewStat("processor.transformer_failed", stats.CountType)
@@ -128,7 +138,7 @@ func (trans *transformerHandleT) Setup() {
 }
 
 type ResponseT struct {
-	Events  []interface{}
+	Events  []transformerResponseT
 	Success bool
 }
 
@@ -140,7 +150,7 @@ type ResponseT struct {
 //are big enough to saturate NodeJS. Right now the transformer
 //instance is shared between both user specific transformation
 //code and destination transformation code.
-func (trans *transformerHandleT) Transform(clientEvents []interface{},
+func (trans *transformerHandleT) Transform(clientEvents []transformerEventT,
 	url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT {
 
 	trans.accessLock.Lock()
@@ -148,7 +158,7 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 
 	trans.transformTimerStat.Start()
 
-	var transformResponse = make([]*transformMessageT, 0)
+	var transformResponse = make([]*transformedMessageT, 0)
 	//Enqueue all the jobs
 	inputIdx := 0
 	outputIdx := 0
@@ -157,13 +167,13 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 	resQ := trans.responseQ
 
 	trans.perfStats.Start()
-	var toSendData interface{}
+	var toSendData []transformerEventT
 
 	for {
 		//The channel is still live and the last batch has been sent
 		//Construct the next batch
 		if reqQ != nil && toSendData == nil {
-			clientBatch := make([]interface{}, 0)
+			clientBatch := make([]transformerEventT, 0)
 			batchCount := 0
 			for {
 				if (batchCount >= batchSize || inputIdx >= len(clientEvents)) && inputIdx != 0 {
@@ -172,11 +182,11 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 					if !breakIntoBatchWhenUserChanges || inputIdx >= len(clientEvents) {
 						break
 					}
-					prevUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx-1].(map[string]interface{})["message"])
+					prevUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx-1].Message)
 					if !ok {
 						panic(fmt.Errorf("GetAnonymousID failed"))
 					}
-					currentUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx].(map[string]interface{})["message"])
+					currentUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx].Message)
 					if !ok {
 						panic(fmt.Errorf("GetAnonymousID failed"))
 					}
@@ -233,35 +243,24 @@ func (trans *transformerHandleT) Transform(clientEvents []interface{},
 		panic(fmt.Errorf("transformResponse[len(transformResponse)-1].index:%d != len(clientEvents):%d", transformResponse[len(transformResponse)-1].index, len(clientEvents)))
 	}
 
-	outClientEvents := make([]interface{}, 0)
+	var outClientEvents []transformerResponseT
 
 	for _, resp := range transformResponse {
 		if resp.data == nil {
 			continue
 		}
-		respArray, ok := resp.data.([]interface{})
-		if !ok {
-			panic(fmt.Errorf("typecast of resp.data to []interface{} failed"))
-		}
+		respArray := resp.data
+
 		//Transform is one to many mapping so returned
 		//response for each is an array. We flatten it out
-		for _, respElem := range respArray {
-			respElemMap, castOk := respElem.(map[string]interface{})
-			if castOk {
-				respOutput, ok := respElemMap["output"]
-				if !ok {
-					trans.failedStat.Increment()
-					continue
-				}
-				if output, castOk := respOutput.(map[string]interface{}); castOk {
-					if statusCode, ok := output["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
-						// TODO: Log errored resposnes to file
-						trans.failedStat.Increment()
-						continue
-					}
-				}
+		for _, transformerResponse := range respArray {
+			respOutput := transformerResponse.Output
+			if statusCode, ok := respOutput["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
+				// TODO: Log errored resposnes to file
+				trans.failedStat.Increment()
+				continue
 			}
-			outClientEvents = append(outClientEvents, respElem)
+			outClientEvents = append(outClientEvents, transformerResponse)
 		}
 
 	}

@@ -540,32 +540,51 @@ func getTimestampFromEvent(event map[string]interface{}, field string) time.Time
 	return timestamp
 }
 
-func enhanceWithTimeFields(event map[string]interface{}, singularEventMap map[string]interface{}, receivedAt time.Time) {
+func enhanceWithTimeFields(event *transformerEventT, singularEventMap map[string]interface{}, receivedAt time.Time) {
 	// set timestamp skew based on timestamp fields from SDKs
 	originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
 	sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
 
 	// set all timestamps in RFC3339 format
-	event["message"].(map[string]interface{})["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
-	event["message"].(map[string]interface{})["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339Milli)
-	event["message"].(map[string]interface{})["sentAt"] = sentAt.Format(misc.RFC3339Milli)
-	event["message"].(map[string]interface{})["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339Milli)
+	event.Message["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
+	event.Message["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339Milli)
+	event.Message["sentAt"] = sentAt.Format(misc.RFC3339Milli)
+	event.Message["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339Milli)
+}
+
+type metadataT struct {
+	SourceID        string `json:"sourceId"`
+	DestinationID   string `json:"destinationId"`
+	JobID           int64  `json:"jobId"`
+	DestinationType string `json:"destinationType"`
+	MessageID       string `json:"messageId"`
+	AnonymousID     string `json:"anonymousId"`
+	SessionID       string `json:"sessionId,omitempty"`
+}
+
+type transformerEventT struct {
+	Message     map[string]interface{}     `json:"message"`
+	Metadata    metadataT                  `json:"metadata"`
+	Destination backendconfig.DestinationT `json:"destination"`
+	SessionID   string                     `json:"session_id"`
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
-func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT) {
-	event["metadata"] = make(map[string]interface{})
-	event["metadata"].(map[string]interface{})["sourceId"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
-	event["metadata"].(map[string]interface{})["jobId"] = batchEvent.JobID
-	event["metadata"].(map[string]interface{})["destinationId"] = destination.ID
-	event["metadata"].(map[string]interface{})["destinationType"] = destination.DestinationDefinition.Name
-	event["metadata"].(map[string]interface{})["messageId"] = event["message"].(map[string]interface{})["messageId"].(string)
-	if sessionID, ok := event["session_id"].(string); ok {
-		event["metadata"].(map[string]interface{})["sessionId"] = sessionID
+func enhanceWithMetadata(event *transformerEventT, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT) {
+	metadata := metadataT{}
+	metadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+	metadata.DestinationID = destination.ID
+	metadata.JobID = batchEvent.JobID
+	metadata.DestinationType = destination.DestinationDefinition.Name
+	metadata.MessageID = event.Message["messageId"].(string)
+
+	if event.SessionID != "" {
+		metadata.SessionID = event.SessionID
 	}
-	if anonymousID, ok := misc.GetAnonymousID(event["message"]); ok {
-		event["metadata"].(map[string]interface{})["anonymousId"] = anonymousID
+	if anonymousID, ok := misc.GetAnonymousID(event.Message); ok {
+		metadata.AnonymousID = anonymousID
 	}
+	event.Metadata = metadata
 }
 
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]interface{}) {
@@ -575,7 +594,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var destJobs []*jobsdb.JobT
 	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
-	var eventsByDestID = make(map[string][]interface{})
+	var eventsByDestID = make(map[string][]transformerEventT)
 
 	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
 		panic(fmt.Errorf("parsedEventList != nil and len(jobList):%d != len(parsedEventList):%d", len(jobList), len(parsedEventList)))
@@ -635,13 +654,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						continue
 					}
 					for _, destination := range enabledDestinationsList {
-						shallowEventCopy := make(map[string]interface{})
+						shallowEventCopy := transformerEventT{}
 						singularEventMap, ok := singularEvent.(map[string]interface{})
 						if !ok {
 							panic(fmt.Errorf("typecast of singularEvent to map[string]interface{} failed"))
 						}
-						shallowEventCopy["message"] = singularEventMap
-						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
+						shallowEventCopy.Message = singularEventMap
+						shallowEventCopy.Destination = reflect.ValueOf(destination).Interface().(backendconfig.DestinationT)
 
 						/* Stream destinations does not need config in transformer. As the Kafka destination config
 						holds the ca-certificate and it depends on user input, it may happen that they provide entire
@@ -649,20 +668,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						it may result into payload larger than accepted by transformer. So, discarding destination config from being
 						sent to transformer for such destination. */
 						if misc.ContainsString(customDestinations, destType) {
-							dest := shallowEventCopy["destination"].(backendconfig.DestinationT)
-							dest.Config = nil
-							shallowEventCopy["destination"] = dest
+							shallowEventCopy.Destination.Config = nil
 						}
 
-						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
+						shallowEventCopy.Message["request_ip"] = requestIP
 
-						enhanceWithTimeFields(shallowEventCopy, singularEventMap, receivedAt)
-						enhanceWithMetadata(shallowEventCopy, batchEvent, destination)
+						enhanceWithTimeFields(&shallowEventCopy, singularEventMap, receivedAt)
+						enhanceWithMetadata(&shallowEventCopy, batchEvent, destination)
 
 						//We have at-least one event so marking it good
 						_, ok = eventsByDestID[destination.ID]
 						if !ok {
-							eventsByDestID[destination.ID] = make([]interface{}, 0)
+							eventsByDestID[destination.ID] = make([]transformerEventT, 0)
 						}
 						eventsByDestID[destination.ID] = append(eventsByDestID[destination.ID],
 							shallowEventCopy)
@@ -704,27 +721,27 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		url := integrations.GetDestinationURL(destType)
 		var response ResponseT
-		var eventsToTransform []interface{}
+		var eventsToTransform []transformerEventT
 		// Send to custom transformer only if the destination has a transformer enabled
 		if transformationEnabled {
 			logger.Debug("Custom Transform input size", len(destEventList))
 			if processSessions {
-				// If processSessions is true, Transform should break into a new batch only when user changes.
-				// This way all the events of a user session are never broken into separate batches
-				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
-				destStat.sessionTransform.Start()
-				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, true)
-				destStat.sessionTransform.End()
-			} else {
-				// We need not worry about breaking up a single user sessions in this case
-				destStat.userTransform.Start()
-				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, false)
-				destStat.userTransform.End()
-			}
-			for _, userTransformedEvent := range response.Events {
-				eventsToTransform = append(eventsToTransform, userTransformedEvent.(map[string]interface{})["output"])
-			}
-			logger.Debug("Custom Transform output size", len(eventsToTransform))
+			// 	// If processSessions is true, Transform should break into a new batch only when user changes.
+			// 	// This way all the events of a user session are never broken into separate batches
+			// 	// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
+			// 	destStat.sessionTransform.Start()
+			// 	response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, true)
+			// 	destStat.sessionTransform.End()
+			// } else {
+			// 	// We need not worry about breaking up a single user sessions in this case
+			// 	destStat.userTransform.Start()
+			// 	response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, false)
+			// 	destStat.userTransform.End()
+			// }
+			// for _, userTransformedEvent := range response.Events {
+			// 	eventsToTransform = append(eventsToTransform, userTransformedEvent.(map[string]interface{})["output"])
+			// }
+			// logger.Debug("Custom Transform output size", len(eventsToTransform))
 		} else {
 			logger.Debug("No custom transformation")
 			eventsToTransform = destEventList
@@ -744,7 +761,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		//Save the JSON in DB. This is what the rotuer uses
 		for _, destEvent := range destTransformEventList {
-			destEventJSON, err := json.Marshal(destEvent.(map[string]interface{})["output"])
+			destEventJSON, err := json.Marshal(destEvent.Output)
+			fmt.Printf("%+v", destEventJSON)
 			//Should be a valid JSON since its our transformation
 			//but we handle anyway
 			if err != nil {
@@ -756,11 +774,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			// read source_id from metadata that is replayed back from transformer
 			// in case of custom transformations metadata of first event is returned along with all events in session
 			// source_id will be same for all events belong to same user in a session
-			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
-			destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
-			if !ok {
-				logger.Errorf("Error retrieving source_id from transformed event: %+v", destEvent)
-			}
+			sourceID := destEvent.Metadata.SourceID
+			destID := destEvent.Metadata.DestinationID
+
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
