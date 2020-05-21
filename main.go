@@ -38,12 +38,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse"
 
-        // This is necessary for compatibility with enterprise features
-        _ "github.com/rudderlabs/rudder-server/imports"
+	// This is necessary for compatibility with enterprise features
+	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
 var (
-        application                      app.Interface
+	application                      app.Interface
 	warehouseMode                    string
 	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
@@ -248,16 +248,16 @@ func main() {
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 
-        options := app.LoadOptions()
-        if options.VersionFlag {
+	options := app.LoadOptions()
+	if options.VersionFlag {
 		printVersion()
 		return
 	}
-        application = app.New(options)
+	application = app.New(options)
 
 	http.HandleFunc("/version", versionHandler)
 
-        application.Setup
+	application.Setup()
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
