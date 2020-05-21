@@ -1,0 +1,3 @@
+ENTERPRISE_REPO=git@github.com:rudderlabs/rudder-server-enterprise.git
+ENTERPRISE_DIR=enterprise
+ENTERPRISE_COMMIT_FILE=.enterprise-commit
