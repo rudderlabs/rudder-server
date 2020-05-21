@@ -191,17 +191,6 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
 	return eventListJSONBatchType, true
 }
 
-//ParseBatchRouterJob looks for the batch structure inside event
-func ParseBatchRouterJob(eventPayload json.RawMessage) (map[string]interface{}, bool) {
-	var eventListJSON map[string]interface{}
-	err := json.Unmarshal(eventPayload, &eventListJSON)
-	if err != nil {
-		logger.Debug("json parsing of event payload failed ", string(eventPayload))
-		return nil, false
-	}
-	return eventListJSON, true
-}
-
 //GetAnonymousID return the UserID from the object
 func GetAnonymousID(event interface{}) (string, bool) {
 	userID, ok := GetRudderEventVal("anonymousId", event)
