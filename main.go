@@ -192,22 +192,19 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode)
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode)
 
-	enableMigrator := false
-	if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-		enableMigrator = true
-		enableRouter = false
-		enableProcessor = false
-	}
-	shouldStartGateWay := (migrationMode != db.EXPORT)
+	enableGateway := true
 
 	if application.Features().Migrator != nil {
-		if enableMigrator {
+		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startRouterFunc := func() {
-				StartRouter(config.GetBool("enableRouter", true), &routerDB, &batchRouterDB)
+				StartRouter(enableRouter, &routerDB, &batchRouterDB)
 			}
 			startProcessorFunc := func() {
-				StartProcessor(config.GetBool("enableProcessor", true), &gatewayDB, &routerDB, &batchRouterDB)
+				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB)
 			}
+			enableRouter = false
+			enableProcessor = false
+			enableGateway = (migrationMode != db.EXPORT)
 			application.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
 		}
 	}
@@ -215,7 +212,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	StartRouter(enableRouter, &routerDB, &batchRouterDB)
 	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB)
 
-	if shouldStartGateWay {
+	if enableGateway {
 		var gateway gateway.HandleT
 		var rateLimiter ratelimiter.HandleT
 		rateLimiter.SetUp()
