@@ -116,11 +116,6 @@ func (webhook *webhookHandleT) batchHandler(w http.ResponseWriter, r *http.Reque
 		atomic.AddUint64(&webhook.ackCount, 1)
 		return
 	}
-	if !misc.ContainsString(webhookSources, sourceDefName) {
-		webhook.failRequest(w, r, getStatus(InvalidWebhookSource), getStatusCode(InvalidWebhookSource), writeKey)
-		atomic.AddUint64(&webhook.ackCount, 1)
-		return
-	}
 
 	done := make(chan webhookErrorRespT)
 	req := webhookT{request: r, writer: &w, done: done, sourceType: sourceDefName, writeKey: writeKey}
@@ -253,7 +248,6 @@ func (webhook *webhookHandleT) enqueueToWebRequestQ(req *webhookT, payload []byt
 func (webhook *webhookHandleT) register(name string) {
 	if _, ok := webhook.requestQ[name]; !ok {
 		webhook.requestQ[name] = make(chan *webhookT)
-		// webhook.sourceStats[name] = newWebhookStat(name)
 		rruntime.Go(func() {
 			webhook.batcher(name)
 		})
