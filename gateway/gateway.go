@@ -540,7 +540,7 @@ func (gateway *HandleT) backendConfigSubscriber() {
 			if source.Enabled {
 				enabledWriteKeysSourceMap[source.WriteKey] = source.ID
 			}
-			if source.SourceDefinition.Category == "" {
+			if source.SourceDefinition.Category == "webhook" {
 				enabledWriteKeySourceDefMap[source.WriteKey] = source.SourceDefinition.Name
 				gateway.webhookHandler.register(source.SourceDefinition.Name)
 			}
