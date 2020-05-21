@@ -42,7 +42,7 @@ func init() {
 }
 
 func loadConfig() {
-	objectStreamDestinations = []string{"KINESIS", "KAFKA"}
+	objectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB"}
 	streamDestinationsMap = make(map[string]StreamDestination)
 }
 
