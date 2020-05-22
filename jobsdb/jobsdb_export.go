@@ -57,7 +57,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
-		jobs, err := jd.getNonMigratedJobsAndMarkMigratingDS(ds, count)
+		jobs, err := jd.getNonMigratedJobsFromDSAndMarkMigrating(ds, count)
 		jd.assertError(err)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
@@ -100,7 +100,7 @@ type SQLJobStatusT struct {
 	ErrorResponse sql.NullString
 }
 
-func (jd *HandleT) getNonMigratedJobsAndMarkMigratingDS(ds dataSetT, count int) ([]*JobT, error) {
+func (jd *HandleT) getNonMigratedJobsFromDSAndMarkMigrating(ds dataSetT, count int) ([]*JobT, error) {
 	queryStat := stats.NewJobsDBStat("get_for_export_and_update_status_ds", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
@@ -175,12 +175,10 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 	defer queryStat.End()
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
-	//TODO REMOVE
-	logger.Debug("[DEFER UpdateJobStatusAndCheckpoint] rolling back transaction")
-	defer txn.Rollback() //TODO: Review this. In a successful case rollback will be called after commit. In a failure case there will be a panic and a dangling db connection may be left
+	defer txn.Rollback()
 	jd.UpdateJobStatusInTxn(txn, statusList, []string{}, []ParameterFilterT{})
-	migrationEvent := NewMigrationEvent(ExportOp, fromNodeID, toNodeID, uploadLocation, Exported, 0)
-	migrationEvent.ID = jd.CheckpointInTxn(txn, &migrationEvent)
+	migrationCheckpoint := NewMigrationCheckpoint(ExportOp, fromNodeID, toNodeID, uploadLocation, Exported, 0)
+	migrationCheckpoint.ID = jd.CheckpointInTxn(txn, &migrationCheckpoint)
 	txn.Commit()
 }
 

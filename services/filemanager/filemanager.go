@@ -10,6 +10,7 @@ import (
 
 type UploadOutput struct {
 	Location string
+	ObjectName string
 }
 
 // FileManager inplements all upload methods

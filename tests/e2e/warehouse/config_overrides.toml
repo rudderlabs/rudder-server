@@ -12,19 +12,13 @@ useTestSink = true
 mainLoopSleepInS = 2
 noOfWorkers = 8
 jobQueryBatchSize = 100000
-uploadFreqInS = 5
+uploadFreqInS = 2
 maxFailedCountForJob = 128
 
 [recovery]
 enabled = false
 
 [Warehouse]
-stagingFilesTable = "wh_staging_files"
-loadFilesTable = "wh_load_files"
-uploadsTable = "wh_uploads"
-schemasTable = "wh_schemas"
-uploadFreqInS = 10
-noOfWorkers = 8
-mainLoopSleepInS = 3
-maxRetry = 3
-stagingFilesBatchSize = 240
+uploadFreqInS = 3
+mainLoopSleepInS = 1
+warehouseSyncFreqIgnore=true

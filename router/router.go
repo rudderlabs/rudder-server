@@ -27,21 +27,22 @@ import (
 
 //HandleT is the handle to this module.
 type HandleT struct {
-	requestQ              chan *jobsdb.JobT
-	responseQ             chan jobResponseT
-	jobsDB                *jobsdb.HandleT
-	netHandle             *NetHandleT
-	destID                string
-	workers               []*workerT
-	perfStats             *misc.PerfStats
-	successCount          uint64
-	failCount             uint64
-	isEnabled             bool
-	toClearFailJobIDMutex sync.Mutex
-	toClearFailJobIDMap   map[int][]string
-	requestsMetricLock    sync.RWMutex
-	diagnosisTicker       *time.Ticker
-	requestsMetric        []requestMetric
+	requestQ                 chan *jobsdb.JobT
+	responseQ                chan jobResponseT
+	jobsDB                   *jobsdb.HandleT
+	netHandle                *NetHandleT
+	destID                   string
+	workers                  []*workerT
+	perfStats                *misc.PerfStats
+	successCount             uint64
+	failCount                uint64
+	isEnabled                bool
+	toClearFailJobIDMutex    sync.Mutex
+	toClearFailJobIDMap      map[int][]string
+	requestsMetricLock       sync.RWMutex
+	diagnosisTicker          *time.Ticker
+	requestsMetric           []requestMetric
+	customDestinationManager customdestinationmanager.DestinationManager
 }
 
 type jobResponseT struct {
@@ -103,7 +104,7 @@ func loadConfig() {
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
-	customDestinations = []string{"KINESIS"}
+	customDestinations = []string{"KINESIS", "KAFKA"}
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -128,7 +129,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		batchTimeStat.Start()
 		logger.Debugf("Router :: trying to send payload to %s. Payload: ", rt.destID, job.EventPayload)
 
-		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload, job.CustomVal)
+		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
 		if userID == "" {
 			panic(fmt.Errorf("userID is empty"))
 		}
@@ -147,6 +148,12 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			}
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 			continue
+		}
+
+		var paramaters ParametersT
+		err := json.Unmarshal(job.Parameters, &paramaters)
+		if err != nil {
+			logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
 		}
 
 		//If there is a failed jobID from this user, we cannot pass future jobs
@@ -182,8 +189,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", rt.destID, attempts, ser)
 
 			deliveryTimeStat.Start()
-			if misc.ContainsString(customDestinations, job.CustomVal) {
-				respStatusCode, respStatus, respBody = customdestinationmanager.Send(job.EventPayload, job.CustomVal)
+
+			if rt.customDestinationManager != nil {
+				respStatusCode, respStatus, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
 			} else {
 				respStatusCode, respStatus, respBody = rt.netHandle.sendPost(job.EventPayload)
 			}
@@ -298,11 +306,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		}
 
 		//Sending destination response to config backend
-		var paramaters ParametersT
-		err := json.Unmarshal(job.Parameters, &paramaters)
-		if err != nil {
-			logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
-		}
+
 		deliveryStatus := destinationdebugger.DeliveryStatusT{
 			DestinationID: paramaters.DestinationID,
 			SourceID:      paramaters.SourceID,
@@ -351,7 +355,7 @@ func (rt *HandleT) initWorkers() {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload, job.CustomVal)
+	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
 
 	var index int
 	if randomWorkerAssign {
@@ -708,6 +712,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.netHandle.Setup(destID)
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destID)
+	rt.customDestinationManager = customdestinationmanager.New(destID)
 	rt.initWorkers()
 	rruntime.Go(func() {
 		rt.collectMetrics()

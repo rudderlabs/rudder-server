@@ -9,18 +9,22 @@ const (
 	Ok = "OK"
 	//RequestBodyNil - Request body is nil
 	RequestBodyNil = "Request body is nil"
+	//InvalidRequestMethod - Request Method is invalid
+	InvalidRequestMethod = "Invalid HTTP Request Method"
 	//TooManyRequests - too many requests
 	TooManyRequests = "Max Events Limit reached. Dropping Events."
 	//NoWriteKeyInBasicAuth - Failed to read writeKey from header
 	NoWriteKeyInBasicAuth = "Failed to read writeKey from header"
+	//NoWriteKeyInQueryParams - Failed to read writeKey from Query Params
+	NoWriteKeyInQueryParams = "Failed to read writeKey from Query Params"
 	//RequestBodyReadFailed - Failed to read body from request
 	RequestBodyReadFailed = "Failed to read body from request"
 	//RequestBodyTooLarge - Request size exceeds max limit
 	RequestBodyTooLarge = "Request size exceeds max limit"
 	//InvalidWriteKey - Invalid Write Key
 	InvalidWriteKey = "Invalid Write Key"
-	//InvalidJson - Invalid JSON
-	InvalidJson = "Invalid JSON"
+	//InvalidJSON - Invalid JSON
+	InvalidJSON = "Invalid JSON"
 )
 
 var (
@@ -37,12 +41,14 @@ func loadStatusMap() {
 	statusMap = make(map[string]ResponseStatus)
 	statusMap[Ok] = ResponseStatus{message: Ok, code: http.StatusOK}
 	statusMap[RequestBodyNil] = ResponseStatus{message: RequestBodyNil, code: http.StatusBadRequest}
+	statusMap[InvalidRequestMethod] = ResponseStatus{message: InvalidRequestMethod, code: http.StatusBadRequest}
 	statusMap[TooManyRequests] = ResponseStatus{message: TooManyRequests, code: http.StatusTooManyRequests}
 	statusMap[NoWriteKeyInBasicAuth] = ResponseStatus{message: NoWriteKeyInBasicAuth, code: http.StatusUnauthorized}
+	statusMap[NoWriteKeyInQueryParams] = ResponseStatus{message: NoWriteKeyInQueryParams, code: http.StatusUnauthorized}
 	statusMap[RequestBodyReadFailed] = ResponseStatus{message: RequestBodyReadFailed, code: http.StatusBadRequest}
 	statusMap[RequestBodyTooLarge] = ResponseStatus{message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge}
 	statusMap[InvalidWriteKey] = ResponseStatus{message: InvalidWriteKey, code: http.StatusUnauthorized}
-	statusMap[InvalidJson] = ResponseStatus{message: InvalidJson, code: http.StatusBadRequest}
+	statusMap[InvalidJSON] = ResponseStatus{message: InvalidJSON, code: http.StatusBadRequest}
 }
 
 func getStatus(key string) string {

@@ -17,6 +17,8 @@ mostly serviced from memory cache.
 
 package jobsdb
 
+//go:generate mockgen -destination=../mocks/jobsdb/mock_jobsdb.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb JobsDB
+
 import (
 	"bytes"
 	"database/sql"
@@ -52,6 +54,14 @@ type BackupSettingsT struct {
 	BackupEnabled bool
 	FailedOnly    bool
 	PathPrefix    string
+}
+
+/*
+JobsDB interface contains public methods to access JobsDB data
+*/
+type JobsDB interface {
+	Store(jobList []*JobT) map[uuid.UUID]string
+	CheckPGHealth() bool
 }
 
 /*
@@ -127,12 +137,12 @@ type HandleT struct {
 	dsCacheLock                   sync.Mutex
 	BackupSettings                *BackupSettingsT
 	jobsFileUploader              filemanager.FileManager
-	statTableCount                *stats.RudderStats
-	statNewDSPeriod               *stats.RudderStats
+	statTableCount                stats.RudderStats
+	statNewDSPeriod               stats.RudderStats
 	isStatNewDSPeriodInitialized  bool
-	statDropDSPeriod              *stats.RudderStats
+	statDropDSPeriod              stats.RudderStats
 	isStatDropDSPeriodInitialized bool
-	jobsdbQueryTimeStat           *stats.RudderStats
+	jobsdbQueryTimeStat           stats.RudderStats
 	migrationState                MigrationState
 	migrationMode                 string
 }
@@ -1140,7 +1150,6 @@ func (jd *HandleT) storeJobsDSInTxn(txn *sql.Tx, ds dataSetT, copyID bool, retry
 	_, err = stmt.Exec()
 	if !isTxnPassed {
 		if err != nil && retryEach {
-			//TODO REMOVE
 			logger.Debug("[storeJobsDSInTxn] rolling back transaction")
 			txn.Rollback() // rollback started txn, to prevent dangling db connection
 			for _, job := range jobList {
@@ -1320,7 +1329,7 @@ parameterFilters do a AND query on values included in the map
 */
 func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []string,
 	customValFilters []string, limitCount int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
-	var queryStat *stats.RudderStats
+	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
@@ -1442,7 +1451,7 @@ parameterFilters do a AND query on values included in the map
 */
 func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	order bool, count int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
-	var queryStat *stats.RudderStats
+	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
@@ -1609,8 +1618,6 @@ func (jd *HandleT) mainCheckLoop() {
 			jd.dsListLock.Unlock()
 		}
 
-		//TODO need to put a better condition to check if migration is in progess.
-		//jd.migrationState.dsForImport.Index: this gets set only upon import request from export node.
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		logger.Infof("[[ MainCheckLoop ]]: migration mode = %s", jd.migrationMode)
 		if jd.migrationMode != "" {
@@ -2197,8 +2204,8 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		var importDest dataSetT
 		json.Unmarshal(opPayload, &importDest)
 		jd.dropDS(importDest, true)
-		checkPoint := jd.GetSetupCheckpoint(ImportOp)
-		jd.DeleteCheckpoint(checkPoint)
+		checkpoint := jd.GetSetupCheckpoint(ImportOp)
+		jd.deleteCheckpoint(checkpoint)
 		undoOp = true
 	case postMigrateDSOperation:
 		//Some of the source datasets would have been
@@ -2380,7 +2387,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
-	var queryStat *stats.RudderStats
+	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
@@ -2426,7 +2433,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
-	var queryStat *stats.RudderStats
+	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"

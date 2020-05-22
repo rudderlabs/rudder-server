@@ -16,10 +16,10 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 
-	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -92,7 +92,7 @@ func readIOforResume(router router.HandleT) {
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	// dstToWhRouter := make(map[string]*warehouse.HandleT)
@@ -192,22 +192,19 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode)
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode)
 
-	enableMigrator := false
-	if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-		enableMigrator = true
-		enableRouter = false
-		enableProcessor = false
-	}
-	shouldStartGateWay := (migrationMode != db.EXPORT)
+	enableGateway := true
 
 	if application.Features().Migrator != nil {
-		if enableMigrator {
+		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startRouterFunc := func() {
-				StartRouter(config.GetBool("enableRouter", true), &routerDB, &batchRouterDB)
+				StartRouter(enableRouter, &routerDB, &batchRouterDB)
 			}
 			startProcessorFunc := func() {
-				StartProcessor(config.GetBool("enableProcessor", true), &gatewayDB, &routerDB, &batchRouterDB)
+				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB)
 			}
+			enableRouter = false
+			enableProcessor = false
+			enableGateway = (migrationMode != db.EXPORT)
 			application.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
 		}
 	}
@@ -215,15 +212,17 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	StartRouter(enableRouter, &routerDB, &batchRouterDB)
 	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB)
 
-	if shouldStartGateWay {
+	if enableGateway {
 		var gateway gateway.HandleT
 		var rateLimiter ratelimiter.HandleT
 		rateLimiter.SetUp()
-		gateway.Setup(&gatewayDB, &rateLimiter, clearDB)
+		gateway.Setup(backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, stats.DefaultStats, clearDB)
+		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
+//StartRouter atomically starts router process if not already started
 func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
@@ -238,6 +237,7 @@ func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
 	}
 }
 
+//StartProcessor atomically starts processor process if not already started
 func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
@@ -304,7 +304,6 @@ func main() {
 		printVersion()
 		return
 	}
-
 	application = app.New(options)
 
 	http.HandleFunc("/version", versionHandler)
@@ -316,7 +315,6 @@ func main() {
 	go func() {
 		<-c
 		application.Stop()
-
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
 			logger.Log.Sync()

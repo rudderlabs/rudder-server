@@ -198,17 +198,6 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
 	return eventListJSONBatchType, true
 }
 
-//ParseBatchRouterJob looks for the batch structure inside event
-func ParseBatchRouterJob(eventPayload json.RawMessage) (map[string]interface{}, bool) {
-	var eventListJSON map[string]interface{}
-	err := json.Unmarshal(eventPayload, &eventListJSON)
-	if err != nil {
-		logger.Debug("json parsing of event payload failed ", string(eventPayload))
-		return nil, false
-	}
-	return eventListJSON, true
-}
-
 //GetAnonymousID return the UserID from the object
 func GetAnonymousID(event interface{}) (string, bool) {
 	userID, ok := GetRudderEventVal("anonymousId", event)
@@ -565,6 +554,10 @@ func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 	return replacedStr, nil
 }
 
+func IntArrayToString(a []int64, delim string) string {
+	return strings.Trim(strings.Replace(fmt.Sprint(a), " ", delim, -1), "[]")
+}
+
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number
 // of garage collection cycles completed.
 func PrintMemUsage() {
@@ -699,6 +692,32 @@ func IsPostgresCompatible(connInfo string) bool {
 	}
 
 	return versionNum >= minPostgresVersion
+}
+
+/*
+RunWithTimeout runs provided function f until provided timeout d.
+If the timeout is reached, onTimeout callback will be called.
+*/
+func RunWithTimeout(f func(), onTimeout func(), d time.Duration) {
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		f()
+	}()
+
+	select {
+	case <-c:
+	case <-time.After(d):
+		onTimeout()
+	}
+}
+
+/*
+IsValidUUID will check if provided string is a valid UUID
+*/
+func IsValidUUID(uuid string) bool {
+	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
+	return r.MatchString(uuid)
 }
 
 //GetNodeID returns the nodeId of the current node
