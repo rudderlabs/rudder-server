@@ -222,6 +222,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
+//StartRouter atomically starts router process if not already started
 func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
@@ -236,6 +237,7 @@ func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
 	}
 }
 
+//StartProcessor atomically starts processor process if not already started
 func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
