@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -100,6 +101,7 @@ type HandleT struct {
 	requestMetricLock                         sync.RWMutex
 	diagnosisTicker                           *time.Ticker
 	webRequestBatchCount                      uint64
+	dbWriterWorkers                           []*dbWriterWorkerT
 	// pf                                        pathfinder.ClusterStateT
 }
 
@@ -110,10 +112,76 @@ func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket
 	}
 }
 
+type dbWriterWorkerT struct {
+	webRequestQ   chan *webRequestT
+	batchRequestQ chan *batchWebRequestT
+	workerID      int
+}
+
+func (gateway *HandleT) initDBWorkers() {
+	gateway.dbWriterWorkers = make([]*dbWriterWorkerT, maxDBWriterProcess)
+	for i := 0; i < maxDBWriterProcess; i++ {
+		logger.Debug("DB Writer Worker Started", i)
+		var dbWriterWorker *dbWriterWorkerT
+		dbWriterWorker = &dbWriterWorkerT{
+			webRequestQ:   make(chan *webRequestT),
+			batchRequestQ: make(chan *batchWebRequestT),
+			workerID:      i}
+		gateway.dbWriterWorkers[i] = dbWriterWorker
+		rruntime.Go(func() {
+			gateway.userWebRequestBatchDBWriter(dbWriterWorker)
+		})
+
+		rruntime.Go(func() {
+			gateway.userWebRequestBatcher(dbWriterWorker)
+		})
+	}
+
+}
+
+func (gateway *HandleT) findWorker(userID string) *dbWriterWorkerT {
+
+	index := int(math.Abs(float64(misc.GetHash(userID) % maxDBWriterProcess)))
+
+	dbWriterWorker := gateway.dbWriterWorkers[index]
+	if dbWriterWorker == nil {
+		panic(fmt.Errorf("worker is nil"))
+	}
+
+	return dbWriterWorker
+}
+
 //Function to process the batch requests. It saves data in DB and
 //sends and ACK on the done channel which unblocks the HTTP handler
-func (gateway *HandleT) webRequestBatchDBWriter(process int) {
-	for breq := range gateway.batchRequestQ {
+func (gateway *HandleT) userWebRequestBatcher(dbWriterWorker *dbWriterWorkerT) {
+	var reqBuffer = make([]*webRequestT, 0)
+	timeout := time.After(batchTimeout)
+	for {
+		select {
+		case req := <-dbWriterWorker.webRequestQ:
+
+			//Append to request buffer
+			reqBuffer = append(reqBuffer, req)
+			if len(reqBuffer) == maxBatchSize {
+				breq := batchWebRequestT{batchRequest: reqBuffer}
+				dbWriterWorker.batchRequestQ <- &breq
+				reqBuffer = nil
+				reqBuffer = make([]*webRequestT, 0)
+			}
+		case <-timeout:
+			timeout = time.After(batchTimeout)
+			if len(reqBuffer) > 0 {
+				breq := batchWebRequestT{batchRequest: reqBuffer}
+				dbWriterWorker.batchRequestQ <- &breq
+				reqBuffer = nil
+				reqBuffer = make([]*webRequestT, 0)
+			}
+		}
+	}
+}
+
+func (gateway *HandleT) userWebRequestBatchDBWriter(dbWriterWorker *dbWriterWorkerT) {
+	for breq := range dbWriterWorker.batchRequestQ {
 		//TODO check if this assignment is atomic
 		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
 		var jobList []*jobsdb.JobT
@@ -386,30 +454,16 @@ func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 	return true
 }
 
-//Function to batch incoming web requests
-func (gateway *HandleT) webRequestBatcher() {
-	var reqBuffer = make([]*webRequestT, 0)
-	timeout := time.After(batchTimeout)
-	for {
-		select {
-		case req := <-gateway.webRequestQ:
-			//Append to request buffer
-			reqBuffer = append(reqBuffer, req)
-			if len(reqBuffer) == maxBatchSize {
-				breq := batchWebRequestT{batchRequest: reqBuffer}
-				gateway.batchRequestQ <- &breq
-				reqBuffer = nil
-				reqBuffer = make([]*webRequestT, 0)
-			}
-		case <-timeout:
-			timeout = time.After(batchTimeout)
-			if len(reqBuffer) > 0 {
-				breq := batchWebRequestT{batchRequest: reqBuffer}
-				gateway.batchRequestQ <- &breq
-				reqBuffer = nil
-				reqBuffer = make([]*webRequestT, 0)
-			}
+//Function to route incoming web requests to userWebRequestBatcher
+func (gateway *HandleT) webRequestRouter() {
+	for req := range gateway.webRequestQ {
+		userIDHeader := req.request.Header.Get("anonymousId")
+		//If necessary fetch userID from request body.
+		if userIDHeader == "" {
+			userIDHeader = uuid.NewV4().String()
 		}
+		dbWriterWorker := gateway.findWorker(userIDHeader)
+		dbWriterWorker.webRequestQ <- req
 	}
 }
 
@@ -739,17 +793,14 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB
 	rruntime.Go(func() {
-		gateway.webRequestBatcher()
+		gateway.webRequestRouter()
 	})
 	rruntime.Go(func() {
 		gateway.backendConfigSubscriber()
 	})
-	for i := 0; i < maxDBWriterProcess; i++ {
-		j := i
-		rruntime.Go(func() {
-			gateway.webRequestBatchDBWriter(j)
-		})
-	}
+
+	gateway.initDBWorkers()
+
 	gateway.backendConfig.WaitForConfig()
 	rruntime.Go(func() {
 		gateway.printStats()
