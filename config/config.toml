@@ -84,10 +84,10 @@ backupCheckSleepDurationIns = 5
 backupRowsBatchSize = 10000
 
 [JobsDB.backup]
-enabled = false
+enabled = true
 
 [JobsDB.backup.gw]
-enabled=false
+enabled=true
 pathPrefix=""
 
 [JobsDB.backup.rt]

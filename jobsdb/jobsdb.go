@@ -1088,7 +1088,7 @@ func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 		if jd.BackupSettings.BackupEnabled {
 			jd.renameDS(ds, false)
 		} else {
-			jd.renameDS(ds, false)
+			jd.dropDS(ds, false)
 		}
 	}
 
@@ -1105,6 +1105,7 @@ a given dataset. The names should be self explainatory
 */
 
 func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
+	//TODO: Instead of passing nil, start a transaction here and handle rollback/commit based on error
 	return jd.storeJobsDSInTxn(nil, ds, copyID, retryEach, jobList)
 }
 

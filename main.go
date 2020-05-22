@@ -54,7 +54,6 @@ var (
 	configSubscriberLock             sync.RWMutex
 	objectStorageDestinations        []string
 	warehouseDestinations            []string
-	clusterVersion                   int
 	moduleLoadLock                   sync.Mutex
 	routerLoaded                     bool
 	processorLoaded                  bool
@@ -73,7 +72,6 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	clusterVersion = config.GetEnvAsInt("CLUSTER_VERSION", 1)
 }
 
 // Test Function

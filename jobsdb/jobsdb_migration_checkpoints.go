@@ -299,7 +299,7 @@ func (jd *HandleT) GetCheckpoints(migrationType MigrationOp, status string) []*M
 	return migrationCheckpoints
 }
 
-func getNumberOfJobsFromFileLocation(fileLocation string) int64 {
+func getNumberOfJobsFromFileLocation(fileLocation string) int64 { //TODO: Don't get from file location. Explicitly store it
 	slicedS := strings.FieldsFunc(fileLocation, fileLocationSplitter)
 	totalJobs, _ := strconv.ParseInt(slicedS[len(slicedS)-2], 10, 64)
 	return totalJobs
