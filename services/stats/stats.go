@@ -250,15 +250,15 @@ func NewJobsDBStat(Name string, StatType string, customVal string) RudderStats {
 
 /*
 NewMigratorStat is used to create new Migrator specific stat.
-Migrator customVal is added as the value of 'customVal' tag in this case.
-If customVal has been used on this function before, a RudderStats with the same underlying client will be returned.
+Migrator migrationType is added as the value of 'migrationType' tag in this case.
+If migrationType has been used on this function before, a RudderStats with the same underlying client will be returned.
 */
-func (s *HandleT) NewMigratorStat(Name string, StatType string, customVal string) RudderStats {
+func (s *HandleT) NewMigratorStat(Name string, StatType string, migrationType string) RudderStats {
 	migratorsMapLock.Lock()
 	defer migratorsMapLock.Unlock()
-	if _, found := migratorsMap[customVal]; !found {
+	if _, found := migratorsMap[migrationType]; !found {
 		var err error
-		migratorsMap[customVal], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "customVal", customVal))
+		migratorsMap[migrationType], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "migrationType", migrationType))
 		if err != nil {
 			logger.Error(err)
 		}
@@ -266,12 +266,12 @@ func (s *HandleT) NewMigratorStat(Name string, StatType string, customVal string
 	return &RudderStatsT{
 		Name:     Name,
 		StatType: StatType,
-		Client:   migratorsMap[customVal],
+		Client:   migratorsMap[migrationType],
 	}
 
 }
 
-// NewJobsDBStat is used to create new JobsDB specific stat.
+// NewMigratorStat is used to create new Migrator specific stat.
 // Deprecated: Use DefaultStats for managing stats instead
 func NewMigratorStat(Name string, StatType string, customVal string) RudderStats {
 	return DefaultStats.NewMigratorStat(Name, StatType, customVal)

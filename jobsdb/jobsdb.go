@@ -1150,7 +1150,6 @@ func (jd *HandleT) storeJobsDSInTxn(txn *sql.Tx, ds dataSetT, copyID bool, retry
 	_, err = stmt.Exec()
 	if !isTxnPassed {
 		if err != nil && retryEach {
-			//TODO REMOVE
 			logger.Debug("[storeJobsDSInTxn] rolling back transaction")
 			txn.Rollback() // rollback started txn, to prevent dangling db connection
 			for _, job := range jobList {
@@ -1619,8 +1618,6 @@ func (jd *HandleT) mainCheckLoop() {
 			jd.dsListLock.Unlock()
 		}
 
-		//TODO need to put a better condition to check if migration is in progess.
-		//jd.migrationState.dsForImport.Index: this gets set only upon import request from export node.
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		logger.Infof("[[ MainCheckLoop ]]: migration mode = %s", jd.migrationMode)
 		if jd.migrationMode != "" {
@@ -2207,8 +2204,8 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		var importDest dataSetT
 		json.Unmarshal(opPayload, &importDest)
 		jd.dropDS(importDest, true)
-		checkPoint := jd.GetSetupCheckpoint(ImportOp)
-		jd.DeleteCheckpoint(checkPoint)
+		checkpoint := jd.GetSetupCheckpoint(ImportOp)
+		jd.deleteCheckpoint(checkpoint)
 		undoOp = true
 	case postMigrateDSOperation:
 		//Some of the source datasets would have been

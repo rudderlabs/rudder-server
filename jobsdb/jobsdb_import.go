@@ -68,8 +68,8 @@ func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 	return ds
 }
 
-//StoreImportedJobsAndJobStatuses is used to write the jobs to _tables
-func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName string, migrationEvent *MigrationEventT) {
+//StoreJobsAndCheckpoint is used to write the jobs to _tables
+func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint *MigrationCheckpointT) {
 	queryStat := stats.NewJobsDBStat("store_imported_jobs_and_statuses", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
@@ -114,7 +114,7 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 		panic("dsForImportEvents was not setup. Go debug")
 	}
 
-	startJobID := jd.getStartJobID(len(jobList), migrationEvent)
+	startJobID := jd.getStartJobID(len(jobList), migrationCheckpoint)
 	statusList := []*JobStatusT{}
 
 	for idx, job := range jobList {
@@ -126,35 +126,34 @@ func (jd *HandleT) StoreImportedJobsAndJobStatuses(jobList []*JobT, fileName str
 		}
 	}
 
-	logger.Infof("[[ %s-JobsDB Import ]] Writing jobs from file:%s to db", jd.GetTablePrefix(), fileName)
-	logger.Infof("[[ %s-JobsDB Import ]] %d jobs found in file:%s. Writing to db", jd.GetTablePrefix(), len(jobList), fileName)
-	logger.Infof("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), fileName)
-
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
-	//TODO REMOVE
-	logger.Debug("[DEFER StoreImportedJobsAndJobStatuses] rolling back transaction")
-	defer txn.Rollback() //TODO: Review this. In a successful case rollback will be called after commit. In a failure case there will be a panic and a dangling db connection may be left
+	defer txn.Rollback()
+
+	logger.Infof("[[ %s-JobsDB Import ]] %d jobs found in file:%s. Writing to db", jd.GetTablePrefix(), len(jobList), migrationCheckpoint.FileLocation)
 	jd.storeJobsDSInTxn(txn, jd.migrationState.dsForImport, true, false, jobList)
+
+	logger.Infof("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), migrationCheckpoint.FileLocation)
 	jd.updateJobStatusDSInTxn(txn, jd.migrationState.dsForImport, statusList, []string{}, []ParameterFilterT{})
-	migrationEvent.Status = Imported
-	jd.CheckpointInTxn(txn, migrationEvent)
+
+	migrationCheckpoint.Status = Imported
+	jd.CheckpointInTxn(txn, migrationCheckpoint)
 	if opID != 0 {
 		jd.JournalMarkDoneInTxn(txn, opID)
 	}
 	txn.Commit()
 }
 
-func (jd *HandleT) getStartJobID(count int, migrationEvent *MigrationEventT) int64 {
+func (jd *HandleT) getStartJobID(count int, migrationCheckpoint *MigrationCheckpointT) int64 {
 	queryStat := stats.NewJobsDBStat("get_start_job_id", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
 	var sequenceNumber int64
-	sequenceNumber = migrationEvent.StartSeq
+	sequenceNumber = migrationCheckpoint.StartSeq
 	if sequenceNumber == 0 {
 		sequenceNumber = jd.migrationState.sequenceProvider.ReserveIdsAndProvideStartSequence(count)
-		migrationEvent.StartSeq = sequenceNumber
-		jd.Checkpoint(migrationEvent)
+		migrationCheckpoint.StartSeq = sequenceNumber
+		jd.Checkpoint(migrationCheckpoint)
 	}
 	return sequenceNumber
 }

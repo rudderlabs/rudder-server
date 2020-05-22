@@ -99,7 +99,7 @@ type HandleT struct {
 	requestMetricLock                         sync.RWMutex
 	diagnosisTicker                           *time.Ticker
 	webRequestBatchCount                      uint64
-	pf                                        pathfinder.PathfinderT
+	pf                                        pathfinder.ClusterStateT
 }
 
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -244,8 +244,8 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			jobList = append(jobList, &newJob)
 
-			if computedNode := gateway.pf.GetNodeFromUserID(newJob.UserID); computedNode.GetNodeID() != misc.GetNodeID() {
-				logger.Infof("Gateway: I am %s, but I have received an event that belongs to %s. event.UserID is %s", misc.GetNodeID(), computedNode.GetNodeID(), newJob.UserID)
+			if computedNode := gateway.pf.GetNodeFromUserID(newJob.UserID); computedNode.ID != misc.GetNodeID() {
+				logger.Infof("Gateway: I am %s, but I have received an event that belongs to %s. event.UserID is %s", misc.GetNodeID(), computedNode.ID, newJob.UserID)
 			}
 
 			jobIDReqMap[newJob.UUID] = req
