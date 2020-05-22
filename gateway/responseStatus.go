@@ -25,6 +25,18 @@ const (
 	InvalidWriteKey = "Invalid Write Key"
 	//InvalidJSON - Invalid JSON
 	InvalidJSON = "Invalid JSON"
+	//InvalidWebhookSource - Source does not accept webhook events
+	InvalidWebhookSource = "Source does not accept webhook events"
+	//SourceTrasnformerResponseErrorReadFailed - Failed to read error from source transformer response
+	SourceTrasnformerResponseErrorReadFailed = "Failed to read error from source transformer response"
+	//SourceTransformerFailed - Internal server error in source transformer
+	SourceTransformerFailed = "Internal server error in source transformer"
+	//SourceTransformerFailedToReadOutput - Output not found in source transformer response
+	SourceTransformerFailedToReadOutput = "Output not found in source transformer response"
+	//SourceTransformerInvalidResponseFormat - Invalid format of source transformer response
+	SourceTransformerInvalidResponseFormat = "Invalid format of source transformer response"
+	//SourceTransformerInvalidOutputFormatInResponse - Invalid output format in source transformer response
+	SourceTransformerInvalidOutputFormatInResponse = "Invalid output format in source transformer response"
 )
 
 var (
@@ -49,9 +61,16 @@ func loadStatusMap() {
 	statusMap[RequestBodyTooLarge] = ResponseStatus{message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge}
 	statusMap[InvalidWriteKey] = ResponseStatus{message: InvalidWriteKey, code: http.StatusUnauthorized}
 	statusMap[InvalidJSON] = ResponseStatus{message: InvalidJSON, code: http.StatusBadRequest}
+	// webhook specific status
+	statusMap[InvalidWebhookSource] = ResponseStatus{message: InvalidWebhookSource, code: http.StatusBadRequest}
+	statusMap[SourceTransformerFailed] = ResponseStatus{message: SourceTransformerFailed, code: http.StatusBadRequest}
+	statusMap[SourceTrasnformerResponseErrorReadFailed] = ResponseStatus{message: SourceTrasnformerResponseErrorReadFailed, code: http.StatusBadRequest}
+	statusMap[SourceTransformerFailedToReadOutput] = ResponseStatus{message: SourceTransformerFailedToReadOutput, code: http.StatusBadRequest}
+	statusMap[SourceTransformerInvalidResponseFormat] = ResponseStatus{message: SourceTransformerInvalidResponseFormat, code: http.StatusBadRequest}
+	statusMap[SourceTransformerInvalidOutputFormatInResponse] = ResponseStatus{message: SourceTransformerInvalidOutputFormatInResponse, code: http.StatusBadRequest}
 }
 
-func getStatus(key string) string {
+func GetStatus(key string) string {
 	if status, ok := statusMap[key]; ok {
 		return status.message
 	}
@@ -59,7 +78,7 @@ func getStatus(key string) string {
 	return ""
 }
 
-func getStatusCode(key string) int {
+func GetStatusCode(key string) int {
 	if status, ok := statusMap[key]; ok {
 		return status.code
 	}

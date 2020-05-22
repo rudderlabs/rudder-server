@@ -1,6 +1,8 @@
 package app
 
 import (
+	"net/http"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
@@ -19,7 +21,29 @@ func RegisterMigratorFeature(f MigratorFeatureSetup) {
 	migratorFeatureSetup = f
 }
 
+// WebhookHandler is the interface returned on setting up a WebhookFeature
+type WebhookHandler interface {
+	BatchHandler(http.ResponseWriter, *http.Request)
+	Register(name string, writeKey string)
+}
+
+// WebhookFeature handles webhook event requests
+type WebhookFeature interface {
+	Setup(interface{}) WebhookHandler
+}
+
+// WebhookFeatureSetup is a function that initializes a Webhook feature, based on application instance
+type WebhookFeatureSetup func(Interface) WebhookFeature
+
+var webhookFeatureSetup WebhookFeatureSetup
+
+// RegisterWebhookFeature registers a Webhook implementation
+func RegisterWebhookFeature(f WebhookFeatureSetup) {
+	webhookFeatureSetup = f
+}
+
 // Features contains optional implementations of Enterprise only features.
 type Features struct {
 	Migrator MigratorFeature
+	Webhook  WebhookFeature
 }
