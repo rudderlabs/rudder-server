@@ -429,5 +429,6 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 			err = bq.Export()
 		}
 	}
+	bq.Db.Close()
 	return
 }
