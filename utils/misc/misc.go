@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/ioutil"
 	"net"
@@ -138,6 +139,12 @@ func AssertErrorIfDev(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func GetHash(s string) int {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return int(h.Sum32())
 }
 
 //GetMD5Hash returns EncodeToString(md5 hash of the input string)
