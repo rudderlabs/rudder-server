@@ -649,5 +649,6 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 			err = rs.Export()
 		}
 	}
+	rs.Db.Close()
 	return
 }
