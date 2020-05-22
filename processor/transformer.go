@@ -47,6 +47,7 @@ var (
 )
 
 type transformerResponseT struct {
+	// Not marking this Singular Event, since this not a RudderEvent
 	Output   map[string]interface{} `json:"output"`
 	Metadata metadataT              `json:"metadata"`
 }

@@ -146,8 +146,8 @@ func (r *ReplayProcessorT) backendConfigSubscriber() {
 		for _, source := range sources.Sources {
 			var replays = []replayT{}
 			for _, dest := range source.Destinations {
-				if dest.Config.(map[string]interface{})["Replay"] == true {
-					notifyURL, ok := dest.Config.(map[string]interface{})["ReplayURL"].(string)
+				if dest.Config["Replay"] == true {
+					notifyURL, ok := dest.Config["ReplayURL"].(string)
 					if !ok {
 						notifyURL = ""
 					}

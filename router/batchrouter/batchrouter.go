@@ -184,7 +184,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
-		Config:   batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
+		Config:   batchJobs.BatchDestination.Destination.Config,
 	})
 	if err != nil {
 		panic(err)
@@ -211,7 +211,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	)
 	if !isWarehouse {
 		opPayload, _ = json.Marshal(&ObjectStorageT{
-			Config:          batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
+			Config:          batchJobs.BatchDestination.Destination.Config,
 			Key:             strings.Join(append(keyPrefixes, fileName), "/"),
 			Provider:        provider,
 			DestinationID:   batchJobs.BatchDestination.Destination.ID,
@@ -230,7 +230,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 
 	return StorageUploadOutput{
-		Config:         batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
+		Config:         batchJobs.BatchDestination.Destination.Config,
 		Key:            uploadOutput.ObjectName,
 		LocalFilePaths: []string{gzipFilePath},
 		JournalOpID:    opID,
@@ -754,7 +754,7 @@ func loadConfig() {
 	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
-	warehouseServiceMaxRetryTimeinHr =  config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
+	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
 }
 
 func init() {
