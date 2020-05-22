@@ -726,6 +726,7 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 	gateway.latencyStat = gateway.stats.NewStat("gateway.response_time", stats.TimerType)
 	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
 	gateway.batchTimeStat = gateway.stats.NewStat("gateway.batch_time", stats.TimerType)
+
 	// gateway.pf = pathfinder.Default()
 
 	if enableDedup {
