@@ -16,7 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/enterprise/pathfinder"
+	//	"github.com/rudderlabs/rudder-server/enterprise/pathfinder"
+
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -99,7 +100,7 @@ type HandleT struct {
 	requestMetricLock                         sync.RWMutex
 	diagnosisTicker                           *time.Ticker
 	webRequestBatchCount                      uint64
-	pf                                        pathfinder.ClusterStateT
+	// pf                                        pathfinder.ClusterStateT
 }
 
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -244,9 +245,9 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 			}
 			jobList = append(jobList, &newJob)
 
-			if computedNode := gateway.pf.GetNodeFromUserID(newJob.UserID); computedNode.ID != misc.GetNodeID() {
-				logger.Infof("Gateway: I am %s, but I have received an event that belongs to %s. event.UserID is %s", misc.GetNodeID(), computedNode.ID, newJob.UserID)
-			}
+			// if computedNode := gateway.pf.GetNodeFromUserID(newJob.UserID); computedNode.ID != misc.GetNodeID() {
+			// 	logger.Infof("Gateway: I am %s, but I have received an event that belongs to %s. event.UserID is %s", misc.GetNodeID(), computedNode.ID, newJob.UserID)
+			// }
 
 			jobIDReqMap[newJob.UUID] = req
 			jobWriteKeyMap[newJob.UUID] = writeKey
@@ -725,7 +726,7 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 	gateway.latencyStat = gateway.stats.NewStat("gateway.response_time", stats.TimerType)
 	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
 	gateway.batchTimeStat = gateway.stats.NewStat("gateway.batch_time", stats.TimerType)
-	gateway.pf = pathfinder.Default()
+	// gateway.pf = pathfinder.Default()
 
 	if enableDedup {
 		gateway.openBadger(clearDB)
