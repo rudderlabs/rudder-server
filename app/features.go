@@ -1,9 +1,8 @@
 package app
 
 import (
-	"net/http"
-
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 // MigratorFeature handles migration of nodes during cluster's scale up/down.
@@ -21,15 +20,9 @@ func RegisterMigratorFeature(f MigratorFeatureSetup) {
 	migratorFeatureSetup = f
 }
 
-// WebhookHandler is the interface returned on setting up a WebhookFeature
-type WebhookHandler interface {
-	BatchHandler(http.ResponseWriter, *http.Request)
-	Register(name string, writeKey string)
-}
-
 // WebhookFeature handles webhook event requests
 type WebhookFeature interface {
-	Setup(interface{}) WebhookHandler
+	Setup(types.GatewayI) types.WebHookI
 }
 
 // WebhookFeatureSetup is a function that initializes a Webhook feature, based on application instance
