@@ -36,6 +36,12 @@ const (
 )
 
 const (
+	RS        = "RS"
+	BQ        = "BQ"
+	SNOWFLAKE = "SNOWFLAKE"
+)
+
+const (
 	StagingFileSucceededState = "succeeded"
 	StagingFileFailedState    = "failed"
 	StagingFileExecutingState = "executing"
@@ -176,7 +182,7 @@ type SchemaDiffT struct {
 	UpdatedSchema map[string]map[string]string
 }
 
-func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (diff SchemaDiffT) {
+func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string, provider string) (diff SchemaDiffT) {
 	diff = SchemaDiffT{
 		Tables:        []string{},
 		ColumnMaps:    make(map[string]map[string]string),
@@ -197,8 +203,13 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 			diff.UpdatedSchema[tableName] = uploadColumnMap
 		} else {
 			diff.ColumnMaps[tableName] = make(map[string]string)
+			currentColumnsWithCaseMap := make(map[string]string)
+			for currentColumnName, currentColumnValue := range currentColumnsMap {
+				currentColumnNameWithCase := ToCase(provider, currentColumnName)
+				currentColumnsWithCaseMap[currentColumnNameWithCase] = currentColumnValue
+			}
 			for columnName, columnVal := range uploadColumnMap {
-				if _, ok := currentColumnsMap[columnName]; !ok {
+				if _, ok := currentColumnsWithCaseMap[columnName]; !ok {
 					diff.ColumnMaps[tableName][columnName] = columnVal
 					diff.UpdatedSchema[tableName][columnName] = columnVal
 				}
@@ -626,8 +637,13 @@ func ToSafeDBString(provider string, str string) string {
 }
 
 func ToCase(provider string, str string) string {
+	if provider == "" {
+		return str
+	}
 	if strings.ToUpper(provider) == "SNOWFLAKE" {
 		str = strings.ToUpper(str)
+	} else {
+		str = strings.ToLower(str)
 	}
 	return str
 }

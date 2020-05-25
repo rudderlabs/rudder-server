@@ -149,7 +149,7 @@ func (rs *HandleT) createSchema() (err error) {
 }
 
 func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
-	diff := warehouseutils.GetSchemaDiff(rs.CurrentSchema, rs.Upload.Schema)
+	diff := warehouseutils.GetSchemaDiff(rs.CurrentSchema, rs.Upload.Schema, warehouseutils.RS)
 	updatedSchema = diff.UpdatedSchema
 	if len(rs.CurrentSchema) == 0 {
 		err = rs.createSchema()
