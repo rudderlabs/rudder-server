@@ -216,9 +216,9 @@ func getNamespaceFromDestinationConfig(config interface{}, sourceName string, de
 		namespace = configMap["namespace"].(string)
 	}
 	if len(strings.TrimSpace(namespace)) > 0 {
-		namespace = misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(destType, namespace))), 127)
+		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, strcase.ToSnake(warehouseutils.ToSafeDBString(destType, namespace))), 127)
 	} else {
-		namespace = misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(destType, sourceName))), 127)
+		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, strcase.ToSnake(warehouseutils.ToSafeDBString(destType, sourceName))), 127)
 	}
 	return namespace
 }
@@ -447,7 +447,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 	startJSONID := jsonUploadsList[0].ID
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
-	namespace := misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(wh.destType, warehouse.Source.Name))), 127)
+	namespace := warehouse.Namespace
 
 	var firstEventAt, lastEventAt time.Time
 	if ok := jsonUploadsList[0].FirstEventAt.IsZero(); !ok {
