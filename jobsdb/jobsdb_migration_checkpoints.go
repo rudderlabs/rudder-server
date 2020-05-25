@@ -297,10 +297,10 @@ func (jd *HandleT) GetCheckpoints(migrationType MigrationOp, status string) []Mi
 		migrationCheckpoint := MigrationCheckpointT{}
 
 		err = rows.Scan(&migrationCheckpoint.ID, &migrationCheckpoint.MigrationType, &migrationCheckpoint.FromNode,
-			&migrationCheckpoint.ToNode, &migrationCheckpoint.FileLocation, &migrationCheckpoint.Status,
+			&migrationCheckpoint.ToNode, &migrationCheckpoint.JobsCount, &migrationCheckpoint.FileLocation, &migrationCheckpoint.Status,
 			&migrationCheckpoint.StartSeq, &migrationCheckpoint.Payload, &migrationCheckpoint.TimeStamp)
 		if err != nil {
-			panic(fmt.Sprintf("query result pares issue : %s", err.Error()))
+			panic(fmt.Sprintf("query result parse issue : %s", err.Error()))
 		}
 		migrationCheckpoints = append(migrationCheckpoints, migrationCheckpoint)
 	}
