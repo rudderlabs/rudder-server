@@ -188,7 +188,7 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 	isForced := false
 
 	//If MIGRATION_MODE environment variable is present and is equal to "import", "export", "import-export", then server mode is forced to be Migration.
-	if forceMigrationMode == IMPORT || forceMigrationMode == EXPORT || forceMigrationMode == IMPORT_EXPORT {
+	if IsValidMigrationMode(forceMigrationMode) {
 		logger.Info("Setting server mode to Migration. If this is not intended remove environment variables related to Migration.")
 		forceMode = migrationMode
 	} else {

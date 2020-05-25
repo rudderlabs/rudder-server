@@ -9,9 +9,16 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
+var (
+	nonExportedJobsCountByDS   map[string]int64
+	doesDSHaveJobsToMigrateMap map[string]bool
+)
+
 //SetupForExport is used to setup jobsdb for export or for import or for both
 func (jd *HandleT) SetupForExport() {
 	jd.migrationState.lastDsForExport = jd.findOrCreateDsFromSetupCheckpoint(ExportOp)
+	nonExportedJobsCountByDS = make(map[string]int64)
+	doesDSHaveJobsToMigrateMap = make(map[string]bool)
 	logger.Infof("[[ %s-JobsDB Export ]] Last ds for export : %v", jd.GetTablePrefix(), jd.migrationState.lastDsForExport)
 }
 
@@ -57,8 +64,19 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
+
+		doesDSHaveJobsToMigrate, found := doesDSHaveJobsToMigrateMap[ds.Index]
+		if found && !doesDSHaveJobsToMigrate {
+			continue
+		}
+
 		jobs, err := jd.getNonMigratedJobsFromDSAndMarkMigrating(ds, count)
 		jd.assertError(err)
+
+		if len(jobs) == 0 {
+			doesDSHaveJobsToMigrateMap[ds.Index] = false
+		}
+
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
 		jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
@@ -122,9 +140,8 @@ func (jd *HandleT) getNonMigratedJobsFromDSAndMarkMigrating(ds dataSetT, count i
 			order by %[1]s.job_id asc, %[2]s.id desc
 		) as temp WHERE job_state IS NULL OR (job_state != 'migrating' AND job_state != 'migrated' AND job_state != 'wont_migrate')`, ds.JobTable, ds.JobStatusTable)
 
-	if count > 0 {
-		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
-	}
+	jd.assert(count > 0, fmt.Sprintf("count should be greater than 0, but count = %d", count))
+	sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 
 	logger.Info(sqlStatement)
 	rows, err = jd.dbHandle.Query(sqlStatement)
@@ -169,17 +186,22 @@ func (jd *HandleT) getNonMigratedJobsFromDSAndMarkMigrating(ds dataSetT, count i
 }
 
 //UpdateJobStatusAndCheckpoint does update job status and checkpoint in a single transaction
-func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNodeID string, toNodeID string, uploadLocation string) {
+func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNodeID string, toNodeID string, jobsCount int64, uploadLocation string) {
 	queryStat := stats.NewJobsDBStat("update_status_and_checkpoint", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
-	defer txn.Rollback()
-	jd.UpdateJobStatusInTxn(txn, statusList, []string{}, []ParameterFilterT{})
-	migrationCheckpoint := NewMigrationCheckpoint(ExportOp, fromNodeID, toNodeID, uploadLocation, Exported, 0)
-	migrationCheckpoint.ID = jd.CheckpointInTxn(txn, &migrationCheckpoint)
-	txn.Commit()
+
+	err = jd.UpdateJobStatusInTxn(txn, statusList, []string{}, []ParameterFilterT{})
+	jd.assertTxErrorAndRollback(txn, err)
+
+	migrationCheckpoint := NewMigrationCheckpoint(ExportOp, fromNodeID, toNodeID, jobsCount, uploadLocation, Exported, 0)
+	migrationCheckpoint.ID, err = jd.CheckpointInTxn(txn, migrationCheckpoint)
+	jd.assertTxErrorAndRollback(txn, err)
+
+	err = txn.Commit()
+	jd.assertError(err)
 }
 
 //IsMigrating returns true if there are non zero jobs with status = 'migrating'
@@ -202,13 +224,11 @@ func (jd *HandleT) IsMigrating() bool {
 		return false
 	}
 
-	dsCounts := make(map[string]int64)
-
 	for _, ds := range dsList {
-		nonExportedCount, found := dsCounts[ds.Index]
+		nonExportedCount, found := nonExportedJobsCountByDS[ds.Index]
 		if !found || nonExportedCount > 0 {
 			nonExportedCount = jd.getNonExportedJobsCountDS(ds)
-			dsCounts[ds.Index] = nonExportedCount
+			nonExportedJobsCountByDS[ds.Index] = nonExportedCount
 		}
 		if nonExportedCount > 0 {
 			return true

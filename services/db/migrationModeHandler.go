@@ -11,6 +11,10 @@ const (
 	IMPORT_EXPORT = "import-export"
 )
 
+func IsValidMigrationMode(migrationMode string) bool {
+	return migrationMode == IMPORT || migrationMode == EXPORT || migrationMode == IMPORT_EXPORT
+}
+
 func (handler *MigrationModeHandler) RecordAppStart(currTime int64) {
 	handler.recoveryData.MigrationModeStartTimes = append(handler.recoveryData.MigrationModeStartTimes, currTime)
 	handler.recoveryData.ReadableMigrationModeStartTimes = append(handler.recoveryData.ReadableMigrationModeStartTimes, fmt.Sprint(time.Unix(currTime, 0)))

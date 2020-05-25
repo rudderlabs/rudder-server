@@ -39,6 +39,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -194,6 +195,15 @@ func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
 //Some helper functions
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
+		jd.printLists(true)
+		logger.Fatal(jd.dsEmptyResultCache)
+		panic(err)
+	}
+}
+
+func (jd *HandleT) assertTxErrorAndRollback(tx *sql.Tx, err error) {
+	if err != nil {
+		tx.Rollback()
 		jd.printLists(true)
 		logger.Fatal(jd.dsEmptyResultCache)
 		panic(err)
@@ -812,6 +822,15 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 	return newDSIdx
 }
 
+type transactionHandler interface {
+	Exec(string, ...interface{}) (sql.Result, error)
+	Prepare(query string) (*sql.Stmt, error)
+	//If required, add other definitions that are common between *sql.DB and *sql.Tx
+	//Never include Commit and Rollback in this interface
+	//That ensures that whoever is acting on a transactionHandler can't commit or rollback
+	//Only the function that passes *sql.Tx should do the commit or rollback based on the error it receives
+}
+
 func (jd *HandleT) createDS(newDSIdx string) dataSetT {
 	var newDS dataSetT
 	newDS.JobTable, newDS.JobStatusTable = jd.createTableNames(newDSIdx)
@@ -824,6 +843,7 @@ func (jd *HandleT) createDS(newDSIdx string) dataSetT {
 	opID := jd.JournalMarkStart(addDSOperation, opPayload)
 
 	//Create the jobs and job_status tables
+	//TODO: Make user_id as not null
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
                                       job_id BIGSERIAL PRIMARY KEY,
 									  uuid UUID NOT NULL,
@@ -1105,33 +1125,42 @@ a given dataset. The names should be self explainatory
 */
 
 func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
-	//TODO: Instead of passing nil, start a transaction here and handle rollback/commit based on error
-	return jd.storeJobsDSInTxn(nil, ds, copyID, retryEach, jobList)
+	txn, err := jd.dbHandle.Begin()
+	jd.assertError(err)
+
+	errorMessagesMap, err = jd.storeJobsDSInTxn(nil, ds, copyID, retryEach, jobList)
+
+	if err != nil && retryEach {
+		logger.Debug("[storeJobsDSInTxn] rolling back transaction")
+		txn.Rollback() // rollback started txn, to prevent dangling db connection
+		for _, job := range jobList {
+			errorMessage := jd.storeJobDS(ds, job)
+			errorMessagesMap[job.UUID] = errorMessage
+		}
+	} else {
+		jd.assertError(err)
+		err = txn.Commit()
+		jd.assertError(err)
+	}
+
+	return errorMessagesMap
 }
 
-func (jd *HandleT) storeJobsDSInTxn(txn *sql.Tx, ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
+func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, copyID bool, retryEach bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string, err error) {
 	queryStat := stats.NewJobsDBStat("store_jobs", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
 
 	var stmt *sql.Stmt
-	var err error
-
-	//Using transactions for bulk copying
-	isTxnPassed := txn != nil
-	if !isTxnPassed {
-		txn, err = jd.dbHandle.Begin()
-		jd.assertError(err)
-	}
 
 	errorMessagesMap = make(map[uuid.UUID]string)
 
 	if copyID {
-		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "parameters", "custom_val",
+		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "parameters", "custom_val",
 			"event_payload", "created_at", "expire_at"))
 		jd.assertError(err)
 	} else {
-		stmt, err = txn.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "parameters", "custom_val", "event_payload"))
+		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "parameters", "custom_val", "event_payload"))
 		jd.assertError(err)
 	}
 
@@ -1149,22 +1178,6 @@ func (jd *HandleT) storeJobsDSInTxn(txn *sql.Tx, ds dataSetT, copyID bool, retry
 		jd.assertError(err)
 	}
 	_, err = stmt.Exec()
-	if !isTxnPassed {
-		if err != nil && retryEach {
-			logger.Debug("[storeJobsDSInTxn] rolling back transaction")
-			txn.Rollback() // rollback started txn, to prevent dangling db connection
-			for _, job := range jobList {
-				errorMessage := jd.storeJobDS(ds, job)
-				errorMessagesMap[job.UUID] = errorMessage
-			}
-		} else {
-			jd.assertError(err)
-			err = txn.Commit()
-			jd.assertError(err)
-		}
-	} else {
-		jd.assertError(err)
-	}
 
 	//Empty customValFilters means we want to clear for all
 	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, false)
@@ -1523,24 +1536,29 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 }
 
 func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
-	return jd.updateJobStatusDSInTxn(nil, ds, statusList, customValFilters, parameterFilters)
+	txn, err := jd.dbHandle.Begin()
+	jd.assertError(err)
+
+	err = jd.updateJobStatusDSInTxn(txn, ds, statusList, customValFilters, parameterFilters)
+	jd.assertError(err)
+
+	err = txn.Commit()
+	jd.assertError(err)
+
+	return err
 }
 
-func (jd *HandleT) updateJobStatusDSInTxn(txn *sql.Tx, ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
+func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataSetT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) (err error) {
 
 	if len(statusList) == 0 {
 		return nil
 	}
 
-	isTxnPassed := txn != nil
-	if !isTxnPassed {
-		txn, err = jd.dbHandle.Begin()
-		jd.assertError(err)
-	}
-
-	stmt, err := txn.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
+	stmt, err := txHandler.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
 		"retry_time", "error_code", "error_response"))
-	jd.assertError(err)
+	if err != nil {
+		return err
+	}
 
 	defer stmt.Close()
 	for _, status := range statusList {
@@ -1550,15 +1568,15 @@ func (jd *HandleT) updateJobStatusDSInTxn(txn *sql.Tx, ds dataSetT, statusList [
 		}
 		_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
 			status.RetryTime, status.ErrorCode, string(status.ErrorResponse))
-		jd.assertError(err)
+		if err != nil {
+			return err
+		}
 	}
 	_, err = stmt.Exec()
-	jd.assertError(err)
-
-	if !isTxnPassed {
-		err = txn.Commit()
-		jd.assertError(err)
+	if err != nil {
+		return err
 	}
+
 	//Get all the states and clear from empty cache
 	stateFiltersMap := map[string]bool{}
 	for _, st := range statusList {
@@ -1620,13 +1638,10 @@ func (jd *HandleT) mainCheckLoop() {
 		}
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
-		logger.Infof("[[ MainCheckLoop ]]: migration mode = %s", jd.migrationMode)
-		if jd.migrationMode != "" {
-			logger.Infof("[[ MainCheckLoop ]]: migration mode = %s is non empty so skipping internal migrations", jd.migrationMode)
+		if db.IsValidMigrationMode(jd.migrationMode) {
+			logger.Debugf("[[ MainCheckLoop ]]: migration mode = %s, so skipping internal migrations", jd.migrationMode)
 			continue
 		}
-
-		logger.Infof("[[ MainCheckLoop ]]: This shouldn't be logged in multi-node migration mode")
 
 		//Take the lock and run actual migration
 		jd.dsMigrationLock.Lock()
@@ -2086,18 +2101,18 @@ func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) in
 
 //JournalMarkDone marks the end of a journal action
 func (jd *HandleT) JournalMarkDone(opID int64) {
-	jd.JournalMarkDoneInTxn(jd.dbHandle, opID)
-}
-
-type transactionHandler interface {
-	Exec(string, ...interface{}) (sql.Result, error)
+	err := jd.JournalMarkDoneInTxn(jd.dbHandle, opID)
+	jd.assertError(err)
 }
 
 //JournalMarkDoneInTxn marks the end of a journal action in a transaction
-func (jd *HandleT) JournalMarkDoneInTxn(txHandler transactionHandler, opID int64) {
+func (jd *HandleT) JournalMarkDoneInTxn(txHandler transactionHandler, opID int64) error {
 	sqlStatement := fmt.Sprintf(`UPDATE %s_journal SET done=$2, end_time=$3 WHERE id=$1`, jd.tablePrefix)
 	_, err := txHandler.Exec(sqlStatement, opID, true, time.Now())
-	jd.assertError(err)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (jd *HandleT) JournalDeleteEntry(opID int64) {
@@ -2202,11 +2217,11 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		jd.dropDS(migrateDest, true)
 		undoOp = true
 	case migrateImportOperation:
+		jd.assert(db.IsValidMigrationMode(jd.migrationMode), "If migration mode is not valid, then this operation shouldn't have been unfinished. Go debug")
 		var importDest dataSetT
 		json.Unmarshal(opPayload, &importDest)
 		jd.dropDS(importDest, true)
-		checkpoint := jd.GetSetupCheckpoint(ImportOp)
-		jd.deleteCheckpoint(checkpoint)
+		jd.deleteSetupCheckpoint(ImportOp)
 		undoOp = true
 	case postMigrateDSOperation:
 		//Some of the source datasets would have been
@@ -2252,7 +2267,9 @@ const (
 func (jd *HandleT) recoverFromJournal() {
 	jd.recoverFromCrash(mainGoRoutine)
 	jd.recoverFromCrash(backupGoRoutine)
-	jd.recoverFromCrash(migratorRoutine)
+	if db.IsValidMigrationMode(jd.migrationMode) {
+		jd.recoverFromCrash(migratorRoutine)
+	}
 }
 
 /*
@@ -2261,7 +2278,14 @@ customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
 func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) {
-	jd.UpdateJobStatusInTxn(nil, statusList, customValFilters, parameterFilters)
+	txn, err := jd.dbHandle.Begin()
+	jd.assertError(err)
+
+	err = jd.UpdateJobStatusInTxn(txn, statusList, customValFilters, parameterFilters)
+	jd.assertTxErrorAndRollback(txn, err)
+
+	err = txn.Commit()
+	jd.assertError(err)
 }
 
 /*
@@ -2269,10 +2293,10 @@ UpdateJobStatusInTxn updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) {
+func (jd *HandleT) UpdateJobStatusInTxn(txHandler transactionHandler, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
 
 	if len(statusList) == 0 {
-		return
+		return nil
 	}
 
 	//First we sort by JobID
@@ -2307,12 +2331,10 @@ func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, c
 						statusList[i-1].JobID, lastPos, i-1)
 				}
 				var err error
-				if txn == nil {
-					err = jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
-				} else {
-					err = jd.updateJobStatusDSInTxn(txn, ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
+				err = jd.updateJobStatusDSInTxn(txHandler, ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
+				if err != nil {
+					return err
 				}
-				jd.assertError(err)
 				lastPos = i
 				break
 			}
@@ -2321,12 +2343,10 @@ func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, c
 		if i == len(statusList) && lastPos < i {
 			logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
 			var err error
-			if txn == nil {
-				err = jd.updateJobStatusDS(ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
-			} else {
-				err = jd.updateJobStatusDSInTxn(txn, ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
+			err = jd.updateJobStatusDSInTxn(txHandler, ds.ds, statusList[lastPos:i], customValFilters, parameterFilters)
+			if err != nil {
+				return err
 			}
-			jd.assertError(err)
 			lastPos = i
 			break
 		}
@@ -2340,14 +2360,12 @@ func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, c
 		//Update status in the last element
 		logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
 		var err error
-		if txn == nil {
-			err = jd.updateJobStatusDS(dsList[len(dsList)-1], statusList[lastPos:], customValFilters, parameterFilters)
-		} else {
-			err = jd.updateJobStatusDSInTxn(txn, dsList[len(dsList)-1], statusList[lastPos:], customValFilters, parameterFilters)
+		err = jd.updateJobStatusDSInTxn(txHandler, dsList[len(dsList)-1], statusList[lastPos:], customValFilters, parameterFilters)
+		if err != nil {
+			return err
 		}
-		jd.assertError(err)
 	}
-
+	return nil
 }
 
 /*
@@ -2650,7 +2668,6 @@ func (jd *HandleT) staticDSTest() {
 		}
 
 		jd.updateJobStatusDS(testDS, statusList, []string{testEndPoint}, nil)
-
 		//Mark call as failed
 		statusList = nil
 		var maxAttempt = 0
