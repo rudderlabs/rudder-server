@@ -216,9 +216,9 @@ func getNamespaceFromDestinationConfig(config interface{}, sourceName string, de
 		namespace = configMap["namespace"].(string)
 	}
 	if len(strings.TrimSpace(namespace)) > 0 {
-		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, strcase.ToSnake(warehouseutils.ToSafeDBString(destType, namespace))), 127)
+		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, warehouseutils.ToSafeDBString(destType, strcase.ToSnake(namespace))), 127)
 	} else {
-		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, strcase.ToSnake(warehouseutils.ToSafeDBString(destType, sourceName))), 127)
+		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, warehouseutils.ToSafeDBString(destType, strcase.ToSnake(sourceName))), 127)
 	}
 	return namespace
 }
