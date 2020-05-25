@@ -188,6 +188,14 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string, pro
 		ColumnMaps:    make(map[string]map[string]string),
 		UpdatedSchema: make(map[string]map[string]string),
 	}
+	currentSchemaWithCase := make(map[string]map[string]string)
+	for tableName, columnMap := range currentSchema {
+		tableNameWithCase := ToCase(provider, tableName)
+		currentSchemaWithCase[tableNameWithCase] = make(map[string]string)
+		for columnName, columnType := range columnMap {
+			currentSchemaWithCase[tableNameWithCase][ToCase(provider, columnName)] = columnType
+		}
+	}
 	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
 	for tableName, columnMap := range currentSchema {
 		diff.UpdatedSchema[tableName] = make(map[string]string)
@@ -196,20 +204,15 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string, pro
 		}
 	}
 	for tableName, uploadColumnMap := range uploadSchema {
-		currentColumnsMap, ok := currentSchema[tableName]
+		currentColumnsMap, ok := currentSchemaWithCase[tableName]
 		if !ok {
 			diff.Tables = append(diff.Tables, tableName)
 			diff.ColumnMaps[tableName] = uploadColumnMap
 			diff.UpdatedSchema[tableName] = uploadColumnMap
 		} else {
 			diff.ColumnMaps[tableName] = make(map[string]string)
-			currentColumnsWithCaseMap := make(map[string]string)
-			for currentColumnName, currentColumnValue := range currentColumnsMap {
-				currentColumnNameWithCase := ToCase(provider, currentColumnName)
-				currentColumnsWithCaseMap[currentColumnNameWithCase] = currentColumnValue
-			}
 			for columnName, columnVal := range uploadColumnMap {
-				if _, ok := currentColumnsWithCaseMap[columnName]; !ok {
+				if _, ok := currentColumnsMap[columnName]; !ok {
 					diff.ColumnMaps[tableName][columnName] = columnVal
 					diff.UpdatedSchema[tableName][columnName] = columnVal
 				}
