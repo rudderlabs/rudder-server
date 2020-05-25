@@ -1128,7 +1128,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, retryEach bool, jobList
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
-	errorMessagesMap, err = jd.storeJobsDSInTxn(nil, ds, copyID, retryEach, jobList)
+	errorMessagesMap, err = jd.storeJobsDSInTxn(txn, ds, copyID, retryEach, jobList)
 
 	if err != nil && retryEach {
 		logger.Debug("[storeJobsDSInTxn] rolling back transaction")
