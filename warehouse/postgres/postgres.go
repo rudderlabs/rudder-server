@@ -233,7 +233,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 
 	gzipFile, err := os.Open(objectFileName)
 	if err != nil {
-		logger.Errorf("WH: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
+		logger.Errorf("PG: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 
@@ -242,9 +242,9 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 	gzipReader, err := gzip.NewReader(gzipFile)
 	if err != nil {
 		if err.Error() == "EOF" {
-			logger.Infof("WH: EOF while reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
+			logger.Infof("PG: EOF while reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
 		} else {
-			logger.Errorf("WH: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
+			logger.Errorf("PG: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
 			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 			return
 
@@ -384,14 +384,14 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 
 func (pg *HandleT) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, pg.Namespace)
-	logger.Infof("Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
+	logger.Infof("PG: Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
 }
 
 func (pg *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, name, columnsWithDataTypes(columns, ""))
-	logger.Infof("Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
+	logger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
 }
@@ -407,8 +407,8 @@ func (pg *HandleT) tableExists(tableName string) (exists bool, err error) {
 }
 
 func (pg *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType])
-	logger.Infof("Adding column in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s`, tableName, columnName, dataTypesMap[columnType])
+	logger.Infof("PG: Adding column in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
 }
@@ -428,7 +428,7 @@ func (pg *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	if err != nil {
 		return nil, err
 	}
-	logger.Infof("Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
+	logger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
 
 	processedTables := make(map[string]bool)
 	for _, tableName := range diff.Tables {
@@ -455,7 +455,7 @@ func (pg *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 				err := pg.addColumn(tableName, columnName, columnType)
 				if err != nil {
 					if checkAndIgnoreAlreadyExistError(err) {
-						logger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, pg.Namespace, tableName, err)
+						logger.Infof("PG: Column %s already exists on %s.%s \nResponse: %v", columnName, pg.Namespace, tableName, err)
 					} else {
 						return nil, err
 					}
@@ -480,7 +480,7 @@ func (pg *HandleT) MigrateSchema() (err error) {
 	if err != nil {
 		panic(err)
 	}
-	err = warehouseutils.UpdateCurrentSchema(pg.Namespace, pg.Warehouse, pg.Upload.ID, pg.CurrentSchema, updatedSchema, pg.DbHandle)
+	err = warehouseutils.UpdateCurrentSchema(pg.Namespace, pg.Warehouse, pg.Upload.ID, updatedSchema, pg.DbHandle)
 	timer.End()
 	if err != nil {
 		warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
@@ -500,21 +500,18 @@ func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	if err != nil {
 		panic(err)
 	}
-	pg.CurrentSchema = currSchema.Schema
-	pg.Namespace = strings.ToLower(currSchema.Namespace)
-	if pg.Namespace == "" {
-		logger.Infof("pg: Namespace not found in current schema for pg:%s, setting from upload: %s", pg.Warehouse.Destination.ID, pg.Upload.Namespace)
-		pg.Namespace = strings.ToLower(pg.Upload.Namespace)
-	}
+	pg.CurrentSchema = currSchema
+	pg.Namespace = pg.Upload.Namespace
 
 	pg.Db, err = connect(pg.getConnectionCredentials(optionalCredsT{}))
 	if err != nil {
 		warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
 		return err
 	}
+	defer pg.Db.Close()
 	if err := pg.MigrateSchema(); err == nil {
 		pg.Export()
 	}
-	pg.Db.Close()
+
 	return
 }

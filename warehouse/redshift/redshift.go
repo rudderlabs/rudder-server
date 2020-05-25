@@ -637,11 +637,6 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	}
 	rs.CurrentSchema = currSchema
 	rs.Namespace = rs.Upload.Namespace
-	if rs.Namespace == "" {
-		logger.Infof("Namespace not found in currentschema for RS:%s, setting from upload: %s", rs.Warehouse.Destination.ID, rs.Upload.Namespace)
-		rs.Namespace = rs.Upload.Namespace
-	}
-
 	if config.Stage == "ExportData" {
 		err = rs.Export()
 	} else {

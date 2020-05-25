@@ -497,17 +497,10 @@ func GetObjectFolder(provider string, location string) (folder string) {
 	return
 }
 
-var cloudProviderToStorageMap = map[string]string{
-	"AWS":   "S3",
-	"GCP":   "GCS",
-	"AZURE": "AZURE_BLOB",
-	"MINIO": "MINIO",
-}
-
 func GetObjectName(providerConfig interface{}, location string) (key string, err error) {
 	config := providerConfig.(map[string]interface{})
 	fm, err := filemanager.New(&filemanager.SettingsT{
-		Provider: cloudProviderToStorageMap[config["cloudProvider"].(string)],
+		Provider: config["bucketProvider"].(string),
 		Config:   config,
 	})
 	if err != nil {
@@ -676,11 +669,11 @@ func GetSlaveWorkerId(workerIdx int, slaveID string) string {
 	return fmt.Sprintf("%v-%v-%v", GetIP(), workerIdx, slaveID)
 }
 
-func PostgresCloudProvider(config interface{}) string {
+func PostgresBucketProvider(config interface{}) string {
 	c := config.(map[string]interface{})
-	provider, ok := c["cloudProvider"].(string)
+	provider, ok := c["bucketProvider"].(string)
 	if provider == "" || !ok {
-		provider = "MINIO"
+		return ""
 	}
 	return provider
 }
@@ -723,9 +716,6 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string, warehouseDestinati
 	columnKeys := make([]string, len(keys))
 	for i := 0; i < len(keys); i++ {
 		columnKeys[i] = keys[i].String()
-		if warehouseDestinationType == "POSTGRES" {
-			columnKeys[i] = strings.ToLower(columnKeys[i])
-		}
 	}
 	sort.Strings(columnKeys)
 	return columnKeys

@@ -708,7 +708,6 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println(payloadJSON)
 		message := pgnotifier.MessageT{
 			Payload: payloadJSON,
 		}
