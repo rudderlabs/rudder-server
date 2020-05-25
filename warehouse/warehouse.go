@@ -283,8 +283,16 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	return stagingFilesList, nil
 }
 
-func mergeSchema(currentSchema map[string]map[string]string, schemaList []map[string]map[string]string) map[string]map[string]string {
+func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schemaList []map[string]map[string]string) map[string]map[string]string {
 	schemaMap := make(map[string]map[string]string)
+	currentSchemaWithCase := make(map[string]map[string]string)
+	for tableName, columnMap := range currentSchema {
+		tableNameWithCase := warehouseutils.ToCase(wh.destType, tableName)
+		currentSchemaWithCase[tableNameWithCase] = make(map[string]string)
+		for columnName, columnType := range columnMap {
+			currentSchemaWithCase[tableNameWithCase][warehouseutils.ToCase(wh.destType, columnName)] = columnType
+		}
+	}
 	for _, schema := range schemaList {
 		for tableName, columnMap := range schema {
 			if schemaMap[tableName] == nil {
@@ -292,9 +300,10 @@ func mergeSchema(currentSchema map[string]map[string]string, schemaList []map[st
 			}
 			for columnName, columnType := range columnMap {
 				// if column already has a type in db, use that
-				if len(currentSchema) > 0 {
-					if _, ok := currentSchema[tableName]; ok {
-						if columnTypeInDB, ok := currentSchema[tableName][columnName]; ok {
+				if len(currentSchemaWithCase) > 0 {
+
+					if _, ok := currentSchemaWithCase[tableName]; ok {
+						if columnTypeInDB, ok := currentSchemaWithCase[tableName][columnName]; ok {
 							schemaMap[tableName][columnName] = columnTypeInDB
 							continue
 						}
@@ -352,7 +361,7 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 		}
 		rows.Close()
 
-		currSchema = mergeSchema(currSchema, schemas)
+		currSchema = wh.mergeSchema(currSchema, schemas)
 
 		count += stagingFilesSchemaPaginationSize
 		if count >= len(jsonUploadsList) {
