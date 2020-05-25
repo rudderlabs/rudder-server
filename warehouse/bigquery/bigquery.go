@@ -414,6 +414,7 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
 		return err
 	}
+	defer bq.Db.Close()
 	currSchema, err := warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
 	if err != nil {
 		panic(err)
