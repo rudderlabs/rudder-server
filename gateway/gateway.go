@@ -85,7 +85,6 @@ func init() {
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
 	webRequestQ                               chan *webRequestT
-	batchRequestQ                             chan *batchWebRequestT
 	jobsDB                                    jobsdb.JobsDB
 	badgerDB                                  *badger.DB
 	ackCount                                  uint64
@@ -781,7 +780,6 @@ func (gateway *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB 
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
 	gateway.webRequestQ = make(chan *webRequestT)
-	gateway.batchRequestQ = make(chan *batchWebRequestT)
 	gateway.jobsDB = jobsDB
 	rruntime.Go(func() {
 		gateway.webRequestRouter()
