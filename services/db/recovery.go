@@ -220,19 +220,6 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 		}
 	}
 
-	//TODO recoveryModeStat
-	recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
-	if recoveryData.Mode != normalMode {
-		if recoveryData.Mode == degradedMode {
-			recoveryModeStat.Gauge(2)
-		} else if recoveryData.Mode == maintenanceMode {
-			recoveryModeStat.Gauge(3)
-		} else if recoveryData.Mode == migrationMode {
-			recoveryModeStat.Gauge(4)
-		}
-	} else {
-		recoveryModeStat.Gauge(1)
-	}
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
