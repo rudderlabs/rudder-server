@@ -627,7 +627,7 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				enabledWriteKeysSourceMap[source.WriteKey] = source.ID
-				if source.SourceDefinition.Category == "webhook" {
+				if gateway.application.Features().Webhook != nil && source.SourceDefinition.Category == "webhook" {
 					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
 					gateway.webhookHandler.Register(source.SourceDefinition.Name)
 				}
@@ -750,7 +750,9 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 			gateway.webRequestBatchDBWriter(j)
 		})
 	}
-	gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
+	if gateway.application.Features().Webhook != nil {
+		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
+	}
 	gateway.backendConfig.WaitForConfig()
 	rruntime.Go(func() {
 		gateway.printStats()
