@@ -102,6 +102,7 @@ func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProd
 
 	config := sarama.NewConfig()
 	config.Net.DialTimeout = 10 * time.Second
+	config.Net.WriteTimeout = 1 * time.Second
 
 	config.Net.SASL.Enable = true
 	config.Net.SASL.User = azureEventHubUser
