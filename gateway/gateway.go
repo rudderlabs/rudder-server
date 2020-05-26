@@ -673,7 +673,7 @@ func (gateway *HandleT) openBadger(clearDB *bool) {
 }
 
 /*
-Public methods on GatewayI
+Public methods on GatewayWebhookI
 */
 
 // AddToWebRequestQ provides access to add a request to the gateway's webRequestQ

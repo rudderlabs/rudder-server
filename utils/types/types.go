@@ -2,7 +2,7 @@ package types
 
 import "net/http"
 
-type GatewayI interface {
+type GatewayWebhookI interface {
 	IncrementRecvCount(count uint64)
 	IncrementAckCount(count uint64)
 	UpdateWriteKeyStats(writeKeyStats map[string]int, bucket string)

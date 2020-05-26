@@ -22,7 +22,7 @@ func RegisterMigratorFeature(f MigratorFeatureSetup) {
 
 // WebhookFeature handles webhook event requests
 type WebhookFeature interface {
-	Setup(types.GatewayI) types.WebHookI
+	Setup(types.GatewayWebhookI) types.WebHookI
 }
 
 // WebhookFeatureSetup is a function that initializes a Webhook feature, based on application instance
