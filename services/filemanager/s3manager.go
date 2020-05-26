@@ -48,7 +48,6 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 		}
 	}
 	output, err := s3manager.Upload(&awsS3Manager.UploadInput{
-		ACL:    aws.String("bucket-owner-full-control"),
 		Bucket: aws.String(manager.Config.Bucket),
 		Key:    aws.String(fileName),
 		Body:   file,
