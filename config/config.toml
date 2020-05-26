@@ -119,6 +119,8 @@ randomWorkerAssign = false
 useTestSink = false
 maxFailedCountForJob = 8
 keepOrderOnFailure = true
+kafkaWriteTimeoutInSec = 2
+kafkaDialTimeoutInSec = 10
 
 [BatchRouter]
 mainLoopSleepInS = 2
