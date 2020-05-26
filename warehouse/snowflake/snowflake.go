@@ -293,7 +293,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		sortedColumnNames += fmt.Sprintf(`%s`, key)
 	}
 
-	stagingTableName := fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1)), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, tableName)
 
 	logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)

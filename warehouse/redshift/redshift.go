@@ -354,7 +354,7 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
 	}
 
-	stagingTableName := fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String())
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, tableName, uuid.NewV4().String()), 127)
 	err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), rs.Upload.Schema[tableName])
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
