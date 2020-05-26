@@ -1086,7 +1086,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig),
-		Config:   job.DestinationConfig.(map[string]interface{}),
+		Config:   misc.GetObjectStorageConfig(warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), job.DestinationConfig),
 	})
 	if err != nil {
 		return loadFileIDs, err
@@ -1350,7 +1350,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig),
-		Config:   job.DestinationConfig.(map[string]interface{}),
+		Config:   misc.GetObjectStorageConfig(warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), job.DestinationConfig),
 	})
 	if err != nil {
 		panic(err)

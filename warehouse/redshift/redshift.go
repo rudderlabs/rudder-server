@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sts"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -43,7 +47,7 @@ type HandleT struct {
 // String constants for redshift destination config
 const (
 	AWSAccessKey        = "accessKey"
-	AWSAccessSecret     = "accessKeyID"
+	AWSAccessKeyID      = "accessKeyID"
 	AWSBucketNameConfig = "bucketName"
 	RSHost              = "host"
 	RSPort              = "port"
@@ -286,13 +290,20 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		panic(err)
 	}
 	defer file.Close()
-
+	var accessKeyID, accessKey string
+	if misc.HasAWSKeysInConfig(rs.Warehouse.Destination.Config) {
+		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, rs.Warehouse)
+		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse)
+	} else {
+		accessKeyID = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+		accessKey = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+	}
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
 		Config: map[string]interface{}{
 			"bucketName":  warehouseutils.GetConfigValue(AWSBucketNameConfig, rs.Warehouse),
-			"accessKeyID": warehouseutils.GetConfigValue(AWSAccessSecret, rs.Warehouse),
-			"accessKey":   warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse),
+			"accessKeyID": accessKeyID,
+			"accessKey":   accessKey,
 		},
 	})
 
@@ -373,9 +384,15 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 		return
 	}
+	// create session token and temporary credentials
+	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
+	if err != nil {
+		logger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
+		return
+	}
 
-	sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, warehouseutils.GetConfigValue(AWSAccessSecret, rs.Warehouse), warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse), region)
-
+	sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token, region)
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
 		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
@@ -469,6 +486,28 @@ func (rs *HandleT) load() (errList []error) {
 	wg.Wait()
 	logger.Infof("RS: Completed load for all tables\n")
 	return
+}
+
+func (rs *HandleT) getTemporaryCredForCopy() (string, string, string, error) {
+
+	var accessKey, accessKeyID string
+	if misc.HasAWSKeysInConfig(rs.Warehouse.Destination.Config) {
+		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse)
+		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, rs.Warehouse)
+	} else {
+		accessKeyID = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+		accessKey = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+	}
+	mySession := session.Must(session.NewSession())
+	// Create a STS client from just a session.
+	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
+
+	//sts.New(mySession, aws.NewConfig().WithRegion("us-west-2"))
+	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{})
+	if err != nil {
+		return "", "", "", err
+	}
+	return *SessionTokenOutput.Credentials.AccessKeyId, *SessionTokenOutput.Credentials.SecretAccessKey, *SessionTokenOutput.Credentials.SessionToken, err
 }
 
 // RedshiftCredentialsT ...

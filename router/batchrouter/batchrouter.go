@@ -181,10 +181,9 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 
 	logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
-
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
-		Config:   batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
+		Config:   misc.GetObjectStorageConfig(provider, batchJobs.BatchDestination.Destination.Config),
 	})
 	if err != nil {
 		panic(err)
@@ -754,7 +753,7 @@ func loadConfig() {
 	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
-	warehouseServiceMaxRetryTimeinHr =  config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
+	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
 }
 
 func init() {
