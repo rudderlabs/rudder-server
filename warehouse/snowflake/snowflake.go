@@ -539,6 +539,7 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		warehouseutils.SetUploadError(sf.Upload, err, warehouseutils.UpdatingSchemaFailedState, sf.DbHandle)
 		return err
 	}
+	defer sf.Db.Close()
 
 	if config.Stage == "ExportData" {
 		err = sf.Export()
@@ -548,6 +549,5 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 			err = sf.Export()
 		}
 	}
-	sf.Db.Close()
 	return
 }

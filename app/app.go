@@ -55,6 +55,10 @@ func (a *App) initEnterpriseFeatures() {
 	if migratorFeatureSetup != nil {
 		a.features.Migrator = migratorFeatureSetup(a)
 	}
+
+	if webhookFeatureSetup != nil {
+		a.features.Webhook = webhookFeatureSetup(a)
+	}
 }
 
 // Options returns this application's options

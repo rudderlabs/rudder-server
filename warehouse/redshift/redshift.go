@@ -630,6 +630,7 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
 		return err
 	}
+	defer rs.Db.Close()
 	currSchema, err := warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
 	if err != nil {
 		panic(err)
