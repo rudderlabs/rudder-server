@@ -189,14 +189,8 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string, pro
 		ColumnMaps:    make(map[string]map[string]string),
 		UpdatedSchema: make(map[string]map[string]string),
 	}
-	currentSchemaWithCase := make(map[string]map[string]string)
-	for tableName, columnMap := range currentSchema {
-		tableNameWithCase := ToCase(provider, tableName)
-		currentSchemaWithCase[tableNameWithCase] = make(map[string]string)
-		for columnName, columnType := range columnMap {
-			currentSchemaWithCase[tableNameWithCase][ToCase(provider, columnName)] = columnType
-		}
-	}
+	currentSchemaWithCase := ChangeSchemaCase(currentSchema, provider)
+
 	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
 	for tableName, columnMap := range currentSchema {
 		diff.UpdatedSchema[tableName] = make(map[string]string)
@@ -641,9 +635,6 @@ func ToSafeDBString(provider string, str string) string {
 }
 
 func ToCase(provider string, str string) string {
-	if provider == "" {
-		return str
-	}
 	if strings.ToUpper(provider) == "SNOWFLAKE" {
 		str = strings.ToUpper(str)
 	} else {
@@ -696,4 +687,16 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 		val, _ = config[key].(string)
 	}
 	return val
+}
+
+func ChangeSchemaCase(currentSchema map[string]map[string]string, destType string) map[string]map[string]string {
+	currentSchemaWithCase := make(map[string]map[string]string)
+	for tableName, columnMap := range currentSchema {
+		tableNameWithCase := ToCase(destType, tableName)
+		currentSchemaWithCase[tableNameWithCase] = make(map[string]string)
+		for columnName, columnType := range columnMap {
+			currentSchemaWithCase[tableNameWithCase][ToCase(destType, columnName)] = columnType
+		}
+	}
+	return currentSchemaWithCase
 }

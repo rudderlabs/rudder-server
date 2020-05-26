@@ -285,14 +285,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 
 func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schemaList []map[string]map[string]string) map[string]map[string]string {
 	schemaMap := make(map[string]map[string]string)
-	currentSchemaWithCase := make(map[string]map[string]string)
-	for tableName, columnMap := range currentSchema {
-		tableNameWithCase := warehouseutils.ToCase(wh.destType, tableName)
-		currentSchemaWithCase[tableNameWithCase] = make(map[string]string)
-		for columnName, columnType := range columnMap {
-			currentSchemaWithCase[tableNameWithCase][warehouseutils.ToCase(wh.destType, columnName)] = columnType
-		}
-	}
+	currentSchemaWithCase := warehouseutils.ChangeSchemaCase(currentSchema, wh.destType)
 	for _, schema := range schemaList {
 		for tableName, columnMap := range schema {
 			if schemaMap[tableName] == nil {
