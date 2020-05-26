@@ -27,12 +27,12 @@ services:
   #     - CLUSTER_VERSION=1
   #     - INSTANCE_ID_PATTERN=hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>
   #     - RSERVER_CONFIG_FROM_FILE=true
-  # d-transformer:
-  #   build:
-  #     context: ./rudder-transformer/
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "9090:9090"
+  d-transformer:
+    build:
+      context: ./rudder-transformer/
+      dockerfile: Dockerfile
+    ports:
+      - "9090:9090"
   # minio:
   #   image: minio/minio
   #   ports:

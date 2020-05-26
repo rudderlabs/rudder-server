@@ -381,6 +381,14 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	dList := jd.getDSList(false)
 	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
 
+	// Schema Migration: New user_id column and new values for enumtype
+	{ //TODO: Remove this hack and the funcs defined for this, once all datasets have user_id column and new values for type added
+		for _, ds := range dList {
+			jd.addUserIDColumn(ds.Index)
+			jd.addNewValuesToJobStateType(ds.Index)
+		}
+	}
+
 	if jd.BackupSettings.BackupEnabled {
 		jd.jobsFileUploader, err = jd.getFileUploader()
 		jd.assertError(err)
@@ -847,7 +855,7 @@ func (jd *HandleT) createDS(newDSIdx string) dataSetT {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
                                       job_id BIGSERIAL PRIMARY KEY,
 									  uuid UUID NOT NULL,
-									  user_id TEXT,
+									  user_id TEXT NOT NULL,
 									  parameters JSONB NOT NULL,
                                       custom_val VARCHAR(64) NOT NULL,
                                       event_payload JSONB NOT NULL,
@@ -2053,6 +2061,22 @@ func (jd *HandleT) setDefaultNowColumns(dsIndex string) {
 
 }
 
+// Remove this after a release
+func (jd *HandleT) addUserIDColumn(dsIndex string) {
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s_jobs_%s ADD COLUMN user_id TEXT NOT NULL DEFAULT '-1'`, jd.tablePrefix, dsIndex)
+	jd.dbHandle.Exec(sqlStatement)
+}
+
+// Remove this after a release
+func (jd *HandleT) addNewValuesToJobStateType(dsIndex string) {
+	sqlStatement := fmt.Sprintf(`ALTER TYPE job_state_type ADD VALUE 'migrating'`)
+	jd.dbHandle.Exec(sqlStatement)
+	sqlStatement = fmt.Sprintf(`ALTER TYPE job_state_type ADD VALUE 'migrated'`)
+	jd.dbHandle.Exec(sqlStatement)
+	sqlStatement = fmt.Sprintf(`ALTER TYPE job_state_type ADD VALUE 'wont_migrate'`)
+	jd.dbHandle.Exec(sqlStatement)
+}
+
 func (jd *HandleT) setupJournal() {
 
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s_journal (
@@ -2578,7 +2602,7 @@ func (jd *HandleT) createTables() error {
 	sqlStatement := `CREATE TABLE jobs (
                              job_id BIGSERIAL PRIMARY KEY,
 							 uuid UUID NOT NULL,
-							 user_id TEXT,
+							 user_id TEXT NOT NULL,
 							 parameters JSONB NOT NULL,
                              custom_val INT NOT NULL,
                              event_payload JSONB NOT NULL,
