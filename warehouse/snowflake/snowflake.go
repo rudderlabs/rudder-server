@@ -140,7 +140,7 @@ func (sf *HandleT) createSchema() (err error) {
 }
 
 func (sf *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
-	diff := warehouseutils.GetSchemaDiff(sf.CurrentSchema, sf.Upload.Schema)
+	diff := warehouseutils.GetSchemaDiff(sf.CurrentSchema, sf.Upload.Schema, warehouseutils.SNOWFLAKE)
 	updatedSchema = diff.UpdatedSchema
 	if len(sf.CurrentSchema) == 0 {
 		err = sf.createSchema()
@@ -293,7 +293,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		sortedColumnNames += fmt.Sprintf(`%s`, key)
 	}
 
-	stagingTableName := fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, tableName)
 
 	logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
@@ -539,6 +539,7 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		warehouseutils.SetUploadError(sf.Upload, err, warehouseutils.UpdatingSchemaFailedState, sf.DbHandle)
 		return err
 	}
+	defer sf.Db.Close()
 
 	if config.Stage == "ExportData" {
 		err = sf.Export()
@@ -548,6 +549,5 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 			err = sf.Export()
 		}
 	}
-	sf.Db.Close()
 	return
 }

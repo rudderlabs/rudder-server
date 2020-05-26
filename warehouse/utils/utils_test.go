@@ -151,7 +151,7 @@ var _ = Describe("Utils", func() {
 				}
 				columnMap := currentSchema["table_1"]
 				columnMap["col_4"] = "float"
-				diff := GetSchemaDiff(currentSchema, uploadSchema)
+				diff := GetSchemaDiff(currentSchema, uploadSchema, "RS")
 				Expect(diff.UpdatedSchema["table_1"]).To(Equal(columnMap))
 			})
 
@@ -164,7 +164,7 @@ var _ = Describe("Utils", func() {
 				newColumnMap := map[string]string{
 					"col_1": "float",
 				}
-				diff := GetSchemaDiff(currentSchema, uploadSchema)
+				diff := GetSchemaDiff(currentSchema, uploadSchema, "RS")
 				Expect(diff.UpdatedSchema["new_table"]).To(Equal(newColumnMap))
 			})
 
@@ -175,7 +175,7 @@ var _ = Describe("Utils", func() {
 					},
 				}
 				columnMap := currentSchema["table_2"]
-				diff := GetSchemaDiff(currentSchema, uploadSchema)
+				diff := GetSchemaDiff(currentSchema, uploadSchema, "RS")
 				Expect(diff.UpdatedSchema["table_2"]).To(Equal(columnMap))
 			})
 		})

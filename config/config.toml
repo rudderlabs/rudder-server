@@ -56,6 +56,13 @@ enableDedup = false
 enableRateLimit = false
 dedupWindowInS = 86400
 
+[Gateway.webhook]
+batchTimeoutInMS = 20
+maxBatchSize = 32
+maxTransformerProcess = 64
+maxRetry = 5
+maxRetryTimeInS = 10
+
 [SourceDebugger]
 maxBatchSize = 32
 maxESQueueSize = 1024
@@ -112,6 +119,8 @@ randomWorkerAssign = false
 useTestSink = false
 maxFailedCountForJob = 8
 keepOrderOnFailure = true
+kafkaWriteTimeoutInSec = 2
+kafkaDialTimeoutInSec = 10
 
 [BatchRouter]
 mainLoopSleepInS = 2

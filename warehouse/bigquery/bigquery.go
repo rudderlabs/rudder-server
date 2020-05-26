@@ -216,7 +216,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 }
 
 func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
-	diff := warehouseutils.GetSchemaDiff(bq.CurrentSchema, bq.Upload.Schema)
+	diff := warehouseutils.GetSchemaDiff(bq.CurrentSchema, bq.Upload.Schema, warehouseutils.BQ)
 	updatedSchema = diff.UpdatedSchema
 	if len(bq.CurrentSchema) == 0 {
 		err = bq.createSchema()
@@ -414,6 +414,7 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
 		return err
 	}
+	defer bq.Db.Close()
 	currSchema, err := warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
 	if err != nil {
 		panic(err)

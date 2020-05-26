@@ -36,6 +36,12 @@ const (
 )
 
 const (
+	RS        = "RS"
+	BQ        = "BQ"
+	SNOWFLAKE = "SNOWFLAKE"
+)
+
+const (
 	StagingFileSucceededState = "succeeded"
 	StagingFileFailedState    = "failed"
 	StagingFileExecutingState = "executing"
@@ -143,7 +149,8 @@ type StagingFileT struct {
 
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
 	var rawSchema json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[3]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Destination.ID, warehouse.Namespace)
+	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[2]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Destination.ID, warehouse.Namespace)
+
 	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -176,12 +183,14 @@ type SchemaDiffT struct {
 	UpdatedSchema map[string]map[string]string
 }
 
-func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (diff SchemaDiffT) {
+func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string, provider string) (diff SchemaDiffT) {
 	diff = SchemaDiffT{
 		Tables:        []string{},
 		ColumnMaps:    make(map[string]map[string]string),
 		UpdatedSchema: make(map[string]map[string]string),
 	}
+	currentSchemaWithCase := ChangeSchemaCase(currentSchema, provider)
+
 	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
 	for tableName, columnMap := range currentSchema {
 		diff.UpdatedSchema[tableName] = make(map[string]string)
@@ -190,7 +199,7 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 		}
 	}
 	for tableName, uploadColumnMap := range uploadSchema {
-		currentColumnsMap, ok := currentSchema[tableName]
+		currentColumnsMap, ok := currentSchemaWithCase[tableName]
 		if !ok {
 			diff.Tables = append(diff.Tables, tableName)
 			diff.ColumnMaps[tableName] = uploadColumnMap
@@ -628,6 +637,8 @@ func ToSafeDBString(provider string, str string) string {
 func ToCase(provider string, str string) string {
 	if strings.ToUpper(provider) == "SNOWFLAKE" {
 		str = strings.ToUpper(str)
+	} else {
+		str = strings.ToLower(str)
 	}
 	return str
 }
@@ -676,4 +687,16 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 		val, _ = config[key].(string)
 	}
 	return val
+}
+
+func ChangeSchemaCase(currentSchema map[string]map[string]string, destType string) map[string]map[string]string {
+	currentSchemaWithCase := make(map[string]map[string]string)
+	for tableName, columnMap := range currentSchema {
+		tableNameWithCase := ToCase(destType, tableName)
+		currentSchemaWithCase[tableNameWithCase] = make(map[string]string)
+		for columnName, columnType := range columnMap {
+			currentSchemaWithCase[tableNameWithCase][ToCase(destType, columnName)] = columnType
+		}
+	}
+	return currentSchemaWithCase
 }

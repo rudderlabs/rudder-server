@@ -3,6 +3,7 @@ package misc
 import (
 	"archive/zip"
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"crypto/md5"
 	"database/sql"
@@ -550,6 +551,19 @@ func IntArrayToString(a []int64, delim string) string {
 	return strings.Trim(strings.Replace(fmt.Sprint(a), " ", delim, -1), "[]")
 }
 
+func MakeJSONArray(bytesArray [][]byte) []byte {
+	joinedArray := bytes.Join(bytesArray, []byte(","))
+
+	// insert '[' to the front
+	joinedArray = append(joinedArray, 0)
+	copy(joinedArray[1:], joinedArray[0:])
+	joinedArray[0] = byte('[')
+
+	// append ']'
+	joinedArray = append(joinedArray, ']')
+	return joinedArray
+}
+
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number
 // of garage collection cycles completed.
 func PrintMemUsage() {
@@ -710,4 +724,26 @@ IsValidUUID will check if provided string is a valid UUID
 func IsValidUUID(uuid string) bool {
 	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
 	return r.MatchString(uuid)
+}
+
+func HasAWSKeysInConfig(config interface{}) bool {
+	configMap := config.(map[string]interface{})
+	if configMap["accessKeyID"] == nil || configMap["accessKey"] == nil {
+		return false
+	}
+	if configMap["accessKeyID"].(string) == "" || configMap["accessKey"].(string) == "" {
+		return false
+	}
+	return true
+}
+
+func GetObjectStorageConfig(provider string, objectStorageConfig interface{}) map[string]interface{} {
+	objectStorageConfigMap := objectStorageConfig.(map[string]interface{})
+	if provider == "S3" && !HasAWSKeysInConfig(objectStorageConfig) {
+		objectStorageConfigMap["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+		objectStorageConfigMap["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+
+	}
+	return objectStorageConfigMap
+
 }
