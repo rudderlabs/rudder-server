@@ -179,7 +179,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == wh.destType {
 						namespace := getNamespaceFromDestinationConfig(destination.Config, source.Name, wh.destType)
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace})
-						if destination.Config != nil && destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
+						if destination.Config != nil && destination.Enabled && destination.Config["eventDelivery"] == true {
 							sourceID := source.ID
 							destinationID := destination.ID
 							rruntime.Go(func() {

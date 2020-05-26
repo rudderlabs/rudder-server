@@ -15,7 +15,12 @@ mocks: ## Generate all mocks
 	$(GO) generate ./...
 
 test: enterprise-prepare-build mocks ## Run all unit tests
+ifdef package
+	$(GINKGO) --randomizeAllSpecs -p --skipPackage=tests $(package)
+else
 	$(GINKGO) --randomizeAllSpecs -p --skipPackage=tests ./...
+endif
+		
 
 build: enterprise-prepare-build ## Build rudder-server binary
 	$(GO) build -o bin/rudder-server main.go

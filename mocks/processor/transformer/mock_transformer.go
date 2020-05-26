@@ -46,7 +46,7 @@ func (mr *MockTransformerMockRecorder) Setup() *gomock.Call {
 }
 
 // Transform mocks base method
-func (m *MockTransformer) Transform(arg0 []interface{}, arg1 string, arg2 int, arg3 bool) transformer.ResponseT {
+func (m *MockTransformer) Transform(arg0 []transformer.TransformerEventT, arg1 string, arg2 int, arg3 bool) transformer.ResponseT {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Transform", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(transformer.ResponseT)

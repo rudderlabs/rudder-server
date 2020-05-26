@@ -185,6 +185,14 @@ var sampleBackendConfig = backendconfig.SourcesT{
 						DisplayName: "enabled-destination-b-definition-display-name",
 						Config:      "",
 					},
+					Transformations: []backendconfig.TransformationT{
+						{
+							ID:          "transformation-id",
+							Name:        "transformation-name",
+							Description: "transformation-description",
+							VersionID:   "transformation-version-id",
+						},
+					},
 				},
 				// This destination should receive no events
 				{
@@ -243,16 +251,6 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			assertJobStatus := func(job *jobsdb.JobT, status *jobsdb.JobStatusT) {
-				Expect(status.JobID).To(Equal(job.JobID))
-				Expect(status.JobState).To(Equal(jobsdb.FailedState))
-				Expect(status.ErrorCode).To(Equal(""))
-				Expect(status.ErrorResponse).To(MatchJSON(`{}`))
-				Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
-				Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
-				Expect(status.AttemptNum).To(Equal(job.LastJobStatus.AttemptNum + 1))
-			}
-
 			var executingJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
 					UUID:         uuid.NewV4(),
@@ -292,15 +290,15 @@ var _ = Describe("Processor", func() {
 			var executingCall1 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(executingJobsList[0:2]).Times(1)
 			var updateCall1 = c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(2), gatewayCustomVal, nil).After(executingCall1).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-					assertJobStatus(executingJobsList[0], statuses[0])
-					assertJobStatus(executingJobsList[1], statuses[1])
+					assertJobStatus(executingJobsList[0], statuses[0], jobsdb.FailedState, "", "{}", 2)
+					assertJobStatus(executingJobsList[1], statuses[1], jobsdb.FailedState, "", "{}", 1)
 				})
 
 			// second loop iteration
 			var executingCall2 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(emptyJobsList).After(updateCall1).Return(executingJobsList[2:]).Times(1)
 			var updateCall2 = c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(1), gatewayCustomVal, nil).After(executingCall2).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-					assertJobStatus(executingJobsList[2], statuses[0])
+					assertJobStatus(executingJobsList[2], statuses[0], jobsdb.FailedState, "", "{}", 1)
 				})
 
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
@@ -316,7 +314,13 @@ var _ = Describe("Processor", func() {
 		})
 
 		It("should only send proper stats, if not pending jobs are returned", func() {
-			var processor *HandleT = &HandleT{}
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			var processor *HandleT = &HandleT{
+				transformer: mockTransformer,
+			}
+
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
@@ -440,56 +444,59 @@ var _ = Describe("Processor", func() {
 			}
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
-
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, 10000, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, 10000-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
-
 			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
-
-			// process jobs
-			assertJobStatus := func(job *jobsdb.JobT, status *jobsdb.JobStatusT) {
-				Expect(status.JobID).To(Equal(job.JobID))
-				Expect(status.JobState).To(Equal(jobsdb.SucceededState))
-				Expect(status.ErrorCode).To(Equal("200"))
-				Expect(status.ErrorResponse).To(MatchJSON(`{"success":"OK"}`))
-				Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
-				Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
-
-				// Attempt num will be overwritten
-				Expect(status.AttemptNum).To(Equal(1))
-			}
-
 			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
 			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
-
 			callListSortEnd := c.mockStatJobListSort.EXPECT().End().Times(1).After(callListSort)
-
 			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callListSortEnd)
 			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
-
 			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
-
-			c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(4).Times(1).After(callDestProcessing)
-			c.mockEnabledBDestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
-
+			callDestANumEvents := c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(4).Times(1).After(callDestProcessing)
 			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
-			c.mockEnabledBDestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
-
 			c.mockEnabledADestStats.numOutputEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
-			c.mockEnabledBDestStats.numOutputEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
-
 			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().End().Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.numOutputEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
 			c.mockEnabledBDestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().End().Times(1).After(callDestProcessing)
+			callUserTransformStart := c.mockEnabledBDestStats.userTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
+
+			// We expect one call to user transform for destination B
+			callUserTransform := mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUserTransformStart).
+				DoAndReturn(func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
+					Expect(breakIntoBatchWhenUserChanges).To(BeFalse())
+					Expect(url).To(Equal("http://localhost:9090/customTransform"))
+
+					outputEvents := make([]transformer.TransformerResponseT, 0)
+
+					for _, event := range clientEvents {
+						event.Message["user-transform"] = "value"
+						outputEvents = append(outputEvents, transformer.TransformerResponseT{
+							Output: map[string]interface{}{
+								"message": map[string]interface{}(event.Message),
+							},
+						})
+					}
+
+					return transformer.ResponseT{
+						Events:  outputEvents,
+						Success: false, // ??? response success is ignored in user transform
+					}
+				})
+
+			c.mockEnabledBDestStats.userTransform.(*mocksStats.MockRudderStats).EXPECT().End().Times(1).After(callUserTransform)
 
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledA: {
-					events:     4,
-					messageIds: "message-1,message-2,message-3,message-4",
+					events:          4,
+					messageIds:      "message-1,message-2,message-3,message-4",
+					receiveMetadata: true,
 				},
 				DestinationIDEnabledB: {
 					events:     2,
@@ -497,38 +504,38 @@ var _ = Describe("Processor", func() {
 				},
 			}
 
-			// We expect one call per destination
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(2).
-				DoAndReturn(func(clientEvents []interface{}, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
-					destinationID := clientEvents[0].(map[string]interface{})["destination"].(backendconfig.DestinationT).ID
-					expectations := transformExpectations[destinationID]
+			assertDestinationTransform := func(destinationID string, destinationDefinitionName string) func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
+				return func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
+					Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/%s", destinationDefinitionName)))
+					Expect(breakIntoBatchWhenUserChanges).To(BeFalse())
 
+					expectations := transformExpectations[destinationID]
 					Expect(clientEvents).To(HaveLen(expectations.events))
 
 					messageIDs := make([]string, 0)
 					for i := range clientEvents {
-						event := clientEvents[i].(map[string]interface{})
-
-						// j, _ := json.MarshalIndent(event, "", "\t")
-						// fmt.Print(string(j))
-
-						messageID := event["message"].(map[string]interface{})["messageId"].(string)
+						event := clientEvents[i]
+						messageID := event.Message["messageId"].(string)
 						messageIDs = append(messageIDs, messageID)
 
 						// Expect all messages belong to same destination
-						Expect(event["destination"].(backendconfig.DestinationT).ID).To(Equal(destinationID))
-
-						expectedDestinationType := fmt.Sprintf("%s-definition-name", destinationID)
-						if destinationID == "enabled-destination-b" {
-							expectedDestinationType = "MINIO"
-						}
+						Expect(event.Destination.ID).To(Equal(destinationID))
 
 						// Expect metadata
-						Expect(event["metadata"].(map[string]interface{})["destinationId"].(string)).To(Equal(destinationID))
-						Expect(event["metadata"].(map[string]interface{})["destinationType"].(string)).To(Equal(expectedDestinationType))
-						Expect(event["metadata"].(map[string]interface{})["jobId"].(int64)).To(Equal(messages[messageID].jobid))
-						Expect(event["metadata"].(map[string]interface{})["messageId"].(string)).To(Equal(messageID))
-						Expect(event["metadata"].(map[string]interface{})["sourceId"].(string)).To(Equal("")) // ???
+						Expect(event.Metadata.DestinationID).To(Equal(destinationID))
+
+						// Metadata are stripped from destination transform, is a user transform occurred before.
+						if expectations.receiveMetadata {
+							Expect(event.Metadata.DestinationType).To(Equal(fmt.Sprintf("%s-definition-name", destinationID)))
+							Expect(event.Metadata.JobID).To(Equal(messages[messageID].jobid))
+							Expect(event.Metadata.MessageID).To(Equal(messageID))
+							Expect(event.Metadata.SourceID).To(Equal("")) // ???
+						} else {
+							Expect(event.Metadata.DestinationType).To(Equal(""))
+							Expect(event.Metadata.JobID).To(Equal(int64(0)))
+							Expect(event.Metadata.MessageID).To(Equal(""))
+							Expect(event.Metadata.SourceID).To(Equal("")) // ???
+						}
 
 						// Expect timestamp fields
 						expectTimestamp := func(input string, expected time.Time) {
@@ -549,45 +556,56 @@ var _ = Describe("Processor", func() {
 						sentAt := parseTimestamp(messages[messageID].expectedSentAt)
 						originalTimestamp := parseTimestamp(messages[messageID].expectedOriginalTimestamp)
 
-						expectTimestamp(event["message"].(map[string]interface{})["receivedAt"].(string), receivedAt)
-						expectTimestamp(event["message"].(map[string]interface{})["sentAt"].(string), sentAt)
-						expectTimestamp(event["message"].(map[string]interface{})["originalTimestamp"].(string), originalTimestamp)
-						expectTimestamp(event["message"].(map[string]interface{})["timestamp"].(string), misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp))
+						expectTimestamp(event.Message["receivedAt"].(string), receivedAt)
+						expectTimestamp(event.Message["sentAt"].(string), sentAt)
+						expectTimestamp(event.Message["originalTimestamp"].(string), originalTimestamp)
+						expectTimestamp(event.Message["timestamp"].(string), misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp))
 
 						// Expect message properties
-						Expect(event["message"].(map[string]interface{})["some-property"].(string)).To(Equal(fmt.Sprintf("property-%s", messages[messageID].id)))
+						Expect(event.Message["some-property"].(string)).To(Equal(fmt.Sprintf("property-%s", messages[messageID].id)))
+
+						if destinationID == "enabled-destination-b" {
+							Expect(event.Message["user-transform"].(string)).To(Equal("value"))
+						}
 					}
 
 					Expect(strings.Join(messageIDs, ",")).To(Equal(expectations.messageIds))
-					// fmt.Println("-----")
 
 					return transformer.ResponseT{
-						Events: []interface{}{
-							map[string]interface{}{
-								"output": map[string]interface{}{
+						Events: []transformer.TransformerResponseT{
+							{
+								Output: map[string]interface{}{
 									"int-value":    0,
 									"string-value": fmt.Sprintf("value-%s", destinationID),
 								},
-								"metadata": map[string]interface{}{
-									"sourceId":      "source-from-transformer",      // transformer should replay source id
-									"destinationId": "destination-from-transformer", // transformer should replay destination id
+								Metadata: transformer.MetadataT{
+									SourceID:      "source-from-transformer",      // transformer should replay source id
+									DestinationID: "destination-from-transformer", // transformer should replay destination id
 								},
 							},
-							map[string]interface{}{
-								"output": map[string]interface{}{
+							{
+								Output: map[string]interface{}{
 									"int-value":    1,
 									"string-value": fmt.Sprintf("value-%s", destinationID),
 								},
-								"string-value": "some-string",
-								"metadata": map[string]interface{}{
-									"sourceId":      "source-from-transformer",      // transformer should replay source id
-									"destinationId": "destination-from-transformer", // transformer should replay destination id
+								Metadata: transformer.MetadataT{
+									SourceID:      "source-from-transformer",      // transformer should replay source id
+									DestinationID: "destination-from-transformer", // transformer should replay destination id
 								},
 							},
 						},
 						Success: true,
 					}
-				})
+				}
+			}
+
+			// We expect one transform call to destination A, after sending numEvents stat.
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				After(callDestANumEvents).DoAndReturn(assertDestinationTransform("enabled-destination-a", "enabled-destination-a-definition-name"))
+
+			// We expect one transform call to destination B, after user transform for destination B.
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				After(callUserTransform).DoAndReturn(assertDestinationTransform("enabled-destination-b", "minio"))
 
 			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
 			callDBWrite := c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
@@ -623,18 +641,831 @@ var _ = Describe("Processor", func() {
 			callUpdateJobs := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).After(callStoreRouter).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
-					assertJobStatus(unprocessedJobsList[1], statuses[0]) // id 1002
-					assertJobStatus(unprocessedJobsList[0], statuses[1]) // id 1010
-					assertJobStatus(toRetryJobsList[1], statuses[2])     // id 2002
-					assertJobStatus(toRetryJobsList[2], statuses[3])     // id 2003
-					assertJobStatus(toRetryJobsList[0], statuses[4])     // id 2010
+					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1) // id 1002
+					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1) // id 1010
+					assertJobStatus(toRetryJobsList[1], statuses[2], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1)     // id 2002
+					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1)     // id 2003
+					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1)     // id 2010
+				})
+
+			c.mockStatGatewayDBWriteTime.EXPECT().End().Times(1).After(callUpdateJobs)
+			c.mockStatGatewayDBWrite.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callUpdateJobs)
+			c.mockStatRouterDBWrite.EXPECT().Count(2).Times(1).After(callUpdateJobs)
+			c.mockStatBatchRouterDBWrite.EXPECT().Count(2).Times(1).After(callUpdateJobs)
+
+			c.mockStatLoopTime.EXPECT().End().Times(1).After(callUpdateJobs)
+
+			var processor *HandleT = &HandleT{
+				transformer: mockTransformer,
+			}
+
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
+
+			// make sure the mock backend config has sent the configuration
+			testutils.RunTestWithTimeout(func() {
+				for !c.configInitialised {
+				}
+			}, time.Second)
+
+			didWork := processor.handlePendingGatewayJobs()
+			Expect(didWork).To(Equal(true))
+		})
+	})
+
+	Context("sessions", func() {
+		BeforeEach(func() {
+			// crash recovery check
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(emptyJobsList).Times(1)
+		})
+
+		It("should process ToRetry and Unprocessed jobs, when total events are less than sessionThreshold", func() {
+			var messages map[string]mockEventData = map[string]mockEventData{
+				// this message should be delivered only to destination A
+				"message-1": {
+					id:                        "1",
+					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+				},
+				// this message should be delivered only to destination A
+				"message-2": {
+					id:                        "2",
+					jobid:                     1010,
+					originalTimestamp:         "2000-02-02T01:23:45",
+					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": true, "enabled-destination-b-definition-display-name": false},
+				},
+				// The following messages are part of job 2010, but merged in 1010 due to sessions.
+				// The jobid and received at values are overwritten by 1010.
+				"message-3": {
+					id:                 "3",
+					jobid:              1010,
+					originalTimestamp:  "malformed timestamp",
+					sentAt:             "2000-03-02T01:23:15",
+					expectedSentAt:     "2000-03-02T01:23:15.000Z",
+					expectedReceivedAt: "2001-01-02T02:23:45.000Z", // received at is taken from job 1010
+					integrations:       map[string]bool{"All": true},
+				},
+				// this message should be delivered to all destinations (default All value)
+				"message-4": {
+					id:                        "4",
+					jobid:                     1010,
+					originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
+					expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z", // received at is taken from job 1010
+					integrations:              map[string]bool{},
+				},
+				// this message should not be delivered to any destination
+				"message-5": {
+					id:                 "5",
+					jobid:              1010,
+					expectedReceivedAt: "2001-01-02T02:23:45.000Z", // received at is taken from job 1010
+					integrations:       map[string]bool{"All": false},
+				},
+			}
+
+			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         1010,
+					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  createBatchPayload(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         1002,
+					CreatedAt:     time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+			}
+
+			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+				{
+					UUID:         uuid.NewV4(),
+					JobID:        2010,
+					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CustomVal:    gatewayCustomVal[0],
+					EventPayload: createBatchPayload(WriteKeyEnabled, "2002-01-02T02:23:45.000Z", []mockEventData{messages["message-3"], messages["message-4"], messages["message-5"]}),
+					LastJobStatus: jobsdb.JobStatusT{
+						AttemptNum: 1,
+					},
+					Parameters: nil,
+				},
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         2002,
+					CreatedAt:     time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         2003,
+					CreatedAt:     time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+			}
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
+			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, 10000, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, 10000-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
+			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
+			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
+			callListSortEnd := c.mockStatJobListSort.EXPECT().End().Times(1).After(callListSort)
+
+			callUpdateJobs := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callListSortEnd).
+				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
+					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1) // id 1002
+					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1) // id 1010
+					assertJobStatus(toRetryJobsList[1], statuses[2], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1)     // id 2002
+					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1)     // id 2003
+					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1)     // id 2010
+				})
+
+			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callUpdateJobs)
+			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
+			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
+			callDestANumEvents := c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(4).Times(1).After(callDestProcessing)
+			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
+			c.mockEnabledADestStats.numOutputEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
+			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().End().Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.numOutputEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().End().Times(1).After(callDestProcessing)
+			callUserTransformStart := c.mockEnabledBDestStats.sessionTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
+
+			c.mockStatLoopTime.EXPECT().End().Times(1).After(callUpdateJobs)
+
+			// We expect one call to user transform for destination B
+			callUserTransform := mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUserTransformStart).
+				DoAndReturn(func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
+					Expect(breakIntoBatchWhenUserChanges).To(BeTrue())
+					Expect(url).To(Equal("http://localhost:9090/customTransform?processSessions=true"))
+
+					outputEvents := make([]transformer.TransformerResponseT, 0)
+
+					for _, event := range clientEvents {
+						event.Message["user-transform"] = "value"
+						outputEvents = append(outputEvents, transformer.TransformerResponseT{
+							Output: map[string]interface{}{
+								"message": map[string]interface{}(event.Message),
+							},
+						})
+					}
+
+					return transformer.ResponseT{
+						Events:  outputEvents,
+						Success: false, // ??? response success is ignored in user transform
+					}
+				})
+
+			c.mockEnabledBDestStats.sessionTransform.(*mocksStats.MockRudderStats).EXPECT().End().Times(1).After(callUserTransform)
+
+			transformExpectations := map[string]transformExpectation{
+				DestinationIDEnabledA: {
+					events:          4,
+					messageIds:      "message-1,message-2,message-3,message-4",
+					receiveMetadata: true,
+				},
+				DestinationIDEnabledB: {
+					events:     2,
+					messageIds: "message-3,message-4",
+				},
+			}
+
+			assertDestinationTransform := func(destinationID string, destinationDefinitionName string) func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
+				return func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
+					Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/%s", destinationDefinitionName)))
+					Expect(breakIntoBatchWhenUserChanges).To(BeFalse())
+
+					expectations := transformExpectations[destinationID]
+					Expect(clientEvents).To(HaveLen(expectations.events))
+
+					messageIDs := make([]string, 0)
+					for i := range clientEvents {
+						event := clientEvents[i]
+						messageID := event.Message["messageId"].(string)
+						messageIDs = append(messageIDs, messageID)
+
+						// Expect all messages belong to same destination
+						Expect(event.Destination.ID).To(Equal(destinationID))
+
+						// Metadata are stripped from destination transform, is a user transform occurred before.
+						if expectations.receiveMetadata {
+							Expect(event.Metadata.DestinationType).To(Equal(fmt.Sprintf("%s-definition-name", destinationID)))
+							Expect(event.Metadata.JobID).To(Equal(messages[messageID].jobid))
+							Expect(event.Metadata.MessageID).To(Equal(messageID))
+							Expect(event.Metadata.SourceID).To(Equal("")) // ???
+						} else {
+							Expect(event.Metadata.DestinationType).To(Equal(""))
+							Expect(event.Metadata.JobID).To(Equal(int64(0)))
+							Expect(event.Metadata.MessageID).To(Equal(""))
+							Expect(event.Metadata.SourceID).To(Equal("")) // ???
+						}
+
+						// Expect timestamp fields
+						expectTimestamp := func(input string, expected time.Time) {
+							inputTime, _ := time.Parse(misc.RFC3339Milli, input)
+							Expect(inputTime).To(BeTemporally("~", expected, time.Second))
+						}
+
+						parseTimestamp := func(timestamp string) time.Time {
+							parsed, ok := time.Parse(misc.RFC3339Milli, timestamp)
+							if ok != nil {
+								return time.Now()
+							} else {
+								return parsed
+							}
+						}
+
+						receivedAt := parseTimestamp(messages[messageID].expectedReceivedAt)
+						sentAt := parseTimestamp(messages[messageID].expectedSentAt)
+						originalTimestamp := parseTimestamp(messages[messageID].expectedOriginalTimestamp)
+
+						expectTimestamp(event.Message["receivedAt"].(string), receivedAt)
+						expectTimestamp(event.Message["sentAt"].(string), sentAt)
+						expectTimestamp(event.Message["originalTimestamp"].(string), originalTimestamp)
+						expectTimestamp(event.Message["timestamp"].(string), misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp))
+
+						// Expect message properties
+						Expect(event.Message["some-property"].(string)).To(Equal(fmt.Sprintf("property-%s", messages[messageID].id)))
+
+						if destinationID == "enabled-destination-b" {
+							Expect(event.Message["user-transform"].(string)).To(Equal("value"))
+						}
+					}
+
+					Expect(strings.Join(messageIDs, ",")).To(Equal(expectations.messageIds))
+
+					return transformer.ResponseT{
+						Events: []transformer.TransformerResponseT{
+							{
+								Output: map[string]interface{}{
+									"int-value":    0,
+									"string-value": fmt.Sprintf("value-%s", destinationID),
+								},
+								Metadata: transformer.MetadataT{
+									SourceID:      "source-from-transformer",      // transformer should replay source id
+									DestinationID: "destination-from-transformer", // transformer should replay destination id
+								},
+							},
+							{
+								Output: map[string]interface{}{
+									"int-value":    1,
+									"string-value": fmt.Sprintf("value-%s", destinationID),
+								},
+								Metadata: transformer.MetadataT{
+									SourceID:      "source-from-transformer",      // transformer should replay source id
+									DestinationID: "destination-from-transformer", // transformer should replay destination id
+								},
+							},
+						},
+						Success: true,
+					}
+				}
+			}
+
+			// We expect one transform call to destination A, after sending numEvents stat.
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				After(callDestANumEvents).DoAndReturn(assertDestinationTransform("enabled-destination-a", "enabled-destination-a-definition-name"))
+
+			// We expect one transform call to destination B, after user transform for destination B.
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				After(callUserTransform).DoAndReturn(assertDestinationTransform("enabled-destination-b", "minio"))
+
+			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
+			callDBWrite := c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
+
+			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
+				Expect(job.UUID.String()).To(testutils.BeValidUUID())
+				Expect(job.JobID).To(Equal(int64(0)))
+				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
+				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
+				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer"}`))
+			}
+
+			// One Store call is expected for all events
+			callStoreRouter := c.mockRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).After(callDBWrite).
+				Do(func(jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(2))
+					for i, job := range jobs {
+						assertStoreJob(job, i, "value-enabled-destination-a")
+					}
+				})
+
+			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).After(callDBWrite).
+				Do(func(jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(2))
+					for i, job := range jobs {
+						assertStoreJob(job, i, "value-enabled-destination-b")
+					}
+				})
+
+			callUpdateJobsSuccess := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(2), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
+				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1) // id 1002
+					assertJobStatus(toRetryJobsList[0], statuses[1], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1)     // id 2002
+				})
+
+			c.mockStatGatewayDBWriteTime.EXPECT().End().Times(1).After(callStoreRouter).After(callUpdateJobsSuccess)
+			c.mockStatGatewayDBWrite.EXPECT().Count(2).Times(1)
+			c.mockStatRouterDBWrite.EXPECT().Count(2).Times(1)
+			c.mockStatBatchRouterDBWrite.EXPECT().Count(2).Times(1)
+
+			// expecting any number of empty gauge stats, from createSessions loop
+			c.mockStatActiveUsers.EXPECT().Gauge(0).AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatMarshalSingularEvents.EXPECT().Start().AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatMarshalSingularEvents.EXPECT().End().AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatDestProcessing.EXPECT().Start().AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatDestProcessing.EXPECT().End().AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatGatewayDBWriteTime.EXPECT().Start().AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatGatewayDBWriteTime.EXPECT().End().AnyTimes().After(callUpdateJobsSuccess)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(0), gatewayCustomVal, nil).AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatGatewayDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatRouterDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatBatchRouterDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
+
+			var processor *HandleT = &HandleT{
+				transformer:            mockTransformer,
+				processSessions:        true,
+				sessionThresholdEvents: 3, // this test will send 5 events
+			}
+
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
+
+			// make sure the mock backend config has sent the configuration
+			testutils.RunTestWithTimeout(func() {
+				for !c.configInitialised {
+				}
+			}, time.Second)
+
+			didWork := processor.handlePendingGatewayJobs()
+			Expect(didWork).To(Equal(true))
+		})
+
+		It("should process ToRetry and Unprocessed jobs, when total events are more than sessionThreshold", func() {
+			var messages map[string]mockEventData = map[string]mockEventData{
+				// this message should be delivered only to destination A
+				"message-1": {
+					id:                        "1",
+					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+				},
+				// this message should be delivered only to destination A
+				"message-2": {
+					id:                        "2",
+					jobid:                     1010,
+					originalTimestamp:         "2000-02-02T01:23:45",
+					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": true, "enabled-destination-b-definition-display-name": false},
+				},
+				// The following messages are part of job 2010, but merged in 1010 due to sessions.
+				// The jobid and received at values are overwritten by 1010.
+				"message-3": {
+					id:                 "3",
+					jobid:              1010,
+					originalTimestamp:  "malformed timestamp",
+					sentAt:             "2000-03-02T01:23:15",
+					expectedSentAt:     "2000-03-02T01:23:15.000Z",
+					expectedReceivedAt: "2001-01-02T02:23:45.000Z", // received at is taken from job 1010
+					integrations:       map[string]bool{"All": true},
+				},
+				// this message should be delivered to all destinations (default All value)
+				"message-4": {
+					id:                        "4",
+					jobid:                     1010,
+					originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
+					expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z", // received at is taken from job 1010
+					integrations:              map[string]bool{},
+				},
+				// this message should not be delivered to any destination
+				"message-5": {
+					id:                 "5",
+					jobid:              1010,
+					expectedReceivedAt: "2001-01-02T02:23:45.000Z", // received at is taken from job 1010
+					integrations:       map[string]bool{"All": false},
+				},
+			}
+
+			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         1010,
+					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  createBatchPayload(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         1002,
+					CreatedAt:     time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+			}
+
+			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+				{
+					UUID:         uuid.NewV4(),
+					JobID:        2010,
+					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CustomVal:    gatewayCustomVal[0],
+					EventPayload: createBatchPayload(WriteKeyEnabled, "2002-01-02T02:23:45.000Z", []mockEventData{messages["message-3"], messages["message-4"], messages["message-5"]}),
+					LastJobStatus: jobsdb.JobStatusT{
+						AttemptNum: 1,
+					},
+					Parameters: nil,
+				},
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         2002,
+					CreatedAt:     time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         2003,
+					CreatedAt:     time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+			}
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
+			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, 10000, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, 10000-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
+			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
+			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
+			callListSortEnd := c.mockStatJobListSort.EXPECT().End().Times(1).After(callListSort)
+
+			c.mockStatActiveUsers.EXPECT().Gauge(1).Times(1).After(callListSortEnd).
+				Do(c.asyncHelper.ExpectAndNotifyCallback())
+
+			callUpdateJobs := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callListSortEnd).
+				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
+					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1) // id 1002
+					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1) // id 1010
+					assertJobStatus(toRetryJobsList[1], statuses[2], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1)     // id 2002
+					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1)     // id 2003
+					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1)     // id 2010
+				})
+
+			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callUpdateJobs)
+			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
+			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
+			callDestANumEvents := c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(4).Times(1).After(callDestProcessing)
+			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
+			c.mockEnabledADestStats.numOutputEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
+			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().End().Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.numOutputEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().End().Times(1).After(callDestProcessing)
+			callUserTransformStart := c.mockEnabledBDestStats.sessionTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
+
+			c.mockStatLoopTime.EXPECT().End().Times(1).After(callUpdateJobs)
+
+			// We expect one call to user transform for destination B
+			callUserTransform := mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUserTransformStart).
+				DoAndReturn(func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
+					Expect(breakIntoBatchWhenUserChanges).To(BeTrue())
+					Expect(url).To(Equal("http://localhost:9090/customTransform?processSessions=true"))
+
+					outputEvents := make([]transformer.TransformerResponseT, 0)
+
+					for _, event := range clientEvents {
+						event.Message["user-transform"] = "value"
+						outputEvents = append(outputEvents, transformer.TransformerResponseT{
+							Output: map[string]interface{}{
+								"message": map[string]interface{}(event.Message),
+							},
+						})
+					}
+
+					return transformer.ResponseT{
+						Events:  outputEvents,
+						Success: false, // ??? response success is ignored in user transform
+					}
+				})
+
+			c.mockEnabledBDestStats.sessionTransform.(*mocksStats.MockRudderStats).EXPECT().End().Times(1).After(callUserTransform)
+
+			transformExpectations := map[string]transformExpectation{
+				DestinationIDEnabledA: {
+					events:          4,
+					messageIds:      "message-1,message-2,message-3,message-4",
+					receiveMetadata: true,
+				},
+				DestinationIDEnabledB: {
+					events:     2,
+					messageIds: "message-3,message-4",
+				},
+			}
+
+			assertDestinationTransform := func(destinationID string, destinationDefinitionName string) func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
+				return func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
+					Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/%s", destinationDefinitionName)))
+					Expect(breakIntoBatchWhenUserChanges).To(BeFalse())
+
+					expectations := transformExpectations[destinationID]
+					Expect(clientEvents).To(HaveLen(expectations.events))
+
+					messageIDs := make([]string, 0)
+					for i := range clientEvents {
+						event := clientEvents[i]
+						messageID := event.Message["messageId"].(string)
+						messageIDs = append(messageIDs, messageID)
+
+						// Expect all messages belong to same destination
+						Expect(event.Destination.ID).To(Equal(destinationID))
+
+						// Metadata are stripped from destination transform, is a user transform occurred before.
+						if expectations.receiveMetadata {
+							Expect(event.Metadata.DestinationType).To(Equal(fmt.Sprintf("%s-definition-name", destinationID)))
+							Expect(event.Metadata.JobID).To(Equal(messages[messageID].jobid))
+							Expect(event.Metadata.MessageID).To(Equal(messageID))
+							Expect(event.Metadata.SourceID).To(Equal("")) // ???
+						} else {
+							Expect(event.Metadata.DestinationType).To(Equal(""))
+							Expect(event.Metadata.JobID).To(Equal(int64(0)))
+							Expect(event.Metadata.MessageID).To(Equal(""))
+							Expect(event.Metadata.SourceID).To(Equal("")) // ???
+						}
+
+						// Expect timestamp fields
+						expectTimestamp := func(input string, expected time.Time) {
+							inputTime, _ := time.Parse(misc.RFC3339Milli, input)
+							Expect(inputTime).To(BeTemporally("~", expected, time.Second))
+						}
+
+						parseTimestamp := func(timestamp string) time.Time {
+							parsed, ok := time.Parse(misc.RFC3339Milli, timestamp)
+							if ok != nil {
+								return time.Now()
+							} else {
+								return parsed
+							}
+						}
+
+						receivedAt := parseTimestamp(messages[messageID].expectedReceivedAt)
+						sentAt := parseTimestamp(messages[messageID].expectedSentAt)
+						originalTimestamp := parseTimestamp(messages[messageID].expectedOriginalTimestamp)
+
+						expectTimestamp(event.Message["receivedAt"].(string), receivedAt)
+						expectTimestamp(event.Message["sentAt"].(string), sentAt)
+						expectTimestamp(event.Message["originalTimestamp"].(string), originalTimestamp)
+						expectTimestamp(event.Message["timestamp"].(string), misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp))
+
+						// Expect message properties
+						Expect(event.Message["some-property"].(string)).To(Equal(fmt.Sprintf("property-%s", messages[messageID].id)))
+
+						if destinationID == "enabled-destination-b" {
+							Expect(event.Message["user-transform"].(string)).To(Equal("value"))
+						}
+					}
+
+					Expect(strings.Join(messageIDs, ",")).To(Equal(expectations.messageIds))
+
+					return transformer.ResponseT{
+						Events: []transformer.TransformerResponseT{
+							{
+								Output: map[string]interface{}{
+									"int-value":    0,
+									"string-value": fmt.Sprintf("value-%s", destinationID),
+								},
+								Metadata: transformer.MetadataT{
+									SourceID:      "source-from-transformer",      // transformer should replay source id
+									DestinationID: "destination-from-transformer", // transformer should replay destination id
+								},
+							},
+							{
+								Output: map[string]interface{}{
+									"int-value":    1,
+									"string-value": fmt.Sprintf("value-%s", destinationID),
+								},
+								Metadata: transformer.MetadataT{
+									SourceID:      "source-from-transformer",      // transformer should replay source id
+									DestinationID: "destination-from-transformer", // transformer should replay destination id
+								},
+							},
+						},
+						Success: true,
+					}
+				}
+			}
+
+			// We expect one transform call to destination A, after sending numEvents stat.
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				After(callDestANumEvents).DoAndReturn(assertDestinationTransform("enabled-destination-a", "enabled-destination-a-definition-name"))
+
+			// We expect one transform call to destination B, after user transform for destination B.
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				After(callUserTransform).DoAndReturn(assertDestinationTransform("enabled-destination-b", "minio"))
+
+			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
+			callDBWrite := c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
+
+			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
+				Expect(job.UUID.String()).To(testutils.BeValidUUID())
+				Expect(job.JobID).To(Equal(int64(0)))
+				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
+				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
+				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer"}`))
+			}
+
+			// One Store call is expected for all events
+			callStoreRouter := c.mockRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).After(callDBWrite).
+				Do(func(jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(2))
+					for i, job := range jobs {
+						assertStoreJob(job, i, "value-enabled-destination-a")
+					}
+				})
+
+			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).After(callDBWrite).
+				Do(func(jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(2))
+					for i, job := range jobs {
+						assertStoreJob(job, i, "value-enabled-destination-b")
+					}
+				})
+
+			callUpdateJobsSuccess := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(2), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
+				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1) // id 1002
+					assertJobStatus(toRetryJobsList[0], statuses[1], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1)     // id 2002
+				})
+
+			c.asyncHelper.RegisterCalls(
+				c.mockStatGatewayDBWriteTime.EXPECT().End().Times(1).After(callStoreRouter).After(callUpdateJobsSuccess),
+				c.mockStatGatewayDBWrite.EXPECT().Count(2).Times(1),
+				c.mockStatRouterDBWrite.EXPECT().Count(2).Times(1),
+				c.mockStatBatchRouterDBWrite.EXPECT().Count(2).Times(1),
+			)
+
+			// expecting any number of empty gauge stats, from createSessions loop
+			c.mockStatActiveUsers.EXPECT().Gauge(0).AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatMarshalSingularEvents.EXPECT().Start().AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatMarshalSingularEvents.EXPECT().End().AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatDestProcessing.EXPECT().Start().AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatDestProcessing.EXPECT().End().AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatGatewayDBWriteTime.EXPECT().Start().AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatGatewayDBWriteTime.EXPECT().End().AnyTimes().After(callUpdateJobsSuccess)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(0), gatewayCustomVal, nil).AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatGatewayDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatRouterDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatBatchRouterDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
+
+			var processor *HandleT = &HandleT{
+				transformer:            mockTransformer,
+				processSessions:        true,
+				sessionThresholdEvents: 20, // this test will send 5 events
+			}
+
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
+
+			// make sure the mock backend config has sent the configuration
+			testutils.RunTestWithTimeout(func() {
+				for !c.configInitialised {
+				}
+			}, time.Second)
+
+			didWork := processor.handlePendingGatewayJobs()
+			Expect(didWork).To(Equal(true))
+		})
+	})
+
+	Context("transformations", func() {
+		It("messages should be skipped on transform failures, without failing the job", func() {
+			var messages map[string]mockEventData = map[string]mockEventData{
+				"message-1": {
+					id:                        "1",
+					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+				},
+			}
+
+			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         1010,
+					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  createBatchPayload(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+			}
+
+			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{}
+
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(emptyJobsList).Times(1)
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
+			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, 10000, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, 10000-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
+			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
+			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
+			callListSortEnd := c.mockStatJobListSort.EXPECT().End().Times(1).After(callListSort)
+			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callListSortEnd)
+			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
+			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
+			c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(1).Times(1).After(callDestProcessing)
+			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
+			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().End().Times(1).After(callDestProcessing)
+
+			// Test transformer failure
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Return(transformer.ResponseT{
+					Events:  []transformer.TransformerResponseT{},
+					Success: false,
+				})
+
+			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
+			c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
+
+			callUpdateJobs := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+					// job should be marked as successful regardless of transformer response
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1)
 				})
 
 			c.mockStatGatewayDBWriteTime.EXPECT().End().Times(1).After(callUpdateJobs)
 			c.mockStatGatewayDBWrite.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1)
-			c.mockStatRouterDBWrite.EXPECT().Count(2).Times(1)
-			c.mockStatBatchRouterDBWrite.EXPECT().Count(2).Times(1)
-
+			c.mockStatRouterDBWrite.EXPECT().Count(0).Times(1)
+			c.mockStatBatchRouterDBWrite.EXPECT().Count(0).Times(1)
 			c.mockStatLoopTime.EXPECT().End().Times(1)
 
 			var processor *HandleT = &HandleT{
@@ -671,13 +1502,14 @@ type mockTransformerData struct {
 }
 
 type transformExpectation struct {
-	events     int
-	messageIds string
+	events          int
+	messageIds      string
+	receiveMetadata bool
 }
 
 func createMessagePayload(e mockEventData) string {
 	integrations, _ := json.Marshal(e.integrations)
-	return fmt.Sprintf(`{"messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s"}`, e.id, integrations, e.id, e.originalTimestamp, e.sentAt)
+	return fmt.Sprintf(`{"anonymousId": "some-anonymous-id", "messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s"}`, e.id, integrations, e.id, e.originalTimestamp, e.sentAt)
 }
 
 func createBatchPayload(writeKey string, receivedAt string, events []mockEventData) []byte {
@@ -687,4 +1519,14 @@ func createBatchPayload(writeKey string, receivedAt string, events []mockEventDa
 	}
 	batch := strings.Join(payloads, ",")
 	return []byte(fmt.Sprintf(`{"writeKey": "%s", "batch": [%s], "requestIP": "1.2.3.4", "receivedAt": "%s"}`, writeKey, batch, receivedAt))
+}
+
+func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string, errorCode string, errorResponse string, attemptNum int) {
+	Expect(status.JobID).To(Equal(job.JobID))
+	Expect(status.JobState).To(Equal(expectedState))
+	Expect(status.ErrorCode).To(Equal(errorCode))
+	Expect(status.ErrorResponse).To(MatchJSON(errorResponse))
+	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+	Expect(status.AttemptNum).To(Equal(attemptNum))
 }

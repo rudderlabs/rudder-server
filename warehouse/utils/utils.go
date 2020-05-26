@@ -671,7 +671,7 @@ func ObjectStorageType(destType string, config interface{}) string {
 }
 
 func GetConfigValue(key string, warehouse WarehouseT) (val string) {
-	config := warehouse.Destination.Config.(map[string]interface{})
+	config := warehouse.Destination.Config
 	if config[key] != nil {
 		val, _ = config[key].(string)
 	}
