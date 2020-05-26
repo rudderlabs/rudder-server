@@ -57,11 +57,11 @@ You can also learn more about the [RudderStack Config Generator](https://github.
 
 ### Connections Page
 
-![Connections Page](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-M7WR4_0fzJ-eVn7ZeOE%2F-M7WTXFwcky90UyQmwuq%2FConnections.png?alt=media&token=99ff7da7-f172-486c-9e05-1f113ffcfeef)
+![Connections Page](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-M8Fo18nKM8Y3sHNQwW3%2F-M8Fo6hu_qKB4XX0STNZ%2FScreenshot%202020-05-26%20at%205.02.38%20PM.png?alt=media&token=adbd68bd-5b55-4e65-a19a-a1a29fc616e8)
 
 ### Events Page
 
-![Events Page](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-M7WR4_0fzJ-eVn7ZeOE%2F-M7WU8HlfCDWIB6jHkWl%2FEvents.png?alt=media&token=c332f302-1862-45c2-bf84-dbeca07f4f82)
+![Events Page](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-M8Fo18nKM8Y3sHNQwW3%2F-M8FoF_Gnu9CBQgUujZW%2FScreenshot%202020-05-26%20at%205.12.19%20PM.png?alt=media&token=71165ae7-964c-4370-9826-29315ab3e3b4)
 
 # License
 
