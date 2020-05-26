@@ -104,7 +104,7 @@ type HandleT struct {
 	webhookHandler                            types.WebHookI
 }
 
-func (gateway *HandleT) updatewritekeystats(writeKeyStats map[string]int, bucket string) {
+func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
 	for writeKey, count := range writeKeyStats {
 		writeKeyStatsD := gateway.stats.NewWriteKeyStat(bucket, stats.CountType, writeKey)
 		writeKeyStatsD.Count(count)
@@ -273,18 +273,18 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		gateway.batchTimeStat.End()
 		gateway.batchSizeStat.Count(len(breq.batchRequest))
 		// update stats request wise
-		gateway.updatewritekeystats(writeKeyStats, "gateway.write_key_requests")
-		gateway.updatewritekeystats(writeKeySuccessStats, "gateway.write_key_successful_requests")
-		gateway.updatewritekeystats(writeKeyFailStats, "gateway.write_key_failed_requests")
+		gateway.updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")
+		gateway.updateWriteKeyStats(writeKeySuccessStats, "gateway.write_key_successful_requests")
+		gateway.updateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
 		if enableRateLimit {
-			gateway.updatewritekeystats(workspaceDropRequestStats, "gateway.work_space_dropped_requests")
+			gateway.updateWriteKeyStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests")
 		}
 		// update stats event wise
-		gateway.updatewritekeystats(writeKeyEventStats, "gateway.write_key_events")
-		gateway.updatewritekeystats(writeKeySuccessEventStats, "gateway.write_key_successful_events")
-		gateway.updatewritekeystats(writeKeyFailEventStats, "gateway.write_key_failed_events")
+		gateway.updateWriteKeyStats(writeKeyEventStats, "gateway.write_key_events")
+		gateway.updateWriteKeyStats(writeKeySuccessEventStats, "gateway.write_key_successful_events")
+		gateway.updateWriteKeyStats(writeKeyFailEventStats, "gateway.write_key_failed_events")
 		if enableDedup {
-			gateway.updatewritekeystats(writeKeyDupStats, "gateway.write_key_duplicate_events")
+			gateway.updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
 		}
 	}
 }
@@ -627,10 +627,10 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				enabledWriteKeysSourceMap[source.WriteKey] = source.ID
-			}
-			if source.SourceDefinition.Category == "webhook" {
-				enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
-				gateway.webhookHandler.Register(source.SourceDefinition.Name)
+				if source.SourceDefinition.Category == "webhook" {
+					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
+					gateway.webhookHandler.Register(source.SourceDefinition.Name)
+				}
 			}
 		}
 		configSubscriberLock.Unlock()
@@ -694,7 +694,7 @@ func (gateway *HandleT) IncrementAckCount(count uint64) {
 
 // UpdateWriteKeyStats creates a new stat for every writekey and updates it with the corresponding count
 func (gateway *HandleT) UpdateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
-	gateway.updatewritekeystats(writeKeyStats, bucket)
+	gateway.updateWriteKeyStats(writeKeyStats, bucket)
 }
 
 // TrackRequestMetrics provides access to add request success/failure telemetry
