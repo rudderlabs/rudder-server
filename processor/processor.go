@@ -214,7 +214,7 @@ func loadConfig() {
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE"}
-	customDestinations = []string{"KAFKA", "KINESIS"}
+	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }

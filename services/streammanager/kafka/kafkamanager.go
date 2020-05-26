@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/rudderlabs/rudder-server/config"
@@ -22,9 +23,20 @@ type Config struct {
 	CACertificate string
 }
 
+//AzureEventHubConfig is the config that is required to send data to Azure Event Hub
+type AzureEventHubConfig struct {
+	Topic                     string
+	BootstrapServer           string
+	EventHubsConnectionString string
+}
+
 var (
 	clientCertFile, clientKeyFile string
 	certificate                   tls.Certificate
+)
+
+const (
+	azureEventHubUser = "$ConnectionString"
 )
 
 func init() {
@@ -72,6 +84,37 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 			config.Net.TLS.Enable = true
 		}
 	}
+
+	producer, err := sarama.NewSyncProducer(hosts, config)
+
+	return producer, err
+}
+
+// NewProducerForAzureEventHub creates a producer for Azure event hub based on destination config
+func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProducer, error) {
+
+	var destConfig = AzureEventHubConfig{}
+	jsonConfig, err := json.Marshal(destinationConfig)
+	err = json.Unmarshal(jsonConfig, &destConfig)
+
+	hostName := destConfig.BootstrapServer
+	hosts := []string{hostName}
+
+	config := sarama.NewConfig()
+	config.Net.DialTimeout = 10 * time.Second
+
+	config.Net.SASL.Enable = true
+	config.Net.SASL.User = azureEventHubUser
+	config.Net.SASL.Password = destConfig.EventHubsConnectionString
+	config.Net.SASL.Mechanism = sarama.SASLTypePlaintext //"PLAIN"
+
+	config.Net.TLS.Enable = true
+	config.Net.TLS.Config = &tls.Config{
+		InsecureSkipVerify: true,
+		ClientAuth:         0,
+	}
+	config.Version = sarama.V1_0_0_0
+	config.Producer.Return.Successes = true
 
 	producer, err := sarama.NewSyncProducer(hosts, config)
 

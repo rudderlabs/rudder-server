@@ -3,6 +3,7 @@ package misc
 import (
 	"archive/zip"
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"crypto/md5"
 	"database/sql"
@@ -527,6 +528,19 @@ func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 
 func IntArrayToString(a []int64, delim string) string {
 	return strings.Trim(strings.Replace(fmt.Sprint(a), " ", delim, -1), "[]")
+}
+
+func MakeJSONArray(bytesArray [][]byte) []byte {
+	joinedArray := bytes.Join(bytesArray, []byte(","))
+
+	// insert '[' to the front
+	joinedArray = append(joinedArray, 0)
+	copy(joinedArray[1:], joinedArray[0:])
+	joinedArray[0] = byte('[')
+
+	// append ']'
+	joinedArray = append(joinedArray, ']')
+	return joinedArray
 }
 
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number
