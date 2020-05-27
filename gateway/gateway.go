@@ -369,13 +369,18 @@ func addToSet(set map[string]struct{}, elements []string) {
 func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSet map[string]struct{}, writeKey string, writeKeyDupStats map[string]int) {
 	toRemoveMessageIndexesSet := make(map[int]struct{})
 	//Dedup within events batch in a web request
+	messageIDSet := make(map[string]struct{})
+	//Constructing a set out of messageIDs
+	for _, messageID := range messageIDs {
+		messageIDSet[messageID] = struct{}{}
+	}
+	//In this loop it will remove from set for first occurance and if not found in set it means its a duplicate
 	for idx, messageID := range messageIDs {
-		for i := 0; i < idx; i++ {
-			if messageID == messageIDs[i] {
-				toRemoveMessageIndexesSet[idx] = struct{}{}
-				break
-			}
+		if _, ok := messageIDSet[messageID]; !ok {
+			toRemoveMessageIndexesSet[idx] = struct{}{}
+			continue
 		}
+		delete(messageIDSet, messageID)
 	}
 
 	//Dedup within batch of web requests
@@ -453,9 +458,10 @@ func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 //Function to route incoming web requests to userWebRequestBatcher
 func (gateway *HandleT) webRequestRouter() {
 	for req := range gateway.webRequestQ {
-		userIDHeader := req.request.Header.Get("anonymousId")
+		userIDHeader := req.request.Header.Get("AnonymousId")
 		//If necessary fetch userID from request body.
 		if userIDHeader == "" {
+			//If the request comes through proxy, proxy would already send this. So this shouldn't be happening in that case
 			userIDHeader = uuid.NewV4().String()
 		}
 		dbWriterWorker := gateway.findWorker(userIDHeader)
