@@ -120,6 +120,9 @@ type MigrationState struct {
 	dsForImport      dataSetT
 	lastDsForExport  dataSetT
 	importLock       sync.RWMutex
+	migrationMode    string
+	fromVersion      int
+	toVersion        int
 }
 
 /*
@@ -145,7 +148,6 @@ type HandleT struct {
 	isStatDropDSPeriodInitialized bool
 	jobsdbQueryTimeStat           stats.RudderStats
 	migrationState                MigrationState
-	migrationMode                 string
 }
 
 //The struct which is written to the journal
@@ -331,7 +333,7 @@ in the retention time
 func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string) {
 
 	var err error
-	jd.migrationMode = migrationMode
+	jd.migrationState.migrationMode = migrationMode
 	psqlInfo := GetConnectionString()
 	jd.assert(tablePrefix != "", "tablePrefix received is empty")
 	jd.tablePrefix = tablePrefix
@@ -851,7 +853,6 @@ func (jd *HandleT) createDS(newDSIdx string) dataSetT {
 	opID := jd.JournalMarkStart(addDSOperation, opPayload)
 
 	//Create the jobs and job_status tables
-	//TODO: Make user_id as not null
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %s (
                                       job_id BIGSERIAL PRIMARY KEY,
 									  uuid UUID NOT NULL,
@@ -1646,8 +1647,8 @@ func (jd *HandleT) mainCheckLoop() {
 		}
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
-		if db.IsValidMigrationMode(jd.migrationMode) {
-			logger.Debugf("[[ MainCheckLoop ]]: migration mode = %s, so skipping internal migrations", jd.migrationMode)
+		if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
+			logger.Debugf("[[ MainCheckLoop ]]: migration mode = %s, so skipping internal migrations", jd.migrationState.migrationMode)
 			continue
 		}
 
@@ -2241,7 +2242,7 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		jd.dropDS(migrateDest, true)
 		undoOp = true
 	case migrateImportOperation:
-		jd.assert(db.IsValidMigrationMode(jd.migrationMode), "If migration mode is not valid, then this operation shouldn't have been unfinished. Go debug")
+		jd.assert(db.IsValidMigrationMode(jd.migrationState.migrationMode), "If migration mode is not valid, then this operation shouldn't have been unfinished. Go debug")
 		var importDest dataSetT
 		json.Unmarshal(opPayload, &importDest)
 		jd.dropDS(importDest, true)
@@ -2291,7 +2292,7 @@ const (
 func (jd *HandleT) recoverFromJournal() {
 	jd.recoverFromCrash(mainGoRoutine)
 	jd.recoverFromCrash(backupGoRoutine)
-	if db.IsValidMigrationMode(jd.migrationMode) {
+	if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
 		jd.recoverFromCrash(migratorRoutine)
 	}
 }

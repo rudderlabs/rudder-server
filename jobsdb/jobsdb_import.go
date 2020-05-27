@@ -8,7 +8,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //SetupForImport is used to setup jobsdb for export or for import or for both
@@ -71,7 +70,7 @@ func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 		ds = jd.addNewDS(appendToDsList, dataSetT{})
 	}
 
-	seqNoForNewDS := int64(misc.GetMigratingToVersion())*int64(math.Pow10(13)) + 1
+	seqNoForNewDS := int64(jd.migrationState.toVersion)*int64(math.Pow10(13)) + 1
 	jd.updateSequenceNumber(ds, seqNoForNewDS)
 	logger.Infof("[[ %sJobsDB Import ]] New dataSet %s is prepared with start sequence : %d", jd.GetTablePrefix(), ds, seqNoForNewDS)
 	return ds
