@@ -287,7 +287,7 @@ func (gateway *HandleT) userWebRequestBatchDBWriter(dbWriterWorker *dbWriterWork
 
 			if enableDedup {
 				gateway.dedup(&body, reqMessageIDs, allMessageIdsSet, writeKey, writeKeyDupStats)
-				appendToSet(allMessageIdsSet, reqMessageIDs)
+				addToSet(allMessageIdsSet, reqMessageIDs)
 				if len(gjson.GetBytes(body, "batch").Array()) == 0 {
 					req.done <- ""
 					preDbStoreCount++
@@ -360,7 +360,7 @@ func (gateway *HandleT) userWebRequestBatchDBWriter(dbWriterWorker *dbWriterWork
 	}
 }
 
-func appendToSet(set map[string]struct{}, elements []string) {
+func addToSet(set map[string]struct{}, elements []string) {
 	for _, element := range elements {
 		set[element] = struct{}{}
 	}

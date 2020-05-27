@@ -328,7 +328,6 @@ go.uber.org/zap/zapcore
 # golang.org/x/crypto v0.0.0-20200221231518-2aa609cf4a9d
 golang.org/x/crypto/argon2
 golang.org/x/crypto/blake2b
-golang.org/x/crypto/ocsp
 golang.org/x/crypto/md4
 golang.org/x/crypto/ocsp
 golang.org/x/crypto/pbkdf2
