@@ -153,6 +153,13 @@ func NewMigrationCheckpoint(migrationType MigrationOp, fromNode string, toNode s
 	return MigrationCheckpointT{0, migrationType, fromNode, toNode, jobsCount, fileLocation, status, startSeq, []byte("{}"), time.Now()}
 }
 
+//SetupForMigration prepares jobsdb to start migrations
+func (jd *HandleT) SetupForMigration(fromVersion int, toVersion int) {
+	jd.migrationState.fromVersion = fromVersion
+	jd.migrationState.toVersion = toVersion
+	jd.SetupCheckpointTable()
+}
+
 //SetupCheckpointTable creates a table
 func (jd *HandleT) SetupCheckpointTable() {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -175,11 +182,11 @@ func (jd *HandleT) SetupCheckpointTable() {
 }
 
 func (jd *HandleT) getCheckpointTableName() string {
-	return fmt.Sprintf("%s_%d_%d_%s", jd.GetTablePrefix(), misc.GetMigratingFromVersion(), misc.GetMigratingToVersion(), MigrationCheckpointSuffix)
+	return fmt.Sprintf("%s_%d_%d_%s", jd.GetTablePrefix(), jd.migrationState.fromVersion, jd.migrationState.toVersion, MigrationCheckpointSuffix)
 }
 
 func (jd *HandleT) getUniqueConstraintName() string {
-	return fmt.Sprintf("%s_%d_%d_%s", jd.GetTablePrefix(), misc.GetMigratingFromVersion(), misc.GetMigratingToVersion(), UniqueConstraintSuffix)
+	return fmt.Sprintf("%s_%d_%d_%s", jd.GetTablePrefix(), jd.migrationState.fromVersion, jd.migrationState.toVersion, UniqueConstraintSuffix)
 }
 
 func (jd *HandleT) findDsFromSetupCheckpoint(migrationType MigrationOp) (dataSetT, bool) {
@@ -207,7 +214,6 @@ func (jd *HandleT) createSetupCheckpointAndGetDs(migrationType MigrationOp) data
 	case AcceptNewEventsOp:
 		ds = jd.getDsForNewEvents(dsList)
 	case ImportOp:
-		//TODO If addNewDS is done and crashed, then goes into crashloop
 		ds = jd.getDsForImport(dsList)
 	}
 

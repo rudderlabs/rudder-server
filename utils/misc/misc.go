@@ -757,14 +757,3 @@ func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (re
 	logger.Debugf("Post request: Successful %s", string(body))
 	return body, resp.StatusCode, nil
 }
-
-//TODO: Move to migrator
-//GetMigratingFromVersion gives the from version during migration
-func GetMigratingFromVersion() int {
-	return config.GetRequiredEnvAsInt("MIGRATING_FROM_CLUSTER_VERSION")
-}
-
-//GetMigratingToVersion gives the from version during migration
-func GetMigratingToVersion() int {
-	return config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
-}
