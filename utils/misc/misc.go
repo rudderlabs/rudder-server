@@ -734,6 +734,28 @@ func IsValidUUID(uuid string) bool {
 	return r.MatchString(uuid)
 }
 
+func HasAWSKeysInConfig(config interface{}) bool {
+	configMap := config.(map[string]interface{})
+	if configMap["accessKeyID"] == nil || configMap["accessKey"] == nil {
+		return false
+	}
+	if configMap["accessKeyID"].(string) == "" || configMap["accessKey"].(string) == "" {
+		return false
+	}
+	return true
+}
+
+func GetObjectStorageConfig(provider string, objectStorageConfig interface{}) map[string]interface{} {
+	objectStorageConfigMap := objectStorageConfig.(map[string]interface{})
+	if provider == "S3" && !HasAWSKeysInConfig(objectStorageConfig) {
+		objectStorageConfigMap["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+		objectStorageConfigMap["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+
+	}
+	return objectStorageConfigMap
+
+}
+
 //GetNodeID returns the nodeId of the current node
 func GetNodeID() string {
 	nodeID := config.GetRequiredEnv("INSTANCE_ID")

@@ -370,17 +370,20 @@ func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSe
 	toRemoveMessageIndexesSet := make(map[int]struct{})
 	//Dedup within events batch in a web request
 	messageIDSet := make(map[string]struct{})
+
+	// Eg messageIDs: [m1, m2, m3, m1, m1, m1]
 	//Constructing a set out of messageIDs
 	for _, messageID := range messageIDs {
 		messageIDSet[messageID] = struct{}{}
 	}
+	// Eg messagIDSet: [m1, m2, m3]
 	//In this loop it will remove from set for first occurance and if not found in set it means its a duplicate
 	for idx, messageID := range messageIDs {
-		if _, ok := messageIDSet[messageID]; !ok {
+		if _, ok := messageIDSet[messageID]; ok {
+			delete(messageIDSet, messageID)
+		} else {
 			toRemoveMessageIndexesSet[idx] = struct{}{}
-			continue
 		}
-		delete(messageIDSet, messageID)
 	}
 
 	//Dedup within batch of web requests
@@ -724,7 +727,7 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				enabledWriteKeysSourceMap[source.WriteKey] = source.ID
-				if source.SourceDefinition.Category == "webhook" {
+				if gateway.application.Features().Webhook != nil && source.SourceDefinition.Category == "webhook" {
 					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
 					gateway.webhookHandler.Register(source.SourceDefinition.Name)
 				}
@@ -843,7 +846,9 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	gateway.initDBWorkers()
 
-	gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
+	if gateway.application.Features().Webhook != nil {
+		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
+	}
 	gateway.backendConfig.WaitForConfig()
 	rruntime.Go(func() {
 		gateway.printStats()
