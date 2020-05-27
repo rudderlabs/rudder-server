@@ -17,6 +17,7 @@ type UploadOutput struct {
 type FileManager interface {
 	Upload(*os.File, ...string) (UploadOutput, error)
 	Download(*os.File, string) error
+	GetDownloadKeyFromFileLocation(location string) string
 }
 
 // SettingsT sets configuration for FileManager

@@ -122,6 +122,11 @@ func (manager *AzureBlobStorageManager) Download(output *os.File, key string) er
 	return err
 }
 
+//TODO complete this
+func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location string) string {
+	return location
+}
+
 type AzureBlobStorageManager struct {
 	Config *AzureBlobStorageConfig
 }

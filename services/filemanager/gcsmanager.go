@@ -77,6 +77,11 @@ func (manager *GCSManager) Download(output *os.File, key string) error {
 	return err
 }
 
+//TODO complete this
+func (manager *GCSManager) GetDownloadKeyFromFileLocation(location string) string {
+	return location
+}
+
 type GCSManager struct {
 	Config *GCSConfig
 }
