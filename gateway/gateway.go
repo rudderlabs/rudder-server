@@ -183,7 +183,6 @@ func (gateway *HandleT) userWebRequestBatcher(dbWriterWorker *dbWriterWorkerT) {
 
 func (gateway *HandleT) userWebRequestBatchDBWriter(dbWriterWorker *dbWriterWorkerT) {
 	for breq := range dbWriterWorker.batchRequestQ {
-		//TODO check if this assignment is atomic
 		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
@@ -658,15 +657,10 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func (gateway *HandleT) printStackHandler(w http.ResponseWriter, r *http.Request) {
 	byteArr := make([]byte, 2048*1024)
-	_ = runtime.Stack(byteArr, true)
-	// stackTrace := string(byteArr[:n])
-	// fmt.Println(stackTrace)
-	w.Write(byteArr)
-
-	// n := runtime.Stack(byteArr, true)
-	// stackTrace := string(byteArr[:n])
-	// instanceID := misc.GetNodeID()
-	// w.Write([]byte(fmt.Sprintf(`{"instance": "%s", "stack": "%s"}`, instanceID, stackTrace)))
+	n := runtime.Stack(byteArr, true)
+	stackTrace := string(byteArr[:n])
+	instanceID := misc.GetNodeID()
+	w.Write([]byte(fmt.Sprintf(`{"instance": "%s", "stack": "%s"}`, instanceID, stackTrace)))
 }
 
 func reflectOrigin(origin string) bool {
