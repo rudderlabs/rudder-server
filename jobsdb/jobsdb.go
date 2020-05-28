@@ -351,7 +351,6 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
-
 }
 
 func GetConnectionString() string {
@@ -397,14 +396,15 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
 
 	if clearAll {
+
 		jd.dropAllDS()
 		jd.delJournal()
 		jd.dropAllBackupDS()
 		jd.dropMigrationCheckpointTables()
 	}
 
-	jd.setupEnumTypes()
-	jd.setupJournal()
+	jd.setupDatabaseTables()
+
 	jd.recoverFromJournal()
 
 	//Refresh in memory list. We don't take lock
@@ -2141,20 +2141,6 @@ func (jd *HandleT) addNewValuesToJobStateType(dsIndex string) {
 	jd.dbHandle.Exec(sqlStatement)
 }
 
-func (jd *HandleT) setupJournal() {
-
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s_journal (
-                                      id BIGSERIAL PRIMARY KEY,
-                                      operation VARCHAR(32) NOT NULL,
-                                      done BOOLEAN,
-                                      operation_payload JSONB NOT NULL,
-                                      start_time TIMESTAMP NOT NULL,
-                                      end_time TIMESTAMP);`, jd.tablePrefix)
-
-	_, err := jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-}
-
 func (jd *HandleT) delJournal() {
 
 	sqlStatement := fmt.Sprintf(`DROP TABLE IF EXISTS %s_journal`, jd.tablePrefix)
@@ -2639,69 +2625,4 @@ func (jd *HandleT) CheckPGHealth() bool {
 	}
 	defer rows.Close()
 	return true
-}
-
-/*
-================================================
-==============Test Functions Below==============
-================================================
-*/
-
-func (jd *HandleT) dropTables() error {
-	sqlStatement := `DROP TABLE IF EXISTS job_status`
-	_, err := jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	sqlStatement = `DROP TABLE IF EXISTS  jobs`
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	return nil
-
-}
-
-func (jd *HandleT) setupEnumTypes() {
-	psqlInfo := GetConnectionString()
-
-	dbHandle, err := sql.Open("postgres", psqlInfo)
-	jd.assertError(err)
-	defer dbHandle.Close()
-
-	sqlStatement := fmt.Sprintf(`DO $$ BEGIN
-                                CREATE TYPE job_state_type
-                                     AS ENUM('%s');
-                                     EXCEPTION
-                                        WHEN duplicate_object THEN null;
-                            END $$;`, strings.Join(getValidStates(), "', '"))
-
-	_, err = dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-}
-
-func (jd *HandleT) createTables() error {
-	sqlStatement := `CREATE TABLE jobs (
-                             job_id BIGSERIAL PRIMARY KEY,
-							 uuid UUID NOT NULL,
-							 user_id TEXT NOT NULL,
-							 parameters JSONB NOT NULL,
-                             custom_val INT NOT NULL,
-                             event_payload JSONB NOT NULL,
-                             created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                             expire_at TIMESTAMP NOT NULL DEFAULT NOW());`
-	_, err := jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	sqlStatement = `CREATE TABLE job_status (
-                            id BIGSERIAL PRIMARY KEY,
-                            job_id BIGINT REFERENCES jobs(job_id),
-                            job_state job_state_type,
-                            attempt SMALLINT,
-                            exec_time TIMESTAMP,
-                            retry_time TIMESTAMP,
-                            error_code VARCHAR(32),
-                            error_response JSONB);`
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	return nil
 }
