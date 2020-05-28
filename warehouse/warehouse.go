@@ -130,7 +130,6 @@ type ErrorResponseT struct {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 

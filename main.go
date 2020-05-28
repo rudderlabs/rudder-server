@@ -126,7 +126,6 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 

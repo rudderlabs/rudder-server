@@ -29,11 +29,11 @@ func transformKey(s string) string {
 	return "RSERVER_" + strings.ToUpper(snake)
 }
 
-// Initialize initializes the config
-func Initialize() {
+func init() {
 	if err := godotenv.Load(); err != nil {
 		fmt.Println("ERROR: No .env file found")
 	}
+
 	configPath := GetEnv("CONFIG_PATH", "./config/config.toml")
 
 	viper.SetConfigFile(configPath)

@@ -162,7 +162,6 @@ func MakeBackendPostRequest(endpoint string, data interface{}) (response []byte,
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 

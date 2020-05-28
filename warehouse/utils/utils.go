@@ -92,7 +92,6 @@ var SnowflakeStorageMap = map[string]string{
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
