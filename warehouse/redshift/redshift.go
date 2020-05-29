@@ -5,10 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sts"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -17,6 +13,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sts"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -366,7 +367,7 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 	}
 
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s-%s`, stagingTablePrefix, uuid.NewV4().String(), tableName), 127)
-	err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), rs.Upload.Schema[tableName])
+	err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), rs.CurrentSchema[tableName])
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 		return
@@ -424,6 +425,39 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]s.%[2]s.%[3]s`, rs.Namespace, tableName, "table_name")
 	}
 
+	var hasMergedUserColumns bool
+	var userColumnsDiff []string
+	// merge user records for to avoid replacing values not set in update in existing record
+	if strings.ToLower(tableName) == "users" {
+		usersColumns, ok := rs.CurrentSchema["users"]
+		if ok {
+			currentUserColumns := []string{}
+			for col := range usersColumns {
+				currentUserColumns = append(currentUserColumns, col)
+			}
+			userColumnsDiff = misc.DiffStringSlices(currentUserColumns, strkeys)
+			if len(userColumnsDiff) > 0 {
+				var setColVals string
+				for idx, diffCol := range userColumnsDiff {
+					setColVals += fmt.Sprintf(`%[1]s = o.%[1]s`, diffCol)
+					if idx != len(userColumnsDiff)-1 {
+						setColVals += ","
+					}
+				}
+				sqlStatement = fmt.Sprintf(`UPDATE %[1]s."%[2]s" SET %[3]s FROM %[1]s."%[4]s" o WHERE %[1]s."%[2]s".id = o.id`, rs.Namespace, stagingTableName, setColVals, "users")
+				logger.Infof("RS: Merging staging table: %s with values from existing users table\n", tableName, sqlStatement)
+				_, err = tx.Exec(sqlStatement)
+				if err != nil {
+					logger.Errorf("RS: Error Merging staging table: %s with values from existing users table: %v\n", tableName, err)
+					tx.Rollback()
+					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
+					return
+				}
+				hasMergedUserColumns = true
+			}
+		}
+	}
+
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s)`, rs.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
 	logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
@@ -434,6 +468,10 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		return
 	}
 
+	// also insert merged user columns in user-staging-table
+	if hasMergedUserColumns {
+		strkeys = append(strkeys, userColumnsDiff...)
+	}
 	var quotedColumnNames string
 	for idx, str := range strkeys {
 		quotedColumnNames += "\"" + str + "\""
@@ -556,6 +594,7 @@ func (rs *HandleT) MigrateSchema() (err error) {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
 		return
 	}
+	rs.CurrentSchema = updatedSchema
 	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatedSchemaState, rs.DbHandle)
 	if err != nil {
 		panic(err)

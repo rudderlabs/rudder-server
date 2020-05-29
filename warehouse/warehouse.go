@@ -218,6 +218,7 @@ func getNamespaceFromDestinationConfig(config interface{}, sourceName string, de
 	if len(strings.TrimSpace(namespace)) > 0 {
 		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, warehouseutils.ToSafeDBString(destType, strcase.ToSnake(namespace))), 127)
 	} else {
+		// TODO: check for existing namespace and use it
 		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, warehouseutils.ToSafeDBString(destType, strcase.ToSnake(sourceName))), 127)
 	}
 	return namespace
