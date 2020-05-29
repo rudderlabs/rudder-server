@@ -122,7 +122,7 @@ func (manager *AzureBlobStorageManager) Download(output *os.File, key string) er
 	return err
 }
 
-func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location string) string { //TODO: changes need to be done
+func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location string) string {
 	var baseUrl string
 	baseUrl += "https://"
 	baseUrl += manager.Config.AccountName + ".blob.core.windows.net/"

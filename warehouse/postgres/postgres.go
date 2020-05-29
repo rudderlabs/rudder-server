@@ -38,12 +38,20 @@ const (
 	sslMode  = "sslMode"
 )
 
-var dataTypesMap = map[string]string{
+var rudderDataTypesMapToPostgres = map[string]string{
 	"int":      "bigint",
 	"float":    "numeric",
 	"string":   "text",
-	"datetime": "timestamp with time zone",
+	"datetime": "timestampz",
 	"boolean":  "boolean",
+}
+
+var postgresDataTypesMapToRudder = map[string]string{
+	"bigint":     "int",
+	"numeric":    "float",
+	"text":       "string",
+	"timestampz": "datatime",
+	"boolean":    "boolean",
 }
 
 type HandleT struct {
@@ -53,7 +61,6 @@ type HandleT struct {
 	CurrentSchema map[string]map[string]string
 	Warehouse     warehouseutils.WarehouseT
 	Upload        warehouseutils.UploadT
-	CloudProvider string
 	ObjectStorage string
 }
 
@@ -124,12 +131,51 @@ func (pg *HandleT) getConnectionCredentials(opts optionalCredsT) credentialsT {
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, dataTypesMap[dataType]))
+		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToPostgres[dataType]))
 	}
 	return strings.Join(arr[:], ",")
 }
 
 func (pg *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
+	return
+}
+
+// FetchSchema queries postgres and returns the schema associated with provided namespace
+func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
+	pg.Warehouse = warehouse
+	pg.Db, err = connect(pg.getConnectionCredentials(optionalCredsT{}))
+	if err != nil {
+		return
+	}
+
+	schema = make(map[string]map[string]string)
+	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type
+									FROM INFORMATION_SCHEMA.COLUMNS
+									WHERE table_schema = '%s' and table_name not like '%s%s'`, namespace, stagingTablePrefix, "%")
+
+	rows, err := pg.Db.Query(sqlStatement)
+	if err != nil && err != sql.ErrNoRows {
+		logger.Errorf("PG: Error in fetching schema from postgres destination:%v, query: %v", pg.Warehouse.Destination.ID, sqlStatement)
+		return
+	}
+	if err == sql.ErrNoRows {
+		return schema, nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var tName, cName, cType string
+		err = rows.Scan(&tName, &cName, &cType)
+		if err != nil {
+			logger.Errorf("PG: Error in processing fetched schema from redshift destination:%v", pg.Warehouse.Destination.ID)
+			return
+		}
+		if _, ok := schema[tName]; !ok {
+			schema[tName] = make(map[string]string)
+		}
+		if datatype, ok := postgresDataTypesMapToRudder[cType]; ok {
+			schema[tName][cName] = datatype
+		}
+	}
 	return
 }
 
@@ -253,7 +299,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 	}
 
 	// sort column names
-	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(columnMap, pg.Warehouse.Destination.DestinationDefinition.Name)
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(columnMap)
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
 	txn, err := pg.Db.Begin()
@@ -407,7 +453,7 @@ func (pg *HandleT) tableExists(tableName string) (exists bool, err error) {
 }
 
 func (pg *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s`, tableName, columnName, dataTypesMap[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s`, tableName, columnName, rudderDataTypesMapToPostgres[columnType])
 	logger.Infof("PG: Adding column in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
@@ -493,8 +539,7 @@ func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	pg.DbHandle = config.DbHandle
 	pg.Warehouse = config.Warehouse
 	pg.Upload = config.Upload
-	pg.CloudProvider = warehouseutils.PostgresCloudProvider(config.Warehouse.Destination.Config)
-	pg.ObjectStorage = warehouseutils.ObjectStorageType("POSTGRES", config.Warehouse.Destination.Config)
+	pg.ObjectStorage = warehouseutils.ObjectStorageType("POSTGRES", config.Warehouse.Destination.Config) // TODO: handle if storage is not present
 
 	currSchema, err := warehouseutils.GetCurrentSchema(pg.DbHandle, pg.Warehouse)
 	if err != nil {

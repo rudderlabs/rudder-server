@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/pkg/errors"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"reflect"
 	"regexp"
@@ -498,7 +499,14 @@ func GetObjectFolder(provider string, location string) (folder string) {
 }
 
 func GetObjectName(providerConfig interface{}, location string) (key string, err error) {
-	config := providerConfig.(map[string]interface{})
+	var config map[string]interface{}
+	var ok bool
+	if config, ok = providerConfig.(map[string]interface{}); !ok {
+		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
+	}
+	if _, ok = config["bucketProvider"].(string); !ok {
+		return "", errors.New("failed to get bucket information")
+	}
 	fm, err := filemanager.New(&filemanager.SettingsT{
 		Provider: config["bucketProvider"].(string),
 		Config:   config,
@@ -692,7 +700,7 @@ func ObjectStorageType(destType string, config interface{}) string {
 	}
 	if destType == "POSTGRES" {
 		c := config.(map[string]interface{})
-		provider, _ := c["cloudProvider"].(string)
+		provider, _ := c["bucketProvider"].(string)
 		return PostgresStorageMap[provider]
 	}
 	c := config.(map[string]interface{})
@@ -711,7 +719,7 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 	return val
 }
 
-func SortColumnKeysFromColumnMap(columnMap map[string]string, warehouseDestinationType string) []string {
+func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	keys := reflect.ValueOf(columnMap).MapKeys()
 	columnKeys := make([]string, len(keys))
 	for i := 0; i < len(keys); i++ {
