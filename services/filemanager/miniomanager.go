@@ -71,6 +71,11 @@ func (manager *MinioManager) GetObjectNameFromLocation(location string) string {
 	return location[len(baseUrl):]
 }
 
+//TODO complete this
+func (manager *MinioManager) GetDownloadKeyFromFileLocation(location string) string {
+	return location
+}
+
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey string
 	var useSSL bool

@@ -18,6 +18,7 @@ type FileManager interface {
 	Upload(*os.File, ...string) (UploadOutput, error)
 	Download(*os.File, string) error
 	GetObjectNameFromLocation(string) string
+	GetDownloadKeyFromFileLocation(location string) string
 }
 
 // SettingsT sets configuration for FileManager

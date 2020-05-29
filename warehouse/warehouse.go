@@ -217,9 +217,9 @@ func getNamespaceFromDestinationConfig(config interface{}, sourceName string, de
 		namespace = configMap["namespace"].(string)
 	}
 	if len(strings.TrimSpace(namespace)) > 0 {
-		namespace = misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(destType, namespace))), 127)
+		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, warehouseutils.ToSafeDBString(destType, strcase.ToSnake(namespace))), 127)
 	} else {
-		namespace = misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(destType, sourceName))), 127)
+		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, warehouseutils.ToSafeDBString(destType, strcase.ToSnake(sourceName))), 127)
 	}
 	return namespace
 }
@@ -284,8 +284,9 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	return stagingFilesList, nil
 }
 
-func mergeSchema(currentSchema map[string]map[string]string, schemaList []map[string]map[string]string) map[string]map[string]string {
+func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schemaList []map[string]map[string]string) map[string]map[string]string {
 	schemaMap := make(map[string]map[string]string)
+	currentSchemaWithCase := warehouseutils.ChangeSchemaCase(currentSchema, wh.destType)
 	for _, schema := range schemaList {
 		for tableName, columnMap := range schema {
 			if schemaMap[tableName] == nil {
@@ -293,9 +294,10 @@ func mergeSchema(currentSchema map[string]map[string]string, schemaList []map[st
 			}
 			for columnName, columnType := range columnMap {
 				// if column already has a type in db, use that
-				if len(currentSchema) > 0 {
-					if _, ok := currentSchema[tableName]; ok {
-						if columnTypeInDB, ok := currentSchema[tableName][columnName]; ok {
+				if len(currentSchemaWithCase) > 0 {
+
+					if _, ok := currentSchemaWithCase[tableName]; ok {
+						if columnTypeInDB, ok := currentSchemaWithCase[tableName][columnName]; ok {
 							schemaMap[tableName][columnName] = columnTypeInDB
 							continue
 						}
@@ -353,7 +355,7 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 		}
 		rows.Close()
 
-		currSchema = mergeSchema(currSchema, schemas)
+		currSchema = wh.mergeSchema(currSchema, schemas)
 
 		count += stagingFilesSchemaPaginationSize
 		if count >= len(jsonUploadsList) {
@@ -439,7 +441,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 	startJSONID := jsonUploadsList[0].ID
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
-	namespace := misc.TruncateStr(strings.ToLower(strcase.ToSnake(warehouseutils.ToSafeDBString(wh.destType, warehouse.Source.Name))), 127)
+	namespace := warehouse.Namespace
 
 	var firstEventAt, lastEventAt time.Time
 	if ok := jsonUploadsList[0].FirstEventAt.IsZero(); !ok {
@@ -1090,7 +1092,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig),
-		Config:   job.DestinationConfig.(map[string]interface{}),
+		Config:   misc.GetObjectStorageConfig(warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), job.DestinationConfig),
 	})
 	if err != nil {
 		return loadFileIDs, err
@@ -1354,7 +1356,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig),
-		Config:   job.DestinationConfig.(map[string]interface{}),
+		Config:   misc.GetObjectStorageConfig(warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), job.DestinationConfig),
 	})
 	if err != nil {
 		panic(err)

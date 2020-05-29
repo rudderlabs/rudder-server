@@ -197,7 +197,7 @@ func loadConfig() {
 	maxRetry = config.GetInt("Processor.maxRetry", 30)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES"}
-	customDestinations = []string{"KAFKA", "KINESIS"}
+	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }
@@ -557,6 +557,7 @@ func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, 
 	event["metadata"] = make(map[string]interface{})
 	event["metadata"].(map[string]interface{})["sourceId"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	event["metadata"].(map[string]interface{})["jobId"] = batchEvent.JobID
+	event["metadata"].(map[string]interface{})["userId"] = batchEvent.UserID
 	event["metadata"].(map[string]interface{})["destinationId"] = destination.ID
 	event["metadata"].(map[string]interface{})["destinationType"] = destination.DestinationDefinition.Name
 	event["metadata"].(map[string]interface{})["messageId"] = event["message"].(map[string]interface{})["messageId"].(string)
@@ -589,6 +590,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	//Event count for performance stat monitoring
 	totalEvents := 0
+
+	logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
 
 	proc.marshalSingularEvents.Start()
 	for idx, batchEvent := range jobList {
@@ -757,12 +760,20 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			// in case of custom transformations metadata of first event is returned along with all events in session
 			// source_id will be same for all events belong to same user in a session
 			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
-			destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
 			if !ok {
 				logger.Errorf("Error retrieving source_id from transformed event: %+v", destEvent)
 			}
+			destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
+			if !ok {
+				logger.Errorf("Error retrieving destination_id from transformed event: %+v", destEvent)
+			}
+			userID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["userId"].(string)
+			if !ok {
+				logger.Errorf("Error retrieving user_id from transformed event: %+v", destEvent)
+			}
 			newJob := jobsdb.JobT{
 				UUID:         id,
+				UserID:       userID,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
@@ -786,9 +797,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Start()
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
+		logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 		proc.routerDB.Store(destJobs)
 	}
 	if len(batchDestJobs) > 0 {
+		logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 		proc.batchRouterDB.Store(batchDestJobs)
 	}
 

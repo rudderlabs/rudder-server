@@ -15,10 +15,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go"
+
 	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
-	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -54,6 +55,9 @@ var (
 	configSubscriberLock             sync.RWMutex
 	objectStorageDestinations        []string
 	warehouseDestinations            []string
+	moduleLoadLock                   sync.Mutex
+	routerLoaded                     bool
+	processorLoaded                  bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -162,7 +166,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		})
 	}
 
-	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, misc.AppStartTime)
+	migrationMode := application.Options().MigrationMode
+	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, migrationMode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
 
@@ -182,31 +187,76 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		config.SetBool("JobsDB.backup.gw.enabled", false)
 	}
 
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode)
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode)
+
+	enableGateway := true
+
+	if application.Features().Migrator != nil {
+		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
+			startRouterFunc := func() {
+				StartRouter(enableRouter, &routerDB, &batchRouterDB)
+			}
+			startProcessorFunc := func() {
+				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB)
+			}
+			enableRouter = false
+			enableProcessor = false
+			enableGateway = (migrationMode != db.EXPORT)
+			application.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+		}
+	}
+
+	StartRouter(enableRouter, &routerDB, &batchRouterDB)
+	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB)
+
+	if enableGateway {
+		var gateway gateway.HandleT
+		var rateLimiter ratelimiter.HandleT
+
+		rateLimiter.SetUp()
+		gateway.Setup(application, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, stats.DefaultStats, clearDB)
+		gateway.StartWebHandler()
+	}
+	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+}
+
+//StartRouter atomically starts router process if not already started
+func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
+	moduleLoadLock.Lock()
+	defer moduleLoadLock.Unlock()
+
+	if routerLoaded {
+		return
+	}
 
 	if enableRouter {
-		go monitorDestRouters(&routerDB, &batchRouterDB)
+		go monitorDestRouters(routerDB, batchRouterDB)
+		routerLoaded = true
+	}
+}
+
+//StartProcessor atomically starts processor process if not already started
+func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT) {
+	moduleLoadLock.Lock()
+	defer moduleLoadLock.Unlock()
+
+	if processorLoaded {
+		return
 	}
 
 	if enableProcessor {
 		var processor processor.HandleT
-		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+		processor.Setup(gatewayDB, routerDB, batchRouterDB)
 
 		if !isReplayServer {
 			var replay replay.ReplayProcessorT
-			replay.Setup(&gatewayDB)
+			replay.Setup(gatewayDB)
 		}
+
+		processorLoaded = true
 	}
-
-	var gateway gateway.HandleT
-	var rateLimiter ratelimiter.HandleT
-
-	rateLimiter.SetUp()
-	gateway.Setup(backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, stats.DefaultStats, clearDB)
-	gateway.StartWebHandler()
-	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
 func canStartServer() bool {

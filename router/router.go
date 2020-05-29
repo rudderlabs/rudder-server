@@ -3,7 +3,6 @@ package router
 import (
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"math"
 	"math/rand"
 	"net/http"
@@ -74,7 +73,6 @@ var (
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
 	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
-	customDestinations                                                             []string
 )
 
 type requestMetric struct {
@@ -105,7 +103,6 @@ func loadConfig() {
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
-	customDestinations = []string{"KINESIS", "KAFKA"}
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -354,12 +351,6 @@ func (rt *HandleT) initWorkers() {
 	}
 }
 
-func getHash(s string) int {
-	h := fnv.New32a()
-	h.Write([]byte(s))
-	return int(h.Sum32())
-}
-
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
 	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
@@ -368,7 +359,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	if randomWorkerAssign {
 		index = rand.Intn(noOfWorkers)
 	} else {
-		index = int(math.Abs(float64(getHash(userID) % noOfWorkers)))
+		index = int(math.Abs(float64(misc.GetHash(userID) % noOfWorkers)))
 	}
 
 	worker := rt.workers[index]

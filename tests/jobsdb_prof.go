@@ -86,6 +86,7 @@ func storeProcess(jd *jobsdb.HandleT) {
 			uuidWriteMap[id] = true
 			newJob := jobsdb.JobT{
 				UUID:         id,
+				UserID:       id.String(),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    endPoint,

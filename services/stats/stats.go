@@ -25,6 +25,7 @@ var writeKeyClientsMap = make(map[string]*statsd.Client)
 var batchDestClientsMap = make(map[string]*statsd.Client)
 var destClientsMap = make(map[string]*statsd.Client)
 var jobsdbClientsMap = make(map[string]*statsd.Client)
+var migratorsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
 var statsdServerURL string
 var instanceID string
@@ -33,6 +34,7 @@ var writeKeyClientsMapLock sync.Mutex
 var batchDestClientsMapLock sync.Mutex
 var destClientsMapLock sync.Mutex
 var jobsdbClientsMapLock sync.Mutex
+var migratorsMapLock sync.Mutex
 var enabled bool
 var statsCollectionInterval int64
 var enableCPUStats bool
@@ -62,6 +64,7 @@ type Stats interface {
 	NewBatchDestStat(Name string, StatType string, destID string) RudderStats
 	NewDestStat(Name string, StatType string, destID string) RudderStats
 	NewJobsDBStat(Name string, StatType string, customVal string) RudderStats
+	NewMigratorStat(Name string, StatType string, customVal string) RudderStats
 }
 
 // HandleT is the default implementation of Stats
@@ -243,6 +246,35 @@ func (s *HandleT) NewJobsDBStat(Name string, StatType string, customVal string) 
 // Deprecated: Use DefaultStats for managing stats instead
 func NewJobsDBStat(Name string, StatType string, customVal string) RudderStats {
 	return DefaultStats.NewJobsDBStat(Name, StatType, customVal)
+}
+
+/*
+NewMigratorStat is used to create new Migrator specific stat.
+Migrator migrationType is added as the value of 'migrationType' tag in this case.
+If migrationType has been used on this function before, a RudderStats with the same underlying client will be returned.
+*/
+func (s *HandleT) NewMigratorStat(Name string, StatType string, migrationType string) RudderStats {
+	migratorsMapLock.Lock()
+	defer migratorsMapLock.Unlock()
+	if _, found := migratorsMap[migrationType]; !found {
+		var err error
+		migratorsMap[migrationType], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "migrationType", migrationType))
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+	return &RudderStatsT{
+		Name:     Name,
+		StatType: StatType,
+		Client:   migratorsMap[migrationType],
+	}
+
+}
+
+// NewMigratorStat is used to create new Migrator specific stat.
+// Deprecated: Use DefaultStats for managing stats instead
+func NewMigratorStat(Name string, StatType string, customVal string) RudderStats {
+	return DefaultStats.NewMigratorStat(Name, StatType, customVal)
 }
 
 // Count increases the stat by n. Only applies to CountType stats

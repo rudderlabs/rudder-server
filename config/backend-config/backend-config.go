@@ -62,8 +62,9 @@ type DestinationDefinitionT struct {
 }
 
 type SourceDefinitionT struct {
-	ID   string
-	Name string
+	ID       string
+	Name     string
+	Category string
 }
 
 type DestinationT struct {

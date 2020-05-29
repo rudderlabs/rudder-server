@@ -8,7 +8,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"reflect"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -36,6 +35,13 @@ const (
 	AbortedState                  = "aborted"
 	GeneratingStagingFileFailed   = "generating_staging_file_failed"
 	GeneratedStagingFile          = "generated_staging_file"
+)
+
+const (
+	RS        = "RS"
+	BQ        = "BQ"
+	SNOWFLAKE = "SNOWFLAKE"
+	POSTGRES  = "POSTGRES"
 )
 
 const (
@@ -146,7 +152,8 @@ type StagingFileT struct {
 
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
 	var rawSchema json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[3]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Destination.ID, warehouse.Namespace)
+	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[2]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Destination.ID, warehouse.Namespace)
+
 	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -179,13 +186,15 @@ type SchemaDiffT struct {
 	UpdatedSchema map[string]map[string]string
 }
 
-func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (diff SchemaDiffT) {
+func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string, provider string) (diff SchemaDiffT) {
 	diff = SchemaDiffT{
 		Tables:        []string{},
 		ColumnMaps:    make(map[string]map[string]string),
 		UpdatedSchema: make(map[string]map[string]string),
 	}
-	// deep copy current schema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
+	currentSchemaWithCase := ChangeSchemaCase(currentSchema, provider)
+
+	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
 	for tableName, columnMap := range currentSchema {
 		diff.UpdatedSchema[tableName] = make(map[string]string)
 		for columnName, columnType := range columnMap {
@@ -193,7 +202,7 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 		}
 	}
 	for tableName, uploadColumnMap := range uploadSchema {
-		currentColumnsMap, ok := currentSchema[tableName]
+		currentColumnsMap, ok := currentSchemaWithCase[tableName]
 		if !ok {
 			diff.Tables = append(diff.Tables, tableName)
 			diff.ColumnMaps[tableName] = uploadColumnMap
@@ -713,12 +722,22 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 	return val
 }
 
+func ChangeSchemaCase(currentSchema map[string]map[string]string, destType string) map[string]map[string]string {
+	currentSchemaWithCase := make(map[string]map[string]string)
+	for tableName, columnMap := range currentSchema {
+		tableNameWithCase := ToCase(destType, tableName)
+		currentSchemaWithCase[tableNameWithCase] = make(map[string]string)
+		for columnName, columnType := range columnMap {
+			currentSchemaWithCase[tableNameWithCase][ToCase(destType, columnName)] = columnType
+		}
+	}
+	return currentSchemaWithCase
+}
 func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	keys := reflect.ValueOf(columnMap).MapKeys()
 	columnKeys := make([]string, len(keys))
 	for i := 0; i < len(keys); i++ {
 		columnKeys[i] = keys[i].String()
 	}
-	sort.Strings(columnKeys)
 	return columnKeys
 }

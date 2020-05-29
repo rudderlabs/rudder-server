@@ -130,6 +130,11 @@ func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location strin
 	return location[len(baseUrl):]
 }
 
+//TODO complete this
+func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location string) string {
+	return location
+}
+
 type AzureBlobStorageManager struct {
 	Config *AzureBlobStorageConfig
 }

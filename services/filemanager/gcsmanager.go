@@ -84,6 +84,11 @@ func (manager *GCSManager) GetObjectNameFromLocation(location string) string {
 	return location[len(baseUrl):]
 }
 
+//TODO complete this
+func (manager *GCSManager) GetDownloadKeyFromFileLocation(location string) string {
+	return location
+}
+
 type GCSManager struct {
 	Config *GCSConfig
 }
