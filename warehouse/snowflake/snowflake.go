@@ -442,7 +442,7 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder_staging_"
-	maxParallelLoads = config.GetInt("Warehouse.snowflake.maxParallelLoads", 1)
+	maxParallelLoads = config.GetInt("Warehouse.snowflake.maxParallelLoads", 3)
 }
 
 func init() {

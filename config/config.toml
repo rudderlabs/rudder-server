@@ -143,6 +143,8 @@ stagingFilesBatchSize = 240
     maxParallelLoads = 3
     [Warehouse.bigquery]
     maxParallelLoads = 20
+    [Warehouse.postgres]
+    maxParallelLoads = 20
 
 [Processor]
 loopSleepInMS = 10

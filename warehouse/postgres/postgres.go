@@ -42,16 +42,16 @@ var rudderDataTypesMapToPostgres = map[string]string{
 	"int":      "bigint",
 	"float":    "numeric",
 	"string":   "text",
-	"datetime": "timestampz",
+	"datetime": "timestamptz",
 	"boolean":  "boolean",
 }
 
 var postgresDataTypesMapToRudder = map[string]string{
-	"bigint":     "int",
-	"numeric":    "float",
-	"text":       "string",
-	"timestampz": "datatime",
-	"boolean":    "boolean",
+	"bigint":      "int",
+	"numeric":     "float",
+	"text":        "string",
+	"timestamptz": "datetime",
+	"boolean":     "boolean",
 }
 
 type HandleT struct {
@@ -113,7 +113,7 @@ func init() {
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder_staging_"
-	maxParallelLoads = config.GetInt("Warehouse.postgres.maxParallelLoads", 1)
+	maxParallelLoads = config.GetInt("Warehouse.postgres.maxParallelLoads", 3)
 }
 
 func (pg *HandleT) getConnectionCredentials(opts optionalCredsT) credentialsT {

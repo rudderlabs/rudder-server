@@ -82,12 +82,6 @@ var SnowflakeStorageMap = map[string]string{
 	"GCP":   "GCS",
 	"AZURE": "AZURE_BLOB",
 }
-var PostgresStorageMap = map[string]string{
-	"AWS":   "S3",
-	"GCP":   "GCS",
-	"AZURE": "AZURE_BLOB",
-	"MINIO": "MINIO",
-}
 
 func init() {
 	config.Initialize()
@@ -701,7 +695,7 @@ func ObjectStorageType(destType string, config interface{}) string {
 	if destType == "POSTGRES" {
 		c := config.(map[string]interface{})
 		provider, _ := c["bucketProvider"].(string)
-		return PostgresStorageMap[provider]
+		return provider
 	}
 	c := config.(map[string]interface{})
 	provider, ok := c["cloudProvider"].(string)
