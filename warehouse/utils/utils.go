@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/lib/pq"
@@ -384,6 +383,15 @@ func GetTableUploadStatus(uploadID int64, tableName string, dbHandle *sql.DB) (s
 	return
 }
 
+func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string) {
+	sqlStatement := fmt.Sprintf(`SELECT namespace FROM %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC`, warehouseSchemasTable, source.ID, destination.ID)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace)
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	return
+}
+
 func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
 	var count int
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE source_id='%s' AND destination_id='%s' AND namespace='%s'`, warehouseSchemasTable, wh.Source.ID, wh.Destination.ID, namespace)
@@ -612,26 +620,35 @@ func Datatype(in interface{}) string {
 	return "string"
 }
 
-//ToSafeDBString to remove special characters
-func ToSafeDBString(provider string, str string) string {
-	res := ""
-	if str != "" {
-		r := []rune(str)
-		_, err := strconv.ParseInt(string(r[0]), 10, 64)
-		if err == nil {
-			str = "_" + str
+func ToSafeNamespace(provider string, name string) string {
+	var extractedValues []string
+	var extractedValue string
+	for _, c := range name {
+		asciiValue := int(c)
+		if (asciiValue >= 65 && asciiValue <= 90) || (asciiValue >= 97 && asciiValue <= 122) || (asciiValue >= 48 && asciiValue <= 57) {
+			extractedValue += string(c)
+		} else {
+			if extractedValue != "" {
+				extractedValues = append(extractedValues, extractedValue)
+			}
+			extractedValue = ""
 		}
-		regexForNotAlphaNumeric := regexp.MustCompile("[^a-zA-Z0-9_]+")
-		res = regexForNotAlphaNumeric.ReplaceAllString(str, "")
+	}
 
+	if extractedValue != "" {
+		extractedValues = append(extractedValues, extractedValue)
 	}
-	if res == "" {
-		res = "STRINGEMPTY"
+	namespace := strings.Join(extractedValues, "_")
+	if namespace != "" && int(namespace[0]) >= 48 && int(namespace[0]) <= 57 {
+		namespace = "_" + namespace
 	}
-	if _, ok := ReservedKeywords[provider][strings.ToUpper(str)]; ok {
-		res = fmt.Sprintf(`_%s`, res)
+	if namespace == "" {
+		namespace = "stringempty"
 	}
-	return res
+	if _, ok := ReservedKeywords[provider][strings.ToUpper(namespace)]; ok {
+		namespace = fmt.Sprintf(`_%s`, namespace)
+	}
+	return misc.TruncateStr(namespace, 127)
 }
 
 func ToCase(provider string, str string) string {

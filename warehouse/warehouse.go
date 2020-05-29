@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
-	"github.com/iancoleman/strcase"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -177,7 +176,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == wh.destType {
-						namespace := getNamespaceFromDestinationConfig(destination.Config, source.Name, wh.destType)
+						namespace := getNamespaceFromDestinationConfig(destination.Config, source, destination, wh.destType)
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace})
 						if destination.Config != nil && destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
 							sourceID := source.ID
@@ -209,16 +208,20 @@ func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string
 		wh.recordDeliveryStatus(uploadID)
 	}
 }
-func getNamespaceFromDestinationConfig(config interface{}, sourceName string, destType string) string {
+
+func getNamespaceFromDestinationConfig(config interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
 	configMap := config.(map[string]interface{})
 	var namespace string
 	if configMap["namespace"] != nil {
 		namespace = configMap["namespace"].(string)
 	}
 	if len(strings.TrimSpace(namespace)) > 0 {
-		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, warehouseutils.ToSafeDBString(destType, strcase.ToSnake(namespace))), 127)
+		namespace = warehouseutils.ToCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
 	} else {
-		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, warehouseutils.ToSafeDBString(destType, strcase.ToSnake(sourceName))), 127)
+		namespace = warehouseutils.GetNamespace(source, destination, dbHandle)
+		if namespace == "" {
+			namespace = warehouseutils.ToCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
+		}
 	}
 	return namespace
 }
