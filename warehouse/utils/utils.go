@@ -8,6 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -739,5 +740,6 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	for i := 0; i < len(keys); i++ {
 		columnKeys[i] = keys[i].String()
 	}
+	sort.Strings(columnKeys)
 	return columnKeys
 }
