@@ -355,17 +355,31 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		additionalJoinClause = fmt.Sprintf(`AND original.%[1]s = staging.%[1]s`, "TABLE_NAME")
 	}
 
+	stagingSelectColumns := "*"
+	if tableName == "USERS" {
+		userColMap := sf.CurrentSchema["USERS"]
+		var userColNames, firstValProps []string
+		for colName := range userColMap {
+			if colName == "ID" {
+				continue
+			}
+			userColNames = append(userColNames, colName)
+			firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY uuid_ts DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
+		}
+		stagingSelectColumns = fmt.Sprintf(`ID, %v`, strings.Join(firstValProps, ","))
+	}
+
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY %[8]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
+											SELECT %[9]s, row_number() OVER (PARTITION BY %[8]s ORDER BY RECEIVED_AT DESC) AS _rudder_staging_row_number FROM %[2]s
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
 									ON (original.%[3]s = staging.%[3]s %[7]s)
 									WHEN MATCHED THEN
 									UPDATE SET %[6]s
 									WHEN NOT MATCHED THEN
-									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey)
+									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey, stagingSelectColumns)
 	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -460,6 +474,7 @@ func (sf *HandleT) MigrateSchema() (err error) {
 		warehouseutils.SetUploadError(sf.Upload, err, warehouseutils.UpdatingSchemaFailedState, sf.DbHandle)
 		return
 	}
+	sf.CurrentSchema = updatedSchema
 	err = warehouseutils.SetUploadStatus(sf.Upload, warehouseutils.UpdatedSchemaState, sf.DbHandle)
 	if err != nil {
 		panic(err)
