@@ -65,6 +65,11 @@ const (
 	UploadLastExecAtField      = "last_exec_at"
 )
 
+const (
+	UsersTable       = "users"
+	IndenitfiesTable = "identifies"
+)
+
 var (
 	warehouseUploadsTable      string
 	warehouseTableUploadsTable string
