@@ -59,6 +59,11 @@ func (manager *MinioManager) Download(file *os.File, key string) error {
 	return err
 }
 
+/*
+GetObjectNameFromLocation gets the object name/key name from the object location url
+	https://minio-endpoint/bucket-name/key1 - >> key1
+	http://minio-endpoint/bucket-name/key2 - >> key2
+*/
 func (manager *MinioManager) GetObjectNameFromLocation(location string) string {
 	var baseUrl string
 	if manager.Config.UseSSL {

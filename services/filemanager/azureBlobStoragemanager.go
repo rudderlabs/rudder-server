@@ -122,6 +122,10 @@ func (manager *AzureBlobStorageManager) Download(output *os.File, key string) er
 	return err
 }
 
+/*
+GetObjectNameFromLocation gets the object name/key name from the object location url
+	https://account-name.blob.core.windows.net/container-name/key - >> key
+*/
 func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location string) string {
 	var baseUrl string
 	baseUrl += "https://"

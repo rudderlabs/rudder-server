@@ -539,7 +539,7 @@ func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	pg.DbHandle = config.DbHandle
 	pg.Warehouse = config.Warehouse
 	pg.Upload = config.Upload
-	pg.ObjectStorage = warehouseutils.ObjectStorageType("POSTGRES", config.Warehouse.Destination.Config) // TODO: handle if storage is not present
+	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, config.Warehouse.Destination.Config)
 
 	currSchema, err := warehouseutils.GetCurrentSchema(pg.DbHandle, pg.Warehouse)
 	if err != nil {
