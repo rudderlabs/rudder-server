@@ -464,7 +464,7 @@ func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId strin
 
 func GetLoadFileLocation(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (location string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
-		SELECT  staging_file_id, MAX(id) AS id FROM wh_load_files
+		SELECT  staging_file_id, MAX(id) AS id FROM %[1]s
 		WHERE ( source_id='%[2]s'
 			AND destination_id='%[3]s'
 			AND table_name='%[4]s'
