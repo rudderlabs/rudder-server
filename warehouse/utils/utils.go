@@ -502,17 +502,20 @@ func GetObjectFolder(provider string, location string) (folder string) {
 	return
 }
 
-func GetObjectName(providerConfig interface{}, location string) (key string, err error) {
+// GetObjectName extracts object/key objectName from different buckets locations
+// ex: https://bucket-endpoint/bucket-name/object -> object
+func GetObjectName(providerConfig interface{}, location string) (objectName string, err error) {
 	var config map[string]interface{}
 	var ok bool
+	var bucketProvider string
 	if config, ok = providerConfig.(map[string]interface{}); !ok {
 		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
 	}
-	if _, ok = config["bucketProvider"].(string); !ok {
+	if bucketProvider, ok = config["bucketProvider"].(string); !ok {
 		return "", errors.New("failed to get bucket information")
 	}
 	fm, err := filemanager.New(&filemanager.SettingsT{
-		Provider: config["bucketProvider"].(string),
+		Provider: bucketProvider,
 		Config:   config,
 	})
 	if err != nil {

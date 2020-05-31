@@ -6,6 +6,13 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -15,12 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
-	"io"
-	"os"
-	"path/filepath"
-	"strings"
-	"sync"
-	"time"
 )
 
 var (
@@ -47,11 +48,17 @@ var rudderDataTypesMapToPostgres = map[string]string{
 }
 
 var postgresDataTypesMapToRudder = map[string]string{
-	"bigint":      "int",
-	"numeric":     "float",
-	"text":        "string",
-	"timestamptz": "datetime",
-	"boolean":     "boolean",
+	"integer":                  "int",
+	"smallint":                 "int",
+	"bigint":                   "int",
+	"double precision":         "float",
+	"numeric":                  "float",
+	"real":                     "float",
+	"text":                     "string",
+	"timestamptz":              "datetime",
+	"timestamp with time zone": "datetime",
+	"timestamp":                "datetime",
+	"boolean":                  "boolean",
 }
 
 type HandleT struct {
@@ -269,14 +276,6 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 	timer.Start()
 	defer timer.End()
 
-	dbHandle, err := connect(pg.getConnectionCredentials(optionalCredsT{schemaName: pg.Namespace}))
-	if err != nil {
-		logger.Errorf("PG: Error establishing connection for copying table:%s: %v", tableName, err)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
-		return
-	}
-	defer dbHandle.Close()
-
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(columnMap)
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
@@ -297,6 +296,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 	stagingTableName := fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%[2]s" (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
 	logger.Infof("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
+	defer pg.dropStagingTables([]string{stagingTableName})
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("PG: Error creating temporary table for table:%s: %v\n", tableName, err)
@@ -442,6 +442,16 @@ func (pg *HandleT) createSchema() (err error) {
 	return
 }
 
+func (pg *HandleT) dropStagingTables(stagingTableNames []string) {
+	for _, stagingTableName := range stagingTableNames {
+		logger.Infof("WH: dropping table %+v\n", stagingTableName)
+		_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%[1]s"`, stagingTableName))
+		if err != nil {
+			logger.Errorf("WH: PG:  Error dropping staging tables in POSTGRES: %v", err)
+		}
+	}
+}
+
 func (pg *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, name, columnsWithDataTypes(columns, ""))
 	logger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
@@ -507,11 +517,8 @@ func (pg *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 			for columnName, columnType := range columnMap {
 				err := pg.addColumn(tableName, columnName, columnType)
 				if err != nil {
-					if checkAndIgnoreAlreadyExistError(err) {
-						logger.Infof("PG: Column %s already exists on %s.%s \nResponse: %v", columnName, pg.Namespace, tableName, err)
-					} else {
-						return nil, err
-					}
+					logger.Errorf("PG: Column %s already exists on %s.%s \nResponse: %v", columnName, pg.Namespace, tableName, err)
+					return nil, err
 				}
 			}
 		}
@@ -561,9 +568,8 @@ func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		return err
 	}
 	defer pg.Db.Close()
-	if err := pg.MigrateSchema(); err == nil {
+	if err = pg.MigrateSchema(); err == nil {
 		pg.Export()
 	}
-
 	return
 }
