@@ -3,13 +3,8 @@ package backendconfig
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-
-	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
-
-var IoUtil sysUtils.IoUtilI = sysUtils.NewIoUtil()
 
 type WorkspaceConfig struct {
 	CommonBackendConfig
@@ -52,7 +47,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
-		respBody, _ = ioutil.ReadAll(resp.Body)
+		respBody, _ = IoUtil.ReadAll(resp.Body)
 		defer resp.Body.Close()
 	}
 

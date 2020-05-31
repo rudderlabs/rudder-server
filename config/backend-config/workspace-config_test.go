@@ -82,7 +82,7 @@ var _ = Describe("workspace-config", func() {
 
 	Context("getFromFile method", func() {
 		var mockIoUtil *mock_sysUtils.MockIoUtilI
-		var originalIoUtil = Ioutil
+		var originalIoUtil = IoUtil
 		BeforeEach(func() {
 			mockIoUtil = mock_sysUtils.NewMockIoUtilI(ctrl)
 			IoUtil = mockIoUtil

@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"reflect"
 	"sort"
@@ -41,11 +40,11 @@ var (
 	DefaultBackendConfig BackendConfig
 	Http                 sysUtils.HttpI           = sysUtils.NewHttp()
 	log                  logger.LoggerI           = logger.NewLogger()
-	Ioutil               sysUtils.IoUtilI         = sysUtils.NewIoUtil()
+	IoUtil               sysUtils.IoUtilI         = sysUtils.NewIoUtil()
 	Diagnostics          diagnostics.DiagnosticsI = diagnostics.NewDiagnostics()
 )
 
-var Eb utils.EventBusI = new(utils.EventBus)
+var Eb utils.PublishSubscriber = new(utils.EventBus)
 
 // Topic refers to a subset of backend config's updates, received after subscribing using the backend config's Subscribe function.
 type Topic string
@@ -151,7 +150,7 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 		log.Errorf("ConfigBackend: Got error response %d", resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := IoUtil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
 	log.Debugf("ConfigBackend: Successful %s", string(body))

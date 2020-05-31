@@ -109,7 +109,7 @@ var _ = Describe("BackendConfig", func() {
 			mockHttp = mock_sysUtils.NewMockHttpI(ctrl)
 			Http = mockHttp
 		})
-		It("Expect to execute request with the correct body and headers and return successfull response", func() {
+		It("Expect to execute request with the correct body and headers and return successful response", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				username, pass, ok := req.BasicAuth()
 				Expect(username).To(Equal("testToken"))
@@ -171,7 +171,7 @@ var _ = Describe("BackendConfig", func() {
 			mockRubberStats        *mock_stats.MockRudderStats
 			statConfigBackendError stats.RudderStats
 			mockIoUtil             *mock_sysUtils.MockIoUtilI
-			originalIoUtil         = Ioutil
+			originalIoUtil         = IoUtil
 			originalConfigFromFile = configFromFile
 		)
 		BeforeEach(func() {
@@ -188,7 +188,7 @@ var _ = Describe("BackendConfig", func() {
 		})
 		AfterEach(func() {
 			configFromFile = originalConfigFromFile
-			Ioutil = originalIoUtil
+			IoUtil = originalIoUtil
 		})
 		It("Expect to make the correct actions if Get method fails", func() {
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, errors.New("TestRequestError")).Times(1)
@@ -208,7 +208,7 @@ var _ = Describe("BackendConfig", func() {
 			config, _ := json.Marshal(SampleBackendConfig)
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(config, nil).Times(1)
 			initialized = false
-			mockPubSub := mock_utils.NewMockEventBusI(ctrl)
+			mockPubSub := mock_utils.NewMockPublishSubscriber(ctrl)
 			Eb = mockPubSub
 			curSourceJSON = SampleBackendConfig2
 			Expect(initialized).To(BeFalse())
@@ -233,9 +233,9 @@ var _ = Describe("BackendConfig", func() {
 	})
 
 	Context("Subscribe method", func() {
-		var mockPubSub *mock_utils.MockEventBusI
+		var mockPubSub *mock_utils.MockPublishSubscriber
 		BeforeEach(func() {
-			mockPubSub = mock_utils.NewMockEventBusI(ctrl)
+			mockPubSub = mock_utils.NewMockPublishSubscriber(ctrl)
 			Eb = mockPubSub
 		})
 		AfterEach(func() {

@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../mocks/utils/mock_pubsub.go -package=utils github.com/rudderlabs/rudder-server/utils EventBusI
+//go:generate mockgen -destination=../mocks/utils/mock_pubsub.go -package=utils github.com/rudderlabs/rudder-server/utils PublishSubscriber
 
 package utils
 
@@ -16,7 +16,7 @@ type DataChannel chan DataEvent
 
 // DataChannelSlice is a slice of DataChannels
 type DataChannelSlice []DataChannel
-type EventBusI interface {
+type PublishSubscriber interface {
 	Publish(topic string, data interface{})
 	PublishToChannel(channel DataChannel, topic string, data interface{})
 	Subscribe(topic string, ch DataChannel)
