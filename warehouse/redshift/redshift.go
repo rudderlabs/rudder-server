@@ -472,9 +472,9 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 
 func (rs *HandleT) loadUserTables() (err error) {
 	logger.Infof("RS: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := rs.loadTable(warehouseutils.IndenitfiesTable, rs.Upload.Schema[warehouseutils.IndenitfiesTable], true, true)
+	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, rs.Upload.Schema[warehouseutils.IdentifiesTable], true, true)
 	if err != nil {
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, warehouseutils.IndenitfiesTable, err, rs.DbHandle)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, warehouseutils.IdentifiesTable, err, rs.DbHandle)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), rs.DbHandle)
 		return
 	}
