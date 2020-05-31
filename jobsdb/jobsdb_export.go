@@ -62,6 +62,10 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 		return outJobs
 	}
 
+	txn, txErr := jd.dbHandle.Begin()
+	jd.assertError(txErr)
+	var err error
+	var updateStatesByDS map[dataSetT][]string
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 
@@ -70,8 +74,20 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 			continue
 		}
 
-		jobs, err := jd.getNonMigratedJobsFromDSAndMarkMigrating(ds, count)
-		jd.assertError(err)
+		var jobs []*JobT
+		jobs, err = jd.getNonMigratedJobsFromDS(ds, count)
+		if err != nil {
+			break
+		}
+
+		var statusList []*JobStatusT
+		for _, job := range jobs {
+			statusList = append(statusList, BuildStatus(job, MigratingState))
+		}
+
+		var updateStates []string
+		updateStates, txErr = jd.updateJobStatusDSInTxn(txn, ds, statusList)
+		updateStatesByDS[ds] = updateStates
 
 		if len(jobs) == 0 {
 			doesDSHaveJobsToMigrateMap[ds.Index] = false
@@ -89,6 +105,17 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 			break
 		}
 	}
+	if txErr == nil {
+		err := txn.Commit()
+		jd.assertError(err)
+		for ds, updateStates := range updateStatesByDS {
+			jd.markClearEmptyResult(ds, updateStates, []string{}, []ParameterFilterT{}, false)
+		}
+	} else {
+		txn.Rollback()
+	}
+	jd.assertError(err)
+
 	//Release lock
 	return outJobs
 }
@@ -118,7 +145,7 @@ type SQLJobStatusT struct {
 	ErrorResponse sql.NullString
 }
 
-func (jd *HandleT) getNonMigratedJobsFromDSAndMarkMigrating(ds dataSetT, count int) ([]*JobT, error) {
+func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, error) {
 	queryStat := stats.NewJobsDBStat("get_for_export_and_update_status_ds", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
@@ -175,13 +202,6 @@ func (jd *HandleT) getNonMigratedJobsFromDSAndMarkMigrating(ds dataSetT, count i
 		jobList = append(jobList, &job)
 	}
 
-	var statusList []*JobStatusT
-	for _, job := range jobList {
-		statusList = append(statusList, BuildStatus(job, MigratingState))
-	}
-
-	jd.updateJobStatusDS(ds, statusList, []string{}, []ParameterFilterT{})
-
 	return jobList, nil
 }
 
@@ -193,7 +213,8 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
-	err = jd.UpdateJobStatusInTxn(txn, statusList, []string{}, []ParameterFilterT{})
+	var updatedStatesMap map[dataSetT][]string
+	updatedStatesMap, err = jd.updateJobStatusInTxn(txn, statusList)
 	jd.assertTxErrorAndRollback(txn, err)
 
 	migrationCheckpoint := NewMigrationCheckpoint(ExportOp, fromNodeID, toNodeID, jobsCount, uploadLocation, Exported, 0)
@@ -202,6 +223,9 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 
 	err = txn.Commit()
 	jd.assertError(err)
+	for ds, updateStates := range updatedStatesMap {
+		jd.markClearEmptyResult(ds, updateStates, []string{}, []ParameterFilterT{}, false)
+	}
 }
 
 //IsMigrating returns true if there are non zero jobs with status = 'migrating'

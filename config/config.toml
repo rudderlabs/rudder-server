@@ -83,7 +83,7 @@ disableEventDeliveryStatusUploads = false
 # Migration related parameters
 jobDoneMigrateThres = 0.8
 jobStatusMigrateThres = 5
-maxDSSize = 100000
+maxDSSize = 1000
 maxMigrateOnce = 10
 maxTableSizeInMB = 300
 mainCheckSleepDurationInS = 5

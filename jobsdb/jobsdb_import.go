@@ -133,11 +133,11 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	jd.assertError(err)
 
 	logger.Debugf("[[ %s-JobsDB Import ]] %d jobs found in file:%s. Writing to db", jd.GetTablePrefix(), len(jobList), migrationCheckpoint.FileLocation)
-	_, err = jd.storeJobsDSInTxn(txn, jd.migrationState.dsForImport, true, false, jobList)
+	err = jd.storeJobsDSInTxn(txn, jd.migrationState.dsForImport, true, jobList)
 	jd.assertTxErrorAndRollback(txn, err)
 
 	logger.Debugf("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), migrationCheckpoint.FileLocation)
-	err = jd.updateJobStatusDSInTxn(txn, jd.migrationState.dsForImport, statusList, []string{}, []ParameterFilterT{})
+	_, err = jd.updateJobStatusDSInTxn(txn, jd.migrationState.dsForImport, statusList) //Not collecting updateStates here because the entire ds is un-marked for empty result after commit below
 	jd.assertTxErrorAndRollback(txn, err)
 
 	migrationCheckpoint.Status = Imported
@@ -145,12 +145,17 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	jd.assertTxErrorAndRollback(txn, err)
 
 	if opID != 0 {
-		err = jd.JournalMarkDoneInTxn(txn, opID)
+		err = jd.journalMarkDoneInTxn(txn, opID)
 		jd.assertTxErrorAndRollback(txn, err)
 	}
 
 	err = txn.Commit()
 	jd.assertError(err)
+
+	//Empty customValFilters means we want to clear for all
+	jd.markClearEmptyResult(jd.migrationState.dsForImport, []string{}, []string{}, nil, false)
+	// fmt.Println("Bursting CACHE")
+
 }
 
 func (jd *HandleT) getStartJobID(count int, migrationCheckpoint MigrationCheckpointT) int64 {
