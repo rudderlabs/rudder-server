@@ -318,13 +318,13 @@ func (gateway *HandleT) userWebRequestBatchDBWriter(dbWriterWorker *dbWriterWork
 			jobEventCountMap[newJob.UUID] = totalEventsInReq
 		}
 		var errorMessagesMap map[uuid.UUID]string
-		switch(retryEach) {
+		gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
+		switch gwAllowPartialWriteWithErrors {
 		case true:
-			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList) //Conisder: A switch with a retryEachToggle and make it configurable letting customer define if he is fine with partial writes.
+			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
 		case false:
-			gateway.jobsDB.Store(jobList) //Conisder: A switch with a retryEachToggle and make it configurable letting customer define if he is fine with partial writes.
+			gateway.jobsDB.Store(jobList)
 		}
-		errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList) //Conisder: A switch with a retryEachToggle and make it configurable letting customer define if he is fine with partial writes.
 
 		gateway.writeToBadger(allMessageIdsSet)
 

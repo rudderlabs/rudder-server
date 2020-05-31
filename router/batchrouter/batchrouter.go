@@ -293,14 +293,14 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	var batchReqMetric batchRequestMetric
 	if err != nil {
 		logger.Errorf("BRT: Error uploading to object storage: %v %v", err, batchJobs.BatchDestination.Source.ID)
-		batchJobState = jobsdb.FailedState
+		batchJobState = jobsdb.Failed.State
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 		batchReqMetric.batchRequestFailed = 1
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
 	} else {
 		logger.Debugf("BRT: Uploaded to object storage : %v at %v", batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
-		batchJobState = jobsdb.SucceededState
+		batchJobState = jobsdb.Succeeded.State
 		errorResp = []byte(`{"success":"OK"}`)
 		batchReqMetric.batchRequestSuccess = 1
 		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
@@ -323,14 +323,14 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 
-		if jobState == jobsdb.FailedState && job.LastJobStatus.AttemptNum >= maxFailedCountForJob && !postToWarehouseErr {
-			jobState = jobsdb.AbortedState
+		if jobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum >= maxFailedCountForJob && !postToWarehouseErr {
+			jobState = jobsdb.Aborted.State
 		} else {
 			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
-			if jobState == jobsdb.FailedState && isWarehouse && postToWarehouseErr {
+			if jobState == jobsdb.Failed.State && isWarehouse && postToWarehouseErr {
 				warehouseServiceFailedTimeLock.RLock()
 				if time.Now().Sub(warehouseServiceFailedTime) > warehouseServiceMaxRetryTimeinHr {
-					jobState = jobsdb.AbortedState
+					jobState = jobsdb.Aborted.State
 				}
 				warehouseServiceFailedTimeLock.RUnlock()
 			}
@@ -349,7 +349,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 
 	//tracking batch router errors
 	if diagnostics.EnableDestinationFailuresMetric {
-		if batchJobState == jobsdb.FailedState {
+		if batchJobState == jobsdb.Failed.State {
 			diagnostics.Track(diagnostics.BatchRouterFailed, map[string]interface{}{
 				diagnostics.BatchRouterDestination: brt.destType,
 				diagnostics.ErrorResponse:          string(errorResp),
@@ -392,13 +392,13 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 	)
 
 	if err != nil {
-		jobState = jobsdb.FailedState
+		jobState = jobsdb.Failed.State
 		if isWarehouse {
 			jobState = warehouseutils.GeneratingStagingFileFailed
 		}
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 	} else {
-		jobState = jobsdb.SucceededState
+		jobState = jobsdb.Succeeded.State
 		if isWarehouse {
 			jobState = warehouseutils.GeneratedStagingFile
 		}
@@ -561,7 +561,7 @@ func (brt *HandleT) mainLoop() {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-					JobState:      jobsdb.ExecutingState,
+					JobState:      jobsdb.Executing.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
@@ -686,7 +686,7 @@ func (brt *HandleT) crashRecover() {
 				AttemptNum:    job.LastJobStatus.AttemptNum,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
-				JobState:      jobsdb.FailedState,
+				JobState:      jobsdb.Failed.State,
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{"Error": "Rudder server crashed while copying jobs to storage"}`), // check
 			}

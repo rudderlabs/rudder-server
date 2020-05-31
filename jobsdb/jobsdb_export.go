@@ -82,7 +82,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 
 		var statusList []*JobStatusT
 		for _, job := range jobs {
-			statusList = append(statusList, BuildStatus(job, MigratingState))
+			statusList = append(statusList, BuildStatus(job, Migrating.State))
 		}
 
 		var updateStates []string

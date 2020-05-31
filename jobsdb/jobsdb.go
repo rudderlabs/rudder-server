@@ -224,7 +224,7 @@ func (jd *HandleT) assert(cond bool, errorString string) {
 type jobStateT struct {
 	isValid    bool
 	isTerminal bool
-	state      string
+	State      string
 }
 
 //State definitions
@@ -263,7 +263,7 @@ var jobStates []jobStateT = []jobStateT{
 func getValidStates() (validStates []string) {
 	for _, js := range jobStates {
 		if js.isValid {
-			validStates = append(validStates, js.state)
+			validStates = append(validStates, js.State)
 		}
 	}
 	return
@@ -272,7 +272,7 @@ func getValidStates() (validStates []string) {
 func getValidTerminalStates() (validTerminalStates []string) {
 	for _, js := range jobStates {
 		if js.isValid && js.isTerminal {
-			validTerminalStates = append(validTerminalStates, js.state)
+			validTerminalStates = append(validTerminalStates, js.State)
 		}
 	}
 	return
@@ -281,43 +281,21 @@ func getValidTerminalStates() (validTerminalStates []string) {
 func getValidNonTerminalStates() (validNonTerminalStates []string) {
 	for _, js := range jobStates {
 		if js.isValid && !js.isTerminal {
-			validNonTerminalStates = append(validNonTerminalStates, js.state)
+			validNonTerminalStates = append(validNonTerminalStates, js.State)
 		}
 	}
 	return
 }
 
-// constants for JobStatusT JobState
-const (
-	SucceededState    = "succeeded"
-	FailedState       = "failed"
-	ExecutingState    = "executing"
-	AbortedState      = "aborted"
-	WaitingState      = "waiting"
-	WaitingRetryState = "waiting_retry"
-	InternalState     = "NP"
-	MigratingState    = "migrating"
-	MigratedState     = "migrated"
-	WontMigrateState  = "wont_migrate"
-)
-
-var validJobStates = map[string]bool{
-	InternalState:     false, //False means internal state
-	SucceededState:    true,
-	FailedState:       true,
-	ExecutingState:    true,
-	AbortedState:      true,
-	WaitingState:      true,
-	WaitingRetryState: true,
-	MigratingState:    true,
-	MigratedState:     true,
-	WontMigrateState:  true,
-}
-
 func (jd *HandleT) checkValidJobState(stateFilters []string) {
+	jobStateMap := make(map[string]jobStateT)
+	for _, js := range jobStates {
+		jobStateMap[js.State] = js
+	}
 	for _, st := range stateFilters {
-		_, ok := validJobStates[st]
-		jd.assert(ok, fmt.Sprintf("key %s is not found in validJobStates map", st))
+		js, ok := jobStateMap[st]
+		jd.assert(ok, fmt.Sprintf("state %s is not found in jobStates: %v", st, jobStates))
+		jd.assert(js.isValid, fmt.Sprintf("jobState : %v is not valid", js))
 	}
 }
 
@@ -1572,7 +1550,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	var rows *sql.Rows
 	var err error
 
-	if jd.isEmptyResult(ds, []string{"NP"}, customValFilters, parameterFilters) {
+	if jd.isEmptyResult(ds, []string{Internal.State}, customValFilters, parameterFilters) {
 		logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		return []*JobT{}, nil
 	}
@@ -1624,7 +1602,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 
 	if len(jobList) == 0 {
 		logger.Debugf("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
-		jd.markClearEmptyResult(ds, []string{"NP"}, customValFilters, parameterFilters, true)
+		jd.markClearEmptyResult(ds, []string{Internal.State}, customValFilters, parameterFilters, true)
 	}
 
 	return jobList, nil
@@ -1892,7 +1870,7 @@ func (jd *HandleT) getBackUpQuery(backupDSRange dataSetRangeT, isJobStatusTable 
 		// check failed and aborted state, order the output based on destination, job_id, exec_time
 		stmt = fmt.Sprintf(`SELECT coalesce(json_agg(failed_jobs), '[]'::json) FROM (select * from %[1]s %[2]s INNER JOIN %[3]s %[4]s ON  %[2]s.job_id = %[4]s.job_id
 			where %[2]s.job_state in ('%[5]s', '%[6]s') order by  %[4]s.custom_val, %[2]s.job_id, %[2]s.exec_time asc limit %[7]d offset %[8]d) AS failed_jobs`, backupDSRange.ds.JobStatusTable, "job_status", backupDSRange.ds.JobTable, "job",
-			FailedState, AbortedState, backupRowsBatchSize, offset)
+			Failed.State, Aborted.State, backupRowsBatchSize, offset)
 	} else {
 		if isJobStatusTable {
 			stmt = fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s order by job_id asc limit %[2]d offset %[3]d) AS dump_table`, backupDSRange.ds.JobStatusTable, backupRowsBatchSize, offset)
@@ -1950,9 +1928,9 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 		logger.Info("[JobsDB] :: backupTable: backing up aborted/failed entries")
 		tableName = backupDSRange.ds.JobStatusTable
 		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
-		path = fmt.Sprintf(`%v%v_%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, AbortedState)
+		path = fmt.Sprintf(`%v%v_%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, Aborted.State)
 		// checked failed and aborted state
-		countStmt = fmt.Sprintf(`SELECT COUNT(*) FROM %s where job_state in ('%s', '%s')`, tableName, FailedState, AbortedState)
+		countStmt = fmt.Sprintf(`SELECT COUNT(*) FROM %s where job_state in ('%s', '%s')`, tableName, Failed.State, Aborted.State)
 	} else {
 		if isJobStatusTable {
 			tableName = backupDSRange.ds.JobStatusTable
@@ -2638,7 +2616,7 @@ GetToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
 func (jd *HandleT) GetToRetry(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
-	return jd.GetProcessed([]string{FailedState}, customValFilters, count, parameterFilters)
+	return jd.GetProcessed([]string{Failed.State}, customValFilters, count, parameterFilters)
 }
 
 /*
@@ -2646,14 +2624,14 @@ GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
 func (jd *HandleT) GetWaiting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
-	return jd.GetProcessed([]string{WaitingState}, customValFilters, count, parameterFilters)
+	return jd.GetProcessed([]string{Waiting.State}, customValFilters, count, parameterFilters)
 }
 
 /*
 GetExecuting returns events which  in executing state
 */
 func (jd *HandleT) GetExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
-	return jd.GetProcessed([]string{ExecutingState}, customValFilters, count, parameterFilters)
+	return jd.GetProcessed([]string{Executing.State}, customValFilters, count, parameterFilters)
 }
 
 /*
@@ -2777,7 +2755,7 @@ func (jd *HandleT) staticDSTest() {
 		unprocessedList, _ := jd.getUnprocessedJobsDS(testDS, []string{testEndPoint}, true, testNumQuery, nil)
 		fmt.Println("Got unprocessed events:", len(unprocessedList))
 
-		retryList, _ := jd.getProcessedJobsDS(testDS, false, []string{"failed"},
+		retryList, _ := jd.getProcessedJobsDS(testDS, false, []string{Failed.State},
 			[]string{testEndPoint}, testNumQuery, nil)
 		fmt.Println("Got retry events:", len(retryList))
 		if len(unprocessedList)+len(retryList) == 0 {
@@ -2791,7 +2769,7 @@ func (jd *HandleT) staticDSTest() {
 		for _, job := range append(unprocessedList, retryList...) {
 			newStatus := JobStatusT{
 				JobID:         job.JobID,
-				JobState:      ExecutingState,
+				JobState:      Executing.State,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
@@ -2807,9 +2785,9 @@ func (jd *HandleT) staticDSTest() {
 		statusList = nil
 		var maxAttempt = 0
 		for _, job := range append(unprocessedList, retryList...) {
-			stat := SucceededState
+			stat := Succeeded.State
 			if rand.Intn(testFailRatio) == 0 {
-				stat = FailedState
+				stat = Failed.State
 			}
 			if job.LastJobStatus.AttemptNum > maxAttempt {
 				maxAttempt = job.LastJobStatus.AttemptNum
@@ -2921,9 +2899,9 @@ func (jd *HandleT) dynamicTest() {
 			combinedList[len(combinedList)-1].JobID)
 
 		for _, job := range append(unprocessedList, retryList...) {
-			state := SucceededState
+			state := Succeeded.State
 			if rand.Intn(testFailRatio) == 0 {
-				state = FailedState
+				state = Failed.State
 			}
 			newStatus := JobStatusT{
 				JobID:         job.JobID,

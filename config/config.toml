@@ -55,6 +55,7 @@ maxReqSizeInKB = 100000
 enableDedup = false
 enableRateLimit = false
 dedupWindowInS = 86400
+allowPartialWriteWithErrors = true
 
 [Gateway.webhook]
 batchTimeoutInMS = 20
