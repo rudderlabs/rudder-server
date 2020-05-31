@@ -66,8 +66,8 @@ const (
 )
 
 const (
-	UsersTable       = "users"
-	IndenitfiesTable = "identifies"
+	UsersTable      = "users"
+	IdentifiesTable = "identifies"
 )
 
 var (
