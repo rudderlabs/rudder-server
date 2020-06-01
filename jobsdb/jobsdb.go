@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1213,9 +1214,9 @@ func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, jobList []*JobT) (error
 	}
 
 	for _, job := range jobList {
-		errorMessage := jd.storeJobDS(ds, job)
-		if errorMessage != "" {
-			errorMessagesMap[job.UUID] = errorMessage
+		err := jd.storeJobDS(ds, job)
+		if err != nil {
+			errorMessagesMap[job.UUID] = err.Error()
 		}
 	}
 
@@ -1250,8 +1251,7 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 	return err
 }
 
-//TODO: Error handling
-func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (errorMessage string) {
+func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (uuid, user_id, custom_val, parameters, event_payload)
 	                                   VALUES ($1, $2, $3, $4, (regexp_replace($5::text, '\\u0000', '', 'g'))::json) RETURNING job_id`, ds.JobTable)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
@@ -1267,8 +1267,8 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (errorMessage string) {
 	pqErr := err.(*pq.Error)
 	errCode := string(pqErr.Code)
 	if errCode == dbErrorMap["Invalid JSON"] || errCode == dbErrorMap["Invalid Unicode"] ||
-		errCode == dbErrorMap["Invalid Escape Sequence"] || errCode == dbErrorMap["Invalid Escape Sequence"] {
-		return "Invalid JSON"
+		errCode == dbErrorMap["Invalid Escape Sequence"] || errCode == dbErrorMap["Invalid Escape Character"] {
+		return errors.New("Invalid JSON")
 	}
 	jd.assertError(err)
 	return
