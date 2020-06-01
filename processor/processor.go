@@ -677,7 +677,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//Mark the batch event as processed
 		newStatus := jobsdb.JobStatusT{
 			JobID:         batchEvent.JobID,
-			JobState:      jobsdb.SucceededState,
+			JobState:      jobsdb.Succeeded.State,
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
@@ -878,7 +878,7 @@ func (proc *HandleT) mainLoop() {
 			for _, batchEvent := range combinedList {
 				newStatus := jobsdb.JobStatusT{
 					JobID:         batchEvent.JobID,
-					JobState:      jobsdb.ExecutingState,
+					JobState:      jobsdb.Executing.State,
 					AttemptNum:    1,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
@@ -914,7 +914,7 @@ func (proc *HandleT) crashRecover() {
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
-				JobState:      jobsdb.FailedState,
+				JobState:      jobsdb.Failed.State,
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check
 			}

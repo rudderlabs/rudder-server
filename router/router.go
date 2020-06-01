@@ -141,7 +141,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
-				JobState:      jobsdb.WaitingState,
+				JobState:      jobsdb.Waiting.State,
 				ErrorResponse: []byte(`{"reason":"Router Disabled"}`), // check
 			}
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
@@ -168,7 +168,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     respStatus,
-				JobState:      jobsdb.WaitingState,
+				JobState:      jobsdb.Waiting.State,
 				ErrorResponse: []byte(resp), // check
 			}
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
@@ -252,7 +252,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			// failedAttemptsStat.Count(job.LastJobStatus.AttemptNum)
 			eventsDeliveredStat.Increment()
 			status.AttemptNum = job.LastJobStatus.AttemptNum
-			status.JobState = jobsdb.SucceededState
+			status.JobState = jobsdb.Succeeded.State
 			logger.Debugf("[%v Router] :: sending success status to response", rt.destID)
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		} else {
@@ -276,7 +276,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				//Lot of jobs are failing in this worker. Likely the sink is down
 				//We still mark the job failed but don't increment the AttemptNum
 				//This is a heuristic. Will fix it with Sayan's idea
-				status.JobState = jobsdb.FailedState
+				status.JobState = jobsdb.Failed.State
 				status.AttemptNum = job.LastJobStatus.AttemptNum
 				logger.Debugf("[%v Router] :: Marking job as failed and not incrementing the AttemptNum since jobs from more than 5 users are failing for destination", rt.destID)
 				break
@@ -289,12 +289,12 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				//lot of jobs will fail and all will get retried in batch with
 				//doubling sleep in between. That case will be handled in case above
 				logger.Debugf("[%v Router] :: Aborting the job and deleting from user map", rt.destID)
-				status.JobState = jobsdb.AbortedState
+				status.JobState = jobsdb.Aborted.State
 				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
 				eventsAbortedStat.Increment()
 				break
 			default:
-				status.JobState = jobsdb.FailedState
+				status.JobState = jobsdb.Failed.State
 				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
 				logger.Debugf("[%v Router] :: Marking job as failed and incrementing the AttemptNum", rt.destID)
 				break
@@ -435,9 +435,9 @@ func (rt *HandleT) statusInsertLoop() {
 
 				//tracking router errors
 				if diagnostics.EnableDestinationFailuresMetric {
-					if resp.status.JobState == jobsdb.FailedState || resp.status.JobState == jobsdb.AbortedState {
+					if resp.status.JobState == jobsdb.Failed.State || resp.status.JobState == jobsdb.Aborted.State {
 						var event string
-						if resp.status.JobState == jobsdb.FailedState {
+						if resp.status.JobState == jobsdb.Failed.State {
 							event = diagnostics.RouterFailed
 						} else {
 							event = diagnostics.RouterAborted
@@ -468,7 +468,7 @@ func (rt *HandleT) statusInsertLoop() {
 				status := resp.status.JobState
 				userID := resp.userID
 				worker := resp.worker
-				if status == jobsdb.SucceededState || status == jobsdb.AbortedState {
+				if status == jobsdb.Succeeded.State || status == jobsdb.Aborted.State {
 					worker.failedJobIDMutex.RLock()
 					lastJobID, ok := worker.failedJobIDMap[userID]
 					worker.failedJobIDMutex.RUnlock()
@@ -535,7 +535,7 @@ func (rt *HandleT) collectMetrics() {
 //If a job fails (say with given failed_job_id), we need to fail other jobs from that user till
 //the failed_job_id succeeds. We achieve this by keeping the failed_job_id in a failedJobIDMap
 //structure (mapping userID to failed_job_id). All subsequent jobs (guaranteed to be job_id >= failed_job_id)
-//are put in WaitingState in worker loop till the failed_job_id succeeds.
+//are put in Waiting.State in worker loop till the failed_job_id succeeds.
 //However, the step of removing failed_job_id from the failedJobIDMap structure is QUITE TRICKY.
 //To understand that, need to understand the complete lifecycle of a job.
 //The job goes through the following data-structures in order
@@ -623,7 +623,7 @@ func (rt *HandleT) generatorLoop() {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
-					JobState:      jobsdb.ExecutingState,
+					JobState:      jobsdb.Executing.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
@@ -665,7 +665,7 @@ func (rt *HandleT) crashRecover() {
 				AttemptNum:    job.LastJobStatus.AttemptNum,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
-				JobState:      jobsdb.FailedState,
+				JobState:      jobsdb.Failed.State,
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{"Error": "Rudder server crashed while sending job to destination"}`), // check
 			}
