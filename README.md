@@ -39,19 +39,34 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 - **Enhanced Telemetry**: To help us improve RudderStack, we collect performance and diagnostic metrics about how you use RudderStack, and how it is working. **No customer data is present in the metrics**. For technical details, please check out our wiki page on [Telemetry](https://github.com/rudderlabs/rudder-server/wiki/Telemetry).
 
 
-# Install RudderStack
+# RudderStack Architecture
 
-You can go through our [detailed documentation](https://docs.rudderstack.com/) to get up and running with RudderStack on your platform of choice:
+RudderStack has two major components, namely:
+- The Control Plane: Allows you to manage the configuration of your sources and destinations
+- The Data Plane:  This is the core engine that is responsible for:
 
-- [Hosted Demo Account](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-a-hosted-demo-account)
-- [Docker](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-docker)
-- [Kubernetes](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-kubernetes)
-- [Native Installation](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-a-native-installation)
+   - Receiving and buffering the event data
+   - Transforming the event data into the required destination format, and
+   - Relaying it to the destination
+
+For a detailed understanding of the RudderStack architecture, please check our [documentation](https://docs.rudderstack.com/getting-started/rudderstack-data-plane-architecture)
+
+# RudderStack Setup
+
+The easiest way to set up and use RudderStack is through our hosted service. For detailed instructions, please refer to our documentation on using the [RudderStack Hosted Service](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-a-hosted-demo-account).
+
+You can also set up and use RudderStack on your platform of choice. Please refer to the following guides for detailed instructions:
+
+- [Setting up RudderStack on Docker](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-docker)
+- [Setting up RudderStack on Kubernetes](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-kubernetes)
+- [Setting up RudderStack on a Native Installation](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-a-native-installation)
 - [Developer Machine Setup](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack/developer-machine-setup)
 
 Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#how-to-send-test-events) to verify the setup.
 
-You can also learn more about the [RudderStack Config Generator](https://github.com/ameypv-rudder/rudder-server/wiki/RudderStack-Config-Generator) which allows you to manage your source and destination configurations without using our hosted services.
+## RudderStack Config Generator
+
+RudderStack also allows you to manage your source and destination configurations without using our hosted services. Read more on how you can do this using the [RudderStack Config Generator].
 
 # UI Pages
 
