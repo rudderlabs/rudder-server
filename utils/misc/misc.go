@@ -420,7 +420,8 @@ func Copy(dst, src interface{}) {
 func GetIPFromReq(req *http.Request) string {
 	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
 	if addresses[0] == "" {
-		return req.RemoteAddr // When there is no load-balancer
+		splits := strings.Split(req.RemoteAddr, ":")
+		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
 	}
 
 	return strings.Replace(addresses[0], " ", "", -1)
