@@ -18,7 +18,7 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 
 - **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool
 
-- **Seamless Integration**: RudderStack currently supports integration with over 30 popular destination platforms such as Google Analytics, Amplitude, Mixpanel, Amazon S3,and more. Moreover, it also supports integration with popular data warehouses such as Snowflake, Redshift, and Google BigQuery
+- **Seamless Integration**: RudderStack currently supports integration with over 45 popular destination platforms such as Google Analytics, Amplitude, Mixpanel, Amazon S3,and more. Moreover, it also supports integration with popular data warehouses such as Snowflake, Redshift, and Google BigQuery
 
 - **Client-side SDK Support**: RudderStack offers client-side SDKs for [JavaScript](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-javascript-sdk), [Android](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-android-sdk), [iOS](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-ios-sdk), and [Unity](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-unity-sdk)
 
@@ -53,14 +53,14 @@ For a detailed understanding of the RudderStack architecture, please check our [
 
 # RudderStack Setup
 
-The easiest way to set up and use RudderStack is through our hosted service. For detailed instructions, please refer to our documentation on using the [RudderStack Hosted Service](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-a-hosted-demo-account).
+The easiest way to set up and use RudderStack is through our hosted service. For detailed instructions, please refer to our documentation on using the [RudderStack Hosted Service](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/hosted-demo-account).
 
 You can also set up and use RudderStack on your platform of choice. Please refer to the following guides for detailed instructions:
 
-- [Setting up RudderStack on Docker](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-docker)
-- [Setting up RudderStack on Kubernetes](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-kubernetes)
-- [Setting up RudderStack on a Native Installation](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#setup-instructions-for-a-native-installation)
-- [Developer Machine Setup](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack/developer-machine-setup)
+- [Setting up RudderStack on Docker](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/docker)
+- [Setting up RudderStack on Kubernetes](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/kubernetes)
+- [Setting up RudderStack on a Native Installation](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/native-installation)
+- [Developer Machine Setup](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/developer-machine-setup)
 
 Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#how-to-send-test-events) to verify the setup.
 
