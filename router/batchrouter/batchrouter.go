@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -58,7 +57,6 @@ type HandleT struct {
 	netHandle               *http.Client
 	processQ                chan BatchJobsT
 	jobsDB                  *jobsdb.HandleT
-	jobsDBHandle            *sql.DB
 	isEnabled               bool
 	batchRequestsMetricLock sync.RWMutex
 	diagnosisTicker         *time.Ticker
@@ -768,7 +766,6 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.destType = destType
 	brt.jobsDB = jobsDB
-	brt.jobsDBHandle = brt.jobsDB.GetDBHandle()
 	brt.isEnabled = true
 
 	tr := &http.Transport{}
