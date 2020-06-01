@@ -131,6 +131,7 @@ maxFailedCountForJob = 128
 warehouseServiceMaxRetryTimeinHr = 3
 
 [Warehouse]
+schemaVersion = "v1"
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
 webPort = 8082
 stagingFilesTable = "wh_staging_files"

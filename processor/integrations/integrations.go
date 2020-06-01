@@ -1,11 +1,13 @@
 package integrations
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -15,6 +17,7 @@ import (
 var (
 	destTransformURL, userTransformURL string
 	customDestination                  []string
+	whSchemaVersion                    string
 )
 
 func init() {
@@ -181,7 +184,7 @@ func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backend
 
 //GetDestinationURL returns node URL
 func GetDestinationURL(destID string) string {
-	return fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destID))
+	return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s", destTransformURL, strings.ToLower(destID), getWHSchemaVersion())
 }
 
 //GetUserTransformURL returns the port of running user transform
@@ -190,4 +193,37 @@ func GetUserTransformURL(processSessions bool) string {
 		return destTransformURL + "/customTransform?processSessions=true"
 	}
 	return destTransformURL + "/customTransform"
+}
+
+func createDBConnection() *sql.DB {
+	var err error
+	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
+	if err != nil {
+		panic(err)
+	}
+
+	err = dbHandle.Ping()
+	if err != nil {
+		panic(err)
+	}
+	return dbHandle
+}
+
+func getWHSchemaVersion() string {
+	if whSchemaVersion != "" {
+		return whSchemaVersion
+	}
+
+	// get from db
+	dbHandle := createDBConnection()
+
+	var version string
+	sqlStatememnt := fmt.Sprintf(`SELECT parameters ->> 'wh_schema_version' as version FROM workspace`)
+	err := dbHandle.QueryRow(sqlStatememnt).Scan(&version)
+	if err != nil {
+		panic(err)
+	}
+	whSchemaVersion = version
+	dbHandle.Close()
+	return version
 }
