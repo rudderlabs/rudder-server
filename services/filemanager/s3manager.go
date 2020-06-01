@@ -47,12 +47,23 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 			fileName = manager.Config.Prefix + "/" + fileName
 		}
 	}
-	output, err := s3manager.Upload(&awsS3Manager.UploadInput{
-		ACL:    aws.String("bucket-owner-full-control"),
-		Bucket: aws.String(manager.Config.Bucket),
-		Key:    aws.String(fileName),
-		Body:   file,
-	})
+	var output *awsS3Manager.UploadOutput
+	if manager.Config.EnableSSE {
+		output, err = s3manager.Upload(&awsS3Manager.UploadInput{
+			ACL:                  aws.String("bucket-owner-full-control"),
+			Bucket:               aws.String(manager.Config.Bucket),
+			Key:                  aws.String(fileName),
+			Body:                 file,
+			ServerSideEncryption: aws.String("AES256"),
+		})
+	} else {
+		output, err = s3manager.Upload(&awsS3Manager.UploadInput{
+			ACL:    aws.String("bucket-owner-full-control"),
+			Bucket: aws.String(manager.Config.Bucket),
+			Key:    aws.String(fileName),
+			Body:   file,
+		})
+	}
 
 	if err != nil {
 		return UploadOutput{}, err
@@ -143,6 +154,7 @@ type S3Manager struct {
 
 func GetS3Config(config map[string]interface{}) *S3Config {
 	var bucketName, prefix, accessKeyID, accessKey string
+	var enableSSE bool
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
 	}
@@ -155,7 +167,10 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 	if config["accessKey"] != nil {
 		accessKey = config["accessKey"].(string)
 	}
-	return &S3Config{Bucket: bucketName, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey}
+	if config["enableSSE"] != nil {
+		enableSSE = config["enableSSE"].(bool)
+	}
+	return &S3Config{Bucket: bucketName, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey, EnableSSE: enableSSE}
 }
 
 type S3Config struct {
@@ -163,4 +178,5 @@ type S3Config struct {
 	Prefix      string
 	AccessKeyID string
 	AccessKey   string
+	EnableSSE   bool
 }
