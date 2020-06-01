@@ -5,10 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sts"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -17,6 +13,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sts"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -149,7 +150,7 @@ func (rs *HandleT) createSchema() (err error) {
 }
 
 func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
-	diff := warehouseutils.GetSchemaDiff(rs.CurrentSchema, rs.Upload.Schema, warehouseutils.RS)
+	diff := warehouseutils.GetSchemaDiff(rs.CurrentSchema, rs.Upload.Schema)
 	updatedSchema = diff.UpdatedSchema
 	if len(rs.CurrentSchema) == 0 {
 		err = rs.createSchema()

@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/iancoleman/strcase"
 	"reflect"
 	"regexp"
 	"strings"
+
+	"github.com/iancoleman/strcase"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -183,7 +184,7 @@ type SchemaDiffT struct {
 	UpdatedSchema map[string]map[string]string
 }
 
-func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string, provider string) (diff SchemaDiffT) {
+func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (diff SchemaDiffT) {
 	diff = SchemaDiffT{
 		Tables:        []string{},
 		ColumnMaps:    make(map[string]map[string]string),
