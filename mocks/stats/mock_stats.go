@@ -75,6 +75,20 @@ func (mr *MockStatsMockRecorder) NewJobsDBStat(arg0, arg1, arg2 interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewJobsDBStat", reflect.TypeOf((*MockStats)(nil).NewJobsDBStat), arg0, arg1, arg2)
 }
 
+// NewMigratorStat mocks base method
+func (m *MockStats) NewMigratorStat(arg0, arg1, arg2 string) stats.RudderStats {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewMigratorStat", arg0, arg1, arg2)
+	ret0, _ := ret[0].(stats.RudderStats)
+	return ret0
+}
+
+// NewMigratorStat indicates an expected call of NewMigratorStat
+func (mr *MockStatsMockRecorder) NewMigratorStat(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewMigratorStat", reflect.TypeOf((*MockStats)(nil).NewMigratorStat), arg0, arg1, arg2)
+}
+
 // NewStat mocks base method
 func (m *MockStats) NewStat(arg0, arg1 string) stats.RudderStats {
 	m.ctrl.T.Helper()
