@@ -1,5 +1,7 @@
 package app
 
+//go:generate mockgen -destination=../mocks/app/mock_app.go -package=mock_app github.com/rudderlabs/rudder-server/app Interface
+
 import (
 	"os"
 	"runtime"
