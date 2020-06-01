@@ -66,7 +66,7 @@ Once you have installed RudderStack, [send test events](https://docs.rudderstack
 
 ## RudderStack Config Generator
 
-RudderStack also allows you to manage your source and destination configurations without using our hosted services. Read more on how you can do this using the [RudderStack Config Generator].
+RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. Read more on how you can do this using the [RudderStack Config Generator](https://docs.rudderstack.com/getting-started/rudderstack-config-generator).
 
 # UI Pages
 
