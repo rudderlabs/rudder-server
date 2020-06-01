@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -157,17 +158,25 @@ var _ = Describe("Gateway", func() {
 
 	Context("Valid requests", func() {
 		var (
-			gateway      = &HandleT{}
-			clearDB bool = false
+			gateway                = &HandleT{}
+			clearDB           bool = false
+			gatewayBatchCalls int  = 1
 		)
+
+		// tracks expected batch_id
+		nextBatchID := func() (batchID int) {
+			batchID = gatewayBatchCalls
+			gatewayBatchCalls++
+			return
+		}
 
 		BeforeEach(func() {
 			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockStats, &clearDB)
 		})
 
-		assertJobMetadata := func(job *jobsdb.JobT, batchLength int) {
+		assertJobMetadata := func(job *jobsdb.JobT, batchLength int, batchId int) {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
-			Expect(string(job.Parameters)).Should(ContainSubstring(fmt.Sprintf(`"source_id": "%v"`, SourceIDEnabled)))
+			Expect(job.Parameters).To(Equal(json.RawMessage(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, SourceIDEnabled, batchId))))
 			Expect(job.CustomVal).To(Equal(CustomVal))
 
 			responseData := []byte(job.EventPayload)
@@ -230,7 +239,9 @@ var _ = Describe("Gateway", func() {
 					EXPECT().Store(gomock.Any()).
 					DoAndReturn(func(jobs []*jobsdb.JobT) map[uuid.UUID]string {
 						for _, job := range jobs {
-							assertJobMetadata(job, 1)
+							// each call should be included in a separate batch, with a separate batch_id
+							expectedBatchID := nextBatchID()
+							assertJobMetadata(job, 1, expectedBatchID)
 
 							responseData := []byte(job.EventPayload)
 							payload := gjson.GetBytes(responseData, "batch.0")
@@ -285,8 +296,11 @@ var _ = Describe("Gateway", func() {
 					// will collect all message handler types, found in jobs send to Store function
 					typesFound := make(map[string]bool, 6)
 
+					// All jobs should belong to the same batchId
+					expectedBatchID := nextBatchID()
+
 					for _, job := range jobs {
-						assertJobMetadata(job, 1)
+						assertJobMetadata(job, 1, expectedBatchID)
 
 						responseData := []byte(job.EventPayload)
 						payload := gjson.GetBytes(responseData, "batch.0")
