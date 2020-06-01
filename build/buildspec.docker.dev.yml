@@ -23,14 +23,14 @@ phases:
       - DATE=$(date "+%F,%T")
       - VERSION=$(echo $GIT_BRANCH | tr "/" .)
       # Build Open source version
-      - CGO_ENABLED=0 GOOS=linux go build -mod vendor -a -installsuffix cgo -ldflags="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID "
+      - CGO_ENABLED=0 GOOS=linux go build -race -mod vendor -a -installsuffix cgo -ldflags="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID "
       - docker build -t rudderlabs/develop-rudder-server:$VERSION -f build/Dockerfile-aws .
       # Build Enterprise version
       - make enterprise-init
       - make enterprise-prepare-build
-      - CGO_ENABLED=0 GOOS=linux go build -mod vendor -a -installsuffix cgo -ldflags="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID "
-      - docker build -t rudderstack/rudder-server-enterprise:$VERSION -f build/Dockerfile-aws . 
-      
+      - CGO_ENABLED=0 GOOS=linux go build -race -mod vendor -a -installsuffix cgo -ldflags="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID "
+      - docker build -t rudderstack/rudder-server-enterprise:$VERSION -f build/Dockerfile-aws .
+
   post_build:
     commands:
       - docker push rudderlabs/develop-rudder-server:$VERSION
