@@ -67,7 +67,7 @@ func (manager *MinioManager) GetDownloadKeyFromFileLocation(location string) str
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey string
-	var useSSL bool
+	var useSSL, ok bool
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
 	}
@@ -84,7 +84,9 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 		secretAccessKey = config["secretAccessKey"].(string)
 	}
 	if config["useSSL"] != nil {
-		useSSL = config["useSSL"].(bool)
+		if useSSL, ok = config["useSSL"].(bool); !ok {
+			useSSL = false
+		}
 	}
 
 	return &MinioConfig{
