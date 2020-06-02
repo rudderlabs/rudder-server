@@ -38,7 +38,7 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 
 - **High Performance**: On a single m4.2xlarge AWS EC2 instance, RudderStack can process 3000 events/second.
 
-- **Enhanced Telemetry**: To help us improve RudderStack, we collect performance and diagnostic metrics about how you use RudderStack, and how it is working. **No customer data is present in the metrics**. For technical details, please check out our wiki page on [Telemetry](https://github.com/rudderlabs/rudder-server/wiki/Telemetry).
+- **Enhanced Telemetry**: To help us improve RudderStack, we collect performance and diagnostic metrics about how you use RudderStack, and how it is working. **No customer data is present in the metrics**. For technical details, please check out our wiki page on [Telemetry](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Telemetry).
 
 
 # RudderStack Architecture
