@@ -4,13 +4,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/pkg/errors"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/pkg/errors"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -743,10 +744,9 @@ func ChangeSchemaCase(currentSchema map[string]map[string]string, destType strin
 	return currentSchemaWithCase
 }
 func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
-	keys := reflect.ValueOf(columnMap).MapKeys()
-	columnKeys := make([]string, len(keys))
-	for i := 0; i < len(keys); i++ {
-		columnKeys[i] = keys[i].String()
+	columnKeys := make([]string, 0, len(columnMap))
+	for k := range columnMap {
+		columnKeys = append(columnKeys, k)
 	}
 	sort.Strings(columnKeys)
 	return columnKeys

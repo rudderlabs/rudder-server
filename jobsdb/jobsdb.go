@@ -1185,7 +1185,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 		return err
 	}
 
-	err = jd.storeJobsDSInTxn(txn, ds, false, jobList)
+	err = jd.storeJobsDSInTxn(txn, ds, copyID, jobList)
 	if err != nil {
 		txn.Rollback()
 		return err
@@ -1203,12 +1203,12 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 	return nil
 }
 
-func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
+func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
 	queryStat := stats.NewJobsDBStat("store_jobs", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
 
-	err := jd.storeJobsDS(ds, false, jobList)
+	err := jd.storeJobsDS(ds, copyID, jobList)
 	if err == nil {
 		return
 	}
@@ -2493,7 +2493,7 @@ func (jd *HandleT) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList(false)
-	return jd.storeJobsDSWithRetryEach(dsList[len(dsList)-1], jobList)
+	return jd.storeJobsDSWithRetryEach(dsList[len(dsList)-1], false, jobList)
 }
 
 /*

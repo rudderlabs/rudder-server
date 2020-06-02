@@ -25,9 +25,8 @@ import (
 )
 
 var (
-	warehouseUploadsTable string
-	stagingTablePrefix    string
-	maxParallelLoads      int
+	stagingTablePrefix string
+	maxParallelLoads   int
 )
 
 const (
@@ -55,6 +54,8 @@ var postgresDataTypesMapToRudder = map[string]string{
 	"numeric":                  "float",
 	"real":                     "float",
 	"text":                     "string",
+	"varchar":                  "string",
+	"char":                     "string",
 	"timestamptz":              "datetime",
 	"timestamp with time zone": "datetime",
 	"timestamp":                "datetime",
@@ -72,28 +73,23 @@ type HandleT struct {
 }
 
 type credentialsT struct {
-	host       string
-	dbName     string
-	user       string
-	password   string
-	schemaName string
-	port       string
-	sslMode    string
-}
-
-type optionalCredsT struct {
-	schemaName string
+	host     string
+	dbName   string
+	user     string
+	password string
+	port     string
+	sslMode  string
 }
 
 var primaryKeyMap = map[string]string{
-	"users":                      "id",
-	"identifies":                 "id",
-	warehouseutils.DiscardsTable: "row_id",
+	warehouseutils.UsersTable:      "id",
+	warehouseutils.IdentifiesTable: "id",
+	warehouseutils.DiscardsTable:   "row_id",
 }
 var partitionKeyMap = map[string]string{
-	"users":                      "id",
-	"identifies":                 "id",
-	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
+	warehouseutils.UsersTable:      "id",
+	warehouseutils.IdentifiesTable: "id",
+	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
 func connect(cred credentialsT) (*sql.DB, error) {
@@ -118,20 +114,18 @@ func init() {
 	loadConfig()
 }
 func loadConfig() {
-	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder_staging_"
 	maxParallelLoads = config.GetInt("Warehouse.postgres.maxParallelLoads", 3)
 }
 
-func (pg *HandleT) getConnectionCredentials(opts optionalCredsT) credentialsT {
+func (pg *HandleT) getConnectionCredentials() credentialsT {
 	return credentialsT{
-		host:       warehouseutils.GetConfigValue(host, pg.Warehouse),
-		dbName:     warehouseutils.GetConfigValue(dbName, pg.Warehouse),
-		user:       warehouseutils.GetConfigValue(user, pg.Warehouse),
-		password:   warehouseutils.GetConfigValue(password, pg.Warehouse),
-		port:       warehouseutils.GetConfigValue(port, pg.Warehouse),
-		sslMode:    warehouseutils.GetConfigValue(sslMode, pg.Warehouse),
-		schemaName: opts.schemaName,
+		host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
+		dbName:   warehouseutils.GetConfigValue(dbName, pg.Warehouse),
+		user:     warehouseutils.GetConfigValue(user, pg.Warehouse),
+		password: warehouseutils.GetConfigValue(password, pg.Warehouse),
+		port:     warehouseutils.GetConfigValue(port, pg.Warehouse),
+		sslMode:  warehouseutils.GetConfigValue(sslMode, pg.Warehouse),
 	}
 }
 
@@ -150,7 +144,7 @@ func (pg *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 // FetchSchema queries postgres and returns the schema associated with provided namespace
 func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	pg.Warehouse = warehouse
-	pg.Db, err = connect(pg.getConnectionCredentials(optionalCredsT{}))
+	pg.Db, err = connect(pg.getConnectionCredentials())
 	if err != nil {
 		return
 	}
@@ -422,7 +416,7 @@ func (pg *HandleT) loadUserTables() (err error) {
 	}
 
 	unionStagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), "users_identifies_union"), 127)
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), "users"), 127)
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), warehouseutils.UsersTable), 127)
 
 	userColMap := pg.CurrentSchema[warehouseutils.UsersTable]
 	var userColNames, firstValProps []string
@@ -520,7 +514,7 @@ func (pg *HandleT) loadUserTables() (err error) {
 
 func (pg *HandleT) load() (errList []error) {
 	logger.Infof("PG: Starting load for all %v tables\n", len(pg.Upload.Schema))
-	if _, ok := pg.Upload.Schema["users"]; ok {
+	if _, ok := pg.Upload.Schema[warehouseutils.UsersTable]; ok {
 		err := pg.loadUserTables()
 		if err != nil {
 			errList = append(errList, err)
@@ -530,7 +524,7 @@ func (pg *HandleT) load() (errList []error) {
 	loadChan := make(chan struct{}, maxParallelLoads)
 	wg.Add(len(pg.Upload.Schema))
 	for tableName, columnMap := range pg.Upload.Schema {
-		if tableName == "users" || tableName == "identifies" {
+		if tableName == warehouseutils.UsersTable || tableName == warehouseutils.IdentifiesTable {
 			wg.Done()
 			continue
 		}
@@ -564,16 +558,6 @@ func (pg *HandleT) createSchema() (err error) {
 	logger.Infof("PG: Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
-}
-
-func (pg *HandleT) dropStagingTables(stagingTableNames []string) {
-	for _, stagingTableName := range stagingTableNames {
-		logger.Infof("WH: dropping table %+v\n", stagingTableName)
-		_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%[1]s"`, stagingTableName))
-		if err != nil {
-			logger.Errorf("WH: PG:  Error dropping staging tables in POSTGRES: %v", err)
-		}
-	}
 }
 
 func (pg *HandleT) createTable(name string, columns map[string]string) (err error) {
@@ -687,7 +671,7 @@ func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	pg.CurrentSchema = currSchema
 	pg.Namespace = pg.Upload.Namespace
 
-	pg.Db, err = connect(pg.getConnectionCredentials(optionalCredsT{}))
+	pg.Db, err = connect(pg.getConnectionCredentials())
 	if err != nil {
 		warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
 		return err
