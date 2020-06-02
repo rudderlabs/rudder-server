@@ -317,24 +317,31 @@ func (gateway *HandleT) userWebRequestBatchDBWriter(dbWriterWorker *dbWriterWork
 			jobWriteKeyMap[newJob.UUID] = writeKey
 			jobEventCountMap[newJob.UUID] = totalEventsInReq
 		}
-
-		errorMessagesMap := gateway.jobsDB.Store(jobList)
+		var errorMessagesMap map[uuid.UUID]string
+		gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
+		switch gwAllowPartialWriteWithErrors {
+		case true:
+			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
+		case false:
+			gateway.jobsDB.Store(jobList)
+		}
 
 		gateway.writeToBadger(allMessageIdsSet)
 
-		if preDbStoreCount+len(errorMessagesMap) != len(breq.batchRequest) {
+		if preDbStoreCount+len(jobList) != len(breq.batchRequest) {
 			panic(fmt.Errorf("preDbStoreCount:%d+len(errorMessagesMap):%d != len(breq.batchRequest):%d",
-				preDbStoreCount, len(errorMessagesMap), len(breq.batchRequest)))
+				preDbStoreCount, len(jobList), len(breq.batchRequest)))
 		}
-		for uuid, err := range errorMessagesMap {
-			if err != "" {
-				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[uuid], 1)
-				misc.IncrementMapByKey(writeKeyFailEventStats, jobWriteKeyMap[uuid], jobEventCountMap[uuid])
+		for _, job := range jobList {
+			err, found := errorMessagesMap[job.UUID]
+			if found {
+				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[job.UUID], 1)
+				misc.IncrementMapByKey(writeKeyFailEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
 			} else {
-				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[uuid], 1)
-				misc.IncrementMapByKey(writeKeySuccessEventStats, jobWriteKeyMap[uuid], jobEventCountMap[uuid])
+				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[job.UUID], 1)
+				misc.IncrementMapByKey(writeKeySuccessEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
 			}
-			jobIDReqMap[uuid].done <- err
+			jobIDReqMap[job.UUID].done <- err
 		}
 		//Sending events to config backend
 		for _, event := range eventBatchesToRecord {
