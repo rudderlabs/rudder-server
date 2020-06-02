@@ -1,6 +1,7 @@
 package config
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"regexp"
@@ -15,6 +16,11 @@ import (
 
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
+var (
+	host, user, password, dbname, whSchemaVersion string
+	port                                          int
+)
+
 const (
 	EmbeddedMode    = "embedded"
 	MasterMode      = "master"
@@ -22,6 +28,18 @@ const (
 	SlaveMode       = "slave"
 	OffMode         = "off"
 )
+
+func init() {
+	loadConfig()
+}
+
+func loadConfig() {
+	host = GetEnv("JOBS_DB_HOST", "localhost")
+	user = GetEnv("JOBS_DB_USER", "ubuntu")
+	dbname = GetEnv("JOBS_DB_DB_NAME", "ubuntu")
+	port, _ = strconv.Atoi(GetEnv("JOBS_DB_PORT", "5432"))
+	password = GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+}
 
 func transformKey(s string) string {
 	snake := matchAllCap.ReplaceAllString(s, "${1}_${2}")
@@ -195,4 +213,43 @@ func GetWorkspaceToken() string {
 	}
 
 	return GetEnv("CONFIG_BACKEND_TOKEN", "")
+}
+
+func connectionString() string {
+	return fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+}
+
+func createDBConnection() *sql.DB {
+	var err error
+	dbHandle, err := sql.Open("postgres", connectionString())
+	if err != nil {
+		panic(err)
+	}
+
+	err = dbHandle.Ping()
+	if err != nil {
+		panic(err)
+	}
+	return dbHandle
+}
+
+func GetWHSchemaVersion() string {
+	if whSchemaVersion != "" {
+		return whSchemaVersion
+	}
+
+	// get from db
+	dbHandle := createDBConnection()
+
+	var version string
+	sqlStatememnt := fmt.Sprintf(`SELECT parameters ->> 'wh_schema_version' as version FROM workspace`)
+	err := dbHandle.QueryRow(sqlStatememnt).Scan(&version)
+	if err != nil {
+		panic(err)
+	}
+	whSchemaVersion = version
+	dbHandle.Close()
+	return version
 }

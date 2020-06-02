@@ -65,20 +65,20 @@ func insertTokenIfNotExists() {
 }
 
 func insertWHSchemaVersionIfNotExits() {
+	hashedToken := misc.GetMD5Hash(config.GetWorkspaceToken())
+	whSchemaVersion := config.GetString("Warehouse.schemaVersion", "v1")
+
 	var parameters sql.NullString
-	sqlStatement := fmt.Sprintf(`SELECT parameters FROM workspace`)
+	sqlStatement := fmt.Sprintf(`SELECT parameters FROM workspace WHERE token = '%s'`, hashedToken)
 	row := dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&parameters)
 	if err != nil {
 		panic(err)
 	}
 
-	hashedToken := misc.GetMD5Hash(config.GetWorkspaceToken())
-	wsSchemaVersion := config.GetString("Warehouse.schemaVersion", "v1")
-
 	if !parameters.Valid {
 		// insert current version
-		sqlStatement = fmt.Sprintf(`UPDATE workspace SET parameters = '{"wh_schema_version":"%s"}' WHERE token = '%s'`, wsSchemaVersion, hashedToken)
+		sqlStatement = fmt.Sprintf(`UPDATE workspace SET parameters = '{"wh_schema_version":"%s"}' WHERE token = '%s'`, whSchemaVersion, hashedToken)
 		_, err := dbHandle.Exec(sqlStatement)
 		if err != nil {
 			panic(err)
@@ -92,7 +92,7 @@ func insertWHSchemaVersionIfNotExits() {
 		if _, ok := parametersMap["wh_schema_version"]; ok {
 			return
 		}
-		parametersMap["wh_schema_version"] = wsSchemaVersion
+		parametersMap["wh_schema_version"] = whSchemaVersion
 		marshalledParameters, err := json.Marshal(parametersMap)
 		if err != nil {
 			panic(err)
@@ -165,6 +165,7 @@ func ValidateEnv() bool {
 	//create workspace table and insert hashed token
 	createWorkspaceTable()
 	insertTokenIfNotExists()
+	insertWHSchemaVersionIfNotExits()
 
 	dbHandle.Close()
 
