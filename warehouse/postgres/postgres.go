@@ -25,9 +25,8 @@ import (
 )
 
 var (
-	warehouseUploadsTable string
-	stagingTablePrefix    string
-	maxParallelLoads      int
+	stagingTablePrefix string
+	maxParallelLoads   int
 )
 
 const (
@@ -55,6 +54,8 @@ var postgresDataTypesMapToRudder = map[string]string{
 	"numeric":                  "float",
 	"real":                     "float",
 	"text":                     "string",
+	"varchar":                  "string",
+	"char":                     "string",
 	"timestamptz":              "datetime",
 	"timestamp with time zone": "datetime",
 	"timestamp":                "datetime",
@@ -72,17 +73,12 @@ type HandleT struct {
 }
 
 type credentialsT struct {
-	host       string
-	dbName     string
-	user       string
-	password   string
-	schemaName string
-	port       string
-	sslMode    string
-}
-
-type optionalCredsT struct {
-	schemaName string
+	host     string
+	dbName   string
+	user     string
+	password string
+	port     string
+	sslMode  string
 }
 
 var primaryKeyMap = map[string]string{
@@ -118,20 +114,18 @@ func init() {
 	loadConfig()
 }
 func loadConfig() {
-	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder_staging_"
 	maxParallelLoads = config.GetInt("Warehouse.postgres.maxParallelLoads", 3)
 }
 
-func (pg *HandleT) getConnectionCredentials(opts optionalCredsT) credentialsT {
+func (pg *HandleT) getConnectionCredentials() credentialsT {
 	return credentialsT{
-		host:       warehouseutils.GetConfigValue(host, pg.Warehouse),
-		dbName:     warehouseutils.GetConfigValue(dbName, pg.Warehouse),
-		user:       warehouseutils.GetConfigValue(user, pg.Warehouse),
-		password:   warehouseutils.GetConfigValue(password, pg.Warehouse),
-		port:       warehouseutils.GetConfigValue(port, pg.Warehouse),
-		sslMode:    warehouseutils.GetConfigValue(sslMode, pg.Warehouse),
-		schemaName: opts.schemaName,
+		host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
+		dbName:   warehouseutils.GetConfigValue(dbName, pg.Warehouse),
+		user:     warehouseutils.GetConfigValue(user, pg.Warehouse),
+		password: warehouseutils.GetConfigValue(password, pg.Warehouse),
+		port:     warehouseutils.GetConfigValue(port, pg.Warehouse),
+		sslMode:  warehouseutils.GetConfigValue(sslMode, pg.Warehouse),
 	}
 }
 
@@ -150,7 +144,7 @@ func (pg *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 // FetchSchema queries postgres and returns the schema associated with provided namespace
 func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	pg.Warehouse = warehouse
-	pg.Db, err = connect(pg.getConnectionCredentials(optionalCredsT{}))
+	pg.Db, err = connect(pg.getConnectionCredentials())
 	if err != nil {
 		return
 	}
@@ -562,7 +556,7 @@ func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	pg.CurrentSchema = currSchema
 	pg.Namespace = pg.Upload.Namespace
 
-	pg.Db, err = connect(pg.getConnectionCredentials(optionalCredsT{}))
+	pg.Db, err = connect(pg.getConnectionCredentials())
 	if err != nil {
 		warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
 		return err

@@ -689,14 +689,6 @@ func GetSlaveWorkerId(workerIdx int, slaveID string) string {
 	return fmt.Sprintf("%v-%v-%v", GetIP(), workerIdx, slaveID)
 }
 
-func PostgresBucketProvider(config interface{}) string {
-	c := config.(map[string]interface{})
-	provider, ok := c["bucketProvider"].(string)
-	if provider == "" || !ok {
-		return ""
-	}
-	return provider
-}
 func SnowflakeCloudProvider(config interface{}) string {
 	c := config.(map[string]interface{})
 	provider, ok := c["cloudProvider"].(string)
@@ -743,10 +735,9 @@ func ChangeSchemaCase(currentSchema map[string]map[string]string, destType strin
 	return currentSchemaWithCase
 }
 func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
-	keys := reflect.ValueOf(columnMap).MapKeys()
-	columnKeys := make([]string, len(keys))
-	for i := 0; i < len(keys); i++ {
-		columnKeys[i] = keys[i].String()
+	columnKeys := make([]string, len(columnMap))
+	for k := range columnMap {
+		columnKeys = append(columnKeys, k)
 	}
 	sort.Strings(columnKeys)
 	return columnKeys
