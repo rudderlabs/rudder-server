@@ -48,8 +48,11 @@ RudderStack has two major components, namely:
    - Receiving and buffering the event data
    - Transforming the event data into the required destination format, and
    - Relaying it to the destination
+ 
+A high-level view of RudderStack's architecture is as shown:
+![Architecture](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-Lz111ICiMeHdy_Gu6JX%2F-Lz1A_NxMgbjhbSrVL2h%2FRudder%20Core%20Architecture.png?alt=media&token=2c524db9-7c5c-44e9-a351-cbb1c46a8063)
 
-For a detailed understanding of the RudderStack architecture, please check our [documentation](https://docs.rudderstack.com/getting-started/rudderstack-data-plane-architecture)
+For a detailed understanding of the RudderStack architecture, please check our [documentation](https://docs.rudderstack.com/getting-started/rudderstack-data-plane-architecture).
 
 # RudderStack Setup
 
