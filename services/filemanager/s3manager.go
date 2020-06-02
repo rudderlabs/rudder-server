@@ -47,13 +47,16 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 			fileName = manager.Config.Prefix + "/" + fileName
 		}
 	}
-	output, err := s3manager.Upload(&awsS3Manager.UploadInput{
+	uploadInput := &awsS3Manager.UploadInput{
 		ACL:    aws.String("bucket-owner-full-control"),
 		Bucket: aws.String(manager.Config.Bucket),
 		Key:    aws.String(fileName),
 		Body:   file,
-	})
-
+	}
+	if manager.Config.EnableSSE {
+		uploadInput.ServerSideEncryption = aws.String("AES256")
+	}
+	output, err := s3manager.Upload(uploadInput)
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -79,7 +82,6 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
 		}))
 	}
-
 	downloader := s3manager.NewDownloader(sess)
 	_, err = downloader.Download(output,
 		&s3.GetObjectInput{
@@ -88,6 +90,23 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 		})
 
 	return err
+}
+
+func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string {
+	locationSlice := strings.Split(location, "amazonaws.com/")
+	return locationSlice[len(locationSlice)-1]
+}
+
+/*
+GetObjectNameFromLocation gets the object name/key name from the object location url
+	https://bucket-name.s3.amazonaws.com/key - >> key
+*/
+func (manager *S3Manager) GetObjectNameFromLocation(location string) string {
+	var baseUrl string
+	baseUrl += "https://"
+	baseUrl += manager.Config.Bucket + "."
+	baseUrl += "s3.amazonaws.com" + "/"
+	return location[len(baseUrl):]
 }
 
 type S3Object struct {
@@ -139,6 +158,7 @@ type S3Manager struct {
 
 func GetS3Config(config map[string]interface{}) *S3Config {
 	var bucketName, prefix, accessKeyID, accessKey string
+	var enableSSE, ok bool
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
 	}
@@ -151,7 +171,12 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 	if config["accessKey"] != nil {
 		accessKey = config["accessKey"].(string)
 	}
-	return &S3Config{Bucket: bucketName, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey}
+	if config["enableSSE"] != nil {
+		if enableSSE, ok = config["enableSSE"].(bool); !ok {
+			enableSSE = false
+		}
+	}
+	return &S3Config{Bucket: bucketName, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey, EnableSSE: enableSSE}
 }
 
 type S3Config struct {
@@ -159,4 +184,5 @@ type S3Config struct {
 	Prefix      string
 	AccessKeyID string
 	AccessKey   string
+	EnableSSE   bool
 }

@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/ioutil"
 	"net"
@@ -25,6 +26,7 @@ import (
 	//"runtime/debug"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/thoas/go-funk"
@@ -138,6 +140,12 @@ func AssertErrorIfDev(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func GetHash(s string) int {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return int(h.Sum32())
 }
 
 //GetMD5Hash returns EncodeToString(md5 hash of the input string)
@@ -412,7 +420,8 @@ func Copy(dst, src interface{}) {
 func GetIPFromReq(req *http.Request) string {
 	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
 	if addresses[0] == "" {
-		return req.RemoteAddr // When there is no load-balancer
+		splits := strings.Split(req.RemoteAddr, ":")
+		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
 	}
 
 	return strings.Replace(addresses[0], " ", "", -1)
@@ -746,4 +755,28 @@ func GetObjectStorageConfig(provider string, objectStorageConfig interface{}) ma
 	}
 	return objectStorageConfigMap
 
+}
+
+//GetNodeID returns the nodeId of the current node
+func GetNodeID() string {
+	nodeID := config.GetRequiredEnv("INSTANCE_ID")
+	return nodeID
+}
+
+//MakeRetryablePostRequest is Util function to make a post request.
+func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (response []byte, statusCode int, err error) {
+	backendURL := fmt.Sprintf("%s%s", url, endpoint)
+	dataJSON, err := json.Marshal(data)
+
+	resp, err := retryablehttp.Post(backendURL, "application/json", dataJSON)
+
+	if err != nil {
+		return nil, -1, err
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+
+	logger.Debugf("Post request: Successful %s", string(body))
+	return body, resp.StatusCode, nil
 }

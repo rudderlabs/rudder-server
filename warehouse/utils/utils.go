@@ -4,8 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/pkg/errors"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -39,6 +42,7 @@ const (
 	RS        = "RS"
 	BQ        = "BQ"
 	SNOWFLAKE = "SNOWFLAKE"
+	POSTGRES  = "POSTGRES"
 )
 
 const (
@@ -465,7 +469,7 @@ func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId strin
 
 func GetLoadFileLocation(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (location string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
-		SELECT  staging_file_id, MAX(id) AS id FROM wh_load_files
+		SELECT  staging_file_id, MAX(id) AS id FROM %[1]s
 		WHERE ( source_id='%[2]s'
 			AND destination_id='%[3]s'
 			AND table_name='%[4]s'
@@ -501,6 +505,28 @@ func GetObjectFolder(provider string, location string) (folder string) {
 		break
 	}
 	return
+}
+
+// GetObjectName extracts object/key objectName from different buckets locations
+// ex: https://bucket-endpoint/bucket-name/object -> object
+func GetObjectName(providerConfig interface{}, location string) (objectName string, err error) {
+	var config map[string]interface{}
+	var ok bool
+	var bucketProvider string
+	if config, ok = providerConfig.(map[string]interface{}); !ok {
+		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
+	}
+	if bucketProvider, ok = config["bucketProvider"].(string); !ok {
+		return "", errors.New("failed to get bucket information")
+	}
+	fm, err := filemanager.New(&filemanager.SettingsT{
+		Provider: bucketProvider,
+		Config:   config,
+	})
+	if err != nil {
+		return "", err
+	}
+	return fm.GetObjectNameFromLocation(location), nil
 }
 
 // GetS3Location parses path-style location http url to return in s3:// format
@@ -642,8 +668,6 @@ func ToSafeDBString(provider string, str string) string {
 func ToCase(provider string, str string) string {
 	if strings.ToUpper(provider) == "SNOWFLAKE" {
 		str = strings.ToUpper(str)
-	} else {
-		str = strings.ToLower(str)
 	}
 	return str
 }
@@ -675,8 +699,13 @@ func SnowflakeCloudProvider(config interface{}) string {
 }
 
 func ObjectStorageType(destType string, config interface{}) string {
-	if destType != "SNOWFLAKE" {
+	if destType != "SNOWFLAKE" && destType != "POSTGRES" {
 		return ObjectStorageMap[destType]
+	}
+	if destType == "POSTGRES" {
+		c := config.(map[string]interface{})
+		provider, _ := c["bucketProvider"].(string)
+		return provider
 	}
 	c := config.(map[string]interface{})
 	provider, ok := c["cloudProvider"].(string)
@@ -704,4 +733,12 @@ func ChangeSchemaCase(currentSchema map[string]map[string]string, destType strin
 		}
 	}
 	return currentSchemaWithCase
+}
+func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
+	columnKeys := make([]string, 0, len(columnMap))
+	for k := range columnMap {
+		columnKeys = append(columnKeys, k)
+	}
+	sort.Strings(columnKeys)
+	return columnKeys
 }
