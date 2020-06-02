@@ -260,11 +260,13 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 
 }
 
-func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err error) {
-	status, err := warehouseutils.GetTableUploadStatus(pg.Upload.ID, tableName, pg.DbHandle)
-	if status == warehouseutils.ExportedDataState {
-		logger.Infof("PG: Skipping load for table:%s as it has been successfully loaded earlier", tableName)
-		return
+func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, skipTempTableDelete bool, forceLoad bool) (stagingTableName string, err error) {
+	if !forceLoad {
+		status, _ := warehouseutils.GetTableUploadStatus(pg.Upload.ID, tableName, pg.DbHandle)
+		if status == warehouseutils.ExportedDataState {
+			logger.Infof("PG: Skipping load for table:%s as it has been successfully loaded earlier", tableName)
+			return
+		}
 	}
 	if !warehouseutils.HasLoadFiles(pg.DbHandle, pg.Warehouse.Source.ID, pg.Warehouse.Destination.ID, tableName, pg.Upload.StartLoadFileID, pg.Upload.EndLoadFileID) {
 		warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, pg.Upload.ID, tableName, pg.DbHandle)
@@ -293,15 +295,18 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		return
 	}
 	// create temporary table
-	stagingTableName := fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
+	stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%[2]s" (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
 	logger.Infof("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
-	defer pg.dropStagingTables([]string{stagingTableName})
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("PG: Error creating temporary table for table:%s: %v\n", tableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
+	}
+
+	if !skipTempTableDelete {
+		defer pg.dropStagingTables([]string{stagingTableName})
 	}
 
 	stmt, err := txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
@@ -311,24 +316,27 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		return
 	}
 	for _, objectFileName := range objectsFileName {
-		gzipFile, err := os.Open(objectFileName)
+		var gzipFile *os.File
+		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			logger.Errorf("PG: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
 			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
-			return err
+			return
 		}
 
-		gzipReader, err := gzip.NewReader(gzipFile)
+		var gzipReader *gzip.Reader
+		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
 			logger.Errorf("PG: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
 			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 			gzipFile.Close()
-			return err
+			return
 
 		}
 		csvReader := csv.NewReader(gzipReader)
 		for {
-			record, err := csvReader.Read()
+			var record []string
+			record, err = csvReader.Read()
 			if err != nil {
 				if err == io.EOF {
 					logger.Infof("PG: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
@@ -338,7 +346,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 					gzipReader.Close()
 					gzipFile.Close()
-					return err
+					return
 				}
 
 			}
@@ -401,20 +409,122 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, pg.Upload.ID, tableName, pg.DbHandle)
 	logger.Infof("PG: Complete load for table:%s", tableName)
-	return err
+	return
+}
+
+func (pg *HandleT) loadUserTables() (err error) {
+	logger.Infof("RS: Starting load for identifies and users tables\n")
+	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Upload.Schema[warehouseutils.IdentifiesTable], true, true)
+	if err != nil {
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.IdentifiesTable, err, pg.DbHandle)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), pg.DbHandle)
+		return
+	}
+	defer pg.dropStagingTables([]string{identifyStagingTable})
+
+	userColMap := pg.CurrentSchema["users"]
+	var userColNames, firstValProps []string
+	for colName := range userColMap {
+		if colName == "id" {
+			continue
+		}
+		userColNames = append(userColNames, colName)
+		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
+	}
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), "users"), 127)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
+										(
+											SELECT
+											id, %[3]s
+											FROM (
+												(
+													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT user_id FROM "%[1]s"."%[5]s")
+												) UNION
+												(
+													SELECT user_id, %[6]s FROM "%[1]s"."%[5]s"
+												)
+											)
+										)
+									)`,
+		pg.Namespace,
+		stagingTableName,
+		strings.Join(firstValProps, ","),
+		warehouseutils.UsersTable,
+		identifyStagingTable,
+		strings.Join(userColNames, ","),
+	)
+
+	// BEGIN TRANSACTION
+	tx, err := pg.Db.Begin()
+	if err != nil {
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, err, pg.DbHandle)
+		return
+	}
+
+	logger.Infof("RS: Creating staging table for users: %s\n", sqlStatement)
+	_, err = tx.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("RS: Error creating users staging table from original table and identifies staging table: %v\n", err)
+		tx.Rollback()
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, err, pg.DbHandle)
+		return
+	}
+	defer pg.dropStagingTables([]string{stagingTableName})
+
+	primaryKey := "id"
+	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
+	logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+	_, err = tx.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
+		tx.Rollback()
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, err, pg.DbHandle)
+		return
+	}
+
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
+	logger.Infof("RS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+	_, err = tx.Exec(sqlStatement)
+
+	if err != nil {
+		logger.Errorf("RS: Error inserting into users table from staging table: %v\n", err)
+		tx.Rollback()
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, err, pg.DbHandle)
+		return
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		logger.Errorf("RS: Error in transaction commit for users table: %v\n", err)
+		tx.Rollback()
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, err, pg.DbHandle)
+		return
+	}
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, pg.Upload.ID, warehouseutils.UsersTable, pg.DbHandle)
+	return
 }
 
 func (pg *HandleT) load() (errList []error) {
 	logger.Infof("PG: Starting load for all %v tables\n", len(pg.Upload.Schema))
+	if _, ok := pg.Upload.Schema["users"]; ok {
+		err := pg.loadUserTables()
+		if err != nil {
+			errList = append(errList, err)
+		}
+	}
 	var wg sync.WaitGroup
 	loadChan := make(chan struct{}, maxParallelLoads)
 	wg.Add(len(pg.Upload.Schema))
 	for tableName, columnMap := range pg.Upload.Schema {
+		if tableName == "users" || tableName == "identifies" {
+			wg.Done()
+			continue
+		}
 		tName := tableName
 		cMap := columnMap
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
-			loadError := pg.loadTable(tName, cMap)
+			_, loadError := pg.loadTable(tName, cMap, false, false)
 			if loadError != nil {
 				errList = append(errList, loadError)
 			}
@@ -536,6 +646,7 @@ func (pg *HandleT) MigrateSchema() (err error) {
 		warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
 		return
 	}
+	pg.CurrentSchema = updatedSchema
 	err = warehouseutils.SetUploadStatus(pg.Upload, warehouseutils.UpdatedSchemaState, pg.DbHandle)
 	if err != nil {
 		panic(err)
