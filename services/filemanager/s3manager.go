@@ -97,6 +97,18 @@ func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string
 	return locationSlice[len(locationSlice)-1]
 }
 
+/*
+GetObjectNameFromLocation gets the object name/key name from the object location url
+	https://bucket-name.s3.amazonaws.com/key - >> key
+*/
+func (manager *S3Manager) GetObjectNameFromLocation(location string) string {
+	var baseUrl string
+	baseUrl += "https://"
+	baseUrl += manager.Config.Bucket + "."
+	baseUrl += "s3.amazonaws.com" + "/"
+	return location[len(baseUrl):]
+}
+
 type S3Object struct {
 	Key              string
 	LastModifiedTime time.Time

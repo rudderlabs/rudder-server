@@ -74,7 +74,7 @@ type ClaimResponseT struct {
 }
 
 func New(connectionInfo string) (notifier PgNotifierT, err error) {
-	logger.Infof("PgNotifier: Initializaing PgNotifier...")
+	logger.Infof("PgNotifier: Initializing PgNotifier...")
 	dbHandle, err := sql.Open("postgres", connectionInfo)
 	if err != nil {
 		return
@@ -312,7 +312,7 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 					if event.Status == WaitingState || event.Status == FailedState {
 						ch <- event
 					} else {
-						logger.Debugf("PgNotifier: Not notifying subsriber for event with id: %d type: %s", event.ID, event.Status)
+						logger.Debugf("PgNotifier: Not notifying subscriber for event with id: %d type: %s", event.ID, event.Status)
 					}
 				}
 			case <-time.After(90 * time.Second):
@@ -350,7 +350,7 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
-		logger.Errorf("PgNotifier: Error creatin trigger func: %v", err)
+		logger.Errorf("PgNotifier: Error creating trigger func: %v", err)
 		return
 	}
 
