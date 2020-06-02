@@ -1,4 +1,4 @@
-{{/* ALTER TYPE job_state_type ADD VALUE IF NOT EXISTS 'migrating';
+ALTER TYPE job_state_type ADD VALUE IF NOT EXISTS 'migrating';
 ALTER TYPE job_state_type ADD VALUE IF NOT EXISTS 'migrated';
 ALTER TYPE job_state_type ADD VALUE IF NOT EXISTS 'wont_migrate';
 
@@ -6,4 +6,4 @@ ALTER TYPE job_state_type ADD VALUE IF NOT EXISTS 'wont_migrate';
     ALTER TABLE {{$.Prefix}}_jobs_{{.}} ALTER COLUMN created_at set DEFAULT NOW();
     ALTER TABLE {{$.Prefix}}_jobs_{{.}} ALTER COLUMN expire_at set DEFAULT NOW();
     ALTER TABLE {{$.Prefix}}_jobs_{{.}} ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT '-1';
-{{end}} */}}
+{{end}}
