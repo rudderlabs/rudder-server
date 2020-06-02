@@ -236,7 +236,7 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 0)
 
 				c.mockJobsDB.
-					EXPECT().Store(gomock.Any()).
+					EXPECT().StoreWithRetryEach(gomock.Any()).
 					DoAndReturn(func(jobs []*jobsdb.JobT) map[uuid.UUID]string {
 						for _, job := range jobs {
 							// each call should be included in a separate batch, with a separate batch_id
@@ -291,7 +291,7 @@ var _ = Describe("Gateway", func() {
 			callStart := c.mockStatGatewayBatchTime.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 
 			callStore := c.mockJobsDB.
-				EXPECT().Store(gomock.Any()).
+				EXPECT().StoreWithRetryEach(gomock.Any()).
 				DoAndReturn(func(jobs []*jobsdb.JobT) map[uuid.UUID]string {
 					// will collect all message handler types, found in jobs send to Store function
 					typesFound := make(map[string]bool, 6)
@@ -362,7 +362,7 @@ var _ = Describe("Gateway", func() {
 			callStart := c.mockStatGatewayBatchTime.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes().Do(c.asyncHelper.ExpectAndNotifyCallback())
 			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(false).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
-			callStore := c.mockJobsDB.EXPECT().Store(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
+			callStore := c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 			callEnd := c.mockStatGatewayBatchTime.EXPECT().End().After(callStart).After(callStore).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).After(callEnd).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 
@@ -381,7 +381,7 @@ var _ = Describe("Gateway", func() {
 			callStart := c.mockStatGatewayBatchTime.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes().Do(c.asyncHelper.ExpectAndNotifyCallback())
 			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(true).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
-			callStore := c.mockJobsDB.EXPECT().Store(emptyJobsList).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
+			callStore := c.mockJobsDB.EXPECT().StoreWithRetryEach(emptyJobsList).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 			callEnd := c.mockStatGatewayBatchTime.EXPECT().End().After(callStart).After(callStore).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).After(callEnd).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 
@@ -405,7 +405,7 @@ var _ = Describe("Gateway", func() {
 			callStart := c.mockStatGatewayBatchTime.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 
 			callStore := c.mockJobsDB.
-				EXPECT().Store(emptyJobsList).
+				EXPECT().StoreWithRetryEach(emptyJobsList).
 				Do(c.asyncHelper.ExpectAndNotifyCallback()).
 				Return(jobsToEmptyErrors(emptyJobsList)).
 				Times(1)
@@ -586,9 +586,9 @@ func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 
 // converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
 func jobsToEmptyErrors(jobs []*jobsdb.JobT) map[uuid.UUID]string {
-	var result = make(map[uuid.UUID]string)
-	for _, job := range jobs {
-		result[job.UUID] = ""
-	}
-	return result
+	return make(map[uuid.UUID]string)
+	// for _, job := range jobs {
+	// 	result[job.UUID] = ""
+	// }
+	// return result
 }
