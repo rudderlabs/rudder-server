@@ -32,9 +32,9 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 
 - **Unlimited Events**: Event volume-based pricing of most of the commercial systems is broken. With RudderStack, you are be able to collect as much data as possible without worrying about overrunning event budgets.
 
-- **Stand-alone System**: RudderStack runs as a single Go binary with the only dependency being on the PostgreSQL database. There is no other dependency required to use RudderStack.
+- **Stand-alone System**: RudderStack runs as a single Go binary with the dependencies being on a PostgreSQL server and a Node.js service. There is no other dependency required to run RudderStack.
 
-- **Platform-independent**: RudderStack is Kubernetes-native and can run on any Kubernetes cluster with our Helm charts. RudderStack is cloud-agnostic and can run on stand-alone machines in all popular cloud platforms, namely AWS, Microsoft Azure, and GCP.
+- **Platform-independent**: RudderStack is Kubernetes-native and can run on any Kubernetes cluster with our Helm charts. RudderStack is cloud-agnostic and can run on stand-alone machines in all popular cloud platforms, namely AWS, Microsoft Azure, GCP, and others.
 
 - **High Performance**: On a single m4.2xlarge AWS EC2 instance, RudderStack can process 3000 events/second.
 
