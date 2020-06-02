@@ -384,13 +384,13 @@ func GetTableUploadStatus(uploadID int64, tableName string, dbHandle *sql.DB) (s
 	return
 }
 
-func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string) {
+func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
 	sqlStatement := fmt.Sprintf(`SELECT namespace FROM %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC`, warehouseSchemasTable, source.ID, destination.ID)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
-	return
+	return namespace, len(namespace) > 0
 }
 
 func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
@@ -621,6 +621,23 @@ func Datatype(in interface{}) string {
 	return "string"
 }
 
+/*
+ToSafeNamespace convert name of the namespace to one acceptable by warehouse
+1. removes symbols and joins continuous letters and numbers with single underscore and if first char is a number will append a underscore before the first number
+2. adds an underscore if the name is a reserved keyword in the warehouse
+3. truncate the length of namespace to 127 characters
+4. return "stringempty" if name is empty after conversion
+examples:
+omega     to omega
+omega v2  to omega_v2
+9mega     to _9mega
+mega&     to mega
+ome$ga    to ome_ga
+omega$    to omega
+ome_ ga   to ome_ga
+9mega________-________90 to _9mega_90
+Cízǔ to C_z
+*/
 func ToSafeNamespace(provider string, name string) string {
 	var extractedValues []string
 	var extractedValue string
@@ -653,6 +670,10 @@ func ToSafeNamespace(provider string, name string) string {
 	return misc.TruncateStr(namespace, 127)
 }
 
+/*
+ToCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc
+eg. columns are uppercased in SNOWFLAKE and lowercased etc in REDSHIFT, BIGQUERY etc
+*/
 func ToCase(provider string, str string) string {
 	if strings.ToUpper(provider) == "SNOWFLAKE" {
 		str = strings.ToUpper(str)

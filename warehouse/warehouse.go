@@ -176,7 +176,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == wh.destType {
-						namespace := getNamespaceFromDestinationConfig(destination.Config, source, destination, wh.destType)
+						namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace})
 						if destination.Config != nil && destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
 							sourceID := source.ID
@@ -192,6 +192,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 		configSubscriberLock.Unlock()
 	}
 }
+
 func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string) {
 	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at asc limit %d`, warehouseUploadsTable, sourceID, destinationID, warehouseSyncPreFetchCount))
 	if err != nil && err != sql.ErrNoRows {
@@ -209,19 +210,22 @@ func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string
 	}
 }
 
-func getNamespaceFromDestinationConfig(config interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
+// getNamespace sets namespace name in the following order
+// 	1. user set name from destinationConfig
+// 	2. from existing record in wh_schemas with same soruce + dest combo
+// 	3. convert source name
+func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
 	configMap := config.(map[string]interface{})
 	var namespace string
 	if configMap["namespace"] != nil {
 		namespace = configMap["namespace"].(string)
-	}
-	if len(strings.TrimSpace(namespace)) > 0 {
-		namespace = warehouseutils.ToCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
-	} else {
-		namespace = warehouseutils.GetNamespace(source, destination, dbHandle)
-		if namespace == "" {
-			namespace = warehouseutils.ToCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
+		if len(strings.TrimSpace(namespace)) > 0 {
+			return warehouseutils.ToCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
 		}
+	}
+	var exists bool
+	if namespace, exists = warehouseutils.GetNamespace(source, destination, wh.dbHandle); !exists {
+		namespace = warehouseutils.ToCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
 	}
 	return namespace
 }
