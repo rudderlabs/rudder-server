@@ -12,13 +12,13 @@ RudderStack's backend is written in Go, with a rich UI written in React.js.
 You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) RudderStack instance to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro).
 
 # Why Use RudderStack?
-- **Production-ready**: Companies like **MatterMost**, **IFTTT**, **Grofers**, and **1mg** use RudderStack for collecting their events
+- **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, and **1mg** use RudderStack for collecting their events
 
 - **Extreme Scale**: One of our largest installations currently sends **300 Million** events/day with peak of **40K** req/sec, via a multi-node RudderStack setup
 
 - **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool
 
-- **Seamless Integration**: RudderStack currently supports integration with over 45 popular destination platforms such as Google Analytics, Amplitude, Mixpanel, Amazon S3,and more. Moreover, it also supports integration with popular data warehouses such as Snowflake, Redshift, and Google BigQuery
+- **Seamless Integration**: RudderStack currently supports integration with over 45 popular [destination platforms](https://docs.rudderstack.com/destinations/) such as Google Analytics, Amplitude, Mixpanel, Amazon S3, and more. Moreover, it also supports [data warehouse integrations](https://docs.rudderstack.com/data-warehouse-integrations) for Snowflake, Redshift, and Google BigQuery
 
 - **Client-side SDK Support**: RudderStack offers client-side SDKs for [JavaScript](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-javascript-sdk), [Android](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-android-sdk), [iOS](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-ios-sdk), and [Unity](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-unity-sdk)
 
@@ -26,7 +26,7 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 
 # Key Features
 
-- **Segment API Compatible**: RudderStack is Segment API and library compatible. So you don't need to change your app if you are using Segment.
+- **Segment API Compatible**: RudderStack is Segment API compatible. So you don't need to change your app if you are using Segment, just integrate the RudderStack SDKs into your app.
 
 - **Processing Flexibility**: With RudderStack's powerful JavaScript-based event transformation framework, you can enhance or transform your event data by combining it with your other internal data. Furthermore, since RudderStack runs inside your cloud or on-premise environment, you can easily access your production data to join with the event data.
 
@@ -34,7 +34,9 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 
 - **Stand-alone System**: RudderStack runs as a single Go binary with the only dependency being on the PostgreSQL database. There is no other dependency required to use RudderStack.
 
-- **High Performance**: On a single m4.2xlarge, RudderStack can process 3000 events/second.
+- **Platform-independent**: RudderStack is Kubernetes-native and can run on any Kubernetes cluster with our Helm charts. RudderStack is cloud-agnostic and can run on stand-alone machines in all popular cloud platforms, namely AWS, Microsoft Azure, and GCP.
+
+- **High Performance**: On a single m4.2xlarge AWS EC2 instance, RudderStack can process 3000 events/second.
 
 - **Enhanced Telemetry**: To help us improve RudderStack, we collect performance and diagnostic metrics about how you use RudderStack, and how it is working. **No customer data is present in the metrics**. For technical details, please check out our wiki page on [Telemetry](https://github.com/rudderlabs/rudder-server/wiki/Telemetry).
 
@@ -42,8 +44,11 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 # RudderStack Architecture
 
 RudderStack has two major components, namely:
-- The Control Plane: Allows you to manage the configuration of your sources and destinations
-- The Data Plane:  This is the core engine that is responsible for:
+- **Control Plane**: The control plane allows you to manage the configuration of your sources and destinations. There are two options for setting up the connections:
+  - [Managed control plane](https://app.rudderstack.com/): This is the easiest way to manage your source and destination configurations.
+  - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services.
+
+- **Data Plane**:  This is the core engine that is responsible for:
 
    - Receiving and buffering the event data
    - Transforming the event data into the required destination format, and
@@ -66,10 +71,6 @@ You can also set up and use RudderStack on your platform of choice. Please refer
 - [Developer Machine Setup](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/developer-machine-setup)
 
 Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#how-to-send-test-events) to verify the setup.
-
-## RudderStack Config Generator
-
-RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. Read more on how you can do this using the [RudderStack Config Generator](https://docs.rudderstack.com/getting-started/rudderstack-config-generator).
 
 # UI Pages
 
