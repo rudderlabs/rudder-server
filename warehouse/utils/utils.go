@@ -735,7 +735,7 @@ func ChangeSchemaCase(currentSchema map[string]map[string]string, destType strin
 	return currentSchemaWithCase
 }
 func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
-	columnKeys := make([]string, len(columnMap))
+	columnKeys := make([]string, 0, len(columnMap))
 	for k := range columnMap {
 		columnKeys = append(columnKeys, k)
 	}
