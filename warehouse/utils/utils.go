@@ -3,6 +3,7 @@ package warehouseutils
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -10,12 +11,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pkg/errors"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
-
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -690,14 +689,6 @@ func GetSlaveWorkerId(workerIdx int, slaveID string) string {
 	return fmt.Sprintf("%v-%v-%v", GetIP(), workerIdx, slaveID)
 }
 
-func PostgresBucketProvider(config interface{}) string {
-	c := config.(map[string]interface{})
-	provider, ok := c["bucketProvider"].(string)
-	if provider == "" || !ok {
-		return ""
-	}
-	return provider
-}
 func SnowflakeCloudProvider(config interface{}) string {
 	c := config.(map[string]interface{})
 	provider, ok := c["cloudProvider"].(string)
