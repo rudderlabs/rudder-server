@@ -671,10 +671,10 @@ func ToSafeNamespace(provider string, name string) string {
 }
 
 /*
-ToCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc
+ToProviderCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc
 eg. columns are uppercased in SNOWFLAKE and lowercased etc in REDSHIFT, BIGQUERY etc
 */
-func ToCase(provider string, str string) string {
+func ToProviderCase(provider string, str string) string {
 	if strings.ToUpper(provider) == "SNOWFLAKE" {
 		str = strings.ToUpper(str)
 	} else {
