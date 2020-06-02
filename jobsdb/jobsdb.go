@@ -2413,6 +2413,7 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 	//We scan through the list of jobs and map them to DS
 	var lastPos int
 	dsRangeList := jd.getDSRangeList(false)
+	updatedStatesByDS = make(map[dataSetT][]string)
 	for _, ds := range dsRangeList {
 		minID := ds.minJobID
 		maxID := ds.maxJobID
