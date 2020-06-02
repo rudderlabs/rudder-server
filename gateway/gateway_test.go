@@ -587,8 +587,4 @@ func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 // converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
 func jobsToEmptyErrors(jobs []*jobsdb.JobT) map[uuid.UUID]string {
 	return make(map[uuid.UUID]string)
-	// for _, job := range jobs {
-	// 	result[job.UUID] = ""
-	// }
-	// return result
 }
