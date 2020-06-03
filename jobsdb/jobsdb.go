@@ -231,14 +231,14 @@ var (
 	//Not valid, Not terminal
 	NotProcessed = jobStateT{isValid: false, isTerminal: false, State: "NP"}
 
-	//Vaild, Not terminal
+	//Valid, Not terminal
 	Failed       = jobStateT{isValid: true, isTerminal: false, State: "failed"}
 	Executing    = jobStateT{isValid: true, isTerminal: false, State: "executing"}
 	Waiting      = jobStateT{isValid: true, isTerminal: false, State: "waiting"}
 	WaitingRetry = jobStateT{isValid: true, isTerminal: false, State: "waiting_retry"}
 	Migrating    = jobStateT{isValid: true, isTerminal: false, State: "migrating"}
 
-	//Vaild, Terminal
+	//Valid, Terminal
 	Succeeded   = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
 	Aborted     = jobStateT{isValid: true, isTerminal: true, State: "aborted"}
 	Migrated    = jobStateT{isValid: true, isTerminal: true, State: "migrated"}
@@ -894,7 +894,7 @@ func (jd *HandleT) createDS(newDSIdx string) dataSetT {
 	sqlStatement = fmt.Sprintf(`CREATE TABLE %s (
                                      id BIGSERIAL PRIMARY KEY,
                                      job_id BIGINT REFERENCES %s(job_id),
-                                     job_state job_state_type,
+                                     job_state VARCHAR(255),
                                      attempt SMALLINT,
                                      exec_time TIMESTAMP,
                                      retry_time TIMESTAMP,

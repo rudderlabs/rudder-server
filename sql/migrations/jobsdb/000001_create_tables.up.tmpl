@@ -24,8 +24,8 @@ DO $$ BEGIN
         WHEN duplicate_object THEN null;
 END $$;
 
--- Dataset tables are not created directly by migration scripts, the are created via JobsDB's addNewDS function instead.
--- The query used in addNewDS must always create the latest version of dataset tables.
+-- Dataset tables are not created directly by migration scripts, the are created via JobsDB's createDS function instead.
+-- The query used in createDS must always create the dataset tables using the latest schema version.
 -- Version updates for existing dataset tables can be defined, using template data key 'Datasets' to iterate existing dataset indices.
 -- This is an example of a dataset migration script, using migration templates:
 --
