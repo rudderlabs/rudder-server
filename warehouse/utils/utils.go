@@ -10,9 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pkg/errors"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
-
 	"github.com/iancoleman/strcase"
 
 	"github.com/lib/pq"
