@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
-	"github.com/iancoleman/strcase"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -177,7 +176,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == wh.destType {
-						namespace := getNamespaceFromDestinationConfig(destination.Config, source.Name, wh.destType)
+						namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
 						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace})
 						if destination.Config != nil && destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
 							sourceID := source.ID
@@ -193,6 +192,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 		configSubscriberLock.Unlock()
 	}
 }
+
 func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string) {
 	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at asc limit %d`, warehouseUploadsTable, sourceID, destinationID, warehouseSyncPreFetchCount))
 	if err != nil && err != sql.ErrNoRows {
@@ -209,16 +209,23 @@ func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string
 		wh.recordDeliveryStatus(uploadID)
 	}
 }
-func getNamespaceFromDestinationConfig(config interface{}, sourceName string, destType string) string {
+
+// getNamespace sets namespace name in the following order
+// 	1. user set name from destinationConfig
+// 	2. from existing record in wh_schemas with same source + dest combo
+// 	3. convert source name
+func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
 	configMap := config.(map[string]interface{})
 	var namespace string
 	if configMap["namespace"] != nil {
 		namespace = configMap["namespace"].(string)
+		if len(strings.TrimSpace(namespace)) > 0 {
+			return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
+		}
 	}
-	if len(strings.TrimSpace(namespace)) > 0 {
-		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, warehouseutils.ToSafeDBString(destType, strcase.ToSnake(namespace))), 127)
-	} else {
-		namespace = misc.TruncateStr(warehouseutils.ToCase(destType, warehouseutils.ToSafeDBString(destType, strcase.ToSnake(sourceName))), 127)
+	var exists bool
+	if namespace, exists = warehouseutils.GetNamespace(source, destination, wh.dbHandle); !exists {
+		namespace = warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
 	}
 	return namespace
 }
@@ -285,7 +292,6 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 
 func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schemaList []map[string]map[string]string) map[string]map[string]string {
 	schemaMap := make(map[string]map[string]string)
-	currentSchemaWithCase := warehouseutils.ChangeSchemaCase(currentSchema, wh.destType)
 	for _, schema := range schemaList {
 		for tableName, columnMap := range schema {
 			if schemaMap[tableName] == nil {
@@ -293,10 +299,10 @@ func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schem
 			}
 			for columnName, columnType := range columnMap {
 				// if column already has a type in db, use that
-				if len(currentSchemaWithCase) > 0 {
+				if len(currentSchema) > 0 {
 
-					if _, ok := currentSchemaWithCase[tableName]; ok {
-						if columnTypeInDB, ok := currentSchemaWithCase[tableName][columnName]; ok {
+					if _, ok := currentSchema[tableName]; ok {
+						if columnTypeInDB, ok := currentSchema[tableName][columnName]; ok {
 							schemaMap[tableName][columnName] = columnTypeInDB
 							continue
 						}
@@ -365,14 +371,14 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 	// add rudder_discards table
 	destType := warehouse.Destination.DestinationDefinition.Name
 	discards := map[string]string{
-		warehouseutils.ToCase(destType, "table_name"):   "string",
-		warehouseutils.ToCase(destType, "row_id"):       "string",
-		warehouseutils.ToCase(destType, "column_name"):  "string",
-		warehouseutils.ToCase(destType, "column_value"): "string",
-		warehouseutils.ToCase(destType, "received_at"):  "datetime",
-		warehouseutils.ToCase(destType, "uuid_ts"):      "datetime",
+		warehouseutils.ToProviderCase(destType, "table_name"):   "string",
+		warehouseutils.ToProviderCase(destType, "row_id"):       "string",
+		warehouseutils.ToProviderCase(destType, "column_name"):  "string",
+		warehouseutils.ToProviderCase(destType, "column_value"): "string",
+		warehouseutils.ToProviderCase(destType, "received_at"):  "datetime",
+		warehouseutils.ToProviderCase(destType, "uuid_ts"):      "datetime",
 	}
-	currSchema[warehouseutils.ToCase(destType, warehouseutils.DiscardsTable)] = discards
+	currSchema[warehouseutils.ToProviderCase(destType, warehouseutils.DiscardsTable)] = discards
 	return currSchema
 }
 
@@ -1186,9 +1192,9 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		}
 		if job.DestinationType == "BQ" {
 			for _, columnName := range sortedTableColumnMap[tableName] {
-				if columnName == warehouseutils.ToCase(job.DestinationType, "uuid_ts") {
+				if columnName == warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts") {
 					// add uuid_ts to track when event was processed into load_file
-					columnData[warehouseutils.ToCase(job.DestinationType, "uuid_ts")] = uuidTS.Format("2006-01-02 15:04:05 Z")
+					columnData[warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts")] = uuidTS.Format("2006-01-02 15:04:05 Z")
 					continue
 				}
 				columnVal, ok := columnData[columnName]
@@ -1225,10 +1231,10 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						columnData[columnName] = int(floatVal)
 					} else {
 						columnData[columnName] = nil
-						rowID, hasID := columnData[warehouseutils.ToCase(job.DestinationType, "id")]
-						receivedAt, hasReceivedAt := columnData[warehouseutils.ToCase(job.DestinationType, "received_at")]
+						rowID, hasID := columnData[warehouseutils.ToProviderCase(job.DestinationType, "id")]
+						receivedAt, hasReceivedAt := columnData[warehouseutils.ToProviderCase(job.DestinationType, "received_at")]
 						if hasID && hasReceivedAt {
-							discardsTable := warehouseutils.ToCase(job.DestinationType, warehouseutils.DiscardsTable)
+							discardsTable := warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
 							if _, ok := outputFileMap[discardsTable]; !ok {
 								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
@@ -1269,7 +1275,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 			var buff bytes.Buffer
 			csvWriter := csv.NewWriter(&buff)
 			for _, columnName := range sortedTableColumnMap[tableName] {
-				if columnName == warehouseutils.ToCase(job.DestinationType, "uuid_ts") {
+				if columnName == warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts") {
 					// add uuid_ts to track when event was processed into load_file
 					csvRow = append(csvRow, fmt.Sprintf("%v", uuidTS.Format(misc.RFC3339Milli)))
 					continue
@@ -1312,10 +1318,10 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						columnVal = int(floatVal)
 					} else {
 						csvRow = append(csvRow, "")
-						rowID, hasID := columnData[warehouseutils.ToCase(job.DestinationType, "id")]
-						receivedAt, hasReceivedAt := columnData[warehouseutils.ToCase(job.DestinationType, "received_at")]
+						rowID, hasID := columnData[warehouseutils.ToProviderCase(job.DestinationType, "id")]
+						receivedAt, hasReceivedAt := columnData[warehouseutils.ToProviderCase(job.DestinationType, "received_at")]
 						if hasID && hasReceivedAt {
-							discardsTable := warehouseutils.ToCase(job.DestinationType, warehouseutils.DiscardsTable)
+							discardsTable := warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
 							if _, ok := outputFileMap[discardsTable]; !ok {
 								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
