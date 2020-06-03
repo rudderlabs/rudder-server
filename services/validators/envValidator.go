@@ -154,7 +154,6 @@ func getDBHandle() *sql.DB {
 	if dbHandle == nil {
 		createDBConnection()
 	}
-	createDBConnection()
 	return dbHandle
 }
 
