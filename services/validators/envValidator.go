@@ -13,10 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var (
-	dbHandle *sql.DB
-)
-
 const (
 	//This is integer representation of Postgres version.
 	//For ex, integer representation of version 9.6.3 is 90603
@@ -24,26 +20,24 @@ const (
 	minPostgresVersion = 100000
 )
 
-func createWorkspaceTable() {
-	db := getDBHandle()
+func createWorkspaceTable(dbHandle *sql.DB) {
 	//Create table to store workspace token
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS workspace (
 		token TEXT PRIMARY KEY,
 		created_at TIMESTAMP NOT NULL,
 		parameters JSONB);`)
 
-	_, err := db.Exec(sqlStatement)
+	_, err := dbHandle.Exec(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func insertTokenIfNotExists() {
+func insertTokenIfNotExists(dbHandle *sql.DB) {
 	//Read entries, if there are no entries insert hashed current workspace token
-	db := getDBHandle()
 	var totalCount int
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM workspace`)
-	row := db.QueryRow(sqlStatement)
+	row := dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&totalCount)
 	if err != nil {
 		panic(err)
@@ -56,7 +50,7 @@ func insertTokenIfNotExists() {
 	//There are no entries in the table, hash current workspace token and insert
 	sqlStatement = fmt.Sprintf(`INSERT INTO workspace (token, created_at)
 									   VALUES ($1, $2)`)
-	stmt, err := db.Prepare(sqlStatement)
+	stmt, err := dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
@@ -68,15 +62,14 @@ func insertTokenIfNotExists() {
 	}
 }
 
-func setWHSchemaVersionIfNotExists() {
+func setWHSchemaVersionIfNotExists(dbHandle *sql.DB) {
 	hashedToken := misc.GetMD5Hash(config.GetWorkspaceToken())
 	whSchemaVersion := config.GetString("Warehouse.schemaVersion", "v1")
 	config.SetWHSchemaVersion(whSchemaVersion)
 
-	db := getDBHandle()
 	var parameters sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT parameters FROM workspace WHERE token = '%s'`, hashedToken)
-	row := db.QueryRow(sqlStatement)
+	row := dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&parameters)
 	if err != nil {
 		panic(err)
@@ -85,7 +78,7 @@ func setWHSchemaVersionIfNotExists() {
 	if !parameters.Valid {
 		// insert current version
 		sqlStatement = fmt.Sprintf(`UPDATE workspace SET parameters = '{"wh_schema_version":"%s"}' WHERE token = '%s'`, whSchemaVersion, hashedToken)
-		_, err := db.Exec(sqlStatement)
+		_, err := dbHandle.Exec(sqlStatement)
 		if err != nil {
 			panic(err)
 		}
@@ -106,14 +99,14 @@ func setWHSchemaVersionIfNotExists() {
 			panic(err)
 		}
 		sqlStatement = fmt.Sprintf(`UPDATE workspace SET parameters = '%s' WHERE token = '%s'`, marshalledParameters, hashedToken)
-		_, err = db.Exec(sqlStatement)
+		_, err = dbHandle.Exec(sqlStatement)
 		if err != nil {
 			panic(err)
 		}
 	}
 }
 
-func getWorkspaceFromDB() string {
+func getWorkspaceFromDB(dbHandle *sql.DB) string {
 	sqlStatement := fmt.Sprintf(`SELECT token FROM workspace order by created_at desc limit 1`)
 	var token string
 	row := dbHandle.QueryRow(sqlStatement)
@@ -125,14 +118,10 @@ func getWorkspaceFromDB() string {
 	return token
 }
 
-func createDBConnection() {
-	if dbHandle != nil {
-		return
-	}
-
+func createDBConnection() *sql.DB {
 	psqlInfo := jobsdb.GetConnectionString()
 	var err error
-	dbHandle, err = sql.Open("postgres", psqlInfo)
+	dbHandle, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
 		panic(err)
 	}
@@ -141,20 +130,14 @@ func createDBConnection() {
 	if err != nil {
 		panic(err)
 	}
-}
-
-func closeDBConnection() {
-	if dbHandle != nil {
-		dbHandle.Close()
-		dbHandle = nil
-	}
-}
-
-func getDBHandle() *sql.DB {
-	if dbHandle == nil {
-		createDBConnection()
-	}
 	return dbHandle
+}
+
+func closeDBConnection(handle *sql.DB) {
+	err := handle.Close()
+	if err != nil {
+		panic(err)
+	}
 }
 
 //IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
@@ -169,7 +152,9 @@ func IsPostgresCompatible(db *sql.DB) bool {
 
 //ValidateEnv validates the current environment available for the server
 func ValidateEnv() bool {
-	if !IsPostgresCompatible(getDBHandle()) {
+	dbHandle := createDBConnection()
+	defer closeDBConnection(dbHandle)
+	if !IsPostgresCompatible(dbHandle) {
 		logger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
 		return false
 	}
@@ -178,30 +163,32 @@ func ValidateEnv() bool {
 
 //InitializeEnv validates the current environment available for the server
 func InitializeEnv() {
-	createDBConnection()
+	dbHandle := createDBConnection()
 
 	//create workspace table and insert token
-	createWorkspaceTable()
-	insertTokenIfNotExists()
-	setWHSchemaVersionIfNotExists()
+	createWorkspaceTable(dbHandle)
+	insertTokenIfNotExists(dbHandle)
+	setWHSchemaVersionIfNotExists(dbHandle)
 
-	workspaceTokenHashInDB := getWorkspaceFromDB()
+	workspaceTokenHashInDB := getWorkspaceFromDB(dbHandle)
 	if workspaceTokenHashInDB == misc.GetMD5Hash(config.GetWorkspaceToken()) {
 		return
 	}
 
 	//db connection should be closed. Else alter db fails.
-	closeDBConnection()
+	closeDBConnection(dbHandle)
 
 	logger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
 
 	dbName := config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
 	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB)
 
-	//create workspace table and insert hashed token
-	createWorkspaceTable()
-	insertTokenIfNotExists()
-	setWHSchemaVersionIfNotExists()
+	dbHandle = createDBConnection()
 
-	closeDBConnection()
+	//create workspace table and insert hashed token
+	createWorkspaceTable(dbHandle)
+	insertTokenIfNotExists(dbHandle)
+	setWHSchemaVersionIfNotExists(dbHandle)
+
+	closeDBConnection(dbHandle)
 }
