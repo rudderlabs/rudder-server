@@ -16,8 +16,7 @@ import (
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
 var (
-	host, user, password, dbname, whSchemaVersion string
-	port                                          int
+	whSchemaVersion string
 )
 
 const (
@@ -27,18 +26,6 @@ const (
 	SlaveMode       = "slave"
 	OffMode         = "off"
 )
-
-func init() {
-	loadConfig()
-}
-
-func loadConfig() {
-	host = GetEnv("JOBS_DB_HOST", "localhost")
-	user = GetEnv("JOBS_DB_USER", "ubuntu")
-	dbname = GetEnv("JOBS_DB_DB_NAME", "ubuntu")
-	port, _ = strconv.Atoi(GetEnv("JOBS_DB_PORT", "5432"))
-	password = GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
-}
 
 func transformKey(s string) string {
 	snake := matchAllCap.ReplaceAllString(s, "${1}_${2}")
@@ -212,4 +199,12 @@ func GetWorkspaceToken() string {
 	}
 
 	return GetEnv("CONFIG_BACKEND_TOKEN", "")
+}
+
+func SetWHSchemaVersion(version string) {
+	whSchemaVersion = version
+}
+
+func GetWHSchemaVersion() string {
+	return whSchemaVersion
 }

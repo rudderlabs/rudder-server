@@ -14,8 +14,7 @@ import (
 )
 
 var (
-	dbHandle        *sql.DB
-	whSchemaVersion string
+	dbHandle *sql.DB
 )
 
 const (
@@ -67,9 +66,10 @@ func insertTokenIfNotExists() {
 	}
 }
 
-func setWHSchemaVersionIfNotExits() {
+func setWHSchemaVersionIfNotExists() {
 	hashedToken := misc.GetMD5Hash(config.GetWorkspaceToken())
-	whSchemaVersion = config.GetString("Warehouse.schemaVersion", "v1")
+	whSchemaVersion := config.GetString("Warehouse.schemaVersion", "v1")
+	defer config.SetWHSchemaVersion(whSchemaVersion)
 
 	var parameters sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT parameters FROM workspace WHERE token = '%s'`, hashedToken)
@@ -147,7 +147,7 @@ func ValidateEnv() bool {
 	//create workspace table and insert token
 	createWorkspaceTable()
 	insertTokenIfNotExists()
-	setWHSchemaVersionIfNotExits()
+	setWHSchemaVersionIfNotExists()
 
 	workspaceTokenHashInDB := getWorkspaceFromDB()
 	if workspaceTokenHashInDB == misc.GetMD5Hash(config.GetWorkspaceToken()) {
@@ -169,14 +169,9 @@ func ValidateEnv() bool {
 	//create workspace table and insert hashed token
 	createWorkspaceTable()
 	insertTokenIfNotExists()
-	setWHSchemaVersionIfNotExits()
+	setWHSchemaVersionIfNotExists()
 
 	dbHandle.Close()
 
 	return true
-}
-
-// GetWHSchemaVersion returns the current warehouse schema version as stored in db/workspaces
-func GetWHSchemaVersion() string {
-	return whSchemaVersion
 }
