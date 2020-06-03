@@ -416,7 +416,7 @@
           "value": "secretAccessKey",
           "regex": ".*",
           "required": true,
-          "placeholder": "e.g: zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG"
+          "placeholder": "e.g: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         },
         {
           "type": "textInput",

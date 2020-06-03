@@ -3,6 +3,7 @@ package misc
 import (
 	"database/sql"
 	"fmt"
+	"github.com/lib/pq"
 	"strconv"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -43,7 +44,7 @@ func ReplaceDB(dbName, targetName string) {
 	}
 	rows.Close()
 
-	renameDBStatement := fmt.Sprintf("ALTER DATABASE %s RENAME TO %s",
+	renameDBStatement := fmt.Sprintf("ALTER DATABASE \"%s\" RENAME TO \"%s\"",
 		dbName, targetName)
 	logger.Debug(renameDBStatement)
 	_, err = db.Exec(renameDBStatement)
@@ -53,9 +54,13 @@ func ReplaceDB(dbName, targetName string) {
 		panic(err)
 	}
 
-	createDBStatement := fmt.Sprintf("CREATE DATABASE %s", dbName)
+	createDBStatement := fmt.Sprintf("CREATE DATABASE \"%s\"", dbName)
 	_, err = db.Exec(createDBStatement)
 	if err != nil {
 		panic(err)
 	}
+}
+
+func QuoteLiteral(literal string) string{
+	return pq.QuoteLiteral(literal)
 }

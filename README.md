@@ -40,7 +40,6 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 
 - **Enhanced Telemetry**: To help us improve RudderStack, we collect performance and diagnostic metrics about how you use RudderStack, and how it is working. **No customer data is present in the metrics**. For technical details, please check out our wiki page on [Telemetry](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Telemetry).
 
-
 # RudderStack Architecture
 
 RudderStack has two major components, namely:
@@ -112,7 +111,13 @@ For more information on RudderStack's features and functionalities, make sure yo
 [go-report-card]: https://go-report-card.com/report/github.com/rudderlabs/rudder-server
 [go-report-card-badge]: https://go-report-card.com/badge/github.com/rudderlabs/rudder-server
 [ssh]: https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls
-[dashboard]: https://app.rudderlabs.com
+[dashboard]: https://app.rudderstack.com
+[dashboard-on]: https://app.rudderstack.com/signup?type=freetrial
+[dashboard-intro]: https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro
+[dashboard-setup]: https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=setup-instructions
+[dashboard-docker]: https://app.rudderstack.com/signup?utm_source=github&utm_medium=rdr-srv&utm_campaign=selfhosted&utm_content=docker
+[dashboard-k8s]: https://app.rudderstack.com/signup?utm_source=github&utm_medium=rdr-srv&utm_campaign=selfhosted&utm_content=k8s
+[dashboard-native]: https://app.rudderstack.com/signup?utm_source=github&utm_medium=rdr-srv&utm_campaign=selfhosted&utm_content=native
 [agplv3_license]: https://www.gnu.org/licenses/agpl-3.0-standalone.html
 [sspl_license]: https://www.mongodb.com/licensing/server-side-public-license
 [hackernews]: https://news.ycombinator.com/item?id=21081756

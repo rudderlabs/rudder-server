@@ -10,7 +10,6 @@ import (
 func setupDegradedMode() {
 	config.SetBool("enableProcessor", false)
 	config.SetBool("enableRouter", false)
-	config.SetBool("JobsDB.enableBackup", false)
 }
 
 func (handler *DegradedModeHandler) RecordAppStart(currTime int64) {

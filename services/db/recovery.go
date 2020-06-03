@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/stats"
 
@@ -19,6 +20,7 @@ const (
 	normalMode      = "normal"
 	degradedMode    = "degraded"
 	maintenanceMode = "maintenance"
+	migrationMode   = "migration"
 )
 
 type RecoveryHandler interface {
@@ -37,6 +39,8 @@ type RecoveryDataT struct {
 	ReadableDegradedModeStartTimes    []string
 	MaintenanceModeStartTimes         []int64
 	ReadableMaintenanceModeStartTimes []string
+	MigrationModeStartTimes           []int64
+	ReadableMigrationModeStartTimes   []string
 	Mode                              string
 }
 
@@ -70,6 +74,7 @@ func saveRecoveryData(recoveryData RecoveryDataT) {
 	}
 }
 
+// IsNormalMode checks if the current mode is normal
 func IsNormalMode() bool {
 	return CurrentMode == normalMode
 }
@@ -119,6 +124,8 @@ func getNextMode(currentMode string) string {
 		return maintenanceMode
 	case maintenanceMode:
 		return ""
+	case migrationMode: //Staying in the migrationMode forever on repeated restarts.
+		return migrationMode
 	}
 	return ""
 }
@@ -132,6 +139,8 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 		recoveryHandler = &DegradedModeHandler{recoveryData: recoveryData}
 	case maintenanceMode:
 		recoveryHandler = &MaintenanceModeHandler{recoveryData: recoveryData}
+	case migrationMode:
+		recoveryHandler = &MigrationModeHandler{recoveryData: recoveryData}
 	default:
 		panic("Invalid Recovery Mode " + recoveryData.Mode)
 	}
@@ -149,19 +158,52 @@ func alertOps(mode string) {
 	}
 }
 
-func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool, currTime int64) {
+// sendRecoveryModeStat sends the recovery mode metric every 10 seconds
+func sendRecoveryModeStat() {
+	recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
+	for {
+		time.Sleep(10 * time.Second)
+		switch CurrentMode {
+		case normalMode:
+			recoveryModeStat.Gauge(1)
+		case degradedMode:
+			recoveryModeStat.Gauge(2)
+		case maintenanceMode:
+			recoveryModeStat.Gauge(3)
+		case migrationMode:
+			recoveryModeStat.Gauge(4)
+		}
+	}
+}
+
+// HandleRecovery decides the recovery Mode in which app should run based on earlier crashes
+func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool, forceMigrationMode string, currTime int64) {
 
 	enabled := config.GetBool("recovery.enabled", false)
 	if !enabled {
 		return
 	}
-	forceMode := getForceRecoveryMode(forceNormal, forceDegraded, forceMaintenance)
+
+	var forceMode string
 	isForced := false
+
+	//If MIGRATION_MODE environment variable is present and is equal to "import", "export", "import-export", then server mode is forced to be Migration.
+	if IsValidMigrationMode(forceMigrationMode) {
+		logger.Info("Setting server mode to Migration. If this is not intended remove environment variables related to Migration.")
+		forceMode = migrationMode
+	} else {
+		forceMode = getForceRecoveryMode(forceNormal, forceDegraded, forceMaintenance)
+	}
 
 	recoveryData := getRecoveryData()
 	if forceMode != "" {
 		isForced = true
 		recoveryData.Mode = forceMode
+	} else {
+		//If no mode is forced (through env or cli) and if previous mode is migration then setting server mode to normal.
+		if recoveryData.Mode == migrationMode {
+			recoveryData.Mode = normalMode
+		}
 	}
 	recoveryHandler := NewRecoveryHandler(&recoveryData)
 
@@ -178,19 +220,12 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 		}
 	}
 
-	recoveryModeStat := stats.NewStat("recovery.mode_normal", stats.GaugeType)
-	if recoveryData.Mode != normalMode {
-		if recoveryData.Mode == degradedMode {
-			recoveryModeStat.Gauge(2)
-		} else if recoveryData.Mode == maintenanceMode {
-			recoveryModeStat.Gauge(3)
-		}
-	} else {
-		recoveryModeStat.Gauge(1)
-	}
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
 	logger.Infof("Starting in %s mode", recoveryData.Mode)
 	CurrentMode = recoveryData.Mode
+	rruntime.Go(func() {
+		sendRecoveryModeStat()
+	})
 }

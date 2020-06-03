@@ -91,7 +91,7 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 		return UploadOutput{}, err
 	}
 
-	return UploadOutput{Location: fileName}, nil
+	return UploadOutput{Location: blobURL.String(), ObjectName: fileName}, nil
 }
 
 func (manager *AzureBlobStorageManager) Download(output *os.File, key string) error {
@@ -120,6 +120,23 @@ func (manager *AzureBlobStorageManager) Download(output *os.File, key string) er
 
 	_, err = output.Write(downloadedData.Bytes())
 	return err
+}
+
+/*
+GetObjectNameFromLocation gets the object name/key name from the object location url
+	https://account-name.blob.core.windows.net/container-name/key - >> key
+*/
+func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location string) string {
+	var baseUrl string
+	baseUrl += "https://"
+	baseUrl += manager.Config.AccountName + ".blob.core.windows.net/"
+	baseUrl += manager.Config.Container + "/"
+	return location[len(baseUrl):]
+}
+
+//TODO complete this
+func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location string) string {
+	return location
 }
 
 type AzureBlobStorageManager struct {

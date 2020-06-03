@@ -1,15 +1,18 @@
 package backendconfig
 
+//go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
+
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"reflect"
+	"sort"
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/stats"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -17,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
 var (
@@ -31,9 +35,27 @@ var (
 	curSourceJSONLock                sync.RWMutex
 	initialized                      bool
 	LastSync                         string
+
+	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
+	DefaultBackendConfig BackendConfig
+	Http                 sysUtils.HttpI           = sysUtils.NewHttp()
+	log                  logger.LoggerI           = logger.NewLogger()
+	IoUtil               sysUtils.IoUtilI         = sysUtils.NewIoUtil()
+	Diagnostics          diagnostics.DiagnosticsI = diagnostics.NewDiagnostics()
 )
 
-var Eb = new(utils.EventBus)
+var Eb utils.PublishSubscriber = new(utils.EventBus)
+
+// Topic refers to a subset of backend config's updates, received after subscribing using the backend config's Subscribe function.
+type Topic string
+
+const (
+	/*TopicBackendConfig topic provides updates on full backend config, via Subscribe function */
+	TopicBackendConfig Topic = "backendConfig"
+
+	/*TopicProcessConfig topic provides updates on backend config of processor enabled destinations, via Subscribe function */
+	TopicProcessConfig Topic = "processConfig"
+)
 
 type DestinationDefinitionT struct {
 	ID          string
@@ -43,8 +65,9 @@ type DestinationDefinitionT struct {
 }
 
 type SourceDefinitionT struct {
-	ID   string
-	Name string
+	ID       string
+	Name     string
+	Category string
 }
 
 type DestinationT struct {
@@ -63,12 +86,14 @@ type SourceT struct {
 	SourceDefinition SourceDefinitionT
 	Config           interface{}
 	Enabled          bool
+	WorkspaceID      string
 	Destinations     []DestinationT
 	WriteKey         string
 }
 
 type SourcesT struct {
-	Sources []SourceT `json:"sources"`
+	EnableMetrics bool      `json:"enableMetrics"`
+	Sources       []SourceT `json:"sources"`
 }
 
 type TransformationT struct {
@@ -82,6 +107,10 @@ type BackendConfig interface {
 	SetUp()
 	Get() (SourcesT, bool)
 	GetWorkspaceIDForWriteKey(string) string
+	WaitForConfig()
+	Subscribe(channel chan utils.DataEvent, topic Topic)
+}
+type CommonBackendConfig struct {
 }
 
 func loadConfig() {
@@ -102,9 +131,9 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 	client := &http.Client{}
 	backendURL := fmt.Sprintf("%s%s", url, endpoint)
 	dataJSON, _ := json.Marshal(data)
-	request, err := http.NewRequest("POST", backendURL, bytes.NewBuffer(dataJSON))
+	request, err := Http.NewRequest("POST", backendURL, bytes.NewBuffer(dataJSON))
 	if err != nil {
-		logger.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
+		log.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
 		return []byte{}, false
 	}
 
@@ -114,18 +143,17 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 	resp, err := client.Do(request)
 	// Not handling errors when sending alert to victorops
 	if err != nil {
-		logger.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
+		log.Errorf("ConfigBackend: Failed to execute request: %s, Error: %s", backendURL, err.Error())
 		return []byte{}, false
 	}
-
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		logger.Errorf("ConfigBackend: Got error response %d", resp.StatusCode)
+		log.Errorf("ConfigBackend: Got error response %d", resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := IoUtil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
-	logger.Debugf("ConfigBackend: Successful %s", string(body))
+	log.Debugf("ConfigBackend: Successful %s", string(body))
 	return body, true
 }
 
@@ -138,13 +166,35 @@ func init() {
 	loadConfig()
 }
 
+func trackConfig(preConfig SourcesT, curConfig SourcesT) {
+	Diagnostics.DisableMetrics(curConfig.EnableMetrics)
+	if diagnostics.EnableConfigIdentifyMetric {
+		if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
+			Diagnostics.Identify(map[string]interface{}{
+				diagnostics.ConfigIdentify: curConfig.Sources[0].WorkspaceID,
+			})
+		}
+	}
+	if diagnostics.EnableConfigProcessedMetric {
+		noOfSources := len(curConfig.Sources)
+		noOfDestinations := 0
+		for _, source := range curConfig.Sources {
+			noOfDestinations = noOfDestinations + len(source.Destinations)
+		}
+		Diagnostics.Track(diagnostics.ConfigProcessed, map[string]interface{}{
+			diagnostics.SourcesCount:      noOfSources,
+			diagnostics.DesitanationCount: noOfDestinations,
+		})
+	}
+}
+
 func filterProcessorEnabledDestinations(config SourcesT) SourcesT {
 	var modifiedSources SourcesT
 	modifiedSources.Sources = make([]SourceT, 0)
 	for _, source := range config.Sources {
 		destinations := make([]DestinationT, 0)
 		for _, destination := range source.Destinations {
-			logger.Debug(destination.Name, " IsProcessorEnabled: ", destination.IsProcessorEnabled)
+			log.Debug(destination.Name, " IsProcessorEnabled: ", destination.IsProcessorEnabled)
 			if destination.IsProcessorEnabled {
 				destinations = append(destinations, destination)
 			}
@@ -154,25 +204,37 @@ func filterProcessorEnabledDestinations(config SourcesT) SourcesT {
 	}
 	return modifiedSources
 }
+func configUpdate(statConfigBackendError stats.RudderStats) {
+
+	sourceJSON, ok := backendConfig.Get()
+	if !ok {
+		statConfigBackendError.Increment()
+	}
+
+	//sorting the sourceJSON.
+	//json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
+	sort.Slice(sourceJSON.Sources[:], func(i, j int) bool {
+		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
+	})
+
+	if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
+		log.Info("Workspace Config changed")
+		curSourceJSONLock.Lock()
+		trackConfig(curSourceJSON, sourceJSON)
+		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
+		curSourceJSON = sourceJSON
+		curSourceJSONLock.Unlock()
+		initialized = true
+		LastSync = time.Now().Format(time.RFC3339)
+		Eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
+		Eb.Publish(string(TopicBackendConfig), sourceJSON)
+	}
+}
 
 func pollConfigUpdate() {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
-		sourceJSON, ok := backendConfig.Get()
-		if !ok {
-			statConfigBackendError.Increment()
-		}
-		if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
-			logger.Info("Workspace Config changed")
-			curSourceJSONLock.Lock()
-			filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
-			curSourceJSON = sourceJSON
-			curSourceJSONLock.Unlock()
-			initialized = true
-			LastSync = time.Now().Format(time.RFC3339)
-			Eb.Publish("processConfig", filteredSourcesJSON)
-			Eb.Publish("backendConfig", sourceJSON)
-		}
+		configUpdate(statConfigBackendError)
 		time.Sleep(time.Duration(pollInterval))
 	}
 }
@@ -185,27 +247,53 @@ func GetWorkspaceIDForWriteKey(writeKey string) string {
 	return backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 }
 
-func Subscribe(channel chan utils.DataEvent, topic string) {
-	Eb.Subscribe(topic, channel)
-	curSourceJSONLock.RLock()
-	filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
+/*
+Subscribe subscribes a channel to a specific topic of backend config updates.
+Deprecated: Use an instance of BackendConfig instead of static function
+*/
+func Subscribe(channel chan utils.DataEvent, topic Topic) {
+	backendConfig.Subscribe(channel, topic)
+}
 
-	if topic == "processConfig" {
-		Eb.PublishToChannel(channel, topic, filteredSourcesJSON)
-	} else if topic == "backendConfig" {
-		Eb.PublishToChannel(channel, topic, curSourceJSON)
+/*
+Subscribe subscribes a channel to a specific topic of backend config updates.
+Channel will receive a new utils.DataEvent each time the backend configuration is updated.
+Data of the DataEvent should be a backendconfig.SourcesT struct.
+Available topics are:
+- TopicBackendConfig: Will receive complete backend configuration
+- TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
+*/
+func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic Topic) {
+	Eb.Subscribe(string(topic), channel)
+	curSourceJSONLock.RLock()
+
+	if topic == TopicProcessConfig {
+		filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
+		Eb.PublishToChannel(channel, string(topic), filteredSourcesJSON)
+	} else if topic == TopicBackendConfig {
+		Eb.PublishToChannel(channel, string(topic), curSourceJSON)
 	}
 	curSourceJSONLock.RUnlock()
 }
 
+/*
+WaitForConfig waits until backend config has been initialized
+Deprecated: Use an instance of BackendConfig instead of static function
+*/
 func WaitForConfig() {
+	backendConfig.WaitForConfig()
+}
+
+/*
+WaitForConfig waits until backend config has been initialized
+*/
+func (bc *CommonBackendConfig) WaitForConfig() {
 	for {
 		if initialized {
 			break
 		}
-		logger.Info("Waiting for initializing backend config")
+		log.Info("Waiting for initializing backend config")
 		time.Sleep(time.Duration(pollInterval))
-
 	}
 }
 
@@ -218,6 +306,8 @@ func Setup() {
 	}
 
 	backendConfig.SetUp()
+
+	DefaultBackendConfig = backendConfig
 
 	rruntime.Go(func() {
 		pollConfigUpdate()

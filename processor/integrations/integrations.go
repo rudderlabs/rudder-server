@@ -14,6 +14,8 @@ import (
 
 var (
 	destTransformURL, userTransformURL string
+	customDestination                  []string
+	whSchemaVersion                    string
 )
 
 func init() {
@@ -93,7 +95,7 @@ func GetPostInfoNew(transformRaw json.RawMessage) PostParameterNewT {
 	}
 	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
 	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"userId\") to string failed"))
+		postInfo.UserID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
 	postInfo.Body, ok = parsedJSON.Get("body").Value().(interface{})
 	if !ok {
@@ -125,7 +127,7 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 	}
 	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
 	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"userId\") to string failed"))
+		postInfo.UserID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
 	postInfo.Payload, ok = parsedJSON.Get("payload").Value().(interface{})
 	if !ok {
@@ -144,18 +146,12 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 
 // GetUserIDFromTransformerResponse parses the payload to get userId
 func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) string {
-	// Get response version
-	version := GetResponseVersion(transformRaw)
+
 	var userID string
-	switch version {
-	case "0":
-		response := GetPostInfo(transformRaw)
-		userID = response.UserID
-	case "-1", "1":
-		response := GetPostInfoNew(transformRaw)
-		userID = response.UserID
-	default:
-		panic(fmt.Errorf("version: %s is not supported", version))
+	parsedJSON := gjson.ParseBytes(transformRaw)
+	var ok bool
+	if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
+		userID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
 	}
 	return userID
 }
@@ -186,10 +182,13 @@ func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backend
 
 //GetDestinationURL returns node URL
 func GetDestinationURL(destID string) string {
-	return fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destID))
+	return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s", destTransformURL, strings.ToLower(destID), config.GetWHSchemaVersion())
 }
 
 //GetUserTransformURL returns the port of running user transform
-func GetUserTransformURL() string {
+func GetUserTransformURL(processSessions bool) string {
+	if processSessions {
+		return destTransformURL + "/customTransform?processSessions=true"
+	}
 	return destTransformURL + "/customTransform"
 }

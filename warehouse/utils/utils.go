@@ -3,18 +3,26 @@ package warehouseutils
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
-	"strconv"
+	"sort"
 	"strings"
-	"time"
+
+	"github.com/pkg/errors"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
+
+	"github.com/iancoleman/strcase"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 )
 
 const (
@@ -30,6 +38,15 @@ const (
 	ExportingDataFailedState      = "exporting_data_failed"
 	ExportedDataState             = "exported_data"
 	AbortedState                  = "aborted"
+	GeneratingStagingFileFailed   = "generating_staging_file_failed"
+	GeneratedStagingFile          = "generated_staging_file"
+)
+
+const (
+	RS        = "RS"
+	BQ        = "BQ"
+	SNOWFLAKE = "SNOWFLAKE"
+	POSTGRES  = "POSTGRES"
 )
 
 const (
@@ -38,6 +55,27 @@ const (
 	StagingFileExecutingState = "executing"
 	StagingFileAbortedState   = "aborted"
 	StagingFileWaitingState   = "waiting"
+)
+
+const (
+	DiscardsTable = "rudder_discards"
+	SyncFrequency = "syncFrequency"
+	SyncStartAt   = "syncStartAt"
+)
+
+const (
+	UploadStatusField          = "status"
+	UploadStartLoadFileIDField = "start_load_file_id"
+	UploadEndLoadFileIDField   = "end_load_file_id"
+	UploadUpdatedAtField       = "updated_at"
+	UploadTimingsField         = "timings"
+	UploadSchemaField          = "schema"
+	UploadLastExecAtField      = "last_exec_at"
+)
+
+const (
+	UsersTable      = "users"
+	IdentifiesTable = "identifies"
 )
 
 var (
@@ -51,9 +89,14 @@ var (
 )
 
 var ObjectStorageMap = map[string]string{
-	"RS":        "S3",
-	"BQ":        "GCS",
-	"SNOWFLAKE": "S3",
+	"RS": "S3",
+	"BQ": "GCS",
+}
+
+var SnowflakeStorageMap = map[string]string{
+	"AWS":   "S3",
+	"GCP":   "GCS",
+	"AZURE": "AZURE_BLOB",
 }
 
 func init() {
@@ -73,6 +116,7 @@ func loadConfig() {
 type WarehouseT struct {
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
+	Namespace   string
 }
 
 type DestinationT struct {
@@ -100,27 +144,30 @@ type UploadT struct {
 	Status             string
 	Schema             map[string]map[string]string
 	Error              json.RawMessage
+	Timings            []map[string]string
 }
 
 type CurrentSchemaT struct {
-	Namespace string
-	Schema    map[string]map[string]string
+	Schema map[string]map[string]string
 }
 
 type StagingFileT struct {
 	Schema           map[string]map[string]interface{}
 	BatchDestination DestinationT
 	Location         string
+	FirstEventAt     string
+	LastEventAt      string
+	TotalEvents      int
 }
 
-func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, error) {
+func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
 	var rawSchema json.RawMessage
-	var namespace string
-	sqlStatement := fmt.Sprintf(`SELECT namespace, schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace, &rawSchema)
+	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[2]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Destination.ID, warehouse.Namespace)
+
+	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return CurrentSchemaT{}, nil
+			return nil, nil
 		}
 		if err != nil {
 			panic(err)
@@ -140,8 +187,7 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (CurrentSchemaT, e
 		}
 		schema[key] = y
 	}
-	currentSchema := CurrentSchemaT{Namespace: namespace, Schema: schema}
-	return currentSchema, nil
+	return schema, nil
 }
 
 type SchemaDiffT struct {
@@ -156,6 +202,14 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 		ColumnMaps:    make(map[string]map[string]string),
 		UpdatedSchema: make(map[string]map[string]string),
 	}
+
+	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
+	for tableName, columnMap := range currentSchema {
+		diff.UpdatedSchema[tableName] = make(map[string]string)
+		for columnName, columnType := range columnMap {
+			diff.UpdatedSchema[tableName][columnName] = columnType
+		}
+	}
 	for tableName, uploadColumnMap := range uploadSchema {
 		currentColumnsMap, ok := currentSchema[tableName]
 		if !ok {
@@ -163,7 +217,6 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 			diff.ColumnMaps[tableName] = uploadColumnMap
 			diff.UpdatedSchema[tableName] = uploadColumnMap
 		} else {
-			diff.UpdatedSchema[tableName] = currentSchema[tableName]
 			diff.ColumnMaps[tableName] = make(map[string]string)
 			for columnName, columnVal := range uploadColumnMap {
 				if _, ok := currentColumnsMap[columnName]; !ok {
@@ -176,10 +229,76 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 	return
 }
 
-func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error) {
+func CompareSchema(sch1, sch2 map[string]map[string]string) bool {
+	eq := reflect.DeepEqual(sch1, sch2)
+	return eq
+}
+
+type UploadColumnT struct {
+	Column string
+	Value  interface{}
+}
+
+// GetUploadTimings returns timings json column
+// eg. timings: [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
+func GetUploadTimings(upload UploadT, dbHandle *sql.DB) (timings []map[string]string) {
+	var rawJSON json.RawMessage
+	sqlStatement := fmt.Sprintf(`SELECT timings FROM %s WHERE id=%d`, warehouseUploadsTable, upload.ID)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&rawJSON)
+	if err != nil {
+		return
+	}
+	err = json.Unmarshal(rawJSON, &timings)
+	return
+}
+
+// GetNewTimings appends current status with current time to timings column
+// eg. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
+func GetNewTimings(upload UploadT, dbHandle *sql.DB, status string) []byte {
+	timings := GetUploadTimings(upload, dbHandle)
+	timing := map[string]string{status: timeutil.Now().Format(misc.RFC3339Milli)}
+	timings = append(timings, timing)
+	marshalledTimings, err := json.Marshal(timings)
+	if err != nil {
+		panic(err)
+	}
+	return marshalledTimings
+}
+
+func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB, additionalFields ...UploadColumnT) (err error) {
 	logger.Infof("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=$3`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), upload.ID)
+	marshalledTimings := GetNewTimings(upload, dbHandle, status)
+	opts := []UploadColumnT{
+		{Column: UploadStatusField, Value: status},
+		{Column: UploadTimingsField, Value: marshalledTimings},
+		{Column: UploadUpdatedAtField, Value: timeutil.Now()},
+	}
+
+	additionalFields = append(additionalFields, opts...)
+
+	SetUploadColumns(
+		upload,
+		dbHandle,
+		additionalFields...,
+	)
+	return
+}
+
+// SetUploadColumns sets any column values passed as args in UploadColumnT format for warehouseUploadsTable
+func SetUploadColumns(upload UploadT, dbHandle *sql.DB, fields ...UploadColumnT) (err error) {
+	var columns string
+	values := []interface{}{upload.ID}
+	// setting values using syntax $n since Exec can correctly format time.Time strings
+	for idx, f := range fields {
+		// start with $2 as $1 is upload.ID
+		columns += fmt.Sprintf(`%s=$%d`, f.Column, idx+2)
+		if idx < len(fields)-1 {
+			columns += ","
+		}
+		values = append(values, f.Value)
+	}
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, warehouseUploadsTable, columns)
+	_, err = dbHandle.Exec(sqlStatement, values...)
 	if err != nil {
 		panic(err)
 	}
@@ -188,7 +307,7 @@ func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB) (err error
 
 func SetUploadError(upload UploadT, statusError error, state string, dbHandle *sql.DB) (err error) {
 	logger.Errorf("WH: Failed during %s stage: %v\n", state, statusError.Error())
-	SetUploadStatus(upload, ExportingDataFailedState, dbHandle)
+	SetUploadStatus(upload, state, dbHandle)
 	var e map[string]map[string]interface{}
 	json.Unmarshal(upload.Error, &e)
 	if e == nil {
@@ -216,7 +335,7 @@ func SetUploadError(upload UploadT, statusError error, state string, dbHandle *s
 	}
 	serializedErr, _ := json.Marshal(&e)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement, state, serializedErr, time.Now(), upload.ID)
+	_, err = dbHandle.Exec(sqlStatement, state, serializedErr, timeutil.Now(), upload.ID)
 	if err != nil {
 		panic(err)
 	}
@@ -225,7 +344,7 @@ func SetUploadError(upload UploadT, statusError error, state string, dbHandle *s
 
 func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err error) {
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), pq.Array(ids))
+	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), pq.Array(ids))
 	if err != nil {
 		panic(err)
 	}
@@ -235,7 +354,7 @@ func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err er
 func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusError error) (err error) {
 	logger.Errorf("WH: Failed processing staging files: %v", statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement, status, statusError.Error(), time.Now(), pq.Array(ids))
+	_, err = dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), pq.Array(ids))
 	if err != nil {
 		panic(err)
 	}
@@ -243,9 +362,17 @@ func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusEr
 }
 
 func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHandle *sql.DB) (err error) {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, last_exec_time=$2 WHERE wh_upload_id=$3 AND table_name=$4`, warehouseTableUploadsTable)
+	// set last_exec_time only if status is executing
+	execValues := []interface{}{status, timeutil.Now(), uploadID, tableName}
+	var lastExec string
+	if status == ExecutingState {
+		// setting values using syntax $n since Exec can correctlt format time.Time strings
+		lastExec = fmt.Sprintf(`, last_exec_time=$%d`, len(execValues)+1)
+		execValues = append(execValues, timeutil.Now())
+	}
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 %s WHERE wh_upload_id=$3 AND table_name=$4`, warehouseTableUploadsTable, lastExec)
 	logger.Infof("WH: Setting table upload status: %v", sqlStatement)
-	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), uploadID, tableName)
+	_, err = dbHandle.Exec(sqlStatement, execValues...)
 	if err != nil {
 		panic(err)
 	}
@@ -256,7 +383,7 @@ func SetTableUploadError(status string, uploadID int64, tableName string, status
 	logger.Errorf("WH: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, error=$3 WHERE wh_upload_id=$4 AND table_name=$5`, warehouseTableUploadsTable)
 	logger.Infof("WH: Setting table upload error: %v", sqlStatement)
-	_, err = dbHandle.Exec(sqlStatement, status, time.Now(), statusError.Error(), uploadID, tableName)
+	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), misc.QuoteLiteral(statusError.Error()), uploadID, tableName)
 	if err != nil {
 		panic(err)
 	}
@@ -269,9 +396,25 @@ func GetTableUploadStatus(uploadID int64, tableName string, dbHandle *sql.DB) (s
 	return
 }
 
-func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, currentSchema, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
+func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
+	sqlStatement := fmt.Sprintf(`SELECT namespace FROM %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC`, warehouseSchemasTable, source.ID, destination.ID)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace)
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	return namespace, len(namespace) > 0
+}
+
+func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
+	var count int
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE source_id='%s' AND destination_id='%s' AND namespace='%s'`, warehouseSchemasTable, wh.Source.ID, wh.Destination.ID, namespace)
+	err = dbHandle.QueryRow(sqlStatement).Scan(&count)
+	if err != nil {
+		panic(err)
+	}
+
 	marshalledSchema, err := json.Marshal(schema)
-	if len(currentSchema) == 0 {
+	if count == 0 {
 		sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_upload_id, source_id, namespace, destination_id, destination_type, schema, created_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $7)`, warehouseSchemasTable)
 		stmt, err := dbHandle.Prepare(sqlStatement)
@@ -280,15 +423,27 @@ func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, curren
 		}
 		defer stmt.Close()
 
-		_, err = stmt.Exec(uploadID, wh.Source.ID, namespace, wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, time.Now())
+		_, err = stmt.Exec(uploadID, wh.Source.ID, namespace, wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, timeutil.Now())
 	} else {
-		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3`, warehouseSchemasTable)
-		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, wh.Source.ID, wh.Destination.ID)
+		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3 AND namespace=$4`, warehouseSchemasTable)
+		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, wh.Source.ID, wh.Destination.ID, namespace)
 	}
 	if err != nil {
 		panic(err)
 	}
 	return
+}
+
+func HasLoadFiles(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) bool {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s
+								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)`,
+		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
+	var count int64
+	err := dbHandle.QueryRow(sqlStatement).Scan(&count)
+	if err != nil {
+		panic(err)
+	}
+	return count > 0
 }
 
 func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (locations []string, err error) {
@@ -325,52 +480,140 @@ func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId strin
 }
 
 func GetLoadFileLocation(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (location string, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s
-								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v) LIMIT 1`,
-		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
+	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
+		SELECT  staging_file_id, MAX(id) AS id FROM %[1]s
+		WHERE ( source_id='%[2]s'
+			AND destination_id='%[3]s'
+			AND table_name='%[4]s'
+			AND id >= %[5]v
+			AND id <= %[6]v)
+		GROUP BY staging_file_id ) uniqueStagingFiles
+		ON  wh_load_files.id = uniqueStagingFiles.id `,
+		warehouseLoadFilesTable,
+		sourceId,
+		destinationId,
+		tableName,
+		start,
+		end)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
 	return
 }
 
-func GetS3Location(location string) (string, string) {
-	r, _ := regexp.Compile("\\.s3.*\\.amazonaws\\.com")
-	subLocation := r.FindString(location)
-	regionTokens := strings.Split(subLocation, ".")
-	var region string
-	if len(regionTokens) == 5 {
-		region = regionTokens[2]
-	}
-	str1 := r.ReplaceAllString(location, "")
-	str2 := strings.Replace(str1, "https", "s3", 1)
-	return region, str2
-}
-
-func GetS3LocationFolder(location string) string {
-	_, s3Location := GetS3Location(location)
-	lastPos := strings.LastIndex(s3Location, "/")
-	return s3Location[:lastPos]
-}
-
-func GetGCSLocation(location string) string {
-	str1 := strings.Replace(location, "https", "gs", 1)
-	str2 := strings.Replace(str1, "storage.googleapis.com/", "", 1)
-	return str2
-}
-
-func GetS3Locations(locations []string) (s3Locations []string, err error) {
-	for _, location := range locations {
-		_, s3Location := GetS3Location(location)
-		s3Locations = append(s3Locations, s3Location)
+// GetObjectFolder returns the folder path for the storage object based on the storage provider
+// eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
+func GetObjectFolder(provider string, location string) (folder string) {
+	switch provider {
+	case "S3":
+		folder = GetS3LocationFolder(location)
+		break
+	case "GCS":
+		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gcs"})
+		break
+	case "AZURE_BLOB":
+		folder = GetAzureBlobLocationFolder(location)
+		break
 	}
 	return
 }
 
-func GetGCSLocations(locations []string) (gcsLocations []string, err error) {
+// GetObjectName extracts object/key objectName from different buckets locations
+// ex: https://bucket-endpoint/bucket-name/object -> object
+func GetObjectName(providerConfig interface{}, location string) (objectName string, err error) {
+	var config map[string]interface{}
+	var ok bool
+	var bucketProvider string
+	if config, ok = providerConfig.(map[string]interface{}); !ok {
+		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
+	}
+	if bucketProvider, ok = config["bucketProvider"].(string); !ok {
+		return "", errors.New("failed to get bucket information")
+	}
+	fm, err := filemanager.New(&filemanager.SettingsT{
+		Provider: bucketProvider,
+		Config:   config,
+	})
+	if err != nil {
+		return "", err
+	}
+	return fm.GetObjectNameFromLocation(location), nil
+}
+
+// GetS3Location parses path-style location http url to return in s3:// format
+// https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
+func GetS3Location(location string) (s3Location string, region string) {
+	r, _ := regexp.Compile("\\.s3.*\\.amazonaws\\.com")
+	subLocation := r.FindString(location)
+	regionTokens := strings.Split(subLocation, ".")
+	if len(regionTokens) == 5 {
+		region = regionTokens[2]
+	}
+	str1 := r.ReplaceAllString(location, "")
+	s3Location = strings.Replace(str1, "https", "s3", 1)
+	return
+}
+
+// GetS3LocationFolder returns the folder path for an s3 object
+// https://test-bucket.s3.amazonaws.com/myfolder/test-object.csv --> s3://test-bucket/myfolder
+func GetS3LocationFolder(location string) string {
+	s3Location, _ := GetS3Location(location)
+	lastPos := strings.LastIndex(s3Location, "/")
+	return s3Location[:lastPos]
+}
+
+type GCSLocationOptionsT struct {
+	TLDFormat string
+}
+
+// GetGCSLocation parses path-style location http url to return in gcs:// format
+// https://storage.googleapis.com/test-bucket/test-object.csv --> gcs://test-bucket/test-object.csv
+// tldFormat is used to set return format "<tldFormat>://..."
+func GetGCSLocation(location string, options GCSLocationOptionsT) string {
+	tld := "gs"
+	if options.TLDFormat != "" {
+		tld = options.TLDFormat
+	}
+	str1 := strings.Replace(location, "https", tld, 1)
+	str2 := strings.Replace(str1, "storage.googleapis.com/", "", 1)
+	return str2
+}
+
+// GetGCSLocationFolder returns the folder path for an gcs object
+// https://storage.googleapis.com/test-bucket/myfolder/test-object.csv --> gcs://test-bucket/myfolder
+func GetGCSLocationFolder(location string, options GCSLocationOptionsT) string {
+	s3Location := GetGCSLocation(location, options)
+	lastPos := strings.LastIndex(s3Location, "/")
+	return s3Location[:lastPos]
+}
+
+func GetGCSLocations(locations []string, options GCSLocationOptionsT) (gcsLocations []string) {
 	for _, location := range locations {
-		gcsLocations = append(gcsLocations, GetGCSLocation((location)))
+		gcsLocations = append(gcsLocations, GetGCSLocation(location, options))
+	}
+	return
+}
+
+// GetAzureBlobLocation parses path-style location http url to return in azure:// format
+// https://myproject.blob.core.windows.net/test-bucket/test-object.csv  --> azure://myproject.blob.core.windows.net/test-bucket/test-object.csv
+func GetAzureBlobLocation(location string) string {
+	str1 := strings.Replace(location, "https", "azure", 1)
+	return str1
+}
+
+// GetAzureBlobLocationFolder returns the folder path for an azure storage object
+// https://myproject.blob.core.windows.net/test-bucket/myfolder/test-object.csv  --> azure://myproject.blob.core.windows.net/myfolder
+func GetAzureBlobLocationFolder(location string) string {
+	s3Location := GetAzureBlobLocation(location)
+	lastPos := strings.LastIndex(s3Location, "/")
+	return s3Location[:lastPos]
+}
+
+func GetS3Locations(locations []string) (s3Locations []string) {
+	for _, location := range locations {
+		s3Location, _ := GetS3Location(location)
+		s3Locations = append(s3Locations, s3Location)
 	}
 	return
 }
@@ -384,7 +627,7 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	return schema
 }
 
-func DestStat(statType string, statName string, id string) *stats.RudderStats {
+func DestStat(statType string, statName string, id string) stats.RudderStats {
 	return stats.NewBatchDestStat(fmt.Sprintf("warehouse.%s", statName), statType, id)
 }
 
@@ -412,26 +655,64 @@ func Datatype(in interface{}) string {
 	return "string"
 }
 
-//ToSafeDBString to remove special characters
-func ToSafeDBString(provider string, str string) string {
-	res := ""
-	if str != "" {
-		r := []rune(str)
-		_, err := strconv.ParseInt(string(r[0]), 10, 64)
-		if err == nil {
-			str = "_" + str
+/*
+ToSafeNamespace convert name of the namespace to one acceptable by warehouse
+1. removes symbols and joins continuous letters and numbers with single underscore and if first char is a number will append a underscore before the first number
+2. adds an underscore if the name is a reserved keyword in the warehouse
+3. truncate the length of namespace to 127 characters
+4. return "stringempty" if name is empty after conversion
+examples:
+omega     to omega
+omega v2  to omega_v2
+9mega     to _9mega
+mega&     to mega
+ome$ga    to ome_ga
+omega$    to omega
+ome_ ga   to ome_ga
+9mega________-________90 to _9mega_90
+Cízǔ to C_z
+*/
+func ToSafeNamespace(provider string, name string) string {
+	var extractedValues []string
+	var extractedValue string
+	for _, c := range name {
+		asciiValue := int(c)
+		if (asciiValue >= 65 && asciiValue <= 90) || (asciiValue >= 97 && asciiValue <= 122) || (asciiValue >= 48 && asciiValue <= 57) {
+			extractedValue += string(c)
+		} else {
+			if extractedValue != "" {
+				extractedValues = append(extractedValues, extractedValue)
+			}
+			extractedValue = ""
 		}
-		regexForNotAlphaNumeric := regexp.MustCompile("[^a-zA-Z0-9_]+")
-		res = regexForNotAlphaNumeric.ReplaceAllString(str, "")
+	}
 
+	if extractedValue != "" {
+		extractedValues = append(extractedValues, extractedValue)
 	}
-	if res == "" {
-		res = "STRINGEMPTY"
+	namespace := strings.Join(extractedValues, "_")
+	namespace = strcase.ToSnake(namespace)
+	if namespace != "" && int(namespace[0]) >= 48 && int(namespace[0]) <= 57 {
+		namespace = "_" + namespace
 	}
-	if _, ok := ReservedKeywords[provider][strings.ToUpper(str)]; ok {
-		res = fmt.Sprintf(`_%s`, res)
+	if namespace == "" {
+		namespace = "stringempty"
 	}
-	return res
+	if _, ok := ReservedKeywords[provider][strings.ToUpper(namespace)]; ok {
+		namespace = fmt.Sprintf(`_%s`, namespace)
+	}
+	return misc.TruncateStr(namespace, 127)
+}
+
+/*
+ToProviderCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc
+eg. columns are uppercased in SNOWFLAKE and lowercased etc in REDSHIFT, BIGQUERY etc
+*/
+func ToProviderCase(provider string, str string) string {
+	if strings.ToUpper(provider) == "SNOWFLAKE" {
+		str = strings.ToUpper(str)
+	}
+	return str
 }
 
 func GetIP() string {
@@ -449,4 +730,47 @@ func GetIP() string {
 
 func GetSlaveWorkerId(workerIdx int, slaveID string) string {
 	return fmt.Sprintf("%v-%v-%v", GetIP(), workerIdx, slaveID)
+}
+
+func SnowflakeCloudProvider(config interface{}) string {
+	c := config.(map[string]interface{})
+	provider, ok := c["cloudProvider"].(string)
+	if provider == "" || !ok {
+		provider = "AWS"
+	}
+	return provider
+}
+
+func ObjectStorageType(destType string, config interface{}) string {
+	if destType != "SNOWFLAKE" && destType != "POSTGRES" {
+		return ObjectStorageMap[destType]
+	}
+	if destType == "POSTGRES" {
+		c := config.(map[string]interface{})
+		provider, _ := c["bucketProvider"].(string)
+		return provider
+	}
+	c := config.(map[string]interface{})
+	provider, ok := c["cloudProvider"].(string)
+	if provider == "" || !ok {
+		provider = "AWS"
+	}
+	return SnowflakeStorageMap[provider]
+}
+
+func GetConfigValue(key string, warehouse WarehouseT) (val string) {
+	config := warehouse.Destination.Config.(map[string]interface{})
+	if config[key] != nil {
+		val, _ = config[key].(string)
+	}
+	return val
+}
+
+func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
+	columnKeys := make([]string, 0, len(columnMap))
+	for k := range columnMap {
+		columnKeys = append(columnKeys, k)
+	}
+	sort.Strings(columnKeys)
+	return columnKeys
 }

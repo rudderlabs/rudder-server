@@ -15,6 +15,10 @@ import (
 
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
+var (
+	whSchemaVersion string
+)
+
 const (
 	EmbeddedMode    = "embedded"
 	MasterMode      = "master"
@@ -39,9 +43,9 @@ func Initialize() {
 	viper.SetConfigFile(configPath)
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig() // Find and read the config file
-	// Don't panic if config.toml is not found. Use the default config values instead
+	// Don't panic if config.toml is not found or error with parsing. Use the default config values instead
 	if err != nil {
-		fmt.Println("Config toml file not found. Using the default values")
+		fmt.Println("[Config] :: Failed to parse Config toml, using default values", err)
 	}
 }
 
@@ -131,6 +135,31 @@ func GetEnv(key string, defaultVal string) string {
 	return defaultVal
 }
 
+// GetEnvAsInt returns the int value of environment value stored in the key variable
+// If not set, default value will be return. If set but unparsable, returns 0
+func GetEnvAsInt(key string, defaultVal int) int {
+	stringValue, exists := os.LookupEnv(key)
+	if !exists {
+		return defaultVal
+	}
+	if value, err := strconv.Atoi(stringValue); err == nil {
+		return value
+	}
+	return 0
+}
+
+// GetRequiredEnvAsInt returns the environment value stored in key variable as int, no default
+func GetRequiredEnvAsInt(key string) int {
+	stringValue, exists := os.LookupEnv(key)
+	if !exists {
+		panic(fmt.Errorf("Fatal error, no required environment variable: %s", key))
+	}
+	if value, err := strconv.Atoi(stringValue); err == nil {
+		return value
+	}
+	panic(fmt.Sprintf("Unable to parse the value of %s env variable. Value : %s", key, stringValue))
+}
+
 // GetEnvAsBool returns the boolean environment value stored in key variable
 func GetEnvAsBool(name string, defaultVal bool) bool {
 	valueStr := GetEnv(name, "")
@@ -170,4 +199,12 @@ func GetWorkspaceToken() string {
 	}
 
 	return GetEnv("CONFIG_BACKEND_TOKEN", "")
+}
+
+func SetWHSchemaVersion(version string) {
+	whSchemaVersion = version
+}
+
+func GetWHSchemaVersion() string {
+	return whSchemaVersion
 }

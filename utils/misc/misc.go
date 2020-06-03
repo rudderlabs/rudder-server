@@ -3,12 +3,13 @@ package misc
 import (
 	"archive/zip"
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"crypto/md5"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/ioutil"
 	"net"
@@ -24,6 +25,7 @@ import (
 	//"runtime/debug"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/thoas/go-funk"
@@ -32,8 +34,8 @@ import (
 var AppStartTime int64
 
 const (
-	// RFC3339 with milli sec precision
-	RFC3339Milli = "2006-01-02T15:04:05.999Z07:00"
+	// RFC3339Milli with milli sec precision
+	RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
 	//This is integer representation of Postgres version.
 	//For ex, integer representation of version 9.6.3 is 90603
 	//Minimum postgres version needed for rudder server is 10
@@ -48,7 +50,9 @@ type ErrorStoreT struct {
 //RudderError : to store rudder error
 type RudderError struct {
 	StartTime         int64
+	CrashTime         int64
 	ReadableStartTime string
+	ReadableCrashTime string
 	Message           string
 	StackTrace        string
 	Code              int
@@ -108,11 +112,15 @@ func RecordAppError(err error) {
 		return
 	}
 
+	crashTime := time.Now().Unix()
+
 	//TODO Code is hardcoded now. When we introduce rudder error codes, we can use them.
 	errorStore.Errors = append(errorStore.Errors,
 		RudderError{
 			StartTime:         AppStartTime,
+			CrashTime:         crashTime,
 			ReadableStartTime: fmt.Sprint(time.Unix(AppStartTime, 0)),
+			ReadableCrashTime: fmt.Sprint(time.Unix(crashTime, 0)),
 			Message:           err.Error(),
 			StackTrace:        stackTrace,
 			Code:              101,
@@ -131,6 +139,12 @@ func AssertErrorIfDev(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func GetHash(s string) int {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return int(h.Sum32())
 }
 
 //GetMD5Hash returns EncodeToString(md5 hash of the input string)
@@ -405,10 +419,11 @@ func Copy(dst, src interface{}) {
 func GetIPFromReq(req *http.Request) string {
 	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
 	if addresses[0] == "" {
-		return req.RemoteAddr // When there is no load-balancer
+		splits := strings.Split(req.RemoteAddr, ":")
+		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
 	}
-	strings.Replace(addresses[0], " ", "", -1)
-	return addresses[0]
+
+	return strings.Replace(addresses[0], " ", "", -1)
 }
 
 func ContainsString(slice []string, str string) bool {
@@ -540,6 +555,23 @@ func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 	return replacedStr, nil
 }
 
+func IntArrayToString(a []int64, delim string) string {
+	return strings.Trim(strings.Replace(fmt.Sprint(a), " ", delim, -1), "[]")
+}
+
+func MakeJSONArray(bytesArray [][]byte) []byte {
+	joinedArray := bytes.Join(bytesArray, []byte(","))
+
+	// insert '[' to the front
+	joinedArray = append(joinedArray, 0)
+	copy(joinedArray[1:], joinedArray[0:])
+	joinedArray[0] = byte('[')
+
+	// append ']'
+	joinedArray = append(joinedArray, ']')
+	return joinedArray
+}
+
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number
 // of garage collection cycles completed.
 func PrintMemUsage() {
@@ -590,6 +622,51 @@ func (w GZipWriter) CloseGZ() {
 	w.File.Close()
 }
 
+func GetMacAddress() string {
+	//----------------------
+	// Get the local machine IP address
+	// https://www.socketloop.com/tutorials/golang-how-do-I-get-the-local-ip-non-loopback-address
+	//----------------------
+
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+
+	var currentIP, currentNetworkHardwareName string
+	for _, address := range addrs {
+		// check the address type and if it is not a loopback then that's the current ip
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				currentIP = ipnet.IP.String()
+			}
+		}
+	}
+
+	// get all the system's or local machine's network interfaces
+	interfaces, _ := net.Interfaces()
+	for _, interf := range interfaces {
+		if addrs, err := interf.Addrs(); err == nil {
+			for _, addr := range addrs {
+				// only interested in the name with current IP address
+				if strings.Contains(addr.String(), currentIP) {
+					currentNetworkHardwareName = interf.Name
+				}
+			}
+		}
+	}
+
+	// extract the hardware information base on the interface name captured above
+	netInterface, err := net.InterfaceByName(currentNetworkHardwareName)
+	if err != nil {
+		return ""
+	}
+
+	macAddress := netInterface.HardwareAddr
+
+	return macAddress.String()
+}
+
 func KeepProcessAlive() {
 	var ch chan int
 	_ = <-ch
@@ -609,24 +686,74 @@ func GetOutboundIP() (net.IP, error) {
 	return localAddr.IP, nil
 }
 
-//IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
-func IsPostgresCompatible(connInfo string) bool {
-	dbHandle, err := sql.Open("postgres", connInfo)
-	if err != nil {
-		panic(err)
-	}
-	defer dbHandle.Close()
+/*
+RunWithTimeout runs provided function f until provided timeout d.
+If the timeout is reached, onTimeout callback will be called.
+*/
+func RunWithTimeout(f func(), onTimeout func(), d time.Duration) {
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		f()
+	}()
 
-	err = dbHandle.Ping()
-	if err != nil {
-		panic(err)
+	select {
+	case <-c:
+	case <-time.After(d):
+		onTimeout()
 	}
+}
 
-	var versionNum int
-	err = dbHandle.QueryRow("SHOW server_version_num;").Scan(&versionNum)
-	if err != nil {
+/*
+IsValidUUID will check if provided string is a valid UUID
+*/
+func IsValidUUID(uuid string) bool {
+	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
+	return r.MatchString(uuid)
+}
+
+func HasAWSKeysInConfig(config interface{}) bool {
+	configMap := config.(map[string]interface{})
+	if configMap["accessKeyID"] == nil || configMap["accessKey"] == nil {
 		return false
 	}
+	if configMap["accessKeyID"].(string) == "" || configMap["accessKey"].(string) == "" {
+		return false
+	}
+	return true
+}
 
-	return versionNum >= minPostgresVersion
+func GetObjectStorageConfig(provider string, objectStorageConfig interface{}) map[string]interface{} {
+	objectStorageConfigMap := objectStorageConfig.(map[string]interface{})
+	if provider == "S3" && !HasAWSKeysInConfig(objectStorageConfig) {
+		objectStorageConfigMap["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+		objectStorageConfigMap["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+
+	}
+	return objectStorageConfigMap
+
+}
+
+//GetNodeID returns the nodeId of the current node
+func GetNodeID() string {
+	nodeID := config.GetRequiredEnv("INSTANCE_ID")
+	return nodeID
+}
+
+//MakeRetryablePostRequest is Util function to make a post request.
+func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (response []byte, statusCode int, err error) {
+	backendURL := fmt.Sprintf("%s%s", url, endpoint)
+	dataJSON, err := json.Marshal(data)
+
+	resp, err := retryablehttp.Post(backendURL, "application/json", dataJSON)
+
+	if err != nil {
+		return nil, -1, err
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+
+	logger.Debugf("Post request: Successful %s", string(body))
+	return body, resp.StatusCode, nil
 }

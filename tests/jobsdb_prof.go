@@ -86,6 +86,7 @@ func storeProcess(jd *jobsdb.HandleT) {
 			uuidWriteMap[id] = true
 			newJob := jobsdb.JobT{
 				UUID:         id,
+				UserID:       id.String(),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    endPoint,
@@ -151,9 +152,9 @@ func readProcess(jd *jobsdb.HandleT) {
 			//Save UUID Map
 			uuidReadMap[job.UUID] = true
 
-			stat := jobsdb.SucceededState
+			stat := jobsdb.Succeeded.State
 			if rand.Intn(failRatio) == 0 {
-				stat = jobsdb.FailedState
+				stat = jobsdb.Failed.State
 			}
 			newStatus := jobsdb.JobStatusT{
 				JobID:         job.JobID,
