@@ -126,6 +126,10 @@ func getWorkspaceFromDB() string {
 }
 
 func createDBConnection() {
+	if dbHandle != nil {
+		return
+	}
+
 	psqlInfo := jobsdb.GetConnectionString()
 	var err error
 	dbHandle, err = sql.Open("postgres", psqlInfo)
@@ -175,6 +179,8 @@ func ValidateEnv() bool {
 
 //InitializeEnv validates the current environment available for the server
 func InitializeEnv() {
+	createDBConnection()
+
 	//create workspace table and insert token
 	createWorkspaceTable()
 	insertTokenIfNotExists()
