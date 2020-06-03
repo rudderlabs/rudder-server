@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -34,11 +33,13 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -1843,16 +1844,17 @@ func Start() {
 	var err error
 	psqlInfo := getConnectionString()
 
-	if !misc.IsPostgresCompatible(psqlInfo) {
+	dbHandle, err = sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+
+	if !validators.IsPostgresCompatible(dbHandle) {
 		err := errors.New("Rudder Warehouse Service needs postgres version >= 10. Exiting")
 		logger.Error(err)
 		panic(err)
 	}
 
-	dbHandle, err = sql.Open("postgres", psqlInfo)
-	if err != nil {
-		panic(err)
-	}
 	setupTables(dbHandle)
 	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {

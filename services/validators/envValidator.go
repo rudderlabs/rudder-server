@@ -25,13 +25,14 @@ const (
 )
 
 func createWorkspaceTable() {
+	db := getDBHandle()
 	//Create table to store workspace token
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS workspace (
 		token TEXT PRIMARY KEY,
 		created_at TIMESTAMP NOT NULL,
 		parameters JSONB);`)
 
-	_, err := dbHandle.Exec(sqlStatement)
+	_, err := db.Exec(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
@@ -39,9 +40,10 @@ func createWorkspaceTable() {
 
 func insertTokenIfNotExists() {
 	//Read entries, if there are no entries insert hashed current workspace token
+	db := getDBHandle()
 	var totalCount int
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM workspace`)
-	row := dbHandle.QueryRow(sqlStatement)
+	row := db.QueryRow(sqlStatement)
 	err := row.Scan(&totalCount)
 	if err != nil {
 		panic(err)
@@ -54,7 +56,7 @@ func insertTokenIfNotExists() {
 	//There are no entries in the table, hash current workspace token and insert
 	sqlStatement = fmt.Sprintf(`INSERT INTO workspace (token, created_at)
 									   VALUES ($1, $2)`)
-	stmt, err := dbHandle.Prepare(sqlStatement)
+	stmt, err := db.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
@@ -69,11 +71,12 @@ func insertTokenIfNotExists() {
 func setWHSchemaVersionIfNotExists() {
 	hashedToken := misc.GetMD5Hash(config.GetWorkspaceToken())
 	whSchemaVersion := config.GetString("Warehouse.schemaVersion", "v1")
-	defer config.SetWHSchemaVersion(whSchemaVersion)
+	config.SetWHSchemaVersion(whSchemaVersion)
 
+	db := getDBHandle()
 	var parameters sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT parameters FROM workspace WHERE token = '%s'`, hashedToken)
-	row := dbHandle.QueryRow(sqlStatement)
+	row := db.QueryRow(sqlStatement)
 	err := row.Scan(&parameters)
 	if err != nil {
 		panic(err)
@@ -82,7 +85,7 @@ func setWHSchemaVersionIfNotExists() {
 	if !parameters.Valid {
 		// insert current version
 		sqlStatement = fmt.Sprintf(`UPDATE workspace SET parameters = '{"wh_schema_version":"%s"}' WHERE token = '%s'`, whSchemaVersion, hashedToken)
-		_, err := dbHandle.Exec(sqlStatement)
+		_, err := db.Exec(sqlStatement)
 		if err != nil {
 			panic(err)
 		}
@@ -94,6 +97,7 @@ func setWHSchemaVersionIfNotExists() {
 		}
 		if version, ok := parametersMap["wh_schema_version"]; ok {
 			whSchemaVersion = version.(string)
+			config.SetWHSchemaVersion(whSchemaVersion)
 			return
 		}
 		parametersMap["wh_schema_version"] = whSchemaVersion
@@ -102,7 +106,7 @@ func setWHSchemaVersionIfNotExists() {
 			panic(err)
 		}
 		sqlStatement = fmt.Sprintf(`UPDATE workspace SET parameters = '%s' WHERE token = '%s'`, marshalledParameters, hashedToken)
-		_, err = dbHandle.Exec(sqlStatement)
+		_, err = db.Exec(sqlStatement)
 		if err != nil {
 			panic(err)
 		}
@@ -135,15 +139,35 @@ func createDBConnection() {
 	}
 }
 
+func getDBHandle() *sql.DB {
+	if dbHandle == nil {
+		createDBConnection()
+	}
+	createDBConnection()
+	return dbHandle
+}
+
+//IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
+func IsPostgresCompatible(db *sql.DB) bool {
+	var versionNum int
+	err := db.QueryRow("SHOW server_version_num;").Scan(&versionNum)
+	if err != nil {
+		return false
+	}
+	return versionNum >= minPostgresVersion
+}
+
 //ValidateEnv validates the current environment available for the server
 func ValidateEnv() bool {
-	createDBConnection()
-
-	if !misc.IsPostgresCompatible(jobsdb.GetConnectionString()) {
+	if !IsPostgresCompatible(getDBHandle()) {
 		logger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
 		return false
 	}
+	return true
+}
 
+//InitializeEnv validates the current environment available for the server
+func InitializeEnv() {
 	//create workspace table and insert token
 	createWorkspaceTable()
 	insertTokenIfNotExists()
@@ -151,8 +175,7 @@ func ValidateEnv() bool {
 
 	workspaceTokenHashInDB := getWorkspaceFromDB()
 	if workspaceTokenHashInDB == misc.GetMD5Hash(config.GetWorkspaceToken()) {
-		dbHandle.Close()
-		return true
+		return
 	}
 
 	//db connection should be closed. Else alter db fails.
@@ -163,15 +186,11 @@ func ValidateEnv() bool {
 	dbName := config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
 	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB)
 
-	//New db created. Creating connection to the new db
+	//New db created. Re-connecting to refresh dbHandle
 	createDBConnection()
 
 	//create workspace table and insert hashed token
 	createWorkspaceTable()
 	insertTokenIfNotExists()
 	setWHSchemaVersionIfNotExists()
-
-	dbHandle.Close()
-
-	return true
 }
