@@ -353,7 +353,6 @@ func loadConfig() {
 func init() {
 	config.Initialize()
 	loadConfig()
-
 }
 
 func GetConnectionString() string {

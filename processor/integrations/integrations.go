@@ -15,6 +15,7 @@ import (
 var (
 	destTransformURL, userTransformURL string
 	customDestination                  []string
+	whSchemaVersion                    string
 )
 
 func init() {
@@ -181,7 +182,7 @@ func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backend
 
 //GetDestinationURL returns node URL
 func GetDestinationURL(destID string) string {
-	return fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destID))
+	return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s", destTransformURL, strings.ToLower(destID), config.GetWHSchemaVersion())
 }
 
 //GetUserTransformURL returns the port of running user transform

@@ -140,7 +140,7 @@ func (sf *HandleT) createSchema() (err error) {
 }
 
 func (sf *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
-	diff := warehouseutils.GetSchemaDiff(sf.CurrentSchema, sf.Upload.Schema, warehouseutils.SNOWFLAKE)
+	diff := warehouseutils.GetSchemaDiff(sf.CurrentSchema, sf.Upload.Schema)
 	updatedSchema = diff.UpdatedSchema
 	if len(sf.CurrentSchema) == 0 {
 		err = sf.createSchema()
