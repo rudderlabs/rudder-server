@@ -44,7 +44,7 @@ func ReplaceDB(dbName, targetName string) {
 	}
 	rows.Close()
 
-	renameDBStatement := fmt.Sprintf("ALTER DATABASE %s RENAME TO %s",
+	renameDBStatement := fmt.Sprintf("ALTER DATABASE \"%s\" RENAME TO \"%s\"",
 		dbName, targetName)
 	logger.Debug(renameDBStatement)
 	_, err = db.Exec(renameDBStatement)
@@ -54,7 +54,7 @@ func ReplaceDB(dbName, targetName string) {
 		panic(err)
 	}
 
-	createDBStatement := fmt.Sprintf("CREATE DATABASE %s", dbName)
+	createDBStatement := fmt.Sprintf("CREATE DATABASE \"%s\"", dbName)
 	_, err = db.Exec(createDBStatement)
 	if err != nil {
 		panic(err)
