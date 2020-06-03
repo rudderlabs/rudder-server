@@ -139,6 +139,13 @@ func createDBConnection() {
 	}
 }
 
+func closeDBConnection() {
+	if dbHandle != nil {
+		dbHandle.Close()
+		dbHandle = nil
+	}
+}
+
 func getDBHandle() *sql.DB {
 	if dbHandle == nil {
 		createDBConnection()
@@ -179,15 +186,12 @@ func InitializeEnv() {
 	}
 
 	//db connection should be closed. Else alter db fails.
-	dbHandle.Close()
+	closeDBConnection()
 
 	logger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
 
 	dbName := config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
 	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB)
-
-	//New db created. Re-connecting to refresh dbHandle
-	createDBConnection()
 
 	//create workspace table and insert hashed token
 	createWorkspaceTable()
