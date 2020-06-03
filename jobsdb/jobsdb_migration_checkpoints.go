@@ -234,33 +234,6 @@ func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType MigrationOp) 
 	return ds
 }
 
-func (jd *HandleT) getSeqNoForFileFromDB(fileLocation string, migrationType MigrationOp) int64 {
-	jd.assert(migrationType == ExportOp ||
-		migrationType == ImportOp,
-		fmt.Sprintf("MigrationType: %s is not a supported operation. Should be %s or %s",
-			migrationType, ExportOp, ImportOp))
-
-	sqlStatement := fmt.Sprintf(`SELECT start_sequence from %s WHERE file_location = $1 AND migration_type = $2 ORDER BY id DESC`, jd.getCheckpointTableName())
-	stmt, err := jd.dbHandle.Prepare(sqlStatement)
-	defer stmt.Close()
-	jd.assertError(err)
-
-	rows, err := stmt.Query(fileLocation, migrationType)
-	defer rows.Close()
-	if err != nil {
-		panic("Unable to query")
-	}
-	rows.Next()
-
-	var sequenceNumber int64
-	sequenceNumber = 0
-	err = rows.Scan(&sequenceNumber)
-	if err != nil && err.Error() != "sql: Rows are closed" {
-		panic("query result pares issue")
-	}
-	return sequenceNumber
-}
-
 //GetSetupCheckpoint gets all checkpoints and picks out the setup event for that type
 func (jd *HandleT) GetSetupCheckpoint(migrationType MigrationOp) (MigrationCheckpointT, bool) {
 	var setupStatus string

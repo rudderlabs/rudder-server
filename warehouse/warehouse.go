@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -58,7 +59,6 @@ var (
 	mainLoopSleep                    time.Duration
 	stagingFilesBatchSize            int
 	configSubscriberLock             sync.RWMutex
-	availableWarehouses              []string
 	crashRecoverWarehouses           []string
 	inProgressMap                    map[string]bool
 	inRecoveryMap                    map[string]bool
@@ -137,7 +137,7 @@ func init() {
 func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
@@ -149,7 +149,6 @@ func loadConfig() {
 	warehouseTableUploadsTable = config.GetString("Warehouse.tableUploadsTable", "wh_table_uploads")
 	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
 	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 60) * time.Second
-	availableWarehouses = []string{"RS", "BQ", "SNOWFLAKE"}
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
@@ -566,6 +565,9 @@ func NewWhManager(destType string) (WarehouseManager, error) {
 	case "SNOWFLAKE":
 		var sf snowflake.HandleT
 		return &sf, nil
+	case "POSTGRES":
+		var pg postgres.HandleT
+		return &pg, nil
 	}
 	return nil, errors.New("No provider configured for WarehouseManager")
 }
@@ -600,7 +602,6 @@ func (wh *HandleT) mainLoop() {
 				}
 				delete(inRecoveryMap, warehouse.Destination.ID)
 			}
-
 			// fetch any pending wh_uploads records (query for not successful/aborted uploads)
 			pendingUploads, ok := wh.getPendingUploads(warehouse)
 			if ok {
@@ -1069,6 +1070,7 @@ var loadFileFormatMap = map[string]string{
 	"BQ":        "json",
 	"RS":        "csv",
 	"SNOWFLAKE": "csv",
+	"POSTGRES":  "csv",
 }
 
 func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
@@ -1114,7 +1116,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	warehouseutils.DestStat(stats.CountType, "downloaded_staging_file_size", job.DestinationID).Count(int(fileSize))
 
 	sortedTableColumnMap := make(map[string][]string)
-	// sort columns per table so as to maintaing same order in load file (needed in case of csv load file)
+	// sort columns per table so as to maintaining same order in load file (needed in case of csv load file)
 	for tableName, columnMap := range job.Schema {
 		sortedTableColumnMap[tableName] = []string{}
 		for k := range columnMap {
