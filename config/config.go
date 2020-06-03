@@ -1,7 +1,6 @@
 package config
 
 import (
-	"database/sql"
 	"fmt"
 	"os"
 	"regexp"
@@ -213,43 +212,4 @@ func GetWorkspaceToken() string {
 	}
 
 	return GetEnv("CONFIG_BACKEND_TOKEN", "")
-}
-
-func connectionString() string {
-	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
-}
-
-func createDBConnection() *sql.DB {
-	var err error
-	dbHandle, err := sql.Open("postgres", connectionString())
-	if err != nil {
-		panic(err)
-	}
-
-	err = dbHandle.Ping()
-	if err != nil {
-		panic(err)
-	}
-	return dbHandle
-}
-
-func GetWHSchemaVersion() string {
-	if whSchemaVersion != "" {
-		return whSchemaVersion
-	}
-
-	// get from db
-	dbHandle := createDBConnection()
-
-	var version string
-	sqlStatememnt := fmt.Sprintf(`SELECT parameters ->> 'wh_schema_version' as version FROM workspace`)
-	err := dbHandle.QueryRow(sqlStatememnt).Scan(&version)
-	if err != nil {
-		panic(err)
-	}
-	whSchemaVersion = version
-	dbHandle.Close()
-	return version
 }

@@ -13,7 +13,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var dbHandle *sql.DB
+var (
+	dbHandle        *sql.DB
+	whSchemaVersion string
+)
 
 const (
 	//This is integer representation of Postgres version.
@@ -64,9 +67,9 @@ func insertTokenIfNotExists() {
 	}
 }
 
-func insertWHSchemaVersionIfNotExits() {
+func setWHSchemaVersionIfNotExits() {
 	hashedToken := misc.GetMD5Hash(config.GetWorkspaceToken())
-	whSchemaVersion := config.GetString("Warehouse.schemaVersion", "v1")
+	whSchemaVersion = config.GetString("Warehouse.schemaVersion", "v1")
 
 	var parameters sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT parameters FROM workspace WHERE token = '%s'`, hashedToken)
@@ -89,7 +92,8 @@ func insertWHSchemaVersionIfNotExits() {
 		if err != nil {
 			panic(err)
 		}
-		if _, ok := parametersMap["wh_schema_version"]; ok {
+		if version, ok := parametersMap["wh_schema_version"]; ok {
+			whSchemaVersion = version.(string)
 			return
 		}
 		parametersMap["wh_schema_version"] = whSchemaVersion
@@ -143,7 +147,7 @@ func ValidateEnv() bool {
 	//create workspace table and insert token
 	createWorkspaceTable()
 	insertTokenIfNotExists()
-	insertWHSchemaVersionIfNotExits()
+	setWHSchemaVersionIfNotExits()
 
 	workspaceTokenHashInDB := getWorkspaceFromDB()
 	if workspaceTokenHashInDB == misc.GetMD5Hash(config.GetWorkspaceToken()) {
@@ -165,9 +169,14 @@ func ValidateEnv() bool {
 	//create workspace table and insert hashed token
 	createWorkspaceTable()
 	insertTokenIfNotExists()
-	insertWHSchemaVersionIfNotExits()
+	setWHSchemaVersionIfNotExits()
 
 	dbHandle.Close()
 
 	return true
+}
+
+// GetWHSchemaVersion returns the current warehouse schema version as stored in db/workspaces
+func GetWHSchemaVersion() string {
+	return whSchemaVersion
 }

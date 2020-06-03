@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/validators"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -182,7 +183,7 @@ func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backend
 
 //GetDestinationURL returns node URL
 func GetDestinationURL(destID string) string {
-	return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s", destTransformURL, strings.ToLower(destID), config.GetWHSchemaVersion())
+	return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s", destTransformURL, strings.ToLower(destID), validators.GetWHSchemaVersion())
 }
 
 //GetUserTransformURL returns the port of running user transform
