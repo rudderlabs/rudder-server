@@ -180,7 +180,7 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 									WHEN attempt > %[2]d
 									THEN CAST ( '%[3]s' AS pg_notifier_status_type)
 									ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
-									END), attempt = attempt + 1, updated_at = '%[5]s', error = '%[6]s'
+									END), attempt = attempt + 1, updated_at = '%[5]s', error = %[6]s
 									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), misc.QuoteLiteral(response.Err.Error()), id)
 			_, err = tx.Exec(stmt)
 		} else {
