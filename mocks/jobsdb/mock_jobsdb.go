@@ -49,15 +49,27 @@ func (mr *MockJobsDBMockRecorder) CheckPGHealth() *gomock.Call {
 }
 
 // Store mocks base method
-func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) map[uuid.UUID]string {
+func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Store", arg0)
-	ret0, _ := ret[0].(map[uuid.UUID]string)
-	return ret0
+	m.ctrl.Call(m, "Store", arg0)
 }
 
 // Store indicates an expected call of Store
 func (mr *MockJobsDBMockRecorder) Store(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Store", reflect.TypeOf((*MockJobsDB)(nil).Store), arg0)
+}
+
+// StoreWithRetryEach mocks base method
+func (m *MockJobsDB) StoreWithRetryEach(arg0 []*jobsdb.JobT) map[uuid.UUID]string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StoreWithRetryEach", arg0)
+	ret0, _ := ret[0].(map[uuid.UUID]string)
+	return ret0
+}
+
+// StoreWithRetryEach indicates an expected call of StoreWithRetryEach
+func (mr *MockJobsDBMockRecorder) StoreWithRetryEach(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreWithRetryEach", reflect.TypeOf((*MockJobsDB)(nil).StoreWithRetryEach), arg0)
 }

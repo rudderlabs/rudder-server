@@ -65,7 +65,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	txn, txErr := jd.dbHandle.Begin()
 	jd.assertError(txErr)
 	var err error
-	var updatedStatesByDS map[dataSetT][]string
+	updatedStatesByDS := make(map[dataSetT][]string)
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 
