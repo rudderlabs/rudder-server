@@ -156,6 +156,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	if !validators.ValidateEnv() {
 		panic(errors.New("Failed to start rudder-server"))
 	}
+	validators.InitializeEnv()
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
