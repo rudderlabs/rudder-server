@@ -432,7 +432,6 @@ func (pg *HandleT) loadUserTables() (err error) {
 							  and %[1]s is not null
 							  order by received_at desc
 						  	limit 1)
-						  else %[1]s
 						  end as %[1]s`, colName, unionStagingTableName)
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
@@ -446,7 +445,7 @@ func (pg *HandleT) loadUserTables() (err error) {
 												)
 											)`, pg.Namespace, warehouseutils.UsersTable, identifyStagingTable, strings.Join(userColNames, ","), unionStagingTableName)
 
-	logger.Infof("PG: Creating staging table for union of users table with idedntidy staging table: %s\n", sqlStatement)
+	logger.Infof("PG: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, err, pg.DbHandle)
@@ -484,7 +483,7 @@ func (pg *HandleT) loadUserTables() (err error) {
 	logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
+		logger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
 		tx.Rollback()
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, err, pg.DbHandle)
 		return
