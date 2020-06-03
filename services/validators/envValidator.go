@@ -197,4 +197,6 @@ func InitializeEnv() {
 	createWorkspaceTable()
 	insertTokenIfNotExists()
 	setWHSchemaVersionIfNotExists()
+
+	closeDBConnection()
 }
