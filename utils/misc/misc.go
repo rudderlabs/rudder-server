@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/md5"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -420,7 +419,8 @@ func Copy(dst, src interface{}) {
 func GetIPFromReq(req *http.Request) string {
 	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
 	if addresses[0] == "" {
-		return req.RemoteAddr // When there is no load-balancer
+		splits := strings.Split(req.RemoteAddr, ":")
+		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
 	}
 
 	return strings.Replace(addresses[0], " ", "", -1)
@@ -684,28 +684,6 @@ func GetOutboundIP() (net.IP, error) {
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 
 	return localAddr.IP, nil
-}
-
-//IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
-func IsPostgresCompatible(connInfo string) bool {
-	dbHandle, err := sql.Open("postgres", connInfo)
-	if err != nil {
-		panic(err)
-	}
-	defer dbHandle.Close()
-
-	err = dbHandle.Ping()
-	if err != nil {
-		panic(err)
-	}
-
-	var versionNum int
-	err = dbHandle.QueryRow("SHOW server_version_num;").Scan(&versionNum)
-	if err != nil {
-		return false
-	}
-
-	return versionNum >= minPostgresVersion
 }
 
 /*

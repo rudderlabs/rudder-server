@@ -9,7 +9,7 @@ import (
 )
 
 type UploadOutput struct {
-	Location string
+	Location   string
 	ObjectName string
 }
 
@@ -17,6 +17,7 @@ type UploadOutput struct {
 type FileManager interface {
 	Upload(*os.File, ...string) (UploadOutput, error)
 	Download(*os.File, string) error
+	GetObjectNameFromLocation(string) string
 	GetDownloadKeyFromFileLocation(location string) string
 }
 
@@ -59,6 +60,7 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
 		providerConfig["accessKeyID"] = config.GetEnv("AWS_ACCESS_KEY_ID", "")
 		providerConfig["accessKey"] = config.GetEnv("AWS_SECRET_ACCESS_KEY", "")
+		providerConfig["enableSSE"] = config.GetEnvAsBool("AWS_ENABLE_SSE", false)
 	case "GCS":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")

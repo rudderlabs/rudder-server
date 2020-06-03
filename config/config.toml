@@ -55,6 +55,7 @@ maxReqSizeInKB = 100000
 enableDedup = false
 enableRateLimit = false
 dedupWindowInS = 86400
+allowPartialWriteWithErrors = true
 
 [Gateway.webhook]
 batchTimeoutInMS = 20
@@ -151,6 +152,8 @@ stagingFilesBatchSize = 240
     [Warehouse.snowflake]
     maxParallelLoads = 3
     [Warehouse.bigquery]
+    maxParallelLoads = 20
+    [Warehouse.postgres]
     maxParallelLoads = 20
 
 [Processor]

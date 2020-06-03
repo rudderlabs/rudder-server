@@ -278,7 +278,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 	}
 	defer dbHandle.Close()
 
-	// sort columnnames
+	// sort column names
 	keys := reflect.ValueOf(columnMap).MapKeys()
 	strkeys := make([]string, len(keys))
 	for i := 0; i < len(keys); i++ {
@@ -442,7 +442,7 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder_staging_"
-	maxParallelLoads = config.GetInt("Warehouse.snowflake.maxParallelLoads", 1)
+	maxParallelLoads = config.GetInt("Warehouse.snowflake.maxParallelLoads", 3)
 }
 
 func init() {
