@@ -150,7 +150,7 @@ func (rs *HandleT) createSchema() (err error) {
 }
 
 func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
-	diff := warehouseutils.GetSchemaDiff(rs.CurrentSchema, rs.Upload.Schema, warehouseutils.RS)
+	diff := warehouseutils.GetSchemaDiff(rs.CurrentSchema, rs.Upload.Schema)
 	updatedSchema = diff.UpdatedSchema
 	if len(rs.CurrentSchema) == 0 {
 		err = rs.createSchema()
@@ -784,11 +784,6 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	}
 	rs.CurrentSchema = currSchema
 	rs.Namespace = rs.Upload.Namespace
-	if rs.Namespace == "" {
-		logger.Infof("Namespace not found in currentschema for RS:%s, setting from upload: %s", rs.Warehouse.Destination.ID, rs.Upload.Namespace)
-		rs.Namespace = rs.Upload.Namespace
-	}
-
 	if config.Stage == "ExportData" {
 		err = rs.Export()
 	} else {
