@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/md5"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -685,28 +684,6 @@ func GetOutboundIP() (net.IP, error) {
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 
 	return localAddr.IP, nil
-}
-
-//IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
-func IsPostgresCompatible(connInfo string) bool {
-	dbHandle, err := sql.Open("postgres", connInfo)
-	if err != nil {
-		panic(err)
-	}
-	defer dbHandle.Close()
-
-	err = dbHandle.Ping()
-	if err != nil {
-		panic(err)
-	}
-
-	var versionNum int
-	err = dbHandle.QueryRow("SHOW server_version_num;").Scan(&versionNum)
-	if err != nil {
-		return false
-	}
-
-	return versionNum >= minPostgresVersion
 }
 
 /*

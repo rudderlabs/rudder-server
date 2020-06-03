@@ -584,7 +584,7 @@ func (pg *HandleT) addColumn(tableName string, columnName string, columnType str
 }
 
 func (pg *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
-	diff := warehouseutils.GetSchemaDiff(pg.CurrentSchema, pg.Upload.Schema, warehouseutils.POSTGRES)
+	diff := warehouseutils.GetSchemaDiff(pg.CurrentSchema, pg.Upload.Schema)
 	updatedSchema = diff.UpdatedSchema
 	if len(pg.CurrentSchema) == 0 {
 		err = pg.createSchema()

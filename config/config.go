@@ -15,6 +15,10 @@ import (
 
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
+var (
+	whSchemaVersion string
+)
+
 const (
 	EmbeddedMode    = "embedded"
 	MasterMode      = "master"
@@ -195,4 +199,12 @@ func GetWorkspaceToken() string {
 	}
 
 	return GetEnv("CONFIG_BACKEND_TOKEN", "")
+}
+
+func SetWHSchemaVersion(version string) {
+	whSchemaVersion = version
+}
+
+func GetWHSchemaVersion() string {
+	return whSchemaVersion
 }
