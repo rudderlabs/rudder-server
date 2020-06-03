@@ -398,7 +398,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 }
 
 func (sf *HandleT) loadUserTables() (err error) {
-	logger.Infof("RS: Starting load for identifies and users tables\n")
+	logger.Infof("SF: Starting load for identifies and users tables\n")
 	resp, err := sf.loadTable(identifiesTable, sf.Upload.Schema[identifiesTable], true, true)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, warehouseutils.IdentifiesTable, err, sf.DbHandle)
