@@ -11,7 +11,7 @@ RudderStack's backend is written in Go, with a rich UI written in React.js.
 
 You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) RudderStack instance to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro).
 
-Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our discord channel.
+Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord channel]((https://discordapp.com/invite/xNEdEGw).
 
 # Why Use RudderStack?
 - **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, and **1mg** use RudderStack for collecting their events.
