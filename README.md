@@ -40,27 +40,10 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 
 - **Enhanced Telemetry**: To help us improve RudderStack, we collect performance and diagnostic metrics about how you use RudderStack, and how it is working. **No customer data is present in the metrics**. For technical details, please check out our wiki page on [Telemetry](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Telemetry).
 
-# RudderStack Architecture
-
-RudderStack has two major components, namely:
-- **Control Plane**: The control plane allows you to manage the configuration of your sources and destinations. There are two options for setting up the connections:
-  - [Managed control plane](https://app.rudderstack.com/): This is the easiest way to manage your source and destination configurations.
-  - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. Please note that you cannot create transformations with the RudderStack Config Generator.
-
-- **Data Plane**:  This is the core engine that is responsible for:
-
-   - Receiving and buffering the event data
-   - Transforming the event data into the required destination format, and
-   - Relaying it to the destination
- 
-For a detailed understanding of the RudderStack architecture, please check our [documentation](https://docs.rudderstack.com/getting-started/rudderstack-data-plane-architecture).
-
-A high-level view of RudderStack's architecture is as shown:
-![Architecture](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-Lz111ICiMeHdy_Gu6JX%2F-Lz1A_NxMgbjhbSrVL2h%2FRudder%20Core%20Architecture.png?alt=media&token=2c524db9-7c5c-44e9-a351-cbb1c46a8063)
-
 # RudderStack Setup
 
-The easiest way to set up and use RudderStack is through our hosted service. For detailed instructions, please refer to our documentation on using the [RudderStack Hosted Service](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/hosted-demo-account).
+The easiest way to try RudderStack is through our hosted service. Please signup [here](https://app.rudderstack.com/signup?type=freetrial)
+
 
 You can also set up and use RudderStack on your platform of choice. Please refer to the following guides for detailed instructions:
 
@@ -80,6 +63,25 @@ Once you have installed RudderStack, [send test events](https://docs.rudderstack
 ### Events Page
 
 ![Events Page](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-M8Fo18nKM8Y3sHNQwW3%2F-M8FoF_Gnu9CBQgUujZW%2FScreenshot%202020-05-26%20at%205.12.19%20PM.png?alt=media&token=71165ae7-964c-4370-9826-29315ab3e3b4)
+
+# RudderStack Architecture
+
+RudderStack has two major components, namely:
+- **Control Plane**: The control plane allows you to manage the configuration of your sources and destinations. There are two options for setting up the connections:
+  - [Managed control plane](https://app.rudderstack.com/): This is the easiest way to manage your source and destination configurations.
+  - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. Please note that you cannot create transformations with the RudderStack Config Generator.
+
+- **Data Plane**:  This is the core engine that is responsible for:
+
+   - Receiving and buffering the event data
+   - Transforming the event data into the required destination format, and
+   - Relaying it to the destination
+ 
+For a detailed understanding of the RudderStack architecture, please check our [documentation](https://docs.rudderstack.com/getting-started/rudderstack-data-plane-architecture).
+
+A high-level view of RudderStack's architecture is as shown:
+![Architecture](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-Lz111ICiMeHdy_Gu6JX%2F-Lz1A_NxMgbjhbSrVL2h%2FRudder%20Core%20Architecture.png?alt=media&token=2c524db9-7c5c-44e9-a351-cbb1c46a8063)
+
 
 # License
 
