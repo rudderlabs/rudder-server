@@ -27,6 +27,7 @@ services:
       - CONFIG_BACKEND_URL=https://api.rudderlabs.com
       - WORKSPACE_TOKEN=<your_workspace_token>
       - CONFIG_PATH=/app/config/config.toml
+      # - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
     # Uncomment the following lines to mount workspaceConfig file
     # volumes:
     #   - <absolute_path_to_workspace_config>:/etc/rudderstack/workspaceConfig.json
