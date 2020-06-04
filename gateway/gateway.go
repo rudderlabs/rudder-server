@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -419,6 +420,7 @@ func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSe
 		toRemoveMessageIndexes = append(toRemoveMessageIndexes, k)
 	}
 
+	sort.Ints(toRemoveMessageIndexes)
 	count := 0
 	for _, idx := range toRemoveMessageIndexes {
 		logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
