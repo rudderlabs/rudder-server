@@ -1,7 +1,7 @@
 ![Build Status][build status]
 [![Release]][release]
 
-![RudderStack](https://github.com/ameypv-rudder/rudder-server/blob/readme-update/resources/RudderStack.png)
+![RudderStack](https://www.rudderstack.com)
 
 # What is RudderStack?
 
@@ -12,17 +12,17 @@ RudderStack's backend is written in Go, with a rich UI written in React.js.
 You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) RudderStack instance to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro).
 
 # Why Use RudderStack?
-- **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, and **1mg** use RudderStack for collecting their events
+- **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, and **1mg** use RudderStack for collecting their events.
 
-- **Extreme Scale**: One of our largest installations currently sends **300 Million** events/day with peak of **40K** req/sec, via a multi-node RudderStack setup
+- **Extreme Scale**: One of our largest installations currently sends **300 Million** events/day with peak of **40K** req/sec, via a multi-node RudderStack setup.
 
-- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool
+- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
 
-- **Seamless Integration**: RudderStack currently supports integration with over 45 popular [destination platforms](https://docs.rudderstack.com/destinations/) such as Google Analytics, Amplitude, Mixpanel, Amazon S3, and more. Moreover, it also supports [data warehouse integrations](https://docs.rudderstack.com/data-warehouse-integrations) for Snowflake, Redshift, and Google BigQuery
+- **Seamless Integration**: RudderStack currently supports integration with over 45 popular [destination platforms](https://docs.rudderstack.com/destinations/) such as Google Analytics, Amplitude, Mixpanel, Amazon S3, and more. Moreover, it also supports [data warehouse integrations](https://docs.rudderstack.com/data-warehouse-integrations) for Snowflake, Redshift, and Google BigQuery.
 
-- **Client-side SDK Support**: RudderStack offers client-side SDKs for [JavaScript](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-javascript-sdk), [Android](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-android-sdk), [iOS](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-ios-sdk), and [Unity](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-unity-sdk)
+- **Client-side SDK Support**: RudderStack offers client-side SDKs for [JavaScript](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-javascript-sdk), [Android](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-android-sdk), [iOS](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-ios-sdk), and [Unity](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-unity-sdk).
 
-- **User-specified Transformation**: RudderStack gives you the power to filter or transform your events before sending them to the desired destinations
+- **User-specified Transformation**: RudderStack gives you the power to filter or transform your events before sending them to the desired destinations.
 
 # Key Features
 
@@ -91,15 +91,15 @@ We would love to see you contribute to RudderStack. Get more information on how 
 
 # Wiki
 
-For more information on RudderStack's features and functionalities, make sure you check out our [Wiki]() page
+For more information on RudderStack's features and functionalities, make sure you check out our [Wiki]() page.
 
 # Stay Connected
 
 - See the [HackerNews][hackernews] discussion around RudderStack.
-- Join our [Discord][discord] channel
-- Follow us on [Twitter][twitter]
-- Get the latest news from the [RudderStack blog][rudderstack-blog]
-- Subscribe to our newsletter
+- Join our [Discord][discord] channel.
+- Follow us on [Twitter][twitter].
+- Get the latest news from the [RudderStack blog][rudderstack-blog].
+- Subscribe to our newsletter.
 
 <!----variables---->
 
