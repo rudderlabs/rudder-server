@@ -12,14 +12,14 @@ cloud.google.com/go/internal/version
 cloud.google.com/go/bigquery
 # cloud.google.com/go/storage v1.6.0
 cloud.google.com/go/storage
-# github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96
-github.com/AndreasBriese/bbloom
 # github.com/Azure/azure-pipeline-go v0.2.2
 github.com/Azure/azure-pipeline-go/pipeline
 # github.com/Azure/azure-storage-blob-go v0.8.0
 github.com/Azure/azure-storage-blob-go/azblob
 # github.com/BurntSushi/toml v0.3.1
 github.com/BurntSushi/toml
+# github.com/DataDog/zstd v1.4.1
+github.com/DataDog/zstd
 # github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d
 github.com/EagleChen/mapmutex
 # github.com/EagleChen/restrictor v0.0.0-20180420073700-9b81bbf8df1d
@@ -83,17 +83,21 @@ github.com/bugsnag/bugsnag-go/headers
 github.com/bugsnag/bugsnag-go/sessions
 # github.com/bugsnag/panicwrap v1.2.0
 github.com/bugsnag/panicwrap
-# github.com/cenkalti/backoff/v4 v4.0.2
-github.com/cenkalti/backoff/v4
+# github.com/cespare/xxhash v1.1.0
+github.com/cespare/xxhash
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
-# github.com/dgraph-io/badger v1.6.0
-github.com/dgraph-io/badger
-github.com/dgraph-io/badger/options
-github.com/dgraph-io/badger/pb
-github.com/dgraph-io/badger/skl
-github.com/dgraph-io/badger/table
-github.com/dgraph-io/badger/y
+# github.com/dgraph-io/badger/v2 v2.0.3
+github.com/dgraph-io/badger/v2
+github.com/dgraph-io/badger/v2/options
+github.com/dgraph-io/badger/v2/pb
+github.com/dgraph-io/badger/v2/skl
+github.com/dgraph-io/badger/v2/table
+github.com/dgraph-io/badger/v2/trie
+github.com/dgraph-io/badger/v2/y
+# github.com/dgraph-io/ristretto v0.0.2
+github.com/dgraph-io/ristretto
+github.com/dgraph-io/ristretto/z
 # github.com/dgrijalva/jwt-go v3.2.0+incompatible
 github.com/dgrijalva/jwt-go
 # github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13
@@ -270,8 +274,6 @@ github.com/segmentio/backo-go
 github.com/segmentio/ksuid
 # github.com/snowflakedb/gosnowflake v1.3.4
 github.com/snowflakedb/gosnowflake
-# github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72
-github.com/spaolacci/murmur3
 # github.com/spf13/afero v1.2.2
 github.com/spf13/afero
 github.com/spf13/afero/mem

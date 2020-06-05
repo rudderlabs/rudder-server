@@ -22,7 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
-	"github.com/dgraph-io/badger"
+	"github.com/dgraph-io/badger/v2"
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -441,7 +441,6 @@ func (gateway *HandleT) writeToBadger(set map[string]struct{}) {
 
 	if enableDedup {
 		err := gateway.badgerDB.Update(func(txn *badger.Txn) error {
-			// Your code here…
 			for _, messageID := range messageIDs {
 				e := badger.NewEntry([]byte(messageID), nil).WithTTL(dedupWindow * time.Second)
 				if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
@@ -760,7 +759,7 @@ func (gateway *HandleT) gcBadgerDB() {
 
 func (gateway *HandleT) openBadger(clearDB *bool) {
 	var err error
-	badgerPathName := "/badgerdb"
+	badgerPathName := "/badgerdb/v2"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		panic(err)
@@ -840,7 +839,6 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	if enableDedup {
 		gateway.openBadger(clearDB)
-		defer gateway.badgerDB.Close()
 	}
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
