@@ -30,7 +30,7 @@ services:
 
   d-transformer:
     build:
-      context: "${CODEBUILD_SRC_DIR_transformer_source_output}"
+      context: ../rudder-transformer
       dockerfile: Dockerfile
     ports:
       - "9090:9090"
