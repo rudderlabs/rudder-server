@@ -174,6 +174,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
 	var batchRouterDB jobsdb.HandleT
+	var procErrorDB jobsdb.HandleT
 
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB ", *clearDB)
@@ -190,6 +191,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode)
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode)
+	procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode)
 
 	enableGateway := true
 
@@ -199,7 +201,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 				StartRouter(enableRouter, &routerDB, &batchRouterDB)
 			}
 			startProcessorFunc := func() {
-				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB)
+				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -209,7 +211,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	}
 
 	StartRouter(enableRouter, &routerDB, &batchRouterDB)
-	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB)
+	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 
 	if enableGateway {
 		var gateway gateway.HandleT
@@ -238,7 +240,7 @@ func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
 }
 
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT) {
+func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
 
@@ -248,7 +250,7 @@ func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jo
 
 	if enableProcessor {
 		var processor = processor.NewProcessor()
-		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, stats.DefaultStats)
+		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, stats.DefaultStats)
 		processor.Start()
 
 		if !isReplayServer {
