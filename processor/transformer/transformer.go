@@ -25,6 +25,7 @@ import (
 type MetadataT struct {
 	SourceID        string `json:"sourceId"`
 	DestinationID   string `json:"destinationId"`
+	UserID          string `json:"userId"`
 	JobID           int64  `json:"jobId"`
 	DestinationType string `json:"destinationType"`
 	MessageID       string `json:"messageId"`

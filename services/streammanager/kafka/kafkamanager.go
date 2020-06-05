@@ -33,6 +33,8 @@ type AzureEventHubConfig struct {
 var (
 	clientCertFile, clientKeyFile string
 	certificate                   tls.Certificate
+	kafkaDialTimeoutInSec         int64
+	kafkaWriteTimeoutInSec        int64
 )
 
 const (
@@ -47,6 +49,8 @@ func init() {
 func loadConfig() {
 	clientCertFile = config.GetEnv("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
 	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
+	kafkaDialTimeoutInSec = config.GetInt64("Router.kafkaDialTimeoutInSec", 10)
+	kafkaWriteTimeoutInSec = config.GetInt64("Router.kafkaWriteTimeoutInSec", 2)
 }
 
 func loadCertificate() {
@@ -101,12 +105,13 @@ func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProd
 	hosts := []string{hostName}
 
 	config := sarama.NewConfig()
-	config.Net.DialTimeout = 10 * time.Second
+	config.Net.DialTimeout = time.Duration(kafkaDialTimeoutInSec) * time.Second
+	config.Net.WriteTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
 
 	config.Net.SASL.Enable = true
 	config.Net.SASL.User = azureEventHubUser
 	config.Net.SASL.Password = destConfig.EventHubsConnectionString
-	config.Net.SASL.Mechanism = sarama.SASLTypePlaintext //"PLAIN"
+	config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 
 	config.Net.TLS.Enable = true
 	config.Net.TLS.Config = &tls.Config{

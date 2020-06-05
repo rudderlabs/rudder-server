@@ -3,7 +3,7 @@ env:
   parameter-store:
     # The SSH deploy key with enterprise rudder server repo
     ssh_key: "/codebuild/github/ssh-key"
-    dockerhub_passwd: "/dev/codebuild/dockerhub-password"
+    dockerhub_passwd: "/prod/codebuild/dockerhub-password"
 
 phases:
   install:

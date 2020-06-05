@@ -6,10 +6,10 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/md5"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/ioutil"
 	"net"
@@ -25,6 +25,7 @@ import (
 	//"runtime/debug"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
@@ -140,6 +141,12 @@ func AssertErrorIfDev(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func GetHash(s string) int {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return int(h.Sum32())
 }
 
 //GetMD5Hash returns EncodeToString(md5 hash of the input string)
@@ -391,7 +398,8 @@ func Copy(dst, src interface{}) {
 func GetIPFromReq(req *http.Request) string {
 	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
 	if addresses[0] == "" {
-		return req.RemoteAddr // When there is no load-balancer
+		splits := strings.Split(req.RemoteAddr, ":")
+		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
 	}
 
 	return strings.Replace(addresses[0], " ", "", -1)
@@ -657,28 +665,6 @@ func GetOutboundIP() (net.IP, error) {
 	return localAddr.IP, nil
 }
 
-//IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
-func IsPostgresCompatible(connInfo string) bool {
-	dbHandle, err := sql.Open("postgres", connInfo)
-	if err != nil {
-		panic(err)
-	}
-	defer dbHandle.Close()
-
-	err = dbHandle.Ping()
-	if err != nil {
-		panic(err)
-	}
-
-	var versionNum int
-	err = dbHandle.QueryRow("SHOW server_version_num;").Scan(&versionNum)
-	if err != nil {
-		return false
-	}
-
-	return versionNum >= minPostgresVersion
-}
-
 /*
 RunWithTimeout runs provided function f until provided timeout d.
 If the timeout is reached, onTimeout callback will be called.
@@ -703,4 +689,50 @@ IsValidUUID will check if provided string is a valid UUID
 func IsValidUUID(uuid string) bool {
 	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
 	return r.MatchString(uuid)
+}
+
+func HasAWSKeysInConfig(config interface{}) bool {
+	configMap := config.(map[string]interface{})
+	if configMap["accessKeyID"] == nil || configMap["accessKey"] == nil {
+		return false
+	}
+	if configMap["accessKeyID"].(string) == "" || configMap["accessKey"].(string) == "" {
+		return false
+	}
+	return true
+}
+
+func GetObjectStorageConfig(provider string, objectStorageConfig interface{}) map[string]interface{} {
+	objectStorageConfigMap := objectStorageConfig.(map[string]interface{})
+	if provider == "S3" && !HasAWSKeysInConfig(objectStorageConfig) {
+		objectStorageConfigMap["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+		objectStorageConfigMap["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+
+	}
+	return objectStorageConfigMap
+
+}
+
+//GetNodeID returns the nodeId of the current node
+func GetNodeID() string {
+	nodeID := config.GetRequiredEnv("INSTANCE_ID")
+	return nodeID
+}
+
+//MakeRetryablePostRequest is Util function to make a post request.
+func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (response []byte, statusCode int, err error) {
+	backendURL := fmt.Sprintf("%s%s", url, endpoint)
+	dataJSON, err := json.Marshal(data)
+
+	resp, err := retryablehttp.Post(backendURL, "application/json", dataJSON)
+
+	if err != nil {
+		return nil, -1, err
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+
+	logger.Debugf("Post request: Successful %s", string(body))
+	return body, resp.StatusCode, nil
 }

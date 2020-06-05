@@ -103,7 +103,7 @@ func loadConfig() {
 
 var options []zap.Option
 
-func NewLogger() LoggerI {
+func NewLogger() *LoggerT {
 	return &LoggerT{}
 }
 

@@ -213,7 +213,7 @@ func loadConfig() {
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
-	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE"}
+	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
@@ -562,6 +562,7 @@ func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsd
 	metadata := transformer.MetadataT{}
 	metadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	metadata.DestinationID = destination.ID
+	metadata.UserID = batchEvent.UserID
 	metadata.JobID = batchEvent.JobID
 	metadata.DestinationType = destination.DestinationDefinition.Name
 	metadata.MessageID = event.Message["messageId"].(string)
@@ -605,6 +606,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	//Event count for performance stat monitoring
 	totalEvents := 0
+
+	logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
 
 	proc.marshalSingularEvents.Start()
 	for idx, batchEvent := range jobList {
@@ -683,7 +686,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//Mark the batch event as processed
 		newStatus := jobsdb.JobStatusT{
 			JobID:         batchEvent.JobID,
-			JobState:      jobsdb.SucceededState,
+			JobState:      jobsdb.Succeeded.State,
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
@@ -776,9 +779,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			// source_id will be same for all events belong to same user in a session
 			sourceID := destEvent.Metadata.SourceID
 			destID := destEvent.Metadata.DestinationID
+			userID := destEvent.Metadata.UserID
 
 			newJob := jobsdb.JobT{
 				UUID:         id,
+				UserID:       userID,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
@@ -802,9 +807,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Start()
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
+		logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 		proc.routerDB.Store(destJobs)
 	}
 	if len(batchDestJobs) > 0 {
+		logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 		proc.batchRouterDB.Store(batchDestJobs)
 	}
 
@@ -869,7 +876,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		for _, batchEvent := range combinedList {
 			newStatus := jobsdb.JobStatusT{
 				JobID:         batchEvent.JobID,
-				JobState:      jobsdb.ExecutingState,
+				JobState:      jobsdb.Executing.State,
 				AttemptNum:    1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
@@ -927,7 +934,7 @@ func (proc *HandleT) crashRecover() {
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
-				JobState:      jobsdb.FailedState,
+				JobState:      jobsdb.Failed.State,
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check
 			}
