@@ -692,21 +692,21 @@ This function will block.
 func (gateway *HandleT) StartWebHandler() {
 
 	logger.Infof("Starting in %d", webPort)
-
-	http.HandleFunc("/v1/batch", gateway.stat(gateway.webBatchHandler))
-	http.HandleFunc("/v1/identify", gateway.stat(gateway.webIdentifyHandler))
-	http.HandleFunc("/v1/track", gateway.stat(gateway.webTrackHandler))
-	http.HandleFunc("/v1/page", gateway.stat(gateway.webPageHandler))
-	http.HandleFunc("/v1/screen", gateway.stat(gateway.webScreenHandler))
-	http.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler))
-	http.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
-	http.HandleFunc("/health", gateway.healthHandler)
-	http.HandleFunc("/debugStack", gateway.printStackHandler)
-	http.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
-	http.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
+	srvMux := http.NewServeMux()
+	srvMux.HandleFunc("/v1/batch", gateway.stat(gateway.webBatchHandler))
+	srvMux.HandleFunc("/v1/identify", gateway.stat(gateway.webIdentifyHandler))
+	srvMux.HandleFunc("/v1/track", gateway.stat(gateway.webTrackHandler))
+	srvMux.HandleFunc("/v1/page", gateway.stat(gateway.webPageHandler))
+	srvMux.HandleFunc("/v1/screen", gateway.stat(gateway.webScreenHandler))
+	srvMux.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler))
+	srvMux.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
+	srvMux.HandleFunc("/health", gateway.healthHandler)
+	srvMux.HandleFunc("/debugStack", gateway.printStackHandler)
+	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
+	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
 
 	if gateway.application.Features().Webhook != nil {
-		http.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
+		srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
 	}
 
 	c := cors.New(cors.Options{
@@ -719,7 +719,16 @@ func (gateway *HandleT) StartWebHandler() {
 			diagnostics.ServerStarted: time.Now(),
 		})
 	}
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), c.Handler(bugsnag.Handler(nil))))
+	srv := &http.Server{
+		Addr:              ":" + strconv.Itoa(webPort),
+		Handler:           c.Handler(bugsnag.Handler(srvMux)),
+		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 1*time.Second),
+		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 2*time.Second),
+		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 5*time.Second),
+		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 30*time.Second),
+		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 // Gets the config from config backend and extracts enabled writekeys

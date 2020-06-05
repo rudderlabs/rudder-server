@@ -40,6 +40,13 @@ enableProcessor = true
 enableRouter = true
 enableStats = true
 
+[Http]
+ReadTimeOutInSec = 1
+ReadHeaderTimeoutInSec = 2
+WriteTimeOutInSec = 5
+IdleTimeoutInSec = 30
+MaxHeaderBytes = 524288
+
 [RateLimit]
 eventLimit=1000
 rateLimitWindowInMins=60
