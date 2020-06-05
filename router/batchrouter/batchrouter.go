@@ -669,7 +669,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 func (brt *HandleT) crashRecover() {
 
 	for {
-		execList := brt.jobsDB.GetExecuting([]string{}, jobQueryBatchSize, nil)
+		execList := brt.jobsDB.GetExecuting([]string{brt.destType}, jobQueryBatchSize, nil)
 
 		if len(execList) == 0 {
 			break
