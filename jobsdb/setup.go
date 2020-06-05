@@ -6,7 +6,7 @@ import (
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 )
 
-// setuDatabaseTables will initialize jobsdb tables using migration templates inside 'sql/migrations/jobsdb'.
+// setupDatabaseTables will initialize jobsdb tables using migration templates inside 'sql/migrations/jobsdb'.
 // Dataset tables are not created via migration scripts, they can only be updated.
 // The following data are passed to JobsDB migration templates:
 // - Prefix: The table prefix used by this jobsdb instance.
