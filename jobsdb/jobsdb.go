@@ -1758,7 +1758,7 @@ func (jd *HandleT) mainCheckLoop() {
 				totalJobsMigrated := 0
 				for _, ds := range migrateFrom {
 					logger.Info("Main check:Migrate", ds, migrateTo)
-					noJobsMigrated, err = jd.migrateJobs(ds, migrateTo)
+					noJobsMigrated, _ := jd.migrateJobs(ds, migrateTo)
 					totalJobsMigrated += noJobsMigrated
 				}
 				jd.assert(totalJobsMigrated > 0, "The number of jobs to migrate is 0 or less. Shouldn't be the case given we have a liveCount check")
