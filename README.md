@@ -1,13 +1,11 @@
 ![Build Status][build status]
 [![Release]][release]
 
-<p align="left">
-  <a href="https://rudderstack.com"><img src="https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png" alt="RudderStack Logo"/></a>
-</p>
+# [![RudderStack](https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png)](https://rudderstack.com)
 
 # What is RudderStack?
 
-[RudderStack](https://rudderstack.com/) is an **open-source Segment alternative**  for collecting, storing and routing customer event data **securely** to your data warehouse and dozens of other tools. It is **enterprise-ready**, and provides a powerful transformation framework to process your event data on the fly.
+[RudderStack](https://rudderstack.com/) is an **open-source Segment alternative** for collecting, storing and routing customer event data **securely** to your data warehouse and dozens of other tools. It is **enterprise-ready**, and provides a powerful transformation framework to process your event data on the fly.
 
 RudderStack's backend is written in Go, with a rich UI written in React.js.
 
@@ -16,6 +14,7 @@ You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=free
 Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord channel](https://discordapp.com/invite/xNEdEGw), or follow us on [Twitter](https://twitter.com/rudderstack).
 
 # Why Use RudderStack?
+
 - **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, and **1mg** use RudderStack for collecting their events.
 
 - **Extreme Scale**: One of our largest installations currently sends **300 Million** events/day with peak of **40K** req/sec, via a multi-node RudderStack setup.
@@ -48,7 +47,6 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord cha
 
 The easiest way to try RudderStack is through our hosted service. Please signup [here](https://app.rudderstack.com/signup?type=freetrial)
 
-
 You can also set up and use RudderStack on your platform of choice. Please refer to the following guides for detailed instructions:
 
 - [Setting up RudderStack on Docker](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/docker)
@@ -71,21 +69,22 @@ Once you have installed RudderStack, [send test events](https://docs.rudderstack
 # RudderStack Architecture
 
 RudderStack has two major components, namely:
+
 - **Control Plane**: The control plane allows you to manage the configuration of your sources and destinations. There are two options for setting up the connections:
+
   - [Managed control plane](https://app.rudderstack.com/): This is the easiest way to manage your source and destination configurations.
   - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. Please note that you cannot create transformations with the RudderStack Config Generator.
 
-- **Data Plane**:  This is the core engine that is responsible for:
+- **Data Plane**: This is the core engine that is responsible for:
 
-   - Receiving and buffering the event data
-   - Transforming the event data into the required destination format, and
-   - Relaying it to the destination
- 
+  - Receiving and buffering the event data
+  - Transforming the event data into the required destination format, and
+  - Relaying it to the destination
+
 For a detailed understanding of the RudderStack architecture, please check our [documentation](https://docs.rudderstack.com/getting-started/rudderstack-data-plane-architecture).
 
 A high-level view of RudderStack's architecture is as shown:
 ![Architecture](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-Lz111ICiMeHdy_Gu6JX%2F-Lz1A_NxMgbjhbSrVL2h%2FRudder%20Core%20Architecture.png?alt=media&token=2c524db9-7c5c-44e9-a351-cbb1c46a8063)
-
 
 # License
 
