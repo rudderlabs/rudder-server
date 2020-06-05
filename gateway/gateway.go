@@ -22,7 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
-	"github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger"
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -759,7 +759,7 @@ func (gateway *HandleT) gcBadgerDB() {
 
 func (gateway *HandleT) openBadger(clearDB *bool) {
 	var err error
-	badgerPathName := "/badgerdb/v2"
+	badgerPathName := "/badgerdb"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		panic(err)
