@@ -298,7 +298,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 	}
-	defer pg.dropStagingTables([]string{stagingTableName})
+	defer pg.dropStagingTable(stagingTableName)
 	stmt, err := txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		logger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v", stagingTableName, err)
@@ -559,14 +559,13 @@ func (pg *HandleT) createSchema() (err error) {
 	return
 }
 
-func (pg *HandleT) dropStagingTables(stagingTableNames []string) {
-	for _, stagingTableName := range stagingTableNames {
-		logger.Infof("WH: dropping table %+v\n", stagingTableName)
-		_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE "%s"`, stagingTableName))
-		if err != nil {
-			logger.Errorf("WH: RS:  Error dropping staging tables in redshift: %v", err)
-		}
+func (pg *HandleT) dropStagingTable(stagingTableName string) {
+	logger.Infof("WH: dropping table %+v\n", stagingTableName)
+	_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, stagingTableName))
+	if err != nil {
+		logger.Errorf("WH: RS:  Error dropping staging table %s in postgres: %v",stagingTableName, err)
 	}
+	
 }
 
 func (pg *HandleT) createTable(name string, columns map[string]string) (err error) {
