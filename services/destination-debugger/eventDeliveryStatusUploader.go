@@ -78,6 +78,8 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 //Setup initializes this module
 func Setup() {
 	deliveryStatusesBatchChannel = make(chan *DeliveryStatusT)
+	deliveryStatusesBuffer = make([]*DeliveryStatusT, 0)
+
 	rruntime.Go(func() {
 		backendConfigSubscriber()
 	})
@@ -149,8 +151,6 @@ func uploadJobs(deliveryStatusesBuffer []*DeliveryStatusT) {
 }
 
 func handleJobs() {
-	deliveryStatusesBuffer = make([]*DeliveryStatusT, 0)
-
 	for {
 		select {
 		case deliveryStatus := <-deliveryStatusesBatchChannel:

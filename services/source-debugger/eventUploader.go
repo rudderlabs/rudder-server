@@ -95,6 +95,8 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 func Setup() {
 	// TODO: Fix the buffer size
 	eventBatchChannel = make(chan *GatewayEventBatchT)
+	eventBuffer = make([]*GatewayEventBatchT, 0)
+
 	rruntime.Go(func() {
 		backendConfigSubscriber()
 	})
@@ -217,8 +219,6 @@ func getKeys(dataMap map[string]interface{}) []string {
 }
 
 func handleEvents() {
-	eventBuffer = make([]*GatewayEventBatchT, 0)
-
 	for {
 		select {
 		case eventSchema := <-eventBatchChannel:
