@@ -15,7 +15,7 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord cha
 
 # Why Use RudderStack?
 
-- **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, and **1mg** use RudderStack for collecting their events.
+- **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, **1mg**, **Nana**, **OnceHub**,  and dozens of large companies use RudderStack for collecting their events.
 
 - **Extreme Scale**: One of our largest installations currently sends **300 Million** events/day with peak of **40K** req/sec, via a multi-node RudderStack setup.
 
