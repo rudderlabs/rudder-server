@@ -41,10 +41,10 @@ enableRouter = true
 enableStats = true
 
 [Http]
-ReadTimeOutInSec = 1
-ReadHeaderTimeoutInSec = 2
-WriteTimeOutInSec = 5
-IdleTimeoutInSec = 30
+ReadTimeOutInSec = 0
+ReadHeaderTimeoutInSec = 0
+WriteTimeOutInSec = 10
+IdleTimeoutInSec = 720
 MaxHeaderBytes = 524288
 
 [RateLimit]
