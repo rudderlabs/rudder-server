@@ -100,11 +100,10 @@ For more information on RudderStack's features and functionalities, make sure yo
 
 # Stay Connected
 
-- See the [HackerNews][hackernews] discussion around RudderStack.
-- Join our [Discord][discord] channel.
-- Follow us on [Twitter][twitter].
-- Get the latest news from the [RudderStack blog][rudderstack-blog].
-- Subscribe to our newsletter.
+- See the [HackerNews][hackernews] discussion around RudderStack
+- Join our [Discord][discord] channel
+- Follow us on [Twitter][twitter]
+- Get the latest news from the [RudderStack blog][rudderstack-blog]
 
 <!----variables---->
 
