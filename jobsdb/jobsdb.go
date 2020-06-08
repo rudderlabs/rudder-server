@@ -64,6 +64,11 @@ type JobsDB interface {
 	Store(jobList []*JobT)
 	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
 	CheckPGHealth() bool
+	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT)
+
+	GetToRetry(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
+	GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
+	GetExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
 }
 
 /*

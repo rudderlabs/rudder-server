@@ -247,8 +247,9 @@ func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jo
 	}
 
 	if enableProcessor {
-		var processor processor.HandleT
-		processor.Setup(gatewayDB, routerDB, batchRouterDB)
+		var processor = processor.NewProcessor()
+		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, stats.DefaultStats)
+		processor.Start()
 
 		if !isReplayServer {
 			var replay replay.ReplayProcessorT
