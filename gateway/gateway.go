@@ -60,15 +60,15 @@ type batchWebRequestT struct {
 }
 
 var (
-	webPort, maxBatchSize, maxDBWriterProcess int
-	batchTimeout                              time.Duration
-	enabledWriteKeysSourceMap                 map[string]string
-	enabledWriteKeyWebhookMap                 map[string]string
-	configSubscriberLock                      sync.RWMutex
-	maxReqSize                                int
-	enableDedup                               bool
-	enableRateLimit                           bool
-	dedupWindow, diagnosisTickerTime          time.Duration
+	webPort, maxBatchSize, maxDBWriterProcess, maxDBWriter int
+	batchTimeout                                           time.Duration
+	enabledWriteKeysSourceMap                              map[string]string
+	enabledWriteKeyWebhookMap                              map[string]string
+	configSubscriberLock                                   sync.RWMutex
+	maxReqSize                                             int
+	enableDedup                                            bool
+	enableRateLimit                                        bool
+	dedupWindow, diagnosisTickerTime                       time.Duration
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -86,10 +86,24 @@ func init() {
 	loadStatusMap()
 }
 
+type writableElementT struct {
+	jobList                   []*jobsdb.JobT
+	allMessageIdsSet          map[string]struct{}
+	jobIDReqMap               map[uuid.UUID]*webRequestT
+	jobWriteKeyMap            map[uuid.UUID]string
+	jobEventCountMap          map[uuid.UUID]int
+	eventBatchesToRecord      []string
+	writeKeyFailStats         map[string]int
+	writeKeyFailEventStats    map[string]int
+	writeKeySuccessStats      map[string]int
+	writeKeySuccessEventStats map[string]int
+}
+
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
 	application                               app.Interface
 	webRequestQ                               chan *webRequestT
+	writableElementQ                          chan *writableElementT
 	jobsDB                                    jobsdb.JobsDB
 	badgerDB                                  *badger.DB
 	ackCount                                  uint64
@@ -179,6 +193,44 @@ func (gateway *HandleT) userWebRequestBatcher(dbWriterWorker *dbWriterWorkerT) {
 				reqBuffer = make([]*webRequestT, 0)
 			}
 		}
+	}
+}
+
+func (gateway *HandleT) dBWriter(process int) {
+	for writableElement := range gateway.writableElementQ {
+		var errorMessagesMap map[uuid.UUID]string
+		gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
+		switch gwAllowPartialWriteWithErrors {
+		case true:
+			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(writableElement.jobList)
+		case false:
+			gateway.jobsDB.Store(writableElement.jobList)
+		}
+
+		gateway.writeToBadger(writableElement.allMessageIdsSet)
+
+		for _, job := range writableElement.jobList {
+			err, found := errorMessagesMap[job.UUID]
+			if found {
+				misc.IncrementMapByKey(writableElement.writeKeyFailStats, writableElement.jobWriteKeyMap[job.UUID], 1)
+				misc.IncrementMapByKey(writableElement.writeKeyFailEventStats, writableElement.jobWriteKeyMap[job.UUID], writableElement.jobEventCountMap[job.UUID])
+			} else {
+				misc.IncrementMapByKey(writableElement.writeKeySuccessStats, writableElement.jobWriteKeyMap[job.UUID], 1)
+				misc.IncrementMapByKey(writableElement.writeKeySuccessEventStats, writableElement.jobWriteKeyMap[job.UUID], writableElement.jobEventCountMap[job.UUID])
+			}
+			writableElement.jobIDReqMap[job.UUID].done <- err
+		}
+		//Sending events to config backend
+		for _, event := range writableElement.eventBatchesToRecord {
+			sourcedebugger.RecordEvent(gjson.Get(event, "writeKey").Str, event)
+		}
+
+		// update stats request wise
+		gateway.updateWriteKeyStats(writableElement.writeKeySuccessStats, "gateway.write_key_successful_requests")
+		gateway.updateWriteKeyStats(writableElement.writeKeyFailStats, "gateway.write_key_failed_requests")
+		// update stats event wise
+		gateway.updateWriteKeyStats(writableElement.writeKeySuccessEventStats, "gateway.write_key_successful_events")
+		gateway.updateWriteKeyStats(writableElement.writeKeyFailEventStats, "gateway.write_key_failed_events")
 	}
 }
 
@@ -318,53 +370,34 @@ func (gateway *HandleT) userWebRequestBatchDBWriter(dbWriterWorker *dbWriterWork
 			jobWriteKeyMap[newJob.UUID] = writeKey
 			jobEventCountMap[newJob.UUID] = totalEventsInReq
 		}
-		var errorMessagesMap map[uuid.UUID]string
-		gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
-		switch gwAllowPartialWriteWithErrors {
-		case true:
-			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
-		case false:
-			gateway.jobsDB.Store(jobList)
-		}
-
-		gateway.writeToBadger(allMessageIdsSet)
 
 		if preDbStoreCount+len(jobList) != len(breq.batchRequest) {
 			panic(fmt.Errorf("preDbStoreCount:%d+len(errorMessagesMap):%d != len(breq.batchRequest):%d",
 				preDbStoreCount, len(jobList), len(breq.batchRequest)))
 		}
-		for _, job := range jobList {
-			err, found := errorMessagesMap[job.UUID]
-			if found {
-				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[job.UUID], 1)
-				misc.IncrementMapByKey(writeKeyFailEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
-			} else {
-				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[job.UUID], 1)
-				misc.IncrementMapByKey(writeKeySuccessEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
-			}
-			jobIDReqMap[job.UUID].done <- err
-		}
-		//Sending events to config backend
-		for _, event := range eventBatchesToRecord {
-			sourcedebugger.RecordEvent(gjson.Get(event, "writeKey").Str, event)
-		}
 
 		gateway.batchTimeStat.End()
 		gateway.batchSizeStat.Count(len(breq.batchRequest))
-		// update stats request wise
 		gateway.updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")
-		gateway.updateWriteKeyStats(writeKeySuccessStats, "gateway.write_key_successful_requests")
-		gateway.updateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
 		if enableRateLimit {
 			gateway.updateWriteKeyStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests")
 		}
-		// update stats event wise
 		gateway.updateWriteKeyStats(writeKeyEventStats, "gateway.write_key_events")
-		gateway.updateWriteKeyStats(writeKeySuccessEventStats, "gateway.write_key_successful_events")
-		gateway.updateWriteKeyStats(writeKeyFailEventStats, "gateway.write_key_failed_events")
 		if enableDedup {
 			gateway.updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
 		}
+
+		//POST JOBLIST ON A CHANNEL
+		gateway.writableElementQ <- &writableElementT{jobList: jobList,
+			allMessageIdsSet:          allMessageIdsSet,
+			jobIDReqMap:               jobIDReqMap,
+			jobWriteKeyMap:            jobWriteKeyMap,
+			jobEventCountMap:          jobEventCountMap,
+			eventBatchesToRecord:      eventBatchesToRecord,
+			writeKeyFailStats:         writeKeyFailStats,
+			writeKeyFailEventStats:    writeKeyFailEventStats,
+			writeKeySuccessStats:      writeKeySuccessStats,
+			writeKeySuccessEventStats: writeKeySuccessEventStats}
 	}
 }
 
@@ -843,6 +876,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
 	gateway.webRequestQ = make(chan *webRequestT)
+	gateway.writableElementQ = make(chan *writableElementT)
 	gateway.jobsDB = jobsDB
 	rruntime.Go(func() {
 		gateway.webRequestRouter()
@@ -852,6 +886,12 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	})
 
 	gateway.initDBWorkers()
+	for i := 0; i < maxDBWriter; i++ {
+		j := i
+		rruntime.Go(func() {
+			gateway.dBWriter(j)
+		})
+	}
 
 	if gateway.application.Features().Webhook != nil {
 		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
