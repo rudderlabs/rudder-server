@@ -121,14 +121,13 @@ type dataSetRangeT struct {
 
 //MigrationState maintains the state required during the migration process
 type MigrationState struct {
-	sequenceProvider *SequenceProviderT
-	dsForNewEvents   dataSetT
-	dsForImport      dataSetT
-	lastDsForExport  dataSetT
-	importLock       sync.RWMutex
-	migrationMode    string
-	fromVersion      int
-	toVersion        int
+	dsForNewEvents  dataSetT
+	dsForImport     dataSetT
+	lastDsForExport dataSetT
+	importLock      sync.RWMutex
+	migrationMode   string
+	fromVersion     int
+	toVersion       int
 }
 
 /*
