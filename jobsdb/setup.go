@@ -34,7 +34,7 @@ func (jd *HandleT) setupDatabaseTables() {
 	}
 
 	// execute any necessary migrations
-	err := migrator.MigrateFromTemplates("sql/migrations/jobsdb", templateData)
+	err := migrator.MigrateFromTemplates("jobsdb", templateData)
 	if err != nil {
 		panic(fmt.Errorf("Error while migrating '%v' jobsdb tables: %w", jd.tablePrefix, err))
 	}

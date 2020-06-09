@@ -12,8 +12,8 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file" // file source
 	bindata "github.com/golang-migrate/migrate/v4/source/go_bindata"
+	"github.com/golang-migrate/migrate/v4/source/httpfs"
 )
 
 // Migrator is responsible for migrating postgres tables
@@ -26,11 +26,16 @@ type Migrator struct {
 	Handle *sql.DB
 }
 
-// Migrate migrates database schema
+// Migrate migrates database schema using migration SQL scripts.
 func (m *Migrator) Migrate(migrationsDir string) error {
-	driver, err := m.getDestinationDriver()
+	destinationDriver, err := m.getDestinationDriver()
 
-	migration, err := migrate.NewWithDatabaseInstance("file://"+migrationsDir, "postgres", driver)
+	sourceDriver, err := httpfs.New(MigrationAssets, "/")
+	if err != nil {
+		return fmt.Errorf("Could not create migration source for script directory '%v': %w", migrationsDir, err)
+	}
+
+	migration, err := migrate.NewWithInstance("httpfs", sourceDriver, "postgres", destinationDriver)
 	if err != nil {
 		return fmt.Errorf("Could not execute migrations from migration directory '%v': %w", migrationsDir, err)
 	}
@@ -43,9 +48,18 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 // Directories inside templates directory are ignored.
 func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}) error {
 	// look in templatesDir for migration template files
-	fileInfos, err := ioutil.ReadDir(templatesDir)
+	templates, err := MigrationAssets.Open(templatesDir)
+	if err != nil {
+		return fmt.Errorf("Could not open migration template directory '%v': '%w'", templatesDir, err)
+	}
+
+	fileInfos, err := templates.Readdir(-1)
 	if err != nil {
 		return fmt.Errorf("Could not read migration template directory '%v': %w", templatesDir, err)
+	}
+
+	if len(fileInfos) == 0 {
+		return fmt.Errorf("Migration template directory '%v' is empty", templatesDir)
 	}
 
 	templateNames := make([]string, 0)
@@ -59,7 +73,13 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}
 	assetSource := bindata.Resource(templateNames,
 		func(name string) ([]byte, error) {
 			// read template file
-			templateData, err := ioutil.ReadFile(filepath.Join(templatesDir, name))
+			path := filepath.Join(templatesDir, name)
+			file, err := MigrationAssets.Open(path)
+			if err != nil {
+				return nil, fmt.Errorf("Could not open migration template '%v': '%w'", path, err)
+			}
+
+			templateData, err := ioutil.ReadAll(file)
 			if err != nil {
 				return nil, fmt.Errorf("Could not read migration template '%v': %w", name, err)
 			}

@@ -24,6 +24,7 @@ require (
 	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/gofrs/uuid v3.2.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.1 // indirect
+	github.com/golang-migrate/migrate/v4 v4.11.0
 	github.com/golang/mock v1.4.3
 	github.com/golang/protobuf v1.3.4 // indirect
 	github.com/google/uuid v1.1.1 // indirect
@@ -44,6 +45,8 @@ require (
 	github.com/satori/go.uuid v1.2.0
 	github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c // indirect
 	github.com/segmentio/ksuid v1.0.2
+	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749 // indirect
+	github.com/shurcooL/vfsgen v0.0.0-20181202132449-6a9ea43bcacd // indirect
 	github.com/snowflakedb/gosnowflake v1.3.4
 	github.com/spf13/afero v1.2.2 // indirect
 	github.com/spf13/cast v1.3.1
@@ -57,7 +60,6 @@ require (
 	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
 	go.uber.org/multierr v1.5.0 // indirect
 	go.uber.org/zap v1.14.0
-	golang.org/x/crypto v0.0.0-20200221231518-2aa609cf4a9d // indirect
 	golang.org/x/net v0.0.0-20200226121028-0de0cce0169b // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 	golang.org/x/tools v0.0.0-20200226224502-204d844ad48d // indirect
