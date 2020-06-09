@@ -169,6 +169,10 @@ processSessions = false
 numTransformWorker = 8
 maxRetry = 30
 retrySleepInMS = 100
+errReadLoopSleepInS = 30
+errDBReadBatchSize = 10000
+noOfErrBackupWorkers = 2
+maxFailedCountForErrJob = 3
 
 [BackendConfig]
 configFromFile = false

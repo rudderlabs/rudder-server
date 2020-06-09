@@ -1893,7 +1893,7 @@ func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
 	}
 	return filemanager.New(&filemanager.SettingsT{
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config:   filemanager.GetProviderConfigFromEnv(),
+		Config:   filemanager.GetProviderConfigFromEnv("JOBS_BACKUP"),
 	})
 
 }
@@ -2002,7 +2002,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			}
 			contentSlice[idx] = rowBytes
 		}
-		content := bytes.Join(contentSlice[:], []byte("\n"))
+		content := append(bytes.Join(contentSlice[:], []byte("\n")), []byte("\n")...)
 		gzWriter.Write(content)
 		offset += backupRowsBatchSize
 		if offset >= totalCount {

@@ -1,8 +1,11 @@
 package processor
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -17,6 +20,8 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -35,7 +40,7 @@ type HandleT struct {
 	gatewayDB              jobsdb.JobsDB
 	routerDB               jobsdb.JobsDB
 	batchRouterDB          jobsdb.JobsDB
-	procErrorDB            jobsdb.JobsDB
+	errorDB                jobsdb.JobsDB
 	transformer            transformer.Transformer
 	pStatsJobs             *misc.PerfStats
 	pStatsDBR              *misc.PerfStats
@@ -44,6 +49,7 @@ type HandleT struct {
 	statGatewayDBW         stats.RudderStats
 	statRouterDBW          stats.RudderStats
 	statBatchRouterDBW     stats.RudderStats
+	statProcErrDBW         stats.RudderStats
 	statActiveUsers        stats.RudderStats
 	userJobListMap         map[string][]*jobsdb.JobT
 	userEventsMap          map[string][]types.SingularEventT
@@ -51,6 +57,8 @@ type HandleT struct {
 	statJobs               stats.RudderStats
 	statDBR                stats.RudderStats
 	statDBW                stats.RudderStats
+	statErrDBR             stats.RudderStats
+	statErrDBW             stats.RudderStats
 	statLoopTime           stats.RudderStats
 	statSessionTransform   stats.RudderStats
 	statUserTransform      stats.RudderStats
@@ -63,6 +71,8 @@ type HandleT struct {
 	userToSessionIDMap     map[string]string
 	userJobPQ              pqT
 	userPQLock             sync.Mutex
+	errProcessQ            chan []*jobsdb.JobT
+	errFileUploader        filemanager.FileManager
 }
 
 type DestStatT struct {
@@ -130,14 +140,14 @@ func NewProcessor() *HandleT {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, procErrorDB jobsdb.JobsDB, s stats.Stats) {
+func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, s stats.Stats) {
 	proc.backendConfig = backendConfig
 	proc.stats = s
 
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
-	proc.procErrorDB = procErrorDB
+	proc.errorDB = errorDB
 	proc.pStatsJobs = &misc.PerfStats{}
 	proc.pStatsDBR = &misc.PerfStats{}
 	proc.pStatsDBW = &misc.PerfStats{}
@@ -154,9 +164,12 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statGatewayDBW = proc.stats.NewStat("processor.gateway_db_write", stats.CountType)
 	proc.statRouterDBW = proc.stats.NewStat("processor.router_db_write", stats.CountType)
 	proc.statBatchRouterDBW = proc.stats.NewStat("processor.batch_router_db_write", stats.CountType)
+	proc.statProcErrDBW = proc.stats.NewStat("processor.proc_err_db_write", stats.CountType)
 	proc.statActiveUsers = proc.stats.NewStat("processor.active_users", stats.GaugeType)
 	proc.statDBR = proc.stats.NewStat("processor.gateway_db_read_time", stats.TimerType)
 	proc.statDBW = proc.stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
+	proc.statErrDBR = proc.stats.NewStat("processor.err_db_read_time", stats.TimerType)
+	proc.statErrDBW = proc.stats.NewStat("processor.err_db_write_time", stats.TimerType)
 	proc.statLoopTime = proc.stats.NewStat("processor.loop_time", stats.TimerType)
 	proc.statSessionTransform = proc.stats.NewStat("processor.session_transform_time", stats.TimerType)
 	proc.statUserTransform = proc.stats.NewStat("processor.user_transform_time", stats.TimerType)
@@ -181,19 +194,143 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	}
 }
 
+type StoreErrorOutputT struct {
+	Location string
+	Error    error
+}
+
+func (proc *HandleT) storeErorrsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOutputT {
+	localTmpDirName := "/rudder-proc-err-logs/"
+
+	uuid := uuid.NewV4()
+	logger.Debug("[Processor: storeErorrsToObjectStorage]: Starting logging to object storage")
+
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
+	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v", time.Now().Unix(), config.GetEnv("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid))
+
+	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
+	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
+	if err != nil {
+		panic(err)
+	}
+	gzWriter, err := misc.CreateGZ(gzipFilePath)
+	if err != nil {
+		panic(err)
+	}
+	defer os.Remove(gzipFilePath)
+
+	var contentSlice [][]byte
+	for _, job := range jobs {
+		rawJob, err := json.Marshal(job)
+		if err != nil {
+			panic(err)
+		}
+		contentSlice = append(contentSlice, rawJob)
+	}
+	content := bytes.Join(contentSlice[:], []byte("\n"))
+	gzWriter.Write(content)
+	gzWriter.CloseGZ()
+
+	outputFile, err := os.Open(gzipFilePath)
+	if err != nil {
+		panic(err)
+	}
+	prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
+	uploadOutput, err := proc.errFileUploader.Upload(outputFile, prefixes...)
+
+	return StoreErrorOutputT{
+		Location: uploadOutput.Location,
+		Error:    err,
+	}
+}
+
+func (proc *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT) {
+	var statusList []*jobsdb.JobStatusT
+	for _, job := range jobs {
+		state := jobsdb.Succeeded.State
+		errorResp := []byte(`{"success":"OK"}`)
+		if output.Error != nil {
+			var err error
+			errorResp, err = json.Marshal(struct{ Error string }{output.Error.Error()})
+			if err != nil {
+				panic(err)
+			}
+			if job.LastJobStatus.AttemptNum >= maxFailedCountForErrJob {
+				state = jobsdb.Aborted.State
+			} else {
+				state = jobsdb.Failed.State
+			}
+		}
+		status := jobsdb.JobStatusT{
+			JobID:         job.JobID,
+			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+			JobState:      state,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "",
+			ErrorResponse: errorResp,
+		}
+		statusList = append(statusList, &status)
+	}
+	proc.errorDB.UpdateJobStatus(statusList, nil, nil)
+}
+
+func (proc *HandleT) initErrWorkers() {
+	for i := 0; i < noOfErrBackupWorkers; i++ {
+		rruntime.Go(func() {
+			func() {
+				for {
+					select {
+					case jobs := <-proc.errProcessQ:
+						uploadStat := stats.NewStat("Processor.err_upload_time", stats.TimerType)
+						uploadStat.Start()
+						output := proc.storeErorrsToObjectStorage(jobs)
+						proc.setErrJobStatus(jobs, output)
+						uploadStat.End()
+					}
+				}
+			}()
+		})
+	}
+}
+
 // Start starts this processor's main loops.
 func (proc *HandleT) Start() {
 	rruntime.Go(func() {
 		proc.mainLoop()
+	})
+	rruntime.Go(func() {
+		provider := config.GetEnv("PROC_ERROR_BACKUP_STORAGE_PROVIDER", "")
+		bucket := config.GetEnv("PROC_ERROR_BACKUP_BUCKET", "")
+		if provider != "" && bucket != "" {
+			var err error
+			proc.errFileUploader, err = filemanager.New(&filemanager.SettingsT{
+				Provider: provider,
+				Config:   filemanager.GetProviderConfigFromEnv("PROC_ERROR_BACKUP"),
+			})
+			if err != nil {
+				panic(err)
+			}
+		}
+		proc.errProcessQ = make(chan []*jobsdb.JobT)
+		proc.initErrWorkers()
+		proc.readErrJobsLoop()
 	})
 }
 
 var (
 	loopSleep                           time.Duration
 	maxLoopSleep                        time.Duration
+	errReadLoopSleep                    time.Duration
 	dbReadBatchSize                     int
 	transformBatchSize                  int
 	userTransformBatchSize              int
+	errDBReadBatchSize                  int
+	noOfErrBackupWorkers                int
+	maxFailedCountForErrJob             int
 	sessionInactivityThreshold          time.Duration
 	configSessionThresholdEvents        int
 	configProcessSessions               bool
@@ -209,7 +346,11 @@ var (
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
 	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
+	errReadLoopSleep = config.GetDuration("Processor.errReadLoopSleepInS", time.Duration(30)) * time.Second
 	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 10000)
+	errDBReadBatchSize = config.GetInt("Processor.errDBReadBatchSize", 10000)
+	noOfErrBackupWorkers = config.GetInt("Processor.noOfErrBackupWorkers", 2)
+	maxFailedCountForErrJob = config.GetInt("BatchRouter.maxFailedCountForErrJob", 3)
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
@@ -587,6 +728,25 @@ func getSourceAndDestIDsFromKey(key string) (sourceID string, destID string) {
 	return fields[0], fields[1]
 }
 
+func recordEventDeliveryStatus(jobs []*jobsdb.JobT) {
+	for _, job := range jobs {
+		var params map[string]interface{}
+		err := json.Unmarshal(job.Parameters, &params)
+		if err != nil {
+			panic(err)
+		}
+		deliveryStatus := destinationdebugger.DeliveryStatusT{
+			DestinationID: params["destination_id"].(string),
+			SourceID:      params["source_id"].(string),
+			Payload:       job.EventPayload,
+			AttemptNum:    1,
+			JobState:      jobsdb.Aborted.State,
+			ErrorResponse: []byte(fmt.Sprintf(`{"error": "%v"}`, params["error"].(string))),
+		}
+		destinationdebugger.RecordEventDeliveryStatus(params["destination_id"].(string), &deliveryStatus)
+	}
+}
+
 func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, metadata transformer.MetadataT, destination backendconfig.DestinationT, eventsByMessageID map[string]types.SingularEventT) (eventsToTransform []transformer.TransformerEventT, failedEventsToStore []*jobsdb.JobT) {
 	for _, userTransformedEvent := range response.Events {
 		// Fix this: Define a cleaner API. Custom transformer should not try to mimic internal structs
@@ -897,22 +1057,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 	if len(procErrorJobs) > 0 {
 		logger.Debug("[Processor] Total jobs written to proc_error: ", len(procErrorJobs))
-		proc.procErrorDB.Store(procErrorJobs)
-		jobs := proc.procErrorDB.GetUnprocessed([]string{}, len(procErrorJobs), nil)
-		var procErrAbortedList []*jobsdb.JobStatusT
-		for _, job := range jobs {
-			newStatus := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				JobState:      jobsdb.Aborted.State,
-				AttemptNum:    0,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				ErrorCode:     "200",
-				ErrorResponse: []byte(`{}`),
-			}
-			procErrAbortedList = append(procErrAbortedList, &newStatus)
-		}
-		proc.procErrorDB.UpdateJobStatus(procErrAbortedList, nil, nil)
+		proc.errorDB.Store(procErrorJobs)
+		recordEventDeliveryStatus(procErrorJobs)
 	}
 
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
@@ -926,6 +1072,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.statGatewayDBW.Count(len(statusList))
 	proc.statRouterDBW.Count(len(destJobs))
 	proc.statBatchRouterDBW.Count(len(batchDestJobs))
+	proc.statProcErrDBW.Count(len(procErrorJobs))
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
@@ -1016,10 +1163,59 @@ func (proc *HandleT) mainLoop() {
 	}
 }
 
-func (proc *HandleT) crashRecover() {
+func (proc *HandleT) readErrJobsLoop() {
+	logger.Info("Processor errors backup loop started")
 
 	for {
-		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize, nil)
+		time.Sleep(errReadLoopSleep)
+		proc.statErrDBR.Start()
+
+		toQuery := errDBReadBatchSize
+		retryList := proc.errorDB.GetToRetry(nil, toQuery, nil)
+		toQuery -= len(retryList)
+		unprocessedList := proc.errorDB.GetUnprocessed(nil, toQuery, nil)
+
+		proc.statErrDBR.End()
+
+		combinedList := append(retryList, unprocessedList...)
+
+		if len(combinedList) == 0 {
+			logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")
+			continue
+		}
+
+		hasFileUploader := proc.errFileUploader != nil
+
+		jobState := jobsdb.Executing.State
+		// abort jobs if file uploader not configured to store them to object storage
+		if !hasFileUploader {
+			jobState = jobsdb.Aborted.State
+		}
+
+		var statusList []*jobsdb.JobStatusT
+		for _, job := range combinedList {
+			status := jobsdb.JobStatusT{
+				JobID:         job.JobID,
+				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+				JobState:      jobState,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "",
+				ErrorResponse: []byte(`{}`),
+			}
+			statusList = append(statusList, &status)
+		}
+
+		proc.errorDB.UpdateJobStatus(statusList, nil, nil)
+		if hasFileUploader {
+			proc.errProcessQ <- combinedList
+		}
+	}
+}
+
+func markExecJobsToFailed(db jobsdb.JobsDB, customVal string) {
+	for {
+		execList := db.GetExecuting([]string{customVal}, dbReadBatchSize, nil)
 
 		if len(execList) == 0 {
 			break
@@ -1031,7 +1227,7 @@ func (proc *HandleT) crashRecover() {
 		for _, job := range execList {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+				AttemptNum:    job.LastJobStatus.AttemptNum,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				JobState:      jobsdb.Failed.State,
@@ -1040,32 +1236,12 @@ func (proc *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+		db.UpdateJobStatus(statusList, []string{customVal}, nil)
 	}
+}
 
-	// TODO: DRY this after deciding whether proc_err jobsbd should be archived or sent to S3 in regular interval
-	for {
-		abortList := proc.procErrorDB.GetUnprocessed(nil, dbReadBatchSize, nil)
-
-		if len(abortList) == 0 {
-			break
-		}
-		logger.Debug("Processor crash recovering proc_err jobs", len(abortList))
-
-		var statusList []*jobsdb.JobStatusT
-
-		for _, job := range abortList {
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    0,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				JobState:      jobsdb.Aborted.State,
-				ErrorCode:     "",
-				ErrorResponse: []byte(`{}`), // check
-			}
-			statusList = append(statusList, &status)
-		}
-		proc.procErrorDB.UpdateJobStatus(statusList, nil, nil)
-	}
+func (proc *HandleT) crashRecover() {
+	markExecJobsToFailed(proc.gatewayDB, gateway.CustomVal)
+	markExecJobsToFailed(proc.errorDB, "")
+	// TODO: Download last uploaded errors file and dedup
 }
