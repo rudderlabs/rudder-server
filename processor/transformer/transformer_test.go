@@ -1,4 +1,4 @@
-package processor
+package transformer
 
 import (
 	"net/http"
@@ -8,19 +8,21 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	mock_logger "github.com/rudderlabs/rudder-server/mocks/logger"
 	mock_stats "github.com/rudderlabs/rudder-server/mocks/stats"
+	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	mock_misc "github.com/rudderlabs/rudder-server/mocks/utils/misc"
 	mock_sysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-type TestData struct {
-	test string
+var TestData = []TransformerEventT{
+	{
+		SessionID: "test",
+	},
 }
-
 var (
-	transformer               *transformerHandleT
+	transformer               *HandleT
 	originalLogger            = log
 	originaIoUtil             = Ioutil
 	originaIo                 = Io
@@ -45,9 +47,9 @@ var _ = Describe("Transformer", func() {
 	})
 	Context("transformWorker", func() {
 		BeforeEach(func() {
-			transformer = &transformerHandleT{}
+			transformer = &HandleT{}
 			transformer.requestQ = make(chan *transformMessageT, 2)
-			transformer.responseQ = make(chan *transformMessageT, 2)
+			transformer.responseQ = make(chan *transformedMessageT, 2)
 			mockIoUtil = mock_sysUtils.NewMockIoUtilI(ctrl)
 			mockIo = mock_sysUtils.NewMockIoI(ctrl)
 			Ioutil = mockIoUtil
@@ -58,18 +60,6 @@ var _ = Describe("Transformer", func() {
 			log = originalLogger
 			Ioutil = originaIoUtil
 			Io = originaIo
-		})
-		It("Expect to panic if wrong job data", func() {
-			defer func() {
-				if r := recover(); r != nil {
-					Expect(r).To(HaveOccurred())
-				} else if r == nil {
-					Expect(r).To(HaveOccurred())
-				}
-			}()
-			// we create channel as data to enforce json.marshal to throw an error
-			transformer.requestQ <- &transformMessageT{index: 0, data: make(chan int), url: ""}
-			transformer.transformWorker(transformRequestTimerStat)
 		})
 
 		It("Expect to panic if all retries fail", func() {
@@ -84,7 +74,7 @@ var _ = Describe("Transformer", func() {
 			mockRubberStats.EXPECT().Start().Times(3)
 			mockRubberStats.EXPECT().End().Times(3)
 			mockLogger.EXPECT().Errorf("JS HTTP connection error: URL: %v Error: %+v", "", gomock.Any()).Times(3)
-			transformer.requestQ <- &transformMessageT{index: 0, data: &TestData{test: "test"}, url: ""}
+			transformer.requestQ <- &transformMessageT{index: 0, data: TestData, url: ""}
 			transformer.transformWorker(transformRequestTimerStat)
 		})
 		It("Expect to make the correct actions if the first request fail but succeed in retry", func() {
@@ -114,7 +104,7 @@ var _ = Describe("Transformer", func() {
 			mockRubberStats.EXPECT().End().Times(2)
 			mockLogger.EXPECT().Errorf("JS HTTP connection error: URL: %v Error: %+v", gomock.Any(), gomock.Any()).Times(1)
 			mockLogger.EXPECT().Errorf("Failed request succeeded after %v retries, URL: %v", 1, gomock.Any()).Times(1)
-			transformer.requestQ <- &transformMessageT{index: 0, data: &TestData{test: "test"}, url: server.URL}
+			transformer.requestQ <- &transformMessageT{index: 0, data: TestData, url: server.URL}
 			transformer.transformWorker(transformRequestTimerStat)
 		})
 
@@ -133,20 +123,20 @@ var _ = Describe("Transformer", func() {
 			mockIoUtil.EXPECT().ReadAll(gomock.Any()).Times(1)
 			mockRubberStats.EXPECT().Start().Times(1)
 			mockRubberStats.EXPECT().End().Times(1)
-			transformer.requestQ <- &transformMessageT{index: 0, data: &TestData{test: "test"}, url: server.URL}
+			transformer.requestQ <- &transformMessageT{index: 0, data: TestData, url: server.URL}
 			transformer.transformWorker(transformRequestTimerStat)
 
 		})
 		It("Expect to make the correct actions if response status is different from 200,400,404,413", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusAccepted)
-				rw.Write([]byte("{}"))
+				rw.Write([]byte("[{}]"))
 			}))
 			mockRubberStats.EXPECT().Start().Times(1)
 			mockRubberStats.EXPECT().End().Times(1)
 			mockLogger.EXPECT().Errorf("Transformer returned status code: %v", 202).Times(1)
 			mockIo.EXPECT().Copy(gomock.Any(), gomock.Any()).Times(1)
-			transformer.requestQ <- &transformMessageT{index: 0, data: &TestData{test: "test"}, url: server.URL}
+			transformer.requestQ <- &transformMessageT{index: 0, data: TestData, url: server.URL}
 			go func() {
 				transformer.transformWorker(transformRequestTimerStat)
 			}()
@@ -156,12 +146,12 @@ var _ = Describe("Transformer", func() {
 		It("Expect to make the correct if a request succeed", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusOK)
-				rw.Write([]byte("{}"))
+				rw.Write([]byte("[{}]"))
 			}))
 			mockRubberStats.EXPECT().Start().Times(1)
 			mockRubberStats.EXPECT().End().Times(1)
-			mockIoUtil.EXPECT().ReadAll(gomock.Any()).Return([]byte("{}"), nil).Times(1)
-			transformer.requestQ <- &transformMessageT{index: 0, data: &TestData{test: "test"}, url: server.URL}
+			mockIoUtil.EXPECT().ReadAll(gomock.Any()).Return([]byte("[{}]"), nil).Times(1)
+			transformer.requestQ <- &transformMessageT{index: 0, data: TestData, url: server.URL}
 			go func() {
 				transformer.transformWorker(transformRequestTimerStat)
 			}()
@@ -171,14 +161,14 @@ var _ = Describe("Transformer", func() {
 	})
 	Context("Transform", func() {
 		var (
-			transformer            *transformerHandleT
+			transformer            *HandleT
 			mockSentStat           *mock_stats.MockRudderStats
 			mockReceivedStat       *mock_stats.MockRudderStats
 			mockFailedStat         *mock_stats.MockRudderStats
 			mockPerfStats          *mock_misc.MockPerfStatsI
 			mockTransformTimerStat *mock_stats.MockRudderStats
-			eventsDataList         []interface{}
-			eventData              map[string]interface{}
+			eventsDataList         []TransformerEventT
+			eventData              TransformerEventT
 		)
 		BeforeEach(func() {
 			mockSentStat = mock_stats.NewMockRudderStats(ctrl)
@@ -186,9 +176,9 @@ var _ = Describe("Transformer", func() {
 			mockFailedStat = mock_stats.NewMockRudderStats(ctrl)
 			mockTransformTimerStat = mock_stats.NewMockRudderStats(ctrl)
 			mockPerfStats = mock_misc.NewMockPerfStatsI(ctrl)
-			transformer = &transformerHandleT{
+			transformer = &HandleT{
 				requestQ:           make(chan *transformMessageT, maxChanSize),
-				responseQ:          make(chan *transformMessageT, maxChanSize),
+				responseQ:          make(chan *transformedMessageT, maxChanSize),
 				sentStat:           mockSentStat,
 				receivedStat:       mockReceivedStat,
 				failedStat:         mockFailedStat,
@@ -197,27 +187,33 @@ var _ = Describe("Transformer", func() {
 			}
 			mockTransformTimerStat.EXPECT().Start().Times(1)
 
-			eventsDataList = make([]interface{}, 0)
-			eventData = make(map[string]interface{})
-			eventData["destination"] = backendconfig.DestinationT{
-				ID:                 "d2",
-				Name:               "processor Enabled",
-				IsProcessorEnabled: true,
+			eventsDataList = make([]TransformerEventT, 0)
+
+			eventMessage := make(types.SingularEventT)
+			eventMessage["anonymousId"] = "a1"
+
+			eventData = TransformerEventT{
+				Destination: backendconfig.DestinationT{
+					ID:                 "d2",
+					Name:               "processor Enabled",
+					IsProcessorEnabled: true,
+				},
+				Message: eventMessage,
 			}
-			eventData["message"] = make(map[string]interface{})
-			eventData["message"].(map[string]interface{})["anonymousId"] = "a1"
 			eventsDataList = append(eventsDataList, eventData)
+
 			mockPerfStats.EXPECT().Start().Times(1)
 		})
 
 		It("Expect to panic if no anonymous id found", func() {
-			eventData2 := make(map[string]interface{})
-			eventData2["destination"] = backendconfig.DestinationT{
-				ID:                 "d2",
-				Name:               "processor Enabled",
-				IsProcessorEnabled: true,
+			eventData2 := TransformerEventT{
+				Destination: backendconfig.DestinationT{
+					ID:                 "d2",
+					Name:               "processor Enabled",
+					IsProcessorEnabled: true,
+				},
+				Message: make(types.SingularEventT),
 			}
-			eventData2["message"] = make(map[string]interface{})
 			eventsDataList = append(eventsDataList, eventData2)
 			defer func() {
 				if r := recover(); r != nil {
@@ -230,19 +226,22 @@ var _ = Describe("Transformer", func() {
 			}()
 
 			mockSentStat.EXPECT().Count(2).Times(1)
-			transformer.requestQ <- &transformMessageT{index: 0, data: &TestData{test: "test"}, url: ""}
+			transformer.requestQ <- &transformMessageT{index: 0, data: TestData, url: ""}
 			transformer.Transform(eventsDataList, "", 1, true)
 		})
 
 		It("Expect to make the correct actions if current and prev user ids are not equal", func() {
-			eventData2 := make(map[string]interface{})
-			eventData2["destination"] = backendconfig.DestinationT{
-				ID:                 "d2",
-				Name:               "processor Enabled",
-				IsProcessorEnabled: true,
+
+			eventMessage := make(types.SingularEventT)
+			eventMessage["anonymousId"] = "a2"
+			eventData2 := TransformerEventT{
+				Destination: backendconfig.DestinationT{
+					ID:                 "d2",
+					Name:               "processor Enabled",
+					IsProcessorEnabled: true,
+				},
+				Message: eventMessage,
 			}
-			eventData2["message"] = make(map[string]interface{})
-			eventData2["message"].(map[string]interface{})["anonymousId"] = "a2"
 			eventsDataList = append(eventsDataList, eventData2)
 			mockLogger.EXPECT().Debug("Breaking batch at", 1, "a1", "a2").AnyTimes()
 			// mockLogger.EXPECT().Debug("Breaking batch at", 0, "a1", "a2").Times(1)
@@ -250,13 +249,12 @@ var _ = Describe("Transformer", func() {
 			mockSentStat.EXPECT().Count(0).AnyTimes()
 			mockSentStat.EXPECT().Count(1).AnyTimes()
 			go func() {
-				respData := make([]interface{}, 0)
-				respData = append(respData, "testData")
+				respData := []TransformerResponseT{{}}
 				defer GinkgoRecover()
 				req := <-transformer.requestQ
 				req2 := <-transformer.requestQ
-				transformer.responseQ <- &transformMessageT{index: 1, data: respData, url: ""}
-				transformer.responseQ <- &transformMessageT{index: 2, data: respData, url: ""}
+				transformer.responseQ <- &transformedMessageT{index: 1, data: respData}
+				transformer.responseQ <- &transformedMessageT{index: 2, data: respData}
 				Expect(req.index).To(Equal(0))
 				Expect(req2.index).To(Equal(1))
 			}()
@@ -264,35 +262,8 @@ var _ = Describe("Transformer", func() {
 			mockPerfStats.EXPECT().End(2).Times(1)
 			mockPerfStats.EXPECT().Print().Times(1)
 			mockTransformTimerStat.EXPECT().End().Times(1)
-			transformer.requestQ <- &transformMessageT{index: 0, data: &TestData{test: "test"}, url: ""}
-			transformer.Transform(eventsDataList, "", 1, true)
-		})
-
-		It("Expect to panic if response data not an array", func() {
-			defer func() {
-				if r := recover(); r != nil {
-					Expect(r).To(HaveOccurred())
-					Expect(r.(error).Error()).To(Equal("typecast of resp.data to []interface{} failed"))
-				} else if r == nil {
-					Expect(r).To(HaveOccurred())
-					Expect(r.(error).Error()).To(Equal("typecast of resp.data to []interface{} failed"))
-				}
-			}()
-
-			mockSentStat.EXPECT().Count(1).Times(1)
-			mockReceivedStat.EXPECT().Count(1).Times(1)
-			mockTransformTimerStat.EXPECT().End().Times(1)
-			mockPerfStats.EXPECT().End(1).Times(1)
-			mockPerfStats.EXPECT().Print().Times(1)
-			respData := make([]interface{}, 0)
-			respData = append(respData, "testData")
-			go func() {
-				defer GinkgoRecover()
-				req := <-transformer.requestQ
-				transformer.responseQ <- &transformMessageT{index: 1, data: "", url: ""}
-				Expect(req.index).To(Equal(1))
-			}()
-			transformer.Transform(eventsDataList, "", 1, false)
+			transformer.requestQ <- &transformMessageT{index: 0, data: TestData, url: ""}
+			transformer.Transform(eventsDataList, "test", 1, true)
 		})
 
 		Context("Failed Increment stats", func() {
@@ -307,52 +278,49 @@ var _ = Describe("Transformer", func() {
 			})
 			It("Expect to Increment failed stats if not outpout in response data", func() {
 
-				respData := make([]interface{}, 0)
-				respDataElement := make(map[string]interface{})
-				respDataElement["test"] = ""
-				respData = append(respData, respDataElement)
+				respData := []TransformerResponseT{}
 				go func() {
 					defer GinkgoRecover()
 					req := <-transformer.requestQ
-					transformer.responseQ <- &transformMessageT{index: 1, data: respData, url: ""}
+					transformer.responseQ <- &transformedMessageT{index: 1, data: respData}
 					Expect(req.index).To(Equal(1))
 				}()
 				transformer.Transform(eventsDataList, "", 1, false)
 			})
 
 			It("Expect to Increment failed stats if not outpout in response data", func() {
-				respData := make([]interface{}, 0)
-				respDataElement := make(map[string]interface{})
-				respDataElement["test"] = ""
-				respData = append(respData, respDataElement)
+				respData := []TransformerResponseT{}
 				go func() {
 					defer GinkgoRecover()
 					req := <-transformer.requestQ
-					transformer.responseQ <- &transformMessageT{index: 1, data: respData, url: ""}
+					transformer.responseQ <- &transformedMessageT{index: 1, data: respData}
 					Expect(req.index).To(Equal(1))
 				}()
+				var expectedEventResponse []TransformerResponseT
 				response := transformer.Transform(eventsDataList, "", 1, false)
 				Expect(response.Success).To(BeTrue())
-				Expect(response.Events).To(Equal(make([]interface{}, 0)))
+				Expect(response.Events).To(Equal(expectedEventResponse))
 			})
 
 			It("Expect to Increment failed stats if status code is 400", func() {
-				respData := make([]interface{}, 0)
-				respDataElement := make(map[string]interface{})
 				output := make(map[string]interface{})
 				output["statusCode"] = 400
-				respDataElement["output"] = output
-				respData = append(respData, respDataElement)
+				respData := []TransformerResponseT{
+					{
+						Output: output,
+					},
+				}
+				var expectedEventResponse []TransformerResponseT
 				go func() {
 					defer GinkgoRecover()
 					req := <-transformer.requestQ
-					transformer.responseQ <- &transformMessageT{index: 1, data: respData, url: ""}
+					transformer.responseQ <- &transformedMessageT{index: 1, data: respData}
 					Expect(req.index).To(Equal(1))
 				}()
 
 				response := transformer.Transform(eventsDataList, "", 1, false)
 				Expect(response.Success).To(BeTrue())
-				Expect(response.Events).To(Equal(make([]interface{}, 0)))
+				Expect(response.Events).To(Equal(expectedEventResponse))
 			})
 		})
 
@@ -363,12 +331,11 @@ var _ = Describe("Transformer", func() {
 			mockTransformTimerStat.EXPECT().End().Times(1)
 			mockPerfStats.EXPECT().End(1).Times(1)
 			mockPerfStats.EXPECT().Print().Times(1)
-			respData := make([]interface{}, 0)
-			respData = append(respData, "testData")
+			respData := []TransformerResponseT{{}}
 			go func() {
 				defer GinkgoRecover()
 				req := <-transformer.requestQ
-				transformer.responseQ <- &transformMessageT{index: 1, data: respData, url: ""}
+				transformer.responseQ <- &transformedMessageT{index: 1, data: respData}
 				Expect(req.index).To(Equal(1))
 			}()
 			response := transformer.Transform(eventsDataList, "", 1, false)

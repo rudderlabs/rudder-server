@@ -16,10 +16,13 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
+
+var log logger.LoggerI = logger.NewLogger()
 
 type MetadataT struct {
 	SourceID        string `json:"sourceId"`
@@ -99,7 +102,7 @@ type TransformerResponseT struct {
 	Metadata MetadataT              `json:"metadata"`
 }
 
-func (trans *transformerHandleT) transformWorker(transformRequestTimerStat stats.RudderStats) {
+func (trans *HandleT) transformWorker(transformRequestTimerStat stats.RudderStats) {
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
 
