@@ -216,7 +216,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 }
 
 func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
-	diff := warehouseutils.GetSchemaDiff(bq.CurrentSchema, bq.Upload.Schema, warehouseutils.BQ)
+	diff := warehouseutils.GetSchemaDiff(bq.CurrentSchema, bq.Upload.Schema)
 	updatedSchema = diff.UpdatedSchema
 	if len(bq.CurrentSchema) == 0 {
 		err = bq.createSchema()

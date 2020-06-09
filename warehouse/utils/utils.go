@@ -3,18 +3,19 @@ package warehouseutils
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/pkg/errors"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"reflect"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
+
+	"github.com/iancoleman/strcase"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -191,13 +192,12 @@ type SchemaDiffT struct {
 	UpdatedSchema map[string]map[string]string
 }
 
-func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string, provider string) (diff SchemaDiffT) {
+func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (diff SchemaDiffT) {
 	diff = SchemaDiffT{
 		Tables:        []string{},
 		ColumnMaps:    make(map[string]map[string]string),
 		UpdatedSchema: make(map[string]map[string]string),
 	}
-	currentSchemaWithCase := ChangeSchemaCase(currentSchema, provider)
 
 	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
 	for tableName, columnMap := range currentSchema {
@@ -207,7 +207,7 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string, pro
 		}
 	}
 	for tableName, uploadColumnMap := range uploadSchema {
-		currentColumnsMap, ok := currentSchemaWithCase[tableName]
+		currentColumnsMap, ok := currentSchema[tableName]
 		if !ok {
 			diff.Tables = append(diff.Tables, tableName)
 			diff.ColumnMaps[tableName] = uploadColumnMap
@@ -390,6 +390,15 @@ func GetTableUploadStatus(uploadID int64, tableName string, dbHandle *sql.DB) (s
 	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseTableUploadsTable, uploadID, tableName)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&status)
 	return
+}
+
+func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
+	sqlStatement := fmt.Sprintf(`SELECT namespace FROM %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC`, warehouseSchemasTable, source.ID, destination.ID)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace)
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	return namespace, len(namespace) > 0
 }
 
 func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
@@ -642,29 +651,60 @@ func Datatype(in interface{}) string {
 	return "string"
 }
 
-//ToSafeDBString to remove special characters
-func ToSafeDBString(provider string, str string) string {
-	res := ""
-	if str != "" {
-		r := []rune(str)
-		_, err := strconv.ParseInt(string(r[0]), 10, 64)
-		if err == nil {
-			str = "_" + str
+/*
+ToSafeNamespace convert name of the namespace to one acceptable by warehouse
+1. removes symbols and joins continuous letters and numbers with single underscore and if first char is a number will append a underscore before the first number
+2. adds an underscore if the name is a reserved keyword in the warehouse
+3. truncate the length of namespace to 127 characters
+4. return "stringempty" if name is empty after conversion
+examples:
+omega     to omega
+omega v2  to omega_v2
+9mega     to _9mega
+mega&     to mega
+ome$ga    to ome_ga
+omega$    to omega
+ome_ ga   to ome_ga
+9mega________-________90 to _9mega_90
+Cízǔ to C_z
+*/
+func ToSafeNamespace(provider string, name string) string {
+	var extractedValues []string
+	var extractedValue string
+	for _, c := range name {
+		asciiValue := int(c)
+		if (asciiValue >= 65 && asciiValue <= 90) || (asciiValue >= 97 && asciiValue <= 122) || (asciiValue >= 48 && asciiValue <= 57) {
+			extractedValue += string(c)
+		} else {
+			if extractedValue != "" {
+				extractedValues = append(extractedValues, extractedValue)
+			}
+			extractedValue = ""
 		}
-		regexForNotAlphaNumeric := regexp.MustCompile("[^a-zA-Z0-9_]+")
-		res = regexForNotAlphaNumeric.ReplaceAllString(str, "")
+	}
 
+	if extractedValue != "" {
+		extractedValues = append(extractedValues, extractedValue)
 	}
-	if res == "" {
-		res = "STRINGEMPTY"
+	namespace := strings.Join(extractedValues, "_")
+	namespace = strcase.ToSnake(namespace)
+	if namespace != "" && int(namespace[0]) >= 48 && int(namespace[0]) <= 57 {
+		namespace = "_" + namespace
 	}
-	if _, ok := ReservedKeywords[provider][strings.ToUpper(str)]; ok {
-		res = fmt.Sprintf(`_%s`, res)
+	if namespace == "" {
+		namespace = "stringempty"
 	}
-	return res
+	if _, ok := ReservedKeywords[provider][strings.ToUpper(namespace)]; ok {
+		namespace = fmt.Sprintf(`_%s`, namespace)
+	}
+	return misc.TruncateStr(namespace, 127)
 }
 
-func ToCase(provider string, str string) string {
+/*
+ToProviderCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc
+eg. columns are uppercased in SNOWFLAKE and lowercased etc in REDSHIFT, BIGQUERY etc
+*/
+func ToProviderCase(provider string, str string) string {
 	if strings.ToUpper(provider) == "SNOWFLAKE" {
 		str = strings.ToUpper(str)
 	}
@@ -715,24 +755,13 @@ func ObjectStorageType(destType string, config interface{}) string {
 }
 
 func GetConfigValue(key string, warehouse WarehouseT) (val string) {
-	config := warehouse.Destination.Config.(map[string]interface{})
+	config := warehouse.Destination.Config
 	if config[key] != nil {
 		val, _ = config[key].(string)
 	}
 	return val
 }
 
-func ChangeSchemaCase(currentSchema map[string]map[string]string, destType string) map[string]map[string]string {
-	currentSchemaWithCase := make(map[string]map[string]string)
-	for tableName, columnMap := range currentSchema {
-		tableNameWithCase := ToCase(destType, tableName)
-		currentSchemaWithCase[tableNameWithCase] = make(map[string]string)
-		for columnName, columnType := range columnMap {
-			currentSchemaWithCase[tableNameWithCase][ToCase(destType, columnName)] = columnType
-		}
-	}
-	return currentSchemaWithCase
-}
 func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	columnKeys := make([]string, 0, len(columnMap))
 	for k := range columnMap {

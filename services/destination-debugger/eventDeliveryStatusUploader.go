@@ -204,7 +204,7 @@ func updateConfig(sources backendconfig.SourcesT) {
 	for _, source := range sources.Sources {
 		for _, destination := range source.Destinations {
 			if destination.Config != nil {
-				if destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
+				if destination.Enabled && destination.Config["eventDelivery"] == true {
 					uploadEnabledDestinationIDs = append(uploadEnabledDestinationIDs, destination.ID)
 				}
 			}

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -419,6 +420,7 @@ func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSe
 		toRemoveMessageIndexes = append(toRemoveMessageIndexes, k)
 	}
 
+	sort.Ints(toRemoveMessageIndexes)
 	count := 0
 	for _, idx := range toRemoveMessageIndexes {
 		logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
@@ -439,7 +441,6 @@ func (gateway *HandleT) writeToBadger(set map[string]struct{}) {
 
 	if enableDedup {
 		err := gateway.badgerDB.Update(func(txn *badger.Txn) error {
-			// Your code here…
 			for _, messageID := range messageIDs {
 				e := badger.NewEntry([]byte(messageID), nil).WithTTL(dedupWindow * time.Second)
 				if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
@@ -838,7 +839,6 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	if enableDedup {
 		gateway.openBadger(clearDB)
-		defer gateway.badgerDB.Close()
 	}
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter

@@ -155,6 +155,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	if !validators.ValidateEnv() {
 		panic(errors.New("Failed to start rudder-server"))
 	}
+	validators.InitializeEnv()
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
@@ -245,8 +246,9 @@ func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jo
 	}
 
 	if enableProcessor {
-		var processor processor.HandleT
-		processor.Setup(gatewayDB, routerDB, batchRouterDB)
+		var processor = processor.NewProcessor()
+		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, stats.DefaultStats)
+		processor.Start()
 
 		if !isReplayServer {
 			var replay replay.ReplayProcessorT

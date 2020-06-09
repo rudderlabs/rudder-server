@@ -1,247 +1,113 @@
 ![Build Status][build status]
 [![Release]][release]
 
+# [![RudderStack](https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png)](https://rudderstack.com)
+
 # What is RudderStack?
 
-**Short answer:** RudderStack is an open-source Segment alternative written in Go, built for the enterprise. .
+[RudderStack](https://rudderstack.com/) is an **open-source Segment alternative** for collecting, storing and routing customer event data **securely** to your data warehouse and dozens of other tools. It is **enterprise-ready**, and provides a powerful transformation framework to process your event data on the fly.
 
-**Long answer:** RudderStack is a platform for collecting, storing and routing customer event data to dozens of tools. RudderStack is open-source, can run in your cloud environment (AWS, GCP, Azure or even your data-centre) and provides a powerful transformation framework to process your event data on the fly.
+RudderStack's backend is written in Go, with a rich UI written in React.js.
 
-RudderStack runs as a single go binary with Postgres. It also needs the destination (e.g. GA, Amplitude) specific transformation code which are node scripts. This repo contains the core backend and the transformation modules of Rudder.
-The client SDKs are in a separate repo (link below).
+You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) RudderStack instance to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro).
 
-Rudder server is released under [AGPLv3 License][agplv3_license]
+Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord channel](https://discordapp.com/invite/xNEdEGw), or follow us on [Twitter](https://twitter.com/rudderstack).
 
-See the [HackerNews][hackernews] discussion around RudderStack.
+# Why Use RudderStack?
 
-Questions? Read our [Docs][docs] OR join our [Discord][discord] channel. Or please email soumyadeb at rudderlabs.com.
+- **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, **1mg**, **Nana**, **OnceHub**,  and dozens of large companies use RudderStack for collecting their events. 
+   Note: If you are using RudderStack and your name is not on the list, please submit a PR.
 
-# Try RudderStack?
+- **Extreme Scale**: One of our largest installations currently sends **300 Million** events/day with peak of **40K** req/sec, via a multi-node RudderStack setup.
 
-You can use the [cloud hosted][dashboard-intro] RudderStack instance to experience the product. Click [here][dashboard-intro].
+- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
 
-# Features
+- **Seamless Integration**: RudderStack currently supports integration with over 45 popular [destination platforms](https://docs.rudderstack.com/destinations/) such as Google Analytics, Amplitude, Mixpanel, Amazon S3, and more. Moreover, it also supports [data warehouse integrations](https://docs.rudderstack.com/data-warehouse-integrations) for Snowflake, Redshift, and Google BigQuery.
 
-1. **Production Ready:** Multiple companies (e.g. **MatterMost**, **IFTTT**, **Grofers**, **1mg** and more) are running RudderStack for collecting events.
-2. **Extreme Scale:** One of our largest installations is sending **300M events/day** with peak of **40K req/sec** via a multi-node RudderStack setup.
-3. **Segment API Compatibile:** RudderStack is Segment API and library compatible so don't need to change your app if you are using Segment.
-4. **Cloud Destinations:** Google Analytics, Amplitude, MixPanel, Adjust, AppsFlyer and dozens more destinations.
-5. **Warehouse Destinations:** S3, Minio, Redshift, Snowflake, Google BigQuery support.
-6. **Transformations:** User-specified transformation to filter/transform events.
-7. **Rich UI:** Written in react
-8. **SDKs:** [Javascript][rudder-sdk-js-git-repo], [Android][rudder-sdk-android-git-repo] or [iOS][rudder-sdk-android-git-repo] and server-side SDKs.
-9. **Detailed Docs:** [Docs][docs]
+- **Client-side SDK Support**: RudderStack offers client-side SDKs for [JavaScript](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-javascript-sdk), [Android](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-android-sdk), [iOS](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-ios-sdk), and [Unity](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-unity-sdk).
 
-# Why RudderStack ?
+- **User-specified Transformation**: RudderStack gives you the power to filter or transform your events before sending them to the desired destinations.
 
-We are building RudderStack because we believe open-source and cloud-prem is important for three main reasons
+# Key Features
 
-1. **Privacy & Security:** You should be able to collect and store your customer data without sending everything to a 3rd party vendor or embedding proprietary SDKs (and getting blocked by ad-blockers). With RudderStack, the event data is always in your control. Besides, RudderStack gives you fine-grained control over what data to forward to what analytical tool.
+- **Segment API Compatible**: RudderStack is Segment API compatible. So you don't need to change your app if you are using Segment, just integrate the RudderStack SDKs into your app.
 
-2. **Processing Flexibility:** You should be able to enhance OR transform your event data by combining it with your other _internal_ data, e.g. stored in your transactional systems. RudderStack makes that possible because it provides a powerful JS-based event transformation framework. Furthermore, since RudderStack runs _inside_ your cloud or on-prem environment, you can access your production data to join with the event data.
+- **Processing Flexibility**: With RudderStack's powerful JavaScript-based event transformation framework, you can enhance or transform your event data by combining it with your other internal data. Furthermore, since RudderStack runs inside your cloud or on-premise environment, you can easily access your production data to join with the event data.
 
-3. **Unlimited Events:** Event volume-based pricing of most commercial systems is broken. You should be able to collect as much data as possible without worrying about overrunning event budgets. RudderStack's core BE is open-source and free to use.
+- **Unlimited Events**: Event volume-based pricing of most of the commercial systems is broken. With RudderStack, you are be able to collect as much data as possible without worrying about overrunning event budgets.
 
-# Contribution
+- **Stand-alone System**: RudderStack runs as a single Go binary with the dependencies being on a PostgreSQL server and a Node.js service. There is no other dependency required to run RudderStack.
 
-We would love to see people contributing to RudderStack. see [CONTRIBUTING.md](CONTRIBUTING.md) for more information on contributing to RudderStack.
+- **Platform-independent**: RudderStack is Kubernetes-native and can run on any Kubernetes cluster with our Helm charts. RudderStack is cloud-agnostic and can run on stand-alone machines in all popular cloud platforms, namely AWS, Microsoft Azure, GCP, and others.
 
-# Stay Connected
+- **High Performance**: On a single m4.2xlarge AWS EC2 instance, RudderStack can process 3000 events/second.
 
-1. Join our [Discord][discord]
-2. Follow [RudderStack][twitter] on Twitter
+- **Enhanced Telemetry**: To help us improve RudderStack, we collect performance and diagnostic metrics about how you use RudderStack, and how it is working. **No customer data is present in the metrics**. For technical details, please check out our wiki page on [Telemetry](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Telemetry).
+
+# RudderStack Setup
+
+The easiest way to try RudderStack is through our hosted service. Please signup [here](https://app.rudderstack.com/signup?type=freetrial)
+
+You can also set up and use RudderStack on your platform of choice. Please refer to the following guides for detailed instructions:
+
+- [Setting up RudderStack on Docker](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/docker)
+- [Setting up RudderStack on Kubernetes](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/kubernetes)
+- [Setting up RudderStack on a Native Installation](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/native-installation)
+- [Developer Machine Setup](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/developer-machine-setup)
+
+Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#how-to-send-test-events) to verify the setup.
 
 # UI Pages
 
-## Connections Page
+### Connections Page
 
-![image](https://user-images.githubusercontent.com/411699/65309691-36b0f200-dbaa-11e9-9631-8a9f81cea606.png)
+![Connections Page](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-M8Fo18nKM8Y3sHNQwW3%2F-M8Fo6hu_qKB4XX0STNZ%2FScreenshot%202020-05-26%20at%205.02.38%20PM.png?alt=media&token=adbd68bd-5b55-4e65-a19a-a1a29fc616e8)
 
-## Events Page
+### Events Page
 
-![image](https://user-images.githubusercontent.com/52487451/65647230-e2937c80-dfb2-11e9-88bd-3b015c4b576f.png)
-
----
-
-# Setup Instructions (Hosted Demo Account)
-
-1. Go to the [dashboard][dashboard-setup] and set up your account.
-2. Select `RudderStack Hosted Service` from the top right corner after you login.
-3. Follow (Send Test Events) instructions below to send test event.
-
----
-
-# Setup Instructions (Docker)
-
-The docker setup is the easiest & fastest way to try out RudderStack.
-
-1. Go to the [dashboard][dashboard-docker] `https://app.rudderstack.com` and set up your account. Copy your workspace token from top of the home page. The Hosted Control plane is FREE (and will always be) for open-source users.
-
-   (Note) You can also use the open-source [config-generator-UI][config-generator-section] to create the source & destination configs and pass it to RudderStack in case you don't want to use the hosted control plane. The open-source generator however does not have certain features like Transformations or Live Event Debugger
-
-2. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
-
-   (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
-   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule init && git submodule update`
-
-3. Replace `<your_workspace_token>` in `build/docker.env` with the above token.
-4. (Optional) Uncomment and set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `build/docker.env` if you want to add S3 as a destination on the UI.
-5. Run the command `docker-compose up --build` to bring up all the services.
-6. Follow (Send Test Events) instructions below to send test event.
-
----
-
-# Setup Instructions (Kubernetes)
-
-**Note:** This is the recommended way of installing RudderStack for running in production. Our hosted deployment runs on Kubernetes so we maintain/patch much more frequently.
-
-1. Go to the [dashboard][dashboard-k8s] `https://app.rudderstack.com` and set up your account. Copy your workspace token from top of the home page.
-
-2. Our helm scripts and instructions are in a separate repo - [Download Here][helm-scripts-git-repo]
-
----
-
-# Setup Instructions (Native Installation)
-
-**Disclaimer:** This is not the recommended way of installing RudderStack. Please use this if you want to know more about the internals.
-
-1. Install Golang 1.13 or above. [Download Here][golang]
-2. Install NodeJS 10.6 or above. [Download Here][node]
-3. Install PostgreSQL 10 or above and set up the DB. If you are on a linux distribution, you have to switch to postgres user `sudo su - postgres` before running the below commands.
-
-```
-psql -c "CREATE DATABASE jobsdb"
-psql -c "CREATE USER rudder SUPERUSER"
-psql "jobsdb" -c "ALTER USER rudder WITH ENCRYPTED PASSWORD 'rudder'";
-psql "jobsdb" -c "GRANT ALL PRIVILEGES ON DATABASE jobsdb to rudder";
-```
-
-4. Go to the [dashboard][dashboard-native] and set up your account. Copy your workspace token from top of the home page
-5. If you have a Github account with SSH key added, then clone the repo with `git clone git@github.com:rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and update the _rudder-transformer_ with `git submodule init && git submodule update`
-
-   (Optional) If you don't have SSH enabled Github account or prefer HTTPS, then clone the repo with `git clone https://github.com/rudderlabs/rudder-server.git`. Move to the directory `cd rudder-server` and change the _rudder-transformer_ submodule path to HTTPS
-   `sed -i.bak 's,git@github.com:rudderlabs/rudder-transformer.git,https://github.com/rudderlabs/rudder-transformer.git,g' .gitmodules`. Update the _rudder-transformer_ with `git submodule init && git submodule update`
-6. Navigate to the transformer directory `cd rudder-transformer`
-7. Install dependencies `npm i` and start the destination transformer `node destTransformer.js`
-8. Navigate back to main directory `cd rudder-server`. Copy the sample.env to the main directory `cp config/sample.env .env`
-9. Update the `WORKSPACE_TOKEN` environment variable with the token fetched in step 4
-10. Run the backend server `go run -mod=vendor main.go`
-11. Follow (Send Test Events) instructions below to send test event.
-
----
-
-# Send Test Events
-
-1. If you already have a Google Analytics account, keep the tracking ID handy. If not, please create one and get the tracking ID. The Google Analytics account needs to have a **Web** Property (**Web+App** does't seem to work)
-2. Create one source (Android or iOS) and configure a Google Analytics destination for the same with the above tracking ID
-3. We have bundled a shell script that can generate test events. Get the source “writeKey” from our app dashboard and then run the following command. Run `cd scripts; ./generate-event <writeKeyHere> http://localhost:8080/v1/batch`. NOTE: `writeKey` is different from the `your_workspace_token` in step 2. Former is associated with the source while the latter is for your account.
-4. You can then login to your Google Analytics account and verify that events are delivered. Go to `MainPage->RealTime->Events`. `RealTime` view is important as the other dashboard can sometimes take 24-48 hrs to refresh.
-5. You can use our [Javascript][rudder-sdk-js-git-repo], [Android][rudder-sdk-android-git-repo] or [iOS][rudder-sdk-ios-git-repo] SDKs for sending events from your app.
-
----
-
-# RudderStack Config Generator
-
-Rudderstack has two components _control plane_ and _data plane_.
-Data plane reliably delivers your event data. Control plane manages the configuration of your sources and destinations.
-This configuration can also be read from a file instead of from Control plane, if you don't want to use our hosted control plane.
-
-Config-generator provides the UI to manage the source and destination configurations without needing to signup, etc.
-All the source and destination configuration stays on your local storage. You can export/import config to a JSON file.
-
-## Setup
-
-1. `cd utils/config-gen`
-2. `npm install`
-3. `npm start`
-
-RudderStack config generator starts on the default port i.e., http://localhost:3000.
-On a successful setup, you should see the following
-
-![image](https://blobscdn.gitbook.com/v0/b/gitbook-28427.appspot.com/o/assets%2F-Lq586FOQtfjJPKbd01W%2F-M0LidOVklHOkLYEulS4%2F-M0M3fzyrb-UHiNBG7j0%2FScreenshot%202020-02-18%20at%2012.20.57%20PM.png?alt=media&token=a3f24ad8-fe72-4fed-8953-8e4c790f6cfd)
-
-## Export workspace config
-
-After adding the required sources and destinations, export your workspace config. This workspace-config is required by the RudderStack Server.
-To learn more about adding sources and destinations in RudderStack, refer [Adding a Source and Destination in RudderStack](https://docs.rudderstack.com/getting-started/adding-source-and-destination-rudderstack)
-
-Update the [config](https://docs.rudderstack.com/administrators-guide/config-parameters) variables `configFromFile` and `configJSONPath` in rudder-server to read workspace config from the exported JSON file.
-
-## Start RudderStack with the workspace config file
-
-- Download the workspace config file on your machine.
-- In `docker-compose.yml`, uncomment `volumes` section under `backend` service. Specify the path to your workspace config.
-- In `build/docker.env`, set the environment variable `RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true`
-
-# Telemetry
-
-To help us improve RudderStack, we collect performance and diagnostic metrics about how you use it and how it's working. No customer data is present in the metrics.
-
-The metrics collection can be disabled by setting the variable `enableDiagnostics` to false in `config/config.toml`
-
-Following are the metrics that are being collected. They are listed in `config/config.toml` under the Diagnostics section.
-
-1. _enableServerStartMetric_: Tracks every time when server starts
-2. _enableConfigIdentifyMetric_: Tracks when the config is fetched for the first time from control-plane
-3. _enableServerStartedMetric_: Tracks when the server is ready to accept requests
-4. _enableConfigProcessedMetric_: Tracks when the config is changed
-5. _enableGatewayMetric_: Tracks no. of success/failed requests
-6. _enableRouterMetric_: Tracks no. of success/aborted/retries requests for every router destination
-7. _enableBatchRouterMetric_: Tracks no. of success/failed requests for every batch router destination
-8. _enableDestinationFailuresMetric_: Tracks destination failures
-
----
+![Events Page](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-M8Fo18nKM8Y3sHNQwW3%2F-M8FoF_Gnu9CBQgUujZW%2FScreenshot%202020-05-26%20at%205.12.19%20PM.png?alt=media&token=71165ae7-964c-4370-9826-29315ab3e3b4)
 
 # RudderStack Architecture
 
-The following is a brief overview of the major components of RudderStack.
-![image](https://user-images.githubusercontent.com/52487451/64673994-471beb00-d48d-11e9-854f-2c3fbc021e63.jpg)
+RudderStack has two major components, namely:
 
-## RudderStack Control Plane
+- **Control Plane**: The control plane allows you to manage the configuration of your sources and destinations. There are two options for setting up the connections:
 
-The UI to configure the sources, destinations etc. It consists of
+  - [Managed control plane](https://app.rudderstack.com/): This is the easiest way to manage your source and destination configurations.
+  - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. Please note that you cannot create transformations with the RudderStack Config Generator.
 
-**Config backend**: This is the backend service that handles the sources, destinations and their connections. User management and access based roles are defined here.
+- **Data Plane**: This is the core engine that is responsible for:
 
-**Customer webapp**: This is the front end application that enables the teams to set up their customer data routing with RudderStack. These will show you high-level data on event deliveries and more stats. It also provides access to custom enterprise features.
+  - Receiving and buffering the event data
+  - Transforming the event data into the required destination format, and
+  - Relaying it to the destination
 
-## RudderStack Data Plane
+For a detailed understanding of the RudderStack architecture, please check our [documentation](https://docs.rudderstack.com/getting-started/rudderstack-data-plane-architecture).
 
-Data plane is our core engine that receives the events, stores, transforms them and reliably delivers to the destinations. This engine can be customized to your business requirements by a wide variety of configuration options. Eg. You can choose to enable backing up events to an S3 bucket, the maximum size of the event for the server to reject malicious requests. Sticking to defaults will work well for most of the companies but you have the flexibility to customize the data plane.
+A high-level view of RudderStack's architecture is as shown:
+![Architecture](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-Lz111ICiMeHdy_Gu6JX%2F-Lz1A_NxMgbjhbSrVL2h%2FRudder%20Core%20Architecture.png?alt=media&token=2c524db9-7c5c-44e9-a351-cbb1c46a8063)
 
-The data plane uses Postgres as the store for events. We built our streaming framework on top of Postgres – that’s a topic for a future blog post. Reliable delivery and order of the events are the first principles in our design.
+# License
 
-## RudderStack Destination Transformation
+RudderStack server is released under the [AGPLv3 License][agplv3_license].
 
-Conversion of events from RudderStack format into destination-specific format is handled by the transformation module. The transformation codes are written in Javascript. I
+# Contribute
 
-The following blogs provide an overview of our transformation module
+We would love to see you contribute to RudderStack. Get more information on how to contribute [here](CONTRIBUTING.md).
 
-https://rudderlabs.com/transformations-in-rudder-part-1/
+# Wiki
 
-https://rudderlabs.com/transformations-in-rudder-part-2/
+For more information on RudderStack's features and functionalities, make sure you check out our [Wiki]() page.
 
-If you are missing a transformation, please feel free to add it to the repository.
+# Stay Connected
 
-## RudderStack User Transformation
+- See the [HackerNews][hackernews] discussion around RudderStack.
+- Join our [Discord][discord] channel.
+- Follow us on [Twitter][twitter].
+- Get the latest news from the [RudderStack blog][rudderstack-blog].
+- Subscribe to our newsletter.
 
-RudderStack also supports user-specific transformations for real-time operations like aggregation, sampling, modifying events etc. The following blog describes one real-life use case of the transformation module
-
-https://rudderlabs.com/customer-case-study-casino-game/
-
-## Client SDKs
-
-The client SDKs provide APIs collecting events and sending it to the RudderStack Backend.
-
-# Coming Soon
-
-1. More performance benchmarks. On a single m4.2xlarge, RudderStack can process ~3K events/sec. We will evaluate other instance types and publish numbers soon.
-2. More documentation
-3. More destination support
-4. HA support
-5. More SDKs (or Segment compatibility)
-
-<!----variable's---->
+<!----variables---->
 
 [build status]: https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master
 [release]: https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver
@@ -270,3 +136,9 @@ The client SDKs provide APIs collecting events and sending it to the RudderStack
 [rudder-sdk-ios-git-repo]: https://github.com/rudderlabs/rudder-sdk-ios
 [config-generator]: https://github.com/rudderlabs/config-generator
 [config-generator-section]: https://github.com/rudderlabs/rudder-server/blob/master/README.md#rudderstack-config-generator
+[rudder-logo]: https://repository-images.githubusercontent.com/197743848/b352c900-dbc8-11e9-9d45-4deb9274101f
+[rudder-server-releases]: https://github.com/rudderlabs/rudder-server/releases
+[rudder-transformer-releases]: https://github.com/rudderlabs/rudder-transformer/releases
+[rudderstack-blog]: https://rudderstack.com/blog/
+[rudder-server-sample-env]: https://github.com/rudderlabs/rudder-server/blob/master/config/sample.env
+[rudder-docker-yml]: https://github.com/rudderlabs/rudder-server/blob/master/rudder-docker.yml
