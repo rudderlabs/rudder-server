@@ -25,7 +25,7 @@ var MigrationAssets = func() http.FileSystem {
 		},
 		"/jobsdb": &vfsgen۰DirInfo{
 			name:    "jobsdb",
-			modTime: time.Date(2020, 6, 9, 11, 12, 51, 743036018, time.UTC),
+			modTime: time.Date(2020, 6, 9, 12, 30, 2, 902507870, time.UTC),
 		},
 		"/jobsdb/000001_create_tables.down.tmpl": &vfsgen۰CompressedFileInfo{
 			name:             "000001_create_tables.down.tmpl",

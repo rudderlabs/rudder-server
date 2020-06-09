@@ -23,10 +23,14 @@ endif
 		
 
 build: enterprise-prepare-build ## Build rudder-server binary
+	$(GO) run -tags=dev generate-sql-migrations.go
 	$(GO) build -o bin/rudder-server main.go
 
-run: enterprise-prepare-build ## Run rudder-server-binary
+run: enterprise-prepare-build ## Run rudder-server using go run
 	$(GO) run -mod=vendor main.go
+
+run-dev: enterprise-prepare-build ## Run rudder-server using go run with 'dev' build tag
+	$(GO) run -mod=vendor -tags=dev main.go
 
 help: ## Show the available commands
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' ./Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
