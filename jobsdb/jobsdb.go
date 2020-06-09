@@ -634,7 +634,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
 	jd.assertError(err)
 
 	//Jobs which have either succeded or expired
-	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(id))
+	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(job_id))
                                       FROM %s
                                       WHERE job_state IN ('%s')`,
 		ds.JobStatusTable, strings.Join(getValidTerminalStates(), "', '"))
@@ -1117,7 +1117,7 @@ completed (state is failed or waiting or waiting_retry or executiong) are copied
 over. Then the status (only the latest) is set for those jobs
 */
 
-func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
+func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated int, err error) {
 	queryStat := stats.NewJobsDBStat("migration_jobs", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
@@ -1131,7 +1131,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
 
 	jd.assertError(err)
 	jobsToMigrate := append(unprocessedList, retryList...)
-	jd.assert(len(jobsToMigrate) > 0, "The number of jobs to migrate is 0 or less. Shouldn't be the case given we have a liveCount check in its caller")
+	noJobsMigrated = len(jobsToMigrate)
 	//Copy the jobs over. Second parameter (true) makes sure job_id is copied over
 	//instead of getting auto-assigned
 	err = jd.storeJobsDS(destDS, true, jobsToMigrate) //TODO: switch to transaction
@@ -1154,7 +1154,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) error {
 	err = jd.updateJobStatusDS(destDS, statusList, []string{}, nil) //TODO: switch to transaction
 	jd.assertError(err)
 
-	return nil
+	return
 }
 
 func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
@@ -1760,10 +1760,13 @@ func (jd *HandleT) mainCheckLoop() {
 				jd.assertError(err)
 				opID := jd.JournalMarkStart(migrateCopyOperation, opPayload)
 
+				totalJobsMigrated := 0
 				for _, ds := range migrateFrom {
 					logger.Info("Main check:Migrate", ds, migrateTo)
-					jd.migrateJobs(ds, migrateTo)
+					noJobsMigrated, _ := jd.migrateJobs(ds, migrateTo)
+					totalJobsMigrated += noJobsMigrated
 				}
+				jd.assert(totalJobsMigrated > 0, "The number of jobs to migrate is 0 or less. Shouldn't be the case given we have a liveCount check")
 				jd.JournalMarkDone(opID)
 			}
 

@@ -12,7 +12,7 @@ cloud.google.com/go/internal/version
 cloud.google.com/go/bigquery
 # cloud.google.com/go/storage v1.6.0
 cloud.google.com/go/storage
-# github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96
+# github.com/AndreasBriese/bbloom v0.0.0-20190306092124-e2d15f34fcf9
 github.com/AndreasBriese/bbloom
 # github.com/Azure/azure-pipeline-go v0.2.2
 github.com/Azure/azure-pipeline-go/pipeline
@@ -83,21 +83,22 @@ github.com/bugsnag/bugsnag-go/headers
 github.com/bugsnag/bugsnag-go/sessions
 # github.com/bugsnag/panicwrap v1.2.0
 github.com/bugsnag/panicwrap
-# github.com/cenkalti/backoff/v4 v4.0.2
-github.com/cenkalti/backoff/v4
+# github.com/cespare/xxhash v1.1.0
+github.com/cespare/xxhash
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
-# github.com/dgraph-io/badger v1.6.0
+# github.com/dgraph-io/badger v1.6.1
 github.com/dgraph-io/badger
 github.com/dgraph-io/badger/options
 github.com/dgraph-io/badger/pb
 github.com/dgraph-io/badger/skl
 github.com/dgraph-io/badger/table
+github.com/dgraph-io/badger/trie
 github.com/dgraph-io/badger/y
+# github.com/dgraph-io/ristretto v0.0.2
+github.com/dgraph-io/ristretto/z
 # github.com/dgrijalva/jwt-go v3.2.0+incompatible
 github.com/dgrijalva/jwt-go
-# github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13
-github.com/dgryski/go-farm
 # github.com/dustin/go-humanize v1.0.0
 github.com/dustin/go-humanize
 # github.com/eapache/go-resiliency v1.2.0
@@ -270,8 +271,6 @@ github.com/segmentio/backo-go
 github.com/segmentio/ksuid
 # github.com/snowflakedb/gosnowflake v1.3.4
 github.com/snowflakedb/gosnowflake
-# github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72
-github.com/spaolacci/murmur3
 # github.com/spf13/afero v1.2.2
 github.com/spf13/afero
 github.com/spf13/afero/mem

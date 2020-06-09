@@ -441,7 +441,6 @@ func (gateway *HandleT) writeToBadger(set map[string]struct{}) {
 
 	if enableDedup {
 		err := gateway.badgerDB.Update(func(txn *badger.Txn) error {
-			// Your code here…
 			for _, messageID := range messageIDs {
 				e := badger.NewEntry([]byte(messageID), nil).WithTTL(dedupWindow * time.Second)
 				if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
@@ -840,7 +839,6 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	if enableDedup {
 		gateway.openBadger(clearDB)
-		defer gateway.badgerDB.Close()
 	}
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
