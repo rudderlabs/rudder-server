@@ -17,7 +17,7 @@
 #
 # Eg 3:
 # [Gateway]
-# maxDBWriterProcess = 64
+# maxUserWebRequestWorkerProcess = 64
 #
 # RSERVER_GATEWAY_MAX_DBWRITER_PROCESS=64
 #
@@ -47,7 +47,7 @@ noOfBucketsInWindow=12
 
 [Gateway]
 webPort = 8080
-maxDBWriterProcess = 64
+maxUserWebRequestWorkerProcess = 64
 CustomVal = "GW"
 maxBatchSize = 32
 batchTimeoutInMS = 20
