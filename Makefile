@@ -2,6 +2,7 @@
 
 GO=go
 GINKGO=ginkgo
+LDFLAGS?=-s -w
 
 include .enterprise/env
 
@@ -20,11 +21,14 @@ ifdef package
 else
 	$(GINKGO) --randomizeAllSpecs -p --skipPackage=tests ./...
 endif
-		
 
-build: enterprise-prepare-build ## Build rudder-server binary
+build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts	
+
+./services/sql-migrator/migrations_vfsdata.go: sql/migrations
 	$(GO) run -tags=dev generate-sql-migrations.go
-	$(GO) build -o bin/rudder-server main.go
+	
+build: build-sql-migrations ## Build rudder-server binary
+	$(GO) build -mod vendor -a -installsuffix cgo -ldflags="$(LDFLAGS)"
 
 run: enterprise-prepare-build ## Run rudder-server using go run
 	$(GO) run -mod=vendor main.go
@@ -51,3 +55,5 @@ enterprise-prepare-build: ## Create ./imports/enterprise.go, to link enterprise 
 	else \
 		rm -f ./imports/enterprise.go; \
 	fi
+
+enterprise-build: enterprise-prepare-build build ## Build rudder-server enterprise version
