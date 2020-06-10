@@ -96,7 +96,7 @@ We would love to see you contribute to RudderStack. Get more information on how 
 
 # Wiki
 
-For more information on RudderStack's features and functionalities, make sure you check out our [Wiki]() page.
+For more information on RudderStack's features and functionalities, make sure you check out our [Wiki](https://github.com/rudderlabs/rudder-server/wiki) page.
 
 # Follow Us
 
