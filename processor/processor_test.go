@@ -290,15 +290,15 @@ var _ = Describe("Processor", func() {
 			var executingCall1 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(executingJobsList[0:2]).Times(1)
 			var updateCall1 = c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(2), gatewayCustomVal, nil).After(executingCall1).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-					assertJobStatus(executingJobsList[0], statuses[0], jobsdb.FailedState, "", "{}", 2)
-					assertJobStatus(executingJobsList[1], statuses[1], jobsdb.FailedState, "", "{}", 1)
+					assertJobStatus(executingJobsList[0], statuses[0], jobsdb.Failed.State, "", "{}", 2)
+					assertJobStatus(executingJobsList[1], statuses[1], jobsdb.Failed.State, "", "{}", 1)
 				})
 
 			// second loop iteration
 			var executingCall2 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(emptyJobsList).After(updateCall1).Return(executingJobsList[2:]).Times(1)
 			var updateCall2 = c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(1), gatewayCustomVal, nil).After(executingCall2).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-					assertJobStatus(executingJobsList[2], statuses[0], jobsdb.FailedState, "", "{}", 1)
+					assertJobStatus(executingJobsList[2], statuses[0], jobsdb.Failed.State, "", "{}", 1)
 				})
 
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
@@ -494,118 +494,25 @@ var _ = Describe("Processor", func() {
 
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledA: {
-					events:          4,
-					messageIds:      "message-1,message-2,message-3,message-4",
-					receiveMetadata: true,
+					events:                    4,
+					messageIds:                "message-1,message-2,message-3,message-4",
+					receiveMetadata:           true,
+					destinationDefinitionName: "enabled-destination-a-definition-name",
 				},
 				DestinationIDEnabledB: {
-					events:     2,
-					messageIds: "message-3,message-4",
+					events:                    2,
+					messageIds:                "message-3,message-4",
+					destinationDefinitionName: "minio",
 				},
-			}
-
-			assertDestinationTransform := func(destinationID string, destinationDefinitionName string) func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
-				return func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
-					Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/%s", destinationDefinitionName)))
-					Expect(breakIntoBatchWhenUserChanges).To(BeFalse())
-
-					expectations := transformExpectations[destinationID]
-					Expect(clientEvents).To(HaveLen(expectations.events))
-
-					messageIDs := make([]string, 0)
-					for i := range clientEvents {
-						event := clientEvents[i]
-						messageID := event.Message["messageId"].(string)
-						messageIDs = append(messageIDs, messageID)
-
-						// Expect all messages belong to same destination
-						Expect(event.Destination.ID).To(Equal(destinationID))
-
-						// Expect metadata
-						Expect(event.Metadata.DestinationID).To(Equal(destinationID))
-
-						// Metadata are stripped from destination transform, is a user transform occurred before.
-						if expectations.receiveMetadata {
-							Expect(event.Metadata.DestinationType).To(Equal(fmt.Sprintf("%s-definition-name", destinationID)))
-							Expect(event.Metadata.JobID).To(Equal(messages[messageID].jobid))
-							Expect(event.Metadata.MessageID).To(Equal(messageID))
-							Expect(event.Metadata.SourceID).To(Equal("")) // ???
-						} else {
-							Expect(event.Metadata.DestinationType).To(Equal(""))
-							Expect(event.Metadata.JobID).To(Equal(int64(0)))
-							Expect(event.Metadata.MessageID).To(Equal(""))
-							Expect(event.Metadata.SourceID).To(Equal("")) // ???
-						}
-
-						// Expect timestamp fields
-						expectTimestamp := func(input string, expected time.Time) {
-							inputTime, _ := time.Parse(misc.RFC3339Milli, input)
-							Expect(inputTime).To(BeTemporally("~", expected, time.Second))
-						}
-
-						parseTimestamp := func(timestamp string) time.Time {
-							parsed, ok := time.Parse(misc.RFC3339Milli, timestamp)
-							if ok != nil {
-								return time.Now()
-							} else {
-								return parsed
-							}
-						}
-
-						receivedAt := parseTimestamp(messages[messageID].expectedReceivedAt)
-						sentAt := parseTimestamp(messages[messageID].expectedSentAt)
-						originalTimestamp := parseTimestamp(messages[messageID].expectedOriginalTimestamp)
-
-						expectTimestamp(event.Message["receivedAt"].(string), receivedAt)
-						expectTimestamp(event.Message["sentAt"].(string), sentAt)
-						expectTimestamp(event.Message["originalTimestamp"].(string), originalTimestamp)
-						expectTimestamp(event.Message["timestamp"].(string), misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp))
-
-						// Expect message properties
-						Expect(event.Message["some-property"].(string)).To(Equal(fmt.Sprintf("property-%s", messages[messageID].id)))
-
-						if destinationID == "enabled-destination-b" {
-							Expect(event.Message["user-transform"].(string)).To(Equal("value"))
-						}
-					}
-
-					Expect(strings.Join(messageIDs, ",")).To(Equal(expectations.messageIds))
-
-					return transformer.ResponseT{
-						Events: []transformer.TransformerResponseT{
-							{
-								Output: map[string]interface{}{
-									"int-value":    0,
-									"string-value": fmt.Sprintf("value-%s", destinationID),
-								},
-								Metadata: transformer.MetadataT{
-									SourceID:      "source-from-transformer",      // transformer should replay source id
-									DestinationID: "destination-from-transformer", // transformer should replay destination id
-								},
-							},
-							{
-								Output: map[string]interface{}{
-									"int-value":    1,
-									"string-value": fmt.Sprintf("value-%s", destinationID),
-								},
-								Metadata: transformer.MetadataT{
-									SourceID:      "source-from-transformer",      // transformer should replay source id
-									DestinationID: "destination-from-transformer", // transformer should replay destination id
-								},
-							},
-						},
-						Success: true,
-					}
-				}
 			}
 
 			// We expect one transform call to destination A, after sending numEvents stat.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				After(callDestANumEvents).DoAndReturn(assertDestinationTransform("enabled-destination-a", "enabled-destination-a-definition-name"))
+				After(callDestANumEvents).DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledA, transformExpectations[DestinationIDEnabledA]))
 
 			// We expect one transform call to destination B, after user transform for destination B.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				After(callUserTransform).DoAndReturn(assertDestinationTransform("enabled-destination-b", "minio"))
+				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
 			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
 			callDBWrite := c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
@@ -641,11 +548,11 @@ var _ = Describe("Processor", func() {
 			callUpdateJobs := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).After(callStoreRouter).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
-					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1) // id 1002
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1) // id 1010
-					assertJobStatus(toRetryJobsList[1], statuses[2], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1)     // id 2002
-					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1)     // id 2003
-					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1)     // id 2010
+					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1) // id 1002
+					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1) // id 1010
+					assertJobStatus(toRetryJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2002
+					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2003
+					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
 
 			c.mockStatGatewayDBWriteTime.EXPECT().End().Times(1).After(callUpdateJobs)
@@ -802,11 +709,11 @@ var _ = Describe("Processor", func() {
 			callUpdateJobs := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callListSortEnd).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
-					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1) // id 1002
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1) // id 1010
-					assertJobStatus(toRetryJobsList[1], statuses[2], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1)     // id 2002
-					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1)     // id 2003
-					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1)     // id 2010
+					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1) // id 1002
+					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1) // id 1010
+					assertJobStatus(toRetryJobsList[1], statuses[2], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1)     // id 2002
+					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1)     // id 2003
+					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
 
 			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callUpdateJobs)
@@ -851,115 +758,25 @@ var _ = Describe("Processor", func() {
 
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledA: {
-					events:          4,
-					messageIds:      "message-1,message-2,message-3,message-4",
-					receiveMetadata: true,
+					events:                    4,
+					messageIds:                "message-1,message-2,message-3,message-4",
+					receiveMetadata:           true,
+					destinationDefinitionName: "enabled-destination-a-definition-name",
 				},
 				DestinationIDEnabledB: {
-					events:     2,
-					messageIds: "message-3,message-4",
+					events:                    2,
+					messageIds:                "message-3,message-4",
+					destinationDefinitionName: "minio",
 				},
-			}
-
-			assertDestinationTransform := func(destinationID string, destinationDefinitionName string) func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
-				return func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
-					Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/%s", destinationDefinitionName)))
-					Expect(breakIntoBatchWhenUserChanges).To(BeFalse())
-
-					expectations := transformExpectations[destinationID]
-					Expect(clientEvents).To(HaveLen(expectations.events))
-
-					messageIDs := make([]string, 0)
-					for i := range clientEvents {
-						event := clientEvents[i]
-						messageID := event.Message["messageId"].(string)
-						messageIDs = append(messageIDs, messageID)
-
-						// Expect all messages belong to same destination
-						Expect(event.Destination.ID).To(Equal(destinationID))
-
-						// Metadata are stripped from destination transform, is a user transform occurred before.
-						if expectations.receiveMetadata {
-							Expect(event.Metadata.DestinationType).To(Equal(fmt.Sprintf("%s-definition-name", destinationID)))
-							Expect(event.Metadata.JobID).To(Equal(messages[messageID].jobid))
-							Expect(event.Metadata.MessageID).To(Equal(messageID))
-							Expect(event.Metadata.SourceID).To(Equal("")) // ???
-						} else {
-							Expect(event.Metadata.DestinationType).To(Equal(""))
-							Expect(event.Metadata.JobID).To(Equal(int64(0)))
-							Expect(event.Metadata.MessageID).To(Equal(""))
-							Expect(event.Metadata.SourceID).To(Equal("")) // ???
-						}
-
-						// Expect timestamp fields
-						expectTimestamp := func(input string, expected time.Time) {
-							inputTime, _ := time.Parse(misc.RFC3339Milli, input)
-							Expect(inputTime).To(BeTemporally("~", expected, time.Second))
-						}
-
-						parseTimestamp := func(timestamp string) time.Time {
-							parsed, ok := time.Parse(misc.RFC3339Milli, timestamp)
-							if ok != nil {
-								return time.Now()
-							} else {
-								return parsed
-							}
-						}
-
-						receivedAt := parseTimestamp(messages[messageID].expectedReceivedAt)
-						sentAt := parseTimestamp(messages[messageID].expectedSentAt)
-						originalTimestamp := parseTimestamp(messages[messageID].expectedOriginalTimestamp)
-
-						expectTimestamp(event.Message["receivedAt"].(string), receivedAt)
-						expectTimestamp(event.Message["sentAt"].(string), sentAt)
-						expectTimestamp(event.Message["originalTimestamp"].(string), originalTimestamp)
-						expectTimestamp(event.Message["timestamp"].(string), misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp))
-
-						// Expect message properties
-						Expect(event.Message["some-property"].(string)).To(Equal(fmt.Sprintf("property-%s", messages[messageID].id)))
-
-						if destinationID == "enabled-destination-b" {
-							Expect(event.Message["user-transform"].(string)).To(Equal("value"))
-						}
-					}
-
-					Expect(strings.Join(messageIDs, ",")).To(Equal(expectations.messageIds))
-
-					return transformer.ResponseT{
-						Events: []transformer.TransformerResponseT{
-							{
-								Output: map[string]interface{}{
-									"int-value":    0,
-									"string-value": fmt.Sprintf("value-%s", destinationID),
-								},
-								Metadata: transformer.MetadataT{
-									SourceID:      "source-from-transformer",      // transformer should replay source id
-									DestinationID: "destination-from-transformer", // transformer should replay destination id
-								},
-							},
-							{
-								Output: map[string]interface{}{
-									"int-value":    1,
-									"string-value": fmt.Sprintf("value-%s", destinationID),
-								},
-								Metadata: transformer.MetadataT{
-									SourceID:      "source-from-transformer",      // transformer should replay source id
-									DestinationID: "destination-from-transformer", // transformer should replay destination id
-								},
-							},
-						},
-						Success: true,
-					}
-				}
 			}
 
 			// We expect one transform call to destination A, after sending numEvents stat.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				After(callDestANumEvents).DoAndReturn(assertDestinationTransform("enabled-destination-a", "enabled-destination-a-definition-name"))
+				After(callDestANumEvents).DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledA, transformExpectations[DestinationIDEnabledA]))
 
 			// We expect one transform call to destination B, after user transform for destination B.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				After(callUserTransform).DoAndReturn(assertDestinationTransform("enabled-destination-b", "minio"))
+				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
 			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
 			callDBWrite := c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
@@ -994,8 +811,8 @@ var _ = Describe("Processor", func() {
 
 			callUpdateJobsSuccess := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(2), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1) // id 1002
-					assertJobStatus(toRetryJobsList[0], statuses[1], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1)     // id 2002
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1) // id 1002
+					assertJobStatus(toRetryJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2002
 				})
 
 			c.mockStatGatewayDBWriteTime.EXPECT().End().Times(1).After(callStoreRouter).After(callUpdateJobsSuccess)
@@ -1161,11 +978,11 @@ var _ = Describe("Processor", func() {
 			callUpdateJobs := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callListSortEnd).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
-					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1) // id 1002
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1) // id 1010
-					assertJobStatus(toRetryJobsList[1], statuses[2], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1)     // id 2002
-					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1)     // id 2003
-					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.ExecutingState, "200", `{"success":"OK"}`, 1)     // id 2010
+					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1) // id 1002
+					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1) // id 1010
+					assertJobStatus(toRetryJobsList[1], statuses[2], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1)     // id 2002
+					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1)     // id 2003
+					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
 
 			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callUpdateJobs)
@@ -1210,115 +1027,25 @@ var _ = Describe("Processor", func() {
 
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledA: {
-					events:          4,
-					messageIds:      "message-1,message-2,message-3,message-4",
-					receiveMetadata: true,
+					events:                    4,
+					messageIds:                "message-1,message-2,message-3,message-4",
+					receiveMetadata:           true,
+					destinationDefinitionName: "enabled-destination-a-definition-name",
 				},
 				DestinationIDEnabledB: {
-					events:     2,
-					messageIds: "message-3,message-4",
+					events:                    2,
+					messageIds:                "message-3,message-4",
+					destinationDefinitionName: "minio",
 				},
-			}
-
-			assertDestinationTransform := func(destinationID string, destinationDefinitionName string) func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
-				return func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
-					Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/%s", destinationDefinitionName)))
-					Expect(breakIntoBatchWhenUserChanges).To(BeFalse())
-
-					expectations := transformExpectations[destinationID]
-					Expect(clientEvents).To(HaveLen(expectations.events))
-
-					messageIDs := make([]string, 0)
-					for i := range clientEvents {
-						event := clientEvents[i]
-						messageID := event.Message["messageId"].(string)
-						messageIDs = append(messageIDs, messageID)
-
-						// Expect all messages belong to same destination
-						Expect(event.Destination.ID).To(Equal(destinationID))
-
-						// Metadata are stripped from destination transform, is a user transform occurred before.
-						if expectations.receiveMetadata {
-							Expect(event.Metadata.DestinationType).To(Equal(fmt.Sprintf("%s-definition-name", destinationID)))
-							Expect(event.Metadata.JobID).To(Equal(messages[messageID].jobid))
-							Expect(event.Metadata.MessageID).To(Equal(messageID))
-							Expect(event.Metadata.SourceID).To(Equal("")) // ???
-						} else {
-							Expect(event.Metadata.DestinationType).To(Equal(""))
-							Expect(event.Metadata.JobID).To(Equal(int64(0)))
-							Expect(event.Metadata.MessageID).To(Equal(""))
-							Expect(event.Metadata.SourceID).To(Equal("")) // ???
-						}
-
-						// Expect timestamp fields
-						expectTimestamp := func(input string, expected time.Time) {
-							inputTime, _ := time.Parse(misc.RFC3339Milli, input)
-							Expect(inputTime).To(BeTemporally("~", expected, time.Second))
-						}
-
-						parseTimestamp := func(timestamp string) time.Time {
-							parsed, ok := time.Parse(misc.RFC3339Milli, timestamp)
-							if ok != nil {
-								return time.Now()
-							} else {
-								return parsed
-							}
-						}
-
-						receivedAt := parseTimestamp(messages[messageID].expectedReceivedAt)
-						sentAt := parseTimestamp(messages[messageID].expectedSentAt)
-						originalTimestamp := parseTimestamp(messages[messageID].expectedOriginalTimestamp)
-
-						expectTimestamp(event.Message["receivedAt"].(string), receivedAt)
-						expectTimestamp(event.Message["sentAt"].(string), sentAt)
-						expectTimestamp(event.Message["originalTimestamp"].(string), originalTimestamp)
-						expectTimestamp(event.Message["timestamp"].(string), misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp))
-
-						// Expect message properties
-						Expect(event.Message["some-property"].(string)).To(Equal(fmt.Sprintf("property-%s", messages[messageID].id)))
-
-						if destinationID == "enabled-destination-b" {
-							Expect(event.Message["user-transform"].(string)).To(Equal("value"))
-						}
-					}
-
-					Expect(strings.Join(messageIDs, ",")).To(Equal(expectations.messageIds))
-
-					return transformer.ResponseT{
-						Events: []transformer.TransformerResponseT{
-							{
-								Output: map[string]interface{}{
-									"int-value":    0,
-									"string-value": fmt.Sprintf("value-%s", destinationID),
-								},
-								Metadata: transformer.MetadataT{
-									SourceID:      "source-from-transformer",      // transformer should replay source id
-									DestinationID: "destination-from-transformer", // transformer should replay destination id
-								},
-							},
-							{
-								Output: map[string]interface{}{
-									"int-value":    1,
-									"string-value": fmt.Sprintf("value-%s", destinationID),
-								},
-								Metadata: transformer.MetadataT{
-									SourceID:      "source-from-transformer",      // transformer should replay source id
-									DestinationID: "destination-from-transformer", // transformer should replay destination id
-								},
-							},
-						},
-						Success: true,
-					}
-				}
 			}
 
 			// We expect one transform call to destination A, after sending numEvents stat.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				After(callDestANumEvents).DoAndReturn(assertDestinationTransform("enabled-destination-a", "enabled-destination-a-definition-name"))
+				After(callDestANumEvents).DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledA, transformExpectations[DestinationIDEnabledA]))
 
 			// We expect one transform call to destination B, after user transform for destination B.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				After(callUserTransform).DoAndReturn(assertDestinationTransform("enabled-destination-b", "minio"))
+				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
 			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
 			callDBWrite := c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
@@ -1353,8 +1080,8 @@ var _ = Describe("Processor", func() {
 
 			callUpdateJobsSuccess := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(2), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1) // id 1002
-					assertJobStatus(toRetryJobsList[0], statuses[1], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1)     // id 2002
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1) // id 1002
+					assertJobStatus(toRetryJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2002
 				})
 
 			c.asyncHelper.RegisterCalls(
@@ -1459,7 +1186,7 @@ var _ = Describe("Processor", func() {
 			callUpdateJobs := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.SucceededState, "200", `{"success":"OK"}`, 1)
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
 				})
 
 			c.mockStatGatewayDBWriteTime.EXPECT().End().Times(1).After(callUpdateJobs)
@@ -1502,9 +1229,10 @@ type mockTransformerData struct {
 }
 
 type transformExpectation struct {
-	events          int
-	messageIds      string
-	receiveMetadata bool
+	events                    int
+	messageIds                string
+	receiveMetadata           bool
+	destinationDefinitionName string
 }
 
 func createMessagePayload(e mockEventData) string {
@@ -1529,4 +1257,100 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState 
 	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
 	Expect(status.AttemptNum).To(Equal(attemptNum))
+}
+
+func assertDestinationTransform(messages map[string]mockEventData, destinationID string, expectations transformExpectation) func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
+	return func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
+		destinationDefinitionName := expectations.destinationDefinitionName
+
+		Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/%s?whSchemaVersion=", destinationDefinitionName)))
+		Expect(breakIntoBatchWhenUserChanges).To(BeFalse())
+
+		Expect(clientEvents).To(HaveLen(expectations.events))
+
+		messageIDs := make([]string, 0)
+		for i := range clientEvents {
+			event := clientEvents[i]
+			messageID := event.Message["messageId"].(string)
+			messageIDs = append(messageIDs, messageID)
+
+			// Expect all messages belong to same destination
+			Expect(event.Destination.ID).To(Equal(destinationID))
+
+			// Expect metadata
+			Expect(event.Metadata.DestinationID).To(Equal(destinationID))
+
+			// Metadata are stripped from destination transform, is a user transform occurred before.
+			if expectations.receiveMetadata {
+				Expect(event.Metadata.DestinationType).To(Equal(fmt.Sprintf("%s-definition-name", destinationID)))
+				Expect(event.Metadata.JobID).To(Equal(messages[messageID].jobid))
+				Expect(event.Metadata.MessageID).To(Equal(messageID))
+				Expect(event.Metadata.SourceID).To(Equal("")) // ???
+			} else {
+				Expect(event.Metadata.DestinationType).To(Equal(""))
+				Expect(event.Metadata.JobID).To(Equal(int64(0)))
+				Expect(event.Metadata.MessageID).To(Equal(""))
+				Expect(event.Metadata.SourceID).To(Equal("")) // ???
+			}
+
+			// Expect timestamp fields
+			expectTimestamp := func(input string, expected time.Time) {
+				inputTime, _ := time.Parse(misc.RFC3339Milli, input)
+				Expect(inputTime).To(BeTemporally("~", expected, time.Second))
+			}
+
+			parseTimestamp := func(timestamp string) time.Time {
+				parsed, ok := time.Parse(misc.RFC3339Milli, timestamp)
+				if ok != nil {
+					return time.Now()
+				} else {
+					return parsed
+				}
+			}
+
+			receivedAt := parseTimestamp(messages[messageID].expectedReceivedAt)
+			sentAt := parseTimestamp(messages[messageID].expectedSentAt)
+			originalTimestamp := parseTimestamp(messages[messageID].expectedOriginalTimestamp)
+
+			expectTimestamp(event.Message["receivedAt"].(string), receivedAt)
+			expectTimestamp(event.Message["sentAt"].(string), sentAt)
+			expectTimestamp(event.Message["originalTimestamp"].(string), originalTimestamp)
+			expectTimestamp(event.Message["timestamp"].(string), misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp))
+
+			// Expect message properties
+			Expect(event.Message["some-property"].(string)).To(Equal(fmt.Sprintf("property-%s", messages[messageID].id)))
+
+			if destinationID == "enabled-destination-b" {
+				Expect(event.Message["user-transform"].(string)).To(Equal("value"))
+			}
+		}
+
+		Expect(strings.Join(messageIDs, ",")).To(Equal(expectations.messageIds))
+
+		return transformer.ResponseT{
+			Events: []transformer.TransformerResponseT{
+				{
+					Output: map[string]interface{}{
+						"int-value":    0,
+						"string-value": fmt.Sprintf("value-%s", destinationID),
+					},
+					Metadata: transformer.MetadataT{
+						SourceID:      "source-from-transformer",      // transformer should replay source id
+						DestinationID: "destination-from-transformer", // transformer should replay destination id
+					},
+				},
+				{
+					Output: map[string]interface{}{
+						"int-value":    1,
+						"string-value": fmt.Sprintf("value-%s", destinationID),
+					},
+					Metadata: transformer.MetadataT{
+						SourceID:      "source-from-transformer",      // transformer should replay source id
+						DestinationID: "destination-from-transformer", // transformer should replay destination id
+					},
+				},
+			},
+			Success: true,
+		}
+	}
 }
