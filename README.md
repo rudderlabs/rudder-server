@@ -98,12 +98,13 @@ We would love to see you contribute to RudderStack. Get more information on how 
 
 For more information on RudderStack's features and functionalities, make sure you check out our [Wiki]() page.
 
-# Stay Connected
+# Follow Us
 
-- See the [HackerNews][hackernews] discussion around RudderStack
-- Join our [Discord][discord] channel
-- Follow us on [Twitter][twitter]
-- Get the latest news from the [RudderStack blog][rudderstack-blog]
+- [Discord][discord]
+- [LinkedIn](https://www.linkedin.com/company/rudderlabs/)
+- [Twitter][twitter]
+- [HackerNews][hackernews]
+- [RudderStack Blog][rudderstack-blog]
 
 <!----variables---->
 
