@@ -953,90 +953,90 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			eventsToTransform = eventList
 		}
 
-		var destTransformEventList []transformer.TransformerResponseT
 		if len(eventsToTransform) > 0 {
 			logger.Debug("Dest Transform input size", len(eventsToTransform))
 			destStat.destTransform.Start()
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 			destStat.destTransform.End()
 
-			destTransformEventList = response.Events
+			destTransformEventList := response.Events
 			logger.Debug("Dest Transform output size", len(destTransformEventList))
 			if !response.Success {
 				logger.Debug("[Processor: processJobsForDest] Request to transformer not a success ", response.Events)
 				continue
 			}
 			destStat.numOutputEvents.Count(len(destTransformEventList))
-		}
 
-		for _, failedEvent := range response.FailedEvents {
-			var payload json.RawMessage
-			if len(failedEvent.Metadata.MessageIDs) > 0 {
-				messageIds := failedEvent.Metadata.MessageIDs
-				var x []types.SingularEventT
-				for _, msgID := range messageIds {
-					x = append(x, eventsByMessageID[msgID])
+			for _, failedEvent := range response.FailedEvents {
+				var payload json.RawMessage
+				if len(failedEvent.Metadata.MessageIDs) > 0 {
+					messageIds := failedEvent.Metadata.MessageIDs
+					var x []types.SingularEventT
+					for _, msgID := range messageIds {
+						x = append(x, eventsByMessageID[msgID])
+					}
+					var err error
+					payload, err = json.Marshal(x)
+					if err != nil {
+						panic(err)
+					}
+				} else {
+					message := eventsByMessageID[failedEvent.Metadata.MessageID]
+					var err error
+					payload, err = json.Marshal(message)
+					if err != nil {
+						panic(err)
+					}
 				}
-				var err error
-				payload, err = json.Marshal(x)
+
+				id := uuid.NewV4()
+				newFailedJob := jobsdb.JobT{
+					UUID:         id,
+					EventPayload: payload,
+					Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "error": "%v"}`, sourceID, destID, failedEvent.Error)),
+					CreatedAt:    time.Now(),
+					ExpireAt:     time.Now(),
+					CustomVal:    metadata.DestinationType,
+				}
+
+				procErrorJobs = append(procErrorJobs, &newFailedJob)
+			}
+
+			//Save the JSON in DB. This is what the router uses
+			for _, destEvent := range destTransformEventList {
+				destEventJSON, err := json.Marshal(destEvent.Output)
+				//Should be a valid JSON since its our transformation
+				//but we handle anyway
 				if err != nil {
-					panic(err)
+					continue
 				}
-			} else {
-				message := eventsByMessageID[failedEvent.Metadata.MessageID]
-				var err error
-				payload, err = json.Marshal(message)
-				if err != nil {
-					panic(err)
+
+				//Need to replace UUID his with messageID from client
+				id := uuid.NewV4()
+				// read source_id from metadata that is replayed back from transformer
+				// in case of custom transformations metadata of first event is returned along with all events in session
+				// source_id will be same for all events belong to same user in a session
+				sourceID := destEvent.Metadata.SourceID
+				destID := destEvent.Metadata.DestinationID
+				userID := destEvent.Metadata.UserID
+
+				newJob := jobsdb.JobT{
+					UUID:         id,
+					UserID:       userID,
+					Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
+					CreatedAt:    time.Now(),
+					ExpireAt:     time.Now(),
+					CustomVal:    destType,
+					EventPayload: destEventJSON,
+				}
+				if misc.Contains(rawDataDestinations, newJob.CustomVal) {
+					batchDestJobs = append(batchDestJobs, &newJob)
+				} else {
+					destJobs = append(destJobs, &newJob)
 				}
 			}
-
-			id := uuid.NewV4()
-			newFailedJob := jobsdb.JobT{
-				UUID:         id,
-				EventPayload: payload,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "error": "%v"}`, sourceID, destID, failedEvent.Error)),
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
-				CustomVal:    metadata.DestinationType,
-			}
-
-			procErrorJobs = append(procErrorJobs, &newFailedJob)
 		}
 
-		//Save the JSON in DB. This is what the router uses
-		for _, destEvent := range destTransformEventList {
-			destEventJSON, err := json.Marshal(destEvent.Output)
-			//Should be a valid JSON since its our transformation
-			//but we handle anyway
-			if err != nil {
-				continue
-			}
-
-			//Need to replace UUID his with messageID from client
-			id := uuid.NewV4()
-			// read source_id from metadata that is replayed back from transformer
-			// in case of custom transformations metadata of first event is returned along with all events in session
-			// source_id will be same for all events belong to same user in a session
-			sourceID := destEvent.Metadata.SourceID
-			destID := destEvent.Metadata.DestinationID
-			userID := destEvent.Metadata.UserID
-
-			newJob := jobsdb.JobT{
-				UUID:         id,
-				UserID:       userID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
-				CustomVal:    destType,
-				EventPayload: destEventJSON,
-			}
-			if misc.Contains(rawDataDestinations, newJob.CustomVal) {
-				batchDestJobs = append(batchDestJobs, &newJob)
-			} else {
-				destJobs = append(destJobs, &newJob)
-			}
-		}
 	}
 
 	proc.destProcessing.End()
