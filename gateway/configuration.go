@@ -16,12 +16,12 @@ func loadConfig() {
 	maxDBBatchTimeout = config.GetInt("Gateway.maxBatchSize", 32)
 	//Timeout after which batch is formed anyway with whatever requests
 	//are available
-	userWebRequestBatchTimeout = (config.GetDuration("Gateway.userWebRequestBatchTimeoutInMS", time.Duration(2000)) * time.Millisecond)
-	dbBatchWriteTimeout = (config.GetDuration("Gateway.dbBatchWriteTimeoutInMS", time.Duration(2000)) * time.Millisecond)
+	userWebRequestBatchTimeout = (config.GetDuration("Gateway.userWebRequestBatchTimeoutInMS", time.Duration(20)) * time.Millisecond)
+	dbBatchWriteTimeout = (config.GetDuration("Gateway.dbBatchWriteTimeoutInMS", time.Duration(20)) * time.Millisecond)
 	//Multiple DB writers are used to write data to DB
 	maxUserWebRequestWorkerProcess = config.GetInt("Gateway.maxUserWebRequestWorkerProcess", 64)
 	//Multiple DB writers are used to write data to DB
-	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess", 8)
+	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess", 64)
 	// CustomVal is used as a key in the jobsDB customval column
 	CustomVal = config.GetString("Gateway.CustomVal", "GW")
 	// Maximum request size to gateway
