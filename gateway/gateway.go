@@ -60,15 +60,16 @@ type batchWebRequestT struct {
 }
 
 var (
-	webPort, maxBatchSize, maxUserWebRequestWorkerProcess, maxDBWriterProcess int
-	batchTimeout                                                              time.Duration
-	enabledWriteKeysSourceMap                                                 map[string]string
-	enabledWriteKeyWebhookMap                                                 map[string]string
-	configSubscriberLock                                                      sync.RWMutex
-	maxReqSize                                                                int
-	enableDedup                                                               bool
-	enableRateLimit                                                           bool
-	dedupWindow, diagnosisTickerTime                                          time.Duration
+	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess int
+	maxUserWebRequestBatchSize, maxDBBatchTimeout               int
+	userWebRequestBatchTimeout, dbBatchWriteTimeout             time.Duration
+	enabledWriteKeysSourceMap                                   map[string]string
+	enabledWriteKeyWebhookMap                                   map[string]string
+	configSubscriberLock                                        sync.RWMutex
+	maxReqSize                                                  int
+	enableDedup                                                 bool
+	enableRateLimit                                             bool
+	dedupWindow, diagnosisTickerTime                            time.Duration
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -97,6 +98,7 @@ type HandleT struct {
 	application                               app.Interface
 	webRequestQ                               chan *webRequestT
 	writableElementQ                          chan *writableElementT
+	batchWritableElementQ                     chan *batchWritableElementT
 	jobsDB                                    jobsdb.JobsDB
 	badgerDB                                  *badger.DB
 	ackCount                                  uint64
@@ -111,7 +113,6 @@ type HandleT struct {
 	diagnosisTicker                           *time.Ticker
 	webRequestBatchCount                      uint64
 	userWebRequestWorkers                     []*userWebRequestWorkerT
-	dbWriterWorkers                           []*dbWriterWorkerT
 	webhookHandler                            types.WebHookI
 }
 
@@ -125,6 +126,7 @@ func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket
 type userWebRequestWorkerT struct {
 	webRequestQ   chan *webRequestT
 	batchRequestQ chan *batchWebRequestT
+	reponseQ      chan map[uuid.UUID]string
 	workerID      int
 }
 
@@ -136,6 +138,7 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 		userWebRequestWorker = &userWebRequestWorkerT{
 			webRequestQ:   make(chan *webRequestT),
 			batchRequestQ: make(chan *batchWebRequestT),
+			reponseQ:      make(chan map[uuid.UUID]string),
 			workerID:      i}
 		gateway.userWebRequestWorkers[i] = userWebRequestWorker
 		rruntime.Go(func() {
@@ -153,52 +156,36 @@ type batchWritableElementT struct {
 	batchWritableElement []*writableElementT
 }
 
-type dbWriterWorkerT struct {
-	writableElementQ      chan *writableElementT
-	batchWritableElementQ chan *batchWritableElementT
-	workerID              int
-}
-
 func (gateway *HandleT) initDBWriterWorkers() {
-	gateway.dbWriterWorkers = make([]*dbWriterWorkerT, maxDBWriterProcess)
 	for i := 0; i < maxDBWriterProcess; i++ {
 		logger.Debug("DB Writer Worker Started", i)
-		var dbWriterWorker *dbWriterWorkerT
-		dbWriterWorker = &dbWriterWorkerT{
-			writableElementQ:      make(chan *writableElementT),
-			batchWritableElementQ: make(chan *batchWritableElementT),
-			workerID:              i}
-		gateway.dbWriterWorkers[i] = dbWriterWorker
+		j := i
 		rruntime.Go(func() {
-			gateway.dbWriterWorkerProcess(dbWriterWorker)
-		})
-
-		rruntime.Go(func() {
-			gateway.writableElementBatcher(dbWriterWorker)
+			gateway.dbWriterWorkerProcess(j)
 		})
 	}
 }
 
-func (gateway *HandleT) writableElementBatcher(dbWriterWorker *dbWriterWorkerT) {
+func (gateway *HandleT) writableElementBatcher() {
 	var writableElementBuffer = make([]*writableElementT, 0)
-	timeout := time.After(batchTimeout)
+	timeout := time.After(dbBatchWriteTimeout)
 	for {
 		select {
-		case writableElement := <-dbWriterWorker.writableElementQ:
+		case writableElement := <-gateway.writableElementQ:
 
 			//Append to request buffer
 			writableElementBuffer = append(writableElementBuffer, writableElement)
-			if len(writableElementBuffer) == maxBatchSize {
+			if len(writableElementBuffer) == maxDBBatchTimeout {
 				bWritableElement := batchWritableElementT{batchWritableElement: writableElementBuffer}
-				dbWriterWorker.batchWritableElementQ <- &bWritableElement
+				gateway.batchWritableElementQ <- &bWritableElement
 				writableElementBuffer = nil
 				writableElementBuffer = make([]*writableElementT, 0)
 			}
 		case <-timeout:
-			timeout = time.After(batchTimeout)
+			timeout = time.After(dbBatchWriteTimeout)
 			if len(writableElementBuffer) > 0 {
 				bWritableElement := batchWritableElementT{batchWritableElement: writableElementBuffer}
-				dbWriterWorker.batchWritableElementQ <- &bWritableElement
+				gateway.batchWritableElementQ <- &bWritableElement
 				writableElementBuffer = nil
 				writableElementBuffer = make([]*writableElementT, 0)
 			}
@@ -206,8 +193,8 @@ func (gateway *HandleT) writableElementBatcher(dbWriterWorker *dbWriterWorkerT) 
 	}
 }
 
-func (gateway *HandleT) dbWriterWorkerProcess(dbWriterWorker *dbWriterWorkerT) {
-	for batchWritableElement := range dbWriterWorker.batchWritableElementQ {
+func (gateway *HandleT) dbWriterWorkerProcess(process int) {
+	for batchWritableElement := range gateway.batchWritableElementQ {
 		for _, writableElement := range batchWritableElement.batchWritableElement {
 			var errorMessagesMap map[uuid.UUID]string
 			gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
@@ -240,21 +227,21 @@ func (gateway *HandleT) findUserWebRequestWorker(userID string) *userWebRequestW
 //sends and ACK on the done channel which unblocks the HTTP handler
 func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebRequestWorkerT) {
 	var reqBuffer = make([]*webRequestT, 0)
-	timeout := time.After(batchTimeout)
+	timeout := time.After(userWebRequestBatchTimeout)
 	for {
 		select {
 		case req := <-userWebRequestWorker.webRequestQ:
 
 			//Append to request buffer
 			reqBuffer = append(reqBuffer, req)
-			if len(reqBuffer) == maxBatchSize {
+			if len(reqBuffer) == maxUserWebRequestBatchSize {
 				breq := batchWebRequestT{batchRequest: reqBuffer}
 				userWebRequestWorker.batchRequestQ <- &breq
 				reqBuffer = nil
 				reqBuffer = make([]*webRequestT, 0)
 			}
 		case <-timeout:
-			timeout = time.After(batchTimeout)
+			timeout = time.After(userWebRequestBatchTimeout)
 			if len(reqBuffer) > 0 {
 				breq := batchWebRequestT{batchRequest: reqBuffer}
 				userWebRequestWorker.batchRequestQ <- &breq
@@ -402,13 +389,12 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			jobEventCountMap[newJob.UUID] = totalEventsInReq
 		}
 
-		respChannel := make(chan map[uuid.UUID]string)
 		gateway.writableElementQ <- &writableElementT{jobList: jobList,
 			allMessageIdsSet: allMessageIdsSet,
-			respChannel:      respChannel,
+			respChannel:      userWebRequestWorker.reponseQ,
 		}
 
-		errorMessagesMap := <-respChannel
+		errorMessagesMap := <-userWebRequestWorker.reponseQ
 
 		if preDbStoreCount+len(jobList) != len(breq.batchRequest) {
 			panic(fmt.Errorf("preDbStoreCount:%d+len(errorMessagesMap):%d != len(breq.batchRequest):%d",
@@ -925,6 +911,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.rateLimiter = rateLimiter
 	gateway.webRequestQ = make(chan *webRequestT)
 	gateway.writableElementQ = make(chan *writableElementT)
+	gateway.batchWritableElementQ = make(chan *batchWritableElementT)
 	gateway.jobsDB = jobsDB
 	rruntime.Go(func() {
 		gateway.webRequestRouter()
@@ -935,6 +922,9 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	gateway.initUserWebRequestWorkers()
 	gateway.initDBWriterWorkers()
+	rruntime.Go(func() {
+		gateway.writableElementBatcher()
+	})
 
 	if gateway.application.Features().Webhook != nil {
 		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)

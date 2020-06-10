@@ -12,10 +12,12 @@ func loadConfig() {
 	//Port where GW is running
 	webPort = config.GetInt("Gateway.webPort", 8080)
 	//Number of incoming requests that are batched before initiating write
-	maxBatchSize = config.GetInt("Gateway.maxBatchSize", 32)
+	maxUserWebRequestBatchSize = config.GetInt("Gateway.maxBatchSize", 32)
+	maxDBBatchTimeout = config.GetInt("Gateway.maxBatchSize", 32)
 	//Timeout after which batch is formed anyway with whatever requests
 	//are available
-	batchTimeout = (config.GetDuration("Gateway.batchTimeoutInMS", time.Duration(20)) * time.Millisecond)
+	userWebRequestBatchTimeout = (config.GetDuration("Gateway.userWebRequestBatchTimeoutInMS", time.Duration(2000)) * time.Millisecond)
+	dbBatchWriteTimeout = (config.GetDuration("Gateway.dbBatchWriteTimeoutInMS", time.Duration(2000)) * time.Millisecond)
 	//Multiple DB writers are used to write data to DB
 	maxUserWebRequestWorkerProcess = config.GetInt("Gateway.maxUserWebRequestWorkerProcess", 64)
 	//Multiple DB writers are used to write data to DB

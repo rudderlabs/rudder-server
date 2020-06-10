@@ -10,7 +10,7 @@ enableStats = true
 
 [Gateway]
 webPort = 8080
-maxDBWriterProcess = 4
+maxUserWebRequestWorkerProcess = 4
 CustomVal = "GW"
 maxBatchSize = 32
 batchTimeoutInMS = 20
