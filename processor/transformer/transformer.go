@@ -22,16 +22,22 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
+const (
+	UserTransformerStage = "user_transformer"
+	DestTransformerStage = "dest_transformer"
+)
+
 type MetadataT struct {
-	SourceID        string   `json:"sourceId"`
-	DestinationID   string   `json:"destinationId"`
-	UserID          string   `json:"userId"`
-	JobID           int64    `json:"jobId"`
-	DestinationType string   `json:"destinationType"`
-	MessageID       string   `json:"messageId"`
-	MessageIDs      []string `json:"messageIds"`
-	AnonymousID     string   `json:"anonymousId"`
-	SessionID       string   `json:"sessionId,omitempty"`
+	SourceID        string `json:"sourceId"`
+	DestinationID   string `json:"destinationId"`
+	UserID          string `json:"userId"`
+	JobID           int64  `json:"jobId"`
+	DestinationType string `json:"destinationType"`
+	MessageID       string `json:"messageId"`
+	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
+	MessageIDs  []string `json:"messageIds"`
+	AnonymousID string   `json:"anonymousId"`
+	SessionID   string   `json:"sessionId,omitempty"`
 }
 
 type TransformerEventT struct {

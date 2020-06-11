@@ -384,6 +384,9 @@ func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) 
 }
 
 func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err error, isWarehouse bool) {
+	if !destinationdebugger.HasUploadEnabled(batchDestination.Destination.ID) {
+		return
+	}
 	var (
 		jobState  string
 		errorResp []byte
