@@ -113,19 +113,19 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 
 	logger.Debugf("[[ %s-JobsDB Import ]] %d jobs found in file:%s. Writing to db", jd.GetTablePrefix(), len(jobList), migrationCheckpoint.FileLocation)
 	err = jd.storeJobsDSInTxn(txn, jd.migrationState.dsForImport, true, jobList)
-	jd.assertTxErrorAndRollback(txn, err)
+	jd.assertErrorAndRollbackTx(err, txn)
 
 	logger.Debugf("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), migrationCheckpoint.FileLocation)
 	_, err = jd.updateJobStatusDSInTxn(txn, jd.migrationState.dsForImport, statusList) //Not collecting updatedStates here because the entire ds is un-marked for empty result after commit below
-	jd.assertTxErrorAndRollback(txn, err)
+	jd.assertErrorAndRollbackTx(err, txn)
 
 	migrationCheckpoint.Status = Imported
 	_, err = jd.CheckpointInTxn(txn, migrationCheckpoint)
-	jd.assertTxErrorAndRollback(txn, err)
+	jd.assertErrorAndRollbackTx(err, txn)
 
 	if opID != 0 {
 		err = jd.journalMarkDoneInTxn(txn, opID)
-		jd.assertTxErrorAndRollback(txn, err)
+		jd.assertErrorAndRollbackTx(err, txn)
 	}
 
 	err = txn.Commit()
