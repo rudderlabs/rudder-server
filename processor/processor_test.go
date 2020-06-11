@@ -1325,7 +1325,7 @@ func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
 	// make sure the mock backend config has sent the configuration
 	testutils.RunTestWithTimeout(func() {
 		for !c.configInitialised {
-			// a minimal sleep is required, to avoid tests for getting stuck in AWS CodeBuild.
+			// a minimal sleep is required, to free this thread and allow scheduler to run other goroutines.
 			time.Sleep(time.Nanosecond)
 		}
 	}, time.Second)
