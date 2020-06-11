@@ -566,16 +566,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
-
-			// make sure the mock backend config has sent the configuration
-			testutils.RunTestWithTimeout(func() {
-				for !c.configInitialised {
-				}
-			}, time.Second)
-
-			didWork := processor.handlePendingGatewayJobs()
-			Expect(didWork).To(Equal(true))
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 	})
 
@@ -839,16 +830,7 @@ var _ = Describe("Processor", func() {
 				sessionThresholdEvents: 3, // this test will send 5 events
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
-
-			// make sure the mock backend config has sent the configuration
-			testutils.RunTestWithTimeout(func() {
-				for !c.configInitialised {
-				}
-			}, time.Second)
-
-			didWork := processor.handlePendingGatewayJobs()
-			Expect(didWork).To(Equal(true))
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process ToRetry and Unprocessed jobs, when total events are more than sessionThreshold", func() {
@@ -1110,16 +1092,7 @@ var _ = Describe("Processor", func() {
 				sessionThresholdEvents: 20, // this test will send 5 events
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
-
-			// make sure the mock backend config has sent the configuration
-			testutils.RunTestWithTimeout(func() {
-				for !c.configInitialised {
-				}
-			}, time.Second)
-
-			didWork := processor.handlePendingGatewayJobs()
-			Expect(didWork).To(Equal(true))
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 	})
 
@@ -1199,16 +1172,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
-
-			// make sure the mock backend config has sent the configuration
-			testutils.RunTestWithTimeout(func() {
-				for !c.configInitialised {
-				}
-			}, time.Second)
-
-			didWork := processor.handlePendingGatewayJobs()
-			Expect(didWork).To(Equal(true))
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 	})
 })
@@ -1353,4 +1317,19 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 			Success: true,
 		}
 	}
+}
+
+func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
+	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
+
+	// make sure the mock backend config has sent the configuration
+	testutils.RunTestWithTimeout(func() {
+		for !c.configInitialised {
+			// a minimal sleep is required, to free this thread and allow scheduler to run other goroutines.
+			time.Sleep(time.Nanosecond)
+		}
+	}, time.Second)
+
+	didWork := processor.handlePendingGatewayJobs()
+	Expect(didWork).To(Equal(true))
 }
