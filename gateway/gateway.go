@@ -722,10 +722,10 @@ func (gateway *HandleT) StartWebHandler() {
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
 		Handler:           c.Handler(bugsnag.Handler(srvMux)),
-		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 1*time.Second),
-		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 2*time.Second),
-		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 5*time.Second),
-		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 30*time.Second),
+		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
+		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
+		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 10*time.Second),
+		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
 		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
 	}
 	log.Fatal(srv.ListenAndServe())
