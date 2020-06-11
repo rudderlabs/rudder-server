@@ -54,10 +54,13 @@ noOfBucketsInWindow=12
 
 [Gateway]
 webPort = 8080
+maxUserWebRequestWorkerProcess = 64
 maxDBWriterProcess = 64
 CustomVal = "GW"
-maxBatchSize = 32
-batchTimeoutInMS = 20
+maxUserRequestBatchSize = 4
+maxDBBatchSize = 32
+userWebRequestBatchTimeoutInMS = 15
+dbBatchWriteTimeoutInMS = 5
 maxReqSizeInKB = 100000
 enableDedup = false
 enableRateLimit = false
