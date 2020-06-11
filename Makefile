@@ -26,6 +26,7 @@ build: enterprise-prepare-build ## Build rudder-server binary
 	$(GO) build -o bin/rudder-server main.go
 
 run: enterprise-prepare-build ## Run rudder-server-binary
+	$(GO) mod vendor
 	$(GO) run -mod=vendor main.go
 
 help: ## Show the available commands
