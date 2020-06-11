@@ -270,7 +270,12 @@ var _ = Describe("Gateway", func() {
 		}
 
 		It("should process multiple requests to all endpoints (except batch) in a batch", func() {
-			handlers := fourHandlers(gateway)
+			handlers := map[string]http.HandlerFunc{
+				"alias":    gateway.webAliasHandler,
+				"group":    gateway.webGroupHandler,
+				"identify": gateway.webIdentifyHandler,
+				"page":     gateway.webPageHandler,
+			}
 
 			handlerExpectation := func(handlerType string, handler http.HandlerFunc) *RequestExpectation {
 				// we add the handler type in custom property of request's body, to check that the type field is set correctly while batching
@@ -581,16 +586,6 @@ func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 		"page":     gateway.webPageHandler,
 		"screen":   gateway.webScreenHandler,
 		"track":    gateway.webTrackHandler,
-	}
-}
-
-//Since our max batch size is four, this is used to test that batch logic.
-func fourHandlers(gateway *HandleT) map[string]http.HandlerFunc {
-	return map[string]http.HandlerFunc{
-		"alias":    gateway.webAliasHandler,
-		"group":    gateway.webGroupHandler,
-		"identify": gateway.webIdentifyHandler,
-		"page":     gateway.webPageHandler,
 	}
 }
 
