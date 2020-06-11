@@ -71,6 +71,9 @@ func setWHSchemaVersionIfNotExists(dbHandle *sql.DB) {
 	sqlStatement := fmt.Sprintf(`SELECT parameters FROM workspace WHERE token = '%s'`, hashedToken)
 	row := dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&parameters)
+	if err == sql.ErrNoRows {
+		return
+	}
 	if err != nil {
 		panic(err)
 	}
