@@ -270,7 +270,12 @@ var _ = Describe("Gateway", func() {
 		}
 
 		It("should process multiple requests to all endpoints (except batch) in a batch", func() {
-			handlers := allHandlers(gateway)
+			handlers := map[string]http.HandlerFunc{
+				"alias":    gateway.webAliasHandler,
+				"group":    gateway.webGroupHandler,
+				"identify": gateway.webIdentifyHandler,
+				"page":     gateway.webPageHandler,
+			}
 
 			handlerExpectation := func(handlerType string, handler http.HandlerFunc) *RequestExpectation {
 				// we add the handler type in custom property of request's body, to check that the type field is set correctly while batching
@@ -285,7 +290,7 @@ var _ = Describe("Gateway", func() {
 				}
 			}
 
-			c.mockStatGatewayBatchSize.EXPECT().Count(6).
+			c.mockStatGatewayBatchSize.EXPECT().Count(4).
 				Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 
 			callStart := c.mockStatGatewayBatchTime.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
@@ -294,7 +299,7 @@ var _ = Describe("Gateway", func() {
 				EXPECT().StoreWithRetryEach(gomock.Any()).
 				DoAndReturn(func(jobs []*jobsdb.JobT) map[uuid.UUID]string {
 					// will collect all message handler types, found in jobs send to Store function
-					typesFound := make(map[string]bool, 6)
+					typesFound := make(map[string]bool, 4)
 
 					// All jobs should belong to the same batchId
 					expectedBatchID := nextBatchID()
@@ -336,8 +341,8 @@ var _ = Describe("Gateway", func() {
 				}
 			}
 
-			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 6)
-			c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 6)
+			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 4)
+			c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 4)
 			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
 			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 0)
 
