@@ -14,7 +14,6 @@ import (
 func (jd *HandleT) SetupForImport() {
 	jd.migrationState.dsForNewEvents = jd.findOrCreateDsFromSetupCheckpoint(AcceptNewEventsOp)
 	logger.Infof("[[ %s-JobsDB Import ]] Ds for new events :%v", jd.GetTablePrefix(), jd.migrationState.dsForNewEvents)
-	jd.setupSequenceProvider()
 }
 
 func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
@@ -23,42 +22,24 @@ func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
 	return ds
 }
 
-func (jd *HandleT) setupSequenceProvider() {
+//GetLastJobIDBeforeImport should return the largest job id stored so far
+func (jd *HandleT) GetLastJobIDBeforeImport() int64 {
 	jd.assert(jd.migrationState.dsForNewEvents.Index != "", "dsForNewEvents must be setup before calling this")
 	jd.dsListLock.Lock()
 	defer jd.dsListLock.Unlock()
 
-	if jd.migrationState.sequenceProvider == nil || !jd.migrationState.sequenceProvider.IsInitialized() {
-		dsList := jd.getDSList(true)
-
-		var lastJobIDBeforeNewImports int64
-		if lastJobIDBeforeNewImports == 0 {
-			for idx, dataSet := range dsList {
-				if dataSet.Index == jd.migrationState.dsForNewEvents.Index {
-					if idx > 0 {
-						lastJobIDBeforeNewImports = jd.getMaxIDForDs(dsList[idx-1])
-					}
-				}
+	dsList := jd.getDSList(true)
+	var lastJobIDBeforeNewImports int64
+	for idx, dataSet := range dsList {
+		if dataSet.Index == jd.migrationState.dsForNewEvents.Index {
+			if idx > 0 {
+				jd.assert(idx != len(dsList)-1, "Shouldn't be the last ds")
+				lastJobIDBeforeNewImports = jd.getMaxIDForDs(dsList[idx-1])
 			}
 		}
-
-		var lastJobIDReservedInCheckpoints int64
-		importCheckpoints := jd.GetCheckpoints(ImportOp, PreparedForImport)
-		for _, checkpoint := range importCheckpoints {
-			lastJobIDForCheckpoint := checkpoint.getLastJobID()
-			if lastJobIDForCheckpoint > lastJobIDReservedInCheckpoints {
-				lastJobIDReservedInCheckpoints = lastJobIDForCheckpoint
-			}
-		}
-
-		var lastJobID int64
-		if lastJobIDReservedInCheckpoints > lastJobIDBeforeNewImports {
-			lastJobID = lastJobIDReservedInCheckpoints
-		}
-		lastJobID = lastJobIDBeforeNewImports
-
-		jd.migrationState.sequenceProvider = NewSequenceProvider(lastJobID + 1)
 	}
+
+	return lastJobIDBeforeNewImports
 }
 
 func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
@@ -117,11 +98,10 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 
 	jd.assert(jd.migrationState.dsForImport.Index != "", "dsForImportEvents was not setup. Go debug")
 
-	startJobID := jd.getStartJobID(len(jobList), migrationCheckpoint)
+	jd.assert(migrationCheckpoint.StartSeq != 0, "Start sequence should have been assigned by importer before giving to jobsdb_import")
 	statusList := []*JobStatusT{}
-
 	for idx, job := range jobList {
-		jobID := startJobID + int64(idx)
+		jobID := migrationCheckpoint.StartSeq + int64(idx)
 		job.JobID = jobID
 		job.LastJobStatus.JobID = jobID
 		if job.LastJobStatus.JobState != "" {
@@ -134,19 +114,19 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 
 	logger.Debugf("[[ %s-JobsDB Import ]] %d jobs found in file:%s. Writing to db", jd.GetTablePrefix(), len(jobList), migrationCheckpoint.FileLocation)
 	err = jd.storeJobsDSInTxn(txn, jd.migrationState.dsForImport, true, jobList)
-	jd.assertTxErrorAndRollback(txn, err)
+	jd.assertErrorAndRollbackTx(err, txn)
 
 	logger.Debugf("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), migrationCheckpoint.FileLocation)
 	_, err = jd.updateJobStatusDSInTxn(txn, jd.migrationState.dsForImport, statusList) //Not collecting updatedStates here because the entire ds is un-marked for empty result after commit below
-	jd.assertTxErrorAndRollback(txn, err)
+	jd.assertErrorAndRollbackTx(err, txn)
 
 	migrationCheckpoint.Status = Imported
 	_, err = jd.CheckpointInTxn(txn, migrationCheckpoint)
-	jd.assertTxErrorAndRollback(txn, err)
+	jd.assertErrorAndRollbackTx(err, txn)
 
 	if opID != 0 {
 		err = jd.journalMarkDoneInTxn(txn, opID)
-		jd.assertTxErrorAndRollback(txn, err)
+		jd.assertErrorAndRollbackTx(err, txn)
 	}
 
 	err = txn.Commit()
@@ -156,20 +136,6 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	jd.markClearEmptyResult(jd.migrationState.dsForImport, []string{}, []string{}, nil, false)
 	// fmt.Println("Bursting CACHE")
 
-}
-
-func (jd *HandleT) getStartJobID(count int, migrationCheckpoint MigrationCheckpointT) int64 {
-	queryStat := stats.NewJobsDBStat("get_start_job_id", stats.TimerType, jd.tablePrefix)
-	queryStat.Start()
-	defer queryStat.End()
-	var sequenceNumber int64
-	sequenceNumber = migrationCheckpoint.StartSeq
-	if sequenceNumber == 0 {
-		sequenceNumber = jd.migrationState.sequenceProvider.ReserveIdsAndProvideStartSequence(count)
-		migrationCheckpoint.StartSeq = sequenceNumber
-		jd.Checkpoint(migrationCheckpoint)
-	}
-	return sequenceNumber
 }
 
 func (jd *HandleT) updateSequenceNumber(ds dataSetT, sequenceNumber int64) {

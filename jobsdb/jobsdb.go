@@ -121,14 +121,13 @@ type dataSetRangeT struct {
 
 //MigrationState maintains the state required during the migration process
 type MigrationState struct {
-	sequenceProvider *SequenceProviderT
-	dsForNewEvents   dataSetT
-	dsForImport      dataSetT
-	lastDsForExport  dataSetT
-	importLock       sync.RWMutex
-	migrationMode    string
-	fromVersion      int
-	toVersion        int
+	dsForNewEvents  dataSetT
+	dsForImport     dataSetT
+	lastDsForExport dataSetT
+	importLock      sync.RWMutex
+	migrationMode   string
+	fromVersion     int
+	toVersion       int
 }
 
 /*
@@ -209,7 +208,7 @@ func (jd *HandleT) assertError(err error) {
 	}
 }
 
-func (jd *HandleT) assertTxErrorAndRollback(tx *sql.Tx, err error) {
+func (jd *HandleT) assertErrorAndRollbackTx(err error, tx *sql.Tx) {
 	if err != nil {
 		tx.Rollback()
 		jd.printLists(true)
@@ -2383,7 +2382,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 	jd.assertError(err)
 
 	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList)
-	jd.assertTxErrorAndRollback(txn, err)
+	jd.assertErrorAndRollbackTx(err, txn)
 
 	err = txn.Commit()
 	jd.assertError(err)
