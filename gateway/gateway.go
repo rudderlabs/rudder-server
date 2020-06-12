@@ -125,6 +125,7 @@ type HandleT struct {
 	webRequestBatchCount                      uint64
 	userWebRequestWorkers                     []*userWebRequestWorkerT
 	webhookHandler                            types.WebHookI
+	versionHandler                            func(w http.ResponseWriter, r *http.Request)
 }
 
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -771,6 +772,7 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/debugStack", gateway.printStackHandler)
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
+	srvMux.HandleFunc("/version", gateway.versionHandler)
 
 	if gateway.application.Features().Webhook != nil {
 		srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
@@ -903,7 +905,7 @@ Setup initializes this module:
 
 This function will block until backend config is initialy received.
 */
-func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, s stats.Stats, clearDB *bool) {
+func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, s stats.Stats, clearDB *bool, versionHandler func(w http.ResponseWriter, r *http.Request)) {
 	gateway.application = application
 	gateway.stats = s
 
@@ -922,6 +924,8 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT)
 	gateway.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT)
 	gateway.jobsDB = jobsDB
+
+	gateway.versionHandler = versionHandler
 	rruntime.Go(func() {
 		gateway.webRequestRouter()
 	})
