@@ -84,6 +84,11 @@ func (brt *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == brt.destType {
 						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
+						if destination.Config["testConnection"] == true {
+							rruntime.Go(func() {
+								testBatchDestinationConnection(destination)
+							})
+						}
 					}
 				}
 			}
@@ -110,6 +115,48 @@ type StorageUploadOutput struct {
 
 type ErrorResponseT struct {
 	Error string
+}
+
+func createTestFileForBatchDestination(destinationID string) string {
+	uuid := uuid.NewV4()
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
+	testFolder := "rudder-test-payload"
+	path := fmt.Sprintf("%v%v.txt", tmpDirPath+testFolder, fmt.Sprintf("%v.%v", destinationID, uuid))
+
+	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
+	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
+	if err != nil {
+		panic(err)
+	}
+	gzWriter, err := misc.CreateGZ(gzipFilePath)
+	if err != nil {
+		panic(err)
+	}
+	gzWriter.WriteGZ("ok")
+	gzWriter.CloseGZ()
+	return gzipFilePath
+}
+
+func testBatchDestinationConnection(destination backendconfig.DestinationT) {
+	testFileName := createTestFileForBatchDestination(destination.ID)
+	provider := destination.DestinationDefinition.Name
+	uploader, err := filemanager.New(&filemanager.SettingsT{
+		Provider: provider,
+		Config:   misc.GetObjectStorageConfig(provider, destination.Config),
+	})
+	if err != nil {
+		// handle err
+	}
+	uploadFile, err := os.Open(testFileName)
+	if err != nil {
+		panic(err)
+	}
+
+	uploader.Upload(uploadFile)
+
 }
 
 func updateDestStatusStats(id string, count int, isSuccess bool) {
