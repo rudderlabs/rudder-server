@@ -1043,7 +1043,7 @@ func (proc *HandleT) crashRecover() {
 		for _, job := range execList {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
+				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				JobState:      jobsdb.Failed.State,

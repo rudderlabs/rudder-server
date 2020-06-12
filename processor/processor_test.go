@@ -38,6 +38,7 @@ type context struct {
 	mockGatewayJobsDB     *mocksJobsDB.MockJobsDB
 	mockRouterJobsDB      *mocksJobsDB.MockJobsDB
 	mockBatchRouterJobsDB *mocksJobsDB.MockJobsDB
+	mockProcErrorsDB      *mocksJobsDB.MockJobsDB
 	mockStats             *mocksStats.MockStats
 
 	mockStatGatewayDBRead         *mocksStats.MockRudderStats
@@ -54,6 +55,7 @@ type context struct {
 	mockStatJobListSort           *mocksStats.MockRudderStats
 	mockStatMarshalSingularEvents *mocksStats.MockRudderStats
 	mockStatDestProcessing        *mocksStats.MockRudderStats
+	mockStatProcErrDBWrite        *mocksStats.MockRudderStats
 	mockEnabledADestStats         *DestStatT
 	mockEnabledBDestStats         *DestStatT
 }
@@ -64,6 +66,7 @@ func (c *context) Setup() {
 	c.mockGatewayJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBatchRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
+	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockStats = mocksStats.NewMockStats(c.mockCtrl)
 
 	c.configInitialised = false
@@ -124,6 +127,7 @@ func (c *context) Setup() {
 	c.mockStatJobListSort = registerStatMocks("processor.job_list_sort", stats.TimerType)
 	c.mockStatMarshalSingularEvents = registerStatMocks("processor.marshal_singular_events", stats.TimerType)
 	c.mockStatDestProcessing = registerStatMocks("processor.dest_processing", stats.TimerType)
+	c.mockStatProcErrDBWrite = registerStatMocks("processor.proc_err_db_write", stats.CountType)
 
 	c.mockEnabledADestStats = registerDestStatMocks(DestinationIDEnabledA)
 	c.mockEnabledBDestStats = registerDestStatMocks(DestinationIDEnabledB)
@@ -240,7 +244,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(emptyJobsList).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
 		})
 
 		It("should recover after crash", func() {
@@ -303,7 +307,7 @@ var _ = Describe("Processor", func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
 		})
 	})
 
@@ -321,7 +325,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
@@ -478,9 +482,7 @@ var _ = Describe("Processor", func() {
 					for _, event := range clientEvents {
 						event.Message["user-transform"] = "value"
 						outputEvents = append(outputEvents, transformer.TransformerResponseT{
-							Output: map[string]interface{}{
-								"message": map[string]interface{}(event.Message),
-							},
+							Output: map[string]interface{}(event.Message),
 						})
 					}
 
@@ -557,6 +559,7 @@ var _ = Describe("Processor", func() {
 
 			c.mockStatGatewayDBWriteTime.EXPECT().End().Times(1).After(callUpdateJobs)
 			c.mockStatGatewayDBWrite.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callUpdateJobs)
+			c.mockStatProcErrDBWrite.EXPECT().Count(0).Times(1).After(callUpdateJobs)
 			c.mockStatRouterDBWrite.EXPECT().Count(2).Times(1).After(callUpdateJobs)
 			c.mockStatBatchRouterDBWrite.EXPECT().Count(2).Times(1).After(callUpdateJobs)
 
@@ -733,9 +736,7 @@ var _ = Describe("Processor", func() {
 					for _, event := range clientEvents {
 						event.Message["user-transform"] = "value"
 						outputEvents = append(outputEvents, transformer.TransformerResponseT{
-							Output: map[string]interface{}{
-								"message": map[string]interface{}(event.Message),
-							},
+							Output: map[string]interface{}(event.Message),
 						})
 					}
 
@@ -810,6 +811,7 @@ var _ = Describe("Processor", func() {
 			c.mockStatGatewayDBWrite.EXPECT().Count(2).Times(1)
 			c.mockStatRouterDBWrite.EXPECT().Count(2).Times(1)
 			c.mockStatBatchRouterDBWrite.EXPECT().Count(2).Times(1)
+			c.mockStatProcErrDBWrite.EXPECT().Count(0).Times(1)
 
 			// expecting any number of empty gauge stats, from createSessions loop
 			c.mockStatActiveUsers.EXPECT().Gauge(0).AnyTimes().After(callUpdateJobsSuccess)
@@ -823,6 +825,7 @@ var _ = Describe("Processor", func() {
 			c.mockStatGatewayDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
 			c.mockStatRouterDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
 			c.mockStatBatchRouterDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatProcErrDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
 
 			var processor *HandleT = &HandleT{
 				transformer:            mockTransformer,
@@ -993,9 +996,7 @@ var _ = Describe("Processor", func() {
 					for _, event := range clientEvents {
 						event.Message["user-transform"] = "value"
 						outputEvents = append(outputEvents, transformer.TransformerResponseT{
-							Output: map[string]interface{}{
-								"message": map[string]interface{}(event.Message),
-							},
+							Output: map[string]interface{}(event.Message),
 						})
 					}
 
@@ -1070,6 +1071,7 @@ var _ = Describe("Processor", func() {
 				c.mockStatGatewayDBWriteTime.EXPECT().End().Times(1).After(callStoreRouter).After(callUpdateJobsSuccess),
 				c.mockStatGatewayDBWrite.EXPECT().Count(2).Times(1),
 				c.mockStatRouterDBWrite.EXPECT().Count(2).Times(1),
+				// c.mockStatProcErrDBWrite.EXPECT().Count(0).Times(1),
 				c.mockStatBatchRouterDBWrite.EXPECT().Count(2).Times(1),
 			)
 
@@ -1084,6 +1086,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(0), gatewayCustomVal, nil).AnyTimes().After(callUpdateJobsSuccess)
 			c.mockStatGatewayDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
 			c.mockStatRouterDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
+			c.mockStatProcErrDBWrite.EXPECT().Count(0).AnyTimes()
 			c.mockStatBatchRouterDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
 
 			var processor *HandleT = &HandleT{
@@ -1167,6 +1170,7 @@ var _ = Describe("Processor", func() {
 			c.mockStatRouterDBWrite.EXPECT().Count(0).Times(1)
 			c.mockStatBatchRouterDBWrite.EXPECT().Count(0).Times(1)
 			c.mockStatLoopTime.EXPECT().End().Times(1)
+			c.mockStatProcErrDBWrite.EXPECT().Count(0).Times(1).After(callUpdateJobs)
 
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
@@ -1251,7 +1255,7 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 				Expect(event.Metadata.MessageID).To(Equal(messageID))
 				Expect(event.Metadata.SourceID).To(Equal("")) // ???
 			} else {
-				Expect(event.Metadata.DestinationType).To(Equal(""))
+				// Expect(event.Metadata.DestinationType).To(Equal(""))
 				Expect(event.Metadata.JobID).To(Equal(int64(0)))
 				Expect(event.Metadata.MessageID).To(Equal(""))
 				Expect(event.Metadata.SourceID).To(Equal("")) // ???
@@ -1320,7 +1324,7 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 }
 
 func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
-	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockStats)
+	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
 
 	// make sure the mock backend config has sent the configuration
 	testutils.RunTestWithTimeout(func() {
