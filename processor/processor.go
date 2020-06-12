@@ -14,8 +14,8 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/backup"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
@@ -191,9 +191,9 @@ func (proc *HandleT) Start() {
 		proc.mainLoop()
 	})
 	rruntime.Go(func() {
-		bk := backup.New()
-		bk.Setup(proc.errorDB)
-		bk.Start()
+		st := stash.New()
+		st.Setup(proc.errorDB)
+		st.Start()
 	})
 }
 

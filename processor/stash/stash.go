@@ -1,4 +1,4 @@
-package backup
+package stash
 
 import (
 	"bytes"
@@ -19,9 +19,10 @@ import (
 )
 
 var (
+	errorStashEnabled       bool
 	errReadLoopSleep        time.Duration
 	errDBReadBatchSize      int
-	noOfErrBackupWorkers    int
+	noOfErrStashWorkers     int
 	maxFailedCountForErrJob int
 )
 
@@ -30,9 +31,10 @@ func init() {
 }
 
 func loadConfig() {
+	errorStashEnabled = config.GetBool("Processor.errorStashEnabled", true)
 	errReadLoopSleep = config.GetDuration("Processor.errReadLoopSleepInS", time.Duration(30)) * time.Second
 	errDBReadBatchSize = config.GetInt("Processor.errDBReadBatchSize", 10000)
-	noOfErrBackupWorkers = config.GetInt("Processor.noOfErrBackupWorkers", 2)
+	noOfErrStashWorkers = config.GetInt("Processor.noOfErrStashWorkers", 2)
 	maxFailedCountForErrJob = config.GetInt("BatchRouter.maxFailedCountForErrJob", 3)
 }
 
@@ -50,7 +52,7 @@ type HandleT struct {
 	statErrDBW      stats.RudderStats
 }
 
-func (bk *HandleT) storeErorrsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOutputT {
+func (st *HandleT) storeErorrsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOutputT {
 	localTmpDirName := "/rudder-processor-errors/"
 
 	uuid := uuid.NewV4()
@@ -90,7 +92,7 @@ func (bk *HandleT) storeErorrsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 		panic(err)
 	}
 	prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
-	uploadOutput, err := bk.errFileUploader.Upload(outputFile, prefixes...)
+	uploadOutput, err := st.errFileUploader.Upload(outputFile, prefixes...)
 
 	return StoreErrorOutputT{
 		Location: uploadOutput.Location,
@@ -98,7 +100,7 @@ func (bk *HandleT) storeErorrsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 	}
 }
 
-func (bk *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT) {
+func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT) {
 	var statusList []*jobsdb.JobStatusT
 	for _, job := range jobs {
 		state := jobsdb.Succeeded.State
@@ -126,20 +128,20 @@ func (bk *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		}
 		statusList = append(statusList, &status)
 	}
-	bk.errorDB.UpdateJobStatus(statusList, nil, nil)
+	st.errorDB.UpdateJobStatus(statusList, nil, nil)
 }
 
-func (bk *HandleT) initErrWorkers() {
-	for i := 0; i < noOfErrBackupWorkers; i++ {
+func (st *HandleT) initErrWorkers() {
+	for i := 0; i < noOfErrStashWorkers; i++ {
 		rruntime.Go(func() {
 			func() {
 				for {
 					select {
-					case jobs := <-bk.errProcessQ:
+					case jobs := <-st.errProcessQ:
 						uploadStat := stats.NewStat("Processor.err_upload_time", stats.TimerType)
 						uploadStat.Start()
-						output := bk.storeErorrsToObjectStorage(jobs)
-						bk.setErrJobStatus(jobs, output)
+						output := st.storeErorrsToObjectStorage(jobs)
+						st.setErrJobStatus(jobs, output)
 						uploadStat.End()
 					}
 				}
@@ -148,19 +150,19 @@ func (bk *HandleT) initErrWorkers() {
 	}
 }
 
-func (bk *HandleT) readErrJobsLoop() {
-	logger.Info("Processor errors backup loop started")
+func (st *HandleT) readErrJobsLoop() {
+	logger.Info("Processor errors stash loop started")
 
 	for {
 		time.Sleep(errReadLoopSleep)
-		bk.statErrDBR.Start()
+		st.statErrDBR.Start()
 
 		toQuery := errDBReadBatchSize
-		retryList := bk.errorDB.GetToRetry(nil, toQuery, nil)
+		retryList := st.errorDB.GetToRetry(nil, toQuery, nil)
 		toQuery -= len(retryList)
-		unprocessedList := bk.errorDB.GetUnprocessed(nil, toQuery, nil)
+		unprocessedList := st.errorDB.GetUnprocessed(nil, toQuery, nil)
 
-		bk.statErrDBR.End()
+		st.statErrDBR.End()
 
 		combinedList := append(retryList, unprocessedList...)
 
@@ -169,7 +171,7 @@ func (bk *HandleT) readErrJobsLoop() {
 			continue
 		}
 
-		hasFileUploader := bk.errFileUploader != nil
+		hasFileUploader := st.errFileUploader != nil
 
 		jobState := jobsdb.Executing.State
 		// abort jobs if file uploader not configured to store them to object storage
@@ -191,21 +193,21 @@ func (bk *HandleT) readErrJobsLoop() {
 			statusList = append(statusList, &status)
 		}
 
-		bk.errorDB.UpdateJobStatus(statusList, nil, nil)
+		st.errorDB.UpdateJobStatus(statusList, nil, nil)
 		if hasFileUploader {
-			bk.errProcessQ <- combinedList
+			st.errProcessQ <- combinedList
 		}
 	}
 }
 
-func (bk *HandleT) crashRecover() {
+func (st *HandleT) crashRecover() {
 	for {
-		execList := bk.errorDB.GetExecuting(nil, errDBReadBatchSize, nil)
+		execList := st.errorDB.GetExecuting(nil, errDBReadBatchSize, nil)
 
 		if len(execList) == 0 {
 			break
 		}
-		logger.Debug("Process Error Backup crash recovering", len(execList))
+		logger.Debug("Process Error Stash crash recovering", len(execList))
 
 		var statusList []*jobsdb.JobStatusT
 
@@ -221,7 +223,24 @@ func (bk *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		bk.errorDB.UpdateJobStatus(statusList, nil, nil)
+		st.errorDB.UpdateJobStatus(statusList, nil, nil)
+	}
+}
+
+func (st *HandleT) setupFileUploader() {
+	if errorStashEnabled {
+		provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "")
+		bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		if provider != "" && bucket != "" {
+			var err error
+			st.errFileUploader, err = filemanager.New(&filemanager.SettingsT{
+				Provider: provider,
+				Config:   filemanager.GetProviderConfigFromEnv(),
+			})
+			if err != nil {
+				panic(err)
+			}
+		}
 	}
 }
 
@@ -229,29 +248,18 @@ func New() *HandleT {
 	return &HandleT{}
 }
 
-func (bk *HandleT) Setup(errorDB jobsdb.JobsDB) {
-	bk.errorDB = errorDB
-	bk.stats = stats.DefaultStats
-	bk.statErrDBR = bk.stats.NewStat("processor.err_db_read_time", stats.TimerType)
-	bk.statErrDBW = bk.stats.NewStat("processor.err_db_write_time", stats.TimerType)
+func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
+	st.errorDB = errorDB
+	st.stats = stats.DefaultStats
+	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
+	st.statErrDBW = st.stats.NewStat("processor.err_db_write_time", stats.TimerType)
 
-	bk.crashRecover()
+	st.crashRecover()
 }
 
-func (bk *HandleT) Start() {
-	provider := config.GetEnv("PROC_ERROR_BACKUP_STORAGE_PROVIDER", "")
-	bucket := config.GetEnv("PROC_ERROR_BACKUP_BUCKET", "")
-	if provider != "" && bucket != "" {
-		var err error
-		bk.errFileUploader, err = filemanager.New(&filemanager.SettingsT{
-			Provider: provider,
-			Config:   filemanager.GetProviderConfigFromEnv("PROC_ERROR_BACKUP"),
-		})
-		if err != nil {
-			panic(err)
-		}
-	}
-	bk.errProcessQ = make(chan []*jobsdb.JobT)
-	bk.initErrWorkers()
-	bk.readErrJobsLoop()
+func (st *HandleT) Start() {
+	st.setupFileUploader()
+	st.errProcessQ = make(chan []*jobsdb.JobT)
+	st.initErrWorkers()
+	st.readErrJobsLoop()
 }

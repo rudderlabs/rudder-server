@@ -1893,9 +1893,8 @@ func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
 	}
 	return filemanager.New(&filemanager.SettingsT{
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config:   filemanager.GetProviderConfigFromEnv("JOBS_BACKUP"),
+		Config:   filemanager.GetProviderConfigFromEnv(),
 	})
-
 }
 
 func (jd *HandleT) isEmpty(ds dataSetT) bool {

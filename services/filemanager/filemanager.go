@@ -2,7 +2,6 @@ package filemanager
 
 import (
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"os"
 
@@ -52,31 +51,31 @@ func New(settings *SettingsT) (FileManager, error) {
 }
 
 // GetProviderConfigFromEnv returns the provider config
-func GetProviderConfigFromEnv(prefix string) map[string]interface{} {
+func GetProviderConfigFromEnv() map[string]interface{} {
 	providerConfig := make(map[string]interface{})
-	provider := config.GetEnv(fmt.Sprintf("%s_STORAGE_PROVIDER", prefix), "S3")
+	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	switch provider {
 	case "S3":
-		providerConfig["bucketName"] = config.GetEnv(fmt.Sprintf("%s_BUCKET", prefix), "")
-		providerConfig["prefix"] = config.GetEnv(fmt.Sprintf("%s_PREFIX", prefix), "")
+		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
 		providerConfig["accessKeyID"] = config.GetEnv("AWS_ACCESS_KEY_ID", "")
 		providerConfig["accessKey"] = config.GetEnv("AWS_SECRET_ACCESS_KEY", "")
 		providerConfig["enableSSE"] = config.GetEnvAsBool("AWS_ENABLE_SSE", false)
 	case "GCS":
-		providerConfig["bucketName"] = config.GetEnv(fmt.Sprintf("%s_BUCKET", prefix), "")
-		providerConfig["prefix"] = config.GetEnv(fmt.Sprintf("%s_PREFIX", prefix), "")
+		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
 		credentials, err := ioutil.ReadFile(config.GetEnv("GOOGLE_APPLICATION_CREDENTIALS", ""))
 		if err == nil {
 			providerConfig["credentials"] = string(credentials)
 		}
 	case "AZURE_BLOB":
-		providerConfig["containerName"] = config.GetEnv(fmt.Sprintf("%s_BUCKET", prefix), "")
-		providerConfig["prefix"] = config.GetEnv(fmt.Sprintf("%s_PREFIX", prefix), "")
+		providerConfig["containerName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
 		providerConfig["accountName"] = config.GetEnv("AZURE_STORAGE_ACCOUNT", "")
 		providerConfig["accountKey"] = config.GetEnv("AZURE_STORAGE_ACCESS_KEY", "")
 	case "MINIO":
-		providerConfig["bucketName"] = config.GetEnv(fmt.Sprintf("%s_BUCKET", prefix), "")
-		providerConfig["prefix"] = config.GetEnv(fmt.Sprintf("%s_PREFIX", prefix), "")
+		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
 		providerConfig["endPoint"] = config.GetEnv("MINIO_ENDPOINT", "localhost:9000")
 		providerConfig["accessKeyID"] = config.GetEnv("MINIO_ACCESS_KEY_ID", "minioadmin")
 		providerConfig["secretAccessKey"] = config.GetEnv("MINIO_SECRET_ACCESS_KEY", "minioadmin")

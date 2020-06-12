@@ -452,8 +452,8 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	if ok := jsonUploadsList[0].FirstEventAt.IsZero(); !ok {
 		firstEventAt = jsonUploadsList[0].FirstEventAt
 	}
-	if ok := jsonUploadsList[0].LastEventAt.IsZero(); !ok {
-		lastEventAt = jsonUploadsList[0].LastEventAt
+	if ok := jsonUploadsList[len(jsonUploadsList)-1].LastEventAt.IsZero(); !ok {
+		lastEventAt = jsonUploadsList[len(jsonUploadsList)-1].LastEventAt
 	}
 
 	now := timeutil.Now()
