@@ -2519,7 +2519,7 @@ func (jd *HandleT) printLists(console bool) {
 GetUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) (outJobs []*JobT) {
+func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 
 	var queryStat stats.RudderStats
 	statName := ""
@@ -2528,11 +2528,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 	}
 	queryStat = stats.NewJobsDBStat(statName+"unprocessed", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
-	defer func() {
-		if len(outJobs) > 0 {
-			queryStat.End()
-		}
-	}()
+	defer queryStat.End()
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -2543,7 +2539,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList(false)
-	outJobs = make([]*JobT, 0)
+	outJobs := make([]*JobT, 0)
 	jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
 	if count == 0 {
 		return outJobs
@@ -2570,7 +2566,7 @@ relises on the caller to update it. That means that successive calls to GetProce
 can return the same set of events. It is the responsibility of the caller to call it from
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
-func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) (outJobs []*JobT) {
+func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 
 	var queryStat stats.RudderStats
 	statName := ""
@@ -2582,11 +2578,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	}
 	queryStat = stats.NewJobsDBStat(statName+"processed", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
-	defer func() {
-		if len(outJobs) > 0 {
-			queryStat.End()
-		}
-	}()
+	defer queryStat.End()
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -2597,7 +2589,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList(false)
-	outJobs = make([]*JobT, 0)
+	outJobs := make([]*JobT, 0)
 
 	jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
 	if count == 0 {
