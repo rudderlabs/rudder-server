@@ -903,15 +903,15 @@ func (proc *HandleT) mainLoop() {
 	currLoopSleep := time.Duration(0)
 
 	for {
-		if !proc.handlePendingGatewayJobs() {
+		if proc.handlePendingGatewayJobs() {
+			currLoopSleep = time.Duration(0)
+		} else {
 			currLoopSleep = 2*currLoopSleep + loopSleep
 			if currLoopSleep > maxLoopSleep {
 				currLoopSleep = maxLoopSleep
 			}
 
 			time.Sleep(currLoopSleep)
-		} else {
-			currLoopSleep = time.Duration(0)
 		}
 	}
 }
