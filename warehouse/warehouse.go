@@ -1438,12 +1438,12 @@ func monitorDestRouters() {
 }
 
 func setupTables(dbHandle *sql.DB) {
-	migrator := &migrator.Migrator{
+	m := &migrator.Migrator{
 		Handle:          dbHandle,
 		MigrationsTable: "wh_schema_migrations",
 	}
 
-	err := migrator.Migrate("warehouse")
+	err := m.Migrate("warehouse")
 	if err != nil {
 		panic(fmt.Errorf("Could not run warehouse database migrations: %w", err))
 	}
