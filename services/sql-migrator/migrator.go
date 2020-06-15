@@ -30,7 +30,9 @@ type Migrator struct {
 func (m *Migrator) Migrate(migrationsDir string) error {
 	destinationDriver, err := m.getDestinationDriver()
 
-	sourceDriver, err := httpfs.New(MigrationAssets, "/")
+	path := filepath.Join("/", migrationsDir)
+	sourceDriver, err := httpfs.New(MigrationAssets, path)
+
 	if err != nil {
 		return fmt.Errorf("Could not create migration source for script directory '%v': %w", migrationsDir, err)
 	}

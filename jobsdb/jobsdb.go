@@ -2105,21 +2105,6 @@ type JournalEntryT struct {
 	OpPayload json.RawMessage
 }
 
-// Remove this after a release
-func (jd *HandleT) setDefaultNowColumns(dsIndex string) {
-
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s_jobs_%s ALTER COLUMN created_at set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
-
-	_, err := jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s_jobs_%s ALTER COLUMN expire_at set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
-
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-}
-
 func (jd *HandleT) dropJournal() {
 	sqlStatement := fmt.Sprintf(`DROP TABLE IF EXISTS %s_journal`, jd.tablePrefix)
 	_, err := jd.dbHandle.Exec(sqlStatement)

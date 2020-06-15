@@ -6,11 +6,7 @@ LDFLAGS?=-s -w
 
 include .enterprise/env
 
-echo:
-	echo $(ENTERPRISE_COMMIT_FILE)
-	echo $(ENTERPRISE_COMMIT)
-
-all: build
+default: build
 
 mocks: ## Generate all mocks
 	$(GO) generate ./...
@@ -24,16 +20,18 @@ endif
 
 build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts	
 
-./services/sql-migrator/migrations_vfsdata.go: sql/migrations
+prepare-build: build-sql-migrations enterprise-prepare-build
+
+./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations) 
 	$(GO) run -tags=dev generate-sql-migrations.go
 	
-build: build-sql-migrations ## Build rudder-server binary
-	$(GO) build -mod vendor -a -installsuffix cgo -ldflags="$(LDFLAGS)"
+build: prepare-build ## Build rudder-server binary
+	$(GO) build -mod vendor -a -ldflags="$(LDFLAGS)"
 
-run: enterprise-prepare-build ## Run rudder-server using go run
+run: prepare-build ## Run rudder-server using go run
 	$(GO) run -mod=vendor main.go
 
-run-dev: enterprise-prepare-build ## Run rudder-server using go run with 'dev' build tag
+run-dev: prepare-build ## Run rudder-server using go run with 'dev' build tag
 	$(GO) run -mod=vendor -tags=dev main.go
 
 help: ## Show the available commands
@@ -45,6 +43,10 @@ help: ## Show the available commands
 enterprise-init: ## Initialise enterprise version
 	@.enterprise/scripts/init.sh
 
+enterprise-cleanup: ## Cleanup enterprise dependencies, revert to oss version
+	rm -rf ${ENTERPRISE_DIR}
+	rm -f ./imports/enterprise.go
+
 enterprise-update-commit: ## Updates linked enterprise commit to current commit in ENTERPRISE_DIR
 	@.enterprise/scripts/update-commit.sh
 	
@@ -55,5 +57,3 @@ enterprise-prepare-build: ## Create ./imports/enterprise.go, to link enterprise 
 	else \
 		rm -f ./imports/enterprise.go; \
 	fi
-
-enterprise-build: enterprise-prepare-build build ## Build rudder-server enterprise version
