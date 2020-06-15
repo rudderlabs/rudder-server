@@ -28,13 +28,13 @@ func (jd *HandleT) setupDatabaseTables() {
 	// setup migrator with appropriate schema migrations table
 	migrationsTable := fmt.Sprintf("%s_schema_migrations", jd.tablePrefix)
 
-	migrator := &migrator.Migrator{
+	m := &migrator.Migrator{
 		Handle:          jd.dbHandle,
 		MigrationsTable: migrationsTable,
 	}
 
 	// execute any necessary migrations
-	err := migrator.MigrateFromTemplates("jobsdb", templateData)
+	err := m.MigrateFromTemplates("jobsdb", templateData)
 	if err != nil {
 		panic(fmt.Errorf("Error while migrating '%v' jobsdb tables: %w", jd.tablePrefix, err))
 	}
