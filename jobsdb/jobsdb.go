@@ -121,14 +121,13 @@ type dataSetRangeT struct {
 
 //MigrationState maintains the state required during the migration process
 type MigrationState struct {
-	sequenceProvider *SequenceProviderT
-	dsForNewEvents   dataSetT
-	dsForImport      dataSetT
-	lastDsForExport  dataSetT
-	importLock       sync.RWMutex
-	migrationMode    string
-	fromVersion      int
-	toVersion        int
+	dsForNewEvents  dataSetT
+	dsForImport     dataSetT
+	lastDsForExport dataSetT
+	importLock      sync.RWMutex
+	migrationMode   string
+	fromVersion     int
+	toVersion       int
 }
 
 /*
@@ -208,7 +207,7 @@ func (jd *HandleT) assertError(err error) {
 	}
 }
 
-func (jd *HandleT) assertTxErrorAndRollback(tx *sql.Tx, err error) {
+func (jd *HandleT) assertErrorAndRollbackTx(err error, tx *sql.Tx) {
 	if err != nil {
 		tx.Rollback()
 		jd.printLists(true)
@@ -1348,9 +1347,6 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 }
 
 func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
-	queryStat := stats.NewJobsDBStat("isEmptyCheck", stats.TimerType, jd.tablePrefix)
-	queryStat.Start()
-	defer queryStat.End()
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
@@ -1402,6 +1398,13 @@ parameterFilters do a AND query on values included in the map
 */
 func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []string,
 	customValFilters []string, limitCount int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
+	jd.checkValidJobState(stateFilters)
+
+	if jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
+		logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		return []*JobT{}, nil
+	}
+
 	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
@@ -1415,13 +1418,6 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	defer queryStat.End()
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
-
-	jd.checkValidJobState(stateFilters)
-
-	if jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
-		logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
-		return []*JobT{}, nil
-	}
 
 	if len(stateFilters) > 0 {
 		stateQuery = " AND " + jd.constructQuery("job_state", stateFilters, "OR")
@@ -1524,6 +1520,11 @@ parameterFilters do a AND query on values included in the map
 */
 func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	order bool, count int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
+	if jd.isEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters) {
+		logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+		return []*JobT{}, nil
+	}
+
 	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
@@ -1535,11 +1536,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 
 	var rows *sql.Rows
 	var err error
-
-	if jd.isEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters) {
-		logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
-		return []*JobT{}, nil
-	}
 
 	var sqlStatement string
 
@@ -2324,7 +2320,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 	jd.assertError(err)
 
 	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList)
-	jd.assertTxErrorAndRollback(txn, err)
+	jd.assertErrorAndRollbackTx(err, txn)
 
 	err = txn.Commit()
 	jd.assertError(err)
@@ -2465,9 +2461,6 @@ those whose state hasn't been marked in the DB
 */
 func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 
-	//The order of lock is very important. The mainCheckLoop
-	//takes lock in this order so reversing this will cause
-	//deadlocks
 	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
@@ -2476,6 +2469,10 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 	queryStat = stats.NewJobsDBStat(statName+"unprocessed", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
+
+	//The order of lock is very important. The mainCheckLoop
+	//takes lock in this order so reversing this will cause
+	//deadlocks
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
@@ -2511,9 +2508,6 @@ one thread, update the state (to "waiting") in the same thread and pass on the t
 */
 func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 
-	//The order of lock is very important. The mainCheckLoop
-	//takes lock in this order so reversing this will cause
-	//deadlocks
 	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
@@ -2525,6 +2519,10 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	queryStat = stats.NewJobsDBStat(statName+"processed", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
+
+	//The order of lock is very important. The mainCheckLoop
+	//takes lock in this order so reversing this will cause
+	//deadlocks
 	jd.dsMigrationLock.RLock()
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
