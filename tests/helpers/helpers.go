@@ -323,7 +323,6 @@ func GetJobStatus(dbHandle *sql.DB, prefix string, limit int, jobState string) [
 	return jobStatusList
 }
 
-<<<<<<< HEAD
 // GetLoadFileTableName queries table column form the warehouseLoadFilesTable provided
 func GetLoadFileTableName(dbHandle *sql.DB, warehouseLoadFilesTable string, sourceId string, destinationId string, destinationType string) []string {
 	rows, err := dbHandle.Query(fmt.Sprintf(`SELECT table_name FROM %s where source_id='%s' and destination_id='%s' and destination_type='%s'`, warehouseLoadFilesTable, sourceId, destinationId, destinationType))
