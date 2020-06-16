@@ -197,7 +197,6 @@ func (trans *HandleT) Setup() {
 type ResponseT struct {
 	Events       []TransformerResponseT
 	FailedEvents []TransformerResponseT
-	Success      bool
 }
 
 //Transform function is used to invoke transformer API
@@ -332,6 +331,5 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	return ResponseT{
 		Events:       outClientEvents,
 		FailedEvents: failedEvents,
-		Success:      true,
 	}
 }

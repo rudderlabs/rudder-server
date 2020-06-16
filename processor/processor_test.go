@@ -487,8 +487,7 @@ var _ = Describe("Processor", func() {
 					}
 
 					return transformer.ResponseT{
-						Events:  outputEvents,
-						Success: false, // ??? response success is ignored in user transform
+						Events: outputEvents,
 					}
 				})
 
@@ -741,8 +740,7 @@ var _ = Describe("Processor", func() {
 					}
 
 					return transformer.ResponseT{
-						Events:  outputEvents,
-						Success: false, // ??? response success is ignored in user transform
+						Events: outputEvents,
 					}
 				})
 
@@ -1001,8 +999,7 @@ var _ = Describe("Processor", func() {
 					}
 
 					return transformer.ResponseT{
-						Events:  outputEvents,
-						Success: false, // ??? response success is ignored in user transform
+						Events: outputEvents,
 					}
 				})
 
@@ -1100,11 +1097,21 @@ var _ = Describe("Processor", func() {
 	})
 
 	Context("transformations", func() {
-		It("messages should be skipped on transform failures, without failing the job", func() {
+		It("messages should be skipped on destination transform failures, without failing the job", func() {
 			var messages map[string]mockEventData = map[string]mockEventData{
 				"message-1": {
 					id:                        "1",
 					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+				},
+				"message-2": {
+					id:                        "2",
+					jobid:                     1011,
 					originalTimestamp:         "2000-01-02T01:23:45",
 					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
 					sentAt:                    "2000-01-02 01:23",
@@ -1123,8 +1130,45 @@ var _ = Describe("Processor", func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  createBatchPayload(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    []byte(`{"source_id": "source-from-transformer"}`),
 				},
+			}
+
+			transformerResponses := []transformer.TransformerResponseT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-1",
+					},
+					StatusCode: 400,
+					Error:      "error-1",
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-2",
+					},
+					StatusCode: 400,
+					Error:      "error-2",
+				},
+			}
+
+			assertErrStoreJob := func(job *jobsdb.JobT, i int, destination string) {
+				Expect(job.UUID.String()).To(testutils.BeValidUUID())
+				Expect(job.JobID).To(Equal(int64(0)))
+				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+				Expect(job.CustomVal).To(Equal("enabled-destination-a-definition-name"))
+				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
+				Expect(string(job.Parameters)).To(Equal(fmt.Sprintf(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-a", "error": "error-%v", "status_code": "400", "stage": "dest_transformer"}`, i+1)))
+
+				// compare payloads
+				var payload []map[string]interface{}
+				err := json.Unmarshal(job.EventPayload, &payload)
+				Expect(err).To(BeNil())
+				Expect(len(payload)).To(Equal(1))
+				message := messages[fmt.Sprintf(`message-%v`, i+1)]
+				Expect(fmt.Sprintf(`message-%s`, message.id)).To(Equal(payload[0]["messageId"]))
+				Expect(payload[0]["some-property"]).To(Equal(fmt.Sprintf(`property-%s`, message.id)))
+				Expect(message.expectedOriginalTimestamp).To(Equal(payload[0]["originalTimestamp"]))
 			}
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{}
@@ -1145,15 +1189,16 @@ var _ = Describe("Processor", func() {
 			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callListSortEnd)
 			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
 			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
-			c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(1).Times(1).After(callDestProcessing)
+			c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
+			c.mockEnabledADestStats.numOutputEvents.(*mocksStats.MockRudderStats).EXPECT().Count(0).Times(1).After(callDestProcessing)
 			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
 			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().End().Times(1).After(callDestProcessing)
 
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Return(transformer.ResponseT{
-					Events:  []transformer.TransformerResponseT{},
-					Success: false,
+					Events:       []transformer.TransformerResponseT{},
+					FailedEvents: transformerResponses,
 				})
 
 			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
@@ -1165,12 +1210,153 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
 				})
 
+			// One Store call is expected for all events
+			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
+				Do(func(jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(2))
+					for i, job := range jobs {
+						assertErrStoreJob(job, i, "value-enabled-destination-a")
+					}
+				})
+
 			c.mockStatGatewayDBWriteTime.EXPECT().End().Times(1).After(callUpdateJobs)
 			c.mockStatGatewayDBWrite.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1)
 			c.mockStatRouterDBWrite.EXPECT().Count(0).Times(1)
 			c.mockStatBatchRouterDBWrite.EXPECT().Count(0).Times(1)
 			c.mockStatLoopTime.EXPECT().End().Times(1)
-			c.mockStatProcErrDBWrite.EXPECT().Count(0).Times(1).After(callUpdateJobs)
+			c.mockStatProcErrDBWrite.EXPECT().Count(2).Times(1).After(callUpdateJobs)
+
+			var processor *HandleT = &HandleT{
+				transformer: mockTransformer,
+			}
+
+			processorSetupAndAssertJobHandling(processor, c)
+		})
+
+		It("messages should be skipped on user transform failures, without failing the job", func() {
+			var messages map[string]mockEventData = map[string]mockEventData{
+				"message-1": {
+					id:                        "1",
+					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-b-definition-display-name": true},
+				},
+				"message-2": {
+					id:                        "2",
+					jobid:                     1011,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-b-definition-display-name": true},
+				},
+			}
+
+			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         1010,
+					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  createBatchPayload(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    []byte(`{"source_id": "source-from-transformer"}`),
+				},
+			}
+
+			transformerResponses := []transformer.TransformerResponseT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageIDs: []string{"message-1", "message-2"},
+					},
+					StatusCode: 400,
+					Error:      "error-combined",
+				},
+			}
+
+			assertErrStoreJob := func(job *jobsdb.JobT) {
+				Expect(job.UUID.String()).To(testutils.BeValidUUID())
+				Expect(job.JobID).To(Equal(int64(0)))
+				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+				Expect(job.CustomVal).To(Equal("MINIO"))
+				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-b", "error": "error-combined", "status_code": "400", "stage": "user_transformer"}`))
+
+				// compare payloads
+				var payload []map[string]interface{}
+				err := json.Unmarshal(job.EventPayload, &payload)
+				Expect(err).To(BeNil())
+				Expect(len(payload)).To(Equal(2))
+				message1 := messages[fmt.Sprintf(`message-%v`, 1)]
+				Expect(fmt.Sprintf(`message-%s`, message1.id)).To(Equal(payload[0]["messageId"]))
+				Expect(payload[0]["some-property"]).To(Equal(fmt.Sprintf(`property-%s`, message1.id)))
+				Expect(message1.expectedOriginalTimestamp).To(Equal(payload[0]["originalTimestamp"]))
+				message2 := messages[fmt.Sprintf(`message-%v`, 2)]
+				Expect(fmt.Sprintf(`message-%s`, message2.id)).To(Equal(payload[1]["messageId"]))
+				Expect(payload[1]["some-property"]).To(Equal(fmt.Sprintf(`property-%s`, message2.id)))
+				Expect(message2.expectedOriginalTimestamp).To(Equal(payload[1]["originalTimestamp"]))
+			}
+
+			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{}
+
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(emptyJobsList).Times(1)
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
+			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, 10000, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, 10000-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
+			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
+			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
+			callListSortEnd := c.mockStatJobListSort.EXPECT().End().Times(1).After(callListSort)
+			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callListSortEnd)
+			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
+			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
+			c.mockEnabledBDestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.userTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
+			c.mockEnabledBDestStats.userTransform.(*mocksStats.MockRudderStats).EXPECT().End().Times(1).After(callDestProcessing)
+
+			// Test transformer failure
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Return(transformer.ResponseT{
+					Events:       []transformer.TransformerResponseT{},
+					FailedEvents: transformerResponses,
+				})
+
+			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
+			c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
+
+			callUpdateJobs := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+					// job should be marked as successful regardless of transformer response
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+				})
+
+			// One Store call is expected for all events
+			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
+				Do(func(jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(1))
+					for _, job := range jobs {
+						assertErrStoreJob(job)
+					}
+				})
+
+			c.mockStatGatewayDBWriteTime.EXPECT().End().Times(1).After(callUpdateJobs)
+			c.mockStatGatewayDBWrite.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1)
+			c.mockStatRouterDBWrite.EXPECT().Count(0).Times(1)
+			c.mockStatBatchRouterDBWrite.EXPECT().Count(0).Times(1)
+			c.mockStatLoopTime.EXPECT().End().Times(1)
+			c.mockStatProcErrDBWrite.EXPECT().Count(1).Times(1).After(callUpdateJobs)
 
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
@@ -1318,7 +1504,6 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 					},
 				},
 			},
-			Success: true,
 		}
 	}
 }

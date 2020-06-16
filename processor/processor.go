@@ -853,10 +853,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		destTransformEventList := response.Events
 		logger.Debug("Dest Transform output size", len(destTransformEventList))
-		if !response.Success {
-			logger.Debug("[Processor: processJobsForDest] Request to transformer not a success ", response.Events)
-			continue
-		}
 		destStat.numOutputEvents.Count(len(destTransformEventList))
 
 		failedJobs := proc.getFailedEventJobs(response, metadata, eventsByMessageID, transformer.DestTransformerStage)
@@ -922,7 +918,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		procErrorJobs = append(procErrorJobs, jobs...)
 	}
 	if len(procErrorJobs) > 0 {
-		logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobsByDestID))
+		logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobs))
 		proc.errorDB.Store(procErrorJobs)
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
