@@ -41,7 +41,6 @@ var (
 )
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 

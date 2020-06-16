@@ -186,7 +186,6 @@ var dbErrorMap = map[string]string{
 // instanceBackupFailedAndAborted = true => the individual jobdb backsup failed and aborted jobs only
 // pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
 func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
-	config.Initialize()
 	// for replay server, we are changing the gateway backup to false in main.go
 	masterBackupEnabled := config.GetBool("JobsDB.backup.enabled", false)
 	instanceBackupEnabled := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix), false)
@@ -236,14 +235,14 @@ var (
 	//Not valid, Not terminal
 	NotProcessed = jobStateT{isValid: false, isTerminal: false, State: "NP"}
 
-	//Vaild, Not terminal
+	//Valid, Not terminal
 	Failed       = jobStateT{isValid: true, isTerminal: false, State: "failed"}
 	Executing    = jobStateT{isValid: true, isTerminal: false, State: "executing"}
 	Waiting      = jobStateT{isValid: true, isTerminal: false, State: "waiting"}
 	WaitingRetry = jobStateT{isValid: true, isTerminal: false, State: "waiting_retry"}
 	Migrating    = jobStateT{isValid: true, isTerminal: false, State: "migrating"}
 
-	//Vaild, Terminal
+	//Valid, Terminal
 	Succeeded   = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
 	Aborted     = jobStateT{isValid: true, isTerminal: true, State: "aborted"}
 	Migrated    = jobStateT{isValid: true, isTerminal: true, State: "migrated"}
@@ -355,7 +354,6 @@ func loadConfig() {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
@@ -403,13 +401,13 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	if clearAll {
 		jd.dropAllDS()
-		jd.delJournal()
+		jd.dropJournal()
 		jd.dropAllBackupDS()
 		jd.dropMigrationCheckpointTables()
 	}
 
-	jd.setupEnumTypes()
-	jd.setupJournal()
+	jd.setupDatabaseTables()
+
 	jd.recoverFromJournal()
 
 	//Refresh in memory list. We don't take lock
@@ -421,18 +419,6 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	//If no DS present, add one
 	if len(jd.datasetList) == 0 {
 		jd.addNewDS(appendToDsList, dataSetT{})
-	}
-
-	// Schema Migration: Created_at column should have a default now()
-	dList := jd.getDSList(false)
-	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
-
-	// Schema Migration: New user_id column and new values for enumtype
-	{ //TODO: Remove this hack and the funcs defined for this, once all datasets have user_id column and new values for type added
-		for _, ds := range dList {
-			jd.addUserIDColumn(ds.Index)
-			jd.addNewValuesToJobStateType(ds.Index)
-		}
 	}
 
 	if jd.BackupSettings.BackupEnabled {
@@ -912,7 +898,7 @@ func (jd *HandleT) createDS(newDSIdx string) dataSetT {
 	sqlStatement = fmt.Sprintf(`CREATE TABLE %s (
                                      id BIGSERIAL PRIMARY KEY,
                                      job_id BIGINT REFERENCES %s(job_id),
-                                     job_state job_state_type,
+                                     job_state VARCHAR(255),
                                      attempt SMALLINT,
                                      exec_time TIMESTAMP,
                                      retry_time TIMESTAMP,
@@ -2115,53 +2101,7 @@ type JournalEntryT struct {
 	OpPayload json.RawMessage
 }
 
-// Remove this after a release
-func (jd *HandleT) setDefaultNowColumns(dsIndex string) {
-
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s_jobs_%s ALTER COLUMN created_at set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
-
-	_, err := jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s_jobs_%s ALTER COLUMN expire_at set DEFAULT NOW()`, jd.tablePrefix, dsIndex)
-
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-}
-
-// Remove this after a release
-func (jd *HandleT) addUserIDColumn(dsIndex string) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s_jobs_%s ADD COLUMN user_id TEXT NOT NULL DEFAULT '-1'`, jd.tablePrefix, dsIndex)
-	jd.dbHandle.Exec(sqlStatement)
-}
-
-// Remove this after a release
-func (jd *HandleT) addNewValuesToJobStateType(dsIndex string) {
-	sqlStatement := fmt.Sprintf(`ALTER TYPE job_state_type ADD VALUE 'migrating'`)
-	jd.dbHandle.Exec(sqlStatement)
-	sqlStatement = fmt.Sprintf(`ALTER TYPE job_state_type ADD VALUE 'migrated'`)
-	jd.dbHandle.Exec(sqlStatement)
-	sqlStatement = fmt.Sprintf(`ALTER TYPE job_state_type ADD VALUE 'wont_migrate'`)
-	jd.dbHandle.Exec(sqlStatement)
-}
-
-func (jd *HandleT) setupJournal() {
-
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s_journal (
-                                      id BIGSERIAL PRIMARY KEY,
-                                      operation VARCHAR(32) NOT NULL,
-                                      done BOOLEAN,
-                                      operation_payload JSONB NOT NULL,
-                                      start_time TIMESTAMP NOT NULL,
-                                      end_time TIMESTAMP);`, jd.tablePrefix)
-
-	_, err := jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-}
-
-func (jd *HandleT) delJournal() {
-
+func (jd *HandleT) dropJournal() {
 	sqlStatement := fmt.Sprintf(`DROP TABLE IF EXISTS %s_journal`, jd.tablePrefix)
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
@@ -2646,69 +2586,4 @@ func (jd *HandleT) CheckPGHealth() bool {
 	}
 	defer rows.Close()
 	return true
-}
-
-/*
-================================================
-==============Test Functions Below==============
-================================================
-*/
-
-func (jd *HandleT) dropTables() error {
-	sqlStatement := `DROP TABLE IF EXISTS job_status`
-	_, err := jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	sqlStatement = `DROP TABLE IF EXISTS  jobs`
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	return nil
-
-}
-
-func (jd *HandleT) setupEnumTypes() {
-	psqlInfo := GetConnectionString()
-
-	dbHandle, err := sql.Open("postgres", psqlInfo)
-	jd.assertError(err)
-	defer dbHandle.Close()
-
-	sqlStatement := fmt.Sprintf(`DO $$ BEGIN
-                                CREATE TYPE job_state_type
-                                     AS ENUM('%s');
-                                     EXCEPTION
-                                        WHEN duplicate_object THEN null;
-                            END $$;`, strings.Join(getValidStates(), "', '"))
-
-	_, err = dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-}
-
-func (jd *HandleT) createTables() error {
-	sqlStatement := `CREATE TABLE jobs (
-                             job_id BIGSERIAL PRIMARY KEY,
-							 uuid UUID NOT NULL,
-							 user_id TEXT NOT NULL,
-							 parameters JSONB NOT NULL,
-                             custom_val INT NOT NULL,
-                             event_payload JSONB NOT NULL,
-                             created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                             expire_at TIMESTAMP NOT NULL DEFAULT NOW());`
-	_, err := jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	sqlStatement = `CREATE TABLE job_status (
-                            id BIGSERIAL PRIMARY KEY,
-                            job_id BIGINT REFERENCES jobs(job_id),
-                            job_state job_state_type,
-                            attempt SMALLINT,
-                            exec_time TIMESTAMP,
-                            retry_time TIMESTAMP,
-                            error_code VARCHAR(32),
-                            error_response JSONB);`
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	return nil
 }

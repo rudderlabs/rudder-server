@@ -755,7 +755,6 @@ func loadConfig() {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 	uploadedRawDataJobsCache = make(map[string]map[string]bool)
 }

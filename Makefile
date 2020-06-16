@@ -1,15 +1,12 @@
-.PHONY: help run test enterprise-init enterprise-update-commit enterprise-prepare-build
+.PHONY: help default build run run-dev test mocks prepare-build enterprise-init enterprise-cleanup enterprise-update-commit enterprise-prepare-build
 
 GO=go
 GINKGO=ginkgo
+LDFLAGS?=-s -w
 
 include .enterprise/env
 
-echo:
-	echo $(ENTERPRISE_COMMIT_FILE)
-	echo $(ENTERPRISE_COMMIT)
-
-all: build
+default: build
 
 mocks: ## Generate all mocks
 	$(GO) generate ./...
@@ -20,13 +17,22 @@ ifdef package
 else
 	$(GINKGO) --randomizeAllSpecs -p --skipPackage=tests ./...
 endif
-		
 
-build: enterprise-prepare-build ## Build rudder-server binary
-	$(GO) build -o bin/rudder-server main.go
+build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts	
 
-run: enterprise-prepare-build ## Run rudder-server-binary
+prepare-build: build-sql-migrations enterprise-prepare-build
+
+./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations) 
+	$(GO) run -tags=dev generate-sql-migrations.go
+	
+build: prepare-build ## Build rudder-server binary
+	$(GO) build -mod vendor -a -ldflags="$(LDFLAGS)"
+
+run: prepare-build ## Run rudder-server using go run
 	$(GO) run -mod=vendor main.go
+
+run-dev: prepare-build ## Run rudder-server using go run with 'dev' build tag
+	$(GO) run -mod=vendor -tags=dev main.go
 
 help: ## Show the available commands
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' ./Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
@@ -36,6 +42,10 @@ help: ## Show the available commands
 
 enterprise-init: ## Initialise enterprise version
 	@.enterprise/scripts/init.sh
+
+enterprise-cleanup: ## Cleanup enterprise dependencies, revert to oss version
+	rm -rf ${ENTERPRISE_DIR}
+	rm -f ./imports/enterprise.go
 
 enterprise-update-commit: ## Updates linked enterprise commit to current commit in ENTERPRISE_DIR
 	@.enterprise/scripts/update-commit.sh

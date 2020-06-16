@@ -7,8 +7,6 @@ import (
 )
 
 func loadConfig() {
-	config.Initialize()
-
 	//Port where GW is running
 	webPort = config.GetInt("Gateway.webPort", 8080)
 	//Number of incoming requests that are batched before handing off to write workers

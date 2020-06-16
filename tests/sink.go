@@ -242,7 +242,6 @@ func main() {
 	countStat = stats.NewStat("sink.request_count", stats.CountType)
 	successStat = stats.NewStat("sink.success_count", stats.CountType)
 
-	config.Initialize()
 	fmt.Println(config.GetInt("SinkServer.rate", 100), config.GetInt("SinkServer.burst", 1000))
 	redisChan = make(chan string)
 

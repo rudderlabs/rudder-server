@@ -46,7 +46,6 @@ var rc runtimeStatsCollector
 var DefaultStats Stats
 
 func init() {
-	config.Initialize()
 	statsEnabled = config.GetBool("enableStats", false)
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
 	instanceID = config.GetEnv("INSTANCE_ID", "")

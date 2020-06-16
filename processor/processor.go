@@ -115,7 +115,6 @@ func (proc *HandleT) Print() {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
