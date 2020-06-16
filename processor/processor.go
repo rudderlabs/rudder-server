@@ -922,7 +922,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		procErrorJobs = append(procErrorJobs, jobs...)
 	}
 	if len(procErrorJobs) > 0 {
-		logger.Debug("[Processor] Total jobs written to proc_error: ", len(procErrorJobsByDestID))
+		logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobsByDestID))
 		proc.errorDB.Store(procErrorJobs)
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}

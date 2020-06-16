@@ -52,11 +52,11 @@ type HandleT struct {
 	statErrDBW      stats.RudderStats
 }
 
-func (st *HandleT) storeErorrsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOutputT {
+func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOutputT {
 	localTmpDirName := "/rudder-processor-errors/"
 
 	uuid := uuid.NewV4()
-	logger.Debug("[Processor: storeErorrsToObjectStorage]: Starting logging to object storage")
+	logger.Debug("[Processor: storeErrorsToObjectStorage]: Starting logging to object storage")
 
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -140,7 +140,7 @@ func (st *HandleT) initErrWorkers() {
 					case jobs := <-st.errProcessQ:
 						uploadStat := stats.NewStat("Processor.err_upload_time", stats.TimerType)
 						uploadStat.Start()
-						output := st.storeErorrsToObjectStorage(jobs)
+						output := st.storeErrorsToObjectStorage(jobs)
 						st.setErrJobStatus(jobs, output)
 						uploadStat.End()
 					}

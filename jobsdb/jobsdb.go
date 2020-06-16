@@ -2000,6 +2000,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			}
 			contentSlice[idx] = rowBytes
 		}
+		// append new line character at end, before next backupRowsBatch is appended to same file
 		content := append(bytes.Join(contentSlice[:], []byte("\n")), []byte("\n")...)
 		gzWriter.Write(content)
 		offset += backupRowsBatchSize
