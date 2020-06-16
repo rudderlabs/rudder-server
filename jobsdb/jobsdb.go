@@ -333,6 +333,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	// Schema Migration: Created_at column should have a default now()
 	dList := jd.getDSList(false)
 	jd.setDefaultNowColumns(dList[len(dList)-1].Index)
+	jd.alterStatusTables(dList)
 
 	if jd.BackupSettings.BackupEnabled {
 		jd.jobsFileUploader, err = jd.getFileUploader()
@@ -645,6 +646,16 @@ func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
 	return jobTable, jobStatusTable
 }
 
+//alterStatusTables changes job_id column in status tables to BIGINT
+func (jd *HandleT) alterStatusTables(dList []dataSetT) {
+	for _, ds := range dList {
+		sqlStatement := fmt.Sprintf(`ALTER TABLE %s_job_status_%s ALTER COLUMN job_id TYPE BIGINT`, jd.tablePrefix, ds.Index)
+
+		_, err := jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
+	}
+}
+
 func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 	queryStat := stats.NewJobsDBStat("add_new_ds", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
@@ -721,7 +732,7 @@ func (jd *HandleT) addNewDS(appendLast bool, insertBeforeDS dataSetT) dataSetT {
 
 	sqlStatement = fmt.Sprintf(`CREATE TABLE %s (
                                      id BIGSERIAL PRIMARY KEY,
-                                     job_id INT REFERENCES %s(job_id),
+                                     job_id BIGINT REFERENCES %s(job_id),
                                      job_state job_state_type,
                                      attempt SMALLINT,
                                      exec_time TIMESTAMP,
@@ -2338,7 +2349,7 @@ func (jd *HandleT) createTables() error {
 
 	sqlStatement = `CREATE TABLE job_status (
                             id BIGSERIAL PRIMARY KEY,
-                            job_id INT REFERENCES jobs(job_id),
+                            job_id BIGINT REFERENCES jobs(job_id),
                             job_state job_state_type,
                             attempt SMALLINT,
                             exec_time TIMESTAMP,
