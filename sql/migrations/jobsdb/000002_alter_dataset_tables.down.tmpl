@@ -18,4 +18,5 @@
     END $$;
 
     ALTER TABLE {{$.Prefix}}_job_status_{{.}} ALTER COLUMN job_state TYPE job_state_type;
+    ALTER TABLE {{$.Prefix}}_job_status_{{.}} ALTER COLUMN job_id TYPE INT;
 {{end}}
