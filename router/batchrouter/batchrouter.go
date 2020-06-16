@@ -512,7 +512,10 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 func (brt *HandleT) mainLoop() {
 	for {
 		time.Sleep(mainLoopSleep)
-		for _, batchDestination := range brt.batchDestinations {
+		configSubscriberLock.RLock()
+		batchDestinations := brt.batchDestinations
+		configSubscriberLock.RUnlock()
+		for _, batchDestination := range batchDestinations {
 			if isDestInProgress(batchDestination) {
 				logger.Debugf("BRT: Skipping batch router upload loop since destination %s:%s is in progress", batchDestination.Destination.DestinationDefinition.Name, batchDestination.Destination.ID)
 				continue

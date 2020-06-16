@@ -88,13 +88,14 @@ const (
 )
 
 type HandleT struct {
-	destType           string
-	warehouses         []warehouseutils.WarehouseT
-	dbHandle           *sql.DB
-	notifier           pgnotifier.PgNotifierT
-	uploadToWarehouseQ chan []ProcessStagingFilesJobT
-	createLoadFilesQ   chan LoadFileJobT
-	isEnabled          bool
+	destType             string
+	warehouses           []warehouseutils.WarehouseT
+	dbHandle             *sql.DB
+	notifier             pgnotifier.PgNotifierT
+	uploadToWarehouseQ   chan []ProcessStagingFilesJobT
+	createLoadFilesQ     chan LoadFileJobT
+	isEnabled            bool
+	configSubscriberLock sync.RWMutex
 }
 
 type ProcessStagingFilesJobT struct {
@@ -581,11 +582,18 @@ func NewWhManager(destType string) (WarehouseManager, error) {
 
 func (wh *HandleT) mainLoop() {
 	for {
+		wh.configSubscriberLock.RLock()
 		if !wh.isEnabled {
+			wh.configSubscriberLock.RUnlock()
 			time.Sleep(mainLoopSleep)
 			continue
 		}
-		for _, warehouse := range wh.warehouses {
+		wh.configSubscriberLock.RUnlock()
+
+		configSubscriberLock.RLock()
+		warehouses := wh.warehouses
+		configSubscriberLock.RUnlock()
+		for _, warehouse := range warehouses {
 			if isDestInProgress(warehouse) {
 				logger.Debugf("WH: Skipping upload loop since %s:%s upload in progess", wh.destType, warehouse.Destination.ID)
 				continue
@@ -1416,11 +1424,15 @@ func monitorDestRouters() {
 					if !ok {
 						logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 						var wh HandleT
+						wh.configSubscriberLock.Lock()
 						wh.Setup(destination.DestinationDefinition.Name)
+						wh.configSubscriberLock.Unlock()
 						dstToWhRouter[destination.DestinationDefinition.Name] = &wh
 					} else {
 						logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+						wh.configSubscriberLock.Lock()
 						wh.Enable()
+						wh.configSubscriberLock.Unlock()
 					}
 				}
 			}
@@ -1431,7 +1443,9 @@ func monitorDestRouters() {
 			if _, ok := enabledDestinations[key]; !ok {
 				if whHandle, ok := dstToWhRouter[key]; ok {
 					logger.Info("Disabling a existing warehouse destination: ", key)
+					whHandle.configSubscriberLock.Lock()
 					whHandle.Disable()
+					whHandle.configSubscriberLock.Unlock()
 				}
 			}
 		}

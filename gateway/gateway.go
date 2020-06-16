@@ -88,23 +88,23 @@ func init() {
 
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
-	application                               app.Interface
-	webRequestQ                               chan *webRequestT
-	jobsDB                                    jobsdb.JobsDB
-	badgerDB                                  *badger.DB
-	ackCount                                  uint64
-	recvCount                                 uint64
-	backendConfig                             backendconfig.BackendConfig
-	rateLimiter                               ratelimiter.RateLimiter
-	stats                                     stats.Stats
-	batchSizeStat, batchTimeStat, latencyStat stats.RudderStats
-	trackSuccessCount                         int
-	trackFailureCount                         int
-	requestMetricLock                         sync.RWMutex
-	diagnosisTicker                           *time.Ticker
-	webRequestBatchCount                      uint64
-	dbWriterWorkers                           []*dbWriterWorkerT
-	webhookHandler                            types.WebHookI
+	application          app.Interface
+	webRequestQ          chan *webRequestT
+	jobsDB               jobsdb.JobsDB
+	badgerDB             *badger.DB
+	ackCount             uint64
+	recvCount            uint64
+	backendConfig        backendconfig.BackendConfig
+	rateLimiter          ratelimiter.RateLimiter
+	stats                stats.Stats
+	batchSizeStat        stats.RudderStats
+	trackSuccessCount    int
+	trackFailureCount    int
+	requestMetricLock    sync.RWMutex
+	diagnosisTicker      *time.Ticker
+	webRequestBatchCount uint64
+	dbWriterWorkers      []*dbWriterWorkerT
+	webhookHandler       types.WebHookI
 }
 
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -118,6 +118,7 @@ type dbWriterWorkerT struct {
 	webRequestQ   chan *webRequestT
 	batchRequestQ chan *batchWebRequestT
 	workerID      int
+	batchTimeStat stats.RudderStats
 }
 
 func (gateway *HandleT) initDBWorkers() {
@@ -128,7 +129,8 @@ func (gateway *HandleT) initDBWorkers() {
 		dbWriterWorker = &dbWriterWorkerT{
 			webRequestQ:   make(chan *webRequestT),
 			batchRequestQ: make(chan *batchWebRequestT),
-			workerID:      i}
+			workerID:      i,
+			batchTimeStat: gateway.stats.NewStat("gateway.batch_time", stats.TimerType)}
 		gateway.dbWriterWorkers[i] = dbWriterWorker
 		rruntime.Go(func() {
 			gateway.userWebRequestBatchDBWriter(dbWriterWorker)
@@ -201,7 +203,7 @@ func (gateway *HandleT) userWebRequestBatchDBWriter(dbWriterWorker *dbWriterWork
 		//Saving the event data read from req.request.Body to the splice.
 		//Using this to send event schema to the config backend.
 		var eventBatchesToRecord []string
-		gateway.batchTimeStat.Start()
+		dbWriterWorker.batchTimeStat.Start()
 		allMessageIdsSet := make(map[string]struct{})
 		for _, req := range breq.batchRequest {
 			writeKey, _, ok := req.request.BasicAuth()
@@ -349,7 +351,7 @@ func (gateway *HandleT) userWebRequestBatchDBWriter(dbWriterWorker *dbWriterWork
 			sourcedebugger.RecordEvent(gjson.Get(event, "writeKey").Str, event)
 		}
 
-		gateway.batchTimeStat.End()
+		dbWriterWorker.batchTimeStat.End()
 		gateway.batchSizeStat.Count(len(breq.batchRequest))
 		// update stats request wise
 		gateway.updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")
@@ -484,15 +486,18 @@ func (gateway *HandleT) webRequestRouter() {
 func (gateway *HandleT) printStats() {
 	for {
 		time.Sleep(10 * time.Second)
-		logger.Info("Gateway Recv/Ack ", gateway.recvCount, gateway.ackCount)
+		recvCount := atomic.LoadUint64(&gateway.recvCount)
+		ackCount := atomic.LoadUint64(&gateway.ackCount)
+		logger.Info("Gateway Recv/Ack ", recvCount, ackCount)
 	}
 }
 
 func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gateway.latencyStat.Start()
+		latencyStat := gateway.stats.NewStat("gateway.response_time", stats.TimerType)
+		latencyStat.Start()
 		wrappedFunc(w, r)
-		gateway.latencyStat.End()
+		latencyStat.End()
 	}
 }
 
@@ -834,9 +839,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 
-	gateway.latencyStat = gateway.stats.NewStat("gateway.response_time", stats.TimerType)
 	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
-	gateway.batchTimeStat = gateway.stats.NewStat("gateway.batch_time", stats.TimerType)
 
 	if enableDedup {
 		gateway.openBadger(clearDB)
