@@ -3,11 +3,6 @@
 -- wh_staging_files
 --
 
-DO $$ BEGIN
-    DROP TYPE wh_staging_state_type;
-    EXCEPTION WHEN OTHERS THEN null;
-END $$;
-
 CREATE TABLE IF NOT EXISTS wh_staging_files (
     id BIGSERIAL PRIMARY KEY,
     location TEXT NOT NULL,
@@ -30,6 +25,11 @@ ALTER TABLE wh_staging_files
 CREATE INDEX IF NOT EXISTS wh_staging_files_id_index ON wh_staging_files (source_id, destination_id);
 
 ALTER TABLE wh_staging_files ALTER COLUMN status TYPE VARCHAR(64);
+
+DO $$ BEGIN
+    DROP TYPE wh_staging_state_type;
+    EXCEPTION WHEN OTHERS THEN null;
+END $$;
 
 --
 -- wh_load_files
@@ -55,11 +55,6 @@ CREATE INDEX IF NOT EXISTS wh_load_files_source_destination_id_table_name_index 
 --
 -- wh_uploads
 --
-
-DO $$ BEGIN
-    DROP TYPE wh_upload_state_type;
-    EXCEPTION WHEN OTHERS THEN null;
-END $$;
 
 CREATE TABLE IF NOT EXISTS wh_uploads (
     id BIGSERIAL PRIMARY KEY,
@@ -93,14 +88,14 @@ CREATE INDEX IF NOT EXISTS wh_uploads_source_destination_id_index ON wh_uploads 
 
 ALTER TABLE wh_uploads ALTER COLUMN status TYPE VARCHAR(64);
 
+DO $$ BEGIN
+    DROP TYPE wh_upload_state_type;
+    EXCEPTION WHEN OTHERS THEN null;
+END $$;
+
 --
 -- wh_table_uploads
 --
-
-DO $$ BEGIN
-    DROP TYPE wh_table_upload_state_type;
-    EXCEPTION WHEN OTHERS THEN null;
-END $$;
 
 CREATE TABLE IF NOT EXISTS 	wh_table_uploads (
     id BIGSERIAL PRIMARY KEY,
@@ -121,6 +116,11 @@ CREATE INDEX IF NOT EXISTS wh_table_uploads_wh_upload_id_table_name_index ON wh_
 
 ALTER TABLE wh_table_uploads ALTER COLUMN status TYPE VARCHAR(64);
 
+DO $$ BEGIN
+    DROP TYPE wh_table_upload_state_type;
+    EXCEPTION WHEN OTHERS THEN null;
+END $$;
+
 --
 -- wh_schemas
 --
@@ -135,5 +135,7 @@ CREATE TABLE IF NOT EXISTS wh_schemas (
     schema JSONB NOT NULL,
     error TEXT,
     created_at TIMESTAMP NOT NULL);
+
+DROP INDEX IF EXISTS wh_schemas_source_destination_id_index;
 
 CREATE INDEX IF NOT EXISTS wh_schemas_destination_id_namespace_index ON wh_schemas (destination_id, namespace);
