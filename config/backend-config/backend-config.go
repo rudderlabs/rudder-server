@@ -75,7 +75,7 @@ type DestinationT struct {
 	ID                    string
 	Name                  string
 	DestinationDefinition DestinationDefinitionT
-	Config                interface{}
+	Config                map[string]interface{}
 	Enabled               bool
 	Transformations       []TransformationT
 	IsProcessorEnabled    bool
@@ -85,7 +85,7 @@ type SourceT struct {
 	ID               string
 	Name             string
 	SourceDefinition SourceDefinitionT
-	Config           interface{}
+	Config           map[string]interface{}
 	Enabled          bool
 	WorkspaceID      string
 	Destinations     []DestinationT
@@ -163,7 +163,6 @@ func MakeBackendPostRequest(endpoint string, data interface{}) (response []byte,
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 

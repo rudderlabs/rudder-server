@@ -15,9 +15,10 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord cha
 
 # Why Use RudderStack?
 
-- **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, and **1mg** use RudderStack for collecting their events.
+- **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, **1mg**, **Nana**, **OnceHub**,  and dozens of large companies use RudderStack for collecting their events. 
+   Note: If you are using RudderStack and your name is not on the list, please submit a PR.
 
-- **Extreme Scale**: One of our largest installations currently sends **300 Million** events/day with peak of **40K** req/sec, via a multi-node RudderStack setup.
+- **Extreme Scale**: One of our largest installations currently sends **300 Million** events/day with peak of **40K** req/sec, via a two-node RudderStack setup.
 
 - **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
 
@@ -29,7 +30,7 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord cha
 
 # Key Features
 
-- **Segment API Compatible**: RudderStack is Segment API compatible. So you don't need to change your app if you are using Segment, just integrate the RudderStack SDKs into your app.
+- **Segment API Compatible**: RudderStack is Segment API compatible. So you don't need to change your app if you are using Segment, just integrate the RudderStack SDKs into your app and your events will keep flowing as before (including data-warehouse).
 
 - **Processing Flexibility**: With RudderStack's powerful JavaScript-based event transformation framework, you can enhance or transform your event data by combining it with your other internal data. Furthermore, since RudderStack runs inside your cloud or on-premise environment, you can easily access your production data to join with the event data.
 
@@ -96,15 +97,15 @@ We would love to see you contribute to RudderStack. Get more information on how 
 
 # Wiki
 
-For more information on RudderStack's features and functionalities, make sure you check out our [Wiki]() page.
+For more information on RudderStack's features and functionalities, make sure you check out our [Wiki](https://github.com/rudderlabs/rudder-server/wiki) page.
 
-# Stay Connected
+# Follow Us
 
-- See the [HackerNews][hackernews] discussion around RudderStack.
-- Join our [Discord][discord] channel.
-- Follow us on [Twitter][twitter].
-- Get the latest news from the [RudderStack blog][rudderstack-blog].
-- Subscribe to our newsletter.
+- [Discord][discord]
+- [LinkedIn](https://www.linkedin.com/company/rudderlabs/)
+- [Twitter][twitter]
+- [HackerNews][hackernews]
+- [RudderStack Blog][rudderstack-blog]
 
 <!----variables---->
 

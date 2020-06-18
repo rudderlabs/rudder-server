@@ -110,7 +110,6 @@ func connect(cred credentialsT) (*sql.DB, error) {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 func loadConfig() {
@@ -236,7 +235,7 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		}
 		downloader, err := filemanager.New(&filemanager.SettingsT{
 			Provider: warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config),
-			Config:   pg.Warehouse.Destination.Config.(map[string]interface{}),
+			Config:   pg.Warehouse.Destination.Config,
 		})
 		err = downloader.Download(objectFile, object)
 		if err != nil {

@@ -87,6 +87,9 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 
 		var updatedStates []string
 		updatedStates, txErr = jd.updateJobStatusDSInTxn(txn, ds, statusList)
+		if txErr != nil {
+			break
+		}
 		updatedStatesByDS[ds] = updatedStates
 
 		if len(jobs) == 0 {
@@ -105,14 +108,14 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 			break
 		}
 	}
-	if txErr == nil {
-		err := txn.Commit()
-		jd.assertError(err)
-		for ds, updatedStates := range updatedStatesByDS {
-			jd.markClearEmptyResult(ds, updatedStates, []string{}, []ParameterFilterT{}, false)
-		}
-	} else {
-		txn.Rollback()
+	jd.assertErrorAndRollbackTx(err, txn)
+	jd.assertErrorAndRollbackTx(txErr, txn)
+
+	err = txn.Commit()
+	jd.assertError(err)
+
+	for ds, updatedStates := range updatedStatesByDS {
+		jd.markClearEmptyResult(ds, updatedStates, []string{}, []ParameterFilterT{}, false)
 	}
 	jd.assertError(err)
 
@@ -215,11 +218,11 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 
 	var updatedStatesMap map[dataSetT][]string
 	updatedStatesMap, err = jd.updateJobStatusInTxn(txn, statusList)
-	jd.assertTxErrorAndRollback(txn, err)
+	jd.assertErrorAndRollbackTx(err, txn)
 
 	migrationCheckpoint := NewMigrationCheckpoint(ExportOp, fromNodeID, toNodeID, jobsCount, uploadLocation, Exported, 0)
 	migrationCheckpoint.ID, err = jd.CheckpointInTxn(txn, migrationCheckpoint)
-	jd.assertTxErrorAndRollback(txn, err)
+	jd.assertErrorAndRollbackTx(err, txn)
 
 	err = txn.Commit()
 	jd.assertError(err)

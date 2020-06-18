@@ -480,14 +480,20 @@ func (rs *HandleT) loadUserTables() (err error) {
 	}
 	defer rs.dropStagingTables([]string{identifyStagingTable})
 
+	if _, ok := rs.Upload.Schema["users"]; !ok {
+		return
+	}
+
 	userColMap := rs.CurrentSchema["users"]
 	var userColNames, firstValProps []string
+	firstValPropsForIdentifies := []string{fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY anonymous_id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, "user_id")}
 	for colName := range userColMap {
 		if colName == "id" {
 			continue
 		}
 		userColNames = append(userColNames, colName)
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
+		firstValPropsForIdentifies = append(firstValPropsForIdentifies, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY anonymous_id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), "users"), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
@@ -496,10 +502,10 @@ func (rs *HandleT) loadUserTables() (err error) {
 											id, %[3]s
 											FROM (
 												(
-													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT user_id FROM "%[1]s"."%[5]s")
+													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT user_id FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL)
 												) UNION
 												(
-													SELECT user_id, %[6]s FROM "%[1]s"."%[5]s"
+													SELECT user_id, %[6]s FROM (SELECT %[7]s FROM "%[1]s"."%[8]s") WHERE user_id IS NOT NULL
 												)
 											)
 										)
@@ -510,6 +516,8 @@ func (rs *HandleT) loadUserTables() (err error) {
 		warehouseutils.UsersTable,
 		identifyStagingTable,
 		strings.Join(userColNames, ","),
+		strings.Join(firstValPropsForIdentifies, ","),
+		warehouseutils.IdentifiesTable,
 	)
 
 	// BEGIN TRANSACTION
@@ -564,7 +572,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 
 func (rs *HandleT) load() (errList []error) {
 	logger.Infof("RS: Starting load for all %v tables\n", len(rs.Upload.Schema))
-	if _, ok := rs.Upload.Schema["users"]; ok {
+	if _, ok := rs.Upload.Schema["identifies"]; ok {
 		err := rs.loadUserTables()
 		if err != nil {
 			errList = append(errList, err)
@@ -649,7 +657,6 @@ func loadConfig() {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
