@@ -19,6 +19,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -50,6 +51,8 @@ var (
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTimeinHr   time.Duration
 )
+
+var batchRouterTestPayload = "ok"
 
 type HandleT struct {
 	destType                string
@@ -84,6 +87,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == brt.destType {
 						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
+						fmt.Println(destination.Config)
 						if destination.Config["testConnection"] == true {
 							rruntime.Go(func() {
 								testBatchDestinationConnection(destination)
@@ -116,31 +120,40 @@ type StorageUploadOutput struct {
 type ErrorResponseT struct {
 	Error string
 }
+type batchDestinationConnectionTesterResponse struct {
+	Error        string    `json:"error"`
+	testedAt     time.Time `json:"testedAt"`
+	fileLocation string    `json:"fileLocation"`
+}
 
 func createTestFileForBatchDestination(destinationID string) string {
 	uuid := uuid.NewV4()
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
+		logger.Errorf("BRT: Failed to create tmp dir for testing this destination id %s: err %v", destinationID, err)
 		panic(err)
 	}
 	testFolder := "rudder-test-payload"
-	path := fmt.Sprintf("%v%v.txt", tmpDirPath+testFolder, fmt.Sprintf("%v.%v", destinationID, uuid))
+	path := fmt.Sprintf("%v/%v.txt", tmpDirPath+"/"+testFolder, fmt.Sprintf("%v.%v", destinationID, uuid))
 
 	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
 	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	if err != nil {
+		logger.Errorf("BRT: Failed to make dir %s for testing this destination id %s: err %v", gzipFilePath, destinationID, err)
 		panic(err)
 	}
 	gzWriter, err := misc.CreateGZ(gzipFilePath)
 	if err != nil {
+		logger.Errorf("BRT: Failed to create gzip writer for testing this destination id %s: err %v", gzipFilePath, destinationID, err)
 		panic(err)
 	}
-	gzWriter.WriteGZ("ok")
+	gzWriter.WriteGZ(batchRouterTestPayload)
 	gzWriter.CloseGZ()
 	return gzipFilePath
 }
 
 func testBatchDestinationConnection(destination backendconfig.DestinationT) {
+	fmt.Println(destination.Config)
 	testFileName := createTestFileForBatchDestination(destination.ID)
 	provider := destination.DestinationDefinition.Name
 	uploader, err := filemanager.New(&filemanager.SettingsT{
@@ -148,14 +161,30 @@ func testBatchDestinationConnection(destination backendconfig.DestinationT) {
 		Config:   misc.GetObjectStorageConfig(provider, destination.Config),
 	})
 	if err != nil {
-		// handle err
+		logger.Errorf("BRT: Failed to get filemanager config for testing this destination id %s: err %v", destination.ID, err)
+		panic(err)
 	}
 	uploadFile, err := os.Open(testFileName)
 	if err != nil {
+		logger.Errorf("BRT: Failed to open file %s for testing this destination id %s: err %v", testFileName, destination.ID, err)
 		panic(err)
 	}
+	uploadOutput, err := uploader.Upload(uploadFile)
+	if err != nil {
+		logger.Errorf("BRT: Failed to upload test file %s for testing this destination id %s: err %v", testFileName, destination.ID, err)
+	}
+	var error string
+	if err != nil {
+		error = err.Error()
+	}
+	testResponse := batchDestinationConnectionTesterResponse{
+		Error:        error,
+		testedAt:     time.Now(),
+		fileLocation: uploadOutput.Location,
+	}
+	destinationConnectionTester.UploadDestinationConnectionTesterResonse(testResponse, destination.ID)
 
-	uploader.Upload(uploadFile)
+	return
 
 }
 
