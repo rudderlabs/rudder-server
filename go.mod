@@ -15,7 +15,6 @@ require (
 	github.com/araddon/dateparse v0.0.0-20190622164848-0fb0a474d195
 	github.com/aws/aws-sdk-go v1.29.11
 	github.com/bitly/go-simplejson v0.5.0 // indirect
-	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
 	github.com/bugsnag/bugsnag-go v1.5.3
 	github.com/bugsnag/panicwrap v1.2.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.0.2
@@ -24,7 +23,6 @@ require (
 	github.com/garyburd/redigo v1.6.0 // indirect
 	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/gofrs/uuid v3.2.0+incompatible // indirect
-	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang-migrate/migrate/v4 v4.11.0
 	github.com/golang/mock v1.4.3
 	github.com/golang/protobuf v1.3.4 // indirect
@@ -32,7 +30,6 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.6.6
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334
 	github.com/joho/godotenv v1.3.0
-	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
 	github.com/lib/pq v1.3.0
 	github.com/mattn/go-ieproxy v0.0.0-20200203040449-2dbc853185d9 // indirect
 	github.com/minio/minio-go/v6 v6.0.49

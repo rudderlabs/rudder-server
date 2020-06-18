@@ -926,6 +926,12 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.jobsDB = jobsDB
 
 	gateway.versionHandler = versionHandler
+
+	//gateway.webhookHandler should be initialised before workspace config fetch.
+	if gateway.application.Features().Webhook != nil {
+		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
+	}
+
 	rruntime.Go(func() {
 		gateway.webRequestRouter()
 	})
@@ -939,9 +945,6 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 		gateway.userWorkerRequestBatcher()
 	})
 
-	if gateway.application.Features().Webhook != nil {
-		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
-	}
 	gateway.backendConfig.WaitForConfig()
 	rruntime.Go(func() {
 		gateway.printStats()
