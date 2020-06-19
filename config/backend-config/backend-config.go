@@ -225,11 +225,11 @@ func configUpdate(statConfigBackendError stats.RudderStats) {
 		curSourceJSON = sourceJSON
 		curSourceJSONLock.Unlock()
 		initializedLock.Lock()
+		defer initializedLock.Unlock()
 		initialized = true
 		LastSync = time.Now().Format(time.RFC3339)
 		Eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 		Eb.Publish(string(TopicBackendConfig), sourceJSON)
-		initializedLock.Unlock()
 	}
 }
 
