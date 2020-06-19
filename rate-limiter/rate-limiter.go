@@ -27,7 +27,6 @@ type HandleT struct {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 

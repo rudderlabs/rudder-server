@@ -50,9 +50,13 @@ var (
 	EnableBatchRouterMetric         bool
 	EnableDestinationFailuresMetric bool
 )
+var diagnostics DiagnosticsI = NewDiagnostics()
 
-var diagnostics Diagnostics
-
+type DiagnosticsI interface {
+	Track(event string, properties map[string]interface{})
+	DisableMetrics(enableMetrics bool)
+	Identify(properties map[string]interface{})
+}
 type Diagnostics struct {
 	Client     analytics.Client
 	StartTime  time.Time
@@ -62,16 +66,7 @@ type Diagnostics struct {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
-	diagnostics.InstanceId = config.GetEnv("INSTANCE_ID", "1")
-	config := analytics.Config{
-		Endpoint: endpoint,
-	}
-	client, _ := analytics.NewWithConfig(writekey, config)
-	diagnostics.Client = client
-	diagnostics.StartTime = time.Now()
-	diagnostics.UniqueId = misc.GetMD5Hash(misc.GetMacAddress())
 }
 
 func loadConfig() {
@@ -88,22 +83,42 @@ func loadConfig() {
 	EnableDestinationFailuresMetric = config.GetBool("Diagnostics.enableDestinationFailuresMetric", true)
 }
 
-func Track(event string, properties map[string]interface{}) {
+// NewDiagnostics return new instace of diagnostics
+func NewDiagnostics() *Diagnostics {
+	instanceId := config.GetEnv("INSTANCE_ID", "1")
+	analyticsConfig := analytics.Config{
+		Endpoint: endpoint,
+	}
+	client, _ := analytics.NewWithConfig(writekey, analyticsConfig)
+	return &Diagnostics{
+		InstanceId: instanceId,
+		Client:     client,
+		StartTime:  time.Now(),
+		UniqueId:   misc.GetMD5Hash(misc.GetMacAddress()),
+	}
+}
+
+func (d *Diagnostics) Track(event string, properties map[string]interface{}) {
 	if EnableDiagnostics {
-		properties[StartTime] = diagnostics.StartTime
-		properties[InstanceId] = diagnostics.InstanceId
-		diagnostics.Client.Enqueue(
+		properties[StartTime] = d.StartTime
+		properties[InstanceId] = d.InstanceId
+		d.Client.Enqueue(
 			analytics.Track{
 				Event:       event,
 				Properties:  properties,
-				AnonymousId: diagnostics.UniqueId,
-				UserId:      diagnostics.UserId,
+				AnonymousId: d.UniqueId,
+				UserId:      d.UserId,
 			},
 		)
 	}
 }
 
-func DisableMetrics(enableMetrics bool) {
+// Deprecated! Use instance of diagnostics instead;
+func Track(event string, properties map[string]interface{}) {
+	diagnostics.Track(event, properties)
+}
+
+func (d *Diagnostics) DisableMetrics(enableMetrics bool) {
 	if !enableMetrics {
 		EnableServerStartedMetric = false
 		EnableConfigProcessedMetric = false
@@ -112,20 +127,29 @@ func DisableMetrics(enableMetrics bool) {
 		EnableBatchRouterMetric = false
 		EnableDestinationFailuresMetric = false
 	}
-
 }
 
-func Identify(properties map[string]interface{}) {
+// Deprecated! Use instance of diagnostics instead;
+func DisableMetrics(enableMetrics bool) {
+	diagnostics.DisableMetrics(enableMetrics)
+}
+
+func (d *Diagnostics) Identify(properties map[string]interface{}) {
 	if EnableDiagnostics {
 		// add in traits
 		if val, ok := properties[ConfigIdentify]; ok {
-			diagnostics.UserId = val.(string)
+			d.UserId = val.(string)
 		}
-		diagnostics.Client.Enqueue(
+		d.Client.Enqueue(
 			analytics.Identify{
-				AnonymousId: diagnostics.UniqueId,
-				UserId:      diagnostics.UserId,
+				AnonymousId: d.UniqueId,
+				UserId:      d.UserId,
 			},
 		)
 	}
+}
+
+// Deprecated! Use instance of diagnostics instead;
+func Identify(properties map[string]interface{}) {
+	diagnostics.Identify(properties)
 }

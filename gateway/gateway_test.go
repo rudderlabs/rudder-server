@@ -18,8 +18,10 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
+	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
@@ -32,13 +34,14 @@ import (
 )
 
 const (
-	WriteKeyEnabled   = "enabled-write-key"
-	WriteKeyDisabled  = "disabled-write-key"
-	WriteKeyInvalid   = "invalid-write-key"
-	WriteKeyEmpty     = ""
-	SourceIDEnabled   = "enabled-source"
-	SourceIDDisabled  = "disabled-source"
-	TestRemoteAddress = "test.com"
+	WriteKeyEnabled           = "enabled-write-key"
+	WriteKeyDisabled          = "disabled-write-key"
+	WriteKeyInvalid           = "invalid-write-key"
+	WriteKeyEmpty             = ""
+	SourceIDEnabled           = "enabled-source"
+	SourceIDDisabled          = "disabled-source"
+	TestRemoteAddressWithPort = "test.com:80"
+	TestRemoteAddress         = "test.com"
 )
 
 var testTimeout = 5 * time.Second
@@ -65,12 +68,14 @@ type context struct {
 	mockCtrl          *gomock.Controller
 	mockJobsDB        *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	mockApp           *mocksApp.MockInterface
 	mockRateLimiter   *mocksRateLimiter.MockRateLimiter
 	mockStats         *mocksStats.MockStats
 
 	mockStatGatewayResponseTime *mocksStats.MockRudderStats
 	mockStatGatewayBatchSize    *mocksStats.MockRudderStats
 	mockStatGatewayBatchTime    *mocksStats.MockRudderStats
+	mockVersionHandler          func(w http.ResponseWriter, r *http.Request)
 }
 
 // Initiaze mocks and common expectations
@@ -78,6 +83,7 @@ func (c *context) Setup() {
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
+	c.mockApp = mocksApp.NewMockInterface(c.mockCtrl)
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
 	c.mockStats = mocksStats.NewMockStats(c.mockCtrl)
 
@@ -90,6 +96,9 @@ func (c *context) Setup() {
 	c.mockStats.EXPECT().NewStat("gateway.batch_size", stats.CountType).Return(c.mockStatGatewayBatchSize).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 	c.mockStats.EXPECT().NewStat("gateway.batch_time", stats.TimerType).Return(c.mockStatGatewayBatchTime).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 
+	// Mock enterprise features to be empty Features struct
+	c.mockApp.EXPECT().Features().Return(&app.Features{}).AnyTimes()
+
 	// During Setup, gateway subscribes to backend config and waits until it is received.
 	c.mockBackendConfig.EXPECT().WaitForConfig().Return().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
@@ -99,6 +108,7 @@ func (c *context) Setup() {
 		}).
 		Do(c.asyncHelper.ExpectAndNotifyCallback()).
 		Return().Times(1)
+	c.mockVersionHandler = func(w http.ResponseWriter, r *http.Request) {}
 }
 
 func (c *context) Finish() {
@@ -144,23 +154,31 @@ var _ = Describe("Gateway", func() {
 		var clearDB = false
 
 		It("should wait for backend config", func() {
-			gateway.Setup(c.mockBackendConfig, c.mockJobsDB, nil, c.mockStats, &clearDB)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockStats, &clearDB, c.mockVersionHandler)
 		})
 	})
 
 	Context("Valid requests", func() {
 		var (
-			gateway      = &HandleT{}
-			clearDB bool = false
+			gateway                = &HandleT{}
+			clearDB           bool = false
+			gatewayBatchCalls int  = 1
 		)
 
+		// tracks expected batch_id
+		nextBatchID := func() (batchID int) {
+			batchID = gatewayBatchCalls
+			gatewayBatchCalls++
+			return
+		}
+
 		BeforeEach(func() {
-			gateway.Setup(c.mockBackendConfig, c.mockJobsDB, nil, c.mockStats, &clearDB)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockStats, &clearDB, c.mockVersionHandler)
 		})
 
-		assertJobMetadata := func(job *jobsdb.JobT, batchLength int) {
+		assertJobMetadata := func(job *jobsdb.JobT, batchLength int, batchId int) {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
-			Expect(job.Parameters).To(Equal(json.RawMessage(fmt.Sprintf(`{"source_id": "%v"}`, SourceIDEnabled))))
+			Expect(job.Parameters).To(Equal(json.RawMessage(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, SourceIDEnabled, batchId))))
 			Expect(job.CustomVal).To(Equal(CustomVal))
 
 			responseData := []byte(job.EventPayload)
@@ -220,10 +238,12 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 0)
 
 				c.mockJobsDB.
-					EXPECT().Store(gomock.Any()).
+					EXPECT().StoreWithRetryEach(gomock.Any()).
 					DoAndReturn(func(jobs []*jobsdb.JobT) map[uuid.UUID]string {
 						for _, job := range jobs {
-							assertJobMetadata(job, 1)
+							// each call should be included in a separate batch, with a separate batch_id
+							expectedBatchID := nextBatchID()
+							assertJobMetadata(job, 1, expectedBatchID)
 
 							responseData := []byte(job.EventPayload)
 							payload := gjson.GetBytes(responseData, "batch.0")
@@ -252,7 +272,12 @@ var _ = Describe("Gateway", func() {
 		}
 
 		It("should process multiple requests to all endpoints (except batch) in a batch", func() {
-			handlers := allHandlers(gateway)
+			handlers := map[string]http.HandlerFunc{
+				"alias":    gateway.webAliasHandler,
+				"group":    gateway.webGroupHandler,
+				"identify": gateway.webIdentifyHandler,
+				"page":     gateway.webPageHandler,
+			}
 
 			handlerExpectation := func(handlerType string, handler http.HandlerFunc) *RequestExpectation {
 				// we add the handler type in custom property of request's body, to check that the type field is set correctly while batching
@@ -267,19 +292,22 @@ var _ = Describe("Gateway", func() {
 				}
 			}
 
-			c.mockStatGatewayBatchSize.EXPECT().Count(6).
+			c.mockStatGatewayBatchSize.EXPECT().Count(4).
 				Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 
 			callStart := c.mockStatGatewayBatchTime.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 
 			callStore := c.mockJobsDB.
-				EXPECT().Store(gomock.Any()).
+				EXPECT().StoreWithRetryEach(gomock.Any()).
 				DoAndReturn(func(jobs []*jobsdb.JobT) map[uuid.UUID]string {
 					// will collect all message handler types, found in jobs send to Store function
-					typesFound := make(map[string]bool, 6)
+					typesFound := make(map[string]bool, 4)
+
+					// All jobs should belong to the same batchId
+					expectedBatchID := nextBatchID()
 
 					for _, job := range jobs {
-						assertJobMetadata(job, 1)
+						assertJobMetadata(job, 1, expectedBatchID)
 
 						responseData := []byte(job.EventPayload)
 						payload := gjson.GetBytes(responseData, "batch.0")
@@ -315,8 +343,8 @@ var _ = Describe("Gateway", func() {
 				}
 			}
 
-			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 6)
-			c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 6)
+			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 4)
+			c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 4)
 			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
 			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 0)
 
@@ -332,7 +360,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			SetEnableRateLimit(true)
-			gateway.Setup(c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockStats, &clearDB)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockStats, &clearDB, c.mockVersionHandler)
 		})
 
 		It("should store messages successfuly if rate limit is not reached for workspace", func() {
@@ -341,7 +369,7 @@ var _ = Describe("Gateway", func() {
 			callStart := c.mockStatGatewayBatchTime.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes().Do(c.asyncHelper.ExpectAndNotifyCallback())
 			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(false).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
-			callStore := c.mockJobsDB.EXPECT().Store(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
+			callStore := c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 			callEnd := c.mockStatGatewayBatchTime.EXPECT().End().After(callStart).After(callStore).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).After(callEnd).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 
@@ -360,7 +388,7 @@ var _ = Describe("Gateway", func() {
 			callStart := c.mockStatGatewayBatchTime.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes().Do(c.asyncHelper.ExpectAndNotifyCallback())
 			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(true).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
-			callStore := c.mockJobsDB.EXPECT().Store(emptyJobsList).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
+			callStore := c.mockJobsDB.EXPECT().StoreWithRetryEach(emptyJobsList).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 			callEnd := c.mockStatGatewayBatchTime.EXPECT().End().After(callStart).After(callStore).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).After(callEnd).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 
@@ -384,14 +412,14 @@ var _ = Describe("Gateway", func() {
 			callStart := c.mockStatGatewayBatchTime.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 
 			callStore := c.mockJobsDB.
-				EXPECT().Store(emptyJobsList).
+				EXPECT().StoreWithRetryEach(emptyJobsList).
 				Do(c.asyncHelper.ExpectAndNotifyCallback()).
 				Return(jobsToEmptyErrors(emptyJobsList)).
 				Times(1)
 
 			c.mockStatGatewayBatchTime.EXPECT().End().After(callStart).After(callStore).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallback())
 
-			gateway.Setup(c.mockBackendConfig, c.mockJobsDB, nil, c.mockStats, &clearDB)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockStats, &clearDB, c.mockVersionHandler)
 		})
 
 		// common tests for all web handlers
@@ -505,7 +533,9 @@ func authorizedRequest(username string, body io.Reader) *http.Request {
 	basicAuth := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:password-should-be-ignored", username)))
 
 	req.Header.Set("Authorization", fmt.Sprintf("Basic %s", basicAuth))
-	req.RemoteAddr = TestRemoteAddress
+	// set anonymousId header to ensure everything goes into same batch
+	req.Header.Set("AnonymousId", "094985f8-b4eb-43c3-bc8a-e8b75aae9c7c")
+	req.RemoteAddr = TestRemoteAddressWithPort
 	return req
 }
 
@@ -563,9 +593,5 @@ func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 
 // converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
 func jobsToEmptyErrors(jobs []*jobsdb.JobT) map[uuid.UUID]string {
-	var result = make(map[uuid.UUID]string)
-	for _, job := range jobs {
-		result[job.UUID] = ""
-	}
-	return result
+	return make(map[uuid.UUID]string)
 }

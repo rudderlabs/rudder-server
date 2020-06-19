@@ -2,10 +2,9 @@ package filemanager
 
 import (
 	"errors"
+	"github.com/minio/minio-go/v6"
 	"os"
 	"strings"
-
-	"github.com/minio/minio-go/v6"
 )
 
 func (manager *MinioManager) ObjectUrl(objectName string) string {
@@ -58,6 +57,23 @@ func (manager *MinioManager) Download(file *os.File, key string) error {
 	}
 	err = minioClient.FGetObject(manager.Config.Bucket, key, file.Name(), minio.GetObjectOptions{})
 	return err
+}
+
+/*
+GetObjectNameFromLocation gets the object name/key name from the object location url
+	https://minio-endpoint/bucket-name/key1 - >> key1
+	http://minio-endpoint/bucket-name/key2 - >> key2
+*/
+func (manager *MinioManager) GetObjectNameFromLocation(location string) string {
+	var baseUrl string
+	if manager.Config.UseSSL {
+		baseUrl += "https://"
+	} else {
+		baseUrl += "http://"
+	}
+	baseUrl += manager.Config.EndPoint + "/"
+	baseUrl += manager.Config.Bucket + "/"
+	return location[len(baseUrl):]
 }
 
 //TODO complete this

@@ -15,6 +15,10 @@ import (
 
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
+var (
+	whSchemaVersion string
+)
+
 const (
 	EmbeddedMode    = "embedded"
 	MasterMode      = "master"
@@ -29,11 +33,16 @@ func transformKey(s string) string {
 	return "RSERVER_" + strings.ToUpper(snake)
 }
 
-// Initialize initializes the config
+// Initialize used to initialize config package
+// Deprecated - There is no need to directly call Initialize, config is initialized via its package init()
 func Initialize() {
+}
+
+func init() {
 	if err := godotenv.Load(); err != nil {
 		fmt.Println("ERROR: No .env file found")
 	}
+
 	configPath := GetEnv("CONFIG_PATH", "./config/config.toml")
 
 	viper.SetConfigFile(configPath)
@@ -41,7 +50,7 @@ func Initialize() {
 	err := viper.ReadInConfig() // Find and read the config file
 	// Don't panic if config.toml is not found or error with parsing. Use the default config values instead
 	if err != nil {
-		fmt.Println("[Config] :: Failed to parse Config toml, using default values", err)
+		fmt.Println("[Config] :: Failed to parse Config toml, using default values:", err)
 	}
 }
 
@@ -195,4 +204,12 @@ func GetWorkspaceToken() string {
 	}
 
 	return GetEnv("CONFIG_BACKEND_TOKEN", "")
+}
+
+func SetWHSchemaVersion(version string) {
+	whSchemaVersion = version
+}
+
+func GetWHSchemaVersion() string {
+	return whSchemaVersion
 }

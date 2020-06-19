@@ -208,7 +208,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	)
 	if !isWarehouse {
 		opPayload, _ = json.Marshal(&ObjectStorageT{
-			Config:          batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
+			Config:          batchJobs.BatchDestination.Destination.Config,
 			Key:             strings.Join(append(keyPrefixes, fileName), "/"),
 			Provider:        provider,
 			DestinationID:   batchJobs.BatchDestination.Destination.ID,
@@ -227,7 +227,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 
 	return StorageUploadOutput{
-		Config:         batchJobs.BatchDestination.Destination.Config.(map[string]interface{}),
+		Config:         batchJobs.BatchDestination.Destination.Config,
 		Key:            uploadOutput.ObjectName,
 		LocalFilePaths: []string{gzipFilePath},
 		JournalOpID:    opID,
@@ -669,7 +669,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 func (brt *HandleT) crashRecover() {
 
 	for {
-		execList := brt.jobsDB.GetExecuting([]string{}, jobQueryBatchSize, nil)
+		execList := brt.jobsDB.GetExecuting([]string{brt.destType}, jobQueryBatchSize, nil)
 
 		if len(execList) == 0 {
 			break
@@ -744,7 +744,7 @@ func loadConfig() {
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
@@ -755,7 +755,6 @@ func loadConfig() {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 	uploadedRawDataJobsCache = make(map[string]map[string]bool)
 }

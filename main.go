@@ -70,7 +70,7 @@ func loadConfig() {
 	enableRouter = config.GetBool("enableRouter", true)
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 }
 
@@ -126,7 +126,6 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
@@ -156,6 +155,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	if !validators.ValidateEnv() {
 		panic(errors.New("Failed to start rudder-server"))
 	}
+	validators.InitializeEnv()
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
@@ -215,7 +215,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		var rateLimiter ratelimiter.HandleT
 
 		rateLimiter.SetUp()
-		gateway.Setup(application, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, stats.DefaultStats, clearDB)
+		gateway.Setup(application, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, stats.DefaultStats, clearDB, versionHandler)
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
@@ -246,8 +246,9 @@ func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jo
 	}
 
 	if enableProcessor {
-		var processor processor.HandleT
-		processor.Setup(gatewayDB, routerDB, batchRouterDB)
+		var processor = processor.NewProcessor()
+		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, stats.DefaultStats)
+		processor.Start()
 
 		if !isReplayServer {
 			var replay replay.ReplayProcessorT
