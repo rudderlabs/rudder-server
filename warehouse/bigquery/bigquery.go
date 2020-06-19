@@ -253,12 +253,23 @@ func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	return updatedSchema, nil
 }
 
-func (bq *HandleT) loadTable(tableName string) (err error) {
-	uploadStatus, err := warehouseutils.GetTableUploadStatus(bq.Upload.ID, tableName, bq.DbHandle)
-	if uploadStatus == warehouseutils.ExportedDataState {
-		logger.Infof("BQ: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
-		return
+func partitionedTable(tableName string, partitionDate string) string {
+	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
+}
+
+func (bq *HandleT) loadTable(tableName string, forceLoad bool) (partitionDate string, err error) {
+	if !forceLoad {
+		uploadStatus, err := warehouseutils.GetTableUploadStatus(bq.Upload.ID, tableName, bq.DbHandle)
+		if err != nil {
+			panic(err)
+		}
+
+		if uploadStatus == warehouseutils.ExportedDataState {
+			logger.Infof("BQ: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
+			return "", nil
+		}
 	}
+
 	if !warehouseutils.HasLoadFiles(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID) {
 		warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, bq.Upload.ID, tableName, bq.DbHandle)
 		return
@@ -277,8 +288,12 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 100
 	gcsRef.IgnoreUnknownValues = true
+
+	partitionDate = time.Now().Format("2006-01-02")
+	outputTable := partitionedTable(tableName, partitionDate)
+
 	// create partitioned table in format tableName$20191221
-	loader := bq.Db.Dataset(bq.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
+	loader := bq.Db.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
 
 	job, err := loader.Run(bq.BQContext)
 	if err != nil {
@@ -301,16 +316,104 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 	return
 }
 
+func (bq *HandleT) loadUserTables() (err error) {
+	logger.Infof("BQ: Starting load for identifies and users tables\n")
+	partitionDate, err := bq.loadTable(warehouseutils.IdentifiesTable, true)
+	if err != nil {
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, warehouseutils.IdentifiesTable, err, bq.DbHandle)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), bq.DbHandle)
+		return
+	}
+
+	if _, ok := bq.Upload.Schema["users"]; !ok {
+		return
+	}
+
+	firstValueSQL := func(column string) string {
+		return fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, column)
+	}
+
+	userColMap := bq.CurrentSchema["users"]
+	var userColNames, firstValProps []string
+	for colName := range userColMap {
+		if colName == "id" {
+			continue
+		}
+		userColNames = append(userColNames, colName)
+		firstValProps = append(firstValProps, firstValueSQL(colName))
+	}
+
+	bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.Namespace, name) }
+
+	bqUsersTable := bqTable(warehouseutils.UsersTable)
+	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
+	partition := fmt.Sprintf("TIMESTAMP('%s')", partitionDate)
+	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL`, bqIdentifiesTable, partition)
+	sqlStatement := fmt.Sprintf(`SELECT DISTINCT * EXCEPT (_PARTITIONTIME) FROM (
+			SELECT id, %[1]s FROM (
+				(
+					SELECT id, %[2]s FROM %[3]s WHERE (
+						id in (SELECT user_id FROM %[4]s)
+					)
+				) UNION ALL (
+					SELECT user_id, %[2]s FROM %[4]s
+				)
+			)
+		)`,
+		strings.Join(firstValProps, ","), // 1
+		strings.Join(userColNames, ","),  // 2
+		bqUsersTable,                     // 3
+		identifiesFrom,                   // 4
+	)
+
+	partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
+	query := bq.Db.Query(sqlStatement)
+	query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(partitionedUsersTable)
+	query.WriteDisposition = bigquery.WriteAppend
+
+	tableName := "users"
+	job, err := query.Run(bq.BQContext)
+	if err != nil {
+		logger.Errorf("BQ: Error initiating load job: %v\n", err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
+		return
+	}
+	status, err := job.Wait(bq.BQContext)
+	if err != nil {
+		logger.Errorf("BQ: Error running load job: %v\n", err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
+		return
+	}
+
+	if status.Err() != nil {
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
+		return
+	}
+
+	return
+}
+
 func (bq *HandleT) load() (errList []error) {
 	logger.Infof("BQ: Starting load for all %v tables\n", len(bq.Upload.Schema))
+	if _, ok := bq.Upload.Schema["identifies"]; ok {
+		err := bq.loadUserTables()
+		if err != nil {
+			errList = append(errList, err)
+		}
+	}
 	var wg sync.WaitGroup
 	wg.Add(len(bq.Upload.Schema))
 	loadChan := make(chan struct{}, maxParallelLoads)
 	for tableName := range bq.Upload.Schema {
+		if tableName == "users" || tableName == "identifies" {
+			wg.Done()
+			continue
+		}
+
 		tName := tableName
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
-			err := bq.loadTable(tName)
+			_, err := bq.loadTable(tName, false)
 			if err != nil {
 				errList = append(errList, err)
 			}
@@ -348,7 +451,7 @@ func (bq *HandleT) MigrateSchema() (err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", bq.Warehouse.Destination.ID)
 	timer.Start()
 	warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatingSchemaState, bq.DbHandle)
-	logger.Infof("BQ: Updaing schema for bigquery in project: %s", bq.ProjectID)
+	logger.Infof("BQ: Updating schema for bigquery in project: %s", bq.ProjectID)
 	updatedSchema, err := bq.updateSchema()
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
