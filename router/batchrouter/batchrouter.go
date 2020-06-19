@@ -87,7 +87,6 @@ func (brt *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == brt.destType {
 						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
-						fmt.Println(destination.Config)
 						if destination.Config["testConnection"] == true {
 							rruntime.Go(func() {
 								testBatchDestinationConnection(destination)
@@ -153,7 +152,6 @@ func createTestFileForBatchDestination(destinationID string) string {
 }
 
 func testBatchDestinationConnection(destination backendconfig.DestinationT) {
-	fmt.Println(destination.Config)
 	testFileName := createTestFileForBatchDestination(destination.ID)
 	provider := destination.DestinationDefinition.Name
 	uploader, err := filemanager.New(&filemanager.SettingsT{
