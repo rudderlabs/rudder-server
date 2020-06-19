@@ -191,6 +191,18 @@ func (mr *MockLoggerIMockRecorder) LogRequest(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LogRequest", reflect.TypeOf((*MockLoggerI)(nil).LogRequest), arg0)
 }
 
+// Setup mocks base method
+func (m *MockLoggerI) Setup() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Setup")
+}
+
+// Setup indicates an expected call of Setup
+func (mr *MockLoggerIMockRecorder) Setup() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockLoggerI)(nil).Setup))
+}
+
 // Warn mocks base method
 func (m *MockLoggerI) Warn(arg0 ...interface{}) {
 	m.ctrl.T.Helper()

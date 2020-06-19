@@ -1,3 +1,4 @@
+//go:generate mockgen -destination=../../mocks/utils/misc/mock_misc.go -package=mock_misc github.com/rudderlabs/rudder-server/utils/misc PerfStatsI
 package misc
 
 import (
@@ -310,6 +311,12 @@ func CreateTMPDIR() (string, error) {
 }
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
+type PerfStatsI interface {
+	Setup(comp string)
+	Start()
+	End(events int)
+	Print()
+}
 type PerfStats struct {
 	eventCount           int64
 	elapsedTime          time.Duration

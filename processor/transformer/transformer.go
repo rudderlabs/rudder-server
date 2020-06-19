@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"sort"
@@ -19,8 +18,11 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
+
+var log logger.LoggerI = logger.NewLogger()
 
 type MetadataT struct {
 	SourceID        string `json:"sourceId"`
@@ -57,7 +59,7 @@ type HandleT struct {
 	requestQ           chan *transformMessageT
 	responseQ          chan *transformedMessageT
 	accessLock         sync.Mutex
-	perfStats          *misc.PerfStats
+	perfStats          misc.PerfStatsI
 	sentStat           stats.RudderStats
 	receivedStat       stats.RudderStats
 	failedStat         stats.RudderStats
@@ -78,6 +80,8 @@ func NewTransformer() *HandleT {
 var (
 	maxChanSize, numTransformWorker, maxRetry int
 	retrySleep                                time.Duration
+	Io                                        sysUtils.IoI     = sysUtils.NewIo()
+	Ioutil                                    sysUtils.IoUtilI = sysUtils.NewIoUtil()
 )
 
 func loadConfig() {
@@ -97,10 +101,9 @@ type TransformerResponseT struct {
 	Metadata MetadataT              `json:"metadata"`
 }
 
-func (trans *HandleT) transformWorker() {
+func (trans *HandleT) transformWorker(transformRequestTimerStat stats.RudderStats) {
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
-	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
 
 	for job := range trans.requestQ {
 		//Call remote transformation
@@ -120,7 +123,7 @@ func (trans *HandleT) transformWorker() {
 			if err != nil {
 				transformRequestTimerStat.End()
 				reqFailed = true
-				logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
+				log.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
 				if retryCount > maxRetry {
 					panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err))
 				}
@@ -130,7 +133,7 @@ func (trans *HandleT) transformWorker() {
 				continue
 			}
 			if reqFailed {
-				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
+				log.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
 			}
 			transformRequestTimerStat.End()
 			break
@@ -141,12 +144,12 @@ func (trans *HandleT) transformWorker() {
 			resp.StatusCode == http.StatusBadRequest ||
 			resp.StatusCode == http.StatusNotFound ||
 			resp.StatusCode == http.StatusRequestEntityTooLarge) {
-			logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
+			log.Errorf("Transformer returned status code: %v", resp.StatusCode)
 		}
 
 		var transformerResponses []TransformerResponseT
 		if resp.StatusCode == http.StatusOK {
-			respData, err := ioutil.ReadAll(resp.Body)
+			respData, err := Ioutil.ReadAll(resp.Body)
 			if err != nil {
 				panic(err)
 			}
@@ -157,7 +160,7 @@ func (trans *HandleT) transformWorker() {
 				panic(err)
 			}
 		} else {
-			io.Copy(ioutil.Discard, resp.Body)
+			Io.Copy(ioutil.Discard, resp.Body)
 		}
 		resp.Body.Close()
 
@@ -176,9 +179,10 @@ func (trans *HandleT) Setup() {
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 	for i := 0; i < numTransformWorker; i++ {
-		logger.Info("Starting transformer worker", i)
+		transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
+		log.Info("Starting transformer worker", i)
 		rruntime.Go(func() {
-			trans.transformWorker()
+			trans.transformWorker(transformRequestTimerStat)
 		})
 	}
 }
@@ -235,10 +239,10 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 					}
 					currentUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx].Message)
 					if !ok {
-						panic(fmt.Errorf("GetAnonymousID failed"))
+						panic(fmt.Errorf("GetAnonymousID from current user failed"))
 					}
 					if currentUserID != prevUserID {
-						logger.Debug("Breaking batch at", inputIdx, prevUserID, currentUserID)
+						log.Debug("Breaking batch at", inputIdx, prevUserID, currentUserID)
 						break
 					}
 				}
