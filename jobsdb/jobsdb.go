@@ -898,7 +898,7 @@ func (jd *HandleT) createDS(newDSIdx string) dataSetT {
 	sqlStatement = fmt.Sprintf(`CREATE TABLE %s (
                                      id BIGSERIAL PRIMARY KEY,
                                      job_id BIGINT REFERENCES %s(job_id),
-                                     job_state VARCHAR(255),
+                                     job_state VARCHAR(64),
                                      attempt SMALLINT,
                                      exec_time TIMESTAMP,
                                      retry_time TIMESTAMP,
