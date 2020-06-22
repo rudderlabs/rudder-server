@@ -40,6 +40,13 @@ enableProcessor = true
 enableRouter = true
 enableStats = true
 
+[Http]
+ReadTimeOutInSec = 0
+ReadHeaderTimeoutInSec = 0
+WriteTimeOutInSec = 10
+IdleTimeoutInSec = 720
+MaxHeaderBytes = 524288
+
 [RateLimit]
 eventLimit=1000
 rateLimitWindowInMins=60
@@ -47,10 +54,13 @@ noOfBucketsInWindow=12
 
 [Gateway]
 webPort = 8080
+maxUserWebRequestWorkerProcess = 64
 maxDBWriterProcess = 64
 CustomVal = "GW"
-maxBatchSize = 32
-batchTimeoutInMS = 20
+maxUserRequestBatchSize = 4
+maxDBBatchSize = 32
+userWebRequestBatchTimeoutInMS = 15
+dbBatchWriteTimeoutInMS = 5
 maxReqSizeInKB = 100000
 enableDedup = false
 enableRateLimit = false
@@ -134,11 +144,6 @@ warehouseServiceMaxRetryTimeinHr = 3
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
 webPort = 8082
-stagingFilesTable = "wh_staging_files"
-loadFilesTable = "wh_load_files"
-uploadsTable = "wh_uploads"
-tableUploadsTable = "wh_table_uploads"
-schemasTable = "wh_schemas"
 uploadFreqInS = 1800
 noOfWorkers = 8
 noOfSlaveWorkerRoutines = 4

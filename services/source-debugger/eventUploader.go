@@ -57,7 +57,6 @@ var (
 )
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
@@ -272,7 +271,7 @@ func updateConfig(sources backendconfig.SourcesT) {
 	uploadEnabledWriteKeys = []string{}
 	for _, source := range sources.Sources {
 		if source.Config != nil {
-			if source.Enabled && source.Config.(map[string]interface{})["eventUpload"] == true {
+			if source.Enabled && source.Config["eventUpload"] == true {
 				uploadEnabledWriteKeys = append(uploadEnabledWriteKeys, source.WriteKey)
 			}
 		}

@@ -28,6 +28,8 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
 )
 
@@ -153,24 +155,10 @@ func GetMD5Hash(input string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-//GetRudderEventMap returns the event structure from the client payload
-func GetRudderEventMap(rudderEvent interface{}) (map[string]interface{}, bool) {
-
-	rudderEventMap, ok := rudderEvent.(map[string]interface{})
-	if !ok {
-		return nil, false
-	}
-	return rudderEventMap, true
-}
-
 //GetRudderEventVal returns the value corresponding to the key in the message structure
-func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) {
+func GetRudderEventVal(key string, rudderEvent types.SingularEventT) (interface{}, bool) {
 
-	rudderEventMap, ok := GetRudderEventMap(rudderEvent)
-	if !ok {
-		return nil, false
-	}
-	rudderVal, ok := rudderEventMap[key]
+	rudderVal, ok := rudderEvent[key]
 	if !ok {
 		return nil, false
 	}
@@ -178,28 +166,19 @@ func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) 
 }
 
 //ParseRudderEventBatch looks for the batch structure inside event
-func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
-	var eventListJSON map[string]interface{}
-	err := json.Unmarshal(eventPayload, &eventListJSON)
+func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT, bool) {
+	var gatewayBatchEvent types.GatewayBatchRequestT
+	err := json.Unmarshal(eventPayload, &gatewayBatchEvent)
 	if err != nil {
 		logger.Debug("json parsing of event payload failed ", string(eventPayload))
 		return nil, false
 	}
-	_, ok := eventListJSON["batch"]
-	if !ok {
-		logger.Debug("error retrieving value for batch key ", string(eventPayload))
-		return nil, false
-	}
-	eventListJSONBatchType, ok := eventListJSON["batch"].([]interface{})
-	if !ok {
-		logger.Error("error casting batch value to list of maps ", string(eventPayload))
-		return nil, false
-	}
-	return eventListJSONBatchType, true
+
+	return gatewayBatchEvent.Batch, true
 }
 
 //GetAnonymousID return the UserID from the object
-func GetAnonymousID(event interface{}) (string, bool) {
+func GetAnonymousID(event types.SingularEventT) (string, bool) {
 	userID, ok := GetRudderEventVal("anonymousId", event)
 	if !ok {
 		return "", false
