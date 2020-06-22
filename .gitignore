@@ -11,5 +11,4 @@ imports/enterprise.go
 enterprise
 *.coverprofile
 junit*.xml
-*/profile.out
-*/*/profile.out
+**/profile.out
