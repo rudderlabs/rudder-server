@@ -399,14 +399,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
 	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
 
-	if clearAll {
-		jd.dropAllDS()
-		jd.dropJournal()
-		jd.dropAllBackupDS()
-		jd.dropMigrationCheckpointTables()
-	}
-
-	jd.setupDatabaseTables()
+	jd.setupDatabaseTables(clearAll)
 
 	jd.recoverFromJournal()
 
