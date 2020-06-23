@@ -22,9 +22,9 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord cha
 
 - **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
 
-- **Seamless Integration**: RudderStack currently supports integration with over 45 popular [destination platforms](https://docs.rudderstack.com/destinations/) such as Google Analytics, Amplitude, Mixpanel, Amazon S3, and more. Moreover, it also supports [data warehouse integrations](https://docs.rudderstack.com/data-warehouse-integrations) for Snowflake, Redshift, and Google BigQuery.
+- **Seamless Integration**: RudderStack currently supports integration with over 45 popular [destination platforms](https://docs.rudderstack.com/destinations-guides) such as Google Analytics, Amplitude, Mixpanel, Amazon S3, and more. Moreover, it also supports [data warehouse integrations](https://docs.rudderstack.com/data-warehouse-integration-guides) for Snowflake, Redshift, PostgreSQL and Google BigQuery.
 
-- **Client-side SDK Support**: RudderStack offers client-side SDKs for [JavaScript](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-javascript-sdk), [Android](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-android-sdk), [iOS](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-ios-sdk), and [Unity](https://docs.rudderstack.com/sdk-integration-guide/getting-started-with-unity-sdk).
+- **Client-side SDK Support**: RudderStack offers client-side SDKs for [JavaScript](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-javascript-sdk), [Android](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-android-sdk), [iOS](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-ios-sdk), and [Unity](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/getting-started-with-unity-sdk).
 
 - **User-specified Transformation**: RudderStack gives you the power to filter or transform your events before sending them to the desired destinations.
 
@@ -46,16 +46,16 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord cha
 
 # RudderStack Setup
 
-The easiest way to try RudderStack is through our hosted service. Please signup [here](https://app.rudderstack.com/signup?type=freetrial)
+The easiest way to try RudderStack is through our hosted service. Please signup [here](https://app.rudderstack.com/signup?type=freetrial) to get started.
 
 You can also set up and use RudderStack on your platform of choice. Please refer to the following guides for detailed instructions:
 
-- [Setting up RudderStack on Docker](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/docker)
-- [Setting up RudderStack on Kubernetes](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/kubernetes)
-- [Setting up RudderStack on a Native Installation](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/native-installation)
-- [Developer Machine Setup](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/developer-machine-setup)
+- [Setting up RudderStack on Docker](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/docker)
+- [Setting up RudderStack on Kubernetes](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/kubernetes)
+- [Setting up RudderStack on a Native Installation](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/native-installation)
+- [Developer Machine Setup](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/developer-machine-setup)
 
-Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/getting-started/installing-and-setting-up-rudderstack#how-to-send-test-events) to verify the setup.
+Once you have installed RudderStack, [send test events]() to verify the setup.
 
 # UI Pages
 
@@ -74,7 +74,7 @@ RudderStack has two major components, namely:
 - **Control Plane**: The control plane allows you to manage the configuration of your sources and destinations. There are two options for setting up the connections:
 
   - [Managed control plane](https://app.rudderstack.com/): This is the easiest way to manage your source and destination configurations.
-  - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. Please note that you cannot create transformations with the RudderStack Config Generator.
+  - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to use our hosted services. Please note that you cannot create transformations with the RudderStack Config Generator.
 
 - **Data Plane**: This is the core engine that is responsible for:
 
@@ -82,7 +82,7 @@ RudderStack has two major components, namely:
   - Transforming the event data into the required destination format, and
   - Relaying it to the destination
 
-For a detailed understanding of the RudderStack architecture, please check our [documentation](https://docs.rudderstack.com/getting-started/rudderstack-data-plane-architecture).
+For a detailed understanding of the RudderStack architecture, please check our [documentation](https://docs.rudderstack.com/get-started/rudderstack-architecture).
 
 A high-level view of RudderStack's architecture is as shown:
 ![Architecture](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-Lz111ICiMeHdy_Gu6JX%2F-Lz1A_NxMgbjhbSrVL2h%2FRudder%20Core%20Architecture.png?alt=media&token=2c524db9-7c5c-44e9-a351-cbb1c46a8063)
