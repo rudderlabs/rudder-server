@@ -126,7 +126,6 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
@@ -216,7 +215,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		var rateLimiter ratelimiter.HandleT
 
 		rateLimiter.SetUp()
-		gateway.Setup(application, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, stats.DefaultStats, clearDB)
+		gateway.Setup(application, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, stats.DefaultStats, clearDB, versionHandler)
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
@@ -247,8 +246,9 @@ func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jo
 	}
 
 	if enableProcessor {
-		var processor processor.HandleT
-		processor.Setup(gatewayDB, routerDB, batchRouterDB)
+		var processor = processor.NewProcessor()
+		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, stats.DefaultStats)
+		processor.Start()
 
 		if !isReplayServer {
 			var replay replay.ReplayProcessorT

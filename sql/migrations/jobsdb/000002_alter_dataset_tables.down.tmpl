@@ -1,0 +1,22 @@
+{{range .Datasets}}
+    ALTER TABLE {{$.Prefix}}_jobs_{{.}} DROP COLUMN user_id;
+    ALTER TABLE {{$.Prefix}}_jobs_{{.}} ALTER COLUMN created_at set DEFAULT NULL;
+    ALTER TABLE {{$.Prefix}}_jobs_{{.}} ALTER COLUMN expire_at set DEFAULT NULL;
+
+    -- recreate job_state_type type
+    DO $$ BEGIN
+        CREATE TYPE job_state_type
+            AS ENUM(
+                    'waiting',
+                    'executing',
+                    'succeeded',
+                    'waiting_retry',
+                    'failed',
+                    'aborted');
+            EXCEPTION
+            WHEN duplicate_object THEN null;
+    END $$;
+
+    ALTER TABLE {{$.Prefix}}_job_status_{{.}} ALTER COLUMN job_state TYPE job_state_type;
+    ALTER TABLE {{$.Prefix}}_job_status_{{.}} ALTER COLUMN job_id TYPE INT;
+{{end}}

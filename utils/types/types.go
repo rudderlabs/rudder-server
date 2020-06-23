@@ -2,6 +2,14 @@ package types
 
 import "net/http"
 
+//SingularEventT single event structrue
+type SingularEventT map[string]interface{}
+
+//GatewayBatchRequestT batch request structure
+type GatewayBatchRequestT struct {
+	Batch []SingularEventT `json:"batch"`
+}
+
 type GatewayWebhookI interface {
 	IncrementRecvCount(count uint64)
 	IncrementAckCount(count uint64)
