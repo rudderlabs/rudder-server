@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
 )
 
@@ -156,9 +157,9 @@ func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) string {
 	return userID
 }
 
-//GetDestinationIDs parses the destination names from the
+//FilterClientIntegrations parses the destination names from the
 //input JSON, matches them with enabled destinations from controle plane and returns the IDSs
-func GetDestinationIDs(clientEvent interface{}, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
+func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
 	clientIntgs, ok := misc.GetRudderEventVal("integrations", clientEvent)
 	if !ok {
 		clientIntgs = make(map[string]interface{})
