@@ -34,6 +34,7 @@ var (
 	warehouseUploadsTable string
 	stagingTablePrefix    string
 	maxParallelLoads      int
+	setVarCharMax         bool
 )
 
 type HandleT struct {
@@ -55,6 +56,7 @@ const (
 	RSDbName            = "database"
 	RSUserName          = "user"
 	RSPassword          = "password"
+	varCharMax          = "varchar(MAX)"
 )
 
 var dataTypesMap = map[string]string{
@@ -103,10 +105,19 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
+func getRSDataType(columnType string) string {
+	if columnType == "string" {
+		if setVarCharMax {
+			return varCharMax
+		}
+	}
+	return dataTypesMap[columnType]
+
+}
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	arr := []string{}
 	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[dataType]))
+		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, getRSDataType(dataType)))
 	}
 	return strings.Join(arr[:], ",")
 }
@@ -136,7 +147,7 @@ func (rs *HandleT) tableExists(tableName string) (exists bool, err error) {
 }
 
 func (rs *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, dataTypesMap[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, getRSDataType(columnType))
 	logger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
@@ -654,6 +665,7 @@ func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder_staging_"
 	maxParallelLoads = config.GetInt("Warehouse.redshift.maxParallelLoads", 3)
+	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
 }
 
 func init() {

@@ -154,6 +154,7 @@ warehouseSyncFreqIgnore=false
 stagingFilesBatchSize = 240
     [Warehouse.redshift]
     maxParallelLoads = 3
+    setVarCharMax = false
     [Warehouse.snowflake]
     maxParallelLoads = 3
     [Warehouse.bigquery]
