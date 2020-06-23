@@ -389,14 +389,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			jobWriteKeyMap[newJob.UUID] = writeKey
 			jobEventCountMap[newJob.UUID] = totalEventsInReq
 		}
-		var errorMessagesMap map[uuid.UUID]string
-		gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
-		switch gwAllowPartialWriteWithErrors {
-		case true:
-			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
-		case false:
-			gateway.jobsDB.Store(jobList)
-		}
 
 		gateway.userWorkerBatchRequestQ <- &userWorkerBatchRequestT{jobList: jobList,
 			allMessageIdsSet: allMessageIdsSet,

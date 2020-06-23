@@ -306,9 +306,6 @@ var _ = Describe("Gateway", func() {
 					// All jobs should belong to the same batchId
 					expectedBatchID := nextBatchID()
 
-					// All jobs should belong to the same batchId
-					expectedBatchID := nextBatchID()
-
 					for _, job := range jobs {
 						assertJobMetadata(job, 1, expectedBatchID)
 
