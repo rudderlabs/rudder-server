@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -55,6 +57,7 @@ type NotificationT struct {
 type ResponseT struct {
 	Status  string
 	Payload json.RawMessage
+	Error   string
 }
 
 type ClaimT struct {
@@ -71,7 +74,7 @@ type ClaimResponseT struct {
 }
 
 func New(connectionInfo string) (notifier PgNotifierT, err error) {
-	logger.Infof("PgNotifier: Initializaing PgNotifier...")
+	logger.Infof("PgNotifier: Initializing PgNotifier...")
 	dbHandle, err := sql.Open("postgres", connectionInfo)
 	if err != nil {
 		return
@@ -141,7 +144,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				panic(err)
 			}
 			if count == 0 {
-				stmt = fmt.Sprintf(`SELECT payload, status FROM %s WHERE batch_id = '%s'`, queueName, batchID)
+				stmt = fmt.Sprintf(`SELECT payload, status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
 				rows, err := notifier.dbHandle.Query(stmt)
 				if err != nil {
 					panic(err)
@@ -150,11 +153,12 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				responses := []ResponseT{}
 				for rows.Next() {
 					var payload json.RawMessage
-					var status string
-					err = rows.Scan(&payload, &status)
+					var status, error string
+					err = rows.Scan(&payload, &status, &error)
 					responses = append(responses, ResponseT{
 						Status:  status,
 						Payload: payload,
+						Error:   error,
 					})
 				}
 				*ch <- responses
@@ -171,12 +175,13 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 		response := <-ch
 		var err error
 		if response.Err != nil {
+			logger.Error(response.Err.Error())
 			stmt := fmt.Sprintf(`UPDATE %[1]s SET status=(CASE
 									WHEN attempt > %[2]d
 									THEN CAST ( '%[3]s' AS pg_notifier_status_type)
 									ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
-									END), updated_at = '%[5]s', error = '%[6]s'
-									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), response.Err.Error(), id)
+									END), attempt = attempt + 1, updated_at = '%[5]s', error = '%[6]s'
+									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), misc.QuoteLiteral(response.Err.Error()), id)
 			_, err = tx.Exec(stmt)
 		} else {
 			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
@@ -307,7 +312,7 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 					if event.Status == WaitingState || event.Status == FailedState {
 						ch <- event
 					} else {
-						logger.Debugf("PgNotifier: Not notifying subsriber for event with id: %d type: %s", event.ID, event.Status)
+						logger.Debugf("PgNotifier: Not notifying subscriber for event with id: %d type: %s", event.ID, event.Status)
 					}
 				}
 			case <-time.After(90 * time.Second):
@@ -345,7 +350,7 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
-		logger.Errorf("PgNotifier: Error creatin trigger func: %v", err)
+		logger.Errorf("PgNotifier: Error creating trigger func: %v", err)
 		return
 	}
 
@@ -397,12 +402,19 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 										  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 										  last_exec_time TIMESTAMP,
 										  attempt SMALLINT DEFAULT 0,
-										  error VARCHAR(64),
+										  error TEXT,
 										  worker_id VARCHAR(64));`, queueName)
 
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
 		return
+	}
+
+	// change error type to text
+	sqlStmt = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, queueName, "error")
+	_, err = notifier.dbHandle.Exec(sqlStmt)
+	if err != nil {
+		panic(err)
 	}
 
 	// create index on status

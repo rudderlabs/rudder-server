@@ -1,7 +1,6 @@
 {
   "batch": [
     {
-      "anonymousId": "49e4bdd1c280bc00",
       "channel": "android-sdk",
       "destination_props": {
         "AF": {

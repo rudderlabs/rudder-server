@@ -55,7 +55,7 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 	if err != nil {
 		return UploadOutput{}, err
 	}
-	return UploadOutput{Location: objectURL(attrs)}, err
+	return UploadOutput{Location: objectURL(attrs), ObjectName: fileName}, err
 }
 
 func (manager *GCSManager) Download(output *os.File, key string) error {
@@ -75,6 +75,22 @@ func (manager *GCSManager) Download(output *os.File, key string) error {
 
 	_, err = io.Copy(output, rc)
 	return err
+}
+
+/*
+GetObjectNameFromLocation gets the object name/key name from the object location url
+	https://storage.googleapis.com/bucket-name/key - >> key
+*/
+func (manager *GCSManager) GetObjectNameFromLocation(location string) string {
+	var baseUrl string
+	baseUrl += "https://storage.googleapis.com" + "/"
+	baseUrl += manager.Config.Bucket + "/"
+	return location[len(baseUrl):]
+}
+
+//TODO complete this
+func (manager *GCSManager) GetDownloadKeyFromFileLocation(location string) string {
+	return location
 }
 
 type GCSManager struct {

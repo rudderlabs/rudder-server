@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
 
@@ -35,16 +36,42 @@ type HandleT struct {
 	Upload        warehouseutils.UploadT
 }
 
+// String constants for bigquery destination config
+const (
+	GCPProjectID   = "project"
+	GCPCredentials = "credentials"
+)
+
+// maps datatype stored in rudder to datatype in bigquery
 var dataTypesMap = map[string]bigquery.FieldType{
 	"boolean":  bigquery.BooleanFieldType,
-	"int":      bigquery.NumericFieldType,
+	"int":      bigquery.IntegerFieldType,
 	"float":    bigquery.FloatFieldType,
 	"string":   bigquery.StringFieldType,
 	"datetime": bigquery.TimestampFieldType,
 }
 
-var primaryKeyMap = map[string]string{
-	"identifies": "user_id",
+// maps datatype in bigquery to datatype stored in rudder
+var dataTypesMapToRudder = map[bigquery.FieldType]string{
+	"BOOLEAN":   "boolean",
+	"BOOL":      "boolean",
+	"INTEGER":   "int",
+	"INT64":     "int",
+	"NUMERIC":   "float",
+	"FLOAT":     "float",
+	"FLOAT64":   "float",
+	"STRING":    "string",
+	"BYTES":     "string",
+	"DATE":      "datetime",
+	"DATETIME":  "datetime",
+	"TIME":      "datetime",
+	"TIMESTAMP": "datetime",
+}
+
+var partitionKeyMap = map[string]string{
+	"users":                      "id",
+	"identifies":                 "id",
+	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
 func (bq *HandleT) setUploadError(err error, state string) {
@@ -77,14 +104,14 @@ func (bq *HandleT) createTable(name string, columns map[string]string) (err erro
 		return err
 	}
 
-	primaryKey := "id"
-	if column, ok := primaryKeyMap[name]; ok {
-		primaryKey = column
+	partitionKey := "id"
+	if column, ok := partitionKeyMap[name]; ok {
+		partitionKey = column
 	}
 
 	// assuming it has field named id upon which dedup is done in view
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + primaryKey + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
 					AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
 			)
 		WHERE __row_number = 1`
@@ -133,6 +160,61 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
+// FetchSchema queries bigquery and returns the schema assoiciated with provided namespace
+func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
+	schema = make(map[string]map[string]string)
+	bq.Warehouse = warehouse
+	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
+	bq.Db, err = bq.connect(BQCredentialsT{
+		projectID:   bq.ProjectID,
+		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+	})
+	if err != nil {
+		return
+	}
+
+	query := bq.Db.Query(fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
+							 FROM %[1]s.INFORMATION_SCHEMA.TABLES as t JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c
+							 ON (t.table_name = c.table_name) and (t.table_type != 'VIEW')`, namespace))
+
+	it, err := query.Read(bq.BQContext)
+	if err != nil {
+		if e, ok := err.(*googleapi.Error); ok {
+			// if dataset resource is not found, return empty schema
+			if e.Code == 404 {
+				return schema, nil
+			}
+			logger.Errorf("BQ: Error in fetching schema from bigquery destination:%v, query: %v", bq.Warehouse.Destination.ID, query)
+			return schema, e
+		}
+		logger.Errorf("BQ: Error in fetching schema from bigquery destination:%v, query: %v", bq.Warehouse.Destination.ID, query)
+		return
+	}
+
+	for {
+		var values []bigquery.Value
+		err := it.Next(&values)
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			logger.Errorf("BQ: Error in processing fetched schema from redshift destination:%v, error: %v", bq.Warehouse.Destination.ID, err)
+			return nil, err
+		}
+		var tName, cName, cType string
+		tName, _ = values[0].(string)
+		if _, ok := schema[tName]; !ok {
+			schema[tName] = make(map[string]string)
+		}
+		cName, _ = values[1].(string)
+		cType, _ = values[2].(string)
+		if datatype, ok := dataTypesMapToRudder[bigquery.FieldType(cType)]; ok {
+			schema[tName][cName] = datatype
+		}
+	}
+	return
+}
+
 func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
 	diff := warehouseutils.GetSchemaDiff(bq.CurrentSchema, bq.Upload.Schema)
 	updatedSchema = diff.UpdatedSchema
@@ -158,8 +240,12 @@ func (bq *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 			var err error
 			for columnName, columnType := range columnMap {
 				err = bq.addColumn(tableName, columnName, columnType)
-				if !checkAndIgnoreAlreadyExistError(err) {
-					return nil, err
+				if err != nil {
+					if checkAndIgnoreAlreadyExistError(err) {
+						logger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnName, bq.Namespace, tableName, err)
+					} else {
+						return nil, err
+					}
 				}
 			}
 		}
@@ -173,6 +259,10 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 		logger.Infof("BQ: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
 		return
 	}
+	if !warehouseutils.HasLoadFiles(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, tableName, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID) {
+		warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, bq.Upload.ID, tableName, bq.DbHandle)
+		return
+	}
 
 	logger.Infof("BQ: Starting load for table:%s\n", tableName)
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, bq.Upload.ID, tableName, bq.DbHandle)
@@ -181,7 +271,7 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 	if err != nil {
 		panic(err)
 	}
-	locations, err = warehouseutils.GetGCSLocations(locations)
+	locations = warehouseutils.GetGCSLocations(locations, warehouseutils.GCSLocationOptionsT{})
 	logger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
 	gcsRef := bigquery.NewGCSReference(locations...)
 	gcsRef.SourceFormat = bigquery.JSON
@@ -204,7 +294,7 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 	}
 
 	if status.Err() != nil {
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, status.Err(), bq.DbHandle)
 		return
 	}
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, bq.Upload.ID, tableName, bq.DbHandle)
@@ -247,7 +337,7 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
-	maxParallelLoads = config.GetInt("Warehose.bigquery.maxParallelLoads", 20)
+	maxParallelLoads = config.GetInt("Warehouse.bigquery.maxParallelLoads", 20)
 }
 
 func init() {
@@ -269,7 +359,7 @@ func (bq *HandleT) MigrateSchema() (err error) {
 	if err != nil {
 		panic(err)
 	}
-	err = warehouseutils.UpdateCurrentSchema(bq.Namespace, bq.Warehouse, bq.Upload.ID, bq.CurrentSchema, updatedSchema, bq.DbHandle)
+	err = warehouseutils.UpdateCurrentSchema(bq.Namespace, bq.Warehouse, bq.Upload.ID, updatedSchema, bq.DbHandle)
 	timer.End()
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
@@ -314,25 +404,23 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	bq.DbHandle = config.DbHandle
 	bq.Warehouse = config.Warehouse
 	bq.Upload = config.Upload
-	bq.ProjectID = strings.TrimSpace(bq.Warehouse.Destination.Config.(map[string]interface{})["project"].(string))
+	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
 
 	bq.Db, err = bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
-		credentials: bq.Warehouse.Destination.Config.(map[string]interface{})["credentials"].(string),
+		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
 		return err
 	}
+	defer bq.Db.Close()
 	currSchema, err := warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
 	if err != nil {
 		panic(err)
 	}
-	bq.CurrentSchema = currSchema.Schema
-	bq.Namespace = currSchema.Namespace
-	if bq.Namespace == "" {
-		bq.Namespace = bq.Upload.Namespace
-	}
+	bq.CurrentSchema = currSchema
+	bq.Namespace = bq.Upload.Namespace
 
 	if config.Stage == "ExportData" {
 		err = bq.Export()

@@ -6,12 +6,11 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sync"
-
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 //MultiWorkspaceConfig is a struct to hold variables necessary for supporting multiple workspaces.
 type MultiWorkspaceConfig struct {
+	CommonBackendConfig
 	writeKeyToWorkspaceIDMap  map[string]string
 	workspaceWriteKeysMapLock sync.RWMutex
 }
@@ -41,9 +40,9 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForWriteKey(writ
 //Get returns sources from all hosted workspaces
 func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := Http.NewRequest("GET", url, nil)
 	if err != nil {
-		logger.Error("Errored when sending request to the server", err)
+		log.Error("Error when creating request to the server", err)
 		return SourcesT{}, false
 	}
 
@@ -53,7 +52,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.Error("Errored when sending request to the server", err)
+		log.Error("Error when sending request to the server", err)
 		return SourcesT{}, false
 	}
 
@@ -66,7 +65,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
 	var workspaces WorkspacesT
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		logger.Error("Errored while parsing request", err, string(respBody), resp.StatusCode)
+		log.Error("Error while parsing request", err, string(respBody), resp.StatusCode)
 		return SourcesT{}, false
 	}
 

@@ -1,5 +1,8 @@
 package stats
 
+//go:generate mockgen -destination=../../mocks/stats/mock_stats.go -package=mocks_stats github.com/rudderlabs/rudder-server/services/stats Stats
+//go:generate mockgen -destination=../../mocks/stats/mock_rudderstats.go -package=mocks_stats github.com/rudderlabs/rudder-server/services/stats RudderStats
+
 import (
 	"fmt"
 	"sync"
@@ -22,6 +25,7 @@ var writeKeyClientsMap = make(map[string]*statsd.Client)
 var batchDestClientsMap = make(map[string]*statsd.Client)
 var destClientsMap = make(map[string]*statsd.Client)
 var jobsdbClientsMap = make(map[string]*statsd.Client)
+var migratorsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
 var statsdServerURL string
 var instanceID string
@@ -30,12 +34,16 @@ var writeKeyClientsMapLock sync.Mutex
 var batchDestClientsMapLock sync.Mutex
 var destClientsMapLock sync.Mutex
 var jobsdbClientsMapLock sync.Mutex
+var migratorsMapLock sync.Mutex
 var enabled bool
 var statsCollectionInterval int64
 var enableCPUStats bool
 var enableMemStats bool
 var enableGCStats bool
 var rc runtimeStatsCollector
+
+// DefaultStats is a common implementation of StatsD stats managements
+var DefaultStats Stats
 
 func init() {
 	config.Initialize()
@@ -47,6 +55,43 @@ func init() {
 	enableCPUStats = config.GetBool("RuntimeStats.enableCPUStats", true)
 	enableMemStats = config.GetBool("RuntimeStats.enabledMemStats", true)
 	enableGCStats = config.GetBool("RuntimeStats.enableGCStats", true)
+}
+
+// Stats manages provisioning of RudderStats
+type Stats interface {
+	NewStat(Name string, StatType string) (rStats RudderStats)
+	NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats RudderStats)
+	NewBatchDestStat(Name string, StatType string, destID string) RudderStats
+	NewDestStat(Name string, StatType string, destID string) RudderStats
+	NewJobsDBStat(Name string, StatType string, customVal string) RudderStats
+	NewMigratorStat(Name string, StatType string, customVal string) RudderStats
+}
+
+// HandleT is the default implementation of Stats
+type HandleT struct {
+}
+
+// RudderStats provides functions to interact with StatsD stats
+type RudderStats interface {
+	Count(n int)
+	Increment()
+
+	Gauge(value interface{})
+
+	Start()
+	End()
+	DeferredTimer()
+}
+
+// RudderStatsT is the default implementation of a StatsD stat
+type RudderStatsT struct {
+	Name        string
+	StatType    string
+	Timing      statsd.Timing
+	writeKey    string
+	DestID      string
+	Client      *statsd.Client
+	dontProcess bool
 }
 
 //Setup creates a new statsd client
@@ -65,18 +110,31 @@ func Setup() {
 			collectRuntimeStats(client)
 		})
 	}
+
+	DefaultStats = &HandleT{}
 }
 
-func NewStat(Name string, StatType string) (rStats *RudderStats) {
-	return &RudderStats{
+// NewStat creates a new RudderStats with provided Name and Type
+func (s *HandleT) NewStat(Name string, StatType string) (rStats RudderStats) {
+	return &RudderStatsT{
 		Name:     Name,
 		StatType: StatType,
 		Client:   client,
 	}
 }
 
-// NewWriteKeyStat is used to create new writekey specific stat. Writekey is added as one of the tags in this case
-func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *RudderStats) {
+// NewStat creates a new RudderStats with provided Name and Type
+// Deprecated: Use DefaultStats for managing stats instead
+func NewStat(Name string, StatType string) (rStats RudderStats) {
+	return DefaultStats.NewStat(Name, StatType)
+}
+
+/*
+NewWriteKeyStat is used to create new writekey specific stat.
+Writekey is added as the value of 'writekey' tags in this case.
+If writekey has been used on this function before, a RudderStats with the same underlying client will be returned.
+*/
+func (s *HandleT) NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats RudderStats) {
 	writeKeyClientsMapLock.Lock()
 	defer writeKeyClientsMapLock.Unlock()
 	if _, found := writeKeyClientsMap[writeKey]; !found {
@@ -89,7 +147,7 @@ func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *Rud
 			logger.Error(err)
 		}
 	}
-	return &RudderStats{
+	return &RudderStatsT{
 		Name:     Name,
 		StatType: StatType,
 		writeKey: writeKey,
@@ -97,7 +155,18 @@ func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats *Rud
 	}
 }
 
-func NewBatchDestStat(Name string, StatType string, destID string) *RudderStats {
+// NewWriteKeyStat is used to create new writekey specific stat.
+// Deprecated: Use DefaultStats for managing stats instead
+func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats RudderStats) {
+	return DefaultStats.NewWriteKeyStat(Name, StatType, writeKey)
+}
+
+/*
+NewBatchDestStat is used to create new destination specific stat.
+Destination id Writekey is added as the value of 'destID' tag in this case.
+If destination id has been used on this function before, a RudderStats with the same underlying client will be returned.
+*/
+func (s *HandleT) NewBatchDestStat(Name string, StatType string, destID string) RudderStats {
 	batchDestClientsMapLock.Lock()
 	defer batchDestClientsMapLock.Unlock()
 	if _, found := batchDestClientsMap[destID]; !found {
@@ -107,7 +176,7 @@ func NewBatchDestStat(Name string, StatType string, destID string) *RudderStats 
 			logger.Error(err)
 		}
 	}
-	return &RudderStats{
+	return &RudderStatsT{
 		Name:     Name,
 		StatType: StatType,
 		DestID:   destID,
@@ -115,7 +184,18 @@ func NewBatchDestStat(Name string, StatType string, destID string) *RudderStats 
 	}
 }
 
-func NewDestStat(Name string, StatType string, destID string) *RudderStats {
+// NewBatchDestStat is used to create new destination specific stat.
+// Deprecated: Use DefaultStats for managing stats instead
+func NewBatchDestStat(Name string, StatType string, destID string) RudderStats {
+	return DefaultStats.NewBatchDestStat(Name, StatType, destID)
+}
+
+/*
+NewDestStat is used to create new destination specific stat.
+Destination id Writekey is added as the value of 'destID' tag in this case.
+If destination id has been used on this function before, a RudderStats with the same underlying client will be returned.
+*/
+func (s *HandleT) NewDestStat(Name string, StatType string, destID string) RudderStats {
 	destClientsMapLock.Lock()
 	defer destClientsMapLock.Unlock()
 	if _, found := destClientsMap[destID]; !found {
@@ -125,7 +205,7 @@ func NewDestStat(Name string, StatType string, destID string) *RudderStats {
 			logger.Error(err)
 		}
 	}
-	return &RudderStats{
+	return &RudderStatsT{
 		Name:        Name,
 		StatType:    StatType,
 		DestID:      destID,
@@ -134,7 +214,18 @@ func NewDestStat(Name string, StatType string, destID string) *RudderStats {
 	}
 }
 
-func NewJobsDBStat(Name string, StatType string, customVal string) *RudderStats {
+// NewDestStat is used to create new destination specific stat.
+// Deprecated: Use DefaultStats for managing stats instead
+func NewDestStat(Name string, StatType string, destID string) RudderStats {
+	return DefaultStats.NewDestStat(Name, StatType, destID)
+}
+
+/*
+NewJobsDBStat is used to create new JobsDB specific stat.
+JobsDB customVal is added as the value of 'customVal' tag in this case.
+If customVal has been used on this function before, a RudderStats with the same underlying client will be returned.
+*/
+func (s *HandleT) NewJobsDBStat(Name string, StatType string, customVal string) RudderStats {
 	jobsdbClientsMapLock.Lock()
 	defer jobsdbClientsMapLock.Unlock()
 	if _, found := jobsdbClientsMap[customVal]; !found {
@@ -144,15 +235,50 @@ func NewJobsDBStat(Name string, StatType string, customVal string) *RudderStats 
 			logger.Error(err)
 		}
 	}
-	return &RudderStats{
+	return &RudderStatsT{
 		Name:     Name,
 		StatType: StatType,
 		Client:   jobsdbClientsMap[customVal],
 	}
+}
+
+// NewJobsDBStat is used to create new JobsDB specific stat.
+// Deprecated: Use DefaultStats for managing stats instead
+func NewJobsDBStat(Name string, StatType string, customVal string) RudderStats {
+	return DefaultStats.NewJobsDBStat(Name, StatType, customVal)
+}
+
+/*
+NewMigratorStat is used to create new Migrator specific stat.
+Migrator migrationType is added as the value of 'migrationType' tag in this case.
+If migrationType has been used on this function before, a RudderStats with the same underlying client will be returned.
+*/
+func (s *HandleT) NewMigratorStat(Name string, StatType string, migrationType string) RudderStats {
+	migratorsMapLock.Lock()
+	defer migratorsMapLock.Unlock()
+	if _, found := migratorsMap[migrationType]; !found {
+		var err error
+		migratorsMap[migrationType], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "migrationType", migrationType))
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+	return &RudderStatsT{
+		Name:     Name,
+		StatType: StatType,
+		Client:   migratorsMap[migrationType],
+	}
 
 }
 
-func (rStats *RudderStats) Count(n int) {
+// NewMigratorStat is used to create new Migrator specific stat.
+// Deprecated: Use DefaultStats for managing stats instead
+func NewMigratorStat(Name string, StatType string, customVal string) RudderStats {
+	return DefaultStats.NewMigratorStat(Name, StatType, customVal)
+}
+
+// Count increases the stat by n. Only applies to CountType stats
+func (rStats *RudderStatsT) Count(n int) {
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -162,7 +288,8 @@ func (rStats *RudderStats) Count(n int) {
 	rStats.Client.Count(rStats.Name, n)
 }
 
-func (rStats *RudderStats) Increment() {
+// Increment increases the stat by 1. Is the Equivalent of Count(1). Only applies to CountType stats
+func (rStats *RudderStatsT) Increment() {
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -172,7 +299,8 @@ func (rStats *RudderStats) Increment() {
 	rStats.Client.Increment(rStats.Name)
 }
 
-func (rStats *RudderStats) Gauge(value interface{}) {
+// Gauge records an absolute value for this stat. Only applies to GaugeType stats
+func (rStats *RudderStatsT) Gauge(value interface{}) {
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -182,7 +310,8 @@ func (rStats *RudderStats) Gauge(value interface{}) {
 	rStats.Client.Gauge(rStats.Name, value)
 }
 
-func (rStats *RudderStats) Start() {
+// Start starts a new timing for this stat. Only applies to TimerType stats
+func (rStats *RudderStatsT) Start() {
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -192,7 +321,8 @@ func (rStats *RudderStats) Start() {
 	rStats.Timing = rStats.Client.NewTiming()
 }
 
-func (rStats *RudderStats) End() {
+// End send the time elapsed since the Start()  call of this stat. Only applies to TimerType stats
+func (rStats *RudderStatsT) End() {
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
@@ -202,21 +332,11 @@ func (rStats *RudderStats) End() {
 	rStats.Timing.Send(rStats.Name)
 }
 
-func (rStats *RudderStats) DeferredTimer() {
+func (rStats *RudderStatsT) DeferredTimer() {
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
 	rStats.Client.NewTiming().Send(rStats.Name)
-}
-
-type RudderStats struct {
-	Name        string
-	StatType    string
-	Timing      statsd.Timing
-	writeKey    string
-	DestID      string
-	Client      *statsd.Client
-	dontProcess bool
 }
 
 func collectRuntimeStats(client *statsd.Client) {
@@ -234,6 +354,7 @@ func collectRuntimeStats(client *statsd.Client) {
 
 }
 
+// StopRuntimeStats stops collection of runtime stats.
 func StopRuntimeStats() {
 	close(rc.Done)
 }

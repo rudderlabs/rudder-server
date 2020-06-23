@@ -4,21 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
-	"runtime/pprof"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/bugsnag/bugsnag-go"
+
+	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
-	"github.com/bugsnag/bugsnag-go"
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -37,9 +38,13 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse"
+
+	// This is necessary for compatibility with enterprise features
+	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
 var (
+	application                      app.Interface
 	warehouseMode                    string
 	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
@@ -49,6 +54,9 @@ var (
 	configSubscriberLock             sync.RWMutex
 	objectStorageDestinations        []string
 	warehouseDestinations            []string
+	moduleLoadLock                   sync.Mutex
+	routerLoaded                     bool
+	processorLoaded                  bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -62,7 +70,7 @@ func loadConfig() {
 	enableRouter = config.GetBool("enableRouter", true)
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 }
 
@@ -82,7 +90,7 @@ func readIOforResume(router router.HandleT) {
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, "backendConfig")
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	// dstToWhRouter := make(map[string]*warehouse.HandleT)
@@ -148,6 +156,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	if !validators.ValidateEnv() {
 		panic(errors.New("Failed to start rudder-server"))
 	}
+	validators.InitializeEnv()
 
 	// Check if there is a probable inconsistent state of Data
 	misc.AppStartTime = time.Now().Unix()
@@ -157,7 +166,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		})
 	}
 
-	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, misc.AppStartTime)
+	migrationMode := application.Options().MigrationMode
+	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, migrationMode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
 
@@ -168,33 +178,85 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB ", *clearDB)
 
+	backendconfig.Setup()
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
-	backendconfig.Setup()
 
 	//Forcing enableBackup false for gatewaydb if this server is for handling replayed events
 	if isReplayServer {
 		config.SetBool("JobsDB.backup.gw.enabled", false)
 	}
 
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention)
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode)
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode)
+
+	enableGateway := true
+
+	if application.Features().Migrator != nil {
+		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
+			startRouterFunc := func() {
+				StartRouter(enableRouter, &routerDB, &batchRouterDB)
+			}
+			startProcessorFunc := func() {
+				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB)
+			}
+			enableRouter = false
+			enableProcessor = false
+			enableGateway = (migrationMode != db.EXPORT)
+			application.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+		}
+	}
+
+	StartRouter(enableRouter, &routerDB, &batchRouterDB)
+	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB)
+
+	if enableGateway {
+		var gateway gateway.HandleT
+		var rateLimiter ratelimiter.HandleT
+
+		rateLimiter.SetUp()
+		gateway.Setup(application, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, stats.DefaultStats, clearDB)
+		gateway.StartWebHandler()
+	}
+	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+}
+
+//StartRouter atomically starts router process if not already started
+func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
+	moduleLoadLock.Lock()
+	defer moduleLoadLock.Unlock()
+
+	if routerLoaded {
+		return
+	}
 
 	if enableRouter {
-		go monitorDestRouters(&routerDB, &batchRouterDB)
+		go monitorDestRouters(routerDB, batchRouterDB)
+		routerLoaded = true
+	}
+}
+
+//StartProcessor atomically starts processor process if not already started
+func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT) {
+	moduleLoadLock.Lock()
+	defer moduleLoadLock.Unlock()
+
+	if processorLoaded {
+		return
 	}
 
 	if enableProcessor {
 		var processor processor.HandleT
-		processor.Setup(&gatewayDB, &routerDB, &batchRouterDB)
-	}
+		processor.Setup(gatewayDB, routerDB, batchRouterDB)
 
-	var gateway gateway.HandleT
-	var rateLimiter ratelimiter.HandleT
-	rateLimiter.SetUp()
-	gateway.Setup(&gatewayDB, &rateLimiter, clearDB)
-	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+		if !isReplayServer {
+			var replay replay.ReplayProcessorT
+			replay.Setup(gatewayDB)
+		}
+
+		processorLoaded = true
+	}
 }
 
 func canStartServer() bool {
@@ -237,57 +299,22 @@ func main() {
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 
-	normalMode := flag.Bool("normal-mode", false, "a bool")
-	degradedMode := flag.Bool("degraded-mode", false, "a bool")
-	maintenanceMode := flag.Bool("maintenance-mode", false, "a bool")
-
-	clearDB := flag.Bool("cleardb", false, "a bool")
-	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
-	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
-	versionFlag := flag.Bool("v", false, "Print the current version and exit")
-
-	flag.Parse()
-	if *versionFlag {
+	options := app.LoadOptions()
+	if options.VersionFlag {
 		printVersion()
 		return
 	}
+	application = app.New(options)
+
 	http.HandleFunc("/version", versionHandler)
 
-	var f *os.File
-	if *cpuprofile != "" {
-		var err error
-		f, err = os.Create(*cpuprofile)
-		if err != nil {
-			panic(err)
-		}
-		runtime.SetBlockProfileRate(1)
-		err = pprof.StartCPUProfile(f)
-		if err != nil {
-			panic(err)
-		}
-	}
+	application.Setup()
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		if *cpuprofile != "" {
-			logger.Info("Stopping CPU profile")
-			pprof.StopCPUProfile()
-			f.Close()
-		}
-		if *memprofile != "" {
-			f, err := os.Create(*memprofile)
-			if err != nil {
-				panic(err)
-			}
-			defer f.Close()
-			runtime.GC() // get up-to-date statistics
-			err = pprof.WriteHeapProfile(f)
-			if err != nil {
-				panic(err)
-			}
-		}
+		application.Stop()
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
 			logger.Log.Sync()
@@ -296,19 +323,9 @@ func main() {
 		os.Exit(1)
 	}()
 
-	serverMode := os.Getenv("RSERVER_MODE")
-
-	if serverMode == "normal" {
-		*normalMode = true
-	} else if serverMode == "degraded" {
-		*degradedMode = true
-	} else if serverMode == "maintenance" {
-		*maintenanceMode = true
-	}
-
 	if canStartServer() {
 		rruntime.Go(func() {
-			startRudderCore(clearDB, *normalMode, *degradedMode, *maintenanceMode)
+			startRudderCore(&options.ClearDB, options.NormalMode, options.DegradedMode, options.MaintenanceMode)
 		})
 	}
 

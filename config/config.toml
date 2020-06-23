@@ -55,6 +55,14 @@ maxReqSizeInKB = 100000
 enableDedup = false
 enableRateLimit = false
 dedupWindowInS = 86400
+allowPartialWriteWithErrors = true
+
+[Gateway.webhook]
+batchTimeoutInMS = 20
+maxBatchSize = 32
+maxTransformerProcess = 64
+maxRetry = 5
+maxRetryTimeInS = 10
 
 [SourceDebugger]
 maxBatchSize = 32
@@ -112,6 +120,8 @@ randomWorkerAssign = false
 useTestSink = false
 maxFailedCountForJob = 8
 keepOrderOnFailure = true
+kafkaWriteTimeoutInSec = 2
+kafkaDialTimeoutInSec = 10
 
 [BatchRouter]
 mainLoopSleepInS = 2
@@ -119,6 +129,7 @@ noOfWorkers = 8
 jobQueryBatchSize = 100000
 uploadFreqInS = 30
 maxFailedCountForJob = 128
+warehouseServiceMaxRetryTimeinHr = 3
 
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
@@ -133,12 +144,16 @@ noOfWorkers = 8
 noOfSlaveWorkerRoutines = 4
 mainLoopSleepInS = 60
 maxRetry = 3
+warehouseSyncPreFetchCount = 10
+warehouseSyncFreqIgnore=false
 stagingFilesBatchSize = 240
     [Warehouse.redshift]
     maxParallelLoads = 3
     [Warehouse.snowflake]
     maxParallelLoads = 3
     [Warehouse.bigquery]
+    maxParallelLoads = 20
+    [Warehouse.postgres]
     maxParallelLoads = 20
 
 [Processor]

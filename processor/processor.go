@@ -31,40 +31,39 @@ type HandleT struct {
 	transformer           *transformerHandleT
 	pStatsJobs            *misc.PerfStats
 	pStatsDBR             *misc.PerfStats
-	statGatewayDBR        *stats.RudderStats
+	statGatewayDBR        stats.RudderStats
 	pStatsDBW             *misc.PerfStats
-	statGatewayDBW        *stats.RudderStats
-	statRouterDBW         *stats.RudderStats
-	statBatchRouterDBW    *stats.RudderStats
-	statActiveUsers       *stats.RudderStats
+	statGatewayDBW        stats.RudderStats
+	statRouterDBW         stats.RudderStats
+	statBatchRouterDBW    stats.RudderStats
+	statActiveUsers       stats.RudderStats
 	userJobListMap        map[string][]*jobsdb.JobT
 	userEventsMap         map[string][]interface{}
 	userPQItemMap         map[string]*pqItemT
-	statJobs              *stats.RudderStats
-	statDBR               *stats.RudderStats
-	statDBW               *stats.RudderStats
-	statLoopTime          *stats.RudderStats
-	statSessionTransform  *stats.RudderStats
-	statUserTransform     *stats.RudderStats
-	statDestTransform     *stats.RudderStats
-	statListSort          *stats.RudderStats
-	marshalSingularEvents *stats.RudderStats
-	destProcessing        *stats.RudderStats
-	statNumDests          *stats.RudderStats
+	statJobs              stats.RudderStats
+	statDBR               stats.RudderStats
+	statDBW               stats.RudderStats
+	statLoopTime          stats.RudderStats
+	statSessionTransform  stats.RudderStats
+	statUserTransform     stats.RudderStats
+	statDestTransform     stats.RudderStats
+	statListSort          stats.RudderStats
+	marshalSingularEvents stats.RudderStats
+	destProcessing        stats.RudderStats
+	statNumDests          stats.RudderStats
 	destStats             map[string]*DestStatT
 	userToSessionIDMap    map[string]string
 	userJobPQ             pqT
 	userPQLock            sync.Mutex
-	replayProcessor       *ReplayProcessorT
 }
 
 type DestStatT struct {
 	id               string
-	numEvents        *stats.RudderStats
-	numOutputEvents  *stats.RudderStats
-	sessionTransform *stats.RudderStats
-	userTransform    *stats.RudderStats
-	destTransform    *stats.RudderStats
+	numEvents        stats.RudderStats
+	numOutputEvents  stats.RudderStats
+	sessionTransform stats.RudderStats
+	userTransform    stats.RudderStats
+	destTransform    stats.RudderStats
 }
 
 func newDestinationStat(destID string) *DestStatT {
@@ -148,19 +147,10 @@ func (proc *HandleT) Setup(gatewayDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, 
 	proc.destProcessing = stats.NewStat("processor.dest_processing", stats.TimerType)
 	proc.destStats = make(map[string]*DestStatT)
 
-	if !isReplayServer {
-		proc.replayProcessor = NewReplayProcessor()
-		proc.replayProcessor.Setup()
-	}
-
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
 	proc.transformer.Setup()
-
-	if !isReplayServer {
-		proc.replayProcessor.CrashRecover()
-	}
 
 	proc.crashRecover()
 
@@ -189,8 +179,8 @@ var (
 	destinationTransformationEnabledMap map[string]bool
 	rawDataDestinations                 []string
 	configSubscriberLock                sync.RWMutex
-	processReplays                      []replayT
 	isReplayServer                      bool
+	customDestinations                  []string
 )
 
 func loadConfig() {
@@ -206,16 +196,10 @@ func loadConfig() {
 	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
 	maxRetry = config.GetInt("Processor.maxRetry", 30)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE"}
-	processReplays = []replayT{}
+	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES"}
+	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
-}
-
-type replayT struct {
-	sourceID      string
-	destinationID string
-	notifyURL     string
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -239,25 +223,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 						proc.destStats[destination.ID] = newDestinationStat(destination.ID)
 					}
 				}
-			}
-
-			if isReplayServer {
-				continue
-			}
-
-			var replays = []replayT{}
-			for _, dest := range source.Destinations {
-				if dest.Config.(map[string]interface{})["Replay"] == true {
-					notifyURL, ok := dest.Config.(map[string]interface{})["ReplayURL"].(string)
-					if !ok {
-						notifyURL = ""
-					}
-					replays = append(replays, replayT{sourceID: source.ID, destinationID: dest.ID, notifyURL: notifyURL})
-				}
-			}
-
-			if len(replays) > 0 {
-				processReplays = proc.replayProcessor.GetReplaysToProcess(replays)
 			}
 		}
 		configSubscriberLock.Unlock()
@@ -592,6 +557,7 @@ func enhanceWithMetadata(event map[string]interface{}, batchEvent *jobsdb.JobT, 
 	event["metadata"] = make(map[string]interface{})
 	event["metadata"].(map[string]interface{})["sourceId"] = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	event["metadata"].(map[string]interface{})["jobId"] = batchEvent.JobID
+	event["metadata"].(map[string]interface{})["userId"] = batchEvent.UserID
 	event["metadata"].(map[string]interface{})["destinationId"] = destination.ID
 	event["metadata"].(map[string]interface{})["destinationType"] = destination.DestinationDefinition.Name
 	event["metadata"].(map[string]interface{})["messageId"] = event["message"].(map[string]interface{})["messageId"].(string)
@@ -624,6 +590,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	//Event count for performance stat monitoring
 	totalEvents := 0
+
+	logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
 
 	proc.marshalSingularEvents.Start()
 	for idx, batchEvent := range jobList {
@@ -677,6 +645,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						}
 						shallowEventCopy["message"] = singularEventMap
 						shallowEventCopy["destination"] = reflect.ValueOf(destination).Interface()
+
+						/* Stream destinations does not need config in transformer. As the Kafka destination config
+						holds the ca-certificate and it depends on user input, it may happen that they provide entire
+						certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
+						it may result into payload larger than accepted by transformer. So, discarding destination config from being
+						sent to transformer for such destination. */
+						if misc.ContainsString(customDestinations, destType) {
+							dest := shallowEventCopy["destination"].(backendconfig.DestinationT)
+							dest.Config = nil
+							shallowEventCopy["destination"] = dest
+						}
+
 						shallowEventCopy["message"].(map[string]interface{})["request_ip"] = requestIP
 
 						enhanceWithTimeFields(shallowEventCopy, singularEventMap, receivedAt)
@@ -697,7 +677,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//Mark the batch event as processed
 		newStatus := jobsdb.JobStatusT{
 			JobID:         batchEvent.JobID,
-			JobState:      jobsdb.SucceededState,
+			JobState:      jobsdb.Succeeded.State,
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
@@ -736,12 +716,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				// This way all the events of a user session are never broken into separate batches
 				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
 				destStat.sessionTransform.Start()
-				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, true)
+				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, true)
 				destStat.sessionTransform.End()
 			} else {
 				// We need not worry about breaking up a single user sessions in this case
 				destStat.userTransform.Start()
-				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(), userTransformBatchSize, false)
+				response = proc.transformer.Transform(destEventList, integrations.GetUserTransformURL(processSessions), userTransformBatchSize, false)
 				destStat.userTransform.End()
 			}
 			for _, userTransformedEvent := range response.Events {
@@ -780,12 +760,20 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			// in case of custom transformations metadata of first event is returned along with all events in session
 			// source_id will be same for all events belong to same user in a session
 			sourceID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["sourceId"].(string)
-			destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
 			if !ok {
 				logger.Errorf("Error retrieving source_id from transformed event: %+v", destEvent)
 			}
+			destID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["destinationId"].(string)
+			if !ok {
+				logger.Errorf("Error retrieving destination_id from transformed event: %+v", destEvent)
+			}
+			userID, ok := destEvent.(map[string]interface{})["metadata"].(map[string]interface{})["userId"].(string)
+			if !ok {
+				logger.Errorf("Error retrieving user_id from transformed event: %+v", destEvent)
+			}
 			newJob := jobsdb.JobT{
 				UUID:         id,
+				UserID:       userID,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
@@ -809,9 +797,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Start()
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
+		logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 		proc.routerDB.Store(destJobs)
 	}
 	if len(batchDestJobs) > 0 {
+		logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 		proc.batchRouterDB.Store(batchDestJobs)
 	}
 
@@ -831,30 +821,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Print()
 }
 
-/*
- * If there is a new replay destination, compute the min JobID that the data plane would be routing for that source
- */
-func (proc *HandleT) handleReplay(combinedList []*jobsdb.JobT) {
-	if isReplayServer {
-		return
-	}
-
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
-
-	if len(processReplays) > 0 {
-		maxDSIndex := proc.gatewayDB.GetMaxDSIndex()
-		if len(combinedList) <= 0 {
-			panic(fmt.Errorf("len(combinedList):%d <= 0", len(combinedList)))
-		}
-		replayMinJobID := combinedList[0].JobID
-
-		proc.replayProcessor.ProcessNewReplays(processReplays, replayMinJobID, maxDSIndex)
-		processReplays = []replayT{}
-	}
-}
-
 func (proc *HandleT) mainLoop() {
+	//waiting till the backend config is received
+	backendconfig.WaitForConfig()
 
 	logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
@@ -901,8 +870,6 @@ func (proc *HandleT) mainLoop() {
 			return combinedList[i].JobID < combinedList[j].JobID
 		})
 
-		// Need to process minJobID and new destinations at once
-		proc.handleReplay(combinedList)
 		proc.statListSort.End()
 
 		if processSessions {
@@ -911,7 +878,7 @@ func (proc *HandleT) mainLoop() {
 			for _, batchEvent := range combinedList {
 				newStatus := jobsdb.JobStatusT{
 					JobID:         batchEvent.JobID,
-					JobState:      jobsdb.ExecutingState,
+					JobState:      jobsdb.Executing.State,
 					AttemptNum:    1,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
@@ -947,7 +914,7 @@ func (proc *HandleT) crashRecover() {
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
-				JobState:      jobsdb.FailedState,
+				JobState:      jobsdb.Failed.State,
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check
 			}
