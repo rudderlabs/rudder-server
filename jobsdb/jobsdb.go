@@ -1347,6 +1347,9 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 }
 
 func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
+	queryStat := stats.NewJobsDBStat("isEmptyCheck", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
 
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
