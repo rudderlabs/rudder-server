@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"runtime/pprof"
 
+	"github.com/rudderlabs/rudder-server/app/crash"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -28,6 +30,9 @@ type Interface interface {
 
 // Setup initializes application
 func (a *App) Setup() {
+	// start default crash manager
+	go crash.Default.HandlePanics()
+
 	// If cpuprofile flag is present, setup cpu profiling
 	if a.options.Cpuprofile != "" {
 		a.initCPUProfiling()
@@ -97,6 +102,11 @@ func (a *App) Stop() {
 
 // New creates a new application instance
 func New(options *Options) Interface {
+	logger.Setup()
+
+	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
+	stats.Setup()
+
 	return &App{
 		options: options,
 	}

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,12 +13,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
-
 	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/app"
+	crash "github.com/rudderlabs/rudder-server/app/crash"
+	"github.com/rudderlabs/rudder-server/app/version"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -58,9 +57,6 @@ var (
 	routerLoaded                     bool
 	processorLoaded                  bool
 )
-
-var version = "Not an official release. Get the latest release from the github repo."
-var major, minor, commit, buildDate, builtBy, gitURL, patch string
 
 func loadConfig() {
 	maxProcess = config.GetInt("maxProcess", 12)
@@ -129,20 +125,10 @@ func init() {
 	loadConfig()
 }
 
-func versionInfo() map[string]interface{} {
-	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL}
-}
-
 func versionHandler(w http.ResponseWriter, r *http.Request) {
-	var version = versionInfo()
+	var version = version.Current()
 	versionFormatted, _ := json.Marshal(&version)
 	w.Write(versionFormatted)
-}
-
-func printVersion() {
-	version := versionInfo()
-	versionFormatted, _ := json.MarshalIndent(&version, "", " ")
-	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
 func startWarehouseService() {
@@ -268,40 +254,11 @@ func canStartWarehouse() bool {
 }
 
 func main() {
-	version := versionInfo()
-
-	bugsnag.Configure(bugsnag.Configuration{
-		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
-		ReleaseStage: config.GetEnv("GO_ENV", "development"),
-		// The import paths for the Go packages containing your source files
-		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
-		// more configuration options
-		AppType:      "rudder-server",
-		AppVersion:   version["Version"].(string),
-		PanicHandler: func() {},
-	})
-	ctx := bugsnag.StartSession(context.Background())
-	defer func() {
-		if r := recover(); r != nil {
-			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-				"GoRoutines": {
-					"Number": runtime.NumGoroutine(),
-				}})
-
-			misc.RecordAppError(fmt.Errorf("%v", r))
-			logger.Fatal(r)
-			panic(r)
-		}
-	}()
-
-	logger.Setup()
-
-	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
-	stats.Setup()
+	defer crash.Default.Defer()
 
 	options := app.LoadOptions()
 	if options.VersionFlag {
-		printVersion()
+		version.PrintVersion()
 		return
 	}
 	application = app.New(options)
