@@ -186,16 +186,18 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[st
 }
 
 type SchemaDiffT struct {
-	Tables        []string
-	ColumnMaps    map[string]map[string]string
-	UpdatedSchema map[string]map[string]string
+	Tables                         []string
+	ColumnMaps                     map[string]map[string]string
+	UpdatedSchema                  map[string]map[string]string
+	StringColumnsToBeAlteredToText map[string][]string
 }
 
 func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (diff SchemaDiffT) {
 	diff = SchemaDiffT{
-		Tables:        []string{},
-		ColumnMaps:    make(map[string]map[string]string),
-		UpdatedSchema: make(map[string]map[string]string),
+		Tables:                         []string{},
+		ColumnMaps:                     make(map[string]map[string]string),
+		UpdatedSchema:                  make(map[string]map[string]string),
+		StringColumnsToBeAlteredToText: make(map[string][]string),
 	}
 
 	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
@@ -213,13 +215,18 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 			diff.UpdatedSchema[tableName] = uploadColumnMap
 		} else {
 			diff.ColumnMaps[tableName] = make(map[string]string)
-			for columnName, columnVal := range uploadColumnMap {
+			for columnName, columnType := range uploadColumnMap {
 				if _, ok := currentColumnsMap[columnName]; !ok {
-					diff.ColumnMaps[tableName][columnName] = columnVal
-					diff.UpdatedSchema[tableName][columnName] = columnVal
+					diff.ColumnMaps[tableName][columnName] = columnType
+					diff.UpdatedSchema[tableName][columnName] = columnType
+				} else {
+					if columnType == "text" && currentColumnsMap[columnName] == "string" {
+						diff.StringColumnsToBeAlteredToText[tableName] = append(diff.StringColumnsToBeAlteredToText[tableName], columnName)
+					}
 				}
 			}
 		}
+
 	}
 	return
 }

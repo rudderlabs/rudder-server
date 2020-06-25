@@ -182,8 +182,15 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 }
 
 //GetDestinationURL returns node URL
-func GetDestinationURL(destID string) string {
-	return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s", destTransformURL, strings.ToLower(destID), config.GetWHSchemaVersion())
+func GetDestinationURL(destType string) string {
+	if misc.Contains(misc.WarehouseDestinations, destType) {
+		if destType == "RS" {
+			return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s&RSAlterStringToText=%s", destTransformURL, strings.ToLower(destType), config.GetWHSchemaVersion(), fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
+		}
+		return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s", destTransformURL, strings.ToLower(destType), config.GetWHSchemaVersion())
+	}
+	return fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
+
 }
 
 //GetUserTransformURL returns the port of running user transform

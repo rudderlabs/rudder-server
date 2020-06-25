@@ -44,6 +44,8 @@ const (
 	minPostgresVersion = 100000
 )
 
+var WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
+
 // ErrorStoreT : DS to store the app errors
 type ErrorStoreT struct {
 	Errors []RudderError

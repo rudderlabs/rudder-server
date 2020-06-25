@@ -293,6 +293,10 @@ func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schem
 
 					if _, ok := currentSchema[tableName]; ok {
 						if columnTypeInDB, ok := currentSchema[tableName][columnName]; ok {
+							if columnTypeInDB == "string" && columnType == "text" {
+								schemaMap[tableName][columnName] = columnType
+								continue
+							}
 							schemaMap[tableName][columnName] = columnTypeInDB
 							continue
 						}
@@ -1295,7 +1299,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
-					if dataTypeInSchema == "string" {
+					if dataTypeInSchema == "string" || dataTypeInSchema == "text" {
 						// pass it along since string type column can accomodate any kind of value
 					} else if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
