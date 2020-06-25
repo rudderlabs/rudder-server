@@ -1189,10 +1189,12 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				}
 				columnVal, ok := columnData[columnName]
 				if !ok {
+					columnData[columnName] = nil
 					continue
 				}
 				columnType, ok := columns[columnName].(string)
 				if !ok {
+					columnData[columnName] = nil
 					continue
 				}
 				// json.Unmarshal returns int as float
@@ -1201,6 +1203,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				if columnType == "int" || columnType == "bigint" {
 					floatVal, ok := columnVal.(float64)
 					if !ok {
+						columnData[columnName] = nil
 						continue
 					}
 					columnData[columnName] = int(floatVal)
@@ -1216,6 +1219,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
 						floatVal, ok := columnVal.(float64)
 						if !ok {
+							columnData[columnName] = nil
 							continue
 						}
 						columnData[columnName] = int(floatVal)
@@ -1252,7 +1256,17 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						continue
 					}
 				}
-
+				// cast array values to string as bigquery fails to cast array to string
+				if dataTypeInSchema == "string" && columnType == dataTypeInSchema {
+					if _, ok := columnVal.([]interface{}); ok {
+						valBytes, err := json.Marshal(columnVal)
+						if err != nil {
+							columnData[columnName] = nil
+							continue
+						}
+						columnData[columnName] = string(valBytes)
+					}
+				}
 			}
 			line, err := json.Marshal(columnData)
 			if err != nil {
