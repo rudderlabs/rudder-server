@@ -203,6 +203,33 @@ func filterProcessorEnabledDestinations(config SourcesT) SourcesT {
 	}
 	return modifiedSources
 }
+func regulationsUpdate(statConfigBackendError stats.RudderStats) {
+
+	//TODO incomplete.
+	sourceJSON, ok := backendConfig.Get()
+	if !ok {
+		statConfigBackendError.Increment()
+	}
+
+	//sorting the sourceJSON.
+	//json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
+	sort.Slice(sourceJSON.Sources[:], func(i, j int) bool {
+		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
+	})
+
+	if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
+		log.Info("Workspace Config changed")
+		curSourceJSONLock.Lock()
+		trackConfig(curSourceJSON, sourceJSON)
+		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
+		curSourceJSON = sourceJSON
+		curSourceJSONLock.Unlock()
+		initialized = true
+		LastSync = time.Now().Format(time.RFC3339)
+		Eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
+		Eb.Publish(string(TopicBackendConfig), sourceJSON)
+	}
+}
 func configUpdate(statConfigBackendError stats.RudderStats) {
 
 	sourceJSON, ok := backendConfig.Get()
@@ -234,6 +261,14 @@ func pollConfigUpdate() {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		configUpdate(statConfigBackendError)
+		time.Sleep(time.Duration(pollInterval))
+	}
+}
+
+func pollRegulations() {
+	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
+	for {
+		regulationsUpdate(statConfigBackendError)
 		time.Sleep(time.Duration(pollInterval))
 	}
 }
@@ -310,5 +345,9 @@ func Setup() {
 
 	rruntime.Go(func() {
 		pollConfigUpdate()
+	})
+
+	rruntime.Go(func() {
+		pollRegulations()
 	})
 }
