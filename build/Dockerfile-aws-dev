@@ -1,4 +1,5 @@
 FROM golang:1.13-alpine
+RUN apk add make
 RUN RACE_ENABLED=TRUE make build
 RUN make build
 FROM alpine:latest
