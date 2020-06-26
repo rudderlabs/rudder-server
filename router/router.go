@@ -692,7 +692,6 @@ func (rt *HandleT) printStatsLoop() {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 

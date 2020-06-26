@@ -34,7 +34,7 @@ func (ops *PagerDuty) Alert(message string) {
 		return
 	}
 
-	if resp.StatusCode != 200 || resp.StatusCode != 202 {
+	if resp.StatusCode != 200 && resp.StatusCode != 202 {
 		logger.Errorf("Alert: Got error response %d", resp.StatusCode)
 	}
 
