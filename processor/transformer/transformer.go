@@ -120,19 +120,6 @@ func (trans *HandleT) transformWorker() {
 			transformRequestTimerStat.Start()
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
-			var transformerAPIVersion int
-			var convErr error
-			if err == nil {
-				transformerAPIVersion, convErr = strconv.Atoi(resp.Header.Get("apiVersion"))
-
-				if convErr != nil {
-					transformerAPIVersion = 0
-				}
-			}
-			if supportedTransformerAPIVersion != transformerAPIVersion {
-				logger.Errorf("Incompatible transformer version: Expected: %d Received: %d", supportedTransformerAPIVersion, transformerAPIVersion)
-				panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d", supportedTransformerAPIVersion, transformerAPIVersion))
-			}
 			if err != nil {
 				transformRequestTimerStat.End()
 				reqFailed = true
@@ -147,6 +134,15 @@ func (trans *HandleT) transformWorker() {
 			}
 			if reqFailed {
 				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
+			}
+
+			transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
+			if convErr != nil {
+				transformerAPIVersion = 0
+			}
+			if supportedTransformerAPIVersion != transformerAPIVersion {
+				logger.Errorf("Incompatible transformer version: Expected: %d Received: %d", supportedTransformerAPIVersion, transformerAPIVersion)
+				panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d", supportedTransformerAPIVersion, transformerAPIVersion))
 			}
 			transformRequestTimerStat.End()
 			break
