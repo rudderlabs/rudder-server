@@ -23,7 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-var supportedTransformerAPIVersion = 1
+const supportedTransformerAPIVersion = 1
 
 type MetadataT struct {
 	SourceID        string `json:"sourceId"`
@@ -129,11 +129,14 @@ func (trans *HandleT) transformWorker() {
 					transformerAPIVersion = 0
 				}
 			}
-			if err != nil || supportedTransformerAPIVersion != transformerAPIVersion{
+			if supportedTransformerAPIVersion != transformerAPIVersion {
+				logger.Errorf("Incompatible transformer version: Expected: %d Received: %d", supportedTransformerAPIVersion, transformerAPIVersion)
+				panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d", supportedTransformerAPIVersion, transformerAPIVersion))
+			}
+			if err != nil {
 				transformRequestTimerStat.End()
 				reqFailed = true
 				logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
-				logger.Errorf("JS HTTP version mismatch: URL: %v SupportedVersion: %d, ReceivedVersion: %d", job.url, supportedTransformerAPIVersion, transformerAPIVersion)
 				if retryCount > maxRetry {
 					panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err))
 				}
