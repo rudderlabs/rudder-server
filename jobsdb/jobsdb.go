@@ -1873,7 +1873,6 @@ func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanager.GetProviderConfigFromEnv(),
 	})
-
 }
 
 func (jd *HandleT) isEmpty(ds dataSetT) bool {
@@ -1980,7 +1979,8 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			}
 			contentSlice[idx] = rowBytes
 		}
-		content := bytes.Join(contentSlice[:], []byte("\n"))
+		// append new line character at end, before next backupRowsBatch is appended to same file
+		content := append(bytes.Join(contentSlice[:], []byte("\n")), []byte("\n")...)
 		gzWriter.Write(content)
 		offset += backupRowsBatchSize
 		if offset >= totalCount {
