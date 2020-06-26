@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -21,6 +22,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
+
+var supportedTransformerAPIVersion = 1
 
 type MetadataT struct {
 	SourceID        string `json:"sourceId"`
@@ -117,10 +120,20 @@ func (trans *HandleT) transformWorker() {
 			transformRequestTimerStat.Start()
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
-			if err != nil {
+			var transformerAPIVersion int
+			var convErr error
+			if err == nil {
+				transformerAPIVersion, convErr = strconv.Atoi(resp.Header.Get("apiVersion"))
+
+				if convErr != nil {
+					transformerAPIVersion = 0
+				}
+			}
+			if err != nil || supportedTransformerAPIVersion != transformerAPIVersion{
 				transformRequestTimerStat.End()
 				reqFailed = true
 				logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
+				logger.Errorf("JS HTTP version mismatch: URL: %v SupportedVersion: %d, ReceivedVersion: %d", job.url, supportedTransformerAPIVersion, transformerAPIVersion)
 				if retryCount > maxRetry {
 					panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err))
 				}
