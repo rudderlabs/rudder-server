@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -26,6 +27,7 @@ const (
 	UserTransformerStage = "user_transformer"
 	DestTransformerStage = "dest_transformer"
 )
+const supportedTransformerAPIVersion = 1
 
 type MetadataT struct {
 	SourceID        string `json:"sourceId"`
@@ -140,6 +142,15 @@ func (trans *HandleT) transformWorker() {
 			}
 			if reqFailed {
 				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
+			}
+
+			transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
+			if convErr != nil {
+				transformerAPIVersion = 0
+			}
+			if supportedTransformerAPIVersion != transformerAPIVersion {
+				logger.Errorf("Incompatible transformer version: Expected: %d Received: %d", supportedTransformerAPIVersion, transformerAPIVersion)
+				panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d", supportedTransformerAPIVersion, transformerAPIVersion))
 			}
 			transformRequestTimerStat.End()
 			break
