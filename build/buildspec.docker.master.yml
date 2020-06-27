@@ -19,7 +19,7 @@ phases:
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
-      - go get github.com/onsi/ginkgo/ginkgo
+      - (cd && go get github.com/onsi/ginkgo/ginkgo)
   build:
     commands:
       - export GO111MODULE=on
