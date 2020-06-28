@@ -105,6 +105,7 @@ var partitionKeyMap = map[string]string{
 	"identifies":                 "id",
 	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
+
 // getRSDataType gets datatype for rs which is mapped with rudderstack datatype
 func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
@@ -685,7 +686,7 @@ func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder_staging_"
 	maxParallelLoads = config.GetInt("Warehouse.redshift.maxParallelLoads", 3)
-	setVarCharMax = config.GetVarCharMaxForRS()
+	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
 }
 
 func init() {

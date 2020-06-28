@@ -219,10 +219,8 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 				if _, ok := currentColumnsMap[columnName]; !ok {
 					diff.ColumnMaps[tableName][columnName] = columnType
 					diff.UpdatedSchema[tableName][columnName] = columnType
-				} else {
-					if columnType == "text" && currentColumnsMap[columnName] == "string" {
-						diff.StringColumnsToBeAlteredToText[tableName] = append(diff.StringColumnsToBeAlteredToText[tableName], columnName)
-					}
+				} else if columnType == "text" && currentColumnsMap[columnName] == "string" {
+					diff.StringColumnsToBeAlteredToText[tableName] = append(diff.StringColumnsToBeAlteredToText[tableName], columnName)
 				}
 			}
 		}

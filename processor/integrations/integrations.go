@@ -183,13 +183,16 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 
 //GetDestinationURL returns node URL
 func GetDestinationURL(destType string) string {
+	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
 	if misc.Contains(misc.WarehouseDestinations, destType) {
+		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s", config.GetWHSchemaVersion())
 		if destType == "RS" {
-			return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s&RSAlterStringToText=%s", destTransformURL, strings.ToLower(destType), config.GetWHSchemaVersion(), fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
+			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
+			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + rsAlterStringToTextQueryParam
 		}
-		return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s", destTransformURL, strings.ToLower(destType), config.GetWHSchemaVersion())
+		return destinationEndPoint + "?" + whSchemaVersionQueryParam
 	}
-	return fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
+	return destinationEndPoint
 
 }
 
