@@ -432,3 +432,12 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	}
 	return
 }
+
+func (bq *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	bq.Warehouse = config.Warehouse
+	bq.Db, err = bq.connect(BQCredentialsT{
+		projectID:   bq.ProjectID,
+		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+	})
+	return
+}

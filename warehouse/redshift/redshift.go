@@ -794,3 +794,15 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	}
 	return
 }
+
+func (rs *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	rs.Warehouse = config.Warehouse
+	rs.Db, err = connect(RedshiftCredentialsT{
+		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
+		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
+		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
+		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
+		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
+	})
+	return
+}

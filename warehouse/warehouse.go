@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
+
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -185,12 +187,48 @@ func (wh *HandleT) backendConfigSubscriber() {
 								wh.syncLiveWarehouseStatus(sourceID, destinationID)
 							})
 						}
+						if destination.Config["testConnection"] == true {
+							rruntime.Go(func() {
+								testWarehouseDestinationConnection(destination)
+							})
+						}
 					}
 				}
 			}
 		}
 		configSubscriberLock.Unlock()
 	}
+}
+
+func testWarehouseDestinationConnection(destination backendconfig.DestinationT) {
+	provider := destination.DestinationDefinition.Name
+	whManager, err := NewWhManager(provider)
+	if err != nil {
+		panic(err)
+	}
+
+	err = whManager.TestConnection(warehouseutils.ConfigT{
+		Warehouse: warehouseutils.WarehouseT{
+			Destination: destination,
+		},
+	})
+	if err != nil {
+		logger.Errorf("BRT: Failed to get filemanager config for testing this destination id %s: err %v", destination.ID, err)
+		panic(err)
+	}
+
+	var error string
+	if err != nil {
+		error = err.Error()
+	}
+	testResponse := destinationConnectionTester.DestinationConnectionTesterResponse{
+		Error:         error,
+		TestedAt:      time.Now(),
+		DestinationId: destination.ID,
+	}
+	destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse)
+	return
+
 }
 
 func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string) {
@@ -559,6 +597,7 @@ type WarehouseManager interface {
 	Process(config warehouseutils.ConfigT) error
 	CrashRecover(config warehouseutils.ConfigT) (err error)
 	FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (map[string]map[string]string, error)
+	TestConnection(config warehouseutils.ConfigT) error
 }
 
 func NewWhManager(destType string) (WarehouseManager, error) {

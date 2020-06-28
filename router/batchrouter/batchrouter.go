@@ -119,11 +119,6 @@ type StorageUploadOutput struct {
 type ErrorResponseT struct {
 	Error string
 }
-type batchDestinationConnectionTesterResponse struct {
-	Error        string    `json:"error"`
-	testedAt     time.Time `json:"testedAt"`
-	fileLocation string    `json:"fileLocation"`
-}
 
 func createTestFileForBatchDestination(destinationID string) string {
 	uuid := uuid.NewV4()
@@ -167,7 +162,7 @@ func testBatchDestinationConnection(destination backendconfig.DestinationT) {
 		logger.Errorf("BRT: Failed to open file %s for testing this destination id %s: err %v", testFileName, destination.ID, err)
 		panic(err)
 	}
-	uploadOutput, err := uploader.Upload(uploadFile)
+	_, err = uploader.Upload(uploadFile)
 	if err != nil {
 		logger.Errorf("BRT: Failed to upload test file %s for testing this destination id %s: err %v", testFileName, destination.ID, err)
 	}
@@ -175,13 +170,12 @@ func testBatchDestinationConnection(destination backendconfig.DestinationT) {
 	if err != nil {
 		error = err.Error()
 	}
-	testResponse := batchDestinationConnectionTesterResponse{
-		Error:        error,
-		testedAt:     time.Now(),
-		fileLocation: uploadOutput.Location,
+	testResponse := destinationConnectionTester.DestinationConnectionTesterResponse{
+		Error:         error,
+		TestedAt:      time.Now(),
+		DestinationId: destination.ID,
 	}
-	destinationConnectionTester.UploadDestinationConnectionTesterResonse(testResponse, destination.ID)
-
+	destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse)
 	return
 
 }

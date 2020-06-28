@@ -681,3 +681,9 @@ func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	}
 	return
 }
+
+func (pg *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	pg.Warehouse = config.Warehouse
+	pg.Db, err = connect(pg.getConnectionCredentials())
+	return
+}

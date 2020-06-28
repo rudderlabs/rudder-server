@@ -10,7 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/tidwall/sjson"
 )
 
 var (
@@ -20,9 +19,11 @@ var (
 	instanceID       string
 )
 
-type destinationConnectionTesterResponse struct {
-	DestinationId string      `json:"destinationId"`
-	Payload       interface{} `json:"payload"`
+type DestinationConnectionTesterResponse struct {
+	DestinationId string    `json:"destinationId"`
+	InstanceId    string    `json:instanceId`
+	Error         string    `json: error`
+	TestedAt      time.Time `json:testedAt`
 }
 
 func init() {
@@ -38,22 +39,9 @@ func loadConfig() {
 
 }
 
-func UploadDestinationConnectionTesterResonse(payload interface{}, destinationId string) {
+func UploadDestinationConnectionTesterResponse(payload destinationConnectionTesterResponse) {
+	payload.InstanceId = misc.GetNodeID()
 	rawJSON, err := json.Marshal(payload)
-	if err != nil {
-		logger.Debugf(string(rawJSON))
-		misc.AssertErrorIfDev(err)
-		return
-	}
-	rawJSON, _ = sjson.SetBytes(rawJSON, "instanceId", misc.GetNodeID())
-	var body interface{}
-	_ = json.Unmarshal(rawJSON, &body)
-	testConnectionPayload := destinationConnectionTesterResponse{
-		DestinationId: destinationId,
-		Payload:       body,
-	}
-	fmt.Println(testConnectionPayload)
-	rawJSON, err = json.Marshal(testConnectionPayload)
 	if err != nil {
 		logger.Debugf(string(rawJSON))
 		misc.AssertErrorIfDev(err)
@@ -67,7 +55,7 @@ func UploadDestinationConnectionTesterResonse(payload interface{}, destinationId
 	//Sending destination connection test response to Config Backend
 	for {
 
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(rawJSON)))
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
 		if err != nil {
 			misc.AssertErrorIfDev(err)
 			return
