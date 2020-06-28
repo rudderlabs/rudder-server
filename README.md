@@ -102,6 +102,7 @@ For more information on RudderStack's features and functionalities, make sure yo
 # Follow Us
 
 - [Discord][discord]
+- [Product Hunt](https://www.producthunt.com/posts/rudderstack)
 - [LinkedIn](https://www.linkedin.com/company/rudderlabs/)
 - [Twitter][twitter]
 - [HackerNews][hackernews]
