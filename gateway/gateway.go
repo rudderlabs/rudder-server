@@ -773,6 +773,15 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
 	srvMux.HandleFunc("/version", gateway.versionHandler)
+	srvMux.HandleFunc("/writeKeys", func(w http.ResponseWriter, r *http.Request) {
+		writeKeys := make([]string, len(enabledWriteKeysSourceMap))
+		i := 0
+		for k := range enabledWriteKeysSourceMap {
+			writeKeys[i] = k
+			i++
+		}
+		w.Write([]byte(fmt.Sprintf(`["%s"]`, strings.Join(writeKeys, `","`))))
+	})
 
 	if gateway.application.Features().Webhook != nil {
 		srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
