@@ -400,14 +400,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
 	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
 
-	if clearAll {
-		jd.dropAllDS()
-		jd.dropJournal()
-		jd.dropAllBackupDS()
-		jd.dropMigrationCheckpointTables()
-	}
-
-	jd.setupDatabaseTables()
+	jd.setupDatabaseTables(clearAll)
 
 	jd.recoverFromJournal()
 
@@ -1881,7 +1874,6 @@ func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanager.GetProviderConfigFromEnv(),
 	})
-
 }
 
 func (jd *HandleT) isEmpty(ds dataSetT) bool {
@@ -1993,7 +1985,8 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			}
 			contentSlice[idx] = rowBytes
 		}
-		content := bytes.Join(contentSlice[:], []byte("\n"))
+		// append new line character at end, before next backupRowsBatch is appended to same file
+		content := append(bytes.Join(contentSlice[:], []byte("\n")), []byte("\n")...)
 		gzWriter.Write(content)
 		offset += backupRowsBatchSize
 		if offset >= totalCount {
