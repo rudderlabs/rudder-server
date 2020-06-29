@@ -774,6 +774,8 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
 	srvMux.HandleFunc("/version", gateway.versionHandler)
 	srvMux.HandleFunc("/writeKeys", func(w http.ResponseWriter, r *http.Request) {
+		configSubscriberLock.RLock()
+		defer configSubscriberLock.RUnlock()
 		writeKeys := make([]string, len(enabledWriteKeysSourceMap))
 		i := 0
 		for k := range enabledWriteKeysSourceMap {
