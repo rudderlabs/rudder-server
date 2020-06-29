@@ -16,6 +16,8 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 
+	blendoRegistry "github.com/rudderlabs/rudder-server/blendo/registry"
+	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -50,6 +52,8 @@ var (
 	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
 	enableProcessor, enableRouter    bool
+	isReplayServer                   bool
+	blendoEnabled                    bool
 	enabledDestinations              []backendconfig.DestinationT
 	configSubscriberLock             sync.RWMutex
 	objectStorageDestinations        []string
@@ -69,7 +73,9 @@ func loadConfig() {
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
-	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
+	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
+	blendoEnabled = config.GetEnvAsBool("BLENDO_ENABLED", true)
+	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	// Enable suppress user feature. false by default
@@ -185,6 +191,12 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode, true)
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode, true)
 	procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
+
+	// Setup blendo registry to update config
+	if blendoEnabled {
+		blendoRegistry := &blendoRegistry.BlendoRegistry{}
+		blendoRegistry.Setup()
+	}
 
 	enableGateway := true
 
