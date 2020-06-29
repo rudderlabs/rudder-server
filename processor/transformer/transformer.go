@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -22,6 +23,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
+const (
+	UserTransformerStage = "user_transformer"
+	DestTransformerStage = "dest_transformer"
+)
+const supportedTransformerAPIVersion = 1
+
 type MetadataT struct {
 	SourceID        string `json:"sourceId"`
 	DestinationID   string `json:"destinationId"`
@@ -29,8 +36,10 @@ type MetadataT struct {
 	JobID           int64  `json:"jobId"`
 	DestinationType string `json:"destinationType"`
 	MessageID       string `json:"messageId"`
-	AnonymousID     string `json:"anonymousId"`
-	SessionID       string `json:"sessionId,omitempty"`
+	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
+	MessageIDs  []string `json:"messageIds"`
+	AnonymousID string   `json:"anonymousId"`
+	SessionID   string   `json:"sessionId,omitempty"`
 }
 
 type TransformerEventT struct {
@@ -88,14 +97,15 @@ func loadConfig() {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
 type TransformerResponseT struct {
 	// Not marking this Singular Event, since this not a RudderEvent
-	Output   map[string]interface{} `json:"output"`
-	Metadata MetadataT              `json:"metadata"`
+	Output     map[string]interface{} `json:"output"`
+	Metadata   MetadataT              `json:"metadata"`
+	StatusCode int                    `json:"statusCode"`
+	Error      string                 `json:"error"`
 }
 
 func (trans *HandleT) transformWorker() {
@@ -132,6 +142,15 @@ func (trans *HandleT) transformWorker() {
 			}
 			if reqFailed {
 				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
+			}
+
+			transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
+			if convErr != nil {
+				transformerAPIVersion = 0
+			}
+			if supportedTransformerAPIVersion != transformerAPIVersion {
+				logger.Errorf("Incompatible transformer version: Expected: %d Received: %d", supportedTransformerAPIVersion, transformerAPIVersion)
+				panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d", supportedTransformerAPIVersion, transformerAPIVersion))
 			}
 			transformRequestTimerStat.End()
 			break
@@ -186,8 +205,8 @@ func (trans *HandleT) Setup() {
 
 //ResponseT represents a Transformer response
 type ResponseT struct {
-	Events  []TransformerResponseT
-	Success bool
+	Events       []TransformerResponseT
+	FailedEvents []TransformerResponseT
 }
 
 //Transform function is used to invoke transformer API
@@ -292,6 +311,7 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	}
 
 	var outClientEvents []TransformerResponseT
+	var failedEvents []TransformerResponseT
 
 	for _, resp := range transformResponse {
 		if resp.data == nil {
@@ -302,10 +322,8 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 		//Transform is one to many mapping so returned
 		//response for each is an array. We flatten it out
 		for _, transformerResponse := range respArray {
-			respOutput := transformerResponse.Output
-			if statusCode, ok := respOutput["statusCode"]; ok && fmt.Sprintf("%v", statusCode) == "400" {
-				// TODO: Log errored resposnes to file
-				trans.failedStat.Increment()
+			if transformerResponse.StatusCode != 200 {
+				failedEvents = append(failedEvents, transformerResponse)
 				continue
 			}
 			outClientEvents = append(outClientEvents, transformerResponse)
@@ -314,13 +332,14 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	}
 
 	trans.receivedStat.Count(len(outClientEvents))
+	trans.failedStat.Count(len(failedEvents))
 	trans.perfStats.End(len(clientEvents))
 	trans.perfStats.Print()
 
 	trans.transformTimerStat.End()
 
 	return ResponseT{
-		Events:  outClientEvents,
-		Success: true,
+		Events:       outClientEvents,
+		FailedEvents: failedEvents,
 	}
 }

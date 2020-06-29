@@ -304,17 +304,18 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		}
 
 		//Sending destination response to config backend
-
-		deliveryStatus := destinationdebugger.DeliveryStatusT{
-			DestinationID: paramaters.DestinationID,
-			SourceID:      paramaters.SourceID,
-			Payload:       job.EventPayload,
-			AttemptNum:    status.AttemptNum,
-			JobState:      status.JobState,
-			ErrorCode:     status.ErrorCode,
-			ErrorResponse: status.ErrorResponse,
+		if destinationdebugger.HasUploadEnabled(paramaters.DestinationID) {
+			deliveryStatus := destinationdebugger.DeliveryStatusT{
+				DestinationID: paramaters.DestinationID,
+				SourceID:      paramaters.SourceID,
+				Payload:       job.EventPayload,
+				AttemptNum:    status.AttemptNum,
+				JobState:      status.JobState,
+				ErrorCode:     status.ErrorCode,
+				ErrorResponse: status.ErrorResponse,
+			}
+			destinationdebugger.RecordEventDeliveryStatus(paramaters.DestinationID, &deliveryStatus)
 		}
-		destinationdebugger.RecordEventDeliveryStatus(paramaters.DestinationID, &deliveryStatus)
 
 		batchTimeStat.End()
 	}
@@ -691,7 +692,6 @@ func (rt *HandleT) printStatsLoop() {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 

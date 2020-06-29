@@ -66,7 +66,6 @@ type Diagnostics struct {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 

@@ -89,7 +89,7 @@ func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time)
 // getLastUploadStartTime returns the start time of the last upload
 func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) (lastUploadTime time.Time) {
 	var t sql.NullTime
-	sqlStatement := fmt.Sprintf(`select last_exec_at from %s where source_id='%s' and destination_id='%s' order by id desc limit 1`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID)
+	sqlStatement := fmt.Sprintf(`select last_exec_at from %s where source_id='%s' and destination_id='%s' order by id desc limit 1`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID)
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&t)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)

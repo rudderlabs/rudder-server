@@ -110,7 +110,6 @@ func connect(cred credentialsT) (*sql.DB, error) {
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 func loadConfig() {

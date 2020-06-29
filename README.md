@@ -11,7 +11,7 @@ RudderStack's backend is written in Go, with a rich UI written in React.js.
 
 You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) RudderStack instance to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro).
 
-Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord channel](https://discordapp.com/invite/xNEdEGw), or follow us on [Twitter](https://twitter.com/rudderstack).
+Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord channel](https://discordapp.com/invite/xNEdEGw), or follow us on [ProductHunt](https://www.producthunt.com/posts/rudderstack) or [Twitter](https://twitter.com/rudderstack).
 
 # Why Use RudderStack?
 
@@ -74,7 +74,7 @@ RudderStack has two major components, namely:
 - **Control Plane**: The control plane allows you to manage the configuration of your sources and destinations. There are two options for setting up the connections:
 
   - [Managed control plane](https://app.rudderstack.com/): This is the easiest way to manage your source and destination configurations.
-  - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. Please note that you cannot create transformations with the RudderStack Config Generator.
+  - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. Please note that you cannot create transformations or Live Debugger with the RudderStack Config Generator.
 
 - **Data Plane**: This is the core engine that is responsible for:
 
@@ -97,15 +97,16 @@ We would love to see you contribute to RudderStack. Get more information on how 
 
 # Wiki
 
-For more information on RudderStack's features and functionalities, make sure you check out our [Wiki]() page.
+For more information on RudderStack's features and functionalities, make sure you check out our [Wiki](https://github.com/rudderlabs/rudder-server/wiki) page.
 
-# Stay Connected
+# Follow Us
 
-- See the [HackerNews][hackernews] discussion around RudderStack.
-- Join our [Discord][discord] channel.
-- Follow us on [Twitter][twitter].
-- Get the latest news from the [RudderStack blog][rudderstack-blog].
-- Subscribe to our newsletter.
+- [Discord][discord]
+- [Product Hunt](https://www.producthunt.com/posts/rudderstack)
+- [LinkedIn](https://www.linkedin.com/company/rudderlabs/)
+- [Twitter][twitter]
+- [HackerNews][hackernews]
+- [RudderStack Blog][rudderstack-blog]
 
 <!----variables---->
 

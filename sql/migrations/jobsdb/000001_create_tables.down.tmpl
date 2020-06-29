@@ -1,0 +1,12 @@
+-- Drop any existing datasets
+{{range .Datasets}}
+    DROP TABLE {{$.Prefix}}_jobs_{{.}};
+    DROP TABLE {{$.Prefix}}_job_status_{{.}};
+{{end}}
+
+-- Drop type job_state_type
+DROP TYPE job_state_type;
+
+-- Drop journal table
+DROP TABLE IF EXISTS {{.Prefix}}_journal;
+
