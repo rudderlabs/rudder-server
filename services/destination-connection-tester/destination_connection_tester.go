@@ -1,4 +1,4 @@
-package destinationConnectionTester
+package destination_connection_tester
 
 import (
 	"bytes"
@@ -18,6 +18,8 @@ var (
 	retrySleep       time.Duration
 	instanceID       string
 )
+
+const destinationConnectionTesterEndpoint = "dataplane/testConnectionResponse"
 
 type DestinationConnectionTesterResponse struct {
 	DestinationId string    `json:"destinationId"`
@@ -39,26 +41,28 @@ func loadConfig() {
 
 }
 
-func UploadDestinationConnectionTesterResponse(payload destinationConnectionTesterResponse) {
+func UploadDestinationConnectionTesterResponse(payload DestinationConnectionTesterResponse) {
 	payload.InstanceId = misc.GetNodeID()
+	url := fmt.Sprintf("%s/%s", configBackendURL, destinationConnectionTesterEndpoint)
+	makePostRequest(url, payload)
+}
+
+func makePostRequest(url string, payload interface{}) error {
 	rawJSON, err := json.Marshal(payload)
 	if err != nil {
 		logger.Debugf(string(rawJSON))
 		misc.AssertErrorIfDev(err)
-		return
+		return err
 	}
 	client := &http.Client{}
-	url := fmt.Sprintf("%s/dataplane/testConnectionResponse", configBackendURL)
-
 	retryCount := 0
 	var resp *http.Response
 	//Sending destination connection test response to Config Backend
 	for {
-
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
 		if err != nil {
 			misc.AssertErrorIfDev(err)
-			return
+			return err
 		}
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
 		req.SetBasicAuth(config.GetWorkspaceToken(), "")
@@ -68,7 +72,7 @@ func UploadDestinationConnectionTesterResponse(payload destinationConnectionTest
 			logger.Error("Config Backend connection error", err)
 			if retryCount > maxRetry {
 				logger.Errorf("Max retries exceeded trying to connect to config backend")
-				return
+				return err
 			}
 			retryCount++
 			time.Sleep(retrySleep)
@@ -82,4 +86,5 @@ func UploadDestinationConnectionTesterResponse(payload destinationConnectionTest
 		resp.StatusCode == http.StatusBadRequest) {
 		logger.Errorf("Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
 	}
+	return nil
 }
