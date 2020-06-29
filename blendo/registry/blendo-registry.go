@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"reflect"
-	"strconv"
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -64,13 +62,10 @@ var (
 	IoUtil                           sysUtils.IoUtilI = sysUtils.NewIoUtil()
 	log                              logger.LoggerI   = logger.NewLogger()
 )
-var mapRoles map[string]string = map[string]string{
-	"POSTGRES": "postgres",
-}
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-	blendoRegistryUrl = config.GetEnv("BLENDO_REGISTRY_URL", "http://localhost:8111")
+	blendoRegistryUrl = config.GetEnv("BLENDO_REGISTRY_URL", "http://localhost:8181")
 	pollInterval = config.GetDuration("BlendoConfig.pollIntervalInS", 5) * time.Second
 }
 
@@ -82,16 +77,13 @@ func init() {
 // RequestToRegistry sends request to registry
 func RequestToRegistry(id string, method string, data interface{}) (response []byte, ok bool) {
 	client := &http.Client{}
-	url := fmt.Sprintf("%s/syncs/%s", blendoRegistryUrl, id)
-	var request *http.Request
-	var err error
+	url := fmt.Sprintf("%s/%s", blendoRegistryUrl, id)
+	var dataJSONReader *bytes.Buffer
 	if data != nil {
 		dataJSON, _ := json.Marshal(data)
-		dataJSONReader := bytes.NewBuffer(dataJSON)
-		request, err = Http.NewRequest(method, url, dataJSONReader)
-	} else {
-		request, err = Http.NewRequest(method, url, nil)
+		dataJSONReader = bytes.NewBuffer(dataJSON)
 	}
+	request, err := Http.NewRequest(method, url, dataJSONReader)
 	if err != nil {
 		log.Errorf("BLENDO Registry: Failed to make %s request: %s, Error: %s", method, url, err.Error())
 		return []byte{}, false
@@ -117,182 +109,128 @@ func RequestToRegistry(id string, method string, data interface{}) (response []b
 
 // putConfigToRegistry puts config in blendo registry
 func (br *BlendoRegistry) putConfigToRegistry(id string, data interface{}) (response []byte, ok bool) {
-	fmt.Printf("Putting to registry %s", id)
 	return RequestToRegistry(id, "PUT", data)
 }
 
 // deleteConfigFromRegistry deletes config from blendo registry
 func (br *BlendoRegistry) deleteConfigFromRegistry(id string) (response []byte, ok bool) {
-	fmt.Println("Deleting from registry")
 	return RequestToRegistry(id, "DELETE", nil)
 }
 
-// calculateDifferencesAndUpdateRegistry calculate the differences from the previous config and make the coresponding actions
-// we need to update blendo registry when the destination or source configuration or enabled status change
-// and delete from blendo registry when the connection is no longer exists or a source or destination is deleted
-func (br *BlendoRegistry) calculateDifferencesAndUpdateRegistry(sources []backendconfig.SourceT) {
-	prevSources := br.currentSourceJSON.Sources
-	for _, source := range sources {
-		if source.SourceDefinition.Category != "cloud" {
-			continue
-		}
-		sourceExists := false
-		if br.isConfigSet {
-			for _, prevSource := range prevSources {
-				if prevSource.ID == source.ID {
-					sourceExists = true
-					for _, destination := range source.Destinations {
-						pipelineId := br.getPipelineId(source.ID, destination.ID)
-						// if source deleted, delete all the pipelines from registry for this source
-						if source.Deleted != prevSource.Deleted {
-							br.deleteConfigFromRegistry(pipelineId)
-							continue
-						} else {
-							destinationExists := false
-							for _, prevDestination := range prevSource.Destinations {
-								if prevDestination.ID == destination.ID {
-									destinationExists = true
-									// if destination deleted state has change (this means that deleted is true) remove the pipeline from registry
-									if destination.Deleted != prevDestination.Deleted ||
-										(destination.IsConnectionEnabled != prevDestination.IsConnectionEnabled &&
-											!destination.IsConnectionEnabled) {
-										br.deleteConfigFromRegistry(pipelineId)
-										// if destination or source enabled or connection status or configuration has change then update registry configuration
-									} else if destination.IsProcessorEnabled != prevDestination.IsProcessorEnabled ||
-										(destination.IsConnectionEnabled != prevDestination.IsConnectionEnabled &&
-											prevDestination.IsConnectionEnabled) ||
-										!reflect.DeepEqual(destination.Config, prevDestination.Config) ||
-										!reflect.DeepEqual(source.Config, prevSource.Config) {
-										br.putConfigToRegistry(pipelineId, br.getConfig(source, destination))
-									}
-									break
-								}
-							}
-							// if destination not found in the previous destinations, means is new
-							if !destinationExists {
-								// if source or destination is deleted remove pipeline from blendo registry
-								if source.Deleted || destination.Deleted {
-									br.deleteConfigFromRegistry(pipelineId)
-									// or put the pipeline to blendo registry
-								} else {
-									br.putConfigToRegistry(pipelineId, br.getConfig(source, destination))
-								}
-							}
-						}
-					}
-					break
-				}
-			}
-		}
-		// if source not found in the previous sources mean is new
-		if !sourceExists {
-			for _, destination := range source.Destinations {
-				pipelineId := br.getPipelineId(source.ID, destination.ID)
-				// for each destination remove deleted pipelines from blendo registry
-				if source.Deleted || destination.Deleted {
-					br.deleteConfigFromRegistry(pipelineId)
-					// or put the pipeline to blendo registry
-				} else {
-					br.putConfigToRegistry(pipelineId, br.getConfig(source, destination))
-				}
-			}
+// shouldMakeActionInSource returns if a configuration has changed and what action need to be done in registry (put or delete)
+func (br *BlendoRegistry) shouldMakeActionInSource(source backendconfig.SourceT) (shouldMakeAction bool, action string) {
+	if !br.isConfigSet {
+		if source.Deleted {
+			return true, "delete"
+		} else {
+			return true, "put"
 		}
 	}
-}
-
-// deleteRemovedSourcesDestinations Removes pipelines from registry that no longer exists comparing the previous configuration
-func (br *BlendoRegistry) deleteRemovedSourcesDestinations(sources []backendconfig.SourceT) {
 	prevSources := br.currentSourceJSON.Sources
 	for _, prevSource := range prevSources {
-		if prevSource.SourceDefinition.Category == "cloud" {
-			sourceExists := false
-			for _, source := range sources {
-				if prevSource.ID == source.ID {
-					sourceExists = true
-					for _, prevDestination := range prevSource.Destinations {
-						destExists := false
-						for _, destination := range source.Destinations {
-							if prevDestination.ID == destination.ID {
-								destExists = true
-								break
-							}
-						}
-						if !destExists {
-							br.deleteConfigFromRegistry(br.getPipelineId(source.ID, prevDestination.ID))
-						}
+		if prevSource.ID == source.ID {
+			if prevSource.Deleted != source.Deleted {
+				action = "delete"
+				shouldMakeAction = true
+			} else if prevSource.Enabled != source.Enabled {
+				shouldMakeAction = true
+				action = "put"
+			}
+			break
+		}
+	}
+	return shouldMakeAction, action
+}
+
+// shouldMakeActionInDestination returns if a configuration has changed when possible and what action need to be done in registry (put or delete)
+func (br *BlendoRegistry) shouldMakeActionInDestination(sourceId string, destination backendconfig.DestinationT) (shouldMakeAction bool, action string) {
+	if !br.isConfigSet {
+		if destination.Deleted {
+			return true, "delete"
+		} else {
+			return true, "put"
+		}
+	}
+	prevSources := br.currentSourceJSON.Sources
+	for _, prevSource := range prevSources {
+		if prevSource.ID == sourceId {
+			for _, prevDestination := range prevSource.Destinations {
+				if prevDestination.ID == destination.ID {
+					if prevDestination.Deleted != destination.Deleted {
+						action = "delete"
+						shouldMakeAction = true
+					} else if prevDestination.Enabled != destination.Enabled {
+						shouldMakeAction = true
+						action = "put"
 					}
 					break
 				}
 			}
-			if !sourceExists {
-				for _, destination := range prevSource.Destinations {
-					br.deleteConfigFromRegistry(br.getPipelineId(prevSource.ID, destination.ID))
-				}
-			}
+			break
 		}
 	}
+	return shouldMakeAction, action
 }
 
 // getResources returns the resources of a pipeline in form that registry understands
-func (br *BlendoRegistry) getResources(resources []interface{}) []BlendoResourcesT {
+func (br *BlendoRegistry) getResources(resources []string) []BlendoResourcesT {
 	resourcesArray := []BlendoResourcesT{}
 	for _, role := range resources {
-		resourcesArray = append(resourcesArray, BlendoResourcesT{Role: role.(string)})
+		resourcesArray = append(resourcesArray, BlendoResourcesT{Role: role})
 	}
 	return resourcesArray
 }
 
 // getPipelineId returns a pipeline id tha is constructed with a combination of source id and destination id
 func (br *BlendoRegistry) getPipelineId(sourceId string, destinationId string) string {
-	return fmt.Sprintf("%s_%s", sourceId, destinationId)
-}
-
-func (br *BlendoRegistry) mapDestinationconfig(config map[string]interface{}) map[string]interface{} {
-	desConfog := make(map[string]interface{})
-	for key, value := range config {
-		if key == "user" {
-			desConfog["username"] = value
-		} else if key == "port" {
-			port, _ := strconv.Atoi(value.(string))
-			desConfog["port"] = port
-		} else {
-			desConfog[key] = value
-
-		}
-	}
-	return desConfog
+	return fmt.Sprintf("%s.%s", sourceId, destinationId)
 }
 
 // getConfig returns the configuration of the pipeline
 func (br *BlendoRegistry) getConfig(source backendconfig.SourceT, destination backendconfig.DestinationT) BlendoRegistryPipelineConfigT {
-	sourceResourcesList := source.Config["resources"]
-	var resources []BlendoResourcesT
-	if sourceResourcesList != nil {
-		resources = br.getResources(sourceResourcesList.([]interface{}))
-	}
+	resources := br.getResources(source.Config["resources"].([]string))
 	return BlendoRegistryPipelineConfigT{
 		Source: BlendoSourceT{
 			Role:    source.SourceDefinition.Name,
 			Options: source.Config,
 		},
 		Sink: BlendoDestinationT{
-			Role:    mapRoles[destination.DestinationDefinition.Name],
-			Options: br.mapDestinationconfig(destination.Config),
+			Role:    destination.DestinationDefinition.Name,
+			Options: destination.Config,
 		},
 		Schedule: BlendoScheduleT{
 			Type: "once_per_hour",
 		},
 		Resources: resources,
-		Paused:    !destination.IsProcessorEnabled,
+		Paused:    !source.Enabled || !destination.Enabled,
 	}
 }
 
 // handleSources updates the registry accordingly
 func (br *BlendoRegistry) handleSources(sources []backendconfig.SourceT) {
-	if br.isConfigSet {
-		br.deleteRemovedSourcesDestinations(sources)
+	for _, source := range sources {
+		shouldSourceTakeAction, sourceAction := br.shouldMakeActionInSource(source)
+		for _, destination := range source.Destinations {
+			var action string
+			var shouldTakeAction bool
+			pipelineId := br.getPipelineId(source.ID, destination.ID)
+			if shouldSourceTakeAction {
+				action = sourceAction
+				shouldTakeAction = true
+			} else {
+				shouldDestinationTakeAction, destinationAction := br.shouldMakeActionInDestination(source.ID, destination)
+				action = destinationAction
+				shouldTakeAction = shouldDestinationTakeAction
+			}
+			if shouldTakeAction {
+				if action == "delete" {
+					br.deleteConfigFromRegistry(pipelineId)
+				} else {
+					br.putConfigToRegistry(pipelineId, br.getConfig(source, destination))
+				}
+			}
+		}
 	}
-	br.calculateDifferencesAndUpdateRegistry(sources)
 }
 
 // backendConfigSubscriber subscribes to backend-config change and updates the registry accordingly
@@ -302,7 +240,6 @@ func (br *BlendoRegistry) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		sources := config.Data.(backendconfig.SourcesT)
-		fmt.Println("Received Blendo Config")
 		br.handleSources(sources.Sources)
 		br.currentSourceJSON = config.Data.(backendconfig.SourcesT)
 		br.isConfigSet = true
