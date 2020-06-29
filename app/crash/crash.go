@@ -3,17 +3,20 @@ package crash
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // PanicInformation describes a panic.
 type PanicInformation struct {
-	Error   interface{}
-	Stack   string
-	Context context.Context
+	ReceivedAt time.Time       `json:"received_at"`
+	Error      error           `json:"error"`
+	Trace      string          `json:"stack"`
+	Context    context.Context `json:"context"`
 }
 
 // Handler functions handle errors received by errorSignal.
@@ -28,6 +31,9 @@ type Manager struct {
 
 	// errorSignal is a channel that lets goroutines catch their own panics and safely forward them to one central listener.
 	errorSignal chan PanicInformation
+
+	// Report collects information that should be persisted in case of a crash
+	Report *Report
 }
 
 // Default manager provides the default crash behavior, with Log and Bugsnag handlers.
@@ -37,6 +43,9 @@ var Default *Manager
 func New() *Manager {
 	return &Manager{
 		errorSignal: make(chan PanicInformation),
+		Report: &Report{
+			Metadata: make(map[string]interface{}),
+		},
 	}
 }
 
@@ -45,6 +54,7 @@ func init() {
 	SetupBugsnag()
 
 	Default = New()
+	Default.RegisterHandler(Default.Report.ReportHandler)
 	Default.RegisterHandler(BugsnagHandler)
 	Default.RegisterHandler(LogHandler)
 }
@@ -64,9 +74,10 @@ func stackTrace() string {
 // sendError sends panic information up the Signal channel.
 func (m *Manager) sendError(ctx context.Context, err interface{}) {
 	m.errorSignal <- PanicInformation{
-		Error:   err,
-		Stack:   stackTrace(),
-		Context: ctx,
+		Error:      fmt.Errorf("%v", err),
+		ReceivedAt: time.Now(),
+		Trace:      stackTrace(),
+		Context:    ctx,
 	}
 }
 
@@ -86,10 +97,10 @@ func (m *Manager) Defer() {
 	}
 }
 
-// HandlePanics watches the Signal channel for any panics caught by crash.Defer functions,
+// MonitorPanics watches the Signal channel for any panics caught by crash.Defer functions,
 // and passes them to any registered crash.Handler functions.
 // It will exit the application after all handlers have run.
-func (m *Manager) HandlePanics() {
+func (m *Manager) MonitorPanics() {
 	var pi PanicInformation
 	for {
 		pi = <-m.errorSignal
@@ -103,5 +114,5 @@ func (m *Manager) HandlePanics() {
 // LogHandler will log PanicInformations Error and Stack to stderr
 func LogHandler(pi PanicInformation) {
 	logger.Error(pi.Error)
-	logger.Error(pi.Stack)
+	logger.Error(pi.Trace)
 }

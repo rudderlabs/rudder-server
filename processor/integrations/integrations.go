@@ -3,29 +3,18 @@ package integrations
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
 )
 
 var (
-	destTransformURL, userTransformURL string
-	customDestination                  []string
-	whSchemaVersion                    string
+	customDestination []string
+	whSchemaVersion   string
 )
-
-func init() {
-	loadConfig()
-}
-
-func loadConfig() {
-	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-}
 
 const (
 	//PostDataKV means post data is sent as KV
@@ -179,17 +168,4 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 	}
 	retVal = outVal
 	return
-}
-
-//GetDestinationURL returns node URL
-func GetDestinationURL(destID string) string {
-	return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s", destTransformURL, strings.ToLower(destID), config.GetWHSchemaVersion())
-}
-
-//GetUserTransformURL returns the port of running user transform
-func GetUserTransformURL(processSessions bool) string {
-	if processSessions {
-		return destTransformURL + "/customTransform?processSessions=true"
-	}
-	return destTransformURL + "/customTransform"
 }

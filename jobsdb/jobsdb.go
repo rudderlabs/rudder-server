@@ -373,17 +373,18 @@ dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
 func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string) {
-
 	var err error
 	jd.migrationState.migrationMode = migrationMode
-	psqlInfo := GetConnectionString()
 	jd.assert(tablePrefix != "", "tablePrefix received is empty")
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]bool{}
 
+	jd.registerCrashReportHandlers()
+
 	jd.BackupSettings = jd.getBackUpSettings()
 
+	psqlInfo := GetConnectionString()
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
 
@@ -1898,6 +1899,11 @@ func (jd *HandleT) isEmpty(ds dataSetT) bool {
 //GetTablePrefix returns the table prefix of the jobsdb
 func (jd *HandleT) GetTablePrefix() string {
 	return jd.tablePrefix
+}
+
+// GetTableName returns a full table name by prefixing with this JobsDB tablePrefix
+func (jd *HandleT) GetTableName(name string) string {
+	return fmt.Sprintf("%s_%s", jd.tablePrefix, name)
 }
 
 func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable bool) (success bool, err error) {

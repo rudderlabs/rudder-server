@@ -163,7 +163,6 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB ", *clearDB)
 
-	backendconfig.Setup()
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
 

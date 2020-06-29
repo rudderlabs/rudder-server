@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/araddon/dateparse"
+	"github.com/rudderlabs/rudder-server/app/crash"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -178,8 +179,21 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	}
 }
 
+func setupCrashReportInformation() {
+	transformerVersion, err := transformer.Version()
+	if err != nil {
+		panic(err)
+	}
+
+	metadata := make(map[string]interface{})
+	metadata["version"] = transformerVersion
+	crash.Default.Report.Metadata["transformer"] = metadata
+}
+
 // Start starts this processor's main loops.
 func (proc *HandleT) Start() {
+	setupCrashReportInformation()
+
 	rruntime.Go(func() {
 		proc.mainLoop()
 	})
@@ -715,7 +729,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		transformationEnabled := destinationTransformationEnabledMap[destID]
 		configSubscriberLock.RUnlock()
 
-		url := integrations.GetDestinationURL(destType)
+		url := transformer.GetDestinationURL(destType)
 		var response transformer.ResponseT
 		var eventsToTransform []transformer.TransformerEventT
 		// Send to custom transformer only if the destination has a transformer enabled
@@ -726,12 +740,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				// This way all the events of a user session are never broken into separate batches
 				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
 				destStat.sessionTransform.Start()
-				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, true)
+				response = proc.transformer.Transform(eventList, transformer.GetUserTransformURL(proc.processSessions), userTransformBatchSize, true)
 				destStat.sessionTransform.End()
 			} else {
 				// We need not worry about breaking up a single user sessions in this case
 				destStat.userTransform.Start()
-				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, false)
+				response = proc.transformer.Transform(eventList, transformer.GetUserTransformURL(proc.processSessions), userTransformBatchSize, false)
 				destStat.userTransform.End()
 			}
 			for _, userTransformedEvent := range response.Events {
