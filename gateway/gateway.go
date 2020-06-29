@@ -776,11 +776,9 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/writeKeys", func(w http.ResponseWriter, r *http.Request) {
 		configSubscriberLock.RLock()
 		defer configSubscriberLock.RUnlock()
-		writeKeys := make([]string, len(enabledWriteKeysSourceMap))
-		i := 0
+		writeKeys := make([]string, 0, len(enabledWriteKeysSourceMap))
 		for k := range enabledWriteKeysSourceMap {
-			writeKeys[i] = k
-			i++
+			writeKeys = append(writeKeys, k)
 		}
 		w.Write([]byte(fmt.Sprintf(`["%s"]`, strings.Join(writeKeys, `","`))))
 	})
