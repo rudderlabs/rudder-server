@@ -64,6 +64,7 @@ dbBatchWriteTimeoutInMS = 5
 maxReqSizeInKB = 100000
 enableDedup = false
 enableRateLimit = false
+enableSuppressUserFeature = true
 dedupWindowInS = 86400
 allowPartialWriteWithErrors = true
 
@@ -179,6 +180,7 @@ retrySleepInMS = 100
 configFromFile = false
 configJSONPath = "/etc/rudderstack/workspaceConfig.json"
 pollIntervalInS = 5
+regulationsPollIntervalInS = 300
 
 
 # If the server crashes 'crashThreshold' times in 'durationInS' seconds,

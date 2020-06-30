@@ -64,11 +64,14 @@ var (
 	maxUserWebRequestBatchSize, maxDBBatchSize                  int
 	userWebRequestBatchTimeout, dbBatchWriteTimeout             time.Duration
 	enabledWriteKeysSourceMap                                   map[string]string
+	suppressedUsersMap                                          map[string]map[string]struct{}
+	sourceSpecificSuppressedUserMap                             map[string]map[string]struct{}
 	enabledWriteKeyWebhookMap                                   map[string]string
-	configSubscriberLock                                        sync.RWMutex
+	configSubscriberLock, regulationsSubscriberLock             sync.RWMutex
 	maxReqSize                                                  int
 	enableDedup                                                 bool
 	enableRateLimit                                             bool
+	enableSuppressUserFeature                                   bool
 	dedupWindow, diagnosisTickerTime                            time.Duration
 )
 
@@ -368,6 +371,15 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 			}
 
+			if enableSuppressUserFeature {
+				userID := gjson.GetBytes(body, "batch.0.userId").String()
+				if gateway.isSuppressedUser(userID, writeKey) {
+					req.done <- ""
+					preDbStoreCount++
+					continue
+				}
+			}
+
 			logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
@@ -434,6 +446,39 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			gateway.updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
 		}
 	}
+}
+
+func (gateway *HandleT) isSuppressedUser(userID, writeKey string) bool {
+	regulationsSubscriberLock.RLock()
+	defer regulationsSubscriberLock.RUnlock()
+
+	//If userID is blocked at workspace level, returning true
+	workspaceID := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+	if _, ok := suppressedUsersMap[workspaceID]; ok {
+		m := suppressedUsersMap[workspaceID]
+		if _, ok := m[userID]; ok {
+			return true
+		}
+	}
+
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+
+	//Using enabledWriteKeysSourceMap map to get source id and to check for suppression.
+	//This is safe to use because if the writeKey is not enabled, events are dropped well before.
+	if _, ok := enabledWriteKeysSourceMap[writeKey]; !ok {
+		return false
+	}
+
+	sourceID := enabledWriteKeysSourceMap[writeKey]
+	if _, ok := sourceSpecificSuppressedUserMap[sourceID]; ok {
+		m := sourceSpecificSuppressedUserMap[sourceID]
+		if _, ok := m[userID]; ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 func addToSet(set map[string]struct{}, elements []string) {
@@ -736,7 +781,7 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 		backendConfigMode = "JSON"
 	}
 
-	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync)
+	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync)
 	w.Write([]byte(healthVal))
 }
 
@@ -820,6 +865,44 @@ func (gateway *HandleT) backendConfigSubscriber() {
 			}
 		}
 		configSubscriberLock.Unlock()
+	}
+}
+
+// Gets the regulations from config backend
+func (gateway *HandleT) backendRegulationsSubscriber() {
+	ch := make(chan utils.DataEvent)
+	gateway.backendConfig.Subscribe(ch, backendconfig.TopicRegulations)
+	for {
+		regulationsData := <-ch
+		regulationsSubscriberLock.Lock()
+		suppressedUsersMap = map[string]map[string]struct{}{}
+		sourceSpecificSuppressedUserMap = map[string]map[string]struct{}{}
+		regulations := regulationsData.Data.(backendconfig.RegulationsT)
+		for _, regulation := range regulations.WorkspaceRegulations {
+			if regulation.RegulationType == string(backendconfig.RegulationSuppress) {
+				if _, ok := suppressedUsersMap[regulation.WorkspaceID]; ok {
+					m := suppressedUsersMap[regulation.WorkspaceID]
+					m[regulation.UserID] = struct{}{}
+				} else {
+					m := map[string]struct{}{}
+					m[regulation.UserID] = struct{}{}
+					suppressedUsersMap[regulation.WorkspaceID] = m
+				}
+			}
+		}
+		for _, sourceRegulation := range regulations.SourceRegulations {
+			if sourceRegulation.RegulationType == string(backendconfig.RegulationSuppress) {
+				if _, ok := sourceSpecificSuppressedUserMap[sourceRegulation.SourceID]; ok {
+					m := sourceSpecificSuppressedUserMap[sourceRegulation.SourceID]
+					m[sourceRegulation.UserID] = struct{}{}
+				} else {
+					m := map[string]struct{}{}
+					m[sourceRegulation.UserID] = struct{}{}
+					sourceSpecificSuppressedUserMap[sourceRegulation.SourceID] = m
+				}
+			}
+		}
+		regulationsSubscriberLock.Unlock()
 	}
 }
 
@@ -937,6 +1020,9 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	})
 	rruntime.Go(func() {
 		gateway.backendConfigSubscriber()
+	})
+	rruntime.Go(func() {
+		gateway.backendRegulationsSubscriber()
 	})
 
 	gateway.initUserWebRequestWorkers()

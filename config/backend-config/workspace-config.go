@@ -26,6 +26,15 @@ func (workspaceConfig *WorkspaceConfig) Get() (SourcesT, bool) {
 	}
 }
 
+//GetRegulations returns sources from the workspace
+func (workspaceConfig *WorkspaceConfig) GetRegulations() (RegulationsT, bool) {
+	if configFromFile {
+		return workspaceConfig.getRegulationsFromFile()
+	} else {
+		return workspaceConfig.getRegulationsFromAPI()
+	}
+}
+
 // getFromApi gets the workspace config from api
 func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 	url := fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL)
@@ -75,4 +84,42 @@ func (workspaceConfig *WorkspaceConfig) getFromFile() (SourcesT, bool) {
 		return SourcesT{}, false
 	}
 	return configJSON, true
+}
+
+// getFromApi gets the workspace config from api
+func (workspaceConfig *WorkspaceConfig) getRegulationsFromAPI() (RegulationsT, bool) {
+	url := fmt.Sprintf("%s/regulations", configBackendURL)
+	req, err := Http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Error("Error when creating request", err)
+		return RegulationsT{}, false
+	}
+
+	req.SetBasicAuth(workspaceToken, "")
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error("Error when sending request to the server", err)
+		return RegulationsT{}, false
+	}
+
+	var respBody []byte
+	if resp != nil && resp.Body != nil {
+		respBody, _ = IoUtil.ReadAll(resp.Body)
+		defer resp.Body.Close()
+	}
+
+	var regulationsJSON RegulationsT
+	err = json.Unmarshal(respBody, &regulationsJSON)
+	if err != nil {
+		log.Error("Error while parsing request", err, string(respBody), resp.StatusCode)
+		return RegulationsT{}, false
+	}
+	return regulationsJSON, true
+}
+
+func (workspaceConfig *WorkspaceConfig) getRegulationsFromFile() (RegulationsT, bool) {
+	return RegulationsT{}, false
 }

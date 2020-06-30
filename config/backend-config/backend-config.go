@@ -24,17 +24,21 @@ import (
 )
 
 var (
-	backendConfig                    BackendConfig
-	isMultiWorkspace                 bool
-	multiWorkspaceSecret             string
-	configBackendURL, workspaceToken string
-	pollInterval                     time.Duration
-	configFromFile                   bool
-	configJSONPath                   string
-	curSourceJSON                    SourcesT
-	curSourceJSONLock                sync.RWMutex
-	initialized                      bool
-	LastSync                         string
+	backendConfig                         BackendConfig
+	isMultiWorkspace                      bool
+	multiWorkspaceSecret                  string
+	configBackendURL, workspaceToken      string
+	pollInterval, regulationsPollInterval time.Duration
+	configFromFile                        bool
+	configJSONPath                        string
+	curSourceJSON                         SourcesT
+	curSourceJSONLock                     sync.RWMutex
+	curRegulationJSON                     RegulationsT
+	curRegulationJSONLock                 sync.RWMutex
+	initialized                           bool
+	regulationsInitialized                bool
+	LastSync                              string
+	LastRegulationSync                    string
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
@@ -49,12 +53,27 @@ var Eb utils.PublishSubscriber = new(utils.EventBus)
 // Topic refers to a subset of backend config's updates, received after subscribing using the backend config's Subscribe function.
 type Topic string
 
+type Regulation string
+
 const (
 	/*TopicBackendConfig topic provides updates on full backend config, via Subscribe function */
 	TopicBackendConfig Topic = "backendConfig"
 
 	/*TopicProcessConfig topic provides updates on backend config of processor enabled destinations, via Subscribe function */
 	TopicProcessConfig Topic = "processConfig"
+
+	/*TopicRegulations topic provides updates on regulations, via Subscribe function */
+	TopicRegulations Topic = "regulations"
+
+	/*RegulationSuppress refers to Suppress Regulation */
+	RegulationSuppress Regulation = "Suppress"
+
+	//TODO Will add support soon.
+	/*RegulationDelete refers to Suppress and Delete Regulation */
+	RegulationDelete Regulation = "Delete"
+
+	/*RegulationSuppressAndDelete refers to Suppress and Delete Regulation */
+	RegulationSuppressAndDelete Regulation = "Suppress_With_Delete"
 )
 
 type DestinationDefinitionT struct {
@@ -91,9 +110,29 @@ type SourceT struct {
 	WriteKey         string
 }
 
+type WorkspaceRegulationT struct {
+	ID             string
+	RegulationType string
+	WorkspaceID    string
+	UserID         string
+}
+
+type SourceRegulationT struct {
+	ID             string
+	RegulationType string
+	WorkspaceID    string
+	SourceID       string
+	UserID         string
+}
+
 type SourcesT struct {
 	EnableMetrics bool      `json:"enableMetrics"`
 	Sources       []SourceT `json:"sources"`
+}
+
+type RegulationsT struct {
+	WorkspaceRegulations []WorkspaceRegulationT `json:"workspaceRegulations"`
+	SourceRegulations    []SourceRegulationT    `json:"sourceRegulations"`
 }
 
 type TransformationT struct {
@@ -106,6 +145,7 @@ type TransformationT struct {
 type BackendConfig interface {
 	SetUp()
 	Get() (SourcesT, bool)
+	GetRegulations() (RegulationsT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 	WaitForConfig()
 	Subscribe(channel chan utils.DataEvent, topic Topic)
@@ -123,6 +163,7 @@ func loadConfig() {
 	workspaceToken = config.GetWorkspaceToken()
 
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
+	regulationsPollInterval = config.GetDuration("BackendConfig.regulationsPollIntervalInS", 5) * time.Second
 	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
 }
@@ -203,33 +244,34 @@ func filterProcessorEnabledDestinations(config SourcesT) SourcesT {
 	}
 	return modifiedSources
 }
+
 func regulationsUpdate(statConfigBackendError stats.RudderStats) {
 
-	//TODO incomplete.
-	sourceJSON, ok := backendConfig.Get()
+	regulationJSON, ok := backendConfig.GetRegulations()
 	if !ok {
 		statConfigBackendError.Increment()
 	}
 
-	//sorting the sourceJSON.
+	//sorting the regulationJSON.
 	//json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
-	sort.Slice(sourceJSON.Sources[:], func(i, j int) bool {
-		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
+	sort.Slice(regulationJSON.WorkspaceRegulations[:], func(i, j int) bool {
+		return regulationJSON.WorkspaceRegulations[i].ID < regulationJSON.WorkspaceRegulations[j].ID
+	})
+	sort.Slice(regulationJSON.SourceRegulations[:], func(i, j int) bool {
+		return regulationJSON.SourceRegulations[i].ID < regulationJSON.SourceRegulations[j].ID
 	})
 
-	if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
-		log.Info("Workspace Config changed")
-		curSourceJSONLock.Lock()
-		trackConfig(curSourceJSON, sourceJSON)
-		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
-		curSourceJSON = sourceJSON
-		curSourceJSONLock.Unlock()
-		initialized = true
-		LastSync = time.Now().Format(time.RFC3339)
-		Eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
-		Eb.Publish(string(TopicBackendConfig), sourceJSON)
+	if ok && !reflect.DeepEqual(curRegulationJSON, regulationJSON) {
+		log.Info("Regulations changed")
+		curRegulationJSONLock.Lock()
+		curRegulationJSON = regulationJSON
+		curRegulationJSONLock.Unlock()
+		regulationsInitialized = true
+		LastRegulationSync = time.Now().Format(time.RFC3339)
+		Eb.Publish(string(TopicRegulations), regulationJSON)
 	}
 }
+
 func configUpdate(statConfigBackendError stats.RudderStats) {
 
 	sourceJSON, ok := backendConfig.Get()
@@ -269,7 +311,7 @@ func pollRegulations() {
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
 		regulationsUpdate(statConfigBackendError)
-		time.Sleep(time.Duration(pollInterval))
+		time.Sleep(time.Duration(regulationsPollInterval))
 	}
 }
 
@@ -296,6 +338,7 @@ Data of the DataEvent should be a backendconfig.SourcesT struct.
 Available topics are:
 - TopicBackendConfig: Will receive complete backend configuration
 - TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
+- TopicRegulations: Will receeive all regulations
 */
 func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic Topic) {
 	Eb.Subscribe(string(topic), channel)
@@ -306,6 +349,8 @@ func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic Top
 		Eb.PublishToChannel(channel, string(topic), filteredSourcesJSON)
 	} else if topic == TopicBackendConfig {
 		Eb.PublishToChannel(channel, string(topic), curSourceJSON)
+	} else if topic == TopicRegulations {
+		Eb.PublishToChannel(channel, string(topic), curRegulationJSON)
 	}
 	curSourceJSONLock.RUnlock()
 }
@@ -323,7 +368,7 @@ WaitForConfig waits until backend config has been initialized
 */
 func (bc *CommonBackendConfig) WaitForConfig() {
 	for {
-		if initialized {
+		if initialized && regulationsInitialized {
 			break
 		}
 		log.Info("Waiting for initializing backend config")
