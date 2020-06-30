@@ -31,7 +31,6 @@ type Report struct {
 	handlers map[string]ReportFileHandler
 
 	startedAt time.Time // holds when Save() was called
-	tempDir   string    // on Save(), will be initialized to path of temporary directory, used to hold report contents
 }
 
 // RegisterFileHandler registers a new ReportFileHandler on this Report,
@@ -90,11 +89,23 @@ func (r *Report) filePath(file string) string {
 
 // Save stores the report file.
 // TODO: Explain
-func (r *Report) Save() (err error) {
+func (r *Report) Save() error {
 	r.startedAt = time.Now()
 
 	r.EnsureTempDir()
 
+	if err := r.generateReportFiles(); err != nil {
+		return fmt.Errorf("Could not generate report files: %w", err)
+	}
+
+	if err := r.packageTempDir(); err != nil {
+		return fmt.Errorf("Could not package report: %w", err)
+	}
+
+	return nil
+}
+
+func (r *Report) generateReportFiles() (err error) {
 	// store report's metadata
 	_, err = r.SaveMetadata()
 	if err != nil {
@@ -187,7 +198,9 @@ func (r *Report) panicMetadata() map[string]interface{} {
 // ReportHandler is the Crash handler responsible for creating the report file.
 func (r *Report) ReportHandler(pi PanicInformation) {
 	r.PanicInformation = pi
-	r.Save()
+	if err := r.Save(); err != nil {
+		logger.Errorf("Could not generate crash report: %v", err)
+	}
 }
 
 // WriteMapToFile is a utility function that dumps contents of a map to a file.
