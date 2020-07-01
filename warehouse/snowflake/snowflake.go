@@ -479,7 +479,7 @@ func (sf *HandleT) loadMappingsTable() (err error) {
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY MERGE_PROPERTY_TYPE, MERGE_PROPERTY_TYPE  ORDER BY UPDATED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
+											SELECT *, row_number() OVER (PARTITION BY MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE ORDER BY UPDATED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
 									ON (original.MERGE_PROPERTY_TYPE = staging.MERGE_PROPERTY_TYPE AND original.MERGE_PROPERTY_VALUE = staging.MERGE_PROPERTY_VALUE)
@@ -506,7 +506,9 @@ func (sf *HandleT) loadUserTables() (err error) {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), sf.DbHandle)
 		return
 	}
-	defer resp.dbHandle.Close()
+	if resp.dbHandle != nil {
+		defer resp.dbHandle.Close()
+	}
 
 	idr := identity.HandleT{
 		Warehouse: sf.Warehouse,
@@ -536,25 +538,16 @@ func (sf *HandleT) loadUserTables() (err error) {
 	}
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), usersTable), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[2]s AS
-									WITH USERS_WITH_RUDDER_IDS AS (
-										SELECT u.ID AS ID, %[6]s, m.RUDDER_ID AS RUDDER_ID FROM "%[1]s"."%[4]s" u JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'user_id' AND u.ID = m.MERGE_PROPERTY_VALUE WHERE ID in (SELECT USER_ID FROM %[5]s)
-									), IDENTIFIES_STAGING_WITH_RUDDER_IDS AS (
+									WITH IDENTIFIES_STAGING_WITH_RUDDER_IDS AS (
 										SELECT m.RUDDER_ID AS RUDDER_ID FROM %[7]s u JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND u.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE
 									), IDENTIFIES_WITH_RUDDER_IDS AS (
-										SELECT USER_ID, %[6]s, m.RUDDER_ID AS RUDDER_ID FROM %[5]s u JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND u.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE  WHERE RUDDER_ID IN (SELECT DISTINCT(RUDDER_ID) FROM IDENTIFIES_STAGING_WITH_RUDDER_IDS)
+										SELECT USER_ID AS ID, %[6]s, m.RUDDER_ID AS RUDDER_ID FROM (SELECT * FROM %[5]s WHERE ANONYMOUS_ID IN (SELECT DISTINCT(MERGE_PROPERTY_VALUE) FROM RUDDER_IDENTITY_MAPPINGS WHERE MERGE_PROPERTY_TYPE ='anonymous_id' AND RUDDER_ID IN (SELECT DISTINCT(RUDDER_ID) FROM IDENTIFIES_STAGING_WITH_RUDDER_IDS))) u JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND u.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE
 									)
 									(SELECT DISTINCT * FROM
 										(
 											SELECT
 											ID, %[3]s
-											FROM (
-												(
-													SELECT * FROM USERS_WITH_RUDDER_IDS
-												) UNION
-												(
-													SELECT * FROM IDENTIFIES_WITH_RUDDER_IDS
-												)
-											)
+											FROM IDENTIFIES_WITH_RUDDER_IDS
 										) WHERE ID IS NOT NULL
 									)`,
 		sf.Namespace,
@@ -606,7 +599,9 @@ func (sf *HandleT) loadUserTables() (err error) {
 
 func (sf *HandleT) load() (errList []error) {
 	logger.Infof("SF: Starting load for all %v tables\n", len(sf.Upload.Schema))
-	if _, ok := sf.Upload.Schema[usersTable]; ok {
+	_, ok1 := sf.Upload.Schema[usersTable]
+	_, ok2 := sf.Upload.Schema["RUDDER_IDENTITY_MERGE_RULES"]
+	if ok1 || ok2 {
 		err := sf.loadUserTables()
 		if err != nil {
 			errList = append(errList, err)

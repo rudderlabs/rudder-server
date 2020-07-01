@@ -216,7 +216,16 @@ func (idr *HandleT) ApplyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 			row2Values = fmt.Sprintf(`, (%s)`, row2Values)
 		}
 
-		sqlStatement := fmt.Sprintf(`SELECT merge_property_type, merge_property_value FROM %s WHERE rudder_id IN %v`, mappingsTable, rudderIDs)
+		var x string
+		for index, rudderID := range rudderIDs {
+			if index > 0 {
+				x += fmt.Sprintf(`, `)
+			}
+			x += fmt.Sprintf(`'%s'`, rudderID)
+		}
+
+		sqlStatement := fmt.Sprintf(`SELECT merge_property_type, merge_property_value FROM %s WHERE rudder_id IN (%v)`, mappingsTable, x)
+		fmt.Printf("%+v\n", sqlStatement)
 		rows, err := txn.Query(sqlStatement)
 		if err != nil {
 			// TODO: change this
@@ -234,15 +243,16 @@ func (idr *HandleT) ApplyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 			csvRows = append(csvRows, csvRow)
 		}
 
-		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN %v`, mappingsTable, newID, time.Now(), rudderIDs)
+		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN (%v)`, mappingsTable, newID, currentTimeString, x)
+		fmt.Printf("%+v\n", sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
 			// TODO: change this
 			panic(err)
 		}
 
-		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, mappingsTable, row1Values, row2Values, "unique_merge_property")
-
+		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, mappingsTable, row1Values, row2Values, "unique_merge_property")
+		fmt.Printf("%+v\n", sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
 			// TODO: change this

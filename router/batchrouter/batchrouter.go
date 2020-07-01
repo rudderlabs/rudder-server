@@ -49,6 +49,8 @@ var (
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTimeinHr   time.Duration
+	warehouseEncounteredAnonIDMap      map[string]map[string]bool
+	warehouseEncounteredAnonIDMapLock  sync.RWMutex
 )
 
 type HandleT struct {
@@ -84,6 +86,12 @@ func (brt *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == brt.destType {
 						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
+						if misc.ContainsString(warehouseDestinations, brt.destType) {
+							x := fmt.Sprintf(`%s_%s`, source.ID, destination.ID)
+							if _, ok := warehouseEncounteredAnonIDMap[x]; !ok {
+								warehouseEncounteredAnonIDMap[x] = make(map[string]bool)
+							}
+						}
 					}
 				}
 			}
@@ -150,7 +158,21 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 
 	eventsFound := false
+	x := fmt.Sprintf(`%s_%s`, batchJobs.BatchDestination.Source.ID, batchJobs.BatchDestination.Destination.ID)
 	for _, job := range batchJobs.Jobs {
+		if isWarehouse && gjson.GetBytes(job.EventPayload, "metadata.isMergeRule").Bool() {
+			anonymousID := gjson.GetBytes(job.EventPayload, "metadata.anonymousId").String()
+			warehouseEncounteredAnonIDMapLock.Lock()
+			if _, ok := warehouseEncounteredAnonIDMap[x][anonymousID]; ok {
+				fmt.Println("%%%%%%%%%%%%%here")
+				continue
+			} else {
+				fmt.Println("***********here")
+				warehouseEncounteredAnonIDMap[x][anonymousID] = true
+			}
+			warehouseEncounteredAnonIDMapLock.Unlock()
+		}
+
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
 		var ok bool
 		interruptedEventsMap, isDestInterrupted := uploadedRawDataJobsCache[batchJobs.BatchDestination.Destination.ID]
@@ -755,6 +777,7 @@ func loadConfig() {
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
+	warehouseEncounteredAnonIDMap = map[string]map[string]bool{}
 }
 
 func init() {
