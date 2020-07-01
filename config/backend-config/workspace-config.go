@@ -4,17 +4,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 )
 
 type WorkspaceConfig struct {
 	CommonBackendConfig
+	workspaceID     string
+	workspaceIDLock sync.RWMutex
 }
 
 func (workspaceConfig *WorkspaceConfig) SetUp() {
 }
 
 func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
-	return ""
+	workspaceConfig.workspaceIDLock.RLock()
+	defer workspaceConfig.workspaceIDLock.RUnlock()
+
+	return workspaceConfig.workspaceID
 }
 
 //Get returns sources from the workspace
@@ -66,6 +72,11 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 		log.Error("Error while parsing request", err, string(respBody), resp.StatusCode)
 		return SourcesT{}, false
 	}
+
+	workspaceConfig.workspaceIDLock.Lock()
+	workspaceConfig.workspaceID = sourcesJSON.WorkspaceID
+	workspaceConfig.workspaceIDLock.Unlock()
+
 	return sourcesJSON, true
 }
 

@@ -127,6 +127,7 @@ type SourceRegulationT struct {
 
 type SourcesT struct {
 	EnableMetrics bool      `json:"enableMetrics"`
+	WorkspaceID   string    `json:"workspaceId"`
 	Sources       []SourceT `json:"sources"`
 }
 
