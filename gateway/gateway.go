@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
@@ -551,7 +552,7 @@ func (gateway *HandleT) webRequestRouter() {
 func (gateway *HandleT) printStats() {
 	for {
 		time.Sleep(10 * time.Second)
-		logger.Info("Gateway Recv/Ack ", gateway.recvCount, gateway.ackCount)
+		logger.Debug("Gateway Recv/Ack ", gateway.recvCount, gateway.ackCount)
 	}
 }
 
@@ -740,14 +741,6 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(healthVal))
 }
 
-func (gateway *HandleT) printStackHandler(w http.ResponseWriter, r *http.Request) {
-	byteArr := make([]byte, 2048*1024)
-	n := runtime.Stack(byteArr, true)
-	stackTrace := string(byteArr[:n])
-	instanceID := misc.GetNodeID()
-	w.Write([]byte(fmt.Sprintf(`{"instance": "%s", "stack": "%s"}`, instanceID, stackTrace)))
-}
-
 func reflectOrigin(origin string) bool {
 	return true
 }
@@ -769,19 +762,9 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler))
 	srvMux.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
 	srvMux.HandleFunc("/health", gateway.healthHandler)
-	srvMux.HandleFunc("/debugStack", gateway.printStackHandler)
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
 	srvMux.HandleFunc("/version", gateway.versionHandler)
-	srvMux.HandleFunc("/writeKeys", func(w http.ResponseWriter, r *http.Request) {
-		configSubscriberLock.RLock()
-		defer configSubscriberLock.RUnlock()
-		writeKeys := make([]string, 0, len(enabledWriteKeysSourceMap))
-		for k := range enabledWriteKeysSourceMap {
-			writeKeys = append(writeKeys, k)
-		}
-		w.Write([]byte(fmt.Sprintf(`["%s"]`, strings.Join(writeKeys, `","`))))
-	})
 
 	if gateway.application.Features().Webhook != nil {
 		srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
@@ -879,12 +862,12 @@ func (gateway *HandleT) AddToWebRequestQ(req *http.Request, writer *http.Respons
 
 // IncrementRecvCount increments the received count for gateway requests
 func (gateway *HandleT) IncrementRecvCount(count uint64) {
-	atomic.AddUint64(&gateway.ackCount, count)
+	atomic.AddUint64(&gateway.recvCount, count)
 }
 
 // IncrementAckCount increments the acknowledged count for gateway requests
 func (gateway *HandleT) IncrementAckCount(count uint64) {
-	atomic.AddUint64(&gateway.recvCount, count)
+	atomic.AddUint64(&gateway.ackCount, count)
 }
 
 // UpdateWriteKeyStats creates a new stat for every writekey and updates it with the corresponding count
@@ -935,6 +918,8 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.jobsDB = jobsDB
 
 	gateway.versionHandler = versionHandler
+
+	admin.RegisterAdminHandler("Gateway", &GatewayAdmin{handle: gateway})
 
 	//gateway.webhookHandler should be initialised before workspace config fetch.
 	if gateway.application.Features().Webhook != nil {
