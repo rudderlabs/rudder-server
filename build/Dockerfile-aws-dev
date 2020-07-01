@@ -6,5 +6,6 @@ RUN mkdir /app
 ADD . /app
 ADD build/wait-for /
 ADD build/docker-entrypoint.sh /
+RUN ln -s /app/rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["/rudder-server-with-race"]
