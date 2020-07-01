@@ -18,7 +18,7 @@ phases:
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
-      - go get github.com/onsi/ginkgo/ginkgo
+      - (cd && go get github.com/onsi/ginkgo/ginkgo)
   build:
     commands:
       - export GO111MODULE=on
@@ -28,13 +28,15 @@ phases:
       - ginkgo -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --progress --skipPackage=tests ./...
       - find . -name "profile.out" | while read file;do cat $file >> coverage.txt; echo "" >> coverage.txt;done
       - bash build/codecov.sh
-      - GOOS=linux LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
-      - docker build -t rudderlabs/develop-rudder-server:$VERSION -f build/Dockerfile-aws .
+      - GOOS=linux GOARCH=amd64 CGO_ENABLED=1 RACE_ENABLED=TRUE LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
+      - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
+      - docker build -t rudderlabs/develop-rudder-server:$VERSION -f build/Dockerfile-aws-dev .
       # Build Enterprise version
       - make enterprise-init
       - ginkgo -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --progress --skipPackage=tests ./...
-      - GOOS=linux LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
-      - docker build -t rudderstack/rudder-server-enterprise:$VERSION -f build/Dockerfile-aws .
+      - GOOS=linux GOARCH=amd64 CGO_ENABLED=1 RACE_ENABLED=TRUE LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
+      - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
+      - docker build -t rudderstack/rudder-server-enterprise:$VERSION -f build/Dockerfile-aws-dev .
   post_build:
     commands:
       - docker push rudderlabs/develop-rudder-server:$VERSION

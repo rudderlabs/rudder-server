@@ -119,6 +119,14 @@ var _ = Describe("Warehouse", func() {
 				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return helpers.IsThisInThatSliceString(tables, loadedTables)
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+			By("test to create a load file in database for POSTGRES destination")
+			Eventually(func() bool {
+				destType := POSTGRES
+				WarehouseConfig := warehouses[destType]
+				tables := []string{"tracks", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
+				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+				return helpers.IsThisInThatSliceString(tables, loadedTables)
+			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 			By("test create load files if source has two warehouse destinations")
 			Eventually(func() bool {
 				destType := BQ

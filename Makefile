@@ -26,7 +26,11 @@ prepare-build: build-sql-migrations enterprise-prepare-build
 	$(GO) run -tags=dev generate-sql-migrations.go
 	
 build: prepare-build ## Build rudder-server binary
-	$(GO) build -mod vendor -a -ldflags="$(LDFLAGS)"
+	$(eval BUILD_OPTIONS = )
+ifeq ($(RACE_ENABLED), TRUE)
+	$(eval BUILD_OPTIONS = $(BUILD_OPTIONS) -race -o rudder-server-with-race)
+endif
+	$(GO) build $(BUILD_OPTIONS) -mod vendor -a -ldflags="$(LDFLAGS)"
 
 run: prepare-build ## Run rudder-server using go run
 	$(GO) run -mod=vendor main.go
