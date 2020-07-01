@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 	snowflake "github.com/snowflakedb/gosnowflake" //blank comment
@@ -397,6 +398,106 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 	return
 }
 
+func (sf *HandleT) loadMergeRulesTable() (err error) {
+	tableName := "RUDDER_IDENTITY_MERGE_RULES"
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, sf.Upload.ID, tableName)
+	fmt.Printf("%+v\n", sqlStatement)
+	var location string
+	err = sf.DbHandle.QueryRow(sqlStatement).Scan(&location)
+	if err != nil {
+		return err
+	}
+
+	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
+	if err != nil {
+		logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", tableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		return
+	}
+
+	x := []string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"}
+	var sortedColumnNames string
+	for index, key := range x {
+		if index > 0 {
+			sortedColumnNames += fmt.Sprintf(`, `)
+		}
+		sortedColumnNames += fmt.Sprintf(`%s`, key)
+	}
+	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, location)
+	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, tableName), sortedColumnNames, loadLocation, sf.authString())
+
+	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+	}
+	return
+}
+
+func (sf *HandleT) loadMappingsTable() (err error) {
+	tableName := "RUDDER_IDENTITY_MAPPINGS"
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, sf.Upload.ID, tableName)
+	fmt.Printf("%+v\n", sqlStatement)
+	var location string
+	err = sf.DbHandle.QueryRow(sqlStatement).Scan(&location)
+	if err != nil {
+		return err
+	}
+
+	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
+	if err != nil {
+		logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", tableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		return
+	}
+
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
+	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, tableName)
+
+	logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("SF: Error creating temporary table for table:%s: %v\n", tableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		return
+	}
+
+	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, location)
+	sqlStatement = fmt.Sprintf(`COPY INTO %v(MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE, RUDDER_ID, UPDATED_AT) FROM '%v' %s PATTERN = '.*\.csv\.gz'
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, stagingTableName), loadLocation, sf.authString())
+
+	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		return
+	}
+
+	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
+									USING (
+										SELECT * FROM (
+											SELECT *, row_number() OVER (PARTITION BY MERGE_PROPERTY_TYPE, MERGE_PROPERTY_TYPE  ORDER BY UPDATED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
+										) AS q WHERE _rudder_staging_row_number = 1
+									) AS staging
+									ON (original.MERGE_PROPERTY_TYPE = staging.MERGE_PROPERTY_TYPE AND original.MERGE_PROPERTY_VALUE = staging.MERGE_PROPERTY_VALUE)
+									WHEN MATCHED THEN
+									UPDATE SET original.RUDDER_ID = staging.RUDDER_ID, original.UPDATED_AT =  staging.UPDATED_AT
+									WHEN NOT MATCHED THEN
+									INSERT (MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE, RUDDER_ID, UPDATED_AT) VALUES (staging.MERGE_PROPERTY_TYPE, staging.MERGE_PROPERTY_VALUE, staging.RUDDER_ID, staging.UPDATED_AT)`, tableName, stagingTableName)
+	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		return
+	}
+
+	return
+}
+
 func (sf *HandleT) loadUserTables() (err error) {
 	logger.Infof("SF: Starting load for identifies and users tables\n")
 	resp, err := sf.loadTable(identifiesTable, sf.Upload.Schema[identifiesTable], true, true)
@@ -407,36 +508,62 @@ func (sf *HandleT) loadUserTables() (err error) {
 	}
 	defer resp.dbHandle.Close()
 
+	idr := identity.HandleT{
+		Warehouse: sf.Warehouse,
+		DbHandle:  sf.DbHandle,
+		Upload:    sf.Upload,
+	}
+	idr.Resolve()
+	err = sf.loadMergeRulesTable()
+	if err != nil {
+		panic(err)
+	}
+
+	err = sf.loadMappingsTable()
+	if err != nil {
+		panic(err)
+	}
+
 	userColMap := sf.CurrentSchema[usersTable]
-	var userColNames, firstValProps []string
+	var userColNames, firstValProps, x []string
 	for colName := range userColMap {
 		if colName == "ID" {
 			continue
 		}
-		userColNames = append(userColNames, colName)
-		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
+		userColNames = append(userColNames, fmt.Sprintf(`u.%[1]s AS %[1]s`, colName))
+		x = append(x, colName)
+		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY RUDDER_ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), usersTable), 127)
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[2]s AS (SELECT DISTINCT * FROM
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[2]s AS
+									WITH USERS_WITH_RUDDER_IDS AS (
+										SELECT u.ID AS ID, %[6]s, m.RUDDER_ID AS RUDDER_ID FROM "%[1]s"."%[4]s" u JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'user_id' AND u.ID = m.MERGE_PROPERTY_VALUE WHERE ID in (SELECT USER_ID FROM %[5]s)
+									), IDENTIFIES_STAGING_WITH_RUDDER_IDS AS (
+										SELECT m.RUDDER_ID AS RUDDER_ID FROM %[7]s u JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND u.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE
+									), IDENTIFIES_WITH_RUDDER_IDS AS (
+										SELECT USER_ID, %[6]s, m.RUDDER_ID AS RUDDER_ID FROM %[5]s u JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND u.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE  WHERE RUDDER_ID IN (SELECT DISTINCT(RUDDER_ID) FROM IDENTIFIES_STAGING_WITH_RUDDER_IDS)
+									)
+									(SELECT DISTINCT * FROM
 										(
 											SELECT
 											ID, %[3]s
 											FROM (
 												(
-													SELECT ID, %[6]s FROM "%[1]s"."%[4]s" WHERE ID in (SELECT USER_ID FROM %[5]s)
+													SELECT * FROM USERS_WITH_RUDDER_IDS
 												) UNION
 												(
-													SELECT USER_ID, %[6]s FROM %[5]s
+													SELECT * FROM IDENTIFIES_WITH_RUDDER_IDS
 												)
 											)
-										)
+										) WHERE ID IS NOT NULL
 									)`,
 		sf.Namespace,
 		stagingTableName,
 		strings.Join(firstValProps, ","),
 		usersTable,
-		resp.stagingTable,
+		identifiesTable,
 		strings.Join(userColNames, ","),
+		resp.stagingTable,
 	)
 	logger.Infof("SF: Creating staging table for users: %s\n", sqlStatement)
 	_, err = resp.dbHandle.Exec(sqlStatement)
@@ -447,7 +574,7 @@ func (sf *HandleT) loadUserTables() (err error) {
 	}
 
 	primaryKey := "ID"
-	columnNames := append([]string{"ID"}, userColNames...)
+	columnNames := append([]string{"ID"}, x...)
 	columnNamesStr := strings.Join(columnNames, ",")
 	columnsWithValuesArr := []string{}
 	stagingColumnValuesArr := []string{}
@@ -489,7 +616,7 @@ func (sf *HandleT) load() (errList []error) {
 	wg.Add(len(sf.Upload.Schema))
 	loadChan := make(chan struct{}, maxParallelLoads)
 	for tableName, columnMap := range sf.Upload.Schema {
-		if tableName == usersTable || tableName == identifiesTable {
+		if tableName == usersTable || tableName == identifiesTable || tableName == "RUDDER_IDENTITY_MERGE_RULES" || tableName == "RUDDER_IDENTITY_MAPPINGS" {
 			wg.Done()
 			continue
 		}

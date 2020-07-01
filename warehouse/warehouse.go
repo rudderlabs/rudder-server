@@ -369,6 +369,15 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 		warehouseutils.ToProviderCase(destType, "uuid_ts"):      "datetime",
 	}
 	currSchema[warehouseutils.ToProviderCase(destType, warehouseutils.DiscardsTable)] = discards
+
+	// add rudder_identity_mappings table
+	identityMappings := map[string]string{
+		warehouseutils.ToProviderCase(destType, "merge_property_type"):  "string",
+		warehouseutils.ToProviderCase(destType, "merge_property_value"): "string",
+		warehouseutils.ToProviderCase(destType, "rudder_id"):            "string",
+		warehouseutils.ToProviderCase(destType, "updated_at"):           "datetime",
+	}
+	currSchema[warehouseutils.ToProviderCase(destType, "rudder_identity_mappings")] = identityMappings
 	return currSchema
 }
 
@@ -397,6 +406,10 @@ func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[st
 	tables := make([]string, 0, len(schema))
 	for t := range schema {
 		tables = append(tables, t)
+		// TODO: remove table name hardcoding
+		if strings.ToLower(t) == "rudder_identity_merge_rules" {
+			tables = append(tables, warehouseutils.ToProviderCase(upload.DestinationType, "rudder_identity_mappings"))
+		}
 	}
 
 	now := timeutil.Now()
@@ -1087,6 +1100,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	if err != nil {
 		panic(err)
 	}
+	defer os.Remove(jsonPath)
 
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig),
@@ -1104,7 +1118,6 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		return loadFileIDs, err
 	}
 	jsonFile.Close()
-	defer os.Remove(jsonPath)
 	timer.End()
 
 	fi, err := os.Stat(jsonPath)

@@ -514,17 +514,36 @@ func GetObjectFolder(provider string, location string) (folder string) {
 	return
 }
 
+// GetObjectFolder returns the folder path for the storage object based on the storage provider
+// eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
+func GetObjectLocation(provider string, location string) (folder string) {
+	switch provider {
+	case "S3":
+		folder, _ = GetS3Location(location)
+		break
+	case "GCS":
+		folder = GetGCSLocation(location, GCSLocationOptionsT{TLDFormat: "gcs"})
+		break
+	case "AZURE_BLOB":
+		folder = GetAzureBlobLocation(location)
+		break
+	}
+	return
+}
+
 // GetObjectName extracts object/key objectName from different buckets locations
 // ex: https://bucket-endpoint/bucket-name/object -> object
-func GetObjectName(providerConfig interface{}, location string) (objectName string, err error) {
+func GetObjectName(providerConfig interface{}, location string, objectProvider string) (objectName string, err error) {
 	var config map[string]interface{}
 	var ok bool
-	var bucketProvider string
 	if config, ok = providerConfig.(map[string]interface{}); !ok {
 		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
 	}
-	if bucketProvider, ok = config["bucketProvider"].(string); !ok {
-		return "", errors.New("failed to get bucket information")
+	bucketProvider := objectProvider
+	if bucketProvider == "" {
+		if bucketProvider, ok = config["bucketProvider"].(string); !ok {
+			return "", errors.New("failed to get bucket information")
+		}
 	}
 	fm, err := filemanager.New(&filemanager.SettingsT{
 		Provider: bucketProvider,
