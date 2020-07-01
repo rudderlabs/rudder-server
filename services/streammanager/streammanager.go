@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/services/streammanager/firehose"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
 )
@@ -47,6 +48,8 @@ func Produce(jsonData json.RawMessage, destination string, producer interface{},
 		return kinesis.Produce(jsonData, producer, config)
 	case "KAFKA":
 		return kafka.Produce(jsonData, producer, config)
+	case "FIREHOSE":
+		return firehose.Produce(jsonData, producer, config)
 	default:
 		return 404, "No provider configured for StreamManager", ""
 	}
