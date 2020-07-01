@@ -48,7 +48,8 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord cha
 
 The easiest way to try RudderStack is through our hosted service. Please signup [here](https://app.rudderstack.com/signup?type=freetrial)
 
-You can also set up and use RudderStack on your platform of choice. Please refer to the following guides for detailed instructions:
+You can also set up and use RudderStack on your platform of choice. 
+**Note:** If you are planning to use RudderStack in production, we **strongly** recommend the Kubernetes helm charts. We update our docker images with bug fixes etc much more frequently than our GitHub repo (where we release once a month). 
 
 - [Setting up RudderStack on Docker](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/docker)
 - [Setting up RudderStack on Kubernetes](https://docs.rudderstack.com/administrators-guide/installing-and-setting-up-rudderstack/kubernetes)
