@@ -1,5 +1,4 @@
 version: "3.7"
-
 services:
   db:
     image: postgres:11-alpine
@@ -9,6 +8,7 @@ services:
       - POSTGRES_DB=jobsdb
     ports:
       - "6432:5432"
+<<<<<<< HEAD
   backend:
     depends_on:
       - db
@@ -41,3 +41,37 @@ services:
     ports:
       - "9000:9000"
     command: server /data
+=======
+  # backend:
+  #   depends_on:
+  #     - db
+  #     - d-transformer
+  #   image: rudderlabs/rudder-server:latest
+  #   entrypoint: sh -c '/wait-for db:5432 -- /rudder-server'
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - JOBS_DB_HOST=db
+  #     - JOBS_DB_USER=rudder
+  #     - JOBS_DB_PORT=5432
+  #     - JOBS_DB_DB_NAME=jobsdb
+  #     - JOBS_DB_PASSWORD=password
+  #     - DEST_TRANSFORM_URL=http://d-transformer:9090
+  #     - CONFIG_BACKEND_URL=https://api.rudderlabs.com
+  #     - WORKSPACE_TOKEN=1SEnT8jo6QsrmYi5dQ9R6UTR4d9
+  #     - CONFIG_PATH=/app/config/config.toml
+  #     # - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
+  #     # - RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH=<workspace_config_filepath_in_container> # For ex., /etc/rudderstack/workspaceConfig.json
+  #   # Uncomment the following lines to mount workspaceConfig file
+  #   # volumes:
+  #   #   - <absolute_path_to_workspace_config>:<workspace_config_filepath_in_container> # Value for <workspace_config_filepath_in_container> should be same as the value provided for RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH
+  # d-transformer:
+  #   image: rudderlabs/rudder-transformer:latest
+  #   ports:
+  #     - "9090:9090"
+  # minio:
+  #   image: minio/minio
+  #   ports:
+  #     - "9000:9000"
+  #   command: server /data
+>>>>>>> 021c289d... changing for firehose
