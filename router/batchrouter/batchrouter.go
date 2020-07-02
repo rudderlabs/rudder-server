@@ -49,8 +49,8 @@ var (
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTimeinHr   time.Duration
-	warehouseEncounteredAnonIDMap      map[string]map[string]bool
-	warehouseEncounteredAnonIDMapLock  sync.RWMutex
+	encounteredAnonymousIDMap          map[string]map[string]bool
+	encounteredAnonymousIDMapLock      sync.RWMutex
 )
 
 type HandleT struct {
@@ -85,11 +85,13 @@ func (brt *HandleT) backendConfigSubscriber() {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == brt.destType {
-						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
+						batchDestination := DestinationT{Source: source, Destination: destination}
+						brt.batchDestinations = append(brt.batchDestinations, batchDestination)
+						// initialize map to track encountered anonymousIds for a warehouse destination
 						if misc.ContainsString(warehouseDestinations, brt.destType) {
-							x := fmt.Sprintf(`%s_%s`, source.ID, destination.ID)
-							if _, ok := warehouseEncounteredAnonIDMap[x]; !ok {
-								warehouseEncounteredAnonIDMap[x] = make(map[string]bool)
+							identifier := connectionString(batchDestination)
+							if _, ok := encounteredAnonymousIDMap[identifier]; !ok {
+								encounteredAnonymousIDMap[identifier] = make(map[string]bool)
 							}
 						}
 					}
@@ -158,19 +160,19 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 
 	eventsFound := false
-	x := fmt.Sprintf(`%s_%s`, batchJobs.BatchDestination.Source.ID, batchJobs.BatchDestination.Destination.ID)
+	identifier := connectionString(batchJobs.BatchDestination)
 	for _, job := range batchJobs.Jobs {
+		// do not add to staging file if the event is a rudder_identity_merge_rules record
+		// and has been previously added to it
 		if isWarehouse && gjson.GetBytes(job.EventPayload, "metadata.isMergeRule").Bool() {
 			anonymousID := gjson.GetBytes(job.EventPayload, "metadata.anonymousId").String()
-			warehouseEncounteredAnonIDMapLock.Lock()
-			if _, ok := warehouseEncounteredAnonIDMap[x][anonymousID]; ok {
-				fmt.Println("%%%%%%%%%%%%%here")
+			encounteredAnonymousIDMapLock.Lock()
+			if _, ok := encounteredAnonymousIDMap[identifier][anonymousID]; ok {
 				continue
 			} else {
-				fmt.Println("***********here")
-				warehouseEncounteredAnonIDMap[x][anonymousID] = true
+				encounteredAnonymousIDMap[identifier][anonymousID] = true
 			}
-			warehouseEncounteredAnonIDMapLock.Unlock()
+			encounteredAnonymousIDMapLock.Unlock()
 		}
 
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
@@ -501,7 +503,7 @@ type BatchJobsT struct {
 }
 
 func connectionString(batchDestination DestinationT) string {
-	return fmt.Sprintf(`source:%s:destination:%s`, batchDestination.Source.ID, batchDestination.Destination.ID)
+	return fmt.Sprintf(`source:%s::destination:%s`, batchDestination.Source.ID, batchDestination.Destination.ID)
 }
 
 func isDestInProgress(batchDestination DestinationT) bool {
@@ -777,7 +779,7 @@ func loadConfig() {
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
-	warehouseEncounteredAnonIDMap = map[string]map[string]bool{}
+	encounteredAnonymousIDMap = map[string]map[string]bool{}
 }
 
 func init() {

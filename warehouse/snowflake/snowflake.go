@@ -404,68 +404,66 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, dbHa
 }
 
 func (sf *HandleT) loadMergeRulesTable() (err error) {
-	tableName := "RUDDER_IDENTITY_MERGE_RULES"
-	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, sf.Upload.ID, tableName)
-	fmt.Printf("%+v\n", sqlStatement)
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, sf.Upload.ID, identityMergeRulesTable)
+	logger.Debugf("SF: Fetching load file location for %s: %s", identityMergeRulesTable, sqlStatement)
 	var location string
 	err = sf.DbHandle.QueryRow(sqlStatement).Scan(&location)
 	if err != nil {
+		logger.Errorf("SF: Error fetching load file location:%s Error: %v\n", sqlStatement, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, identityMergeRulesTable, err, sf.DbHandle)
 		return err
 	}
 
 	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
 	if err != nil {
-		logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", tableName, err)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", identityMergeRulesTable, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, identityMergeRulesTable, err, sf.DbHandle)
 		return
 	}
 
-	x := []string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"}
-	var sortedColumnNames string
-	for index, key := range x {
-		if index > 0 {
-			sortedColumnNames += fmt.Sprintf(`, `)
-		}
-		sortedColumnNames += fmt.Sprintf(`%s`, key)
-	}
+	sortedColumnNames := strings.Join([]string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"}, ",")
 	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, location)
 	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, tableName), sortedColumnNames, loadLocation, sf.authString())
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, identityMergeRulesTable), sortedColumnNames, loadLocation, sf.authString())
 
-	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	// TODO: sanitise log statement
+	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMergeRulesTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, identityMergeRulesTable, err, sf.DbHandle)
 	}
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, sf.Upload.ID, identityMergeRulesTable, sf.DbHandle)
+	logger.Infof("SF: Complete load for table:%s\n", identityMergeRulesTable)
 	return
 }
 
 func (sf *HandleT) loadMappingsTable() (err error) {
-	tableName := "RUDDER_IDENTITY_MAPPINGS"
-	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, sf.Upload.ID, tableName)
-	fmt.Printf("%+v\n", sqlStatement)
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, sf.Upload.ID, identityMappingsTable)
+	logger.Debugf("SF: Fetching load file location for %s: %s", identityMappingsTable, sqlStatement)
 	var location string
 	err = sf.DbHandle.QueryRow(sqlStatement).Scan(&location)
 	if err != nil {
+		logger.Errorf("SF: Error fetching load file location:%s Error: %v\n", sqlStatement, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, identityMappingsTable, err, sf.DbHandle)
 		return err
 	}
 
 	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
 	if err != nil {
-		logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", tableName, err)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", identityMappingsTable, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, identityMappingsTable, err, sf.DbHandle)
 		return
 	}
 
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
-	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, tableName)
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), identityMappingsTable), 127)
+	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, identityMappingsTable)
 
-	logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
+	logger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("SF: Error creating temporary table for table:%s: %v\n", tableName, err)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		logger.Errorf("SF: Error creating temporary table for table:%s: %v\n", identityMappingsTable, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, identityMappingsTable, err, sf.DbHandle)
 		return
 	}
 
@@ -473,11 +471,11 @@ func (sf *HandleT) loadMappingsTable() (err error) {
 	sqlStatement = fmt.Sprintf(`COPY INTO %v(MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE, RUDDER_ID, UPDATED_AT) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, stagingTableName), loadLocation, sf.authString())
 
-	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, identityMappingsTable, err, sf.DbHandle)
 		return
 	}
 
@@ -491,29 +489,28 @@ func (sf *HandleT) loadMappingsTable() (err error) {
 									WHEN MATCHED THEN
 									UPDATE SET original.RUDDER_ID = staging.RUDDER_ID, original.UPDATED_AT =  staging.UPDATED_AT
 									WHEN NOT MATCHED THEN
-									INSERT (MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE, RUDDER_ID, UPDATED_AT) VALUES (staging.MERGE_PROPERTY_TYPE, staging.MERGE_PROPERTY_VALUE, staging.RUDDER_ID, staging.UPDATED_AT)`, tableName, stagingTableName)
-	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+									INSERT (MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE, RUDDER_ID, UPDATED_AT) VALUES (staging.MERGE_PROPERTY_TYPE, staging.MERGE_PROPERTY_VALUE, staging.RUDDER_ID, staging.UPDATED_AT)`, identityMappingsTable, stagingTableName)
+	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, tableName, err, sf.DbHandle)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, identityMappingsTable, err, sf.DbHandle)
 		return
 	}
-
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, sf.Upload.ID, identityMappingsTable, sf.DbHandle)
+	logger.Infof("SF: Complete load for table:%s\n", identityMappingsTable)
 	return
 }
 
-func (sf *HandleT) loadUserTables() (err error) {
-	logger.Infof("SF: Starting load for identifies and users tables\n")
+func (sf *HandleT) loadIdentityTables() (err error) {
+	logger.Infof("SF: Starting load for identity tables\n")
 
 	_, haveToUploadIdentifies := sf.Upload.Schema[identifiesTable]
-
 	var identifiesLoadResp tableLoadRespT
 	if haveToUploadIdentifies {
 		identifiesLoadResp, err = sf.loadTable(identifiesTable, sf.Upload.Schema[identifiesTable], nil, true, true)
 		if err != nil {
-			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, warehouseutils.IdentifiesTable, err, sf.DbHandle)
-			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), sf.DbHandle)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, usersTable, errors.New("Failed to upload identifies table"), sf.DbHandle)
 			return
 		}
 		if identifiesLoadResp.dbHandle != nil {
@@ -521,34 +518,12 @@ func (sf *HandleT) loadUserTables() (err error) {
 		}
 	}
 
-	_, haveToUploadMergeRules := sf.Upload.Schema[identityMergeRulesTable]
-
-	if haveToUploadMergeRules {
-		idr := identity.HandleT{
-			Warehouse: sf.Warehouse,
-			DbHandle:  sf.DbHandle,
-			Upload:    sf.Upload,
-		}
-		idr.Resolve()
-		err = sf.loadMergeRulesTable()
-		if err != nil {
-			panic(err)
-		}
-
-		err = sf.loadMappingsTable()
-		if err != nil {
-			panic(err)
-		}
-	}
-
 	_, haveToUploadAliases := sf.Upload.Schema[aliasTable]
-
 	var aliasLoadResp tableLoadRespT
 	if haveToUploadAliases {
 		aliasLoadResp, err = sf.loadTable(aliasTable, sf.Upload.Schema[aliasTable], identifiesLoadResp.dbHandle, true, true)
 		if err != nil {
-			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, warehouseutils.IdentifiesTable, err, sf.DbHandle)
-			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), sf.DbHandle)
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, usersTable, errors.New("Failed to upload aliases table"), sf.DbHandle)
 			return
 		}
 		if aliasLoadResp.dbHandle != nil {
@@ -556,8 +531,31 @@ func (sf *HandleT) loadUserTables() (err error) {
 		}
 	}
 
-	haveToUploadUsers := haveToUploadIdentifies || haveToUploadAliases
+	_, haveToUploadMergeRules := sf.Upload.Schema[identityMergeRulesTable]
+	if haveToUploadMergeRules {
+		idr := identity.HandleT{
+			Warehouse: sf.Warehouse,
+			DbHandle:  sf.DbHandle,
+			Upload:    sf.Upload,
+		}
+		err = idr.Resolve()
+		if err != nil {
+			logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
+		}
+		err = sf.loadMergeRulesTable()
+		if err != nil {
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, usersTable, errors.New("Failed to upload rudder_identity_merge_rules table"), sf.DbHandle)
+			return
+		}
 
+		err = sf.loadMappingsTable()
+		if err != nil {
+			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, usersTable, errors.New("Failed to upload rudder_identity_mappings table"), sf.DbHandle)
+			return
+		}
+	}
+
+	haveToUploadUsers := haveToUploadIdentifies || haveToUploadAliases
 	if !haveToUploadUsers {
 		return
 	}
@@ -574,37 +572,38 @@ func (sf *HandleT) loadUserTables() (err error) {
 		rudderIDsListTable = fmt.Sprintf(`WITH RUDDER_IDS_LIST_TABLE AS (
 				SELECT * FROM (
 					(
-						SELECT m.RUDDER_ID AS RUDDER_ID FROM %[1]s u JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND u.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE
+						SELECT m.RUDDER_ID AS RUDDER_ID FROM %[1]s i_st JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND i_st.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE
 					) UNION
 					(
-						SELECT m.RUDDER_ID AS RUDDER_ID FROM %[2]s u JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'user_id' AND (u.USER_ID = m.MERGE_PROPERTY_VALUE OR u.PREVIOUS_ID = m.MERGE_PROPERTY_VALUE)
+						SELECT m.RUDDER_ID AS RUDDER_ID FROM %[2]s a_st JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'user_id' AND (a_st.USER_ID = m.MERGE_PROPERTY_VALUE OR a_st.PREVIOUS_ID = m.MERGE_PROPERTY_VALUE)
 					)
 				)
 			)`, identifiesLoadResp.stagingTable, aliasLoadResp.stagingTable)
 	} else if haveToUploadIdentifies {
 		rudderIDsListTable = fmt.Sprintf(`WITH RUDDER_IDS_LIST_TABLE AS (
-				SELECT m.RUDDER_ID AS RUDDER_ID FROM %[1]s u JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND u.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE
+				SELECT m.RUDDER_ID AS RUDDER_ID FROM %[1]s i_st JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND i_st.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE
 			)`, identifiesLoadResp.stagingTable)
 	} else if haveToUploadAliases {
 		rudderIDsListTable = fmt.Sprintf(`WITH RUDDER_IDS_LIST_TABLE AS (
-				SELECT m.RUDDER_ID AS RUDDER_ID FROM %[1]s u JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'user_id' AND (u.USER_ID = m.MERGE_PROPERTY_VALUE OR u.PREVIOUS_ID = m.MERGE_PROPERTY_VALUE)
+				SELECT m.RUDDER_ID AS RUDDER_ID FROM %[1]s a_st JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'user_id' AND (a_st.USER_ID = m.MERGE_PROPERTY_VALUE OR a_st.PREVIOUS_ID = m.MERGE_PROPERTY_VALUE)
 			)`, aliasLoadResp.stagingTable)
 	}
 
 	userColMap := sf.CurrentSchema[usersTable]
-	var userColNames, firstValProps, x []string
+	var userColNamesAliased, firstValProps, userColNames []string
 	for colName := range userColMap {
 		if colName == "ID" {
 			continue
 		}
-		userColNames = append(userColNames, fmt.Sprintf(`u.%[1]s AS %[1]s`, colName))
-		x = append(x, colName)
+		userColNames = append(userColNames, colName)
+		userColNamesAliased = append(userColNamesAliased, fmt.Sprintf(`i.%[1]s AS %[1]s`, colName))
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY RUDDER_ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), usersTable), 127)
+	// TODO: Add example query
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s AS
 									%[5]s, IDENTIFIES_WITH_RUDDER_IDS AS (
-										SELECT USER_ID AS ID, %[4]s, m.RUDDER_ID AS RUDDER_ID FROM (SELECT * FROM %[3]s WHERE ANONYMOUS_ID IN (SELECT DISTINCT(MERGE_PROPERTY_VALUE) FROM RUDDER_IDENTITY_MAPPINGS WHERE MERGE_PROPERTY_TYPE ='anonymous_id' AND RUDDER_ID IN (SELECT DISTINCT(RUDDER_ID) FROM RUDDER_IDS_LIST_TABLE))) u JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND u.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE
+										SELECT USER_ID AS ID, %[4]s, m.RUDDER_ID AS RUDDER_ID FROM (SELECT * FROM %[3]s WHERE ANONYMOUS_ID IN (SELECT DISTINCT(MERGE_PROPERTY_VALUE) FROM RUDDER_IDENTITY_MAPPINGS WHERE MERGE_PROPERTY_TYPE ='anonymous_id' AND RUDDER_ID IN (SELECT DISTINCT(RUDDER_ID) FROM RUDDER_IDS_LIST_TABLE))) i JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND i.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE
 									)
 									(SELECT DISTINCT * FROM
 										(
@@ -616,7 +615,7 @@ func (sf *HandleT) loadUserTables() (err error) {
 		stagingTableName,
 		strings.Join(firstValProps, ","),
 		identifiesTable,
-		strings.Join(userColNames, ","),
+		strings.Join(userColNamesAliased, ","),
 		rudderIDsListTable,
 	)
 	logger.Infof("SF: Creating staging table for users: %s\n", sqlStatement)
@@ -628,7 +627,7 @@ func (sf *HandleT) loadUserTables() (err error) {
 	}
 
 	primaryKey := "ID"
-	columnNames := append([]string{"ID"}, x...)
+	columnNames := append([]string{"ID"}, userColNames...)
 	columnNamesStr := strings.Join(columnNames, ",")
 	columnsWithValuesArr := []string{}
 	stagingColumnValuesArr := []string{}
@@ -655,24 +654,23 @@ func (sf *HandleT) loadUserTables() (err error) {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, usersTable, err, sf.DbHandle)
 		return
 	}
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, sf.Upload.ID, usersTable, sf.DbHandle)
+	logger.Infof("SF: Complete load for table:%s\n", usersTable)
 	return
 }
 
 func (sf *HandleT) load() (errList []error) {
 	logger.Infof("SF: Starting load for all %v tables\n", len(sf.Upload.Schema))
-	_, ok1 := sf.Upload.Schema[usersTable]
-	_, ok2 := sf.Upload.Schema["RUDDER_IDENTITY_MERGE_RULES"]
-	if ok1 || ok2 {
-		err := sf.loadUserTables()
-		if err != nil {
-			errList = append(errList, err)
-		}
+	identityTables := []string{identifiesTable, usersTable, aliasTable, identityMergeRulesTable, identityMappingsTable}
+	err := sf.loadIdentityTables()
+	if err != nil {
+		errList = append(errList, err)
 	}
 	var wg sync.WaitGroup
 	wg.Add(len(sf.Upload.Schema))
 	loadChan := make(chan struct{}, maxParallelLoads)
 	for tableName, columnMap := range sf.Upload.Schema {
-		if tableName == usersTable || tableName == identifiesTable || tableName == "RUDDER_IDENTITY_MERGE_RULES" || tableName == "RUDDER_IDENTITY_MAPPINGS" || tableName == "ALIASES" {
+		if misc.ContainsString(identityTables, tableName) {
 			wg.Done()
 			continue
 		}

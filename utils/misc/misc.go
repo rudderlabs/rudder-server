@@ -551,6 +551,17 @@ func MakeJSONArray(bytesArray [][]byte) []byte {
 	return joinedArray
 }
 
+func SingleQuotedJoin(slice []string) string {
+	var str string
+	for index, key := range slice {
+		if index > 0 {
+			str += fmt.Sprintf(`, `)
+		}
+		str += fmt.Sprintf(`'%s'`, key)
+	}
+	return str
+}
+
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number
 // of garage collection cycles completed.
 func PrintMemUsage() {

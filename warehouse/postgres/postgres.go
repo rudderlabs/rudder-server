@@ -211,7 +211,7 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	objectLocations, _ := warehouseutils.GetLoadFileLocations(pg.DbHandle, pg.Warehouse.Source.ID, pg.Warehouse.Destination.ID, tableName, pg.Upload.StartLoadFileID, pg.Upload.EndLoadFileID)
 	var filesName []string
 	for _, objectLocation := range objectLocations {
-		object, err := warehouseutils.GetObjectName(pg.Warehouse.Destination.Config, objectLocation, "")
+		object, err := warehouseutils.GetObjectName(objectLocation, pg.Warehouse.Destination.Config, pg.ObjectStorage)
 		if err != nil {
 			logger.Errorf("PG: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
 			return nil, err

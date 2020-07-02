@@ -377,7 +377,7 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 		warehouseutils.ToProviderCase(destType, "rudder_id"):            "string",
 		warehouseutils.ToProviderCase(destType, "updated_at"):           "datetime",
 	}
-	currSchema[warehouseutils.ToProviderCase(destType, "rudder_identity_mappings")] = identityMappings
+	currSchema[warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable)] = identityMappings
 	return currSchema
 }
 
@@ -406,9 +406,9 @@ func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[st
 	tables := make([]string, 0, len(schema))
 	for t := range schema {
 		tables = append(tables, t)
-		// TODO: remove table name hardcoding
-		if strings.ToLower(t) == "rudder_identity_merge_rules" {
-			tables = append(tables, warehouseutils.ToProviderCase(upload.DestinationType, "rudder_identity_mappings"))
+		// also track upload to rudder_identity_mappings if the upload has records for rudder_identity_merge_rules
+		if strings.ToLower(t) == warehouseutils.IdentityMergeRulesTable {
+			tables = append(tables, warehouseutils.ToProviderCase(upload.DestinationType, warehouseutils.IdentityMappingsTable))
 		}
 	}
 
