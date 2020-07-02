@@ -21,7 +21,7 @@ func init() {
 func loadConfig() {
 	host = config.GetEnv("CONFIG_DB_HOST", "localhost")
 	user = config.GetEnv("CONFIG_DB_USER", "postgres")
-	dbname = config.GetEnv("CONFIG_DB_DB_NAME", "postgresDB")
+	dbname = config.GetEnv("CONFIG_DB_DB_NAME", "postgresDBTest")
 	port, _ = strconv.Atoi(config.GetEnv("CONFIG_DB_PORT", "5433"))
 	password = config.GetEnv("CONFIG_DB_PASSWORD", "postgres")
 }

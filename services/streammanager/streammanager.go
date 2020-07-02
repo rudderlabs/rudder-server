@@ -21,6 +21,8 @@ func NewProducer(destinationConfig interface{}, destination string) (interface{}
 		return producer, err
 	case "AZURE_EVENT_HUB":
 		producer, err := kafka.NewProducerForAzureEventHub(destinationConfig)
+	case "FIREHOSE":
+		producer, err := firehose.NewProducer(destinationConfig)
 		return producer, err
 	case "FIREHOSE":
 		producer, err := firehose.NewProducer(destinationConfig)
