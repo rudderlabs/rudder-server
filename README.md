@@ -77,7 +77,7 @@ RudderStack has two major components, namely:
 - **Control Plane**: The control plane allows you to manage the configuration of your sources and destinations. There are two options for setting up the connections:
 
   - [Managed control plane](https://app.rudderstack.com/): This is the easiest way to manage your source and destination configurations.
-  - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. Please note that you cannot create transformations or Live Debugger with the RudderStack Config Generator.
+  - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. **Please note that you cannot create transformations or Live Debugger with the RudderStack Config Generator**.
 
 - **Data Plane**: This is the core engine that is responsible for:
 
