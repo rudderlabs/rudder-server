@@ -40,8 +40,6 @@ func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 	var config Config
 	jsonConfig, err := json.Marshal(destinationConfig)
 	err = json.Unmarshal(jsonConfig, &config)
-	config.AccessKeyID = "AKIAWTVBJHCTCA36AU3S"
-	config.AccessKey = "odp1IJeuoztJf65EFprJnK4H+9n+X34YEKb+WtJa"
 	var s *session.Session
 	if config.AccessKeyID == "" || config.AccessKey == "" {
 		s = session.Must(session.NewSession(&aws.Config{
