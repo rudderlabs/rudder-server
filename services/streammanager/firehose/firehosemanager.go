@@ -1,4 +1,4 @@
-package kinesis
+package firehose
 
 import (
 	"encoding/json"
@@ -8,20 +8,24 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go/service/firehose"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 )
 
 var abortableErrors = []string{}
 
-// Config is the config that is required to send data to Kinesis
+// Config is the config that is required to send data to Firehose
 type Config struct {
-	Region       string
-	Stream       string
-	AccessKeyID  string
-	AccessKey    string
-	UseMessageID bool
+	Region      string
+	AccessKeyID string
+	AccessKey   string
+	MapEvents   []mapEvents
+}
+
+type mapEvents struct {
+	from string
+	to   string
 }
 
 func init() {
@@ -32,12 +36,12 @@ func init() {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}) (kinesis.Kinesis, error) {
-	config := Config{}
-
+func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
+	var config Config
 	jsonConfig, err := json.Marshal(destinationConfig)
 	err = json.Unmarshal(jsonConfig, &config)
-
+	config.AccessKeyID = "AKIAWTVBJHCTCA36AU3S"
+	config.AccessKey = "odp1IJeuoztJf65EFprJnK4H+9n+X34YEKb+WtJa"
 	var s *session.Session
 	if config.AccessKeyID == "" || config.AccessKey == "" {
 		s = session.Must(session.NewSession(&aws.Config{
@@ -48,54 +52,44 @@ func NewProducer(destinationConfig interface{}) (kinesis.Kinesis, error) {
 			Region:      aws.String(config.Region),
 			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")}))
 	}
-	var kc *kinesis.Kinesis = kinesis.New(s)
+	var kc *firehose.Firehose = firehose.New(s)
 	return *kc, err
 }
 
-// Produce creates a producer and send data to Kinesis.
+// Produce creates a producer and send data to Firehose.
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string) {
 
 	parsedJSON := gjson.ParseBytes(jsonData)
 
-	kc, ok := producer.(kinesis.Kinesis)
+	kc, ok := producer.(firehose.Firehose)
 	if !ok {
 		return 400, "Could not create producer", "Could not create producer"
 	}
 
-	config := Config{}
+	var config Config
 
 	jsonConfig, err := json.Marshal(destConfig)
 	err = json.Unmarshal(jsonConfig, &config)
 
-	streamName := aws.String(config.Stream)
-
+	deliveryStreamMap := config.MapEvents
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
-	var userID string
-	if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
-		userID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
-	}
 
-	partitionKey := aws.String(userID)
-
-	if config.UseMessageID {
-		messageID := parsedJSON.Get("message").Get("messageId").Value().(string)
-		partitionKey = aws.String(messageID)
-	}
-
-	putOutput, err := kc.PutRecord(&kinesis.PutRecordInput{
-		Data:         []byte(value),
-		StreamName:   streamName,
-		PartitionKey: partitionKey,
+	putOutput, err := kc.PutRecord(&firehose.PutRecordInput{
+		DeliveryStreamName: aws.String(deliveryStreamMap[0].to),
+		Record:             &firehose.Record{Data: value},
 	})
+
 	if err != nil {
-		logger.Errorf("error in kinesis :: %v", err.Error())
+		logger.Errorf("error in firehose :: %v", err.Error())
 		statusCode := GetStatusCodeFromError(err)
 
 		return statusCode, err.Error(), err.Error()
 	}
-	message := fmt.Sprintf("Message delivered at SequenceNumber: %v , shard Id: %v", putOutput.SequenceNumber, putOutput.ShardId)
+
+	message := fmt.Sprintf("Message delivered with RecordId: %v and encrypted: %v", putOutput.RecordId, putOutput.Encrypted)
 	return 200, "Success", message
+
 }
 
 // GetStatusCodeFromError parses the error and returns the status so that event gets retried or failed.
