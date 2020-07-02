@@ -224,10 +224,6 @@ pollIntervalInS = 5
 regulationsPollIntervalInS = 300
 maxRegulationsPerRequest = 1000
 
-[BlendoConfig]
-pollIntervalInS = 5
-
-
 # If the server crashes 'crashThreshold' times in 'durationInS' seconds,
 #       then we mark it degraded
 # If the server crashes 'degradedCrashThreshold' times in 'degradedDurationInS' seconds in degraded mode,
