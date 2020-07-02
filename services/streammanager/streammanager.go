@@ -21,6 +21,8 @@ func NewProducer(destinationConfig interface{}, destination string) (interface{}
 		return producer, err
 	case "AZURE_EVENT_HUB":
 		producer, err := kafka.NewProducerForAzureEventHub(destinationConfig)
+	case "FIREHOSE":
+		producer, err := firehose.NewProducer(destinationConfig)
 		return producer, err
 	default:
 		return nil, fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
@@ -37,6 +39,8 @@ func CloseProducer(producer interface{}, destination string) error {
 	case "KAFKA", "AZURE_EVENT_HUB":
 		err := kafka.CloseProducer(producer)
 		return err
+	case "FIREHOSE":
+		return nil
 	default:
 		return fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
 	}
