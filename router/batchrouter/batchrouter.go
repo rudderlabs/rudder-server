@@ -120,7 +120,7 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func createTestFileForBatchDestination(destinationID string) string {
+func CreateTestFileForBatchDestination(destinationID string) string {
 	uuid := uuid.NewV4()
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -146,9 +146,7 @@ func createTestFileForBatchDestination(destinationID string) string {
 	return gzipFilePath
 }
 
-func testBatchDestinationConnection(destination backendconfig.DestinationT) {
-	testFileName := createTestFileForBatchDestination(destination.ID)
-	provider := destination.DestinationDefinition.Name
+func UploadTestFileForBatchDestination(filename string, provider string, destination backendconfig.DestinationT) (err error) {
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config:   misc.GetObjectStorageConfig(provider, destination.Config),
@@ -157,15 +155,21 @@ func testBatchDestinationConnection(destination backendconfig.DestinationT) {
 		logger.Errorf("BRT: Failed to get filemanager config for testing this destination id %s: err %v", destination.ID, err)
 		panic(err)
 	}
-	uploadFile, err := os.Open(testFileName)
+	uploadFile, err := os.Open(filename)
 	if err != nil {
-		logger.Errorf("BRT: Failed to open file %s for testing this destination id %s: err %v", testFileName, destination.ID, err)
+		logger.Errorf("BRT: Failed to open file %s for testing this destination id %s: err %v", filename, destination.ID, err)
 		panic(err)
 	}
 	_, err = uploader.Upload(uploadFile)
 	if err != nil {
-		logger.Errorf("BRT: Failed to upload test file %s for testing this destination id %s: err %v", testFileName, destination.ID, err)
+		logger.Errorf("BRT: Failed to upload test file %s for testing this destination id %s: err %v", filename, destination.ID, err)
 	}
+	return err
+}
+
+func testBatchDestinationConnection(destination backendconfig.DestinationT) {
+	testFileName := CreateTestFileForBatchDestination(destination.ID)
+	err := UploadTestFileForBatchDestination(testFileName, destination.DestinationDefinition.Name, destination)
 	var error string
 	if err != nil {
 		error = err.Error()

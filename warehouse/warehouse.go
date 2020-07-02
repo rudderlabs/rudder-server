@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -196,23 +197,24 @@ func testWarehouseDestinationConnection(destination backendconfig.DestinationT) 
 	if err != nil {
 		panic(err)
 	}
-
+	testFileName := batchrouter.CreateTestFileForBatchDestination(destination.ID)
+	storageProvider := warehouseutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config)
+	err = batchrouter.UploadTestFileForBatchDestination(testFileName, storageProvider, destination)
+	var error map[string]string
+	if err != nil {
+		error[storageProvider] = err.Error()
+	}
 	err = whManager.TestConnection(warehouseutils.ConfigT{
 		Warehouse: warehouseutils.WarehouseT{
 			Destination: destination,
 		},
 	})
 	if err != nil {
-		logger.Errorf("BRT: Failed to get filemanager config for testing this destination id %s: err %v", destination.ID, err)
-		panic(err)
+		error[destination.DestinationDefinition.Name] = err.Error()
 	}
-
-	var error string
-	if err != nil {
-		error = err.Error()
-	}
+	errByte, _ := json.Marshal(error)
 	testResponse := destinationConnectionTester.DestinationConnectionTesterResponse{
-		Error:         error,
+		Error:         string(errByte),
 		TestedAt:      time.Now(),
 		DestinationId: destination.ID,
 	}
