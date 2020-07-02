@@ -222,19 +222,9 @@ func loadConfig() {
 	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
-<<<<<<< HEAD
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES"}
-	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
-=======
-	processSessions = config.GetBool("Processor.processSessions", false)
-	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
-	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
-	maxRetry = config.GetInt("Processor.maxRetry", 30)
-	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE"}
-	customDestinations = []string{"KAFKA", "KINESIS", "FIREHOSE"}
->>>>>>> d218530e... changing for firehose
+	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "FIREHOSE"}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }
