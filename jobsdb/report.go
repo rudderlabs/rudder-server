@@ -7,6 +7,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/app/crash"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // Crash report handling - On a crash, a JobsDB will dump basic metadata and table contents
@@ -47,64 +48,43 @@ func (jd *HandleT) createTableDataReports(datasets []dataSetT, dir string) error
 	jd.createTableFile(dir, jd.GetTableName("schema_migrations"))
 
 	for _, ds := range datasets {
-		jd.createTableFile(dir, ds.JobTable)
+		jd.createTableFileWithFilter(dir, ds.JobTable, jobTableDataFilter)
 		jd.createTableFile(dir, ds.JobStatusTable)
 	}
 
 	return nil
 }
 
+func jobTableDataFilter(m map[string]interface{}) map[string]interface{} {
+	delete(m, "event_payload")
+	return m
+}
+
 func (jd *HandleT) createReportMetadata(datasets []dataSetT, file *os.File) error {
 	metadata := make(map[string]interface{})
 	metadata["datasets"] = datasetsMetadata(datasets)
 
-	return crash.WriteMapToFile(metadata, file)
+	return misc.WriteMapToWriter(metadata, file)
 }
 
-func (jd *HandleT) createTableFile(dir string, table string) error {
+func (jd *HandleT) createTableFile(dir string, table string) {
+	jd.createTableFileWithFilter(dir, table, nil)
+}
+
+func (jd *HandleT) createTableFileWithFilter(dir string, table string, filter misc.DumpQueryFilter) {
 	logger.Infof("JobsDB: %[1]s: Dumping data for table %[2]s", jd.tablePrefix, table)
+	filename := path.Join(dir, fmt.Sprintf("%s.jsonl", table))
 
 	// create file
-	file, err := os.Create(path.Join(dir, fmt.Sprintf("%s.jsonl", table)))
+	file, err := os.Create(filename)
 	if err != nil {
-		panic(err)
+		logger.Errorf("Could not create table file %s for jobsdb %s: %v", table, jd.tablePrefix, err)
 	}
 	defer file.Close()
 
-	// query all data
 	query := fmt.Sprintf("SELECT * FROM %s", table)
-	rows, err := jd.dbHandle.Query(query)
-	if err != nil {
-		panic(err)
+
+	if err = misc.DumpQueryToWriter(jd.dbHandle, query, file, filter); err != nil {
+		logger.Errorf("Could not dump data of table %s for jobsdb %s: %v", table, jd.tablePrefix, err)
 	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		panic(err)
-	}
-
-	// scan all rows, for each write a map to file, with columns as keys and query results as values.
-	values := make([][]byte, len(columns))
-	valuePointers := make([]interface{}, len(columns))
-
-	for i := range values {
-		valuePointers[i] = &values[i]
-	}
-
-	for rows.Next() {
-		row := make(map[string]interface{})
-		err := rows.Scan(valuePointers...)
-		if err != nil {
-			panic(err)
-		}
-
-		for i, raw := range values {
-			row[columns[i]] = string(raw)
-		}
-
-		crash.WriteMapToFile(row, file)
-	}
-
-	return nil
 }

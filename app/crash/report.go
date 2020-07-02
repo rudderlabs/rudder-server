@@ -1,15 +1,13 @@
 package crash
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // ReportFileHandler is a function responsible for producing contents of a report file.
@@ -148,7 +146,7 @@ func (r *Report) SaveMetadata() (metadataPath string, err error) {
 	defer file.Close()
 
 	metadata := r.metadata()
-	err = WriteMapToFile(metadata, file)
+	err = misc.WriteMapToWriter(metadata, file)
 	if err != nil {
 		err = fmt.Errorf("Could not write report metadata file '%v': %w", metadataPath, err)
 		return
@@ -201,18 +199,4 @@ func (r *Report) ReportHandler(pi PanicInformation) {
 	if err := r.Save(); err != nil {
 		logger.Errorf("Could not generate crash report: %v", err)
 	}
-}
-
-// WriteMapToFile is a utility function that dumps contents of a map to a file.
-func WriteMapToFile(data map[string]interface{}, file *os.File) (err error) {
-	marshalled, err := json.MarshalIndent(data, "", "\t")
-	if err != nil {
-		err = fmt.Errorf("Could not marshal report metadata: %w", err)
-		return
-	}
-
-	reader := bytes.NewReader(marshalled)
-	_, err = io.Copy(file, reader)
-
-	return
 }
