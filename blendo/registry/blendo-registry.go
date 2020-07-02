@@ -126,6 +126,7 @@ func (br *BlendoRegistry) deleteConfigFromRegistry(id string) (response []byte, 
 	return RequestToRegistry(id, "DELETE", nil)
 }
 
+// calculateDifferencesAndUpdateRegistry calculate the differences from the previous config and make the coresponding actions
 func (br *BlendoRegistry) calculateDifferencesAndUpdateRegistry(sources []backendconfig.SourceT) {
 	prevSources := br.currentSourceJSON.Sources
 	for _, source := range sources {
@@ -139,6 +140,7 @@ func (br *BlendoRegistry) calculateDifferencesAndUpdateRegistry(sources []backen
 					sourceExists = true
 					for _, destination := range source.Destinations {
 						pipelineId := br.getPipelineId(source.ID, destination.ID)
+						// if source deleted delete all the pipelines from registry for this source
 						if source.Deleted != prevSource.Deleted {
 							br.deleteConfigFromRegistry(pipelineId)
 							continue
@@ -147,17 +149,22 @@ func (br *BlendoRegistry) calculateDifferencesAndUpdateRegistry(sources []backen
 							for _, prevDestination := range prevSource.Destinations {
 								if prevDestination.ID == destination.ID {
 									destinationExists = true
+									// if destination deleted state has change (this means that deleted is true) remove the pipeline from registry
 									if destination.Deleted != prevDestination.Deleted {
 										br.deleteConfigFromRegistry(pipelineId)
+										// if destination or source enabled status has change then update registry configuration
 									} else if destination.Enabled != prevDestination.Enabled || source.Enabled != prevSource.Enabled {
 										br.putConfigToRegistry(pipelineId, br.getConfig(source, destination))
 									}
 									break
 								}
 							}
+							// if destination not found in the previous destinations mean is new
 							if !destinationExists {
+								// if source or destination is deleted remove pipeline from blendo registry
 								if source.Deleted || destination.Deleted {
 									br.deleteConfigFromRegistry(pipelineId)
+									// or put the pipeline to blendo registry
 								} else {
 									br.putConfigToRegistry(pipelineId, br.getConfig(source, destination))
 								}
@@ -168,11 +175,14 @@ func (br *BlendoRegistry) calculateDifferencesAndUpdateRegistry(sources []backen
 				}
 			}
 		}
+		// if source not found in the previous sources mean is new
 		if !sourceExists {
 			for _, destination := range source.Destinations {
 				pipelineId := br.getPipelineId(source.ID, destination.ID)
+				// for each destination remove deleted pipelines from blendo registry
 				if source.Deleted || destination.Deleted {
 					br.deleteConfigFromRegistry(pipelineId)
+					// or put the pipeline to blendo registry
 				} else {
 					br.putConfigToRegistry(pipelineId, br.getConfig(source, destination))
 				}
@@ -181,6 +191,7 @@ func (br *BlendoRegistry) calculateDifferencesAndUpdateRegistry(sources []backen
 	}
 }
 
+// deleteRemovedSourcesDestinations Removes pipelines from registry that no longer exists camparing the previous configuration
 func (br *BlendoRegistry) deleteRemovedSourcesDestinations(sources []backendconfig.SourceT) {
 	prevSources := br.currentSourceJSON.Sources
 	for _, prevSource := range prevSources {
