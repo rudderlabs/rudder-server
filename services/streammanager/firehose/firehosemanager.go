@@ -20,12 +20,16 @@ type Config struct {
 	Region      string
 	AccessKeyID string
 	AccessKey   string
-	MapEvents   []mapEvents
+	MapEvents   []map[string]string
 }
 
-type mapEvents struct {
-	from string
-	to   string
+// type mapEvents struct {
+// 	from string
+// 	to   string
+// }
+
+type dataEvent struct {
+	event string
 }
 
 func init() {
@@ -68,15 +72,13 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	jsonConfig, err := json.Marshal(destConfig)
 	err = json.Unmarshal(jsonConfig, &config)
-
 	deliveryStreamMap := config.MapEvents
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
 
-	putOutput, err := kc.PutRecord(&firehose.PutRecordInput{
-		DeliveryStreamName: aws.String(deliveryStreamMap[0].to),
-		Record:             &firehose.Record{Data: value},
-	})
+	event := parsedJSON.Get("message.event")
+	var putOutput *firehose.PutRecordOutput
+	var errorRec error
 
 	if err != nil {
 		logger.Errorf("error in firehose :: %v", err.Error())
@@ -85,9 +87,25 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		return statusCode, err.Error(), err.Error()
 	}
 
-	message := fmt.Sprintf("Message delivered with RecordId: %v and encrypted: %v", putOutput.RecordId, putOutput.Encrypted)
-	return 200, "Success", message
+	for i := 0; i < len(deliveryStreamMap); i++ {
+		if event.Value() == deliveryStreamMap[i]["from"] {
+			putOutput, errorRec = kc.PutRecord(&firehose.PutRecordInput{
+				DeliveryStreamName: aws.String(deliveryStreamMap[i]["to"]),
+				Record:             &firehose.Record{Data: value},
+			})
+		}
+		if errorRec != nil {
+			logger.Errorf("error in firehose :: %v", errorRec.Error())
+			statusCode := GetStatusCodeFromError(errorRec)
 
+			return statusCode, errorRec.Error(), errorRec.Error()
+		}
+
+	}
+
+	message := fmt.Sprintf("Message delivered with RecordId: %v and encrypted: %v", putOutput.RecordId, putOutput.Encrypted) //has to be changed
+
+	return 200, "Success", message
 }
 
 // GetStatusCodeFromError parses the error and returns the status so that event gets retried or failed.
