@@ -175,7 +175,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 
 	query := bq.Db.Query(fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
 							 FROM %[1]s.INFORMATION_SCHEMA.TABLES as t JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c
-							 ON (t.table_name = c.table_name) and (t.table_type != 'VIEW')`, namespace))
+							 ON (t.table_name = c.table_name) and (t.table_type != 'VIEW') and c.column_name != '_PARTITIONTIME'`, namespace))
 
 	it, err := query.Read(bq.BQContext)
 	if err != nil {
@@ -349,7 +349,7 @@ func (bq *HandleT) loadUserTables() (err error) {
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", partitionDate)
 	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL`, bqIdentifiesTable, partition)
-	sqlStatement := fmt.Sprintf(`SELECT DISTINCT * EXCEPT (_PARTITIONTIME) FROM (
+	sqlStatement := fmt.Sprintf(`SELECT DISTINCT *  FROM (
 			SELECT id, %[1]s FROM (
 				(
 					SELECT id, %[2]s FROM %[3]s WHERE (
