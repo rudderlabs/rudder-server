@@ -50,7 +50,7 @@ var (
 	webPort                          int
 	dbHandle                         *sql.DB
 	notifier                         pgnotifier.PgNotifierT
-	warehouseDestinations            []string
+	WarehouseDestinations            []string
 	jobQueryBatchSize                int
 	noOfWorkers                      int
 	noOfSlaveWorkerRoutines          int
@@ -132,7 +132,7 @@ func init() {
 func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
@@ -1405,7 +1405,7 @@ func monitorDestRouters() {
 		for _, source := range sources.Sources {
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
-				if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 					if !ok {
 						logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)

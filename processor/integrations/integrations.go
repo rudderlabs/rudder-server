@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rudderlabs/rudder-server/warehouse"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -184,7 +186,7 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 //GetDestinationURL returns node URL
 func GetDestinationURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
-	if misc.Contains(misc.WarehouseDestinations, destType) {
+	if misc.Contains(warehouse.WarehouseDestinations, destType) {
 		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s", config.GetWHSchemaVersion())
 		if destType == "RS" {
 			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
