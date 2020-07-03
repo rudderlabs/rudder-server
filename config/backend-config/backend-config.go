@@ -39,6 +39,7 @@ var (
 	regulationsInitialized                bool
 	LastSync                              string
 	LastRegulationSync                    string
+	enableSuppressUserFeature             bool
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
@@ -187,6 +188,8 @@ func loadConfig() {
 	regulationsPollInterval = config.GetDuration("BackendConfig.regulationsPollIntervalInS", 5) * time.Second
 	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
+	// Enable suppress user feature. true by default
+	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", true)
 }
 
 func MakePostRequest(url string, endpoint string, data interface{}) (response []byte, ok bool) {
@@ -413,7 +416,9 @@ func Setup() {
 		pollConfigUpdate()
 	})
 
-	rruntime.Go(func() {
-		pollRegulations()
-	})
+	if enableSuppressUserFeature {
+		rruntime.Go(func() {
+			pollRegulations()
+		})
+	}
 }
