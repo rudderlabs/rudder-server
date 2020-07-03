@@ -59,14 +59,9 @@ type Config struct {
 	MapEvents   []map[string]string
 }
 
-// type mapEvents struct {
-// 	from string
-// 	to   string
-// }
-
-type dataEvent struct {
-	event string
-}
+var putOutput *firehose.PutRecordOutput = nil
+var errorRec error
+var event gjson.Result
 
 func init() {
 	abortableErrors = []string{"AccessDeniedException", "IncompleteSignature", "InvalidAction", "InvalidClientTokenId", "InvalidParameterCombination",
@@ -93,6 +88,7 @@ func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 	}
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 	var fh *firehose.Firehose = firehose.New(s)
 	return *fh, err
 }
@@ -112,6 +108,10 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	var kc *firehose.Firehose = firehose.New(s)
 >>>>>>> 4a2aa8f2... added sending simple events to firehose
 	return *kc, err
+=======
+	var fh *firehose.Firehose = firehose.New(s)
+	return *fh, err
+>>>>>>> dbb561bc... showing information to user for firehose
 }
 
 // Produce creates a producer and send data to Firehose.
@@ -120,11 +120,15 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	parsedJSON := gjson.ParseBytes(jsonData)
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 	kc, ok := producer.(kinesis.Kinesis)
 >>>>>>> 021c289d... changing for firehose
 =======
 	kc, ok := producer.(firehose.Firehose)
 >>>>>>> 4a2aa8f2... added sending simple events to firehose
+=======
+	fh, ok := producer.(firehose.Firehose)
+>>>>>>> dbb561bc... showing information to user for firehose
 	if !ok {
 		return 400, "Could not create producer", "Could not create producer"
 	}
@@ -187,9 +191,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
 
-	event := parsedJSON.Get("message.event")
-	var putOutput *firehose.PutRecordOutput
-	var errorRec error
+	event = parsedJSON.Get("message.event")
 
 	if err != nil {
 		logger.Errorf("error in firehose :: %v", err.Error())
@@ -197,10 +199,11 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 		return statusCode, err.Error(), err.Error()
 	}
-
+	putOutput = nil
 	for i := 0; i < len(deliveryStreamMap); i++ {
+
 		if event.Value() == deliveryStreamMap[i]["from"] {
-			putOutput, errorRec = kc.PutRecord(&firehose.PutRecordInput{
+			putOutput, errorRec = fh.PutRecord(&firehose.PutRecordInput{
 				DeliveryStreamName: aws.String(deliveryStreamMap[i]["to"]),
 				Record:             &firehose.Record{Data: value},
 			})
@@ -214,8 +217,8 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	}
 
-	message := fmt.Sprintf("Message delivered with RecordId: %v and encrypted: %v", putOutput.RecordId, putOutput.Encrypted) //has to be changed
-
+	message := fmt.Sprintf("Message delivered for event %v and Record information %v", event, putOutput) //has to be changed
+	fmt.Println(message)
 	return 200, "Success", message
 }
 
