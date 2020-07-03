@@ -333,26 +333,12 @@ func (bq *HandleT) loadUserTables() (err error) {
 		return fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, column)
 	}
 
-	// join both current schema and upload schema, to get full list of properties
-	userColMap := make(map[string]string)
-	if _, ok := bq.CurrentSchema["users"]; ok {
-		for columnName, columnType := range bq.CurrentSchema["users"] {
-			userColMap[columnName] = columnType
-		}
-	}
-
-	if _, ok := bq.Upload.Schema["users"]; ok {
-		for columnName, columnType := range bq.Upload.Schema["users"] {
-			userColMap[columnName] = columnType
-		}
-	}
-
+	userColMap := bq.CurrentSchema["users"]
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "id" {
 			continue
 		}
-		fmt.Println("Current schema column: ", colName)
 		userColNames = append(userColNames, colName)
 		firstValProps = append(firstValProps, firstValueSQL(colName))
 	}
@@ -471,6 +457,7 @@ func (bq *HandleT) MigrateSchema() (err error) {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
 		return
 	}
+	bq.CurrentSchema = updatedSchema
 	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatedSchemaState, bq.DbHandle)
 	if err != nil {
 		panic(err)
