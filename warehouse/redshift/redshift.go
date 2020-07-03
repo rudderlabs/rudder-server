@@ -34,6 +34,7 @@ var (
 	warehouseUploadsTable string
 	stagingTablePrefix    string
 	maxParallelLoads      int
+	setVarCharMax         bool
 )
 
 type HandleT struct {
@@ -55,6 +56,7 @@ const (
 	RSDbName            = "database"
 	RSUserName          = "user"
 	RSPassword          = "password"
+	rudderStringLength  = 512
 )
 
 var dataTypesMap = map[string]string{
@@ -63,6 +65,7 @@ var dataTypesMap = map[string]string{
 	"bigint":   "bigint",
 	"float":    "double precision",
 	"string":   "varchar(512)",
+	"text":     "varchar(max)",
 	"datetime": "timestamp",
 }
 
@@ -103,10 +106,14 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
+// getRSDataType gets datatype for rs which is mapped with rudderstack datatype
+func getRSDataType(columnType string) string {
+	return dataTypesMap[columnType]
+}
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	arr := []string{}
 	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[dataType]))
+		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, getRSDataType(dataType)))
 	}
 	return strings.Join(arr[:], ",")
 }
@@ -119,7 +126,8 @@ func (rs *HandleT) createTable(name string, columns map[string]string) (err erro
 			sortKeyField = "id"
 		}
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) SORTKEY("%s")`, name, columnsWithDataTypes(columns, ""), sortKeyField)
+	distkey := "id"
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) DISTSTYLE KEY DISTKEY("%s") SORTKEY("%s") `, name, columnsWithDataTypes(columns, ""), distkey, sortKeyField)
 	logger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
@@ -136,8 +144,16 @@ func (rs *HandleT) tableExists(tableName string) (exists bool, err error) {
 }
 
 func (rs *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, dataTypesMap[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, getRSDataType(columnType))
 	logger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	_, err = rs.Db.Exec(sqlStatement)
+	return
+}
+
+// alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift
+func (rs *HandleT) alterStringToText(tableName string, columnName string) (err error) {
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ALTER COLUMN "%s" TYPE %s`, tableName, columnName, getRSDataType("text"))
+	logger.Infof("Altering column type in redshift from string to text(varchar(max)) RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -191,6 +207,19 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 			}
 		}
 	}
+	if setVarCharMax {
+		for tableName, stringColumnsToBeAlteredToText := range diff.StringColumnsToBeAlteredToText {
+			if len(stringColumnsToBeAlteredToText) > 0 {
+				for _, columnName := range stringColumnsToBeAlteredToText {
+					err := rs.alterStringToText(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName)
+					if err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+	}
+
 	return
 }
 
@@ -209,7 +238,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	}
 
 	schema = make(map[string]map[string]string)
-	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type
+	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type, character_maximum_length
 									FROM INFORMATION_SCHEMA.COLUMNS
 									WHERE table_schema = '%s' and table_name not like '%s%s'`, namespace, stagingTablePrefix, "%")
 
@@ -224,7 +253,8 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	defer rows.Close()
 	for rows.Next() {
 		var tName, cName, cType string
-		err = rows.Scan(&tName, &cName, &cType)
+		var charLength sql.NullInt64
+		err = rows.Scan(&tName, &cName, &cType, &charLength)
 		if err != nil {
 			logger.Errorf("RS: Error in processing fetched schema from redshift destination:%v", rs.Warehouse.Destination.ID)
 			return
@@ -233,6 +263,9 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 			schema[tName] = make(map[string]string)
 		}
 		if datatype, ok := dataTypesMapToRudder[cType]; ok {
+			if datatype == "string" && charLength.Int64 > rudderStringLength {
+				datatype = "text"
+			}
 			schema[tName][cName] = datatype
 		}
 	}
@@ -654,6 +687,7 @@ func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder_staging_"
 	maxParallelLoads = config.GetInt("Warehouse.redshift.maxParallelLoads", 3)
+	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
 }
 
 func init() {

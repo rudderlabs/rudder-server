@@ -50,7 +50,7 @@ var (
 	webPort                          int
 	dbHandle                         *sql.DB
 	notifier                         pgnotifier.PgNotifierT
-	warehouseDestinations            []string
+	WarehouseDestinations            []string
 	jobQueryBatchSize                int
 	noOfWorkers                      int
 	noOfSlaveWorkerRoutines          int
@@ -132,7 +132,7 @@ func init() {
 func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
@@ -196,7 +196,7 @@ func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string
 		uploadIDs = append(uploadIDs, uploadID)
 	}
 	for _, uploadID := range uploadIDs {
-		wh.recordDeliveryStatus(uploadID)
+		wh.recordDeliveryStatus(destinationID, uploadID)
 	}
 }
 
@@ -293,6 +293,10 @@ func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schem
 
 					if _, ok := currentSchema[tableName]; ok {
 						if columnTypeInDB, ok := currentSchema[tableName][columnName]; ok {
+							if columnTypeInDB == "string" && columnType == "text" {
+								schemaMap[tableName][columnName] = columnType
+								continue
+							}
 							schemaMap[tableName][columnName] = columnTypeInDB
 							continue
 						}
@@ -442,8 +446,8 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	if ok := jsonUploadsList[0].FirstEventAt.IsZero(); !ok {
 		firstEventAt = jsonUploadsList[0].FirstEventAt
 	}
-	if ok := jsonUploadsList[0].LastEventAt.IsZero(); !ok {
-		lastEventAt = jsonUploadsList[0].LastEventAt
+	if ok := jsonUploadsList[len(jsonUploadsList)-1].LastEventAt.IsZero(); !ok {
+		lastEventAt = jsonUploadsList[len(jsonUploadsList)-1].LastEventAt
 	}
 
 	now := timeutil.Now()
@@ -823,7 +827,10 @@ func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err e
 	return
 }
 
-func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
+func (wh *HandleT) recordDeliveryStatus(destID string, uploadID int64) {
+	if !destinationdebugger.HasUploadEnabled(destID) {
+		return
+	}
 	var (
 		sourceID      string
 		destinationID string
@@ -857,12 +864,12 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 		}
 	}
 
-	var errJson map[string]map[string]interface{}
-	err = json.Unmarshal([]byte(errorResp), &errJson)
+	var errJSON map[string]map[string]interface{}
+	err = json.Unmarshal([]byte(errorResp), &errJSON)
 	if err != nil {
 		panic(err)
 	}
-	if stateErr, ok := errJson[status]; ok {
+	if stateErr, ok := errJSON[status]; ok {
 		if attempt, ok := stateErr["attempt"]; ok {
 			if floatAttempt, ok := attempt.(float64); ok {
 				attemptNum = attemptNum + int(floatAttempt)
@@ -914,7 +921,7 @@ func (wh *HandleT) initWorkers() {
 						if len(job.List) == 0 {
 							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 							warehouseutils.SetUploadError(job.Upload, errors.New("no staging files found"), warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
-							wh.recordDeliveryStatus(job.Upload.ID)
+							wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 							break
 						}
 						// consolidate schema if not already done
@@ -929,7 +936,7 @@ func (wh *HandleT) initWorkers() {
 							logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
 							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 							warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
-							wh.recordDeliveryStatus(job.Upload.ID)
+							wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 							break
 						}
 
@@ -982,12 +989,12 @@ func (wh *HandleT) initWorkers() {
 								//Unreachable code. So not modifying the stat 'failed_uploads', which is reused later for copying.
 								warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 								warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
-								wh.recordDeliveryStatus(job.Upload.ID)
+								wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 								break
 							}
 						}
 						err = wh.SyncLoadFilesToWarehouse(&job)
-						wh.recordDeliveryStatus(job.Upload.ID)
+						wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 
 						createPlusUploadTimer.End()
 
@@ -1309,7 +1316,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
-					if dataTypeInSchema == "string" {
+					if dataTypeInSchema == "string" || dataTypeInSchema == "text" {
 						// pass it along since string type column can accomodate any kind of value
 					} else if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
@@ -1415,7 +1422,7 @@ func monitorDestRouters() {
 		for _, source := range sources.Sources {
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
-				if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 					if !ok {
 						logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)

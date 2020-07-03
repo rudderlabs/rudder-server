@@ -57,7 +57,7 @@ enterprise-update-commit: ## Updates linked enterprise commit to current commit 
 
 enterprise-prepare-build: ## Create ./imports/enterprise.go, to link enterprise packages in binary
 	@if [ -d "./$(ENTERPRISE_DIR)" ]; then \
-		$(ENTERPRISE_DIR)/import.sh ./$(ENTERPRISE_DIR) > ./imports/enterprise.go; \
+		$(ENTERPRISE_DIR)/import.sh ./$(ENTERPRISE_DIR) | tee ./imports/enterprise.go; \
 	else \
 		rm -f ./imports/enterprise.go; \
 	fi
