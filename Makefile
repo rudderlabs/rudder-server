@@ -30,7 +30,7 @@ build: prepare-build ## Build rudder-server binary
 ifeq ($(RACE_ENABLED), TRUE)
 	$(eval BUILD_OPTIONS = $(BUILD_OPTIONS) -race -o rudder-server-with-race)
 endif
-	$(GO) build $(BUILD_OPTIONS) -mod vendor -a -ldflags="$(LDFLAGS)"
+	$(GO) build $(BUILD_OPTIONS) -mod vendor -a -installsuffix cgo -ldflags="$(LDFLAGS)"
 
 run: prepare-build ## Run rudder-server using go run
 	$(GO) run -mod=vendor main.go
