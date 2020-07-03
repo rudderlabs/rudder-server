@@ -105,7 +105,7 @@ func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]Work
 
 	totalWorkspaceRegulations := []WorkspaceRegulationT{}
 	for {
-		url := fmt.Sprintf("%s/workspaceRegulations?offset=%d&limit=%d", configBackendURL, offset, maxRegulationsPerRequest)
+		url := fmt.Sprintf("%s/workspaces/regulations?offset=%d&limit=%d", configBackendURL, offset, maxRegulationsPerRequest)
 		respBody, statusCode, err := workspaceConfig.makeHTTPRequest(url)
 		if err != nil {
 			log.Error("Error sending request to the server", err)
@@ -140,7 +140,7 @@ func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceR
 
 	totalSourceRegulations := []SourceRegulationT{}
 	for {
-		url := fmt.Sprintf("%s/sourceRegulations?offset=%d&limit=%d", configBackendURL, offset, maxRegulationsPerRequest)
+		url := fmt.Sprintf("%s/workspaces/sources/regulations?offset=%d&limit=%d", configBackendURL, offset, maxRegulationsPerRequest)
 		respBody, statusCode, err := workspaceConfig.makeHTTPRequest(url)
 		if err != nil {
 			log.Error("Error sending request to the server", err)
