@@ -136,6 +136,26 @@ type RegulationsT struct {
 	SourceRegulations    []SourceRegulationT    `json:"sourceRegulations"`
 }
 
+type WRegulationsT struct {
+	//TODO change types
+	WorkspaceRegulations []WorkspaceRegulationT `json:"workspaceRegulations"`
+	Start                string                 `json:"start"`
+	Limit                string                 `json:"limit"`
+	Size                 int                    `json:"size"`
+	End                  bool                   `json:"end"`
+	Next                 string                 `json:"next"`
+}
+
+type SRegulationsT struct {
+	//TODO change types
+	SourceRegulations []SourceRegulationT `json:"sourceRegulations"`
+	Start             string              `json:"start"`
+	Limit             string              `json:"limit"`
+	Size              int                 `json:"size"`
+	End               bool                `json:"end"`
+	Next              string              `json:"next"`
+}
+
 type TransformationT struct {
 	ID          string
 	Name        string

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 )
 
@@ -97,38 +98,126 @@ func (workspaceConfig *WorkspaceConfig) getFromFile() (SourcesT, bool) {
 	return configJSON, true
 }
 
-// getFromApi gets the workspace config from api
 func (workspaceConfig *WorkspaceConfig) getRegulationsFromAPI() (RegulationsT, bool) {
-	url := fmt.Sprintf("%s/regulations", configBackendURL)
-	req, err := Http.NewRequest("GET", url, nil)
-	if err != nil {
-		log.Error("Error when creating request", err)
+	regulationsJSON := RegulationsT{}
+	wregulations, status := workspaceConfig.getWorkspaceRegulationsFromAPI()
+	if !status {
 		return RegulationsT{}, false
 	}
+	regulationsJSON.WorkspaceRegulations = wregulations
 
-	req.SetBasicAuth(workspaceToken, "")
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Error("Error when sending request to the server", err)
+	var sregulations []SourceRegulationT
+	sregulations, status = workspaceConfig.getSourceRegulationsFromAPI()
+	if !status {
 		return RegulationsT{}, false
 	}
+	regulationsJSON.SourceRegulations = sregulations
 
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = IoUtil.ReadAll(resp.Body)
-		defer resp.Body.Close()
-	}
-
-	var regulationsJSON RegulationsT
-	err = json.Unmarshal(respBody, &regulationsJSON)
-	if err != nil {
-		log.Error("Error while parsing request", err, string(respBody), resp.StatusCode)
-		return RegulationsT{}, false
-	}
 	return regulationsJSON, true
+}
+
+func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]WorkspaceRegulationT, bool) {
+	offset := 0
+	limit := 10
+
+	totalWorkspaceRegulations := []WorkspaceRegulationT{}
+	for {
+		url := fmt.Sprintf("%s/workspaceRegulations?offset=%d&limit=%d", configBackendURL, offset, limit)
+		req, err := Http.NewRequest("GET", url, nil)
+		if err != nil {
+			log.Error("Error when creating request", err)
+			return []WorkspaceRegulationT{}, false
+		}
+
+		req.SetBasicAuth(workspaceToken, "")
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Error("Error when sending request to the server", err)
+			return []WorkspaceRegulationT{}, false
+		}
+
+		var respBody []byte
+		if resp != nil && resp.Body != nil {
+			respBody, _ = IoUtil.ReadAll(resp.Body)
+			defer resp.Body.Close()
+		}
+
+		var workspaceRegulationsJSON WRegulationsT
+		err = json.Unmarshal(respBody, &workspaceRegulationsJSON)
+		if err != nil {
+			log.Error("Error while parsing request", err, string(respBody), resp.StatusCode)
+			return []WorkspaceRegulationT{}, false
+		}
+
+		totalWorkspaceRegulations = append(totalWorkspaceRegulations, workspaceRegulationsJSON.WorkspaceRegulations...)
+
+		if workspaceRegulationsJSON.End {
+			break
+		}
+
+		if value, err := strconv.Atoi(workspaceRegulationsJSON.Next); err == nil {
+			offset = value
+		} else {
+			return []WorkspaceRegulationT{}, false
+		}
+	}
+
+	return totalWorkspaceRegulations, true
+}
+
+func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceRegulationT, bool) {
+	offset := 0
+	limit := 10
+
+	totalSourceRegulations := []SourceRegulationT{}
+	for {
+		url := fmt.Sprintf("%s/sourceRegulations?offset=%d&limit=%d", configBackendURL, offset, limit)
+		req, err := Http.NewRequest("GET", url, nil)
+		if err != nil {
+			log.Error("Error when creating request", err)
+			return []SourceRegulationT{}, false
+		}
+
+		req.SetBasicAuth(workspaceToken, "")
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Error("Error when sending request to the server", err)
+			return []SourceRegulationT{}, false
+		}
+
+		var respBody []byte
+		if resp != nil && resp.Body != nil {
+			respBody, _ = IoUtil.ReadAll(resp.Body)
+			defer resp.Body.Close()
+		}
+
+		var sourceRegulationsJSON SRegulationsT
+		err = json.Unmarshal(respBody, &sourceRegulationsJSON)
+		if err != nil {
+			log.Error("Error while parsing request", err, string(respBody), resp.StatusCode)
+			return []SourceRegulationT{}, false
+		}
+
+		totalSourceRegulations = append(totalSourceRegulations, sourceRegulationsJSON.SourceRegulations...)
+
+		if sourceRegulationsJSON.End {
+			break
+		}
+
+		if value, err := strconv.Atoi(sourceRegulationsJSON.Next); err == nil {
+			offset = value
+		} else {
+			return []SourceRegulationT{}, false
+		}
+	}
+
+	return totalSourceRegulations, true
 }
 
 func (workspaceConfig *WorkspaceConfig) getRegulationsFromFile() (RegulationsT, bool) {
