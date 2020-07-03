@@ -196,7 +196,7 @@ func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string
 		uploadIDs = append(uploadIDs, uploadID)
 	}
 	for _, uploadID := range uploadIDs {
-		wh.recordDeliveryStatus(uploadID)
+		wh.recordDeliveryStatus(destinationID, uploadID)
 	}
 }
 
@@ -442,8 +442,8 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	if ok := jsonUploadsList[0].FirstEventAt.IsZero(); !ok {
 		firstEventAt = jsonUploadsList[0].FirstEventAt
 	}
-	if ok := jsonUploadsList[0].LastEventAt.IsZero(); !ok {
-		lastEventAt = jsonUploadsList[0].LastEventAt
+	if ok := jsonUploadsList[len(jsonUploadsList)-1].LastEventAt.IsZero(); !ok {
+		lastEventAt = jsonUploadsList[len(jsonUploadsList)-1].LastEventAt
 	}
 
 	now := timeutil.Now()
@@ -823,7 +823,10 @@ func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err e
 	return
 }
 
-func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
+func (wh *HandleT) recordDeliveryStatus(destID string, uploadID int64) {
+	if !destinationdebugger.HasUploadEnabled(destID) {
+		return
+	}
 	var (
 		sourceID      string
 		destinationID string
@@ -857,12 +860,12 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 		}
 	}
 
-	var errJson map[string]map[string]interface{}
-	err = json.Unmarshal([]byte(errorResp), &errJson)
+	var errJSON map[string]map[string]interface{}
+	err = json.Unmarshal([]byte(errorResp), &errJSON)
 	if err != nil {
 		panic(err)
 	}
-	if stateErr, ok := errJson[status]; ok {
+	if stateErr, ok := errJSON[status]; ok {
 		if attempt, ok := stateErr["attempt"]; ok {
 			if floatAttempt, ok := attempt.(float64); ok {
 				attemptNum = attemptNum + int(floatAttempt)
@@ -914,7 +917,7 @@ func (wh *HandleT) initWorkers() {
 						if len(job.List) == 0 {
 							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 							warehouseutils.SetUploadError(job.Upload, errors.New("no staging files found"), warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
-							wh.recordDeliveryStatus(job.Upload.ID)
+							wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 							break
 						}
 						// consolidate schema if not already done
@@ -929,7 +932,7 @@ func (wh *HandleT) initWorkers() {
 							logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
 							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 							warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
-							wh.recordDeliveryStatus(job.Upload.ID)
+							wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 							break
 						}
 
@@ -982,12 +985,12 @@ func (wh *HandleT) initWorkers() {
 								//Unreachable code. So not modifying the stat 'failed_uploads', which is reused later for copying.
 								warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 								warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
-								wh.recordDeliveryStatus(job.Upload.ID)
+								wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 								break
 							}
 						}
 						err = wh.SyncLoadFilesToWarehouse(&job)
-						wh.recordDeliveryStatus(job.Upload.ID)
+						wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 
 						createPlusUploadTimer.End()
 
