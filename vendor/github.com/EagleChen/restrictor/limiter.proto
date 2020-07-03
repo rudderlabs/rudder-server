@@ -1,7 +1,0 @@
-syntax = "proto3";
-package restrictor;
-
-message Limiter {
-  uint32 fullUntil = 2;
-  map<uint32, uint32> buckets = 3;
-}
