@@ -736,3 +736,17 @@ func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (re
 	logger.Debugf("Post request: Successful %s", string(body))
 	return body, resp.StatusCode, nil
 }
+
+// WriteMapToWriter is a utility function that dumps contents of a map to an io.Writer.
+func WriteMapToWriter(data map[string]interface{}, writer io.Writer) (err error) {
+	marshalled, err := json.Marshal(data)
+	if err != nil {
+		err = fmt.Errorf("Could not marshal report metadata: %w", err)
+		return
+	}
+
+	reader := bytes.NewReader(marshalled)
+	_, err = io.Copy(writer, reader)
+
+	return
+}

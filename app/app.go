@@ -6,14 +6,20 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"time"
 
+	"github.com/rudderlabs/rudder-server/app/crash"
+	"github.com/rudderlabs/rudder-server/app/version"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // App holds the main application's configuration and state
 type App struct {
-	options  *Options
-	features *Features // Enterprise features, if available
+	options   *Options
+	features  *Features // Enterprise features, if available
+	startedAt time.Time // Marks when the app started
 
 	cpuprofileOutput *os.File
 }
@@ -28,6 +34,15 @@ type Interface interface {
 
 // Setup initializes application
 func (a *App) Setup() {
+	go crash.Default.MonitorPanics()
+
+	backendconfig.Setup()
+
+	a.startedAt = time.Now()
+	a.setupCrashReportInformation()
+
+	// start monitoring default crash manager
+
 	// If cpuprofile flag is present, setup cpu profiling
 	if a.options.Cpuprofile != "" {
 		a.initCPUProfiling()
@@ -35,6 +50,13 @@ func (a *App) Setup() {
 
 	// initialize enterprise features, if available
 	a.initEnterpriseFeatures()
+}
+
+func (a *App) setupCrashReportInformation() {
+	metadata := make(map[string]interface{})
+	metadata["started_at"] = a.startedAt
+	metadata["version"] = version.Current()
+	crash.Default.Report.Metadata["app"] = metadata
 }
 
 func (a *App) initCPUProfiling() {
@@ -97,6 +119,11 @@ func (a *App) Stop() {
 
 // New creates a new application instance
 func New(options *Options) Interface {
+	logger.Setup()
+
+	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
+	stats.Setup()
+
 	return &App{
 		options: options,
 	}

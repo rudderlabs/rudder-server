@@ -3,8 +3,10 @@ package misc
 import (
 	"database/sql"
 	"fmt"
-	"github.com/lib/pq"
+	"io"
 	"strconv"
+
+	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -61,6 +63,55 @@ func ReplaceDB(dbName, targetName string) {
 	}
 }
 
-func QuoteLiteral(literal string) string{
+func QuoteLiteral(literal string) string {
 	return pq.QuoteLiteral(literal)
+}
+
+// DumpQueryFilter describes a filter operation on a map returned by a DumpQuery operation
+type DumpQueryFilter func(m map[string]interface{}) map[string]interface{}
+
+// DumpQueryToWriter will execute the query in db, and send one line to the writer per result, serialized as json.
+func DumpQueryToWriter(db *sql.DB, query string, writer io.Writer, filter DumpQueryFilter) error {
+	rows, err := db.Query(query)
+	if err != nil {
+		return fmt.Errorf("Could not execute query for dump data: %w", err)
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return fmt.Errorf("Could not fetch dump data columns: %w", err)
+	}
+
+	// scan all rows, for each write a map to file, with columns as keys and query results as values.
+	values := make([][]byte, len(columns))
+	valuePointers := make([]interface{}, len(columns))
+
+	for i := range values {
+		valuePointers[i] = &values[i]
+	}
+
+	for rows.Next() {
+		row := make(map[string]interface{})
+
+		if err := rows.Scan(valuePointers...); err != nil {
+			return fmt.Errorf("Could not read dump data row: %w", err)
+		}
+
+		for i, raw := range values {
+			row[columns[i]] = string(raw)
+		}
+
+		if filter != nil {
+			row = filter(row)
+		}
+
+		err := WriteMapToWriter(row, writer)
+		_, err = io.WriteString(writer, "\n")
+		if err != nil {
+			return fmt.Errorf("Could not write dump data row: %w", err)
+		}
+	}
+
+	return nil
 }
