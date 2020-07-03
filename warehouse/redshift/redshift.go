@@ -126,13 +126,11 @@ func (rs *HandleT) createTable(name string, columns map[string]string) (err erro
 			sortKeyField = "id"
 		}
 	}
-	distkey := "id"
-	var sqlStatement string
-	if _, ok := columns[distkey]; ok {
-		sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) DISTSTYLE KEY DISTKEY("%s") SORTKEY("%s") `, name, columnsWithDataTypes(columns, ""), distkey, sortKeyField)
-	} else {
-		sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) SORTKEY("%s") `, name, columnsWithDataTypes(columns, ""), sortKeyField)
+	var distKeySql string
+	if _, ok := columns["id"]; ok {
+		distKeySql = `DISTSTYLE KEY DISTKEY("id")`
 	}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY("%s") `, name, columnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
 	logger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
