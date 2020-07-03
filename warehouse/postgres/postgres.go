@@ -479,7 +479,7 @@ func (pg *HandleT) loadUserTables() (err error) {
 
 	primaryKey := "id"
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
-	logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+	logger.Infof("PG: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
@@ -559,12 +559,12 @@ func (pg *HandleT) createSchema() (err error) {
 }
 
 func (pg *HandleT) dropStagingTable(stagingTableName string) {
-	logger.Infof("WH: dropping table %+v\n", stagingTableName)
+	logger.Infof("PG: dropping table %+v\n", stagingTableName)
 	_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, stagingTableName))
 	if err != nil {
-		logger.Errorf("WH: RS:  Error dropping staging table %s in postgres: %v",stagingTableName, err)
+		logger.Errorf("PG:  Error dropping staging table %s in postgres: %v", stagingTableName, err)
 	}
-	
+
 }
 
 func (pg *HandleT) createTable(name string, columns map[string]string) (err error) {
