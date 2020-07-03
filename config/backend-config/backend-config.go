@@ -420,5 +420,7 @@ func Setup() {
 		rruntime.Go(func() {
 			pollRegulations()
 		})
+	} else {
+		regulationsInitialized = true
 	}
 }

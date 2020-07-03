@@ -3,7 +3,6 @@ package backendconfig
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"strconv"
 	"sync"
@@ -53,32 +52,16 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForWriteKey(writ
 //Get returns sources from all hosted workspaces
 func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
-	req, err := Http.NewRequest("GET", url, nil)
+
+	respBody, statusCode, err := multiWorkspaceConfig.makeHTTPRequest(url)
 	if err != nil {
-		log.Error("Error when creating request to the server", err)
+		log.Error("Error sending request to the server", err)
 		return SourcesT{}, false
 	}
-
-	req.SetBasicAuth(multiWorkspaceSecret, "")
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Error("Error when sending request to the server", err)
-		return SourcesT{}, false
-	}
-
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = ioutil.ReadAll(resp.Body)
-		defer resp.Body.Close()
-	}
-
 	var workspaces WorkspacesT
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		log.Error("Error while parsing request", err, string(respBody), resp.StatusCode)
+		log.Error("Error while parsing request", err, string(respBody), statusCode)
 		return SourcesT{}, false
 	}
 
@@ -102,32 +85,16 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
 //GetRegulations returns regulations from all hosted workspaces
 func (multiWorkspaceConfig *MultiWorkspaceConfig) GetRegulations() (RegulationsT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaces", configBackendURL)
-	req, err := Http.NewRequest("GET", url, nil)
+	respBody, statusCode, err := multiWorkspaceConfig.makeHTTPRequest(url)
 	if err != nil {
-		log.Error("Error when creating request to the server", err)
+		log.Error("Error sending request to the server", err)
 		return RegulationsT{}, false
-	}
-
-	req.SetBasicAuth(multiWorkspaceSecret, "")
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Error("Error when sending request to the server", err)
-		return RegulationsT{}, false
-	}
-
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = ioutil.ReadAll(resp.Body)
-		defer resp.Body.Close()
 	}
 
 	var hostedWorkspaces HostedWorkspacesT
 	err = json.Unmarshal(respBody, &hostedWorkspaces)
 	if err != nil {
-		log.Error("Error while parsing request", err, string(respBody), resp.StatusCode)
+		log.Error("Error while parsing request", err, string(respBody), statusCode)
 		return RegulationsT{}, false
 	}
 
@@ -157,32 +124,16 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(worksp
 	totalWorkspaceRegulations := []WorkspaceRegulationT{}
 	for {
 		url := fmt.Sprintf("%s/hostedWorkspaceRegulations?workspaceId=%s&offset=%d&limit=%d", configBackendURL, workspaceID, offset, limit)
-		req, err := Http.NewRequest("GET", url, nil)
+		respBody, statusCode, err := multiWorkspaceConfig.makeHTTPRequest(url)
 		if err != nil {
-			log.Error("Error when creating request", err)
+			log.Error("Error sending request to the server", err)
 			return []WorkspaceRegulationT{}, false
-		}
-
-		req.SetBasicAuth(multiWorkspaceSecret, "")
-		req.Header.Set("Content-Type", "application/json")
-
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Error("Error when sending request to the server", err)
-			return []WorkspaceRegulationT{}, false
-		}
-
-		var respBody []byte
-		if resp != nil && resp.Body != nil {
-			respBody, _ = IoUtil.ReadAll(resp.Body)
-			defer resp.Body.Close()
 		}
 
 		var workspaceRegulationsJSON WRegulationsT
 		err = json.Unmarshal(respBody, &workspaceRegulationsJSON)
 		if err != nil {
-			log.Error("Error while parsing request", err, string(respBody), resp.StatusCode)
+			log.Error("Error while parsing request", err, string(respBody), statusCode)
 			return []WorkspaceRegulationT{}, false
 		}
 
@@ -208,33 +159,17 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getSourceRegulations(workspace
 
 	totalSourceRegulations := []SourceRegulationT{}
 	for {
-		url := fmt.Sprintf("%s/hostedSourceRegulations?workspaceId=%s&offset=%d&limit=%d", configBackendURL, workspaceID, offset, limit)
-		req, err := Http.NewRequest("GET", url, nil)
+		url := fmt.Sprintf("%s/hostedSourceRegulationsa?workspaceId=%s&offset=%d&limit=%d", configBackendURL, workspaceID, offset, limit)
+		respBody, statusCode, err := multiWorkspaceConfig.makeHTTPRequest(url)
 		if err != nil {
-			log.Error("Error when creating request", err)
+			log.Error("Error sending request to the server", err)
 			return []SourceRegulationT{}, false
-		}
-
-		req.SetBasicAuth(multiWorkspaceSecret, "")
-		req.Header.Set("Content-Type", "application/json")
-
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Error("Error when sending request to the server", err)
-			return []SourceRegulationT{}, false
-		}
-
-		var respBody []byte
-		if resp != nil && resp.Body != nil {
-			respBody, _ = IoUtil.ReadAll(resp.Body)
-			defer resp.Body.Close()
 		}
 
 		var sourceRegulationsJSON SRegulationsT
 		err = json.Unmarshal(respBody, &sourceRegulationsJSON)
 		if err != nil {
-			log.Error("Error while parsing request", err, string(respBody), resp.StatusCode)
+			log.Error("Error while parsing request", err, string(respBody), statusCode)
 			return []SourceRegulationT{}, false
 		}
 
@@ -252,4 +187,28 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getSourceRegulations(workspace
 	}
 
 	return totalSourceRegulations, true
+}
+
+func (multiWorkspaceConfig *MultiWorkspaceConfig) makeHTTPRequest(url string) ([]byte, int, error) {
+	req, err := Http.NewRequest("GET", url, nil)
+	if err != nil {
+		return []byte{}, 400, err
+	}
+
+	req.SetBasicAuth(multiWorkspaceSecret, "")
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return []byte{}, 400, err
+	}
+
+	var respBody []byte
+	if resp != nil && resp.Body != nil {
+		respBody, _ = IoUtil.ReadAll(resp.Body)
+		defer resp.Body.Close()
+	}
+
+	return respBody, resp.StatusCode, nil
 }
