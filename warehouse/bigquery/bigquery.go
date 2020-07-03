@@ -111,7 +111,7 @@ func (bq *HandleT) createTable(name string, columns map[string]string) (err erro
 
 	// assuming it has field named id upon which dedup is done in view
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + ` ORDER BY uuid_ts DESC) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
 					AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
 			)
 		WHERE __row_number = 1`
@@ -333,12 +333,26 @@ func (bq *HandleT) loadUserTables() (err error) {
 		return fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, column)
 	}
 
-	userColMap := bq.CurrentSchema["users"]
+	// join both current schema and upload schema, to get full list of properties
+	userColMap := make(map[string]string)
+	if _, ok := bq.CurrentSchema["users"]; ok {
+		for columnName, columnType := range bq.CurrentSchema["users"] {
+			userColMap[columnName] = columnType
+		}
+	}
+
+	if _, ok := bq.Upload.Schema["users"]; ok {
+		for columnName, columnType := range bq.Upload.Schema["users"] {
+			userColMap[columnName] = columnType
+		}
+	}
+
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "id" {
 			continue
 		}
+		fmt.Println("Current schema column: ", colName)
 		userColNames = append(userColNames, colName)
 		firstValProps = append(firstValProps, firstValueSQL(colName))
 	}
@@ -349,7 +363,7 @@ func (bq *HandleT) loadUserTables() (err error) {
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", partitionDate)
 	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL`, bqIdentifiesTable, partition)
-	sqlStatement := fmt.Sprintf(`SELECT DISTINCT *  FROM (
+	sqlStatement := fmt.Sprintf(`SELECT DISTINCT * FROM (
 			SELECT id, %[1]s FROM (
 				(
 					SELECT id, %[2]s FROM %[3]s WHERE (
