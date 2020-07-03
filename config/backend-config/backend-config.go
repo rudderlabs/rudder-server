@@ -40,6 +40,7 @@ var (
 	LastSync                              string
 	LastRegulationSync                    string
 	enableSuppressUserFeature             bool
+	maxRegulationsPerRequest              int
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
@@ -190,6 +191,7 @@ func loadConfig() {
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
 	// Enable suppress user feature. true by default
 	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", true)
+	maxRegulationsPerRequest = config.GetInt("Gateway.maxRegulationsPerRequest", 10)
 }
 
 func MakePostRequest(url string, endpoint string, data interface{}) (response []byte, ok bool) {

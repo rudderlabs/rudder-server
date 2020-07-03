@@ -99,6 +99,8 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetRegulations() (RegulationsT
 	}
 
 	regulationsJSON := RegulationsT{}
+	regulationsJSON.SourceRegulations = make([]SourceRegulationT, 0)
+	regulationsJSON.WorkspaceRegulations = make([]WorkspaceRegulationT, 0)
 	for _, workspace := range hostedWorkspaces.HostedWorkspaces {
 		wregulations, status := multiWorkspaceConfig.getWorkspaceRegulations(workspace.WorkspaceID)
 		if !status {
@@ -119,11 +121,10 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetRegulations() (RegulationsT
 
 func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(workspaceID string) ([]WorkspaceRegulationT, bool) {
 	offset := 0
-	limit := 10
 
 	totalWorkspaceRegulations := []WorkspaceRegulationT{}
 	for {
-		url := fmt.Sprintf("%s/hostedWorkspaceRegulations?workspaceId=%s&offset=%d&limit=%d", configBackendURL, workspaceID, offset, limit)
+		url := fmt.Sprintf("%s/hostedWorkspaceRegulations?workspaceId=%s&offset=%d&limit=%d", configBackendURL, workspaceID, offset, maxRegulationsPerRequest)
 		respBody, statusCode, err := multiWorkspaceConfig.makeHTTPRequest(url)
 		if err != nil {
 			log.Error("Error sending request to the server", err)
@@ -155,11 +156,10 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(worksp
 
 func (multiWorkspaceConfig *MultiWorkspaceConfig) getSourceRegulations(workspaceID string) ([]SourceRegulationT, bool) {
 	offset := 0
-	limit := 10
 
 	totalSourceRegulations := []SourceRegulationT{}
 	for {
-		url := fmt.Sprintf("%s/hostedSourceRegulationsa?workspaceId=%s&offset=%d&limit=%d", configBackendURL, workspaceID, offset, limit)
+		url := fmt.Sprintf("%s/hostedSourceRegulations?workspaceId=%s&offset=%d&limit=%d", configBackendURL, workspaceID, offset, maxRegulationsPerRequest)
 		respBody, statusCode, err := multiWorkspaceConfig.makeHTTPRequest(url)
 		if err != nil {
 			log.Error("Error sending request to the server", err)
