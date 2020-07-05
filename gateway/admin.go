@@ -1,30 +1,23 @@
 package gateway
 
-import (
-	"fmt"
-	"strings"
-)
-
 type GatewayAdmin struct {
 	handle *HandleT
 }
 
 // Status function is used for debug purposes by the admin interface
-func (g *GatewayAdmin) Status() string {
+func (g *GatewayAdmin) Status() map[string]interface{} {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	writeKeys := make([]string, 0, len(enabledWriteKeysSourceMap))
 	for k := range enabledWriteKeysSourceMap {
 		writeKeys = append(writeKeys, k)
 	}
-	return fmt.Sprintf(
-		`Gateway:
----------
-Ack Count  : %d
-Recv Count : %d
-Enabled write keys:
- %s`,
-		g.handle.ackCount,
-		g.handle.recvCount,
-		strings.Join(writeKeys, "\n "))
+
+	return map[string]interface{}{
+		"ack-count":          g.handle.ackCount,
+		"recv-count":         g.handle.recvCount,
+		"enabled-write-keys": writeKeys,
+		"jobsdb":             g.handle.jobsDB.Status(),
+	}
+
 }
