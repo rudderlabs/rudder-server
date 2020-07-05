@@ -90,6 +90,20 @@ func (mr *MockJobsDBMockRecorder) GetUnprocessed(arg0, arg1, arg2 interface{}) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUnprocessed", reflect.TypeOf((*MockJobsDB)(nil).GetUnprocessed), arg0, arg1, arg2)
 }
 
+// Status mocks base method
+func (m *MockJobsDB) Status() map[string]interface{} {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Status")
+	ret0, _ := ret[0].(map[string]interface{})
+	return ret0
+}
+
+// Status indicates an expected call of Status
+func (mr *MockJobsDBMockRecorder) Status() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockJobsDB)(nil).Status))
+}
+
 // Store mocks base method
 func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) {
 	m.ctrl.T.Helper()
