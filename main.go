@@ -178,7 +178,6 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB ", *clearDB)
 
-	backendconfig.Setup()
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
 
@@ -311,6 +310,7 @@ func main() {
 	http.HandleFunc("/version", versionHandler)
 
 	application.Setup()
+	backendconfig.Setup()
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
