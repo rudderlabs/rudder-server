@@ -2,7 +2,6 @@ import { action, observable } from 'mobx';
 import { apiCaller } from '@services/apiCaller';
 import { IRootStore } from '.';
 import _ from 'lodash';
-import { AnyARecord } from 'dns';
 
 export interface IDestinationDefsListStore {
   destinationDefs: IDestinationDef[];
@@ -28,7 +27,7 @@ export class DestinationDefsListStore implements IDestinationDefsListStore {
 
   @action.bound
   public async getDestinationDefs() {
-    const res = await apiCaller().get(`/destination-definitions`);
+    const res = await apiCaller().get(`/open-destination-definitions`);
     this.destinationDefs = _.orderBy(
       res.data,
       [dest => dest.displayName.toString().toLowerCase()],
