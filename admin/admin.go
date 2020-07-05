@@ -44,6 +44,8 @@ import (
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+
+	"github.com/spf13/viper"
 )
 
 // PackageStatusHandler to be implemented by other package admin objects
@@ -107,6 +109,17 @@ func (a Admin) HeapDump(path *string, reply *string) error {
 	pprof.Lookup("heap").WriteTo(f, 1)
 	*reply = "Heap profile written to " + *path
 	return nil
+}
+
+// ServerConfig fetches current configuration as set in viper
+func (a Admin) ServerConfig(arg *string, reply *string) error {
+	config := make(map[string]interface{})
+	for _, key := range viper.AllKeys() {
+		config[key] = viper.Get(key)
+	}
+	formattedOutput, err := json.MarshalIndent(config, "", "  ")
+	*reply = string(formattedOutput)
+	return err
 }
 
 // StartServer starts an http server listening on unix socket and serving rpc communication
