@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	uuid "github.com/satori/go.uuid"
 
@@ -749,4 +750,5 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rruntime.Go(func() {
 		rt.generatorLoop()
 	})
+	admin.RegisterStatusHandler(fmt.Sprintf("router-%v", destID), &RouterAdmin{rt})
 }

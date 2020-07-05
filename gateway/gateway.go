@@ -924,6 +924,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.versionHandler = versionHandler
 
 	admin.RegisterAdminHandler("Gateway", &GatewayAdmin{handle: gateway})
+	admin.RegisterStatusHandler("Gateway", &GatewayAdmin{handle: gateway})
 
 	//gateway.webhookHandler should be initialised before workspace config fetch.
 	if gateway.application.Features().Webhook != nil {
