@@ -188,10 +188,10 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		config.SetBool("JobsDB.backup.gw.enabled", false)
 	}
 
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode)
-	procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode)
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode, false)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode, true)
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode, true)
+	procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
 
 	enableGateway := true
 

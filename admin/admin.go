@@ -1,37 +1,24 @@
-package admin
-
-import (
-	"fmt"
-	"log"
-	"net"
-	"net/http"
-	"net/rpc"
-	"os"
-	"runtime"
-	"runtime/pprof"
-	"strings"
-)
-
-const sockAddr = "/tmp/rudder-server.sock"
-
 /*
+Package admin :
+- has a rpc over http server listening on a unix socket
+- support other packages to expose any admin functionality over the above server
+
 Example for registering admin handler from another package
 
 // Add this while initializing the package in setup or init etc.
 admin.RegisterAdminHandler("PackageName", &PackageAdmin{})
+admin.RegisterStatusHandler("PackageName", &PackageAdmin{})
 
 // Convention is to keep the following code in admin.go in the respective package
 type PackageAdmin struct {
 }
 
 // Status function is used for debug purposes by the admin interface
-func (p *PackageAdmin) Status() string {
-	return fmt.Sprintf(
-		`Package:
----------
-Parameter 1  : value
-Parameter 2  : value
-`)
+func (p *PackageAdmin) Status() map[string]interface{} {
+	return map[string]interface{}{
+		"parameter-1"  : value,
+		"parameter-2"  : value,
+	}
 }
 
 // The following function can be called from rudder-cli using getUDSClient().Call("PackageName.SomeAdminFunction", &arg, &reply)
@@ -40,61 +27,78 @@ func (p *PackageAdmin) SomeAdminFunction(arg *string, reply *string) error {
 	return nil
 }
 */
+package admin
 
-// PackageAdminHandler to be implemented by other package admin objects
-type PackageAdminHandler interface {
-	Status() string
+import (
+	"encoding/json"
+	"log"
+	"net"
+	"net/http"
+	"net/rpc"
+	"os"
+	"path/filepath"
+	"runtime"
+	"runtime/pprof"
+	"strings"
+
+	"github.com/rudderlabs/rudder-server/services/db"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+)
+
+// PackageStatusHandler to be implemented by other package admin objects
+type PackageStatusHandler interface {
+	Status() map[string]interface{}
 }
 
 // RegisterAdminHandler is used by other packages to
 // expose admin functions over the unix socket based rpc interface
-func RegisterAdminHandler(name string, handler PackageAdminHandler) {
-	instance.handlers[strings.ToLower(name)] = handler
+func RegisterAdminHandler(name string, handler interface{}) {
 	instance.rpcServer.RegisterName(name, handler)
 }
 
+func RegisterStatusHandler(name string, handler PackageStatusHandler) {
+	instance.statushandlers[strings.ToLower(name)] = handler
+}
+
 type Admin struct {
-	handlers  map[string]PackageAdminHandler
-	rpcServer *rpc.Server
+	statushandlers map[string]PackageStatusHandler
+	rpcServer      *rpc.Server
 }
 
 var instance Admin
 
 func init() {
 	instance = Admin{
-		handlers:  make(map[string]PackageAdminHandler),
-		rpcServer: rpc.NewServer(),
+		statushandlers: make(map[string]PackageStatusHandler),
+		rpcServer:      rpc.NewServer(),
 	}
 	instance.rpcServer.Register(instance)
 }
 
-func (a Admin) Status(module *string, reply *string) error {
+// Status reports overall server status by fetching status of all registered admin handlers
+func (a Admin) Status(arg *string, reply *string) error {
+	statusObj := make(map[string]interface{})
+	statusObj["server-mode"] = db.CurrentMode
 
-	if *module == "" {
-		for _, handler := range a.handlers {
-			*reply += handler.Status() + "\n"
-		}
-	} else if _, ok := a.handlers[*module]; ok {
-		*reply = a.handlers[*module].Status()
-	} else {
-		statusEnabledModules := make([]string, 0, len(a.handlers))
-		for k := range a.handlers {
-			statusEnabledModules = append(statusEnabledModules, "\""+k+"\"")
-		}
-		return fmt.Errorf("valid module arguments are " + strings.Join(statusEnabledModules, ","))
+	for moduleName, handler := range a.statushandlers {
+		statusObj[moduleName] = handler.Status()
 	}
-
-	return nil
+	formattedOutput, err := json.MarshalIndent(statusObj, "", "  ")
+	*reply = string(formattedOutput)
+	return err
 }
 
-func (s Admin) PrintStack(arg *string, reply *string) error {
+// PrintStack fetches stack traces of all running goroutines
+func (a Admin) PrintStack(arg *string, reply *string) error {
 	byteArr := make([]byte, 2048*1024)
 	n := runtime.Stack(byteArr, true)
 	*reply = string(byteArr[:n])
 	return nil
 }
 
-func (s Admin) HeapDump(path *string, reply *string) error {
+// HeapDump creates heap profile at given path using pprof
+func (a Admin) HeapDump(path *string, reply *string) error {
 	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0755)
 	if err != nil {
 		return err
@@ -105,7 +109,13 @@ func (s Admin) HeapDump(path *string, reply *string) error {
 	return nil
 }
 
+// StartServer starts an http server listening on unix socket and serving rpc communication
 func StartServer() {
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
+	sockAddr := filepath.Join(tmpDirPath, "rudder-server.sock")
 	if err := os.RemoveAll(sockAddr); err != nil {
 		log.Fatal(err)
 	}
@@ -113,7 +123,7 @@ func StartServer() {
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
-	fmt.Println("Serving on admin interface...")
+	logger.Info("Serving on admin interface @ ", sockAddr)
 	srvMux := http.NewServeMux()
 	srvMux.Handle(rpc.DefaultRPCPath, instance.rpcServer)
 	http.Serve(l, srvMux)
