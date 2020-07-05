@@ -13,6 +13,7 @@ export interface ISourceDefinitionsListStore {
 
 export interface ISourceDefintion {
   id: string;
+  displayName: string;
   name: string;
 }
 
@@ -26,7 +27,7 @@ export class SourceDefinitionsListStore implements ISourceDefinitionsListStore {
 
   @action.bound
   public async getSourceDefinitions() {
-    const res = await apiCaller().get(`/source-definitions`);
+    const res = await apiCaller().get(`/open-source-definitions`);
     this.sourceDefinitions = res.data;
   }
 
