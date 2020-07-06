@@ -211,8 +211,7 @@ var (
 	rawDataDestinations                 []string
 	configSubscriberLock                sync.RWMutex
 	isReplayServer                      bool
-	customDestinations                  []string
-	customDestinationsWithoutConfig     []string
+	customDestinations     []string
 )
 
 func loadConfig() {
@@ -225,8 +224,7 @@ func loadConfig() {
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES"}
-	customDestinations = []string{"EVENTBRIDGE"}
-	customDestinationsWithoutConfig = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
+	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
 
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }
@@ -763,7 +761,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
 						it may result into payload larger than accepted by transformer. So, discarding destination config from being
 						sent to transformer for such destination. */
-						if misc.ContainsString(customDestinationsWithoutConfig, destType) {
+						if misc.ContainsString(customDestinations, destType) {
 							shallowEventCopy.Destination.Config = nil
 						}
 
