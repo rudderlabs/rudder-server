@@ -8,6 +8,7 @@ import (
 	// "strings"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/eventbridge"
@@ -73,13 +74,25 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	requestInput.SetEntries(putRequestEntryList)
 
 	// send request to event bridge
-	// TODO : use putEventsOutput
-	_, err := ebc.PutEvents(&requestInput)
+	putEventsOutput, err := ebc.PutEvents(&requestInput)
 	if err != nil {
-		logger.Errorf("Error while sending request to eventbridge :: %v", err.Error())
+		logger.Errorf("Error while sending event to eventbridge :: %v", err.Error())
+
+		// set default status code as 500
+		statusCode := 500
+
+		// fetching status code from response
+		if reqErr, ok := err.(awserr.RequestFailure); ok {
+			statusCode = reqErr.StatusCode()
+		}
+
+		return statusCode, err.Error(), err.Error()
 	}
 
-	// TODO : Modify message after handling errors
-	message := fmt.Sprintf("Custom message for eventbridge")
+	message := "Successfully sent event to eventbridge"
+	if len(putEventsOutput.Entries) > 0 {
+		message += fmt.Sprintf(",with eventID: %v", *putEventsOutput.Entries[0].EventId)
+	}
+
 	return 200, "Success", message
 }
