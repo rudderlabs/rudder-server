@@ -144,14 +144,17 @@ func (trans *HandleT) transformWorker() {
 				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
 			}
 
-			transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
-			if convErr != nil {
-				transformerAPIVersion = 0
+			if resp.StatusCode == http.StatusOK {
+				transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
+				if convErr != nil {
+					transformerAPIVersion = 0
+				}
+				if supportedTransformerAPIVersion != transformerAPIVersion {
+					logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url)
+					panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url))
+				}
 			}
-			if supportedTransformerAPIVersion != transformerAPIVersion {
-				logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url)
-				panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url))
-			}
+
 			transformRequestTimerStat.End()
 			break
 		}
