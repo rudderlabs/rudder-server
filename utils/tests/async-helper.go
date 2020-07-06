@@ -75,7 +75,10 @@ func (helper *AsyncTestHelper) RunTestWithTimeout(f func(), d time.Duration) {
 		defer ginkgo.GinkgoRecover()
 		f()
 	}, func() {
-		fmt.Println("%+v", helper.waitingMap)
+		for k, v := range helper.waitingMap {
+			fmt.Println(k, "", v)
+		}
+
 		ginkgo.Fail("Async helper's wait group timed out")
 	}, d)
 }

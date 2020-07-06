@@ -226,13 +226,11 @@ var _ = Describe("Gateway", func() {
 			It("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func() {
 				validBody := createValidBody("custom-property", "custom-value")
 
-				batchTimeStat := mocksStats.NewMockRudderStats(c.mockCtrl)
-
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_size.count"))
 
-				callStart := batchTimeStat.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_time.start"))
-				batchTimeStat.EXPECT().End().After(callStart).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_time.end"))
+				callStart := c.mockStatGatewayBatchTime.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_time.start"))
+				c.mockStatGatewayBatchTime.EXPECT().End().After(callStart).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_time.end"))
 
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 				c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 1)
