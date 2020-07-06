@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/services/streammanager/eventbridge"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
 )
@@ -21,6 +22,9 @@ func NewProducer(destinationConfig interface{}, destination string) (interface{}
 	case "AZURE_EVENT_HUB":
 		producer, err := kafka.NewProducerForAzureEventHub(destinationConfig)
 		return producer, err
+	case "EVENTBRIDGE":
+		producer, err := eventbridge.NewProducer(destinationConfig)
+		return producer, err
 	default:
 		return nil, fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
 	}
@@ -31,7 +35,7 @@ func NewProducer(destinationConfig interface{}, destination string) (interface{}
 func CloseProducer(producer interface{}, destination string) error {
 
 	switch destination {
-	case "KINESIS":
+	case "KINESIS", "EVENTBRIDGE":
 		return nil
 	case "KAFKA", "AZURE_EVENT_HUB":
 		err := kafka.CloseProducer(producer)
@@ -50,6 +54,8 @@ func Produce(jsonData json.RawMessage, destination string, producer interface{},
 		return kinesis.Produce(jsonData, producer, config)
 	case "KAFKA", "AZURE_EVENT_HUB":
 		return kafka.Produce(jsonData, producer, config)
+	case "EVENTBRIDGE":
+		return eventbridge.Produce(jsonData, producer, config)
 	default:
 		return 404, "No provider configured for StreamManager", ""
 	}
