@@ -149,8 +149,8 @@ func (trans *HandleT) transformWorker() {
 				transformerAPIVersion = 0
 			}
 			if supportedTransformerAPIVersion != transformerAPIVersion {
-				logger.Errorf("Incompatible transformer version: Expected: %d Received: %d", supportedTransformerAPIVersion, transformerAPIVersion)
-				panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d", supportedTransformerAPIVersion, transformerAPIVersion))
+				logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url)
+				panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url))
 			}
 			transformRequestTimerStat.End()
 			break
