@@ -137,6 +137,7 @@ func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket
 }
 
 func (gateway *HandleT) initUserWebRequestWorkers() {
+
 	gateway.userWebRequestWorkers = make([]*userWebRequestWorkerT, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
 		logger.Debug("User Web Request Worker Started", i)
@@ -146,7 +147,8 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 			batchRequestQ: make(chan *batchWebRequestT),
 			reponseQ:      make(chan map[uuid.UUID]string),
 			workerID:      i,
-			batchTimeStat: gateway.stats.NewStat("gateway.batch_time", stats.TimerType)}
+			batchTimeStat: gateway.stats.NewStat("gateway.batch_time", stats.TimerType),
+		}
 		gateway.userWebRequestWorkers[i] = userWebRequestWorker
 		rruntime.Go(func() {
 			gateway.userWebRequestWorkerProcess(userWebRequestWorker)
@@ -274,7 +276,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		//Saving the event data read from req.request.Body to the splice.
 		//Using this to send event schema to the config backend.
 		var eventBatchesToRecord []string
-		userWebRequestWorker.batchTimeStat.Start()
+		// userWebRequestWorker.batchTimeStat.Start()
 		allMessageIdsSet := make(map[string]struct{})
 		for _, req := range breq.batchRequest {
 			writeKey, _, ok := req.request.BasicAuth()
@@ -419,7 +421,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			sourcedebugger.RecordEvent(gjson.Get(event, "writeKey").Str, event)
 		}
 
-		userWebRequestWorker.batchTimeStat.End()
+		// userWebRequestWorker.batchTimeStat.End()
 		gateway.batchSizeStat.Count(len(breq.batchRequest))
 		// update stats request wise
 		gateway.updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")

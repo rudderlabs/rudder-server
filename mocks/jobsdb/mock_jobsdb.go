@@ -5,11 +5,10 @@
 package mocks_jobsdb
 
 import (
-	reflect "reflect"
-
 	gomock "github.com/golang/mock/gomock"
 	jobsdb "github.com/rudderlabs/rudder-server/jobsdb"
 	uuid "github.com/satori/go.uuid"
+	reflect "reflect"
 )
 
 // MockJobsDB is a mock of JobsDB interface
