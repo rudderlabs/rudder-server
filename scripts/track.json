@@ -33,8 +33,7 @@
   },
   "event": "Demo Track - New",
   "integrations": {
-    "All": false,
-    "Google Analytics": true
+    "All": true
   },
   "properties": {
     "label": "Demo Label",
