@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -127,10 +128,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		batchTimeStat.Start()
 		logger.Debugf("Router :: trying to send payload to %s. Payload: ", rt.destID, job.EventPayload)
 
-		userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
-		if userID == "" {
-			panic(fmt.Errorf("userID is empty"))
-		}
+		userID, canEventBeMappedToUser := integrations.GetUserIDFromTransformerResponse(job, job.EventPayload)
 
 		//If sink is not enabled mark all jobs as waiting
 		if !rt.isEnabled {
@@ -154,32 +152,37 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
 		}
 
-		//If there is a failed jobID from this user, we cannot pass future jobs
-		worker.failedJobIDMutex.RLock()
-		previousFailedJobID, isPrevFailedUser := worker.failedJobIDMap[userID]
-		worker.failedJobIDMutex.RUnlock()
+		var isPrevFailedUser bool
+		var previousFailedJobID int64
+		if canEventBeMappedToUser {
+			//If there is a failed jobID from this user, we cannot pass future jobs
+			worker.failedJobIDMutex.RLock()
+			previousFailedJobID, isPrevFailedUser = worker.failedJobIDMap[userID]
+			worker.failedJobIDMutex.RUnlock()
 
-		if isPrevFailedUser && previousFailedJobID < job.JobID {
-			logger.Debugf("[%v Router] :: skipping processing job for userID: %v since prev failed job exists, prev id %v, current id %v", rt.destID, userID, previousFailedJobID, job.JobID)
-			resp := fmt.Sprintf(`{"blocking_id":"%v", "user_id":"%s"}`, previousFailedJobID, userID)
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				ErrorCode:     respStatus,
-				JobState:      jobsdb.Waiting.State,
-				ErrorResponse: []byte(resp), // check
+			if isPrevFailedUser && previousFailedJobID < job.JobID {
+				logger.Debugf("[%v Router] :: skipping processing job for userID: %v since prev failed job exists, prev id %v, current id %v", rt.destID, userID, previousFailedJobID, job.JobID)
+				resp := fmt.Sprintf(`{"blocking_id":"%v", "user_id":"%s"}`, previousFailedJobID, userID)
+				status := jobsdb.JobStatusT{
+					JobID:         job.JobID,
+					AttemptNum:    job.LastJobStatus.AttemptNum,
+					ExecTime:      time.Now(),
+					RetryTime:     time.Now(),
+					ErrorCode:     respStatus,
+					JobState:      jobsdb.Waiting.State,
+					ErrorResponse: []byte(resp), // check
+				}
+				rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
+				continue
 			}
-			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
-			continue
+
+			if isPrevFailedUser {
+				if previousFailedJobID != job.JobID {
+					panic(fmt.Errorf("previousFailedJobID:%d != job.JobID:%d", previousFailedJobID, job.JobID))
+				}
+			}
 		}
 
-		if isPrevFailedUser {
-			if previousFailedJobID != job.JobID {
-				panic(fmt.Errorf("previousFailedJobID:%d != job.JobID:%d", previousFailedJobID, job.JobID))
-			}
-		}
 		var reqMetric requestMetric
 		diagnosisStartTime := time.Now()
 		//We can execute thoe job
@@ -264,7 +267,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			status.ErrorResponse = []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody)))
 
 			//#JobOrder (see other #JobOrder comment)
-			if !isPrevFailedUser && keepOrderOnFailure {
+			if !isPrevFailedUser && keepOrderOnFailure && userID != "" {
 				logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destID, userID)
 				worker.failedJobIDMutex.Lock()
 				worker.failedJobIDMap[userID] = job.JobID
@@ -354,7 +357,11 @@ func (rt *HandleT) initWorkers() {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	userID := integrations.GetUserIDFromTransformerResponse(job.EventPayload)
+	userID, canEventBeMappedToUser := integrations.GetUserIDFromTransformerResponse(job, job.EventPayload)
+	// set random userID to assign worker when event can't be mapped to an userID
+	if !canEventBeMappedToUser {
+		userID = uuid.NewV4().String()
+	}
 
 	var index int
 	if randomWorkerAssign {
@@ -366,6 +373,10 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	worker := rt.workers[index]
 	if worker == nil {
 		panic(fmt.Errorf("worker is nil"))
+	}
+
+	if !canEventBeMappedToUser {
+		return worker
 	}
 
 	//#JobOrder (see other #JobOrder comment)

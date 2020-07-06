@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/warehouse"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -148,15 +149,19 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 }
 
 // GetUserIDFromTransformerResponse parses the payload to get userId
-func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) string {
+func GetUserIDFromTransformerResponse(job *jobsdb.JobT, transformRaw json.RawMessage) (userID string, found bool) {
 
-	var userID string
-	parsedJSON := gjson.ParseBytes(transformRaw)
-	var ok bool
-	if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
-		userID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
+	if job.UserID != "" {
+		return job.UserID, true
 	}
-	return userID
+
+	parsedJSON := gjson.ParseBytes(transformRaw)
+	userIDVal := parsedJSON.Get("userId").Value()
+
+	if userIDVal != nil {
+		return fmt.Sprintf("%v", userIDVal), true
+	}
+	return
 }
 
 //FilterClientIntegrations parses the destination names from the
