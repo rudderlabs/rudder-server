@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/eventbridge"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	// "github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // TODO : add errors
