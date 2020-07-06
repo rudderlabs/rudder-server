@@ -11,15 +11,18 @@ package firehose
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
+<<<<<<< HEAD
 <<<<<<< HEAD
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/firehose"
 =======
+=======
+	"github.com/aws/aws-sdk-go/aws/awserr"
+>>>>>>> 0f2341ca... added error handling
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 <<<<<<< HEAD
@@ -32,6 +35,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 // Config is the config that is required to send data to Firehose
 type Config struct {
@@ -51,6 +55,8 @@ func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 =======
 var abortableErrors = []string{}
 
+=======
+>>>>>>> 0f2341ca... added error handling
 // Config is the config that is required to send data to Firehose
 type Config struct {
 	Region      string
@@ -64,10 +70,6 @@ var errorRec error
 var event, typeCall gjson.Result
 
 func init() {
-	abortableErrors = []string{"AccessDeniedException", "IncompleteSignature", "InvalidAction", "InvalidClientTokenId", "InvalidParameterCombination",
-		"InvalidParameterValue", "InvalidQueryParameter", "MissingAuthenticationToken", "MissingParameter", "InvalidArgumentException",
-		"KMSAccessDeniedException", "KMSDisabledException", "KMSInvalidStateException", "KMSNotFoundException", "KMSOptInRequired",
-		"ResourceNotFoundException", "UnrecognizedClientException", "ValidationError"}
 }
 
 // NewProducer creates a producer based on destination config
@@ -199,13 +201,12 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	typeCall = parsedJSON.Get("message.type")
 	if err != nil {
 		logger.Errorf("error in firehose :: %v", err.Error())
-		statusCode := GetStatusCodeFromError(err)
-
+		statusCode := 500
 		return statusCode, err.Error(), err.Error()
 	}
 	putOutput = nil
 	for i := 0; i < len(deliveryStreamMap); i++ {
-
+		var statusCode int
 		if event.Value() == deliveryStreamMap[i]["from"] {
 			putOutput, errorRec = fh.PutRecord(&firehose.PutRecordInput{
 				DeliveryStreamName: aws.String(deliveryStreamMap[i]["to"]),
@@ -213,9 +214,15 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			})
 		}
 		if errorRec != nil {
-			logger.Errorf("error in firehose :: %v", errorRec.Error())
-			statusCode := GetStatusCodeFromError(errorRec)
-
+			if awsErr, ok := errorRec.(awserr.Error); ok {
+				if reqErr, ok := errorRec.(awserr.RequestFailure); ok {
+					logger.Errorf("error in firehose :: %v", awsErr.Code())
+					fmt.Println(reqErr.StatusCode(), reqErr.RequestID())
+					statusCode = reqErr.StatusCode()
+				}
+			} else {
+				statusCode = 500
+			}
 			return statusCode, errorRec.Error(), errorRec.Error()
 		}
 
@@ -232,6 +239,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	}
 	return 200, "Success", message
 }
+<<<<<<< HEAD
 
 // GetStatusCodeFromError parses the error and returns the status so that event gets retried or failed.
 func GetStatusCodeFromError(err error) int {
@@ -249,3 +257,5 @@ func GetStatusCodeFromError(err error) int {
 	return statusCode
 >>>>>>> 021c289d... changing for firehose
 }
+=======
+>>>>>>> 0f2341ca... added error handling
