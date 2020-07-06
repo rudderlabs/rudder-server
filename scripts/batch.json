@@ -2,11 +2,6 @@
   "batch": [
     {
       "channel": "android-sdk",
-      "destination_props": {
-        "AF": {
-          "af_uid": "1566363489499-3377330514807116178"
-        }
-      },
       "context": {
         "app": {
           "build": "1",
@@ -28,6 +23,9 @@
           "density": 420,
           "height": 1794,
           "width": 1080
+        },
+        "library": {
+          "name": "com.rudderstack.android.sdk.core"
         },
         "traits": {
           "anonymousId": "49e4bdd1c280bc00"
