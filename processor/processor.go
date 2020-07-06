@@ -918,8 +918,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 	if len(procErrorJobs) > 0 {
 		logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobs))
-		proc.errorDB.Store(procErrorJobs)
-		recordEventDeliveryStatus(procErrorJobsByDestID)
+		// proc.errorDB.Store(procErrorJobs)
+		// recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
 
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
@@ -933,7 +933,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.statGatewayDBW.Count(len(statusList))
 	proc.statRouterDBW.Count(len(destJobs))
 	proc.statBatchRouterDBW.Count(len(batchDestJobs))
-	proc.statProcErrDBW.Count(len(procErrorJobs))
+	// proc.statProcErrDBW.Count(len(procErrorJobs))
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
