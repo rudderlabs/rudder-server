@@ -209,7 +209,7 @@ func (pg *HandleT) Export() (err error) {
 
 func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	objectLocations, _ := warehouseutils.GetLoadFileLocations(pg.DbHandle, pg.Warehouse.Source.ID, pg.Warehouse.Destination.ID, tableName, pg.Upload.StartLoadFileID, pg.Upload.EndLoadFileID)
-	var filesName []string
+	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		object, err := warehouseutils.GetObjectName(objectLocation, pg.Warehouse.Destination.Config, pg.ObjectStorage)
 		if err != nil {
@@ -247,9 +247,9 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			logger.Errorf("PG: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
-		filesName = append(filesName, fileName)
+		fileNames = append(fileNames, fileName)
 	}
-	return filesName, nil
+	return fileNames, nil
 
 }
 
@@ -275,7 +275,8 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(columnMap)
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
-	objectsFileName, err := pg.DownloadLoadFiles(tableName)
+	fileNames, err := pg.DownloadLoadFiles(tableName)
+	defer misc.RemoveFilePaths(fileNames...)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
@@ -304,7 +305,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 	}
-	for _, objectFileName := range objectsFileName {
+	for _, objectFileName := range fileNames {
 		var gzipFile *os.File
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {

@@ -8,6 +8,7 @@ export interface IDestinationSettingsProps {
   destName: string;
   onSettingsChange: any;
   setRequirementsState: any;
+  disabled?: boolean;
   initialSettings?: any;
 }
 
@@ -60,7 +61,7 @@ export default class DestinationSettings extends React.Component<
   };
 
   public render() {
-    const { destName, initialSettings } = this.props;
+    const { destName, initialSettings, disabled } = this.props;
     const { formTemplate } = this.state;
     return (
       <Container className="p-t-lg p-b-lg">
@@ -71,6 +72,7 @@ export default class DestinationSettings extends React.Component<
             fields={group.fields}
             onStateChange={this.onChange}
             initialSettings={initialSettings}
+            disabled={!!disabled}
           ></FormGroup>
         ))}
       </Container>

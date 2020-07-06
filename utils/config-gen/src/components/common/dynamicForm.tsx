@@ -24,6 +24,8 @@ const ButtonText = styled(Label)`
 export interface IDynamicFormProps {
   field: any;
   onChange: any;
+  disabled: boolean;
+  hidden?: boolean;
 }
 export interface IDynamicFormState {
   mapping: any;
@@ -81,7 +83,7 @@ export default class DynamicForm extends React.Component<
   };
 
   public renderSingleRow = (index: number) => {
-    const { field } = this.props;
+    const { field, disabled } = this.props;
     const { mapping } = this.state;
     const keyLeft = field.keyLeft;
     const keyRight = field.keyRight;
@@ -94,6 +96,7 @@ export default class DynamicForm extends React.Component<
             onChange={(e: any) =>
               this.onConfigChange(index, e.target.value, true)
             }
+            disabled={disabled}
           />
         </Column>
         <Column className="p-l-sm">
@@ -103,6 +106,7 @@ export default class DynamicForm extends React.Component<
             onChange={(e: any) =>
               this.onConfigChange(index, e.target.value, false)
             }
+            disabled={disabled}
           />
         </Column>
       </Row>

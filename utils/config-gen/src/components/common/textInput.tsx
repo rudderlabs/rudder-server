@@ -15,6 +15,7 @@ const Container = styled.div`
 export interface ITextInputFieldProps {
   field: any;
   type: string;
+  disabled?: boolean;
   onChange: (label: string, value: string) => void;
 }
 
@@ -27,7 +28,7 @@ export default class TextInputField extends React.Component<
   }
 
   public render() {
-    const { field, type, onChange } = this.props;
+    const { field, type, disabled, onChange } = this.props;
     return (
       <Container className="p-t-sm">
         <LabelDiv className="m-b-xs">
@@ -43,12 +44,14 @@ export default class TextInputField extends React.Component<
             width={500}
             placeholder={field.placeholder}
             onChange={(e: any) => onChange(field.value, e.target.value)}
+            disabled={disabled}
           />
         ) : (
           <Textarea
             defaultValue={field.default}
             placeholder={field.placeholder}
             onChange={(e: any) => onChange(field.value, e.target.value)}
+            disabled={disabled}
           />
         )}
       </Container>

@@ -1,7 +1,7 @@
 {
   "GA": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -14,29 +14,7 @@
       ]
     },
     {
-      "title": "2. Pages and Screens",
-      "fields": [
-        {
-          "type": "checkbox",
-          "label": "Track all pages to Google Analytics",
-          "value": "trackAllPages",
-          "default": true
-        },
-        {
-          "type": "checkbox",
-          "label": "Track all screens",
-          "value": "trackAllScreens"
-        },
-        {
-          "type": "checkbox",
-          "label": "Track categorized pages to Google Analytics",
-          "value": "trackCategorizedPages",
-          "default": true
-        }
-      ]
-    },
-    {
-      "title": "3. Native SDK",
+      "title": "Native SDK",
       "fields": [
         {
           "type": "checkbox",
@@ -47,16 +25,198 @@
       ]
     },
     {
-      "title": "4. Configure Custom Dimension",
+      "title": "Reporting",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Remarketing, Display Ads and Demographic Reports.",
+          "value": "doubleClick",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "Enable Enhanced Link Attribution",
+          "value": "enhancedLinkAttribution",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "Track Pages",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Include the Querystring in Page Views",
+          "value": "includeSearch",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "Track Categorized Pages",
+          "value": "trackCategorizedPages",
+          "default": true
+        },
+        {
+          "type": "checkbox",
+          "label": "Track Named Pages",
+          "value": "trackNamedPages",
+          "default": true
+        }
+      ]
+    },
+    {
+      "title": "Sampling",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Sample Rate",
+          "value": "sampleRate",
+          "default": "100"
+        },
+        {
+          "type": "textInput",
+          "label": "Site Speed Sample Rate",
+          "value": "siteSpeedSampleRate",
+          "default": "1"
+        }
+      ]
+    },
+    {
+      "title": "Custom Dimensions & Metrics",
       "fields": [
         {
           "type": "dynamicForm",
-          "labelLeft": "Event Type",
+          "labelLeft": "Event or Property",
           "labelRight": "Custom Dimension",
           "keyLeft": "from",
           "keyRight": "to",
-          "placeholderLeft": "e.g: product_purchased",
-          "placeholderRight": "e.g: product_price",
+          "placeholderLeft": "e.g: first_name",
+          "placeholderRight": "e.g: dimension1",
+          "value": "dimensions"
+        },
+        {
+          "type": "dynamicForm",
+          "labelLeft": "Traits or  Property",
+          "labelRight": "Metric",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "placeholderLeft": "e.g: age",
+          "placeholderRight": "e.g: metric1",
+          "value": "metrics"
+        },
+        {
+          "type": "dynamicCustomForm",
+          "value": "resetCustomDimensionsOnPage",
+          "customFields": [
+            {
+              "type": "textInput",
+              "label": "Reset dimensions on Page calls",
+              "value": "resetCustomDimensionsOnPage",
+              "required": false,
+              "default": []
+            }
+          ]
+        },
+        {
+          "type": "checkbox",
+          "label": "Set Custom Dimensions & Metrics to the Page",
+          "value": "setAllMappedProps",
+          "default": true
+        }
+      ]
+    },
+    {
+      "title": "Property & Trait Mapping",
+      "fields": [
+        {
+          "type": "dynamicForm",
+          "labelLeft": "Traits or  Property",
+          "labelRight": "Content Grouping",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "placeholderLeft": "e.g: section",
+          "placeholderRight": "e.g: contentGroup1",
+          "value": "contentGroupings"
+        }
+      ]
+    },
+    {
+      "title": "Server Side Identify",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Enable Server Side Identify",
+          "value": "enableServerSideIdentify",
+          "default": false
+        },
+        {
+          "type": "textInput",
+          "label": "Server Side Identify Event Category",
+          "value": "serverSideIdentifyEventCategory",
+          "default": ""
+        },
+        {
+          "type": "textInput",
+          "label": "Server Side Identify Event Action",
+          "value": "serverSideIdentifyEventAction",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "title": "Other Setttings",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Anonymize IP Addresses",
+          "value": "anonymizeIp",
+          "default": false
+        },
+        {
+          "type": "textInput",
+          "label": "Cookie Domain Name",
+          "value": "domain",
+          "default": "auto"
+        },
+        {
+          "type": "checkbox",
+          "label": "Enable Enhanced Ecommerce",
+          "value": "enhancedEcommerce",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "Add the non-interaction flag to all events",
+          "value": "nonInteraction",
+          "default": false
+        },
+        {
+          "type": "textInput",
+          "label": "Optimize Container ID",
+          "value": "optimize",
+          "default": ""
+        },
+        {
+          "type": "checkbox",
+          "label": "Send user-id to GA",
+          "value": "sendUserId",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "Use Google AMP Client ID",
+          "value": "useGoogleAmpClientId",
+          "default": false
+        }
+      ]
+    },
+    {
+      "fields": [
+        {
+          "type": "dynamicForm",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "hidden": true,
           "value": "customMappings"
         }
       ]
@@ -64,7 +224,7 @@
   ],
   "AM": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -72,47 +232,15 @@
           "value": "apiKey",
           "regex": ".*",
           "required": true,
-          "placeholder": "e.g: bSjsdGYsOo9sjw23Shj"
-        }
-      ]
-    },
-    {
-      "title": "2. Pages and Screens",
-      "fields": [
-        {
-          "type": "checkbox",
-          "label": "Track all pages to Amplitude",
-          "value": "trackAllPages",
-          "default": true
-        },
-        {
-          "type": "checkbox",
-          "label": "Track all screens",
-          "value": "trackAllScreens"
-        },
-        {
-          "type": "checkbox",
-          "label": "Track categorized pages to Amplitude",
-          "value": "trackCategorizedPages",
-          "default": true
-        }
-      ]
-    },
-    {
-      "title": "3. Native SDK",
-      "fields": [
-        {
-          "type": "checkbox",
-          "label": "Use native SDK to send events",
-          "value": "useNativeSDK",
-          "default": false
+          "placeholder": "e.g: bSjsdGYsOo9sjw23Shj",
+          "secret": true
         }
       ]
     }
   ],
   "MP": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -120,40 +248,33 @@
           "value": "token",
           "regex": ".*",
           "required": true,
-          "placeholder": "e.g: bSjsdGYsOo9sjw23Shj"
-        }
-      ]
-    },
-    {
-      "title": "2. Native SDK",
-      "fields": [
+          "placeholder": "e.g: bSjsdGYsOo9sjw23Shj",
+          "secret": true
+        },
         {
-          "type": "checkbox",
-          "label": "Use native SDK to send events",
-          "value": "useNativeSDK",
-          "default": false
-        }
-      ]
-    },
-    {
-      "title": "3. Configure Custom Dimension",
-      "fields": [
+          "type": "textInput",
+          "label": "Api Secret",
+          "value": "apiSecret",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "e.g: bSjsdGYsOo9sjw23Shj",
+          "secret": true
+        },
         {
-          "type": "dynamicForm",
-          "labelLeft": "Event Type",
-          "labelRight": "Custom Dimension",
-          "keyLeft": "from",
-          "keyRight": "to",
-          "placeholderLeft": "e.g: product_purchased",
-          "placeholderRight": "e.g: product_price",
-          "value": "customMappings"
+          "type": "textInput",
+          "label": "Group Key Name",
+          "value": "groupKey",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "e.g: company",
+          "secret": false
         }
       ]
     }
   ],
   "FB": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -166,7 +287,7 @@
       ]
     },
     {
-      "title": "2. Native SDK",
+      "title": "Native SDK",
       "fields": [
         {
           "type": "checkbox",
@@ -175,26 +296,11 @@
           "default": false
         }
       ]
-    },
-    {
-      "title": "3. Configure Custom Dimension",
-      "fields": [
-        {
-          "type": "dynamicForm",
-          "labelLeft": "Event Type",
-          "labelRight": "Custom Dimension",
-          "keyLeft": "from",
-          "keyRight": "to",
-          "placeholderLeft": "e.g: product_purchased",
-          "placeholderRight": "e.g: product_price",
-          "value": "customMappings"
-        }
-      ]
     }
   ],
   "ADJ": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -207,18 +313,18 @@
       ]
     },
     {
-      "title": "2. Native SDK",
+      "title": "Native SDK",
       "fields": [
         {
-          "type": "checkbox",
+          "type": "defaultCheckbox",
           "label": "Use native SDK to send events",
           "value": "useNativeSDK",
-          "default": false
+          "default": true
         }
       ]
     },
     {
-      "title": "3. Map Events to Adjust Event Tokens",
+      "title": "Map Events to Adjust Event Tokens",
       "fields": [
         {
           "type": "dynamicForm",
@@ -227,13 +333,13 @@
           "keyLeft": "from",
           "keyRight": "to",
           "placeholderLeft": "e.g: product_purchased",
-          "placeholderRight": "Token from adjust.com",
+          "placeholderRight": "e.g: xcdrf5",
           "value": "customMappings"
         }
       ]
     },
     {
-      "title": "4. Delay Time before SDK initialization",
+      "title": "Delay Time before SDK initialization",
       "fields": [
         {
           "type": "textInput",
@@ -248,16 +354,8 @@
   ],
   "HS": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
-        {
-          "type": "textInput",
-          "label": "API Key",
-          "value": "apiKey",
-          "regex": ".*",
-          "required": true,
-          "placeholder": "e.g: bSjsdGYsOo9sasdjw23Shj"
-        },
         {
           "type": "textInput",
           "label": "Hub ID",
@@ -265,11 +363,19 @@
           "regex": ".*",
           "required": true,
           "placeholder": "e.g: 748991"
+        },
+        {
+          "type": "textInput",
+          "label": "API Key",
+          "value": "apiKey",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "e.g: 05afa518-132c-40db-830a-de0f688902f7"
         }
       ]
     },
     {
-      "title": "2. Native SDK",
+      "title": "Native SDK",
       "fields": [
         {
           "type": "checkbox",
@@ -306,7 +412,8 @@
           "value": "accessKeyID",
           "regex": ".*",
           "required": false,
-          "placeholder": "e.g: access-key-id"
+          "placeholder": "e.g: access-key-id",
+          "secret": true
         },
         {
           "type": "textInput",
@@ -314,7 +421,14 @@
           "value": "accessKey",
           "regex": ".*",
           "required": false,
-          "placeholder": "e.g: secret-access-key"
+          "placeholder": "e.g: secret-access-key",
+          "secret": true
+        },
+        {
+          "type": "checkbox",
+          "label": "Enable Server Side Encryption?",
+          "value": "enableSSE",
+          "default": false
         }
       ]
     }
@@ -342,18 +456,19 @@
         {
           "type": "textareaInput",
           "label": "Credentials",
-          "labelNote": "GCP Service Account credentials JSON for Rudder to use in loading data into your Google Cloud Storage",
+          "labelNote": "GCP Service Account credentials JSON for RudderStack to use in loading data into your Google Cloud Storage",
           "value": "credentials",
           "regex": ".*",
           "required": false,
-          "footerNote": "Create a service account in your GCP Project for Rudder with roles of 'storage.objectCreator'"
+          "footerNote": "Create a service account in your GCP Project for RudderStack with roles of 'storage.objectCreator'",
+          "secret": true
         }
       ]
     }
   ],
   "AZURE_BLOB": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -385,7 +500,8 @@
           "value": "accountKey",
           "regex": ".*",
           "required": true,
-          "placeholder": "e.g: account-key"
+          "placeholder": "e.g: account-key",
+          "secret": true
         }
       ]
     }
@@ -408,7 +524,8 @@
           "value": "accessKeyID",
           "regex": ".*",
           "required": true,
-          "placeholder": "e.g: Q3AM3UQ867SPQQA43P2F"
+          "placeholder": "e.g: Q3AM3UQ867SPQQA43P2F",
+          "secret": true
         },
         {
           "type": "textInput",
@@ -416,7 +533,8 @@
           "value": "secretAccessKey",
           "regex": ".*",
           "required": true,
-          "placeholder": "e.g: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          "placeholder": "e.g: zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG",
+          "secret": true
         },
         {
           "type": "textInput",
@@ -445,7 +563,7 @@
   ],
   "RS": [
     {
-      "title": "1. Connection Credentials",
+      "title": "Connection Credentials",
       "fields": [
         {
           "type": "textInput",
@@ -479,8 +597,10 @@
           "type": "textInput",
           "label": "Password",
           "value": "password",
+          "inputFieldType": "password",
           "regex": ".*",
-          "required": true
+          "required": true,
+          "secret": true
         },
         {
           "type": "textInput",
@@ -493,26 +613,97 @@
         },
         {
           "type": "textInput",
+          "label": "Prefix",
+          "value": "prefix",
+          "regex": ".*",
+          "required": false,
+          "placeholder": ""
+        },
+        {
+          "type": "textInput",
+          "label": "Namespace",
+          "labelNote": "Schema name for the warehouse where the tables are created",
+          "value": "namespace",
+          "regex": ".*",
+          "required": false,
+          "footerNote": "Default will be the source name"
+        },
+        {
+          "type": "textInput",
           "label": "AWS Access Key ID",
           "value": "accessKeyID",
           "regex": ".*",
-          "required": true,
-          "placeholder": "e.g: access-key-id"
+          "required": false,
+          "placeholder": "e.g: access-key-id",
+          "secret": true
         },
         {
           "type": "textInput",
           "label": "AWS Secret Access Key",
           "value": "accessKey",
           "regex": ".*",
-          "required": true,
-          "placeholder": "e.g: secret-access-key"
+          "required": false,
+          "placeholder": "e.g: secret-access-key",
+          "secret": true
+        },
+        {
+          "type": "checkbox",
+          "label": "Enable Server Side Encryption For S3?",
+          "value": "enableSSE",
+          "default": false
+        },
+        {
+          "type": "singleSelect",
+          "label": "Sync Frequency",
+          "value": "syncFrequency",
+          "options": [
+            {
+              "name": "Every 30 minutes",
+              "value": "30"
+            },
+            {
+              "name": "Every 1 hour",
+              "value": "60"
+            },
+            {
+              "name": "Every 3 hours",
+              "value": "180"
+            },
+            {
+              "name": "Every 12 hours",
+              "value": "360"
+            },
+            {
+              "name": "Every 6 hours",
+              "value": "720"
+            },
+            {
+              "name": "Every 24 hours",
+              "value": "1440"
+            }
+          ],
+          "defaultOption": {
+            "name": "Every 30 minutes",
+            "value": "30"
+          },
+          "required": false
+        },
+        {
+          "type": "timePicker",
+          "label": "Sync Starting At (Optional)",
+          "value": "syncStartAt",
+          "options": {
+            "omitSeconds": true
+          },
+          "required": false,
+          "footerNote": "Note: Please specify time in UTC"
         }
       ]
     }
   ],
   "BQ": [
     {
-      "title": "1. Connection Credentials",
+      "title": "Connection Credentials",
       "fields": [
         {
           "type": "textInput",
@@ -542,13 +733,77 @@
           "footerNote": "Please make sure the bucket exists in your GCP Project in the same region as bigquery dataset"
         },
         {
+          "type": "textInput",
+          "label": "Prefix",
+          "value": "prefix",
+          "regex": ".*",
+          "required": false,
+          "placeholder": ""
+        },
+        {
+          "type": "textInput",
+          "label": "Namespace",
+          "labelNote": "Schema name for the warehouse where the tables are created",
+          "value": "namespace",
+          "regex": ".*",
+          "required": false,
+          "footerNote": "Default will be the source name"
+        },
+        {
           "type": "textareaInput",
           "label": "Credentials",
-          "labelNote": "GCP Service Account credentials JSON for Rudder to use in loading data into your BigQuery database",
+          "labelNote": "GCP Service Account credentials JSON for RudderStack to use in loading data into your BigQuery database",
           "value": "credentials",
           "regex": ".*",
           "required": true,
-          "footerNote": "Create a service account in your GCP Project for Rudder with roles of 'BigQuery User'"
+          "footerNote": "Create a service account in your GCP Project for RudderStack with roles of 'BigQuery User'",
+          "secret": true
+        },
+        {
+          "type": "singleSelect",
+          "label": "Sync Frequency",
+          "value": "syncFrequency",
+          "options": [
+            {
+              "name": "Every 30 minutes",
+              "value": "30"
+            },
+            {
+              "name": "Every 1 hour",
+              "value": "60"
+            },
+            {
+              "name": "Every 3 hours",
+              "value": "180"
+            },
+            {
+              "name": "Every 12 hours",
+              "value": "360"
+            },
+            {
+              "name": "Every 6 hours",
+              "value": "720"
+            },
+            {
+              "name": "Every 24 hours",
+              "value": "1440"
+            }
+          ],
+          "defaultOption": {
+            "name": "Every 30 minutes",
+            "value": "30"
+          },
+          "required": false
+        },
+        {
+          "type": "timePicker",
+          "label": "Sync Starting At (Optional)",
+          "value": "syncStartAt",
+          "options": {
+            "omitSeconds": true
+          },
+          "required": false,
+          "footerNote": "Note: Please specify time in UTC"
         }
       ]
     }
@@ -589,13 +844,43 @@
           "type": "textInput",
           "label": "Password",
           "value": "password",
+          "inputFieldType": "password",
           "regex": ".*",
+          "required": true,
+          "secret": true
+        },
+        {
+          "type": "singleSelect",
+          "label": "Choose your Cloud",
+          "value": "cloudProvider",
+          "options": [
+            {
+              "name": "Amazon Web Services",
+              "value": "AWS"
+            },
+            {
+              "name": "Google Cloud Platform",
+              "value": "GCP"
+            },
+            {
+              "name": "Microsoft Azure",
+              "value": "AZURE"
+            }
+          ],
+          "defaultOption": {
+            "name": "Amazon Web Services",
+            "value": "AWS"
+          },
           "required": true
         },
         {
           "type": "textInput",
+          "preRequisiteField": {
+            "name": "cloudProvider",
+            "selectedValue": "AWS"
+          },
           "label": "Staging S3 Storage Bucket Name",
-          "labelNote": "S3 Bucket to storage data before loading into Redshift",
+          "labelNote": "S3 Bucket to storage data before loading into Snowflake",
           "value": "bucketName",
           "regex": ".*",
           "required": true,
@@ -603,6 +888,362 @@
         },
         {
           "type": "textInput",
+          "label": "Namespace",
+          "labelNote": "Schema name for the warehouse where the tables are created",
+          "value": "namespace",
+          "regex": ".*",
+          "required": false,
+          "footerNote": "Default will be the source name"
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "cloudProvider",
+            "selectedValue": "GCP"
+          },
+          "label": "Staging GCS Object Storage Bucket Name",
+          "labelNote": "GCS Bucket to storage data before loading into Snowflake",
+          "value": "bucketName",
+          "regex": ".*",
+          "required": true,
+          "footerNote": "Please make sure the bucket exists in your GCS"
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "cloudProvider",
+            "selectedValue": "AZURE"
+          },
+          "label": "Staging Azure Blob Storage Container Name",
+          "labelNote": "Container to storage data before loading into Snowflake",
+          "value": "containerName",
+          "regex": ".*",
+          "required": true,
+          "footerNote": "Please make sure the container exists in your Azure Blob Storage"
+        },
+        {
+          "type": "textInput",
+          "label": "Prefix",
+          "value": "prefix",
+          "regex": ".*",
+          "required": false,
+          "placeholder": ""
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "cloudProvider",
+            "selectedValue": "AWS"
+          },
+          "label": "Storage Integration",
+          "value": "storageIntegration",
+          "regex": ".*",
+          "placeholder": "e.g: aws_int",
+          "footerURL": {
+            "link": "https://docs.snowflake.com/en/user-guide/data-load-s3-config.html#option-1-configuring-a-snowflake-storage-integration",
+            "text": "Instructions for setting up the integration"
+          }
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "cloudProvider",
+            "selectedValue": "GCP"
+          },
+          "label": "Storage Integration",
+          "value": "storageIntegration",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: gcs_int",
+          "footerURL": {
+            "link": "https://docs.snowflake.com/en/user-guide/data-load-gcs-config.html",
+            "text": "Instructions for setting up the integration"
+          }
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "cloudProvider",
+            "selectedValue": "AZURE"
+          },
+          "label": "Storage Integration",
+          "value": "storageIntegration",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: azure_int",
+          "footerURL": {
+            "link": "https://docs.snowflake.com/en/user-guide/data-load-azure-config.html#option-1-configuring-a-snowflake-storage-integration",
+            "text": "Instructions for setting up the integration"
+          }
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "cloudProvider",
+            "selectedValue": "AWS"
+          },
+          "label": "AWS Access Key ID",
+          "value": "accessKeyID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: access-key-id",
+          "secret": true
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "cloudProvider",
+            "selectedValue": "AWS"
+          },
+          "label": "AWS Secret Access Key",
+          "value": "accessKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: secret-access-key",
+          "secret": true
+        },
+        {
+          "type": "checkbox",
+          "preRequisiteField": {
+            "name": "cloudProvider",
+            "selectedValue": "AWS"
+          },
+          "label": "Enable Server Side Encryption For S3?",
+          "value": "enableSSE",
+          "default": false
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "cloudProvider",
+            "selectedValue": "AZURE"
+          },
+          "label": "Azure Blob Storage Account Name",
+          "value": "accountName",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: account-name"
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "cloudProvider",
+            "selectedValue": "AZURE"
+          },
+          "label": "Azure Blob Storage Account Key",
+          "value": "accountKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: account-key"
+        },
+        {
+          "type": "textareaInput",
+          "preRequisiteField": {
+            "name": "cloudProvider",
+            "selectedValue": "GCP"
+          },
+          "label": "Credentials",
+          "labelNote": "GCP Service Account credentials JSON for RudderStack to use in loading data into your Google Cloud Storage",
+          "value": "credentials",
+          "regex": ".*",
+          "required": true,
+          "footerNote": "Create a service account in your GCP Project for RudderStack with roles of 'storage.objectCreator'"
+        },
+        {
+          "type": "singleSelect",
+          "label": "Sync Frequency",
+          "value": "syncFrequency",
+          "options": [
+            {
+              "name": "Every 30 minutes",
+              "value": "30"
+            },
+            {
+              "name": "Every 1 hour",
+              "value": "60"
+            },
+            {
+              "name": "Every 3 hours",
+              "value": "180"
+            },
+            {
+              "name": "Every 12 hours",
+              "value": "360"
+            },
+            {
+              "name": "Every 6 hours",
+              "value": "720"
+            },
+            {
+              "name": "Every 24 hours",
+              "value": "1440"
+            }
+          ],
+          "defaultOption": {
+            "name": "Every 30 minutes",
+            "value": "30"
+          },
+          "required": false
+        },
+        {
+          "type": "timePicker",
+          "label": "Sync Starting At (Optional)",
+          "value": "syncStartAt",
+          "options": {
+            "omitSeconds": true
+          },
+          "required": false,
+          "footerNote": "Note: Please specify time in UTC"
+        }
+      ]
+    }
+  ],
+  "POSTGRES": [
+    {
+      "title": "1. Connection Credentials",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Host",
+          "value": "host",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Database",
+          "value": "database",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "User",
+          "value": "user",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Password",
+          "value": "password",
+          "inputFieldType": "password",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Port",
+          "value": "port",
+          "regex": ".*",
+          "required": true
+        },
+        {
+          "type": "singleSelect",
+          "label": "SSL Mode",
+          "value": "sslMode",
+          "options": [
+            {
+              "name": "disable",
+              "value": "disable"
+            },
+            {
+              "name": "require",
+              "value": "require"
+            }
+          ],
+          "defaultOption": {
+            "name": "disable",
+            "value": "disable"
+          },
+          "required": true
+        },
+        {
+          "type": "singleSelect",
+          "label": "Choose your Storage Provider",
+          "value": "bucketProvider",
+          "options": [
+            {
+              "name": "S3",
+              "value": "S3"
+            },
+            {
+              "name": "GCS",
+              "value": "GCS"
+            },
+            {
+              "name": "AZURE_BLOB",
+              "value": "AZURE_BLOB"
+            },
+            {
+              "name": "MINIO",
+              "value": "MINIO"
+            }
+          ],
+          "defaultOption": {
+            "name": "MINIO",
+            "value": "MINIO"
+          },
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "S3"
+          },
+          "label": "Staging S3 Storage Bucket Name",
+          "labelNote": "S3 Bucket to storage data before loading into Postgres",
+          "value": "bucketName",
+          "regex": ".*",
+          "required": true,
+          "footerNote": "Please make sure the bucket exists in your S3"
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "GCS"
+          },
+          "label": "Staging GCS Object Storage Bucket Name",
+          "labelNote": "GCS Bucket to storage data before loading into Postgres",
+          "value": "bucketName",
+          "regex": ".*",
+          "required": true,
+          "footerNote": "Please make sure the bucket exists in your GCS"
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "AZURE_BLOB"
+          },
+          "label": "Staging Azure Blob Storage Container Name",
+          "labelNote": "Container to storage data before loading into Postgres",
+          "value": "containerName",
+          "regex": ".*",
+          "required": true,
+          "footerNote": "Please make sure the container exists in your Azure Blob Storage"
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "MINIO"
+          },
+          "label": "Staging MINIO Storage Bucket Name",
+          "labelNote": "MINIO Bucket to storage data before loading into Postgres",
+          "value": "bucketName",
+          "regex": ".*",
+          "required": true,
+          "footerNote": "Please make sure the bucket exists in your MINIO"
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "S3"
+          },
           "label": "AWS Access Key ID",
           "value": "accessKeyID",
           "regex": ".*",
@@ -611,18 +1252,151 @@
         },
         {
           "type": "textInput",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "S3"
+          },
           "label": "AWS Secret Access Key",
           "value": "accessKey",
           "regex": ".*",
           "required": true,
           "placeholder": "e.g: secret-access-key"
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "AZURE_BLOB"
+          },
+          "label": "Azure Blob Storage Account Name",
+          "value": "accountName",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: account-name"
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "AZURE_BLOB"
+          },
+          "label": "Azure Blob Storage Account Key",
+          "value": "accountKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: account-key"
+        },
+        {
+          "type": "textareaInput",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "GCS"
+          },
+          "label": "Credentials",
+          "labelNote": "GCP Service Account credentials JSON for RudderStack to use in loading data into your Google Cloud Storage",
+          "value": "credentials",
+          "regex": ".*",
+          "required": true,
+          "footerNote": "Create a service account in your GCP Project for RudderStack with roles of 'storage.objectCreator'"
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "MINIO"
+          },
+          "label": "MinIO Endpoint",
+          "value": "endPoint",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: play.min.io:9000"
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "MINIO"
+          },
+          "label": "MINIO Access Key ID",
+          "value": "accessKeyID",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: access-key-id"
+        },
+        {
+          "type": "textInput",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "MINIO"
+          },
+          "label": "MINIO Secret Access Key",
+          "value": "secretAccessKey",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: secret-access-key"
+        },
+        {
+          "type": "checkbox",
+          "preRequisiteField": {
+            "name": "bucketProvider",
+            "selectedValue": "MINIO"
+          },
+          "label": "Use SSL for connection",
+          "value": "useSSL",
+          "default": true
+        },
+        {
+          "type": "singleSelect",
+          "label": "Sync Frequency",
+          "value": "syncFrequency",
+          "options": [
+            {
+              "name": "Every 30 minutes",
+              "value": "30"
+            },
+            {
+              "name": "Every 1 hour",
+              "value": "60"
+            },
+            {
+              "name": "Every 3 hours",
+              "value": "180"
+            },
+            {
+              "name": "Every 12 hours",
+              "value": "360"
+            },
+            {
+              "name": "Every 6 hours",
+              "value": "720"
+            },
+            {
+              "name": "Every 24 hours",
+              "value": "1440"
+            }
+          ],
+          "defaultOption": {
+            "name": "Every 30 minutes",
+            "value": "30"
+          },
+          "required": false
+        },
+        {
+          "type": "timePicker",
+          "label": "Sync Starting At (Optional)",
+          "value": "syncStartAt",
+          "options": {
+            "omitSeconds": true
+          },
+          "required": false,
+          "footerNote": "Note: Please specify time in UTC"
         }
       ]
     }
   ],
   "AF": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -631,17 +1405,33 @@
           "regex": ".*",
           "required": true,
           "placeholder": "e.g: bSjsdGYsOo9sjw23Shj"
+        },
+        {
+          "type": "textInput",
+          "label": "Android App ID",
+          "value": "androidAppId",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "com.mypackage.example"
+        },
+        {
+          "type": "textInput",
+          "label": "Apple App ID",
+          "value": "appleAppId",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "123456789"
         }
       ]
     },
     {
-      "title": "2. Native SDK",
+      "title": "Native SDK",
       "fields": [
         {
-          "type": "checkbox",
+          "type": "defaultCheckbox",
           "label": "Use native SDK to send events",
           "value": "useNativeSDK",
-          "default": false
+          "default": true
         }
       ]
     }
@@ -695,17 +1485,17 @@
       "title": "2. Native SDK",
       "fields": [
         {
-          "type": "checkbox",
+          "type": "defaultCheckbox",
           "label": "Use native SDK to send events",
           "value": "useNativeSDK",
-          "default": false
+          "default": true
         }
       ]
     }
   ],
   "SALESFORCE": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -719,9 +1509,11 @@
           "type": "textInput",
           "label": "Password",
           "value": "password",
+          "inputFieldType": "password",
           "regex": ".*",
           "required": true,
-          "placeholder": "Password for salesforce login"
+          "placeholder": "Password for salesforce login",
+          "secret": true
         },
         {
           "type": "textInput",
@@ -729,14 +1521,15 @@
           "value": "initialAccessToken",
           "regex": ".*",
           "required": true,
-          "placeholder": "Initial access token from salesforce"
+          "placeholder": "Initial access token from salesforce",
+          "secret": true
         }
       ]
     }
   ],
   "GOOGLEADS": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -749,18 +1542,18 @@
       ]
     },
     {
-      "title": "2. Native SDK",
+      "title": "Native SDK",
       "fields": [
         {
-          "type": "checkbox",
+          "type": "defaultCheckbox",
           "label": "Use native SDK to send events",
           "value": "useNativeSDK",
-          "default": false
+          "default": true
         }
       ]
     },
     {
-      "title": "3. Configure Page Load Conversion",
+      "title": "Configure Page Load Conversion",
       "fields": [
         {
           "type": "dynamicForm",
@@ -771,11 +1564,19 @@
           "placeholderLeft": "bpg3CMiIjLMBELXBp8wC",
           "placeholderRight": "name",
           "value": "pageLoadConversions"
+        },
+        {
+          "type": "textInput",
+          "label": "Default Conversion Label",
+          "value": "defaultPageConversion",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "e.g: bpg3CMiIjLMBELXBp8wC"
         }
       ]
     },
     {
-      "title": "4. Click Event Conversion",
+      "title": "Click Event Conversion",
       "fields": [
         {
           "type": "dynamicForm",
@@ -792,7 +1593,7 @@
   ],
   "SEGMENT": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -845,15 +1646,15 @@
   ],
   "INTERCOM": [
     {
-      "title": "Connection Settings",
+      "title": "1. Connection Settings",
       "fields": [
         {
           "type": "textInput",
-          "label": "Api Key",
+          "label": "Access Token",
           "value": "apiKey",
           "regex": ".*",
           "required": true,
-          "placeholder": "e.g: dd412940"
+          "placeholder": "e.g: FGHrOjU4ZDc0MjEyXzhjYmNfNDZmYl85ODUxX2RjZDk0Mzk1M2VlMDoxOjA="
         },
         {
           "type": "textInput",
@@ -861,20 +1662,39 @@
           "value": "appId",
           "regex": ".*",
           "required": true,
-          "placeholder": "e.g: dd412940"
+          "placeholder": "e.g: fll5vd90"
         },
         {
           "type": "textInput",
-          "label": "Mobile Api Key",
-          "value": "mobileApiKey",
+          "label": "Android API Key",
+          "value": "mobileApiKeyAndroid",
           "regex": ".*",
           "required": false,
-          "placeholder": "e.g: dd412940"
+          "placeholder": "e.g: android_sdk-67f114561f2267e242466e6687bc7a9ba455cf90"
+        },
+        {
+          "type": "textInput",
+          "label": "iOS API Key",
+          "value": "mobileApiKeyIOS",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "e.g: ios_sdk-5fe73e0bb7fcae17a1a75fdbad227191a69f6c00"
         }
       ]
     },
     {
-      "title": "Other Setttings",
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": false
+        }
+      ]
+    },
+    {
+      "title": "3. Other Setttings",
       "fields": [
         {
           "type": "checkbox",
@@ -944,7 +1764,8 @@
           "value": "restApiKey",
           "regex": ".*",
           "required": true,
-          "placeholder": "e.g: 06c19c59-48d2-11ea-b27a-faffc22c7c7f"
+          "placeholder": "e.g: 06c19c59-48d2-11ea-b27a-faffc22c7c7f",
+          "secret": true
         },
         {
           "type": "textInput",
@@ -1004,7 +1825,7 @@
       "title": "Use Native SDK",
       "fields": [
         {
-          "type": "checkbox",
+          "type": "defaultCheckbox",
           "label": "Use native SDK to send events",
           "value": "useNativeSDK",
           "default": true
@@ -1057,10 +1878,10 @@
       "title": "2. Native SDK",
       "fields": [
         {
-          "type": "checkbox",
+          "type": "defaultCheckbox",
           "label": "Use native SDK to send events",
           "value": "useNativeSDK",
-          "default": false
+          "default": true
         }
       ]
     }
@@ -1129,7 +1950,7 @@
   ],
   "KOCHAVA": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -1144,7 +1965,7 @@
   ],
   "KISSMETRICS": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -1157,7 +1978,7 @@
       ]
     },
     {
-      "title": "2. Native SDK",
+      "title": "Native SDK",
       "fields": [
         {
           "type": "checkbox",
@@ -1168,7 +1989,7 @@
       ]
     },
     {
-      "title": "3. Prefix Properties",
+      "title": "Prefix Properties",
       "fields": [
         {
           "type": "checkbox",
@@ -1181,7 +2002,7 @@
   ],
   "CUSTOMERIO": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -1215,7 +2036,7 @@
   ],
   "CHARTBEAT": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -1236,18 +2057,18 @@
       ]
     },
     {
-      "title": "2. Native SDK",
+      "title": "Native SDK",
       "fields": [
         {
-          "type": "checkbox",
+          "type": "defaultCheckbox",
           "label": "Use native SDK to send events",
           "value": "useNativeSDK",
-          "default": false
+          "default": true
         }
       ]
     },
     {
-      "title": "3. Other Settings",
+      "title": "Other Settings",
       "fields": [
         {
           "type": "checkbox",
@@ -1264,58 +2085,41 @@
       ]
     }
   ],
-  "COMSCORE": [
+  "FULLSTORY": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
-          "label": "c2 ID",
-          "value": "c2ID",
+          "label": "FS ORG",
+          "value": "fs_org",
           "regex": ".*",
           "required": true,
-          "placeholder": "e.g: ABCDEFG"
+          "placeholder": "e.g: dd412940"
         },
         {
-          "type": "textInput",
-          "label": "Publisher Secret",
-          "value": "publisherSecret",
-          "regex": ".*",
-          "required": true,
-          "placeholder": "e.g: ABCDEFG"
+          "type": "checkbox",
+          "label": "FS debug mode",
+          "value": "fs_debug_mode",
+          "default": true
         }
       ]
     },
     {
-      "title": "2. Native SDK",
+      "title": "Native SDK",
       "fields": [
         {
-          "type": "checkbox",
+          "type": "defaultCheckbox",
           "label": "Use native SDK to send events",
           "value": "useNativeSDK",
-          "default": false
-        }
-      ]
-    },
-    {
-      "title": "3. Configure Beacon Param Map",
-      "fields": [
-        {
-          "type": "dynamicForm",
-          "labelLeft": "Event Property",
-          "labelRight": "Beacon Parameter",
-          "keyLeft": "from",
-          "keyRight": "to",
-          "placeholderLeft": "event prop",
-          "placeholderRight": "c0",
-          "value": "comScoreBeaconParam"
+          "default": true
         }
       ]
     }
   ],
   "LEANPLUM": [
     {
-      "title": "1. Connection Settings",
+      "title": "Connection Settings",
       "fields": [
         {
           "type": "textInput",
@@ -1331,12 +2135,13 @@
           "value": "clientKey",
           "regex": ".*",
           "required": true,
-          "placeholder": "e.g: ABCDEFG"
+          "placeholder": "e.g: ABCDEFG",
+          "secret": true
         }
       ]
     },
     {
-      "title": "2. Native SDK",
+      "title": "Native SDK",
       "fields": [
         {
           "type": "checkbox",
@@ -1347,13 +2152,13 @@
         {
           "type": "checkbox",
           "label": "Use native SDK to send user generated events",
-          "value": "sendEvents",
+          "value": "useNativeSDKToSend",
           "default": false
         }
       ]
     },
     {
-      "title": "3. Development Mode",
+      "title": "Development Mode",
       "fields": [
         {
           "type": "checkbox",
@@ -1369,9 +2174,779 @@
       "title": "1. Native SDK",
       "fields": [
         {
-          "type": "checkbox",
+          "type": "defaultCheckbox",
           "label": "Use native SDK to send events",
           "value": "useNativeSDK",
+          "default": true
+        }
+      ]
+    }
+  ],
+  "WEBHOOK": [
+    {
+      "title": "Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Webhook URL",
+          "value": "webhookUrl",
+          "required": true,
+          "placeholder": "http://www.abcd.com"
+        },
+        {
+          "type": "dynamicForm",
+          "label": "Headers",
+          "labelLeft": "Key",
+          "labelRight": "Value",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "placeholderLeft": "content-type",
+          "placeholderRight": "application/json",
+          "value": "headers"
+        }
+      ]
+    }
+  ],
+  "LOTAME": [
+    {
+      "title": "BCP Url Settings",
+      "fields": [
+        {
+          "type": "dynamicCustomForm",
+          "value": "bcpUrlSettingsPixel",
+          "customFields": [
+            {
+              "type": "textInput",
+              "label": "BCP Url Template (Pixel)",
+              "value": "bcpUrlTemplate",
+              "regex": ".*",
+              "required": false,
+              "placeholder": "e.g: ABCDEFG"
+            }
+          ]
+        },
+        {
+          "type": "dynamicCustomForm",
+          "value": "bcpUrlSettingsIframe",
+          "customFields": [
+            {
+              "type": "textInput",
+              "label": "BCP Url Template (Iframe)",
+              "value": "bcpUrlTemplate",
+              "regex": ".*",
+              "required": false,
+              "placeholder": "e.g: ABCDEFG"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "DSP Url Settings",
+      "fields": [
+        {
+          "type": "dynamicCustomForm",
+          "value": "dspUrlSettingsPixel",
+          "customFields": [
+            {
+              "type": "textInput",
+              "label": "DSP Url Template (Pixel)",
+              "value": "dspUrlTemplate",
+              "regex": ".*",
+              "required": false,
+              "placeholder": "e.g: ABCDEFG"
+            }
+          ]
+        },
+        {
+          "type": "dynamicCustomForm",
+          "value": "dspUrlSettingsIframe",
+          "customFields": [
+            {
+              "type": "textInput",
+              "label": "DSP Url Template (IFrame)",
+              "value": "dspUrlTemplate",
+              "regex": ".*",
+              "required": false,
+              "placeholder": "e.g: ABCDEFG"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Map all the fields: ",
+      "fields": [
+        {
+          "type": "dynamicForm",
+          "labelLeft": "Placeholder",
+          "labelRight": "Value",
+          "keyLeft": "key",
+          "keyRight": "value",
+          "placeholderLeft": "e.g: Client ID",
+          "placeholderRight": "e.g: 123456",
+          "value": "mappings"
+        }
+      ]
+    },
+    {
+      "title": "Native SDK",
+      "fields": [
+        {
+          "type": "defaultCheckbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": true
+        }
+      ]
+    }
+  ],
+  "SLACK": [
+    {
+      "title": "Event Channels",
+      "fields": [
+        {
+          "type": "dynamicCustomForm",
+          "value": "eventChannelSettings",
+          "customFields": [
+            {
+              "type": "textInput",
+              "label": "Event Name",
+              "value": "eventName",
+              "regex": ".*",
+              "required": false,
+              "placeholder": "e.g: ABCDEFG"
+            },
+            {
+              "type": "textInput",
+              "label": "Event Channel",
+              "value": "eventChannel",
+              "regex": ".*",
+              "required": false,
+              "placeholder": "e.g: ABCDEFG"
+            },
+            {
+              "type": "checkbox",
+              "label": "Regex Matching",
+              "value": "eventRegex",
+              "default": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Identify Template",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Identify Template",
+          "value": "identifyTemplate",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "e.g: ABCDEFG"
+        }
+      ]
+    },
+    {
+      "title": "Event Template",
+      "fields": [
+        {
+          "type": "dynamicCustomForm",
+          "value": "eventTemplateSettings",
+          "customFields": [
+            {
+              "type": "textInput",
+              "label": "Event Name",
+              "value": "eventName",
+              "regex": ".*",
+              "required": false,
+              "placeholder": "e.g: ABCDEFG"
+            },
+            {
+              "type": "textInput",
+              "label": "Event Template",
+              "value": "eventTemplate",
+              "regex": ".*",
+              "required": false,
+              "placeholder": "e.g: ABCDEFG"
+            },
+            {
+              "type": "checkbox",
+              "label": "Regex Matching",
+              "value": "eventRegex",
+              "default": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Incoming Webhook Url",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Webhook Url",
+          "value": "webhookUrl",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "e.g: ABCDEFG"
+        }
+      ]
+    },
+    {
+      "title": "Whitelisted Traits",
+      "fields": [
+        {
+          "type": "dynamicCustomForm",
+          "value": "whitelistedTraitsSettings",
+          "customFields": [
+            {
+              "type": "textInput",
+              "label": "Trait",
+              "value": "trait",
+              "regex": ".*",
+              "required": false,
+              "placeholder": "e.g: ABCDEFG"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "PERSONALIZE": [
+    {
+      "title": "1. Connection Credentials",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Access Key Id",
+          "value": "accessKeyId",
+          "regex": "(?<![A-Z0-9])[A-Z0-9]{20}(?![A-Z0-9])",
+          "required": true,
+          "placeholder": "e.g: bSjsdGYsOo9sjw23Shj",
+          "secret": true
+        },
+        {
+          "type": "textInput",
+          "label": "Secret Access Key",
+          "value": "secretAccessKey",
+          "regex": "(?<![A-Za-z0-9/+=])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])",
+          "required": true,
+          "placeholder": "e.g: 1d6583b196d34de28a3g19ahadde4b0z",
+          "secret": true
+        },
+        {
+          "type": "textInput",
+          "label": "Region",
+          "value": "region",
+          "required": true,
+          "placeholder": "e.g: us-east-1"
+        }
+      ]
+    },
+    {
+      "title": "2. Information on Dataset Group",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "TrackingId",
+          "value": "trackingId",
+          "required": true
+        },
+        {
+          "type": "textInput",
+          "label": "Type Of Event",
+          "value": "eventName",
+          "required": true
+        }
+      ]
+    },
+    {
+      "title": "Map all the fields: ",
+      "fields": [
+        {
+          "type": "dynamicForm",
+          "labelLeft": "Schema Field",
+          "labelRight": "Mapped Field",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "placeholderLeft": "e.g: USER_ID",
+          "placeholderRight": "e.g: anonymous_id",
+          "value": "customMappings"
+        }
+      ]
+    }
+  ],
+  "ZENDESK": [
+    {
+      "title": "Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Email",
+          "value": "email",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: abc@xyz.com"
+        },
+        {
+          "type": "textInput",
+          "label": "API Token",
+          "value": "apiToken",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "API Token for Zendesk login",
+          "secret": true
+        },
+        {
+          "type": "textInput",
+          "label": "ZenDesk Domain",
+          "value": "domain",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "Your ZenDesk Domain"
+        },
+        {
+          "type": "checkbox",
+          "label": "Create users as verified",
+          "value": "createUsersAsVerified",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "Send Group Calls without User ID",
+          "value": "sendGroupCallsWithoutUserId",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "Enable Removing Users from Organizations",
+          "value": "removeUsersFromOrganization",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "KINESIS": [
+    {
+      "title": "Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Region",
+          "value": "region",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: us-east-1"
+        },
+        {
+          "type": "textInput",
+          "label": "Stream Name",
+          "value": "stream",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: test-stream"
+        },
+        {
+          "type": "textInput",
+          "label": "AWS Access Key ID",
+          "value": "accessKeyID",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "e.g: access-key-id",
+          "secret": true
+        },
+        {
+          "type": "textInput",
+          "label": "AWS Secret Access Key",
+          "value": "accessKey",
+          "regex": ".*",
+          "required": false,
+          "placeholder": "e.g: secret-access-key",
+          "secret": true
+        },
+        {
+          "type": "checkbox",
+          "label": "Use MessageId as Partition Key",
+          "value": "useMessageId",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "BUGSNAG": [
+    {
+      "title": "Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "BugSnag Api Key",
+          "value": "apiKey",
+          "required": true,
+          "placeholder": "e.g: ••••••••••5c0d"
+        }
+      ]
+    },
+    {
+      "title": "Native SDK",
+      "fields": [
+        {
+          "type": "defaultCheckbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": true
+        }
+      ]
+    },
+    {
+      "title": "Other Settings",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Release Stage. If turned on : Development stage else : Production",
+          "value": "releaseStage"
+        },
+        {
+          "type": "checkbox",
+          "label": "SSL",
+          "value": "ssl",
+          "default": true
+        }
+      ]
+    }
+  ],
+  "FACEBOOK_PIXEL": [
+    {
+      "title": "1. Connection Settings",
+      "fields": [
+        {
+          "type": "dynamicCustomForm",
+          "value": "blacklistPiiProperties",
+          "customFields": [
+            {
+              "type": "textInput",
+              "value": "blacklistPiiProperties",
+              "label": "Blacklist PII Properties",
+              "required": false
+            },
+            {
+              "type": "checkbox",
+              "value": "blacklistPiiHash",
+              "label": "Blacklist PII Hash Property",
+              "required": false
+            }
+          ]
+        },
+        {
+          "type": "dynamicForm",
+          "label": "Map Categories to Facebook Content Types",
+          "required": false,
+          "labelLeft": "category",
+          "labelRight": "Facebook content type",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "value": "categoryToContent"
+        },
+        {
+          "type": "textInput",
+          "label": "Pixel ID",
+          "value": "pixelId",
+          "required": true,
+          "placeholder": "Your Pixel ID, from the snippet created on the Facebook Pixel creation page."
+        },
+        {
+          "label": "Map Your Events to Standard Facebook Events"
+        },
+        {
+          "type": "dynamicSelectForm",
+          "label": "Map your events with Facebook Standard Events",
+          "labelLeft": "Event Name",
+          "labelRight": "Standard Event Name",
+          "value": "eventsToEvents",
+          "keyLeft": "from",
+          "keyRight": "to",
+          "required": false,
+          "placeholderLeft": "your event",
+          "options": [
+            {
+              "name": "ViewContent",
+              "value": "ViewContent"
+            },
+            {
+              "name": "Search",
+              "value": "Search"
+            },
+            {
+              "name": "AddToCart",
+              "value": "AddToCart"
+            },
+            {
+              "name": "AddToWishlist",
+              "value": "AddToWishlist"
+            },
+            {
+              "name": "InitiateCheckout",
+              "value": "InitiateCheckout"
+            },
+            {
+              "name": "AddPaymentInfo",
+              "value": "AddPaymentInfo"
+            },
+            {
+              "name": "Purchase",
+              "value": "Purchase"
+            },
+            {
+              "name": "Lead",
+              "value": "Lead"
+            },
+            {
+              "name": "CompleteRegistration",
+              "value": "CompleteRegistration"
+            },
+            {
+              "name": "Contact",
+              "value": "Contact"
+            },
+            {
+              "name": "CustomizeProduct",
+              "value": "CustomizeProduct"
+            },
+            {
+              "name": "Donate",
+              "value": "Donate"
+            },
+            {
+              "name": "FindLocation",
+              "value": "FindLocation"
+            },
+            {
+              "name": "Schedule",
+              "value": "Schedule"
+            },
+            {
+              "name": "StartTrial",
+              "value": "StartTrial"
+            },
+            {
+              "name": "SubmitApplication",
+              "value": "SubmitApplication"
+            },
+            {
+              "name": "Subscribe",
+              "value": "Subscribe"
+            }
+          ]
+        },
+        {
+          "type": "dynamicCustomForm",
+          "value": "eventCustomProperties",
+          "customFields": [
+            {
+              "type": "textInput",
+              "value": "eventCustomProperties",
+              "label": "Standard Events custom properties",
+              "required": false
+            }
+          ]
+        },
+        {
+          "type": "singleSelect",
+          "label": "Value Field Identifier",
+          "value": "valueFieldIdentifier",
+          "required": false,
+          "options": [
+            {
+              "name": "properties.value",
+              "value": "properties.value"
+            },
+            {
+              "name": "properties.price",
+              "value": "properties.price"
+            }
+          ],
+          "defaultOption": {
+            "name": "",
+            "value": ""
+          }
+        }
+      ]
+    },
+    {
+      "title": "2. Native SDK",
+      "fields": [
+        {
+          "type": "defaultCheckbox",
+          "label": "Use native SDK to send events",
+          "value": "useNativeSDK",
+          "default": true
+        }
+      ]
+    },
+    {
+      "title": "3. Other Settings",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Enable Advanced Matching",
+          "value": "advancedMapping"
+        },
+        {
+          "type": "textInput",
+          "label": "Client-Side Only: Advanced Match Trait Key for External ID",
+          "value": "traitKeyToExternalId",
+          "required": false,
+          "placeholder": "Please indicated a user trait key which you would like RudderStack to use to send an external_id to Facebook Pixel using advanced matching. RudderStack will use the value of this trait to map it to Facebook Pixel's external_id."
+        },
+        {
+          "type": "dynamicForm",
+          "label": "Legacy Conversion Pixel IDs",
+          "value": "legacyConversionPixelId",
+          "required": false,
+          "keyLeft": "from",
+          "keyRight": "to",
+          "labelLeft": "Event Name",
+          "labelRight": "Pixel Id"
+        },
+        {
+          "type": "checkbox",
+          "label": "Use UserId or Anonymous Id as External Id",
+          "value": "userIdAsPixelId"
+        },
+        {
+          "type": "dynamicCustomForm",
+          "value": "whitelistPiiProperties",
+          "customFields": [
+            {
+              "type": "textInput",
+              "value": "whitelistPiiProperties",
+              "label": "Whitelist PII Properties",
+              "required": false
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "KAFKA": [
+    {
+      "title": "Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Host Name",
+          "value": "hostName",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: localhost"
+        },
+        {
+          "type": "textInput",
+          "label": "Port",
+          "value": "port",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: 9092"
+        },
+        {
+          "type": "textInput",
+          "label": "Topic Name",
+          "value": "topic",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: test-topic"
+        },
+        {
+          "type": "checkbox",
+          "label": "SSL Enabled",
+          "value": "sslEnabled",
+          "default": true
+        },
+        {
+          "type": "textareaInput",
+          "preRequisiteField": {
+            "name": "sslEnabled",
+            "selectedValue": true
+          },
+          "label": "CA certificate",
+          "value": "caCertificate",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "CA Certificate"
+        }
+      ]
+    }
+  ],
+  "AZURE_EVENT_HUB": [
+    {
+      "title": "Connection Settings",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Bootstrap server",
+          "value": "bootstrapServer",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: NAMESPACENAME.servicebus.windows.net:9093"
+        },
+        {
+          "type": "textInput",
+          "label": "Topic Name",
+          "value": "topic",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: test-topic"
+        },
+        {
+          "type": "textInput",
+          "label": "Event Hubs ConnectionString",
+          "value": "eventHubsConnectionString",
+          "regex": ".*",
+          "required": true,
+          "placeholder": "e.g: Endpoint=sb://..."
+        }
+      ]
+    }
+  ],
+  "ITERABLE": [
+    {
+      "title": "Connection Settings:",
+      "fields": [
+        {
+          "type": "textInput",
+          "label": "Iterable Api Key",
+          "value": "apiKey",
+          "required": true,
+          "placeholder": "e.g: 42f187310705012194bd0bd694905664ae"
+        }
+      ]
+    },
+    {
+      "title": "Other Setttings",
+      "fields": [
+        {
+          "type": "checkbox",
+          "label": "Map All Pages to Single Event Name",
+          "value": "mapToSingleEvent",
+          "default": true
+        },
+        {
+          "type": "checkbox",
+          "label": "Track All Pages",
+          "value": "trackAllPages",
+          "default": false
+        },
+        {
+          "type": "checkbox",
+          "label": "Track Categorised Pages",
+          "value": "trackCategorisedPages",
+          "default": true
+        },
+        {
+          "type": "checkbox",
+          "label": "Track Named Pages",
+          "value": "trackNamedPages",
           "default": true
         }
       ]

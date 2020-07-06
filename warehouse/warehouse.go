@@ -50,7 +50,7 @@ var (
 	webPort                          int
 	dbHandle                         *sql.DB
 	notifier                         pgnotifier.PgNotifierT
-	warehouseDestinations            []string
+	WarehouseDestinations            []string
 	jobQueryBatchSize                int
 	noOfWorkers                      int
 	noOfSlaveWorkerRoutines          int
@@ -132,7 +132,7 @@ func init() {
 func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
@@ -293,6 +293,10 @@ func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schem
 
 					if _, ok := currentSchema[tableName]; ok {
 						if columnTypeInDB, ok := currentSchema[tableName][columnName]; ok {
+							if columnTypeInDB == "string" && columnType == "text" {
+								schemaMap[tableName][columnName] = columnType
+								continue
+							}
 							schemaMap[tableName][columnName] = columnTypeInDB
 							continue
 						}
@@ -1205,10 +1209,12 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				}
 				columnVal, ok := columnData[columnName]
 				if !ok {
+					columnData[columnName] = nil
 					continue
 				}
 				columnType, ok := columns[columnName].(string)
 				if !ok {
+					columnData[columnName] = nil
 					continue
 				}
 				// json.Unmarshal returns int as float
@@ -1217,6 +1223,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				if columnType == "int" || columnType == "bigint" {
 					floatVal, ok := columnVal.(float64)
 					if !ok {
+						columnData[columnName] = nil
 						continue
 					}
 					columnData[columnName] = int(floatVal)
@@ -1232,6 +1239,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
 						floatVal, ok := columnVal.(float64)
 						if !ok {
+							columnData[columnName] = nil
 							continue
 						}
 						columnData[columnName] = int(floatVal)
@@ -1268,7 +1276,17 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						continue
 					}
 				}
-
+				// cast array values to string as bigquery fails to cast array to string
+				if dataTypeInSchema == "string" && columnType == dataTypeInSchema {
+					if _, ok := columnVal.([]interface{}); ok {
+						valBytes, err := json.Marshal(columnVal)
+						if err != nil {
+							columnData[columnName] = nil
+							continue
+						}
+						columnData[columnName] = string(valBytes)
+					}
+				}
 			}
 			line, err := json.Marshal(columnData)
 			if err != nil {
@@ -1311,7 +1329,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
-					if dataTypeInSchema == "string" {
+					if dataTypeInSchema == "string" || dataTypeInSchema == "text" {
 						// pass it along since string type column can accomodate any kind of value
 					} else if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
@@ -1417,7 +1435,7 @@ func monitorDestRouters() {
 		for _, source := range sources.Sources {
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
-				if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 					if !ok {
 						logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
