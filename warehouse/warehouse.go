@@ -31,6 +31,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -49,7 +50,7 @@ var (
 	webPort                          int
 	dbHandle                         *sql.DB
 	notifier                         pgnotifier.PgNotifierT
-	warehouseDestinations            []string
+	WarehouseDestinations            []string
 	jobQueryBatchSize                int
 	noOfWorkers                      int
 	noOfSlaveWorkerRoutines          int
@@ -65,11 +66,6 @@ var (
 	inProgressMapLock                sync.RWMutex
 	lastExecMap                      map[string]int64
 	lastExecMapLock                  sync.RWMutex
-	warehouseLoadFilesTable          string
-	warehouseStagingFilesTable       string
-	warehouseUploadsTable            string
-	warehouseTableUploadsTable       string
-	warehouseSchemasTable            string
 	warehouseMode                    string
 	warehouseSyncPreFetchCount       int
 	warehouseSyncFreqIgnore          bool
@@ -137,17 +133,12 @@ func init() {
 func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
 	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
 	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
-	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
-	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
-	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
-	warehouseTableUploadsTable = config.GetString("Warehouse.tableUploadsTable", "wh_table_uploads")
-	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
 	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 60) * time.Second
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
@@ -194,7 +185,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 }
 
 func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string) {
-	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at asc limit %d`, warehouseUploadsTable, sourceID, destinationID, warehouseSyncPreFetchCount))
+	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at asc limit %d`, warehouseutils.WarehouseUploadsTable, sourceID, destinationID, warehouseSyncPreFetchCount))
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
@@ -206,7 +197,7 @@ func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string
 		uploadIDs = append(uploadIDs, uploadID)
 	}
 	for _, uploadID := range uploadIDs {
-		wh.recordDeliveryStatus(uploadID)
+		wh.recordDeliveryStatus(destinationID, uploadID)
 	}
 }
 
@@ -235,7 +226,7 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
                                 FROM %[1]s
 								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
 								ORDER BY id ASC`,
-		warehouseStagingFilesTable, startID, endID, warehouse.Source.ID, warehouse.Destination.ID)
+		warehouseutils.WarehouseStagingFilesTable, startID, endID, warehouse.Source.ID, warehouse.Destination.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
@@ -257,7 +248,7 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
 
 func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) ([]*StagingFileT, error) {
 	var lastStagingFileID int64
-	sqlStatement := fmt.Sprintf(`SELECT end_staging_file_id FROM %[1]s WHERE %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND (%[1]s.status= '%[4]s' OR %[1]s.status = '%[5]s') ORDER BY %[1]s.id DESC`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
+	sqlStatement := fmt.Sprintf(`SELECT end_staging_file_id FROM %[1]s WHERE %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND (%[1]s.status= '%[4]s' OR %[1]s.status = '%[5]s') ORDER BY %[1]s.id DESC`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileID)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
@@ -267,7 +258,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
                                 FROM %[1]s
 								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
 								ORDER BY id ASC`,
-		warehouseStagingFilesTable, lastStagingFileID, warehouse.Source.ID, warehouse.Destination.ID)
+		warehouseutils.WarehouseStagingFilesTable, lastStagingFileID, warehouse.Source.ID, warehouse.Destination.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
@@ -303,6 +294,10 @@ func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schem
 
 					if _, ok := currentSchema[tableName]; ok {
 						if columnTypeInDB, ok := currentSchema[tableName][columnName]; ok {
+							if columnTypeInDB == "string" && columnType == "text" {
+								schemaMap[tableName][columnName] = columnType
+								continue
+							}
 							schemaMap[tableName][columnName] = columnTypeInDB
 							continue
 						}
@@ -337,7 +332,7 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 			ids = append(ids, upload.ID)
 		}
 
-		sqlStatement := fmt.Sprintf(`SELECT schema FROM %s WHERE id IN (%s)`, warehouseStagingFilesTable, misc.IntArrayToString(ids, ","))
+		sqlStatement := fmt.Sprintf(`SELECT schema FROM %s WHERE id IN (%s)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(ids, ","))
 		rows, err := wh.dbHandle.Query(sqlStatement)
 		if err != nil && err != sql.ErrNoRows {
 			panic(err)
@@ -383,7 +378,7 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 }
 
 func (wh *HandleT) areTableUploadsCreated(upload warehouseutils.UploadT) bool {
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE wh_upload_id=%d`, warehouseTableUploadsTable, upload.ID)
+	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE wh_upload_id=%d`, warehouseutils.WarehouseTableUploadsTable, upload.ID)
 	var count int
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
 	if err != nil {
@@ -399,7 +394,7 @@ func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[st
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(warehouseTableUploadsTable, "wh_upload_id", "table_name", "status", "error", "created_at", "updated_at"))
+	stmt, err := txn.Prepare(pq.CopyIn(warehouseutils.WarehouseTableUploadsTable, "wh_upload_id", "table_name", "status", "error", "created_at", "updated_at"))
 	if err != nil {
 		return
 	}
@@ -436,8 +431,8 @@ func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[st
 
 func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) warehouseutils.UploadT {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, first_event_at, last_event_at, created_at, updated_at)
-	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`, warehouseUploadsTable)
-	logger.Infof("WH: %s: Creating record in %s table: %v", wh.destType, warehouseUploadsTable, sqlStatement)
+	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`, warehouseutils.WarehouseUploadsTable)
+	logger.Infof("WH: %s: Creating record in %s table: %v", wh.destType, warehouseutils.WarehouseUploadsTable, sqlStatement)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -452,8 +447,8 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	if ok := jsonUploadsList[0].FirstEventAt.IsZero(); !ok {
 		firstEventAt = jsonUploadsList[0].FirstEventAt
 	}
-	if ok := jsonUploadsList[0].LastEventAt.IsZero(); !ok {
-		lastEventAt = jsonUploadsList[0].LastEventAt
+	if ok := jsonUploadsList[len(jsonUploadsList)-1].LastEventAt.IsZero(); !ok {
+		lastEventAt = jsonUploadsList[len(jsonUploadsList)-1].LastEventAt
 	}
 
 	now := timeutil.Now()
@@ -481,7 +476,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]warehouseutils.UploadT, bool) {
 
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s' AND %[1]s.status!='%[5]s') ORDER BY id asc`, warehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.status!='%[4]s' AND %[1]s.status!='%[5]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
 
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
@@ -803,16 +798,16 @@ func (wh *HandleT) updateTableEventsCount(tableName string, upload warehouseutil
 			AND id <= %[6]v)
 		GROUP BY staging_file_id ) uniqueStagingFiles
 		ON  wh_load_files.id = uniqueStagingFiles.id `,
-		warehouseLoadFilesTable,
+		warehouseutils.WarehouseLoadFilesTable,
 		warehouse.Source.ID,
 		warehouse.Destination.ID,
 		tableName,
 		upload.StartLoadFileID,
 		upload.EndLoadFileID,
-		warehouseTableUploadsTable)
+		warehouseutils.WarehouseTableUploadsTable)
 
 	sqlStatement := fmt.Sprintf(`update %[1]s set total_events = subquery.total FROM (%[2]s) AS subquery WHERE table_name = '%[3]s' AND wh_upload_id = %[4]d`,
-		warehouseTableUploadsTable,
+		warehouseutils.WarehouseTableUploadsTable,
 		subQuery,
 		tableName,
 		upload.ID)
@@ -840,7 +835,10 @@ func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err e
 	return
 }
 
-func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
+func (wh *HandleT) recordDeliveryStatus(destID string, uploadID int64) {
+	if !destinationdebugger.HasUploadEnabled(destID) {
+		return
+	}
 	var (
 		sourceID      string
 		destinationID string
@@ -855,12 +853,12 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 	successfulTableUploads := make([]string, 0)
 	failedTableUploads := make([]string, 0)
 
-	row := wh.dbHandle.QueryRow(fmt.Sprintf(`select source_id, destination_id, status, error, updated_at from %s where id=%d`, warehouseUploadsTable, uploadID))
+	row := wh.dbHandle.QueryRow(fmt.Sprintf(`select source_id, destination_id, status, error, updated_at from %s where id=%d`, warehouseutils.WarehouseUploadsTable, uploadID))
 	err := row.Scan(&sourceID, &destinationID, &status, &errorResp, &updatedAt)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
-	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select table_name, status from %s where wh_upload_id=%d`, warehouseTableUploadsTable, uploadID))
+	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select table_name, status from %s where wh_upload_id=%d`, warehouseutils.WarehouseTableUploadsTable, uploadID))
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
@@ -874,12 +872,12 @@ func (wh *HandleT) recordDeliveryStatus(uploadID int64) {
 		}
 	}
 
-	var errJson map[string]map[string]interface{}
-	err = json.Unmarshal([]byte(errorResp), &errJson)
+	var errJSON map[string]map[string]interface{}
+	err = json.Unmarshal([]byte(errorResp), &errJSON)
 	if err != nil {
 		panic(err)
 	}
-	if stateErr, ok := errJson[status]; ok {
+	if stateErr, ok := errJSON[status]; ok {
 		if attempt, ok := stateErr["attempt"]; ok {
 			if floatAttempt, ok := attempt.(float64); ok {
 				attemptNum = attemptNum + int(floatAttempt)
@@ -931,7 +929,7 @@ func (wh *HandleT) initWorkers() {
 						if len(job.List) == 0 {
 							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 							warehouseutils.SetUploadError(job.Upload, errors.New("no staging files found"), warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
-							wh.recordDeliveryStatus(job.Upload.ID)
+							wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 							break
 						}
 						// consolidate schema if not already done
@@ -946,7 +944,7 @@ func (wh *HandleT) initWorkers() {
 							logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
 							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 							warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
-							wh.recordDeliveryStatus(job.Upload.ID)
+							wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 							break
 						}
 
@@ -999,12 +997,12 @@ func (wh *HandleT) initWorkers() {
 								//Unreachable code. So not modifying the stat 'failed_uploads', which is reused later for copying.
 								warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 								warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
-								wh.recordDeliveryStatus(job.Upload.ID)
+								wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 								break
 							}
 						}
 						err = wh.SyncLoadFilesToWarehouse(&job)
-						wh.recordDeliveryStatus(job.Upload.ID)
+						wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 
 						createPlusUploadTimer.End()
 
@@ -1042,7 +1040,7 @@ func (wh *HandleT) setInterruptedDestinations() (err error) {
 	if !misc.Contains(crashRecoverWarehouses, wh.destType) {
 		return
 	}
-	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s')`, warehouseUploadsTable, wh.destType, warehouseutils.ExportingDataState, warehouseutils.ExportingDataFailedState)
+	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s')`, warehouseutils.WarehouseUploadsTable, wh.destType, warehouseutils.ExportingDataState, warehouseutils.ExportingDataFailedState)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -1206,10 +1204,12 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				}
 				columnVal, ok := columnData[columnName]
 				if !ok {
+					columnData[columnName] = nil
 					continue
 				}
 				columnType, ok := columns[columnName].(string)
 				if !ok {
+					columnData[columnName] = nil
 					continue
 				}
 				// json.Unmarshal returns int as float
@@ -1218,6 +1218,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				if columnType == "int" || columnType == "bigint" {
 					floatVal, ok := columnVal.(float64)
 					if !ok {
+						columnData[columnName] = nil
 						continue
 					}
 					columnData[columnName] = int(floatVal)
@@ -1233,6 +1234,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
 						floatVal, ok := columnVal.(float64)
 						if !ok {
+							columnData[columnName] = nil
 							continue
 						}
 						columnData[columnName] = int(floatVal)
@@ -1269,7 +1271,17 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						continue
 					}
 				}
-
+				// cast array values to string as bigquery fails to cast array to string
+				if dataTypeInSchema == "string" && columnType == dataTypeInSchema {
+					if _, ok := columnVal.([]interface{}); ok {
+						valBytes, err := json.Marshal(columnVal)
+						if err != nil {
+							columnData[columnName] = nil
+							continue
+						}
+						columnData[columnName] = string(valBytes)
+					}
+				}
 			}
 			line, err := json.Marshal(columnData)
 			if err != nil {
@@ -1312,7 +1324,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				dataTypeInSchema := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
-					if dataTypeInSchema == "string" {
+					if dataTypeInSchema == "string" || dataTypeInSchema == "text" {
 						// pass it along since string type column can accomodate any kind of value
 					} else if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
@@ -1386,7 +1398,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 			return loadFileIDs, err
 		}
 		sqlStatement := fmt.Sprintf(`INSERT INTO %s (staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at)
-									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, warehouseLoadFilesTable)
+									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, warehouseutils.WarehouseLoadFilesTable)
 		stmt, err := dbHandle.Prepare(sqlStatement)
 		if err != nil {
 			panic(err)
@@ -1418,7 +1430,7 @@ func monitorDestRouters() {
 		for _, source := range sources.Sources {
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
-				if misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 					if !ok {
 						logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
@@ -1452,256 +1464,14 @@ func monitorDestRouters() {
 }
 
 func setupTables(dbHandle *sql.DB) {
-	sqlStatement := `DO $$ BEGIN
-                                CREATE TYPE wh_staging_state_type
-                                     AS ENUM(
-                                              'waiting',
-                                              'executing',
-											  'failed',
-											  'succeeded');
-                                     EXCEPTION
-                                        WHEN duplicate_object THEN null;
-                            END $$;`
-
-	_, err := dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
+	m := &migrator.Migrator{
+		Handle:          dbHandle,
+		MigrationsTable: "wh_schema_migrations",
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-                                      id BIGSERIAL PRIMARY KEY,
-									  location TEXT NOT NULL,
-									  source_id VARCHAR(64) NOT NULL,
-									  destination_id VARCHAR(64) NOT NULL,
-									  schema JSONB NOT NULL,
-									  error TEXT,
-									  status wh_staging_state_type,
-									  first_event_at TIMESTAMP,
-									  last_event_at TIMESTAMP,
-									  total_events BIGINT,
-									  created_at TIMESTAMP NOT NULL,
-									  updated_at TIMESTAMP NOT NULL);`, warehouseStagingFilesTable)
-
-	_, err = dbHandle.Exec(sqlStatement)
+	err := m.Migrate("warehouse")
 	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS first_event_at TIMESTAMP, ADD COLUMN IF NOT EXISTS last_event_at TIMESTAMP, ADD COLUMN IF NOT EXISTS total_events BIGINT`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on source_id, destination_id combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_id_index ON %[1]s (source_id, destination_id);`, warehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-									  id BIGSERIAL PRIMARY KEY,
-									  staging_file_id BIGINT,
-									  location TEXT NOT NULL,
-									  source_id VARCHAR(64) NOT NULL,
-									  destination_id VARCHAR(64) NOT NULL,
-									  destination_type VARCHAR(64) NOT NULL,
-									  table_name TEXT NOT NULL,
-									  total_events BIGINT,
-									  created_at TIMESTAMP NOT NULL);`, warehouseLoadFilesTable)
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// change table_name type to text to support table_names upto length 127
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, warehouseLoadFilesTable, "table_name")
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS total_events BIGINT`, warehouseLoadFilesTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on source_id, destination_id, table_name combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_table_name_index ON %[1]s (source_id, destination_id, table_name);`, warehouseLoadFilesTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = `DO $$ BEGIN
-                                CREATE TYPE wh_upload_state_type
-                                     AS ENUM(
-										 	  'waiting',
-											  'generating_load_file',
-											  'generating_load_file_failed',
-											  'generated_load_file',
-											  'updating_schema',
-											  'updating_schema_failed',
-											  'updated_schema',
-											  'exporting_data',
-											  'exporting_data_failed',
-											  'exported_data',
-											  'aborted');
-                                     EXCEPTION
-                                        WHEN duplicate_object THEN null;
-                            END $$;`
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'waiting';`
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-	sqlStatement = `ALTER TYPE wh_upload_state_type ADD VALUE IF NOT EXISTS 'aborted';`
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-                                      id BIGSERIAL PRIMARY KEY,
-									  source_id VARCHAR(64) NOT NULL,
-									  namespace VARCHAR(64) NOT NULL,
-									  destination_id VARCHAR(64) NOT NULL,
-									  destination_type VARCHAR(64) NOT NULL,
-									  start_staging_file_id BIGINT,
-									  end_staging_file_id BIGINT,
-									  start_load_file_id BIGINT,
-									  end_load_file_id BIGINT,
-									  status wh_upload_state_type NOT NULL,
-									  schema JSONB NOT NULL,
-									  error JSONB,
-									  first_event_at TIMESTAMP,
-									  last_event_at TIMESTAMP,
-									  last_exec_at TIMESTAMP,
-									  timings JSONB,
-									  created_at TIMESTAMP NOT NULL,
-									  updated_at TIMESTAMP NOT NULL);`, warehouseUploadsTable)
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS first_event_at TIMESTAMP, ADD COLUMN IF NOT EXISTS last_event_at TIMESTAMP, ADD COLUMN IF NOT EXISTS last_exec_at TIMESTAMP, ADD COLUMN IF NOT EXISTS timings JSONB`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on status
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_index ON %[1]s (status);`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on source_id, destination_id combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = `DO $$ BEGIN
-                                CREATE TYPE wh_table_upload_state_type
-                                     AS ENUM(
-											  'waiting',
-											  'executing',
-											  'exporting_data',
-											  'exporting_data_failed',
-											  'exported_data',
-											  'aborted');
-                                     EXCEPTION
-                                        WHEN duplicate_object THEN null;
-                            END $$;`
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-                                      id BIGSERIAL PRIMARY KEY,
-									  wh_upload_id BIGSERIAL NOT NULL,
-									  table_name TEXT,
-									  status wh_table_upload_state_type NOT NULL,
-									  error TEXT,
-									  last_exec_time TIMESTAMP,
-									  total_events TEXT,
-									  created_at TIMESTAMP NOT NULL,
-									  updated_at TIMESTAMP NOT NULL);`, warehouseTableUploadsTable)
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS total_events BIGINT`, warehouseTableUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// change error type to text
-	sqlStatement = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, warehouseTableUploadsTable, "error")
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on source_id, destination_id combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_wh_upload_id_table_name_index ON %[1]s (wh_upload_id, table_name);`, warehouseTableUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-									  id BIGSERIAL PRIMARY KEY,
-									  wh_upload_id BIGSERIAL,
-									  source_id VARCHAR(64) NOT NULL,
-									  namespace VARCHAR(64) NOT NULL,
-									  destination_id VARCHAR(64) NOT NULL,
-									  destination_type VARCHAR(64) NOT NULL,
-									  schema JSONB NOT NULL,
-									  error TEXT,
-									  created_at TIMESTAMP NOT NULL);`, warehouseSchemasTable)
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	// index on source_id, destination_id combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_source_destination_id_index ON %[1]s (source_id, destination_id);`, warehouseSchemasTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	sqlStatement = fmt.Sprintf(`DROP INDEX IF EXISTS %[1]s_source_destination_id_index`, warehouseSchemasTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-	// index on namespace, destination_id combination
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_destination_id_namespace_index ON %[1]s (destination_id, namespace);`, warehouseSchemasTable)
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("Could not run warehouse database migrations: %w", err))
 	}
 }
 
@@ -1737,10 +1507,10 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		lastEventAt = nil
 	}
 
-	logger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseStagingFilesTable, stagingFile.Schema)
+	logger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
 	schemaPayload, err := json.Marshal(stagingFile.Schema)
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, total_events, first_event_at, last_event_at, created_at, updated_at)
-									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`, warehouseStagingFilesTable)
+									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`, warehouseutils.WarehouseStagingFilesTable)
 	stmt, err := dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -1875,6 +1645,7 @@ func Start() {
 	}
 
 	setupTables(dbHandle)
+
 	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {
 		panic(err)

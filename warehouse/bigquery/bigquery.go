@@ -294,8 +294,8 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 	}
 
 	if status.Err() != nil {
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
-		return
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, status.Err(), bq.DbHandle)
+		return status.Err()
 	}
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, bq.Upload.ID, tableName, bq.DbHandle)
 	return

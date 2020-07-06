@@ -778,6 +778,15 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
 	srvMux.HandleFunc("/version", gateway.versionHandler)
+	srvMux.HandleFunc("/writeKeys", func(w http.ResponseWriter, r *http.Request) {
+		configSubscriberLock.RLock()
+		defer configSubscriberLock.RUnlock()
+		writeKeys := make([]string, 0, len(enabledWriteKeysSourceMap))
+		for k := range enabledWriteKeysSourceMap {
+			writeKeys = append(writeKeys, k)
+		}
+		w.Write([]byte(fmt.Sprintf(`["%s"]`, strings.Join(writeKeys, `","`))))
+	})
 
 	if gateway.application.Features().Webhook != nil {
 		srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
@@ -929,6 +938,12 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.jobsDB = jobsDB
 
 	gateway.versionHandler = versionHandler
+
+	//gateway.webhookHandler should be initialised before workspace config fetch.
+	if gateway.application.Features().Webhook != nil {
+		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
+	}
+
 	rruntime.Go(func() {
 		gateway.webRequestRouter()
 	})
@@ -942,9 +957,6 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 		gateway.userWorkerRequestBatcher()
 	})
 
-	if gateway.application.Features().Webhook != nil {
-		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
-	}
 	gateway.backendConfig.WaitForConfig()
 	rruntime.Go(func() {
 		gateway.printStats()

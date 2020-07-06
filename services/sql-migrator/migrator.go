@@ -42,7 +42,12 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 		return fmt.Errorf("Could not execute migrations from migration directory '%v': %w", migrationsDir, err)
 	}
 
-	return migration.Up()
+	err = migration.Up()
+	if err != nil && err != migrate.ErrNoChange { // migrate library reports that no change was required, using ErrNoChange
+		return fmt.Errorf("Could not run migration from directory '%v', %w", migrationsDir, err)
+	}
+
+	return nil
 }
 
 // MigrateFromTemplates migrates database with migration scripts provided by golang templates.

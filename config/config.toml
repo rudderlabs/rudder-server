@@ -144,21 +144,17 @@ warehouseServiceMaxRetryTimeinHr = 3
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
 webPort = 8082
-stagingFilesTable = "wh_staging_files"
-loadFilesTable = "wh_load_files"
-uploadsTable = "wh_uploads"
-tableUploadsTable = "wh_table_uploads"
-schemasTable = "wh_schemas"
 uploadFreqInS = 1800
 noOfWorkers = 8
 noOfSlaveWorkerRoutines = 4
 mainLoopSleepInS = 60
 maxRetry = 3
 warehouseSyncPreFetchCount = 10
-warehouseSyncFreqIgnore=false
+warehouseSyncFreqIgnore = false
 stagingFilesBatchSize = 240
     [Warehouse.redshift]
     maxParallelLoads = 3
+    setVarCharMax = false
     [Warehouse.snowflake]
     maxParallelLoads = 3
     [Warehouse.bigquery]
@@ -179,6 +175,10 @@ processSessions = false
 numTransformWorker = 8
 maxRetry = 30
 retrySleepInMS = 100
+errReadLoopSleepInS = 30
+errDBReadBatchSize = 10000
+noOfErrStashWorkers = 2
+maxFailedCountForErrJob = 3
 
 [BackendConfig]
 configFromFile = false
