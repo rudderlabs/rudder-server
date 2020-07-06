@@ -61,7 +61,7 @@ type Config struct {
 
 var putOutput *firehose.PutRecordOutput = nil
 var errorRec error
-var event gjson.Result
+var event, typeCall gjson.Result
 
 func init() {
 	abortableErrors = []string{"AccessDeniedException", "IncompleteSignature", "InvalidAction", "InvalidClientTokenId", "InvalidParameterCombination",
@@ -76,7 +76,11 @@ func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 	jsonConfig, err := json.Marshal(destinationConfig)
 	err = json.Unmarshal(jsonConfig, &config)
 	var s *session.Session
+<<<<<<< HEAD
 >>>>>>> 021c289d... changing for firehose
+=======
+
+>>>>>>> 17234333... updated for firehose
 	if config.AccessKeyID == "" || config.AccessKey == "" {
 		s = session.Must(session.NewSession(&aws.Config{
 			Region: aws.String(config.Region),
@@ -192,7 +196,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	value, err := json.Marshal(data)
 
 	event = parsedJSON.Get("message.event")
-
+	typeCall = parsedJSON.Get("message.type")
 	if err != nil {
 		logger.Errorf("error in firehose :: %v", err.Error())
 		statusCode := GetStatusCodeFromError(err)
@@ -216,9 +220,16 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		}
 
 	}
-
-	message := fmt.Sprintf("Message delivered for event %v and Record information %v", event, putOutput) //has to be changed
-	fmt.Println(message)
+	var message string
+	if putOutput != nil {
+		message = fmt.Sprintf("Message delivered for event %v and Record information %v", event, putOutput)
+	} else {
+		if event.Value() != nil {
+			message = fmt.Sprintf("No delivery stream set for event %v", event)
+		} else {
+			message = fmt.Sprintf("No delivery stream set for this %v event", typeCall)
+		}
+	}
 	return 200, "Success", message
 }
 
