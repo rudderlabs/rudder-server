@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kinesis"
@@ -13,7 +14,6 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-var abortableErrors = []string{}
 
 // Config is the config that is required to send data to Kinesis
 type Config struct {
@@ -25,10 +25,6 @@ type Config struct {
 }
 
 func init() {
-	abortableErrors = []string{"AccessDeniedException", "IncompleteSignature", "InvalidAction", "InvalidClientTokenId", "InvalidParameterCombination",
-		"InvalidParameterValue", "InvalidQueryParameter", "MissingAuthenticationToken", "MissingParameter", "InvalidArgumentException",
-		"KMSAccessDeniedException", "KMSDisabledException", "KMSInvalidStateException", "KMSNotFoundException", "KMSOptInRequired",
-		"ResourceNotFoundException", "UnrecognizedClientException", "ValidationError"}
 }
 
 // NewProducer creates a producer based on destination config
@@ -90,7 +86,14 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	})
 	if err != nil {
 		logger.Errorf("error in kinesis :: %v", err.Error())
-		statusCode := GetStatusCodeFromError(err)
+
+		// set default status code as 500
+		statusCode := 500
+
+		// fetching status code from response
+		if awsErr, ok := err.(awserr.RequestFailure); ok {
+			statusCode = awsErr.StatusCode()
+		}
 
 		return statusCode, err.Error(), err.Error()
 	}
@@ -98,18 +101,3 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	return 200, "Success", message
 }
 
-// GetStatusCodeFromError parses the error and returns the status so that event gets retried or failed.
-func GetStatusCodeFromError(err error) int {
-	statusCode := 500
-
-	errorString := err.Error()
-
-	for _, s := range abortableErrors {
-		if strings.Contains(errorString, s) {
-			statusCode = 400
-			break
-		}
-	}
-
-	return statusCode
-}
