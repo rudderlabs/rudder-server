@@ -44,7 +44,7 @@ const (
 	TestRemoteAddress         = "test.com"
 )
 
-var testTimeout = 15 * time.Second
+var testTimeout = 5 * time.Second
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.SourcesT{
@@ -92,15 +92,15 @@ func (c *context) Setup() {
 	c.mockStatGatewayBatchTime = make([]*mocksStats.MockRudderStats, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
 		c.mockStatGatewayBatchTime[i] = mocksStats.NewMockRudderStats(c.mockCtrl)
+		c.mockStatGatewayBatchTime[i].EXPECT().Start().AnyTimes()
+		c.mockStatGatewayBatchTime[i].EXPECT().End().AnyTimes()
 	}
 
 	// During Setup, gateway always creates the following stats
 	c.mockStats.EXPECT().NewStat("gateway.batch_size", stats.CountType).Return(c.mockStatGatewayBatchSize).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_size.new"))
 
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
-		c.mockStats.EXPECT().NewBatchStat("gateway.batch_time", stats.TimerType, i).Times(1).DoAndReturn(func(Name string, StatType string, index int) *mocksStats.MockRudderStats {
-			fmt.Println(Name, StatType, index)
-			c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_time.new")()
+		c.mockStats.EXPECT().NewBatchStat("gateway.batch_time", stats.TimerType, i).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_time.new")).DoAndReturn(func(Name string, StatType string, index int) *mocksStats.MockRudderStats {
 			return c.mockStatGatewayBatchTime[index]
 		})
 	}
