@@ -79,7 +79,7 @@ func init() {
 }
 
 // Status reports overall server status by fetching status of all registered admin handlers
-func (a Admin) Status(arg *string, reply *string) error {
+func (a Admin) Status(noArgs struct{}, reply *string) error {
 	statusObj := make(map[string]interface{})
 	statusObj["server-mode"] = db.CurrentMode
 
@@ -92,7 +92,7 @@ func (a Admin) Status(arg *string, reply *string) error {
 }
 
 // PrintStack fetches stack traces of all running goroutines
-func (a Admin) PrintStack(arg *string, reply *string) error {
+func (a Admin) PrintStack(noArgs struct{}, reply *string) error {
 	byteArr := make([]byte, 2048*1024)
 	n := runtime.Stack(byteArr, true)
 	*reply = string(byteArr[:n])
@@ -112,7 +112,7 @@ func (a Admin) HeapDump(path *string, reply *string) error {
 }
 
 // ServerConfig fetches current configuration as set in viper
-func (a Admin) ServerConfig(arg *string, reply *string) error {
+func (a Admin) ServerConfig(noArgs struct{}, reply *string) error {
 	config := make(map[string]interface{})
 	for _, key := range viper.AllKeys() {
 		config[key] = viper.Get(key)

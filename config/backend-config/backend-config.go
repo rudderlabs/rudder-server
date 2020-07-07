@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/admin"
+
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/stats"
 
@@ -62,7 +64,7 @@ type DestinationDefinitionT struct {
 	ID          string
 	Name        string
 	DisplayName string
-	Config      interface{}
+	Config      map[string]interface{}
 }
 
 type SourceDefinitionT struct {
@@ -317,4 +319,6 @@ func Setup() {
 	rruntime.Go(func() {
 		pollConfigUpdate()
 	})
+
+	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
 }
