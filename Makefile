@@ -1,4 +1,4 @@
-.PHONY: help default build run run-dev test prepare-build enterprise-init enterprise-cleanup enterprise-update-commit enterprise-prepare-build
+.PHONY: help default build run run-dev test mocks prepare-build enterprise-init enterprise-cleanup enterprise-update-commit enterprise-prepare-build
 
 GO=go
 GINKGO=ginkgo
