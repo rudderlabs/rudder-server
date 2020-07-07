@@ -1224,7 +1224,7 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 			_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.Parameters, job.CustomVal,
 				string(job.EventPayload), job.CreatedAt, job.ExpireAt)
 		} else {
-			_, err = stmt.Exec(job.UUID, job.UserID, job.Parameters, job.CustomVal, string(job.EventPayload))
+			_, err = stmt.Exec(job.UUID, job.UserID, string(job.Parameters), job.CustomVal, string(job.EventPayload))
 		}
 		jd.assertError(err)
 	}
