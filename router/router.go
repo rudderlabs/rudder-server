@@ -128,7 +128,14 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		batchTimeStat.Start()
 		logger.Debugf("Router :: trying to send payload to %s. Payload: ", rt.destID, job.EventPayload)
 
-		userID, canEventBeMappedToUser := integrations.GetUserIDFromTransformerResponse(job, job.EventPayload)
+		var userID string
+		var canEventBeMappedToUser bool
+		if job.UserID != "" {
+			userID = job.UserID
+			canEventBeMappedToUser = true
+		} else {
+			userID, canEventBeMappedToUser = integrations.GetUserIDFromTransformerResponse(job.EventPayload)
+		}
 
 		//If sink is not enabled mark all jobs as waiting
 		if !rt.isEnabled {
@@ -357,10 +364,17 @@ func (rt *HandleT) initWorkers() {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	userID, canEventBeMappedToUser := integrations.GetUserIDFromTransformerResponse(job, job.EventPayload)
-	// set random userID to assign worker when event can't be mapped to an userID
-	if !canEventBeMappedToUser {
-		userID = uuid.NewV4().String()
+	var userID string
+	var canEventBeMappedToUser bool
+	if job.UserID != "" {
+		userID = job.UserID
+		canEventBeMappedToUser = true
+	} else {
+		userID, canEventBeMappedToUser = integrations.GetUserIDFromTransformerResponse(job.EventPayload)
+		// set random userID to assign worker when event can't be mapped to an userID
+		if !canEventBeMappedToUser {
+			userID = uuid.NewV4().String()
+		}
 	}
 
 	var index int

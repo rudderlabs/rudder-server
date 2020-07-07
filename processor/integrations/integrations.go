@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/warehouse"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -149,12 +148,7 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 }
 
 // GetUserIDFromTransformerResponse parses the payload to get userId
-func GetUserIDFromTransformerResponse(job *jobsdb.JobT, transformRaw json.RawMessage) (userID string, found bool) {
-
-	if job.UserID != "" {
-		return job.UserID, true
-	}
-
+func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) (userID string, found bool) {
 	parsedJSON := gjson.ParseBytes(transformRaw)
 	userIDVal := parsedJSON.Get("userId").Value()
 
