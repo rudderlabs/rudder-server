@@ -147,6 +147,7 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	if err != nil {
 		return
 	}
+	defer pg.Db.Close()
 
 	schema = make(map[string]map[string]string)
 	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type

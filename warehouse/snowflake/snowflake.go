@@ -209,6 +209,7 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	if err != nil {
 		return
 	}
+	defer sf.Db.Close()
 
 	schema = make(map[string]map[string]string)
 	sqlStatement := fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type

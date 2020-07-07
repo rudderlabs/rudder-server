@@ -239,6 +239,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	if err != nil {
 		return
 	}
+	defer rs.Db.Close()
 
 	schema = make(map[string]map[string]string)
 	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type, character_maximum_length
@@ -796,6 +797,7 @@ func (rs *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	if err != nil {
 		return err
 	}
+	defer rs.Db.Close()
 	currSchema, err := warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
 	if err != nil {
 		panic(err)
