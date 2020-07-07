@@ -71,7 +71,7 @@ type JobsDB interface {
 	GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
 	GetExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
 
-	Status() map[string]interface{}
+	Status() interface{}
 }
 
 /*
@@ -227,7 +227,7 @@ func (jd *HandleT) assert(cond bool, errorString string) {
 	}
 }
 
-func (jd *HandleT) Status() map[string]interface{} {
+func (jd *HandleT) Status() interface{} {
 	statusObj := map[string]interface{}{
 		"dataset-list":    jd.getDSList(false),
 		"dataset-ranges":  jd.getDSRangeList(false),

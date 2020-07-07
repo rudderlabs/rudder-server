@@ -48,9 +48,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-// PackageStatusHandler to be implemented by other package admin objects
+// PackageStatusHandler to be implemented by the package objects that are registered as status handlers
+// output of Status() is expected to be json encodeable by default
 type PackageStatusHandler interface {
-	Status() map[string]interface{}
+	Status() interface{}
 }
 
 // RegisterAdminHandler is used by other packages to
@@ -59,6 +60,7 @@ func RegisterAdminHandler(name string, handler interface{}) {
 	instance.rpcServer.RegisterName(name, handler)
 }
 
+// RegisterStatusHandler expects object implementing PackageStatusHandler interface
 func RegisterStatusHandler(name string, handler PackageStatusHandler) {
 	instance.statushandlers[strings.ToLower(name)] = handler
 }

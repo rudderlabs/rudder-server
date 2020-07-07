@@ -5,7 +5,7 @@ type GatewayAdmin struct {
 }
 
 // Status function is used for debug purposes by the admin interface
-func (g *GatewayAdmin) Status() map[string]interface{} {
+func (g *GatewayAdmin) Status() interface{} {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	writeKeys := make([]string, 0, len(enabledWriteKeysSourceMap))

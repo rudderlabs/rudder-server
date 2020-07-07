@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -795,5 +794,5 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	rruntime.Go(func() {
 		brt.mainLoop()
 	})
-	admin.RegisterStatusHandler(fmt.Sprintf("batch-router-%v", destType), &BatchRouterAdmin{brt})
+	adminInstance.registerBatchRouter(destType, brt)
 }
