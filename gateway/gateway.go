@@ -137,7 +137,6 @@ func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket
 }
 
 func (gateway *HandleT) initUserWebRequestWorkers() {
-
 	gateway.userWebRequestWorkers = make([]*userWebRequestWorkerT, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
 		logger.Debug("User Web Request Worker Started", i)
@@ -563,7 +562,7 @@ func (gateway *HandleT) printStats() {
 
 func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		latencyStat := gateway.stats.NewStat("gateway.response_time", stats.TimerType)
+		latencyStat := gateway.stats.NewLatencyStat("gateway.response_time", stats.TimerType)
 		latencyStat.Start()
 		wrappedFunc(w, r)
 		latencyStat.End()
