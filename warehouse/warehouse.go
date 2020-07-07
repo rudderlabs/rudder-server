@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
+
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -132,7 +134,7 @@ func init() {
 func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
-	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
@@ -207,6 +209,9 @@ func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string
 func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
 	configMap := config.(map[string]interface{})
 	var namespace string
+	if destType == "CLICKHOUSE" {
+		return configMap["database"].(string)
+	}
 	if configMap["namespace"] != nil {
 		namespace = configMap["namespace"].(string)
 		if len(strings.TrimSpace(namespace)) > 0 {
@@ -569,8 +574,12 @@ func NewWhManager(destType string) (WarehouseManager, error) {
 	case "POSTGRES":
 		var pg postgres.HandleT
 		return &pg, nil
+	case "CLICKHOUSE":
+		var ch clickhouse.HandleT
+		return &ch, nil
 	}
-	return nil, errors.New("No provider configured for WarehouseManager")
+
+	return nil, errors.New("no provider configured for WarehouseManager")
 }
 
 func (wh *HandleT) mainLoop() {
@@ -581,7 +590,7 @@ func (wh *HandleT) mainLoop() {
 		}
 		for _, warehouse := range wh.warehouses {
 			if isDestInProgress(warehouse) {
-				logger.Debugf("WH: Skipping upload loop since %s:%s upload in progess", wh.destType, warehouse.Destination.ID)
+				logger.Debugf("WH: Skipping upload loop since %s:%s upload in progress", wh.destType, warehouse.Destination.ID)
 				continue
 			}
 			setDestInProgress(warehouse, true)
@@ -1071,10 +1080,11 @@ func (wh *HandleT) Setup(whType string) {
 }
 
 var loadFileFormatMap = map[string]string{
-	"BQ":        "json",
-	"RS":        "csv",
-	"SNOWFLAKE": "csv",
-	"POSTGRES":  "csv",
+	"BQ":         "json",
+	"RS":         "csv",
+	"SNOWFLAKE":  "csv",
+	"POSTGRES":   "csv",
+	"CLICKHOUSE": "csv",
 }
 
 func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
