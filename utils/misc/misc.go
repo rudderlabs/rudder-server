@@ -355,6 +355,13 @@ func (stats *PerfStats) Print() {
 	}
 }
 
+func (stats *PerfStats) Status() map[string]interface{} {
+	return map[string]interface{}{
+		"total-events": stats.eventCount,
+		"overall-rate": float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime),
+	}
+}
+
 //Copy copies the exported fields from src to dest
 //Used for copying the default transport
 func Copy(dst, src interface{}) {
