@@ -211,7 +211,7 @@ var (
 	rawDataDestinations                 []string
 	configSubscriberLock                sync.RWMutex
 	isReplayServer                      bool
-	customDestinations     []string
+	customDestinations                  []string
 )
 
 func loadConfig() {
