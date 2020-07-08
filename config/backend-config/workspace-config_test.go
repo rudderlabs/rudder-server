@@ -61,7 +61,7 @@ var _ = Describe("workspace-config", func() {
 			configFromFile = false
 			configBackendURL = "http://rudderstack.com"
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError"))
-			mockLogger.EXPECT().Error("Error when creating request", gomock.Eq(errors.New("TestError"))).Times(1)
+			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
 			config, ok := backendConfig.Get()
 			Expect(config).To(Equal(SourcesT{}))
 			Expect(ok).To(BeFalse())
@@ -73,7 +73,7 @@ var _ = Describe("workspace-config", func() {
 			Http = mockHttp
 			testRequest, _ := http.NewRequest("GET", "", nil)
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil)
-			mockLogger.EXPECT().Error("Error when sending request to the server", gomock.Any()).Times(1)
+			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
 			config, ok := backendConfig.Get()
 			Expect(config).To(Equal(SourcesT{}))
 			Expect(ok).To(BeFalse())
