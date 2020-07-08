@@ -46,7 +46,7 @@ var rudderDataTypesMapToClickHouse = map[string]string{
 	"float":    "Float64",
 	"string":   "String",
 	"datetime": "DateTime",
-	"boolean":  "Uint8",
+	"boolean":  "UInt8",
 }
 
 //TODO: add addition clickhouse types which maps to rudder transformer data types
@@ -122,10 +122,15 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 	}
 }
 
-func columnsWithDataTypes(columns map[string]string, prefix string) string {
+func columnsWithDataTypes(columns map[string]string, prefix string, sortKeyField string) string {
 	var arr []string
 	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToClickHouse[dataType]))
+		if name == sortKeyField {
+			arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToClickHouse[dataType]))
+		} else {
+			arr = append(arr, fmt.Sprintf(`%s%s Nullable(%s)`, prefix, name, rudderDataTypesMapToClickHouse[dataType]))
+		}
+
 	}
 	return strings.Join(arr[:], ",")
 }
@@ -262,16 +267,28 @@ func generateArgumentString(arg string, length int) string {
 func getDataFromType(data string, datatype string) interface{} {
 	switch datatype {
 	case "int":
-		i, _ := strconv.Atoi(data)
+		i, err := strconv.Atoi(data)
+		if err != nil {
+			return ""
+		}
 		return i
 	case "float":
-		f, _ := strconv.ParseFloat(data, 64)
+		f, err := strconv.ParseFloat(data, 64)
+		if err != nil {
+			return ""
+		}
 		return f
 	case "datetime":
-		t, _ := time.Parse(time.RFC3339, data)
+		t, err := time.Parse(time.RFC3339, data)
+		if err != nil {
+			return ""
+		}
 		return t
 	case "boolean":
-		b, _ := strconv.ParseBool(data)
+		b, err := strconv.ParseBool(data)
+		if err != nil {
+			return ""
+		}
 		if b {
 			return 1
 		}
@@ -301,7 +318,6 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(columnMap)
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
-	fmt.Println(sortedColumnString)
 
 	fileNames, err := ch.DownloadLoadFiles(tableName)
 	defer misc.RemoveFilePaths(fileNames...)
@@ -316,14 +332,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
-	// create temporary table
-	//stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
-	//err = ch.createTempTable(stagingTableName, columnMap)
-	//if err != nil {
-	//	logger.Errorf("ch: Error creating temporary table for table:%s: %v\n", tableName, err)
-	//	warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
-	//	return
-	//}
+
 	stmt, err := txn.Prepare(fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s) `, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys))))
 	if err != nil {
 		logger.Errorf("ch: Error while preparing statement for  transaction in db for loading in staging table:%s: %v", stagingTableName, err)
@@ -375,6 +384,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 
 			}
 			_, err = stmt.Exec(recordInterface...)
+			fmt.Println(err)
 
 		}
 		gzipReader.Close()
@@ -585,14 +595,6 @@ func (ch *HandleT) createSchema() (err error) {
 	return
 }
 
-// createTempTable create a temporary table in clickhouse, this table resides in clickhouse memory
-func (ch *HandleT) createTempTable(name string, columns map[string]string) (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE IF NOT EXISTS "%s" ( %v ) `, name, columnsWithDataTypes(columns, ""))
-	logger.Infof("CH: Creating temporary table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
-	_, err = ch.Db.Exec(sqlStatement)
-	return
-}
-
 // createTable create a table in the database provided in control plane
 func (ch *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sortKeyField := "received_at"
@@ -602,7 +604,8 @@ func (ch *HandleT) createTable(name string, columns map[string]string) (err erro
 			sortKeyField = "id"
 		}
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = ReplacingMergeTree() order by %s `, ch.Namespace, name, columnsWithDataTypes(columns, ""), sortKeyField)
+	//TODO: if table name is users uses aggregate merge tree
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = ReplacingMergeTree() order by %s `, ch.Namespace, name, columnsWithDataTypes(columns, "", sortKeyField), sortKeyField)
 	logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
