@@ -11,6 +11,8 @@ const SwitchContainer = styled(Flex)`
 
 export interface ISwitchInputProps {
   field: any;
+  hidden: boolean;
+  disabled: boolean;
   onChange: (label: string, value: any) => void;
 }
 
@@ -21,7 +23,7 @@ export default class SwitchInput extends React.Component<ISwitchInputProps> {
   }
 
   public render() {
-    const { field, onChange } = this.props;
+    const { field, disabled, onChange } = this.props;
     return (
       <SwitchContainer spaceBetween className="m-t-xs b-t-grey">
         <Text fontSize="14px">
@@ -31,6 +33,7 @@ export default class SwitchInput extends React.Component<ISwitchInputProps> {
         <Switch
           defaultChecked={field.default}
           className={field.value}
+          disabled={disabled}
           onChange={(checked: any) => onChange(field.value, checked)}
         />
       </SwitchContainer>

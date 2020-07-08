@@ -35,6 +35,7 @@ var (
 	curSourceJSONLock                     sync.RWMutex
 	curRegulationJSON                     RegulationsT
 	curRegulationJSONLock                 sync.RWMutex
+	initializedLock                       sync.RWMutex
 	initialized                           bool
 	regulationsInitialized                bool
 	LastSync                              string
@@ -287,6 +288,8 @@ func regulationsUpdate(statConfigBackendError stats.RudderStats) {
 		curRegulationJSONLock.Lock()
 		curRegulationJSON = regulationJSON
 		curRegulationJSONLock.Unlock()
+		initializedLock.Lock() //Using initializedLock for regulationsInitialized too.
+		defer initializedLock.Unlock()
 		regulationsInitialized = true
 		LastRegulationSync = time.Now().Format(time.RFC3339)
 		Eb.Publish(string(TopicRegulations), regulationJSON)
@@ -313,6 +316,8 @@ func configUpdate(statConfigBackendError stats.RudderStats) {
 		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
 		curSourceJSON = sourceJSON
 		curSourceJSONLock.Unlock()
+		initializedLock.Lock()
+		defer initializedLock.Unlock()
 		initialized = true
 		LastSync = time.Now().Format(time.RFC3339)
 		Eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
@@ -389,9 +394,12 @@ WaitForConfig waits until backend config has been initialized
 */
 func (bc *CommonBackendConfig) WaitForConfig() {
 	for {
+		initializedLock.RLock()
 		if initialized && regulationsInitialized {
+			initializedLock.RUnlock()
 			break
 		}
+		initializedLock.RUnlock()
 		log.Info("Waiting for initializing backend config")
 		time.Sleep(time.Duration(pollInterval))
 	}

@@ -254,6 +254,11 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 		for columnName, columnType := range columns {
 			if _, ok := schemaMap[tableName][columnName]; !ok {
 				schemaMap[tableName][columnName] = columnType
+			} else {
+				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
+				if columnType == "text" && schemaMap[tableName][columnName] == "string" {
+					schemaMap[tableName][columnName] = columnType
+				}
 			}
 		}
 	}
@@ -384,6 +389,9 @@ func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) 
 }
 
 func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err error, isWarehouse bool) {
+	if !destinationdebugger.HasUploadEnabled(batchDestination.Destination.ID) {
+		return
+	}
 	var (
 		jobState  string
 		errorResp []byte
@@ -512,7 +520,10 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 func (brt *HandleT) mainLoop() {
 	for {
 		time.Sleep(mainLoopSleep)
-		for _, batchDestination := range brt.batchDestinations {
+		configSubscriberLock.RLock()
+		batchDestinations := brt.batchDestinations
+		configSubscriberLock.RUnlock()
+		for _, batchDestination := range batchDestinations {
 			if isDestInProgress(batchDestination) {
 				logger.Debugf("BRT: Skipping batch router upload loop since destination %s:%s is in progress", batchDestination.Destination.DestinationDefinition.Name, batchDestination.Destination.ID)
 				continue

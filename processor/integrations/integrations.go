@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rudderlabs/rudder-server/warehouse"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -182,8 +184,18 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 }
 
 //GetDestinationURL returns node URL
-func GetDestinationURL(destID string) string {
-	return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s", destTransformURL, strings.ToLower(destID), config.GetWHSchemaVersion())
+func GetDestinationURL(destType string) string {
+	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
+	if misc.Contains(warehouse.WarehouseDestinations, destType) {
+		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s", config.GetWHSchemaVersion())
+		if destType == "RS" {
+			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
+			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + rsAlterStringToTextQueryParam
+		}
+		return destinationEndPoint + "?" + whSchemaVersionQueryParam
+	}
+	return destinationEndPoint
+
 }
 
 //GetUserTransformURL returns the port of running user transform

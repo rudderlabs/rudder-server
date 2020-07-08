@@ -213,3 +213,7 @@ func SetWHSchemaVersion(version string) {
 func GetWHSchemaVersion() string {
 	return whSchemaVersion
 }
+
+func GetVarCharMaxForRS() bool {
+	return GetBool("Warehouse.redshift.setVarCharMax", false)
+}
