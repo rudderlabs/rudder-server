@@ -165,7 +165,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	schema = make(map[string]map[string]string)
 	bq.Warehouse = warehouse
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
-	bq.Db, err = bq.connect(BQCredentialsT{
+	dbClient, err := bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
@@ -173,7 +173,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 		return
 	}
 
-	query := bq.Db.Query(fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
+	query := dbClient.Query(fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
 							 FROM %[1]s.INFORMATION_SCHEMA.TABLES as t JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c
 							 ON (t.table_name = c.table_name) and (t.table_type != 'VIEW')`, namespace))
 

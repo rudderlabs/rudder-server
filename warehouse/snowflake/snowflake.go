@@ -205,11 +205,11 @@ func (sf *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 // FetchSchema queries snowflake and returns the schema assoiciated with provided namespace
 func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	sf.Warehouse = warehouse
-	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
 		return
 	}
-	defer sf.Db.Close()
+	defer dbHandle.Close()
 
 	schema = make(map[string]map[string]string)
 	sqlStatement := fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
@@ -218,7 +218,7 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 									ON t.table_schema = c.table_schema and t.table_name = c.table_name
 									WHERE t.table_schema = '%s'`, namespace)
 
-	rows, err := sf.Db.Query(sqlStatement)
+	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		logger.Errorf("SF: Error in fetching schema from snowflake destination:%v, query: %v", sf.Warehouse.Destination.ID, sqlStatement)
 		return
