@@ -332,10 +332,13 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 			if err != nil {
 				if err == io.EOF {
 					logger.Infof("PG: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
+					break
 				} else {
 					logger.Errorf("PG: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
+					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+					txn.Rollback()
+					return
 				}
-				break
 
 			}
 			var recordInterface []interface{}
@@ -348,7 +351,10 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 			}
 			_, err = stmt.Exec(recordInterface...)
 			if err != nil {
-				break
+				logger.Errorf("PG: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
+				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+				txn.Rollback()
+				return
 			}
 		}
 		gzipReader.Close()
@@ -409,7 +415,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 
 func (pg *HandleT) loadUserTables() (err error) {
 	logger.Infof("PG: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Upload.Schema[warehouseutils.IdentifiesTable], true, true)
+	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Upload.Schema[warehouseutils.IdentifiesTable], true)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.IdentifiesTable, err, pg.DbHandle)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), pg.DbHandle)
