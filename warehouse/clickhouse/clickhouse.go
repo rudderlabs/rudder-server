@@ -22,7 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 )
 
 var (
@@ -376,17 +375,9 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 			record, err = csvReader.Read()
 			if err != nil {
 				if err == io.EOF {
-					err = nil
 					logger.Infof("CH: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
-					break
-				} else {
-					logger.Errorf("CH: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
-					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
-					gzipReader.Close()
-					gzipFile.Close()
-					return
 				}
-
+				break
 			}
 			var recordInterface []interface{}
 			for key, value := range record {
@@ -397,52 +388,21 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 
 			}
 			_, err = stmt.Exec(recordInterface...)
-			fmt.Println(err)
+			if err != nil {
+				break
+			}
 
 		}
 		gzipReader.Close()
 		gzipFile.Close()
 	}
-	if err != nil {
+	if err != nil && err != io.EOF {
 		txn.Rollback()
 		logger.Errorf("CH: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 
 	}
-
-	//// deduplication process
-	//primaryKey := "id"
-	//if column, ok := primaryKeyMap[tableName]; ok {
-	//	primaryKey = column
-	//}
-	//partitionKey := "id"
-	//if column, ok := partitionKeyMap[tableName]; ok {
-	//	partitionKey = column
-	//}
-	//var additionalJoinClause string
-	//if tableName == warehouseutils.DiscardsTable {
-	//	additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = "%[1]s"."%[2]s"."%[3]s"`, ch.Namespace, tableName, "table_name")
-	//}
-	//sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" USING "%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, ch.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
-	//logger.Infof("ch: Deduplicate records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	//_, err = txn.Exec(sqlStatement)
-	//if err != nil {
-	//	logger.Errorf("ch: Error deleting from original table for dedup: %v\n", err)
-	//	txn.Rollback()
-	//	warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
-	//	return
-	//}
-	//sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[4]s" ) AS _ where _rudder_staging_row_number = 1`, ch.Namespace, tableName, sortedColumnString, stagingTableName, partitionKey)
-	//logger.Infof("ch: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	//_, err = txn.Exec(sqlStatement)
-	//
-	//if err != nil {
-	//	logger.Errorf("ch: Error inserting into original table: %v\n", err)
-	//	txn.Rollback()
-	//	warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
-	//	return
-	//}
 
 	if err = txn.Commit(); err != nil {
 		logger.Errorf("CH: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
@@ -455,119 +415,8 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 	return
 }
 
-func (ch *HandleT) loadUserTables() (err error) {
-	logger.Infof("ch: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := ch.loadTable(warehouseutils.IdentifiesTable, ch.Upload.Schema[warehouseutils.IdentifiesTable], true)
-	if err != nil {
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, warehouseutils.IdentifiesTable, err, ch.DbHandle)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), ch.DbHandle)
-		return
-	}
-
-	unionStagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), "users_identifies_union"), 127)
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), warehouseutils.UsersTable), 127)
-
-	userColMap := ch.CurrentSchema[warehouseutils.UsersTable]
-	var userColNames, firstValProps []string
-	for colName := range userColMap {
-		if colName == "id" {
-			continue
-		}
-		userColNames = append(userColNames, colName)
-		caseSubQuery := fmt.Sprintf(`case
-						  when (select true) then (
-						  	select %[1]s from %[2]s
-						  	where id = %[2]s.id
-							  and %[1]s is not null
-							  order by received_at desc
-						  	limit 1)
-						  end as %[1]s`, colName, unionStagingTableName)
-		firstValProps = append(firstValProps, caseSubQuery)
-	}
-
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[5]s as (
-												(
-													SELECT id, %[4]s FROM "%[1]s"."%[2]s" WHERE id in (SELECT user_id FROM %[3]s)
-												) UNION
-												(
-													SELECT user_id, %[4]s FROM %[3]s
-												)
-											)`, ch.Namespace, warehouseutils.UsersTable, identifyStagingTable, strings.Join(userColNames, ","), unionStagingTableName)
-
-	logger.Infof("ch: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
-	_, err = ch.Db.Exec(sqlStatement)
-	if err != nil {
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, warehouseutils.UsersTable, err, ch.DbHandle)
-		return
-	}
-
-	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s AS (SELECT DISTINCT * FROM
-										(
-											SELECT
-											id, %[2]s
-											FROM %[3]s
-										) as xyz
-									)`,
-		stagingTableName,
-		strings.Join(firstValProps, ","),
-		unionStagingTableName,
-	)
-
-	logger.Infof("ch: Creating staging table for users: %s\n", sqlStatement)
-	_, err = ch.Db.Exec(sqlStatement)
-	if err != nil {
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, warehouseutils.UsersTable, err, ch.DbHandle)
-		return
-	}
-
-	// BEGIN TRANSACTION
-	tx, err := ch.Db.Begin()
-	if err != nil {
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, warehouseutils.UsersTable, err, ch.DbHandle)
-		return
-	}
-
-	primaryKey := "id"
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, ch.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
-	logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
-	_, err = tx.Exec(sqlStatement)
-	if err != nil {
-		logger.Errorf("ch: Error deleting from original table for dedup: %v\n", err)
-		tx.Rollback()
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, warehouseutils.UsersTable, err, ch.DbHandle)
-		return
-	}
-
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, ch.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
-	logger.Infof("ch: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
-	_, err = tx.Exec(sqlStatement)
-
-	if err != nil {
-		logger.Errorf("ch: Error inserting into users table from staging table: %v\n", err)
-		tx.Rollback()
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, warehouseutils.UsersTable, err, ch.DbHandle)
-		return
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		logger.Errorf("ch: Error in transaction commit for users table: %v\n", err)
-		tx.Rollback()
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, warehouseutils.UsersTable, err, ch.DbHandle)
-		return
-	}
-	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, ch.Upload.ID, warehouseutils.UsersTable, ch.DbHandle)
-	return
-}
-
 func (ch *HandleT) load() (errList []error) {
 	logger.Infof("ch: Starting load for all %v tables\n", len(ch.Upload.Schema))
-	if _, ok := ch.Upload.Schema[warehouseutils.UsersTable]; ok {
-		err := ch.loadUserTables()
-		if err != nil {
-			errList = append(errList, err)
-		}
-	}
 	var wg sync.WaitGroup
 	loadChan := make(chan struct{}, maxParallelLoads)
 	wg.Add(len(ch.Upload.Schema))
@@ -616,9 +465,10 @@ func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err
 			sortKeyField = "id"
 		}
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = ReplacingMergeTree() order by %s `, ch.Namespace, name, columnsWithDataTypesForUsersTable(columns, "", sortKeyField), sortKeyField)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = AggregatingMergeTree() order by %s `, ch.Namespace, name, columnsWithDataTypesForUsersTable(columns, "", sortKeyField), sortKeyField)
 	logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
+	return
 }
 
 // createTable create a table in the database provided in control plane
