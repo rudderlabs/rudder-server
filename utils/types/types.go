@@ -23,3 +23,7 @@ type WebHookI interface {
 	RequestHandler(w http.ResponseWriter, r *http.Request)
 	Register(name string)
 }
+
+type SuppressUserI interface {
+	IsSuppressedUser(userID, sourceID, writeKey string) bool
+}

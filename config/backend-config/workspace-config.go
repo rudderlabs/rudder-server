@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"sync"
 )
 
@@ -101,11 +100,11 @@ func (workspaceConfig *WorkspaceConfig) getRegulationsFromAPI() (RegulationsT, b
 }
 
 func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]WorkspaceRegulationT, bool) {
-	offset := 0
+	start := 0
 
 	totalWorkspaceRegulations := []WorkspaceRegulationT{}
 	for {
-		url := fmt.Sprintf("%s/workspaces/regulations?offset=%d&limit=%d", configBackendURL, offset, maxRegulationsPerRequest)
+		url := fmt.Sprintf("%s/workspaces/regulations?start=%d&limit=%d", configBackendURL, start, maxRegulationsPerRequest)
 		respBody, statusCode, err := workspaceConfig.makeHTTPRequest(url)
 		if err != nil {
 			log.Error("Error sending request to the server", err)
@@ -125,22 +124,18 @@ func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]Work
 			break
 		}
 
-		if value, err := strconv.Atoi(workspaceRegulationsJSON.Next); err == nil {
-			offset = value
-		} else {
-			return []WorkspaceRegulationT{}, false
-		}
+		start = workspaceRegulationsJSON.Next
 	}
 
 	return totalWorkspaceRegulations, true
 }
 
 func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceRegulationT, bool) {
-	offset := 0
+	start := 0
 
 	totalSourceRegulations := []SourceRegulationT{}
 	for {
-		url := fmt.Sprintf("%s/workspaces/sources/regulations?offset=%d&limit=%d", configBackendURL, offset, maxRegulationsPerRequest)
+		url := fmt.Sprintf("%s/workspaces/sources/regulations?start=%d&limit=%d", configBackendURL, start, maxRegulationsPerRequest)
 		respBody, statusCode, err := workspaceConfig.makeHTTPRequest(url)
 		if err != nil {
 			log.Error("Error sending request to the server", err)
@@ -160,11 +155,7 @@ func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceR
 			break
 		}
 
-		if value, err := strconv.Atoi(sourceRegulationsJSON.Next); err == nil {
-			offset = value
-		} else {
-			return []SourceRegulationT{}, false
-		}
+		start = sourceRegulationsJSON.Next
 	}
 
 	return totalSourceRegulations, true

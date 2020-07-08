@@ -57,6 +57,7 @@ var (
 	moduleLoadLock                   sync.Mutex
 	routerLoaded                     bool
 	processorLoaded                  bool
+	enableSuppressUserFeature        bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -72,6 +73,8 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
+	// Enable suppress user feature. true by default
+	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", true)
 }
 
 // Test Function
@@ -177,7 +180,14 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB ", *clearDB)
 
-	backendconfig.Setup()
+	backendconfig.Setup(application.Features)
+	if enableSuppressUserFeature {
+		if application.Features().SuppressUser != nil {
+			backendconfig.SetupSuppressUserFeature()
+		} else {
+			logger.Info("Suppress User feature is enterprise only. Unable to poll regulations.")
+		}
+	}
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
 

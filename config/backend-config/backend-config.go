@@ -39,7 +39,6 @@ var (
 	regulationsInitialized                bool
 	LastSync                              string
 	LastRegulationSync                    string
-	enableSuppressUserFeature             bool
 	maxRegulationsPerRequest              int
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
@@ -139,23 +138,21 @@ type RegulationsT struct {
 }
 
 type WRegulationsT struct {
-	//TODO change types
 	WorkspaceRegulations []WorkspaceRegulationT `json:"workspaceRegulations"`
-	Start                string                 `json:"start"`
-	Limit                string                 `json:"limit"`
+	Start                int                    `json:"start"`
+	Limit                int                    `json:"limit"`
 	Size                 int                    `json:"size"`
 	End                  bool                   `json:"end"`
-	Next                 string                 `json:"next"`
+	Next                 int                    `json:"next"`
 }
 
 type SRegulationsT struct {
-	//TODO change types
 	SourceRegulations []SourceRegulationT `json:"sourceRegulations"`
-	Start             string              `json:"start"`
-	Limit             string              `json:"limit"`
+	Start             int                 `json:"start"`
+	Limit             int                 `json:"limit"`
 	Size              int                 `json:"size"`
 	End               bool                `json:"end"`
-	Next              string              `json:"next"`
+	Next              int                 `json:"next"`
 }
 
 type TransformationT struct {
@@ -189,8 +186,6 @@ func loadConfig() {
 	regulationsPollInterval = config.GetDuration("BackendConfig.regulationsPollIntervalInS", 5) * time.Second
 	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
-	// Enable suppress user feature. true by default
-	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", true)
 	maxRegulationsPerRequest = config.GetInt("Gateway.maxRegulationsPerRequest", 10)
 }
 
@@ -418,11 +413,14 @@ func Setup() {
 		pollConfigUpdate()
 	})
 
-	if enableSuppressUserFeature {
-		rruntime.Go(func() {
-			pollRegulations()
-		})
-	} else {
-		regulationsInitialized = true
-	}
+	regulationsInitialized = true
+}
+
+// SetupSuppressUserFeature - setups enterprise backend config features
+func SetupSuppressUserFeature() {
+	regulationsInitialized = false
+
+	rruntime.Go(func() {
+		pollRegulations()
+	})
 }

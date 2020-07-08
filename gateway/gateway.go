@@ -64,10 +64,8 @@ var (
 	maxUserWebRequestBatchSize, maxDBBatchSize                  int
 	userWebRequestBatchTimeout, dbBatchWriteTimeout             time.Duration
 	enabledWriteKeysSourceMap                                   map[string]string
-	suppressedUsersMap                                          map[string]map[string]struct{}
-	sourceSpecificSuppressedUserMap                             map[string]map[string]struct{}
 	enabledWriteKeyWebhookMap                                   map[string]string
-	configSubscriberLock, regulationsSubscriberLock             sync.RWMutex
+	configSubscriberLock                                        sync.RWMutex
 	maxReqSize                                                  int
 	enableDedup                                                 bool
 	enableRateLimit                                             bool
@@ -128,6 +126,7 @@ type HandleT struct {
 	webRequestBatchCount                      uint64
 	userWebRequestWorkers                     []*userWebRequestWorkerT
 	webhookHandler                            types.WebHookI
+	suppressUserHandler                       types.SuppressUserI
 	versionHandler                            func(w http.ResponseWriter, r *http.Request)
 }
 
@@ -371,9 +370,9 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 			}
 
-			if enableSuppressUserFeature {
+			if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
 				userID := gjson.GetBytes(body, "batch.0.userId").String()
-				if gateway.isSuppressedUser(userID, writeKey) {
+				if gateway.suppressUserHandler.IsSuppressedUser(userID, gateway.getSourceIDForWriteKey(writeKey), writeKey) {
 					req.done <- ""
 					preDbStoreCount++
 					continue
@@ -391,7 +390,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       gjson.GetBytes(body, "batch.0.anonymousId").Str,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, enabledWriteKeysSourceMap[writeKey], counter)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, gateway.getSourceIDForWriteKey(writeKey), counter)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
@@ -446,39 +445,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			gateway.updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
 		}
 	}
-}
-
-func (gateway *HandleT) isSuppressedUser(userID, writeKey string) bool {
-	regulationsSubscriberLock.RLock()
-	defer regulationsSubscriberLock.RUnlock()
-
-	//If userID is blocked at workspace level, returning true
-	workspaceID := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-	if _, ok := suppressedUsersMap[workspaceID]; ok {
-		m := suppressedUsersMap[workspaceID]
-		if _, ok := m[userID]; ok {
-			return true
-		}
-	}
-
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
-
-	//Using enabledWriteKeysSourceMap map to get source id and to check for suppression.
-	//This is safe to use because if the writeKey is not enabled, events are dropped well before.
-	if _, ok := enabledWriteKeysSourceMap[writeKey]; !ok {
-		return false
-	}
-
-	sourceID := enabledWriteKeysSourceMap[writeKey]
-	if _, ok := sourceSpecificSuppressedUserMap[sourceID]; ok {
-		m := sourceSpecificSuppressedUserMap[sourceID]
-		if _, ok := m[userID]; ok {
-			return true
-		}
-	}
-
-	return false
 }
 
 func addToSet(set map[string]struct{}, elements []string) {
@@ -577,6 +543,17 @@ func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 		return false
 	}
 	return true
+}
+
+func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+
+	if _, ok := enabledWriteKeysSourceMap[writeKey]; ok {
+		return enabledWriteKeysSourceMap[writeKey]
+	}
+
+	return ""
 }
 
 //Function to route incoming web requests to userWebRequestBatcher
@@ -868,44 +845,6 @@ func (gateway *HandleT) backendConfigSubscriber() {
 	}
 }
 
-// Gets the regulations from config backend
-func (gateway *HandleT) backendRegulationsSubscriber() {
-	ch := make(chan utils.DataEvent)
-	gateway.backendConfig.Subscribe(ch, backendconfig.TopicRegulations)
-	for {
-		regulationsData := <-ch
-		regulationsSubscriberLock.Lock()
-		suppressedUsersMap = map[string]map[string]struct{}{}
-		sourceSpecificSuppressedUserMap = map[string]map[string]struct{}{}
-		regulations := regulationsData.Data.(backendconfig.RegulationsT)
-		for _, regulation := range regulations.WorkspaceRegulations {
-			if regulation.RegulationType == string(backendconfig.RegulationSuppress) {
-				if _, ok := suppressedUsersMap[regulation.WorkspaceID]; ok {
-					m := suppressedUsersMap[regulation.WorkspaceID]
-					m[regulation.UserID] = struct{}{}
-				} else {
-					m := map[string]struct{}{}
-					m[regulation.UserID] = struct{}{}
-					suppressedUsersMap[regulation.WorkspaceID] = m
-				}
-			}
-		}
-		for _, sourceRegulation := range regulations.SourceRegulations {
-			if sourceRegulation.RegulationType == string(backendconfig.RegulationSuppress) {
-				if _, ok := sourceSpecificSuppressedUserMap[sourceRegulation.SourceID]; ok {
-					m := sourceSpecificSuppressedUserMap[sourceRegulation.SourceID]
-					m[sourceRegulation.UserID] = struct{}{}
-				} else {
-					m := map[string]struct{}{}
-					m[sourceRegulation.UserID] = struct{}{}
-					sourceSpecificSuppressedUserMap[sourceRegulation.SourceID] = m
-				}
-			}
-		}
-		regulationsSubscriberLock.Unlock()
-	}
-}
-
 func (gateway *HandleT) gcBadgerDB() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -1015,14 +954,15 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
 	}
 
+	if gateway.application.Features().SuppressUser != nil {
+		gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
+	}
+
 	rruntime.Go(func() {
 		gateway.webRequestRouter()
 	})
 	rruntime.Go(func() {
 		gateway.backendConfigSubscriber()
-	})
-	rruntime.Go(func() {
-		gateway.backendRegulationsSubscriber()
 	})
 
 	gateway.initUserWebRequestWorkers()
