@@ -4,9 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	// "fmt"
-	// "strings"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -15,29 +12,23 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-// TODO : add errors
-var abortableErrors = []string{}
-
 // Config is the config that is required to send data to EventBridge
-// TODO : ResourceID -> List
 type Config struct {
 	Region       string
 	AccessKeyID  string
 	AccessKey    string
 	EventBusName string
-	ResourceID   string
+	ResourceID   []string
 	DetailType   string
 }
 
 func init() {
-	// TODO
 }
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}) (eventbridge.EventBridge, error) {
 	config := Config{}
 
-	// do we need to marshall and then unmarshall? can we not directly unmarshall
 	jsonConfig, err := json.Marshal(destinationConfig)
 	err = json.Unmarshal(jsonConfig, &config)
 
