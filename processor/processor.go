@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-
+	"strconv"
 	"github.com/araddon/dateparse"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -290,7 +290,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		logger.Debug("[Processor: addJobsToSessions] Adding a new session id for the user")
 		_, ok = proc.userToSessionIDMap[userID]
 		if !ok {
-			proc.userToSessionIDMap[userID] = uuid.NewV4().String()
+			proc.userToSessionIDMap[userID] = strconv.FormatInt(time.Now().UnixNano()/ 1000000, 10)
 		}
 		//Add the job to the userID specific lists
 		proc.userJobListMap[userID] = append(proc.userJobListMap[userID], job)
