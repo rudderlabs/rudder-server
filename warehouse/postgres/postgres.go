@@ -253,7 +253,7 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 
 }
 
-func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forceLoad bool) (stagingTableName string, err error) {
+func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, skipTempTableDelete bool, forceLoad bool) (stagingTableName string, err error) {
 	if !forceLoad {
 		status, _ := warehouseutils.GetTableUploadStatus(pg.Upload.ID, tableName, pg.DbHandle)
 		if status == warehouseutils.ExportedDataState {
@@ -297,7 +297,10 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 	}
-	defer pg.dropStagingTable(stagingTableName)
+	if !skipTempTableDelete {
+		defer pg.dropStagingTable(stagingTableName)
+	}
+
 	stmt, err := txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		logger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v", stagingTableName, err)
@@ -329,14 +332,10 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 			if err != nil {
 				if err == io.EOF {
 					logger.Infof("PG: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
-					break
 				} else {
 					logger.Errorf("PG: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
-					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
-					gzipReader.Close()
-					gzipFile.Close()
-					return
 				}
+				break
 
 			}
 			var recordInterface []interface{}
@@ -348,6 +347,9 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 				}
 			}
 			_, err = stmt.Exec(recordInterface...)
+			if err != nil {
+				break
+			}
 		}
 		gzipReader.Close()
 		gzipFile.Close()
@@ -407,7 +409,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 
 func (pg *HandleT) loadUserTables() (err error) {
 	logger.Infof("PG: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Upload.Schema[warehouseutils.IdentifiesTable], true)
+	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Upload.Schema[warehouseutils.IdentifiesTable], true, true)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.IdentifiesTable, err, pg.DbHandle)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), pg.DbHandle)
