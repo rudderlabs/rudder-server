@@ -180,7 +180,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB ", *clearDB)
 
-	backendconfig.Setup(application.Features)
+	backendconfig.Setup()
 	if enableSuppressUserFeature {
 		if application.Features().SuppressUser != nil {
 			backendconfig.SetupSuppressUserFeature()
