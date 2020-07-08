@@ -18,7 +18,7 @@ type Config struct {
 	AccessKeyID  string
 	AccessKey    string
 	EventBusName string
-	ResourceID   []string
+	ResourceID   []map[string]interface{}
 	DetailType   string
 }
 
@@ -48,7 +48,7 @@ func NewProducer(destinationConfig interface{}) (eventbridge.EventBridge, error)
 
 // Produce creates a producer and send data to EventBridge.
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string) {
-	
+
 	// get producer
 	ebc, ok := producer.(eventbridge.EventBridge)
 	if !ok {
