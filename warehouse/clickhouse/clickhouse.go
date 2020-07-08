@@ -135,6 +135,19 @@ func columnsWithDataTypes(columns map[string]string, prefix string, sortKeyField
 	return strings.Join(arr[:], ",")
 }
 
+func columnsWithDataTypesForUsersTable(columns map[string]string, prefix string, sortKeyField string) string {
+	var arr []string
+	for name, dataType := range columns {
+		if name == sortKeyField {
+			arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToClickHouse[dataType]))
+		} else {
+			arr = append(arr, fmt.Sprintf(`%s%s SimpleAggregateFunction(anyLast, Nullable(%s))`, prefix, name, rudderDataTypesMapToClickHouse[dataType]))
+		}
+
+	}
+	return strings.Join(arr[:], ",")
+}
+
 func (ch *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	return
 }
@@ -595,6 +608,19 @@ func (ch *HandleT) createSchema() (err error) {
 	return
 }
 
+func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err error) {
+	sortKeyField := "received_at"
+	if _, ok := columns["received_at"]; !ok {
+		sortKeyField = "uuid_ts"
+		if _, ok = columns["uuid_ts"]; !ok {
+			sortKeyField = "id"
+		}
+	}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = ReplacingMergeTree() order by %s `, ch.Namespace, name, columnsWithDataTypesForUsersTable(columns, "", sortKeyField), sortKeyField)
+	logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
+	_, err = ch.Db.Exec(sqlStatement)
+}
+
 // createTable create a table in the database provided in control plane
 func (ch *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sortKeyField := "received_at"
@@ -604,8 +630,13 @@ func (ch *HandleT) createTable(name string, columns map[string]string) (err erro
 			sortKeyField = "id"
 		}
 	}
-	//TODO: if table name is users uses aggregate merge tree
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = ReplacingMergeTree() order by %s `, ch.Namespace, name, columnsWithDataTypes(columns, "", sortKeyField), sortKeyField)
+
+	var sqlStatement string
+	if name == warehouseutils.UsersTable {
+		return ch.createUsersTable(name, columns)
+	}
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = ReplacingMergeTree() order by %s `, ch.Namespace, name, columnsWithDataTypes(columns, "", sortKeyField), sortKeyField)
+
 	logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
