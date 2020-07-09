@@ -69,9 +69,6 @@ var putOutput *firehose.PutRecordOutput = nil
 var errorRec error
 var event, typeCall gjson.Result
 
-func init() {
-}
-
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 	var config Config
@@ -79,10 +76,13 @@ func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 	err = json.Unmarshal(jsonConfig, &config)
 	var s *session.Session
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 021c289d... changing for firehose
 =======
 
 >>>>>>> 17234333... updated for firehose
+=======
+>>>>>>> 98a2ae58... addressed review comments
 	if config.AccessKeyID == "" || config.AccessKey == "" {
 		s = session.Must(session.NewSession(&aws.Config{
 			Region: aws.String(config.Region),
@@ -206,26 +206,28 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	}
 	putOutput = nil
 	for i := 0; i < len(deliveryStreamMap); i++ {
+		var count int = 0
 		var statusCode int
 		if event.Value() == deliveryStreamMap[i]["from"] {
 			putOutput, errorRec = fh.PutRecord(&firehose.PutRecordInput{
 				DeliveryStreamName: aws.String(deliveryStreamMap[i]["to"]),
 				Record:             &firehose.Record{Data: value},
 			})
+			count = 1
 		}
 		if errorRec != nil {
+			statusCode = 500
 			if awsErr, ok := errorRec.(awserr.Error); ok {
 				if reqErr, ok := errorRec.(awserr.RequestFailure); ok {
-					logger.Errorf("error in firehose :: %v", awsErr.Code())
-					fmt.Println(reqErr.StatusCode(), reqErr.RequestID())
+					logger.Errorf("error in firehose :: %v for event %v", awsErr.Code(), event.Value())
 					statusCode = reqErr.StatusCode()
 				}
-			} else {
-				statusCode = 500
 			}
 			return statusCode, errorRec.Error(), errorRec.Error()
 		}
-
+		if count == 1 {
+			break
+		}
 	}
 	var message string
 	if putOutput != nil {
@@ -237,6 +239,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			message = fmt.Sprintf("No delivery stream set for this %v event", typeCall)
 		}
 	}
+	logger.Infof(message)
 	return 200, "Success", message
 }
 <<<<<<< HEAD

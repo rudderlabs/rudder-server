@@ -1,4 +1,5 @@
 version: "3.7"
+
 services:
   db:
     image: postgres:11-alpine
@@ -9,6 +10,9 @@ services:
     ports:
       - "6432:5432"
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 98a2ae58... addressed review comments
   backend:
     depends_on:
       - db
@@ -40,6 +44,7 @@ services:
     image: minio/minio
     ports:
       - "9000:9000"
+<<<<<<< HEAD
     command: server /data
 =======
   # backend:
@@ -75,3 +80,6 @@ services:
   #     - "9000:9000"
   #   command: server /data
 >>>>>>> 021c289d... changing for firehose
+=======
+    command: server /data
+>>>>>>> 98a2ae58... addressed review comments
