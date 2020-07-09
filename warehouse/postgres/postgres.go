@@ -143,17 +143,18 @@ func (pg *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 // FetchSchema queries postgres and returns the schema associated with provided namespace
 func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	pg.Warehouse = warehouse
-	pg.Db, err = connect(pg.getConnectionCredentials())
+	dbHandle, err := connect(pg.getConnectionCredentials())
 	if err != nil {
 		return
 	}
+	defer dbHandle.Close()
 
 	schema = make(map[string]map[string]string)
 	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type
 									FROM INFORMATION_SCHEMA.COLUMNS
 									WHERE table_schema = '%s' and table_name not like '%s%s'`, namespace, stagingTablePrefix, "%")
 
-	rows, err := pg.Db.Query(sqlStatement)
+	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		logger.Errorf("PG: Error in fetching schema from postgres destination:%v, query: %v", pg.Warehouse.Destination.ID, sqlStatement)
 		return

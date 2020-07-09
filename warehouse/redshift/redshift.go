@@ -229,7 +229,7 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 // FetchSchema queries redshift and returns the schema assoiciated with provided namespace
 func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	rs.Warehouse = warehouse
-	rs.Db, err = connect(RedshiftCredentialsT{
+	dbHandle, err := connect(RedshiftCredentialsT{
 		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
 		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
 		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
@@ -239,13 +239,14 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	if err != nil {
 		return
 	}
+	defer dbHandle.Close()
 
 	schema = make(map[string]map[string]string)
 	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type, character_maximum_length
 									FROM INFORMATION_SCHEMA.COLUMNS
 									WHERE table_schema = '%s' and table_name not like '%s%s'`, namespace, stagingTablePrefix, "%")
 
-	rows, err := rs.Db.Query(sqlStatement)
+	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		logger.Errorf("RS: Error in fetching schema from redshift destination:%v, query: %v", rs.Warehouse.Destination.ID, sqlStatement)
 		return
@@ -796,6 +797,7 @@ func (rs *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	if err != nil {
 		return err
 	}
+	defer rs.Db.Close()
 	currSchema, err := warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
 	if err != nil {
 		panic(err)
