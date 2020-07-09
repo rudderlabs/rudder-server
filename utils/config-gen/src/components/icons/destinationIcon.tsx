@@ -11,6 +11,7 @@ import { ReactComponent as Minio } from '@svg/minio.svg';
 import { ReactComponent as Redshift } from '@svg/rs.svg';
 import { ReactComponent as BigQuery } from '@svg/bq.svg';
 import { ReactComponent as Snowflake } from '@svg/snowflake.svg';
+import { ReactComponent as Postgres } from '@svg/postgres.svg';
 import { ReactComponent as AppsFlyer } from '@svg/af.svg';
 import { ReactComponent as Mailchimp } from '@svg/mc.svg';
 import { ReactComponent as HotJar } from '@svg/hotjar.svg';
@@ -30,9 +31,27 @@ import { ReactComponent as KEEN } from '@svg/keen.svg';
 import { ReactComponent as KissMetrics } from '@svg/kissmetrics.svg';
 import { ReactComponent as CustomerIO } from '@svg/customerio.svg';
 import { ReactComponent as Chartbeat } from '@svg/chartbeat.svg';
-import { ReactComponent as Comscore } from '@svg/heap.svg';
+import { ReactComponent as Comscore } from '@svg/comscore.svg';
 import { ReactComponent as Firebase } from '@svg/firebase.svg';
 import { ReactComponent as Leanplum } from '@svg/leanplum.svg';
+import { ReactComponent as Fullstory } from '@svg/fullstory.svg';
+import { ReactComponent as Webhook } from '@svg/webhook.svg';
+import { ReactComponent as Personalize } from '@svg/personalize.svg';
+import { ReactComponent as Bugsnag } from '@svg/bugsnag.svg';
+import { ReactComponent as Lotame } from '@svg/lotame.svg';
+import { ReactComponent as Slack } from '@svg/slack.svg';
+import { ReactComponent as AdobeAnalytics } from '@svg/adobe_analytics.svg';
+import { ReactComponent as Kinesis } from '@svg/kinesis.svg';
+import { ReactComponent as Drift } from '@svg/drift.svg';
+import { ReactComponent as Marketo } from '@svg/marketo.svg';
+import { ReactComponent as Optimizely } from '@svg/optimizely.svg';
+import { ReactComponent as Twitter } from '@svg/twitter.svg';
+import { ReactComponent as Pardot } from '@svg/salesforce.svg';
+import { ReactComponent as Taplytics } from '@svg/taplytics.svg';
+import { ReactComponent as Zendesk } from '@svg/zendesk.svg';
+import { ReactComponent as Kafka } from '@svg/kafka.svg';
+import { ReactComponent as AzureEventHub } from '@svg/azure_event_hub.svg';
+import { ReactComponent as Iterable } from '@svg/iterable.svg';
 import theme from '@css/theme';
 
 const DestinationIcon = (props: any) => {
@@ -48,6 +67,8 @@ const DestinationIcon = (props: any) => {
     case 'mp':
       return <Mixpanel width={width} height={height} />;
     case 'fb':
+      return <Facebook width={width} height={height} />;
+    case 'facebook_pixel':
       return <Facebook width={width} height={height} />;
     case 'adj':
       return <Adjust width={width} height={height} />;
@@ -65,6 +86,8 @@ const DestinationIcon = (props: any) => {
       return <BigQuery width={width} height={height} />;
     case 'snowflake':
       return <Snowflake width={width} height={height} />;
+    case 'postgres':
+      return <Postgres width={width} height={height} />;
     case 'af':
       return <AppsFlyer height={height} />;
     case 'mailchimp':
@@ -105,10 +128,46 @@ const DestinationIcon = (props: any) => {
       return <Chartbeat width={width} height={height} />;
     case 'comscore':
       return <Comscore width={width} height={height} />;
+    case 'fullstory':
+      return <Fullstory width={width} height={height} />;
     case 'firebase':
       return <Firebase width={width} height={height} />;
     case 'leanplum':
       return <Leanplum width={width} height={height} />;
+    case 'webhook':
+      return <Webhook width={width} height={height} />;
+    case 'personalize':
+      return <Personalize width={width} height={height} />;
+    case 'lotame':
+      return <Lotame width={width} height={height} />;
+    case 'slack':
+      return <Slack width={width} height={height} />;
+    case 'bugsnag':
+      return <Bugsnag width={width} height={height} />;
+    case 'adobe_analytics':
+      return <AdobeAnalytics width={width} height={height} />;
+    case 'kinesis':
+      return <Kinesis width={width} height={height} />;
+    case 'drift':
+      return <Drift width={width} height={height} />;
+    case 'marketo':
+      return <Marketo width={width} height={height} />;
+    case 'pardot':
+      return <Pardot width={width} height={height} />;
+    case 'optimizely':
+      return <Optimizely width={width} height={height} />;
+    case 'twitter_ads':
+      return <Twitter width={width} height={height} />;
+    case 'taplytics':
+      return <Taplytics width={width} height={height} />;
+    case 'zendesk':
+      return <Zendesk width={width} height={height} />;
+    case 'kafka':
+      return <Kafka width={width} height={height} />;
+    case 'azure_event_hub':
+      return <AzureEventHub width={width} height={height} />;
+    case 'iterable':
+      return <Iterable width={width} height={height} />;
     default:
       break;
   }

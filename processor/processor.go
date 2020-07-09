@@ -674,6 +674,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, metadata
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			CustomVal:    metadata.DestinationType,
+			UserID:       failedEvent.Metadata.UserID, // will be nil if it went throgh user transformation
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 	}

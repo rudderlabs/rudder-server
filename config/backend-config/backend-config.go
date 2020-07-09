@@ -33,6 +33,7 @@ var (
 	configJSONPath                   string
 	curSourceJSON                    SourcesT
 	curSourceJSONLock                sync.RWMutex
+	initializedLock                  sync.RWMutex
 	initialized                      bool
 	LastSync                         string
 
@@ -223,6 +224,8 @@ func configUpdate(statConfigBackendError stats.RudderStats) {
 		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
 		curSourceJSON = sourceJSON
 		curSourceJSONLock.Unlock()
+		initializedLock.Lock()
+		defer initializedLock.Unlock()
 		initialized = true
 		LastSync = time.Now().Format(time.RFC3339)
 		Eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
@@ -288,9 +291,12 @@ WaitForConfig waits until backend config has been initialized
 */
 func (bc *CommonBackendConfig) WaitForConfig() {
 	for {
+		initializedLock.RLock()
 		if initialized {
+			initializedLock.RUnlock()
 			break
 		}
+		initializedLock.RUnlock()
 		log.Info("Waiting for initializing backend config")
 		time.Sleep(time.Duration(pollInterval))
 	}

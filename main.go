@@ -158,15 +158,12 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	validators.InitializeEnv()
 
 	// Check if there is a probable inconsistent state of Data
-	misc.AppStartTime = time.Now().Unix()
 	if diagnostics.EnableServerStartMetric {
 		diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
 			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
 		})
 	}
 
-	migrationMode := application.Options().MigrationMode
-	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, migrationMode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
 
@@ -178,7 +175,6 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB ", *clearDB)
 
-	backendconfig.Setup()
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
 
@@ -187,6 +183,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		config.SetBool("JobsDB.backup.gw.enabled", false)
 	}
 
+	migrationMode := application.Options().MigrationMode
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode)
 	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode)
@@ -311,6 +308,7 @@ func main() {
 	http.HandleFunc("/version", versionHandler)
 
 	application.Setup()
+	backendconfig.Setup()
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -325,7 +323,10 @@ func main() {
 		os.Exit(1)
 	}()
 
+	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
+		db.HandleRecovery(options.NormalMode, options.DegradedMode, options.MaintenanceMode, options.MigrationMode, misc.AppStartTime)
+
 		rruntime.Go(func() {
 			startRudderCore(&options.ClearDB, options.NormalMode, options.DegradedMode, options.MaintenanceMode)
 		})
