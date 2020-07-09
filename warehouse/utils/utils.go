@@ -743,7 +743,7 @@ func SnowflakeCloudProvider(config interface{}) string {
 }
 
 func ObjectStorageType(destType string, config interface{}) string {
-	if destType == "RS" && destType == "BQ" {
+	if destType == "RS" || destType == "BQ" {
 		return ObjectStorageMap[destType]
 	}
 	c := config.(map[string]interface{})
