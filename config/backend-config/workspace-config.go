@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
+
+	"github.com/cenkalti/backoff"
 )
 
 type WorkspaceConfig struct {
@@ -44,7 +47,21 @@ func (workspaceConfig *WorkspaceConfig) GetRegulations() (RegulationsT, bool) {
 // getFromApi gets the workspace config from api
 func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 	url := fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL)
-	respBody, statusCode, err := workspaceConfig.makeHTTPRequest(url)
+
+	var respBody []byte
+	var statusCode int
+
+	operation := func() error {
+		var fetchError error
+		respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(url)
+		return fetchError
+	}
+
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		log.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %w, retrying after %v", err, t)
+	})
+
 	if err != nil {
 		log.Error("Error sending request to the server", err)
 		return SourcesT{}, false
@@ -105,7 +122,21 @@ func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]Work
 	totalWorkspaceRegulations := []WorkspaceRegulationT{}
 	for {
 		url := fmt.Sprintf("%s/workspaces/regulations?start=%d&limit=%d", configBackendURL, start, maxRegulationsPerRequest)
-		respBody, statusCode, err := workspaceConfig.makeHTTPRequest(url)
+
+		var respBody []byte
+		var statusCode int
+
+		operation := func() error {
+			var fetchError error
+			respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(url)
+			return fetchError
+		}
+
+		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+			log.Errorf("[[ Workspace-config ]] Failed to fetch workspace regulations from API with error: %w, retrying after %v", err, t)
+		})
+
 		if err != nil {
 			log.Error("Error sending request to the server", err)
 			return []WorkspaceRegulationT{}, false
@@ -136,7 +167,20 @@ func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceR
 	totalSourceRegulations := []SourceRegulationT{}
 	for {
 		url := fmt.Sprintf("%s/workspaces/sources/regulations?start=%d&limit=%d", configBackendURL, start, maxRegulationsPerRequest)
-		respBody, statusCode, err := workspaceConfig.makeHTTPRequest(url)
+
+		var respBody []byte
+		var statusCode int
+
+		operation := func() error {
+			var fetchError error
+			respBody, statusCode, fetchError = workspaceConfig.makeHTTPRequest(url)
+			return fetchError
+		}
+
+		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+			log.Errorf("[[ Workspace-config ]] Failed to fetch source regulations from API with error: %w, retrying after %v", err, t)
+		})
 		if err != nil {
 			log.Error("Error sending request to the server", err)
 			return []SourceRegulationT{}, false

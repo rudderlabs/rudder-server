@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
+
+	"github.com/cenkalti/backoff"
 )
 
 //MultiWorkspaceConfig is a struct to hold variables necessary for supporting multiple workspaces.
@@ -52,7 +55,20 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForWriteKey(writ
 func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 
-	respBody, statusCode, err := multiWorkspaceConfig.makeHTTPRequest(url)
+	var respBody []byte
+	var statusCode int
+
+	operation := func() error {
+		var fetchError error
+		respBody, statusCode, fetchError = multiWorkspaceConfig.makeHTTPRequest(url)
+		return fetchError
+	}
+
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		log.Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %w, retrying after %v", err, t)
+	})
+
 	if err != nil {
 		log.Error("Error sending request to the server", err)
 		return SourcesT{}, false
@@ -84,7 +100,21 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
 //GetRegulations returns regulations from all hosted workspaces
 func (multiWorkspaceConfig *MultiWorkspaceConfig) GetRegulations() (RegulationsT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaces", configBackendURL)
-	respBody, statusCode, err := multiWorkspaceConfig.makeHTTPRequest(url)
+
+	var respBody []byte
+	var statusCode int
+
+	operation := func() error {
+		var fetchError error
+		respBody, statusCode, fetchError = multiWorkspaceConfig.makeHTTPRequest(url)
+		return fetchError
+	}
+
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		log.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspaces with error: %w, retrying after %v", err, t)
+	})
+
 	if err != nil {
 		log.Error("Error sending request to the server", err)
 		return RegulationsT{}, false
@@ -124,7 +154,21 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(worksp
 	totalWorkspaceRegulations := []WorkspaceRegulationT{}
 	for {
 		url := fmt.Sprintf("%s/hostedWorkspaceRegulations?workspaceId=%s&start=%d&limit=%d", configBackendURL, workspaceID, start, maxRegulationsPerRequest)
-		respBody, statusCode, err := multiWorkspaceConfig.makeHTTPRequest(url)
+
+		var respBody []byte
+		var statusCode int
+
+		operation := func() error {
+			var fetchError error
+			respBody, statusCode, fetchError = multiWorkspaceConfig.makeHTTPRequest(url)
+			return fetchError
+		}
+
+		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+			log.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspace regulations with error: %w, retrying after %v", err, t)
+		})
+
 		if err != nil {
 			log.Error("Error sending request to the server", err)
 			return []WorkspaceRegulationT{}, false
@@ -155,7 +199,21 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getSourceRegulations(workspace
 	totalSourceRegulations := []SourceRegulationT{}
 	for {
 		url := fmt.Sprintf("%s/hostedSourceRegulations?workspaceId=%s&start=%d&limit=%d", configBackendURL, workspaceID, start, maxRegulationsPerRequest)
-		respBody, statusCode, err := multiWorkspaceConfig.makeHTTPRequest(url)
+
+		var respBody []byte
+		var statusCode int
+
+		operation := func() error {
+			var fetchError error
+			respBody, statusCode, fetchError = multiWorkspaceConfig.makeHTTPRequest(url)
+			return fetchError
+		}
+
+		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+			log.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted source regulations with error: %w, retrying after %v", err, t)
+		})
+
 		if err != nil {
 			log.Error("Error sending request to the server", err)
 			return []SourceRegulationT{}, false
