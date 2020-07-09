@@ -91,10 +91,10 @@ func (mr *MockJobsDBMockRecorder) GetUnprocessed(arg0, arg1, arg2 interface{}) *
 }
 
 // Status mocks base method
-func (m *MockJobsDB) Status() map[string]interface{} {
+func (m *MockJobsDB) Status() interface{} {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Status")
-	ret0, _ := ret[0].(map[string]interface{})
+	ret0, _ := ret[0].(interface{})
 	return ret0
 }
 

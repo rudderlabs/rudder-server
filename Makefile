@@ -12,19 +12,20 @@ mocks: ## Generate all mocks
 	$(GO) generate ./...
 
 test: enterprise-prepare-build mocks ## Run all unit tests
+# removed -p(parallel) inorder to pass builds
 ifdef package
-	$(GINKGO) --randomizeAllSpecs -p --skipPackage=tests $(package)
+	$(GINKGO) -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --skipPackage=tests $(package)
 else
-	$(GINKGO) --randomizeAllSpecs -p --skipPackage=tests ./...
+	$(GINKGO) -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --skipPackage=tests ./...
 endif
 
-build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts	
+build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts
 
 prepare-build: build-sql-migrations enterprise-prepare-build
 
-./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations) 
+./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations)
 	$(GO) run -tags=dev generate-sql-migrations.go
-	
+
 build: prepare-build ## Build rudder-server binary
 	$(eval BUILD_OPTIONS = )
 ifeq ($(RACE_ENABLED), TRUE)
@@ -53,7 +54,7 @@ enterprise-cleanup: ## Cleanup enterprise dependencies, revert to oss version
 
 enterprise-update-commit: ## Updates linked enterprise commit to current commit in ENTERPRISE_DIR
 	@.enterprise/scripts/update-commit.sh
-	
+
 
 enterprise-prepare-build: ## Create ./imports/enterprise.go, to link enterprise packages in binary
 	@if [ -d "./$(ENTERPRISE_DIR)" ]; then \
