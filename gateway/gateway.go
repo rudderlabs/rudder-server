@@ -972,7 +972,6 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	features1 := gateway.application.Features()
 	if features1.SuppressUser != nil {
 		gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
-		fmt.Println("Sumanth Reached in tests")
 	}
 
 	rruntime.Go(func() {

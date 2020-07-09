@@ -5,11 +5,12 @@
 package mock_app
 
 import (
+	reflect "reflect"
+
 	gomock "github.com/golang/mock/gomock"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	jobsdb "github.com/rudderlabs/rudder-server/jobsdb"
 	types "github.com/rudderlabs/rudder-server/utils/types"
-	reflect "reflect"
 )
 
 // MockMigratorFeature is a mock of MigratorFeature interface

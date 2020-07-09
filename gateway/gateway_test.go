@@ -132,6 +132,17 @@ func (c *context) initializeSetupStats() {
 	}
 }
 
+func (c *context) initializeAppFeatures() {
+	c.mockApp.EXPECT().Features().Return(&app.Features{}).AnyTimes()
+}
+
+func (c *context) initializeEnterprizeAppFeatures() {
+	enterpriseFeatures := &app.Features{
+		SuppressUser: c.mockSuppressUserFeature,
+	}
+	c.mockApp.EXPECT().Features().Return(enterpriseFeatures).AnyTimes()
+}
+
 // Initiaze mocks and common expectations
 func (c *context) Setup() {
 	c.asyncHelper.Setup()
@@ -143,9 +154,6 @@ func (c *context) Setup() {
 	c.mockStats = mocksStats.NewMockStats(c.mockCtrl)
 
 	c.initializeSetupStats()
-
-	// Mock enterprise features to be empty Features struct
-	// c.mockApp.EXPECT().Features().Return(&app.Features{}).AnyTimes()
 
 	// During Setup, gateway subscribes to backend config and waits until it is received.
 	c.mockBackendConfig.EXPECT().WaitForConfig().Return().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("wait_for_config"))
@@ -170,11 +178,11 @@ func (c *context) expectWriteKeyStat(name string, writeKey string, count int) *g
 
 	c.mockStats.EXPECT().NewWriteKeyStat(name, stats.CountType, writeKey).
 		Return(mockStat).Times(1).
-		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.new.%s", writeKey)))
+		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.new.%s.%s", name, writeKey)))
 
 	return mockStat.EXPECT().Count(count).
 		Times(1).
-		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.count.%s", writeKey)))
+		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.count.%s.%s", name, writeKey)))
 }
 
 var _ = Describe("Gateway Enterprise", func() {
@@ -186,13 +194,9 @@ var _ = Describe("Gateway Enterprise", func() {
 
 		c.mockSuppressUser = mocksTypes.NewMockSuppressUserI(c.mockCtrl)
 		c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
+		c.initializeEnterprizeAppFeatures()
 
-		enterpriseFeatures := &app.Features{
-			SuppressUser: c.mockSuppressUserFeature,
-		}
-		// Mock enterprise features to be empty Features struct
-		c.mockApp.EXPECT().Features().Return(enterpriseFeatures).AnyTimes()
-		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any()).AnyTimes()
+		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any()).AnyTimes().Return(c.mockSuppressUser)
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(NormalUserID, SourceIDEnabled, WriteKeyEnabled).Return(false).AnyTimes()
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled, WriteKeyEnabled).Return(true).AnyTimes()
 
@@ -213,34 +217,33 @@ var _ = Describe("Gateway Enterprise", func() {
 		var clearDB = false
 		gateway := &HandleT{}
 
-		FIt("should not accept events from suppress users", func() {
-			// c.mockSuppressUser.IsSuppressedUser()
+		BeforeEach(func() {
 			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockStats, &clearDB, c.mockVersionHandler)
+		})
 
+		FIt("should not accept events from suppress users", func() {
+			suppressedUserEventData := fmt.Sprintf("{\"batch\":[{\"userId\": \"%s\"}]}", SuppressedUserID)
+
+			c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job"))
+			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("batch-size"))
+
+			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
+			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
+			// Why GET
+			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), 200, "OK")
+		})
+
+		FIt("should accept events from normal users", func() {
 			allowedUserEventData := fmt.Sprintf("{\"batch\":[{\"userId\": \"%s\"}]}", NormalUserID)
 
-			// c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-			// c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-
-			// c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
-			// c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 1)
-			// c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
-			// c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 0)
-
-			// // Why GET
-			// expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(allowedUserEventData)), 200, "OK")
-
-			// workspaceID := "some-workspace-id"
-
-			// c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes().Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("workspace-id"))
 			c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job"))
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("batch-size"))
 
 			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 			c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 1)
-			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
-			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 0)
-
+			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
+			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 1)
+			// Why GET
 			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(allowedUserEventData)), 200, "OK")
 		})
 	})
