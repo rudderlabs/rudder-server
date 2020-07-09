@@ -415,7 +415,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 
 func (pg *HandleT) loadUserTables() (err error) {
 	logger.Infof("PG: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Upload.Schema[warehouseutils.IdentifiesTable], true)
+	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Upload.Schema[warehouseutils.IdentifiesTable], true, true)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.IdentifiesTable, err, pg.DbHandle)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), pg.DbHandle)
@@ -538,7 +538,7 @@ func (pg *HandleT) load() (errList []error) {
 		cMap := columnMap
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
-			_, loadError := pg.loadTable(tName, cMap, false)
+			_, loadError := pg.loadTable(tName, cMap, false, false)
 			if loadError != nil {
 				errList = append(errList, loadError)
 			}
