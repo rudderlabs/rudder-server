@@ -660,10 +660,17 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, metadata
 		}
 
 		id := uuid.NewV4()
+		// marshal error to escape any quotes in error string etc.
+		marshalledErr, err := json.Marshal(failedEvent.Error)
+		if err != nil {
+			logger.Errorf(`[Processor: getFailedEventJobs] Failed to marshal failedEvent error: %v`, failedEvent.Error)
+			marshalledErr = []byte(`"Unknown error: rudder-server failed to marshal error returned by rudder-transformer"`)
+		}
+
 		newFailedJob := jobsdb.JobT{
 			UUID:         id,
 			EventPayload: payload,
-			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "error": "%v", "status_code": "%v", "stage": "%s"}`, metadata.SourceID, metadata.DestinationID, failedEvent.Error, failedEvent.StatusCode, stage)),
+			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "error": %s, "status_code": "%v", "stage": "%s"}`, metadata.SourceID, metadata.DestinationID, string(marshalledErr), failedEvent.StatusCode, stage)),
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			CustomVal:    metadata.DestinationType,
