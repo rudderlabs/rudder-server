@@ -70,18 +70,25 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		return statusCode, err.Error(), err.Error()
 	}
 	putOutput = nil
+	var deliveryStreamMapTo string = ""
+	var deliveryStreamMapFrom string = ""
+
 	for i := 0; i < len(deliveryStreamMap); i++ {
-		var count int = 0
-		var statusCode int
-		if event.Value() == deliveryStreamMap[i]["from"] {
-			putOutput, errorRec = fh.PutRecord(&firehose.PutRecordInput{
-				DeliveryStreamName: aws.String(deliveryStreamMap[i]["to"]),
-				Record:             &firehose.Record{Data: value},
-			})
-			count = 1
+		deliveryStreamMapFrom = deliveryStreamMap[i]["from"]
+		if event.Value() == deliveryStreamMapFrom {
+			deliveryStreamMapTo = deliveryStreamMap[i]["to"]
+			break
 		}
+	}
+
+	if deliveryStreamMapTo != "" {
+		putOutput, errorRec = fh.PutRecord(&firehose.PutRecordInput{
+			DeliveryStreamName: aws.String(deliveryStreamMapTo),
+			Record:             &firehose.Record{Data: value},
+		})
+
 		if errorRec != nil {
-			statusCode = 500
+			statusCode := 500
 			if awsErr, ok := errorRec.(awserr.Error); ok {
 				if reqErr, ok := errorRec.(awserr.RequestFailure); ok {
 					logger.Errorf("error in firehose :: %v for event %v", awsErr.Code(), event.Value())
@@ -89,9 +96,6 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 				}
 			}
 			return statusCode, errorRec.Error(), errorRec.Error()
-		}
-		if count == 1 {
-			break
 		}
 	}
 	var message string
