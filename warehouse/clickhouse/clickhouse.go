@@ -416,6 +416,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 	}
 
 	if err = txn.Commit(); err != nil {
+
 		logger.Errorf("CH: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
