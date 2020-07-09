@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -187,10 +188,10 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	}
 
 	migrationMode := application.Options().MigrationMode
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode)
-	procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode)
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode, false)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode, true)
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode, true)
+	procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
 
 	enableGateway := true
 
@@ -348,6 +349,8 @@ func main() {
 			startWarehouseService()
 		})
 	}
+
+	rruntime.Go(admin.StartServer)
 
 	misc.KeepProcessAlive()
 }

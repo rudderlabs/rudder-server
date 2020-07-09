@@ -1417,7 +1417,7 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 	return func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
 		destinationDefinitionName := expectations.destinationDefinitionName
 
-		Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/%s?whSchemaVersion=", destinationDefinitionName)))
+		Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/%s", destinationDefinitionName)))
 		Expect(breakIntoBatchWhenUserChanges).To(BeFalse())
 
 		Expect(clientEvents).To(HaveLen(expectations.events))

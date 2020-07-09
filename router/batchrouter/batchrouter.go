@@ -797,4 +797,5 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	rruntime.Go(func() {
 		brt.mainLoop()
 	})
+	adminInstance.registerBatchRouter(destType, brt)
 }

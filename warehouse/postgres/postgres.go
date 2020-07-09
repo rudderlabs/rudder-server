@@ -143,17 +143,18 @@ func (pg *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 // FetchSchema queries postgres and returns the schema associated with provided namespace
 func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	pg.Warehouse = warehouse
-	pg.Db, err = connect(pg.getConnectionCredentials())
+	dbHandle, err := connect(pg.getConnectionCredentials())
 	if err != nil {
 		return
 	}
+	defer dbHandle.Close()
 
 	schema = make(map[string]map[string]string)
 	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type
 									FROM INFORMATION_SCHEMA.COLUMNS
 									WHERE table_schema = '%s' and table_name not like '%s%s'`, namespace, stagingTablePrefix, "%")
 
-	rows, err := pg.Db.Query(sqlStatement)
+	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		logger.Errorf("PG: Error in fetching schema from postgres destination:%v, query: %v", pg.Warehouse.Destination.ID, sqlStatement)
 		return
@@ -253,7 +254,7 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 
 }
 
-func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forceLoad bool) (stagingTableName string, err error) {
+func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, skipTempTableDelete bool, forceLoad bool) (stagingTableName string, err error) {
 	if !forceLoad {
 		status, _ := warehouseutils.GetTableUploadStatus(pg.Upload.ID, tableName, pg.DbHandle)
 		if status == warehouseutils.ExportedDataState {
@@ -298,6 +299,9 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
 		return
 	}
+	if !skipTempTableDelete {
+		defer pg.dropStagingTable(stagingTableName)
+	}
 
 	stmt, err := txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
 	if err != nil {
@@ -334,8 +338,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 				} else {
 					logger.Errorf("PG: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
 					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
-					gzipReader.Close()
-					gzipFile.Close()
+					txn.Rollback()
 					return
 				}
 
@@ -349,6 +352,12 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 				}
 			}
 			_, err = stmt.Exec(recordInterface...)
+			if err != nil {
+				logger.Errorf("PG: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
+				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+				txn.Rollback()
+				return
+			}
 		}
 		gzipReader.Close()
 		gzipFile.Close()
@@ -408,7 +417,7 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 
 func (pg *HandleT) loadUserTables() (err error) {
 	logger.Infof("PG: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Upload.Schema[warehouseutils.IdentifiesTable], true)
+	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Upload.Schema[warehouseutils.IdentifiesTable], true, true)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.IdentifiesTable, err, pg.DbHandle)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), pg.DbHandle)
@@ -480,7 +489,7 @@ func (pg *HandleT) loadUserTables() (err error) {
 
 	primaryKey := "id"
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
-	logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+	logger.Infof("PG: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
@@ -531,7 +540,7 @@ func (pg *HandleT) load() (errList []error) {
 		cMap := columnMap
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
-			_, loadError := pg.loadTable(tName, cMap, false)
+			_, loadError := pg.loadTable(tName, cMap, false, false)
 			if loadError != nil {
 				errList = append(errList, loadError)
 			}
@@ -557,6 +566,15 @@ func (pg *HandleT) createSchema() (err error) {
 	logger.Infof("PG: Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
+}
+
+func (pg *HandleT) dropStagingTable(stagingTableName string) {
+	logger.Infof("PG: dropping table %+v\n", stagingTableName)
+	_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, stagingTableName))
+	if err != nil {
+		logger.Errorf("PG:  Error dropping staging table %s in postgres: %v", stagingTableName, err)
+	}
+
 }
 
 func (pg *HandleT) createTable(name string, columns map[string]string) (err error) {
