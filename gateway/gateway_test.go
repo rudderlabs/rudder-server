@@ -221,7 +221,7 @@ var _ = Describe("Gateway Enterprise", func() {
 			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockStats, &clearDB, c.mockVersionHandler)
 		})
 
-		FIt("should not accept events from suppress users", func() {
+		It("should not accept events from suppress users", func() {
 			suppressedUserEventData := fmt.Sprintf("{\"batch\":[{\"userId\": \"%s\"}]}", SuppressedUserID)
 
 			c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job"))
@@ -233,7 +233,7 @@ var _ = Describe("Gateway Enterprise", func() {
 			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), 200, "OK")
 		})
 
-		FIt("should accept events from normal users", func() {
+		It("should accept events from normal users", func() {
 			allowedUserEventData := fmt.Sprintf("{\"batch\":[{\"userId\": \"%s\"}]}", NormalUserID)
 
 			c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job"))
@@ -256,6 +256,7 @@ var _ = Describe("Gateway", func() {
 	BeforeEach(func() {
 		c = &context{}
 		c.Setup()
+		c.initializeAppFeatures()
 
 		// setup static requirements of dependencies
 		logger.Setup()
