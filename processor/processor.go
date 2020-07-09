@@ -664,7 +664,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, metadata
 		marshalledErr, err := json.Marshal(failedEvent.Error)
 		if err != nil {
 			logger.Errorf(`[Processor: getFailedEventJobs] Failed to marshal failedEvent error: %v`, failedEvent.Error)
-			continue
+			marshalledErr = []byte(`"Unknown error: rudder-server failed to marshal error returned by rudder-tranformer"`)
 		}
 
 		newFailedJob := jobsdb.JobT{
