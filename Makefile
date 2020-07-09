@@ -12,11 +12,11 @@ mocks: ## Generate all mocks
 	$(GO) generate ./...
 
 test: enterprise-prepare-build mocks ## Run all unit tests
-# remove -p(parallel)  inorder to pass builds
+# removed -p(parallel) inorder to pass builds
 ifdef package
-	$(GINKGO) --randomizeAllSpecs --skipPackage=tests $(package)
+	$(GINKGO) --randomizeAllSpecs --skipPackage=tests $(package) --cover -coverprofile=profile.out -covermode=atomic
 else
-	$(GINKGO) --randomizeAllSpecs  --skipPackage=tests ./...
+	$(GINKGO) --randomizeAllSpecs  --skipPackage=tests ./... --cover -coverprofile=profile.out -covermode=atomic
 endif
 
 build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts
