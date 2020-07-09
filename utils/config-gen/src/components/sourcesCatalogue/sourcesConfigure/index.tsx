@@ -18,6 +18,15 @@ export const markdown = {
   iOS: raw('./iOS.md'),
   Javascript: raw('./Javascript.md'),
   Unity: raw('./Unity.md'),
+  Go: raw('./Go.md'),
+  Node: raw('./Node.md'),
+  Ruby: raw('./Ruby.md'),
+  ReactNative: raw('./ReactNative.md'),
+  Python: raw('./Python.md'),
+  HTTP: raw('./HTTP.md'),
+  AMP: raw('./AMP.md'),
+  LOOKER: raw('./LOOKER.md'),
+  JAVA: raw('./JAVA.md'),
 };
 
 export interface ISourceConfigureProps {

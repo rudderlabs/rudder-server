@@ -30,6 +30,7 @@ import (
 	"sort"
 	"unicode/utf8"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"strconv"
@@ -69,6 +70,8 @@ type JobsDB interface {
 	GetToRetry(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
 	GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
 	GetExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
+
+	Status() interface{}
 }
 
 /*
@@ -224,6 +227,24 @@ func (jd *HandleT) assert(cond bool, errorString string) {
 	}
 }
 
+func (jd *HandleT) Status() interface{} {
+	statusObj := map[string]interface{}{
+		"dataset-list":    jd.getDSList(false),
+		"dataset-ranges":  jd.getDSRangeList(false),
+		"backups-enabled": jd.BackupSettings.BackupEnabled,
+	}
+	emptyResults := make(map[string]interface{})
+	for ds, entry := range jd.dsEmptyResultCache {
+		emptyResults[ds.JobTable] = entry
+	}
+	statusObj["empty-results-cache"] = emptyResults
+
+	if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
+		statusObj["migration-state"] = jd.migrationState
+	}
+	return statusObj
+}
+
 type jobStateT struct {
 	isValid    bool
 	isTerminal bool
@@ -372,7 +393,7 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string) {
+func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
 
 	var err error
 	jd.migrationState.migrationMode = migrationMode
@@ -381,6 +402,9 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]bool{}
+	if registerStatusHandler {
+		admin.RegisterStatusHandler(tablePrefix+"-jobsdb", jd)
+	}
 
 	jd.BackupSettings = jd.getBackUpSettings()
 

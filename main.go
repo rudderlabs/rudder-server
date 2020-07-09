@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -158,15 +159,12 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	validators.InitializeEnv()
 
 	// Check if there is a probable inconsistent state of Data
-	misc.AppStartTime = time.Now().Unix()
 	if diagnostics.EnableServerStartMetric {
 		diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
 			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
 		})
 	}
 
-	migrationMode := application.Options().MigrationMode
-	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, migrationMode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
 
@@ -178,7 +176,6 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB ", *clearDB)
 
-	backendconfig.Setup()
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
 
@@ -187,10 +184,11 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 		config.SetBool("JobsDB.backup.gw.enabled", false)
 	}
 
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode)
-	procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode)
+	migrationMode := application.Options().MigrationMode
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode, false)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode, true)
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode, true)
+	procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
 
 	enableGateway := true
 
@@ -311,6 +309,7 @@ func main() {
 	http.HandleFunc("/version", versionHandler)
 
 	application.Setup()
+	backendconfig.Setup()
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -325,7 +324,10 @@ func main() {
 		os.Exit(1)
 	}()
 
+	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
+		db.HandleRecovery(options.NormalMode, options.DegradedMode, options.MaintenanceMode, options.MigrationMode, misc.AppStartTime)
+
 		rruntime.Go(func() {
 			startRudderCore(&options.ClearDB, options.NormalMode, options.DegradedMode, options.MaintenanceMode)
 		})
@@ -337,6 +339,8 @@ func main() {
 			startWarehouseService()
 		})
 	}
+
+	rruntime.Go(admin.StartServer)
 
 	misc.KeepProcessAlive()
 }

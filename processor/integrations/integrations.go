@@ -148,15 +148,14 @@ func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
 }
 
 // GetUserIDFromTransformerResponse parses the payload to get userId
-func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) string {
-
-	var userID string
+func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) (userID string, found bool) {
 	parsedJSON := gjson.ParseBytes(transformRaw)
-	var ok bool
-	if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
-		userID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
+	userIDVal := parsedJSON.Get("userId").Value()
+
+	if userIDVal != nil {
+		return fmt.Sprintf("%v", userIDVal), true
 	}
-	return userID
+	return
 }
 
 //FilterClientIntegrations parses the destination names from the
