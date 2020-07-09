@@ -20,6 +20,17 @@ github.com/Azure/azure-pipeline-go/pipeline
 github.com/Azure/azure-storage-blob-go/azblob
 # github.com/BurntSushi/toml v0.3.1
 github.com/BurntSushi/toml
+# github.com/ClickHouse/clickhouse-go v1.3.12
+github.com/ClickHouse/clickhouse-go
+github.com/ClickHouse/clickhouse-go/lib/binary
+github.com/ClickHouse/clickhouse-go/lib/cityhash102
+github.com/ClickHouse/clickhouse-go/lib/column
+github.com/ClickHouse/clickhouse-go/lib/data
+github.com/ClickHouse/clickhouse-go/lib/leakypool
+github.com/ClickHouse/clickhouse-go/lib/lz4
+github.com/ClickHouse/clickhouse-go/lib/protocol
+github.com/ClickHouse/clickhouse-go/lib/types
+github.com/ClickHouse/clickhouse-go/lib/writebuffer
 # github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d
 github.com/EagleChen/mapmutex
 # github.com/EagleChen/restrictor v0.0.0-20180420073700-9b81bbf8df1d
@@ -83,10 +94,10 @@ github.com/bugsnag/bugsnag-go/headers
 github.com/bugsnag/bugsnag-go/sessions
 # github.com/bugsnag/panicwrap v1.2.0
 github.com/bugsnag/panicwrap
-# github.com/cenkalti/backoff/v4 v4.0.2
-github.com/cenkalti/backoff/v4
 # github.com/cespare/xxhash v1.1.0
 github.com/cespare/xxhash
+# github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58
+github.com/cloudflare/golz4
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
 # github.com/dgraph-io/badger v1.6.1
@@ -285,8 +296,6 @@ github.com/segmentio/backo-go
 github.com/segmentio/ksuid
 # github.com/snowflakedb/gosnowflake v1.3.4
 github.com/snowflakedb/gosnowflake
-# github.com/spaolacci/murmur3 v1.1.0
-github.com/spaolacci/murmur3
 # github.com/spf13/afero v1.2.2
 github.com/spf13/afero
 github.com/spf13/afero/mem
