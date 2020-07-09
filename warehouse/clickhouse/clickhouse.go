@@ -381,7 +381,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 					break
 				} else {
 					logger.Errorf("PG: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
-					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 					txn.Rollback()
 					return
 				}
@@ -397,7 +397,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 			_, err = stmt.Exec(recordInterface...)
 			if err != nil {
 				logger.Errorf("PG: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
-				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 				txn.Rollback()
 				return
 			}
