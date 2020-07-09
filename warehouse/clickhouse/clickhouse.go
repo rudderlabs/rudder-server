@@ -88,7 +88,9 @@ var partitionKeyMap = map[string]string{
 }
 
 func connect(cred credentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("tcp://localhost:9000?debug=true&username=%s&password=%s&database=%s",
+	url := fmt.Sprintf("tcp://%s:%s?debug=true&username=%s&password=%s&database=%s",
+		cred.host,
+		cred.port,
 		cred.user,
 		cred.password,
 		cred.dbName,
