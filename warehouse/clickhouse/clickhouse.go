@@ -407,7 +407,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		gzipReader.Close()
 		gzipFile.Close()
 	}
-	if err != nil {
+	if err != nil && err != io.EOF {
 		txn.Rollback()
 		logger.Errorf("CH: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
