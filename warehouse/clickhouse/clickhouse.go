@@ -377,9 +377,14 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 			record, err = csvReader.Read()
 			if err != nil {
 				if err == io.EOF {
-					logger.Infof("CH: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
+					logger.Infof("PG: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
+					break
+				} else {
+					logger.Errorf("PG: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
+					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+					txn.Rollback()
+					return
 				}
-				break
 			}
 			var recordInterface []interface{}
 			for key, value := range record {
@@ -391,14 +396,17 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 			}
 			_, err = stmt.Exec(recordInterface...)
 			if err != nil {
-				break
+				logger.Errorf("PG: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
+				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, tableName, err, pg.DbHandle)
+				txn.Rollback()
+				return
 			}
 
 		}
 		gzipReader.Close()
 		gzipFile.Close()
 	}
-	if err != nil && err != io.EOF {
+	if err != nil {
 		txn.Rollback()
 		logger.Errorf("CH: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
