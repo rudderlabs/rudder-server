@@ -175,7 +175,7 @@ var sampleBackendConfig = backendconfig.SourcesT{
 						ID:          "enabled-destination-a-definition-id",
 						Name:        "enabled-destination-a-definition-name",
 						DisplayName: "enabled-destination-a-definition-display-name",
-						Config:      "",
+						Config:      map[string]interface{}{},
 					},
 				},
 				{
@@ -187,7 +187,7 @@ var sampleBackendConfig = backendconfig.SourcesT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",
 						DisplayName: "enabled-destination-b-definition-display-name",
-						Config:      "",
+						Config:      map[string]interface{}{},
 					},
 					Transformations: []backendconfig.TransformationT{
 						{
@@ -208,7 +208,7 @@ var sampleBackendConfig = backendconfig.SourcesT{
 						ID:          "destination-definition-disabled",
 						Name:        "destination-definition-name-disabled",
 						DisplayName: "destination-definition-display-name-disabled",
-						Config:      "",
+						Config:      map[string]interface{}{},
 					},
 				},
 			},
