@@ -394,6 +394,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 				recordInterface = append(recordInterface, data)
 
 			}
+
 			_, err = stmt.Exec(recordInterface...)
 			if err != nil {
 				logger.Errorf("PG: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
