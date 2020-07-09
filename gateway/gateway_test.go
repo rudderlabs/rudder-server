@@ -198,7 +198,7 @@ var _ = Describe("Gateway", func() {
 			requestIP := gjson.GetBytes(responseData, "requestIP")
 			batch := gjson.GetBytes(responseData, "batch")
 
-			Expect(time.Parse(misc.RFC3339Milli, receivedAt.String())).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+			Expect(time.Parse(misc.RFC3339Milli, receivedAt.String())).To(BeTemporally("~", time.Now(), 100*time.Millisecond))
 			Expect(writeKey.String()).To(Equal(WriteKeyEnabled))
 			Expect(requestIP.String()).To(Equal(TestRemoteAddress))
 			Expect(batch.Array()).To(HaveLen(batchLength))
