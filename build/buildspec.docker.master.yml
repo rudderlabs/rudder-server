@@ -20,6 +20,7 @@ phases:
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
       - (cd && go get github.com/onsi/ginkgo/ginkgo)
+      - (cd && go get github.com/golang/mock/mockgen)
   build:
     commands:
       - export GO111MODULE=on
