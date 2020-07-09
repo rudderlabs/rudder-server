@@ -1,6 +1,6 @@
 package app
 
-//go:generate mockgen -destination=../mocks/app/mock_features.go -package=mock_app github.com/rudderlabs/rudder-server/app MigratorFeature,WebhookFeature
+//go:generate mockgen -destination=../mocks/app/mock_features.go -package=mock_app github.com/rudderlabs/rudder-server/app MigratorFeature,WebhookFeature,SuppressUserFeature
 
 import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"

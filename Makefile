@@ -1,4 +1,4 @@
-.PHONY: help default build run run-dev test mocks prepare-build enterprise-init enterprise-cleanup enterprise-update-commit enterprise-prepare-build
+.PHONY: help default build run run-dev test prepare-build enterprise-init enterprise-cleanup enterprise-update-commit enterprise-prepare-build
 
 GO=go
 GINKGO=ginkgo
@@ -13,7 +13,7 @@ mocks: ## Generate all mocks
 
 test: enterprise-prepare-build mocks ## Run all unit tests
 ifdef package
-	$(GINKGO) --randomizeAllSpecs -p --skipPackage=tests $(package)
+	$(GINKGO) --randomizeAllSpecs --skipPackage=tests $(package)
 else
 	$(GINKGO) --randomizeAllSpecs -p --skipPackage=tests ./...
 endif

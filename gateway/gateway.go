@@ -23,6 +23,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/dgraph-io/badger"
+	. "github.com/onsi/ginkgo"
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -259,6 +260,7 @@ func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebReque
 }
 
 func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
+	defer GinkgoRecover()
 	for breq := range userWebRequestWorker.batchRequestQ {
 		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
 		var jobList []*jobsdb.JobT
@@ -967,8 +969,10 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
 	}
 
-	if gateway.application.Features().SuppressUser != nil {
+	features1 := gateway.application.Features()
+	if features1.SuppressUser != nil {
 		gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
+		fmt.Println("Sumanth Reached in tests")
 	}
 
 	rruntime.Go(func() {
