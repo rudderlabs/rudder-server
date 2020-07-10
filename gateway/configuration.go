@@ -54,6 +54,13 @@ func SetEnableRateLimit(b bool) bool {
 	return prev
 }
 
+//SetEnableSuppressUserFeature overrides enableSuppressUserFeature configuration and returns previous value
+func SetEnableSuppressUserFeature(b bool) bool {
+	prev := enableSuppressUserFeature
+	enableSuppressUserFeature = b
+	return prev
+}
+
 //SetEnableDedup overrides enableDedup configuration and returns previous value
 func SetEnableDedup(b bool) bool {
 	prev := enableDedup

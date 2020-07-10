@@ -52,6 +52,9 @@ func (helper *AsyncTestHelper) ExpectAndNotifyCallbackWithName(name string) func
 
 	helper.wg.Add(1)
 	return func(...interface{}) {
+		helper.waitingMapLock.Lock()
+		defer helper.waitingMapLock.Unlock()
+
 		helper.wg.Done()
 		helper.waitingMap[name]--
 	}
