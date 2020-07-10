@@ -26,6 +26,7 @@ phases:
       - export GO111MODULE=on
       - VERSION="master"
       - DATE=$(date "+%F,%T")
+      - git submodule init
       - git submodule update --recursive
 
       - sed -i -e 's/^CONFIG_BACKEND_URL=.*$/CONFIG_BACKEND_URL=https:\/\/api.rudderlabs.com/' build/docker.env
