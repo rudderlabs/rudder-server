@@ -32,7 +32,7 @@ func loadConfig() {
 	// Enable rate limit on incoming events. false by default
 	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
 	// Enable suppress user feature. true by default
-	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", true)
+	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
 }

@@ -75,7 +75,7 @@ func loadConfig() {
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	// Enable suppress user feature. true by default
-	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", true)
+	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
 }
 
 // Test Function
