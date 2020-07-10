@@ -107,6 +107,7 @@ func connect(cred credentialsT) (*sql.DB, error) {
 func init() {
 	loadConfig()
 }
+
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	maxParallelLoads = config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3)
