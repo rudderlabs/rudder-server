@@ -26,6 +26,7 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
 	mocksStats "github.com/rudderlabs/rudder-server/mocks/stats"
+	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -42,6 +43,13 @@ const (
 	SourceIDDisabled          = "disabled-source"
 	TestRemoteAddressWithPort = "test.com:80"
 	TestRemoteAddress         = "test.com"
+
+	// CurrentWorkspaceID        = "workspace-id"
+	// WorkspaceSuppressedUserID = "suppressed-user-1"
+	SuppressedUserID = "suppressed-user-2"
+	NormalUserID     = "normal-user-1"
+	// SecondEnabledSourceID     = "enabled-source-2"
+	// SecondEnabledWriteKey     = "enabled-write-key-2"
 )
 
 var testTimeout = 10 * time.Second
@@ -59,8 +67,29 @@ var sampleBackendConfig = backendconfig.SourcesT{
 			WriteKey: WriteKeyEnabled,
 			Enabled:  true,
 		},
+		// {
+		// 	ID:       SecondEnabledSourceID,
+		// 	WriteKey: SecondEnabledWriteKey,
+		// 	Enabled:  true,
+		// },
 	},
 }
+
+// var sampleRegulationsConfig = backendconfig.RegulationsT{
+// 	WorkspaceRegulations: []backendconfig.WorkspaceRegulationT{
+// 		ID: "1",
+// 		RegulationType: "Suppress",
+// 		WorkspaceID: CurrentWorkspaceID,
+// 		UserID: WorkspaceSuppressedUserID
+// 	},
+// 	SourceRegulations: []backendconfig.SourceRegulationT{
+// 		ID: "2",
+// 		RegulationType: "Suppress",
+// 		WorkspaceID: CurrentWorkspaceID,
+// 		SourceID: SourceIDEnabled,
+// 		UserID: SourceSuppressedUserID
+// 	},
+// }
 
 type context struct {
 	asyncHelper testutils.AsyncTestHelper
@@ -76,18 +105,13 @@ type context struct {
 	mockStatGatewayBatchSize    *mocksStats.MockRudderStats
 	mockStatGatewayBatchTime    []*mocksStats.MockRudderStats
 	mockVersionHandler          func(w http.ResponseWriter, r *http.Request)
+
+	//Enterprise mocks
+	mockSuppressUser        *mocksTypes.MockSuppressUserI
+	mockSuppressUserFeature *mocksApp.MockSuppressUserFeature
 }
 
-// Initiaze mocks and common expectations
-func (c *context) Setup() {
-	c.asyncHelper.Setup()
-	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockApp = mocksApp.NewMockInterface(c.mockCtrl)
-	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
-	c.mockStats = mocksStats.NewMockStats(c.mockCtrl)
-
+func (c *context) initializeSetupStats() {
 	c.mockStatGatewayBatchSize = mocksStats.NewMockRudderStats(c.mockCtrl)
 	c.mockStatGatewayBatchTime = make([]*mocksStats.MockRudderStats, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
@@ -106,9 +130,30 @@ func (c *context) Setup() {
 			return c.mockStatGatewayBatchTime[index]
 		})
 	}
+}
 
-	// Mock enterprise features to be empty Features struct
+func (c *context) initializeAppFeatures() {
 	c.mockApp.EXPECT().Features().Return(&app.Features{}).AnyTimes()
+}
+
+func (c *context) initializeEnterprizeAppFeatures() {
+	enterpriseFeatures := &app.Features{
+		SuppressUser: c.mockSuppressUserFeature,
+	}
+	c.mockApp.EXPECT().Features().Return(enterpriseFeatures).AnyTimes()
+}
+
+// Initiaze mocks and common expectations
+func (c *context) Setup() {
+	c.asyncHelper.Setup()
+	c.mockCtrl = gomock.NewController(GinkgoT())
+	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
+	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
+	c.mockApp = mocksApp.NewMockInterface(c.mockCtrl)
+	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
+	c.mockStats = mocksStats.NewMockStats(c.mockCtrl)
+
+	c.initializeSetupStats()
 
 	// During Setup, gateway subscribes to backend config and waits until it is received.
 	c.mockBackendConfig.EXPECT().WaitForConfig().Return().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("wait_for_config"))
@@ -133,12 +178,78 @@ func (c *context) expectWriteKeyStat(name string, writeKey string, count int) *g
 
 	c.mockStats.EXPECT().NewWriteKeyStat(name, stats.CountType, writeKey).
 		Return(mockStat).Times(1).
-		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.new.%s", writeKey)))
+		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.new.%s.%s", name, writeKey)))
 
 	return mockStat.EXPECT().Count(count).
 		Times(1).
-		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.count.%s", writeKey)))
+		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.count.%s.%s", name, writeKey)))
 }
+
+var _ = Describe("Gateway Enterprise", func() {
+	var c *context
+
+	BeforeEach(func() {
+		c = &context{}
+		c.Setup()
+
+		c.mockSuppressUser = mocksTypes.NewMockSuppressUserI(c.mockCtrl)
+		c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
+		c.initializeEnterprizeAppFeatures()
+
+		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any()).AnyTimes().Return(c.mockSuppressUser)
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(NormalUserID, SourceIDEnabled, WriteKeyEnabled).Return(false).AnyTimes()
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled, WriteKeyEnabled).Return(true).AnyTimes()
+
+		// setup static requirements of dependencies
+		logger.Setup()
+		stats.Setup()
+
+		// setup common environment, override in BeforeEach when required
+		SetEnableRateLimit(false)
+		SetEnableDedup(false)
+		SetEnableSuppressUserFeature(true)
+	})
+
+	AfterEach(func() {
+		c.Finish()
+	})
+
+	Context("Suppress users", func() {
+		var clearDB = false
+		gateway := &HandleT{}
+
+		BeforeEach(func() {
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockStats, &clearDB, c.mockVersionHandler)
+		})
+
+		It("should not accept events from suppress users", func() {
+			suppressedUserEventData := fmt.Sprintf("{\"batch\":[{\"userId\": \"%s\"}]}", SuppressedUserID)
+
+			c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job"))
+			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("batch-size"))
+
+			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
+			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
+			// Why GET
+			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), 200, "OK")
+		})
+
+		It("should accept events from normal users", func() {
+			allowedUserEventData := fmt.Sprintf("{\"batch\":[{\"userId\": \"%s\"}]}", NormalUserID)
+
+			c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job"))
+			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("batch-size"))
+
+			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
+			c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 1)
+			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
+			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 1)
+			// Why GET
+			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(allowedUserEventData)), 200, "OK")
+		})
+	})
+
+})
 
 var _ = Describe("Gateway", func() {
 	var c *context
@@ -146,6 +257,7 @@ var _ = Describe("Gateway", func() {
 	BeforeEach(func() {
 		c = &context{}
 		c.Setup()
+		c.initializeAppFeatures()
 
 		// setup static requirements of dependencies
 		logger.Setup()

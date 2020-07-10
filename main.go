@@ -58,6 +58,7 @@ var (
 	moduleLoadLock                   sync.Mutex
 	routerLoaded                     bool
 	processorLoaded                  bool
+	enableSuppressUserFeature        bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -73,6 +74,8 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
+	// Enable suppress user feature. true by default
+	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
 }
 
 // Test Function
@@ -310,6 +313,13 @@ func main() {
 
 	application.Setup()
 	backendconfig.Setup()
+	if enableSuppressUserFeature {
+		if application.Features().SuppressUser != nil {
+			backendconfig.SetupSuppressUserFeature()
+		} else {
+			logger.Info("Suppress User feature is enterprise only. Unable to poll regulations.")
+		}
+	}
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)

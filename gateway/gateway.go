@@ -24,6 +24,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/dgraph-io/badger"
+	. "github.com/onsi/ginkgo"
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -70,6 +71,7 @@ var (
 	maxReqSize                                                  int
 	enableDedup                                                 bool
 	enableRateLimit                                             bool
+	enableSuppressUserFeature                                   bool
 	dedupWindow, diagnosisTickerTime                            time.Duration
 )
 
@@ -127,6 +129,7 @@ type HandleT struct {
 	webRequestBatchCount         uint64
 	userWebRequestWorkers        []*userWebRequestWorkerT
 	webhookHandler               types.WebHookI
+	suppressUserHandler          types.SuppressUserI
 	versionHandler               func(w http.ResponseWriter, r *http.Request)
 }
 
@@ -258,6 +261,7 @@ func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebReque
 }
 
 func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
+	defer GinkgoRecover()
 	for breq := range userWebRequestWorker.batchRequestQ {
 		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
 		var jobList []*jobsdb.JobT
@@ -372,6 +376,15 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 			}
 
+			if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
+				userID := gjson.GetBytes(body, "batch.0.userId").String()
+				if gateway.suppressUserHandler.IsSuppressedUser(userID, gateway.getSourceIDForWriteKey(writeKey), writeKey) {
+					req.done <- ""
+					preDbStoreCount++
+					continue
+				}
+			}
+
 			logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
@@ -383,7 +396,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       gjson.GetBytes(body, "batch.0.anonymousId").Str,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, enabledWriteKeysSourceMap[writeKey], counter)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, gateway.getSourceIDForWriteKey(writeKey), counter)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
@@ -536,6 +549,17 @@ func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 		return false
 	}
 	return true
+}
+
+func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+
+	if _, ok := enabledWriteKeysSourceMap[writeKey]; ok {
+		return enabledWriteKeysSourceMap[writeKey]
+	}
+
+	return ""
 }
 
 //Function to route incoming web requests to userWebRequestBatcher
@@ -743,7 +767,7 @@ func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 		backendConfigMode = "JSON"
 	}
 
-	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync)
+	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync)
 	w.Write([]byte(healthVal))
 }
 
@@ -928,6 +952,11 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	//gateway.webhookHandler should be initialised before workspace config fetch.
 	if gateway.application.Features().Webhook != nil {
 		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
+	}
+
+	features1 := gateway.application.Features()
+	if features1.SuppressUser != nil {
+		gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
 	}
 
 	rruntime.Go(func() {
