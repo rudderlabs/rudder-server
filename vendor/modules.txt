@@ -94,6 +94,8 @@ github.com/bugsnag/bugsnag-go/headers
 github.com/bugsnag/bugsnag-go/sessions
 # github.com/bugsnag/panicwrap v1.2.0
 github.com/bugsnag/panicwrap
+# github.com/cenkalti/backoff/v4 v4.0.2
+github.com/cenkalti/backoff/v4
 # github.com/cespare/xxhash v1.1.0
 github.com/cespare/xxhash
 # github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58
@@ -297,6 +299,8 @@ github.com/segmentio/backo-go
 github.com/segmentio/ksuid
 # github.com/snowflakedb/gosnowflake v1.3.4
 github.com/snowflakedb/gosnowflake
+# github.com/spaolacci/murmur3 v1.1.0
+github.com/spaolacci/murmur3
 # github.com/spf13/afero v1.2.2
 github.com/spf13/afero
 github.com/spf13/afero/mem
