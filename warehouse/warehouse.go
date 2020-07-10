@@ -394,6 +394,7 @@ func (wh *HandleT) areTableUploadsCreated(upload warehouseutils.UploadT) bool {
 }
 
 func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[string]map[string]string) (err error) {
+
 	//Using transactions for bulk copying
 	txn, err := wh.dbHandle.Begin()
 	if err != nil {
