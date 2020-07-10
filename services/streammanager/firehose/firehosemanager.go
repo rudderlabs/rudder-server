@@ -66,10 +66,6 @@ type Config struct {
 	MapEvents   []map[string]string
 }
 
-var putOutput *firehose.PutRecordOutput = nil
-var errorRec error
-var event, typeCall gjson.Result
-
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 	var config Config
@@ -210,18 +206,22 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		return statusCode, err.Error(), err.Error()
 	}
 
-	deliveryStreamMapTo := parsedJSON.Get("deliveryStreamMapTo").Value().(interface{})
+	if parsedJSON.Get("deliveryStreamMapTo").Value() != nil {
+		deliveryStreamMapTo := parsedJSON.Get("deliveryStreamMapTo").Value().(interface{})
+		deliveryStreamMapToInput, err := json.Marshal(deliveryStreamMapTo)
+		if err != nil {
+			logger.Errorf("error in firehose :: %v", err.Error())
+			statusCode := 500
+			return statusCode, err.Error(), err.Error()
+		}
 
-	deliveryStreamMapToInput, err := json.Marshal(deliveryStreamMapTo)
+		deliveryStreamMapToInputString := strings.Trim(string(deliveryStreamMapToInput), "\"")
 
-	deliveryStreamMapToInputString := strings.Trim(string(deliveryStreamMapToInput), "\"")
-
-	if deliveryStreamMapToInputString != "" {
 		putOutput, errorRec = fh.PutRecord(&firehose.PutRecordInput{
 			DeliveryStreamName: aws.String(string(deliveryStreamMapToInputString)),
 			Record:             &firehose.Record{Data: value},
 		})
-		logger.Infof("%v", putOutput)
+
 		if errorRec != nil {
 			statusCode := 500
 			if awsErr, ok := errorRec.(awserr.Error); ok {
@@ -232,23 +232,11 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			}
 			return statusCode, errorRec.Error(), errorRec.Error()
 		}
-	}
-	var message string
 
-	if putOutput != nil {
-		message = fmt.Sprintf("Message delivered with Record information %v", putOutput)
-	} else {
-		if event.Value() != nil {
-			message = fmt.Sprintf("No delivery stream set for event %v", event)
-			logger.Error(message)
-			return 400, message, message
-		} else {
-			message = fmt.Sprintf("No delivery stream set for this %v event", typeCall)
-			logger.Error(message)
-			return 400, message, message
+		if putOutput != nil {
+			message = fmt.Sprintf("Message delivered with Record information %v", putOutput)
 		}
 	}
-	logger.Debug(message)
 	return 200, "Success", message
 }
 <<<<<<< HEAD
