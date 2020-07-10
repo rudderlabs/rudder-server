@@ -95,7 +95,8 @@ var _ = Describe("workspace-config", func() {
 			Expect(ok).To(BeFalse())
 		})
 		It("Expect to make the correct actions if fail to create the request", func() {
-			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError"))
+			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
+			mockLogger.EXPECT().Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %w, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
 			config, ok := backendConfig.Get()
 			Expect(config).To(Equal(SourcesT{}))
@@ -103,7 +104,8 @@ var _ = Describe("workspace-config", func() {
 		})
 		It("Expect to make the correct actions if fail to send the request", func() {
 			testRequest, _ := http.NewRequest("GET", "", nil)
-			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil)
+			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).AnyTimes()
+			mockLogger.EXPECT().Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %w, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
 			config, ok := backendConfig.Get()
 			Expect(config).To(Equal(SourcesT{}))
