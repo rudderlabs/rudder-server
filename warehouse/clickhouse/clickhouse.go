@@ -334,7 +334,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
 	fileNames, err := ch.DownloadLoadFiles(tableName)
-	defer misc.RemoveFilePaths(fileNames...)
+	//defer misc.RemoveFilePaths(fileNames...)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
@@ -358,6 +358,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			logger.Errorf("ch: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
+			misc.RemoveFilePaths(objectFileName)
 			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 			return
 		}
@@ -366,6 +367,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
 			logger.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
+			misc.RemoveFilePaths(objectFileName)
 			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 			gzipFile.Close()
 			return
@@ -381,6 +383,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 					break
 				} else {
 					logger.Errorf("PG: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
+					misc.RemoveFilePaths(objectFileName)
 					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 					txn.Rollback()
 					return
@@ -398,6 +401,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 			_, err = stmt.Exec(recordInterface...)
 			if err != nil {
 				logger.Errorf("PG: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
+				misc.RemoveFilePaths(objectFileName)
 				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 				txn.Rollback()
 				return
@@ -406,6 +410,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		}
 		gzipReader.Close()
 		gzipFile.Close()
+		misc.RemoveFilePaths(objectFileName)
 	}
 	if err != nil && err != io.EOF {
 		txn.Rollback()
