@@ -39,7 +39,7 @@ var (
 	curRegulationJSONLock                 sync.RWMutex
 	initializedLock                       sync.RWMutex
 	initialized                           bool
-	regulationsInitialized                bool
+	waitForRegulations                    bool
 	LastSync                              string
 	LastRegulationSync                    string
 	maxRegulationsPerRequest              int
@@ -186,10 +186,10 @@ func loadConfig() {
 	workspaceToken = config.GetWorkspaceToken()
 
 	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
-	regulationsPollInterval = config.GetDuration("BackendConfig.regulationsPollIntervalInS", 5) * time.Second
+	regulationsPollInterval = config.GetDuration("BackendConfig.regulationsPollIntervalInS", 300) * time.Second
 	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
-	maxRegulationsPerRequest = config.GetInt("Gateway.maxRegulationsPerRequest", 10)
+	maxRegulationsPerRequest = config.GetInt("BackendConfig.maxRegulationsPerRequest", 1000)
 }
 
 func MakePostRequest(url string, endpoint string, data interface{}) (response []byte, ok bool) {
@@ -290,9 +290,9 @@ func regulationsUpdate(statConfigBackendError stats.RudderStats) {
 		curRegulationJSONLock.Lock()
 		curRegulationJSON = regulationJSON
 		curRegulationJSONLock.Unlock()
-		initializedLock.Lock() //Using initializedLock for regulationsInitialized too.
+		initializedLock.Lock() //Using initializedLock for waitForRegulations too.
 		defer initializedLock.Unlock()
-		regulationsInitialized = true
+		waitForRegulations = false
 		LastRegulationSync = time.Now().Format(time.RFC3339)
 		Eb.Publish(string(TopicRegulations), regulationJSON)
 	}
@@ -397,7 +397,7 @@ WaitForConfig waits until backend config has been initialized
 func (bc *CommonBackendConfig) WaitForConfig() {
 	for {
 		initializedLock.RLock()
-		if initialized && regulationsInitialized {
+		if initialized && !waitForRegulations {
 			initializedLock.RUnlock()
 			break
 		}
@@ -408,7 +408,7 @@ func (bc *CommonBackendConfig) WaitForConfig() {
 }
 
 // Setup backend config
-func Setup() {
+func Setup(pollRegulations bool) {
 	if isMultiWorkspace {
 		backendConfig = new(MultiWorkspaceConfig)
 	} else {
@@ -423,14 +423,16 @@ func Setup() {
 		pollConfigUpdate()
 	})
 
-	regulationsInitialized = true
+	if pollRegulations {
+		startRegulationPolling()
+	}
 
 	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
 }
 
-// SetupSuppressUserFeature - setups enterprise backend config features
-func SetupSuppressUserFeature() {
-	regulationsInitialized = false
+// startRegulationPolling - starts enterprise backend regulations polling
+func startRegulationPolling() {
+	waitForRegulations = true
 
 	rruntime.Go(func() {
 		pollRegulations()

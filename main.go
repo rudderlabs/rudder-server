@@ -311,15 +311,18 @@ func main() {
 
 	http.HandleFunc("/version", versionHandler)
 
+	//application & backend setup should be done before starting any new goroutines.
 	application.Setup()
-	backendconfig.Setup()
+
+	var pollRegulations bool
 	if enableSuppressUserFeature {
 		if application.Features().SuppressUser != nil {
-			backendconfig.SetupSuppressUserFeature()
+			pollRegulations = true
 		} else {
 			logger.Info("Suppress User feature is enterprise only. Unable to poll regulations.")
 		}
 	}
+	backendconfig.Setup(pollRegulations)
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
