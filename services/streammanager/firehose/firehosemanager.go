@@ -11,6 +11,7 @@ package firehose
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 <<<<<<< HEAD
@@ -77,12 +78,16 @@ func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 	var s *session.Session
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 021c289d... changing for firehose
 =======
 
 >>>>>>> 17234333... updated for firehose
 =======
 >>>>>>> 98a2ae58... addressed review comments
+=======
+
+>>>>>>> 66c2d94a... changed logic
 	if config.AccessKeyID == "" || config.AccessKey == "" {
 		s = session.Must(session.NewSession(&aws.Config{
 			Region: aws.String(config.Region),
@@ -189,64 +194,61 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	config := Config{}
 =======
 	var config Config
+<<<<<<< HEAD
 >>>>>>> 4a2aa8f2... added sending simple events to firehose
 
+=======
+>>>>>>> 66c2d94a... changed logic
 	jsonConfig, err := json.Marshal(destConfig)
 	err = json.Unmarshal(jsonConfig, &config)
-	deliveryStreamMap := config.MapEvents
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
 
-	event = parsedJSON.Get("message.event")
-	typeCall = parsedJSON.Get("message.type")
 	if err != nil {
 		logger.Errorf("error in firehose :: %v", err.Error())
 		statusCode := 500
 		return statusCode, err.Error(), err.Error()
 	}
-	putOutput = nil
-	var deliveryStreamMapTo string = ""
-	var deliveryStreamMapFrom string = ""
 
-	for i := 0; i < len(deliveryStreamMap); i++ {
-		deliveryStreamMapFrom = deliveryStreamMap[i]["from"]
-		if event.Value() == deliveryStreamMapFrom {
-			deliveryStreamMapTo = deliveryStreamMap[i]["to"]
-			break
-		}
-	}
+	deliveryStreamMapTo := parsedJSON.Get("deliveryStreamMapTo").Value().(interface{})
 
-	if deliveryStreamMapTo != "" {
+	deliveryStreamMapToInput, err := json.Marshal(deliveryStreamMapTo)
+
+	deliveryStreamMapToInputString := strings.Trim(string(deliveryStreamMapToInput), "\"")
+
+	if deliveryStreamMapToInputString != "" {
 		putOutput, errorRec = fh.PutRecord(&firehose.PutRecordInput{
-			DeliveryStreamName: aws.String(deliveryStreamMapTo),
+			DeliveryStreamName: aws.String(string(deliveryStreamMapToInputString)),
 			Record:             &firehose.Record{Data: value},
 		})
-
+		logger.Infof("%v", putOutput)
 		if errorRec != nil {
 			statusCode := 500
-			logger.Error("Outside if : %v", errorRec.Error())
 			if awsErr, ok := errorRec.(awserr.Error); ok {
 				if reqErr, ok := errorRec.(awserr.RequestFailure); ok {
-					logger.Errorf("error in firehose :: %v for event %v", awsErr.Code(), event.Value())
+					logger.Errorf("error in firehose :: %v + %v", awsErr.Code(), reqErr.Error())
 					statusCode = reqErr.StatusCode()
 				}
 			}
-			logger.Error("event %v", event.Value())
-			logger.Error("error errorRec %v", errorRec.Error())
 			return statusCode, errorRec.Error(), errorRec.Error()
 		}
 	}
 	var message string
+
 	if putOutput != nil {
-		message = fmt.Sprintf("Message delivered for event %v and Record information %v", event, putOutput)
+		message = fmt.Sprintf("Message delivered with Record information %v", putOutput)
 	} else {
 		if event.Value() != nil {
 			message = fmt.Sprintf("No delivery stream set for event %v", event)
+			logger.Error(message)
+			return 400, message, message
 		} else {
 			message = fmt.Sprintf("No delivery stream set for this %v event", typeCall)
+			logger.Error(message)
+			return 400, message, message
 		}
 	}
-	logger.Infof(message)
+	logger.Debug(message)
 	return 200, "Success", message
 }
 <<<<<<< HEAD
