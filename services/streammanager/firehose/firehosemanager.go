@@ -89,12 +89,15 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 		if errorRec != nil {
 			statusCode := 500
+			logger.Error("Outside if : %v", errorRec.Error())
 			if awsErr, ok := errorRec.(awserr.Error); ok {
 				if reqErr, ok := errorRec.(awserr.RequestFailure); ok {
 					logger.Errorf("error in firehose :: %v for event %v", awsErr.Code(), event.Value())
 					statusCode = reqErr.StatusCode()
 				}
 			}
+			logger.Error("event %v", event.Value())
+			logger.Error("error errorRec %v", errorRec.Error())
 			return statusCode, errorRec.Error(), errorRec.Error()
 		}
 	}
