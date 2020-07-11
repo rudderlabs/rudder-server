@@ -379,7 +379,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       gjson.GetBytes(body, "batch.0.anonymousId").Str,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, enabledWriteKeysSourceMap[writeKey], counter)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, gateway.getSourceIDForWriteKey(writeKey), counter)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
@@ -532,6 +532,17 @@ func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 		return false
 	}
 	return true
+}
+
+func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+
+	if _, ok := enabledWriteKeysSourceMap[writeKey]; ok {
+		return enabledWriteKeysSourceMap[writeKey]
+	}
+
+	return ""
 }
 
 //Function to route incoming web requests to userWebRequestBatcher
