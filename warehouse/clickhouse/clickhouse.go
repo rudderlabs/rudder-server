@@ -50,11 +50,16 @@ var rudderDataTypesMapToClickHouse = map[string]string{
 
 //TODO: add addition clickhouse types which maps to rudder transformer data types
 var clickhouseDataTypesMapToRudder = map[string]string{
-	"Int64":    "int",
-	"Float64":  "float",
-	"String":   "string",
-	"DateTime": "datetime",
-	"boolean":  "boolean",
+	"Int64":              "int",
+	"Float64":            "float",
+	"String":             "string",
+	"DateTime":           "datetime",
+	"UInt8":              "boolean",
+	"Nullable(Int64)":    "int",
+	"Nullable(Float64)":  "float",
+	"Nullable(String)":   "string",
+	"Nullable(DateTime)": "datetime",
+	"Nullable(UInt8)":    "boolean",
 }
 
 type HandleT struct {
@@ -284,13 +289,13 @@ func getDataFromType(data string, datatype string) interface{} {
 	case "int":
 		i, err := strconv.Atoi(data)
 		if err != nil {
-			return ""
+			return nil
 		}
 		return i
 	case "float":
 		f, err := strconv.ParseFloat(data, 64)
 		if err != nil {
-			return ""
+			return nil
 		}
 		return f
 	case "datetime":
@@ -302,7 +307,7 @@ func getDataFromType(data string, datatype string) interface{} {
 	case "boolean":
 		b, err := strconv.ParseBool(data)
 		if err != nil {
-			return ""
+			return nil
 		}
 		if b {
 			return 1
