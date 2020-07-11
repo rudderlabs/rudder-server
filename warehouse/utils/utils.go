@@ -539,7 +539,7 @@ func GetObjectName(providerConfig interface{}, location string) (objectName stri
 	if err != nil {
 		return "", err
 	}
-	return fm.GetObjectNameFromLocation(location), nil
+	return fm.GetObjectNameFromLocation(location)
 }
 
 // GetS3Location parses path-style location http url to return in s3:// format

@@ -26,11 +26,6 @@ phases:
       - export GO111MODULE=on
       - VERSION="master"
       - DATE=$(date "+%F,%T")
-      - git init
-      - git remote add origin "git@github.com:rudderlabs/rudder-server.git"
-      - git fetch origin
-      - git branch
-      - git checkout -f "$CODEBUILD_RESOLVED_SOURCE_VERSION"
       - git submodule init
       - git submodule update --recursive
 

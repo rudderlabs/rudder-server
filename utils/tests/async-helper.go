@@ -24,8 +24,9 @@ import (
 //			asyncHelper.WaitWithTimeout(time.Second)
 //		})
 type AsyncTestHelper struct {
-	wg         sync.WaitGroup
-	waitingMap map[string]int
+	wg             sync.WaitGroup
+	waitingMap     map[string]int
+	waitingMapLock sync.RWMutex
 }
 
 // ExpectAndNotifyCallback Adds one to this helper's WaitGroup, and provides a callback that calls Done on it.
@@ -41,6 +42,9 @@ func (helper *AsyncTestHelper) ExpectAndNotifyCallback() func(...interface{}) {
 // Should be used for gomock Do calls that trigger via mocked functions executed in a goroutine.
 func (helper *AsyncTestHelper) ExpectAndNotifyCallbackWithName(name string) func(...interface{}) {
 
+	helper.waitingMapLock.Lock()
+	defer helper.waitingMapLock.Unlock()
+
 	if _, ok := helper.waitingMap[name]; !ok {
 		helper.waitingMap[name] = 0
 	}
@@ -48,6 +52,9 @@ func (helper *AsyncTestHelper) ExpectAndNotifyCallbackWithName(name string) func
 
 	helper.wg.Add(1)
 	return func(...interface{}) {
+		helper.waitingMapLock.Lock()
+		defer helper.waitingMapLock.Unlock()
+
 		helper.wg.Done()
 		helper.waitingMap[name]--
 	}
@@ -75,6 +82,8 @@ func (helper *AsyncTestHelper) RunTestWithTimeout(f func(), d time.Duration) {
 		defer ginkgo.GinkgoRecover()
 		f()
 	}, func() {
+		helper.waitingMapLock.RLock()
+		defer helper.waitingMapLock.RUnlock()
 		for k, v := range helper.waitingMap {
 			fmt.Println(k, "", v)
 		}
