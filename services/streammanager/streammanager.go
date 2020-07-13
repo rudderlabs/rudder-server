@@ -19,16 +19,11 @@ func NewProducer(destinationConfig interface{}, destination string) (interface{}
 	case "FIREHOSE":
 		producer, err := firehose.NewProducer(destinationConfig)
 		return producer, err
-<<<<<<< HEAD
-	case "FIREHOSE":
-		producer, err := firehose.NewProducer(destinationConfig)
-=======
 	case "KAFKA":
 		producer, err := kafka.NewProducer(destinationConfig)
 		return producer, err
 	case "KINESIS":
 		producer, err := kinesis.NewProducer(destinationConfig)
->>>>>>> 9d497bfc... addressed the review comments
 		return producer, err
 	default:
 		return nil, fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
