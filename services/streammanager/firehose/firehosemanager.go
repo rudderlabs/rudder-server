@@ -208,11 +208,11 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if parsedJSON.Get("deliveryStreamMapTo").Value() != nil {
 		deliveryStreamMapToInputString, ok := parsedJSON.Get("deliveryStreamMapTo").Value().(string)
 		if !ok {
-			logger.Errorf("error in firehose :: %v", err.Error())
+			var sendMessage string = "error in firehose :: Could not parse delivery stream to string"
+			logger.Errorf(sendMessage)
 			statusCode := 500
-			return statusCode, err.Error(), err.Error()
+			return statusCode, sendMessage, sendMessage
 		}
-		logger.Infof(deliveryStreamMapToInputString)
 
 		putOutput, errorRec = fh.PutRecord(&firehose.PutRecordInput{
 			DeliveryStreamName: aws.String(string(deliveryStreamMapToInputString)),
