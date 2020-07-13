@@ -94,6 +94,9 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		if putOutput != nil {
 			message = fmt.Sprintf("Message delivered with Record information %v", putOutput)
 		}
+		return 200, "Success", message
+	} else {
+		return 400, "Delivery Stream not found", "Delivery Stream not found"
 	}
-	return 200, "Success", message
+
 }
