@@ -290,7 +290,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		logger.Debug("[Processor: addJobsToSessions] Adding a new session id for the user")
 		_, ok = proc.userToSessionIDMap[userID]
 		if !ok {
-			proc.userToSessionIDMap[userID] = fmt.Sprintf("%s:%s",userID,strconv.FormatInt(time.Now().UnixNano()/ 1000000, 10))
+			proc.userToSessionIDMap[userID] = fmt.Sprintf("%s:%s", userID, strconv.FormatInt(time.Now().UnixNano()/ 1000000, 10))
 		}
 		//Add the job to the userID specific lists
 		proc.userJobListMap[userID] = append(proc.userJobListMap[userID], job)
