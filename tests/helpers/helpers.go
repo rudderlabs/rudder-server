@@ -8,10 +8,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sort"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/db"
 	uuid "github.com/satori/go.uuid"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/sjson"
@@ -28,6 +30,7 @@ type EventOptsT struct {
 	ID           string
 	MessageID    string
 	GaVal        int
+	ValString    string
 }
 
 type QueryTrackPayload struct{
@@ -58,6 +61,10 @@ func AddKeyToJSON(json string, key string, value interface{}) string {
 	return json
 }
 
+type DatabasesT struct {
+	Datname string
+}
+
 // SendEventRequest sends sample event.json with EventOptionsT overrides to gateway server
 func SendEventRequest(options EventOptsT) int {
 	if options.Integrations == nil {
@@ -82,6 +89,7 @@ func SendEventRequest(options EventOptsT) int {
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.anonymousId", options.ID)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.messageId", options.MessageID)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.properties.value", options.GaVal)
+	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.properties.strvalue", options.ValString)
 
 	return SendBatchRequest(options.WriteKey, jsonPayload)
 }
@@ -236,6 +244,18 @@ func GetJobsCount(dbHandle *sql.DB, prefix string) int {
 	for _, tableName := range tableNames {
 		var jobsCount int
 		dbHandle.QueryRow(fmt.Sprintf(`select count(*) as count from %s;`, tableName)).Scan(&jobsCount)
+		count += jobsCount
+	}
+	return count
+}
+
+// GetJobsCountForSourceAndDestination returns count of jobs across all tables with specified prefix
+func GetJobsCountForSourceAndDestination(dbHandle *sql.DB, prefix string, sourceID string, destinationID string) int {
+	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_jobs_")
+	count := 0
+	for _, tableName := range tableNames {
+		var jobsCount int
+		dbHandle.QueryRow(fmt.Sprintf(`select count(*) as count from %s where ("parameters"::TEXT = '{"source_id": "%s", "destination_id": "%s"}');`, tableName, sourceID, destinationID)).Scan(&jobsCount)
 		count += jobsCount
 	}
 	return count
@@ -437,4 +457,56 @@ func QueryWarehouseWithAnonymusID(anonymousId string, eventName string, namespac
 		return queryRS(anonymousId, eventName, namespace, destConfig)
 	}
 	return QueryTrackPayload{}
+}
+
+// GetTableSize returns the size of table in MB
+func GetTableSize(dbHandle *sql.DB, jobTable string) int64 {
+	var tableSize int64
+	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, jobTable)
+	row := dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&tableSize)
+	if err != nil {
+		panic(err)
+	}
+	return tableSize
+}
+
+// GetListOfMaintenanceModeOriginalDBs returns the list of databases in the format of original_jobsdb*
+func GetListOfMaintenanceModeOriginalDBs(dbHandle *sql.DB, jobsdb string) []string {
+	var dbNames []string
+	sqlStatement := "SELECT datname FROM pg_database where datname like 'original_" + jobsdb + "_%'"
+	rows, err := dbHandle.Query(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+	for rows.Next() {
+		var dbName string
+		err = rows.Scan(&dbName)
+		if err != nil {
+			panic(err)
+		}
+		dbNames = append(dbNames, dbName)
+	}
+	return dbNames
+}
+
+// GetRecoveryData gets the recovery data from json file
+func GetRecoveryData(storagePath string) db.RecoveryDataT {
+	data, err := ioutil.ReadFile(storagePath)
+	if os.IsNotExist(err) {
+		defaultRecoveryJSON := "{\"mode\":\"" + "normal" + "\"}"
+		data = []byte(defaultRecoveryJSON)
+	} else {
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	var recoveryData db.RecoveryDataT
+	err = json.Unmarshal(data, &recoveryData)
+	if err != nil {
+		panic(err)
+	}
+
+	return recoveryData
 }

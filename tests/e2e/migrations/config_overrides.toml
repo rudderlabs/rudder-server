@@ -3,6 +3,7 @@ maxDSSize = 10
 mainCheckSleepDurationInS = 2
 backupCheckSleepDurationIns = 5
 enableBackup = false
+maxTableSizeInMB=1
 
 [Processor]
 processSessions = false

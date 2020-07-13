@@ -1,8 +1,10 @@
 package e2e_test
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/tests/helpers"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -19,6 +22,7 @@ import (
 var dbHandle *sql.DB
 var gatewayDBPrefix string
 var routerDBPrefix string
+var batchRouterDBPrefix string
 var dbPollFreqInS int = 1
 var gatewayDBCheckBufferInS int = 15
 var jobSuccessStatus string = "succeeded"
@@ -32,6 +36,7 @@ var _ = BeforeSuite(func() {
 	}
 	gatewayDBPrefix = config.GetString("Gateway.CustomVal", "GW")
 	routerDBPrefix = config.GetString("Router.CustomVal", "RT")
+	batchRouterDBPrefix = config.GetString("Router.CustomVal", "BATCH_RT")
 })
 
 var _ = Describe("E2E", func() {
@@ -276,7 +281,137 @@ var _ = Describe("E2E", func() {
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
 
 		})
+		It("should enhance events with time related fields and metadata", func() {
+			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			// initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
+			eventWriteKey := "1Yc6YbOGg6U2E8rlj97ZdOawPyr"
+			//Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations.
+			helpers.SendEventRequest(helpers.EventOptsT{
+				WriteKey: eventWriteKey,
+			})
 
+			// wait for some seconds for events to be processed by gateway
+			time.Sleep(6 * time.Second)
+			Eventually(func() int {
+				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
+			jobs := helpers.GetJobs(dbHandle, gatewayDBPrefix, 1)
+			if len(jobs) != 1 {
+				panic("Jobs count mismatch")
+			}
+			job := jobs[0]
+			requestIP := gjson.Get(string(job.EventPayload), "requestIP").String()
+			writeKey := gjson.Get(string(job.EventPayload), "writeKey").String()
+			receivedAt := gjson.Get(string(job.EventPayload), "receivedAt").String()
+
+			Expect(writeKey).To(Equal(eventWriteKey))
+			Expect(requestIP).NotTo(BeNil()) //TODO: Figure out a way to test requestIP
+			Expect(time.Parse(misc.RFC3339Milli, receivedAt)).Should(BeTemporally("~", time.Now(), 10*time.Second))
+
+		})
+		It("should send correct response headers to support CORS", func() {
+			originURL := "http://example.com/"
+			serverIP := "http://localhost:8080/v1/track"
+			req, _ := http.NewRequest("POST", serverIP, bytes.NewBuffer([]byte("{}")))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Add("Origin", originURL)
+			req.SetBasicAuth("1Yc6YbOGg6U2E8rlj97ZdOawPyr", "")
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				panic(err)
+			}
+			defer resp.Body.Close()
+			Expect(resp.Header.Get("Access-Control-Allow-Credentials")).To(Equal("true"))
+			Expect(resp.Header.Get("Access-Control-Allow-Origin")).To(Equal(originURL))
+		})
+
+		It("should handle different cases in user transformation functions", func() {
+			gatewayDBCheckBufferInS = 10
+			sourceID := "1YyeVLcPH3rKK3ehTjTUfQyxiRS"
+			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			initialRouterJobsCount := map[string]int{
+				"1YyedMM9RCUJrUUywWXkJWKzQiW": helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, "1YyedMM9RCUJrUUywWXkJWKzQiW"), // Empty array
+				"1YysQJV2ZXgp8wgXRhU3mmwHNti": helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, "1YysQJV2ZXgp8wgXRhU3mmwHNti"), // Access element outside array
+				"1YytOBIeLOdPCxrXWF8DytawB9Z": helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, "1YytOBIeLOdPCxrXWF8DytawB9Z"), // Events in wrong format
+				"1Yytf8vs6vxp5TsLW58D44QPKeT": helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, "1Yytf8vs6vxp5TsLW58D44QPKeT"), // Memory Eater
+				"1YyuocAqn8Q78fqwvBSDks7BVxO": helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, "1YyuocAqn8Q78fqwvBSDks7BVxO"), // Api call
+			}
+			initialBatchRouterJobsCount := map[string]int{
+				"1YyrxAh3Q7FMktGV5GWPDAsldKw": helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, "1YyrxAh3Q7FMktGV5GWPDAsldKw"), // Infinite loop
+				"1YysY9LMizekwLHwM06lmT7Oo47": helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, "1YysY9LMizekwLHwM06lmT7Oo47"), // Syntax error
+				"1YytSagaEVPTK1DLXJ46A9RQBXA": helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, "1YytSagaEVPTK1DLXJ46A9RQBXA"), // Single event outside array
+				"1Yytj13urVx2WmDjOcWBHdZCRGA": helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, "1Yytj13urVx2WmDjOcWBHdZCRGA"), // Api call
+			}
+			//Source with WriteKey: 1YyeVOLDReXPNYORjDlvE7PM1Jw has multiple destinations with diffent user-transformation for differnet destiantions.
+			helpers.SendEventRequest(helpers.EventOptsT{
+				WriteKey: "1YyeVOLDReXPNYORjDlvE7PM1Jw",
+			})
+
+			// wait for some seconds for events to be processed by gateway
+			time.Sleep(6 * time.Second)
+			Eventually(func() int {
+				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
+
+			routerDBCheckBufferInS := 10
+
+			destinationID := "1YyedMM9RCUJrUUywWXkJWKzQiW"
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, destinationID)
+			}, routerDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount[destinationID]))
+
+			destinationID = "1YysQJV2ZXgp8wgXRhU3mmwHNti"
+
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, destinationID)
+			}, routerDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount[destinationID]))
+
+			destinationID = "1YytOBIeLOdPCxrXWF8DytawB9Z"
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, destinationID)
+			}, routerDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount[destinationID]))
+
+			destinationID = "1Yytf8vs6vxp5TsLW58D44QPKeT"
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, destinationID)
+			}, routerDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount[destinationID]))
+
+			destinationID = "1YyuocAqn8Q78fqwvBSDks7BVxO"
+			Eventually(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, destinationID)
+			}, routerDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount[destinationID] + 1))
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, routerDBPrefix, sourceID, destinationID)
+			}, routerDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount[destinationID] + 1))
+
+			batchRouterDBCheckBufferInS := 10
+
+			// For the destination with infinite loop
+			destinationID = "1YyrxAh3Q7FMktGV5GWPDAsldKw"
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, destinationID)
+			}, batchRouterDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount[destinationID]), "User transformation has an Infinite Loop")
+
+			destinationID = "1YysY9LMizekwLHwM06lmT7Oo47"
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, destinationID)
+			}, batchRouterDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount[destinationID]), "User transformation has syntax error")
+
+			destinationID = "1YytSagaEVPTK1DLXJ46A9RQBXA"
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, sourceID, destinationID)
+			}, batchRouterDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount[destinationID]), "User transformation returns a single event outside array")
+
+			// For the destination with API call UT
+			destinationID = "1Yytj13urVx2WmDjOcWBHdZCRGA"
+			Eventually(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, "1YyeVLcPH3rKK3ehTjTUfQyxiRS", destinationID)
+			}, batchRouterDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount[destinationID]+1), "User transformation with API call")
+			Consistently(func() int {
+				return helpers.GetJobsCountForSourceAndDestination(dbHandle, batchRouterDBPrefix, "1YyeVLcPH3rKK3ehTjTUfQyxiRS", destinationID)
+			}, batchRouterDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialBatchRouterJobsCount[destinationID]+1), "User transformation with API call")
+		})
 	})
 
 })
