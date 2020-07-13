@@ -13,20 +13,22 @@ import (
 func NewProducer(destinationConfig interface{}, destination string) (interface{}, error) {
 
 	switch destination {
-	case "KINESIS":
-		producer, err := kinesis.NewProducer(destinationConfig)
-		return producer, err
-	case "KAFKA":
-		producer, err := kafka.NewProducer(destinationConfig)
-		return producer, err
 	case "AZURE_EVENT_HUB":
 		producer, err := kafka.NewProducerForAzureEventHub(destinationConfig)
 		return producer, err
 	case "FIREHOSE":
 		producer, err := firehose.NewProducer(destinationConfig)
 		return producer, err
+<<<<<<< HEAD
 	case "FIREHOSE":
 		producer, err := firehose.NewProducer(destinationConfig)
+=======
+	case "KAFKA":
+		producer, err := kafka.NewProducer(destinationConfig)
+		return producer, err
+	case "KINESIS":
+		producer, err := kinesis.NewProducer(destinationConfig)
+>>>>>>> 9d497bfc... addressed the review comments
 		return producer, err
 	default:
 		return nil, fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
@@ -38,13 +40,11 @@ func NewProducer(destinationConfig interface{}, destination string) (interface{}
 func CloseProducer(producer interface{}, destination string) error {
 
 	switch destination {
-	case "KINESIS":
+	case "KINESIS", "FIREHOSE":
 		return nil
 	case "KAFKA", "AZURE_EVENT_HUB":
 		err := kafka.CloseProducer(producer)
 		return err
-	case "FIREHOSE":
-		return nil
 	default:
 		return fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
 	}

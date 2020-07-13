@@ -11,7 +11,6 @@ package firehose
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 <<<<<<< HEAD
@@ -207,15 +206,13 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	}
 
 	if parsedJSON.Get("deliveryStreamMapTo").Value() != nil {
-		deliveryStreamMapTo := parsedJSON.Get("deliveryStreamMapTo").Value().(interface{})
-		deliveryStreamMapToInput, err := json.Marshal(deliveryStreamMapTo)
-		if err != nil {
+		deliveryStreamMapToInputString, ok := parsedJSON.Get("deliveryStreamMapTo").Value().(string)
+		if !ok {
 			logger.Errorf("error in firehose :: %v", err.Error())
 			statusCode := 500
 			return statusCode, err.Error(), err.Error()
 		}
-
-		deliveryStreamMapToInputString := strings.Trim(string(deliveryStreamMapToInput), "\"")
+		logger.Infof(deliveryStreamMapToInputString)
 
 		putOutput, errorRec = fh.PutRecord(&firehose.PutRecordInput{
 			DeliveryStreamName: aws.String(string(deliveryStreamMapToInputString)),
