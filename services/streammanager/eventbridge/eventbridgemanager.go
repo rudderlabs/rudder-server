@@ -80,10 +80,22 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 		return statusCode, err.Error(), err.Error()
 	}
+	// if one of the required fields(Detail, DetailType, Source) is missing,
+	// the error returned by PutEvents will be nil but the request will eventually fail
+	if len(putEventsOutput.Entries) > 0 {
+		errorCode := putEventsOutput.Entries[0].ErrorCode
+		errorMessage := putEventsOutput.Entries[0].ErrorMessage
+		// request has failed if errorCode and errorMessage are not nil
+		if errorCode != nil && errorMessage != nil {
+			return 400, *errorCode, *errorMessage
+		}
+	}
 
 	message := "Successfully sent event to eventbridge"
 	if len(putEventsOutput.Entries) > 0 {
-		message += fmt.Sprintf(",with eventID: %v", *putEventsOutput.Entries[0].EventId)
+		if eventID := putEventsOutput.Entries[0].EventId; eventID != nil {
+			message += fmt.Sprintf(",with eventID: %v", *eventID)
+		}
 	}
 
 	return 200, "Success", message
