@@ -86,8 +86,6 @@ github.com/bugsnag/bugsnag-go/sessions
 github.com/bugsnag/panicwrap
 # github.com/cenkalti/backoff v2.2.1+incompatible
 github.com/cenkalti/backoff
-# github.com/cenkalti/backoff/v4 v4.0.2
-github.com/cenkalti/backoff/v4
 # github.com/cespare/xxhash v1.1.0
 github.com/cespare/xxhash
 # github.com/davecgh/go-spew v1.1.1
