@@ -42,10 +42,10 @@ phases:
     commands:
       - docker push rudderlabs/develop-rudder-server:$VERSION
       - docker push rudderstack/rudder-server-enterprise:$VERSION
-reports:
-  GinkgoUnitTestReports:
-    files:
-      - "**/junit_*.xml"
+# reports:
+  # GinkgoUnitTestReports:
+  #   files:
+  #     - "**/junit_*.xml"
 artifacts:
   files:
     - "**/*"
