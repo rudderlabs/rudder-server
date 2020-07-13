@@ -22,15 +22,15 @@ type Config struct {
 	DetailType   string
 }
 
-func init() {
-}
-
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}) (eventbridge.EventBridge, error) {
 	config := Config{}
 
 	jsonConfig, err := json.Marshal(destinationConfig)
 	err = json.Unmarshal(jsonConfig, &config)
+	if err != nil {
+		return eventbridge.EventBridge{}, fmt.Errorf("EventBridge: Error while unmarshalling destination config : %v", err.Error())
+	}
 
 	var s *session.Session
 	if config.AccessKeyID == "" || config.AccessKey == "" {
@@ -51,8 +51,9 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	// get producer
 	ebc, ok := producer.(eventbridge.EventBridge)
-	if !ok {
-		return 400, "Could not create producer", "Could not create producer for EventBridge"
+	if (!ok || ebc == eventbridge.EventBridge{}) {
+		// return 400 if producer is invalid
+		return 400, "Could not create producer for EventBridge", "Could not create producer for EventBridge"
 	}
 
 	// create eventbridge event
