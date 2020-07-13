@@ -209,7 +209,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		deliveryStreamMapToInputString, ok := parsedJSON.Get("deliveryStreamMapTo").Value().(string)
 		if !ok {
 			var sendMessage string = "error in firehose :: Could not parse delivery stream to string"
-			logger.Errorf(sendMessage)
+			logger.Error(sendMessage)
 			statusCode := 500
 			return statusCode, sendMessage, sendMessage
 		}
