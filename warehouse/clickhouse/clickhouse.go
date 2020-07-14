@@ -22,7 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 )
 
 var (
@@ -98,7 +97,7 @@ var partitionKeyMap = map[string]string{
 
 // connect connects to warehouse with provided credentials
 func connect(cred credentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=100&pool_size=10&debug=%s",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=1000&pool_size=10&debug=%s",
 		cred.host,
 		cred.port,
 		cred.user,
@@ -372,16 +371,16 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		return
 	}
 	// create staging table
-	stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
-	err = ch.createTemporaryTable(tableName, columnMap, stagingTableName)
+	//stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
+	//err = ch.createTemporaryTable(tableName, columnMap, stagingTableName)
 	if err != nil {
 		logger.Errorf("ch: Error while creating staging table:%s: %v", stagingTableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
-	defer ch.dropStagingTable(stagingTableName)
+	//defer ch.dropStagingTable(stagingTableName)
 
-	stmt, err := txn.Prepare(fmt.Sprintf(`INSERT INTO "%s" (%v) VALUES (%s)`, stagingTableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys))))
+	stmt, err := txn.Prepare(fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys))))
 	if err != nil {
 		logger.Errorf("ch: Error while preparing statement for  transaction in db for loading in staging table:%s: %v", stagingTableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
@@ -458,14 +457,14 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		return
 	}
 
-	// load to table name from staging table
-	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) SELECT %v from %s`, ch.Namespace, tableName, sortedColumnString, sortedColumnString, stagingTableName)
-	_, err = ch.Db.Exec(sqlStatement)
-	if err != nil {
-		logger.Errorf("CH: Error while copying to table from staging table:%s: %v", stagingTableName, err)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
-		return
-	}
+	//// load to table name from staging table
+	//sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) SELECT %v from %s`, ch.Namespace, tableName, sortedColumnString, sortedColumnString, stagingTableName)
+	//_, err = ch.Db.Exec(sqlStatement)
+	//if err != nil {
+	//	logger.Errorf("CH: Error while copying to table from staging table:%s: %v", stagingTableName, err)
+	//	warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
+	//	return
+	//}
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, ch.Upload.ID, tableName, ch.DbHandle)
 	logger.Infof("CH: Complete load for table:%s", tableName)
 	return
