@@ -24,6 +24,9 @@ type Config struct {
 func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 	var config Config
 	jsonConfig, err := json.Marshal(destinationConfig)
+	if err != nil {
+		return firehose.Firehose{}, fmt.Errorf("[FireHose] Error while marshalling destination config :: %w", err)
+	}
 	err = json.Unmarshal(jsonConfig, &config)
 	if err != nil {
 		return firehose.Firehose{}, fmt.Errorf("[FireHose] error  :: error in firehose while unmarshelling destination config:: %w", err)
@@ -59,6 +62,13 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	}
 	var config Config
 	jsonConfig, err := json.Marshal(destConfig)
+	if err != nil {
+		respStatus = "Failure"
+		responseMessage = "[FireHose] error :: " + err.Error()
+		logger.Errorf("[FireHose] error  :: %w", err)
+		statusCode := 400
+		return statusCode, respStatus, responseMessage
+	}
 	err = json.Unmarshal(jsonConfig, &config)
 	if err != nil {
 		respStatus = "Failure"
@@ -124,7 +134,6 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			responseMessage = fmt.Sprintf("Message delivered with Record information %v", putOutput)
 		}
 		respStatus = "Success"
-		logger.Info(responseMessage)
 		return 200, respStatus, responseMessage
 	} else {
 		respStatus = "Failure"
