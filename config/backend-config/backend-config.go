@@ -105,6 +105,7 @@ type DestinationT struct {
 	Deleted               bool
 	Transformations       []TransformationT
 	IsProcessorEnabled    bool
+	IsConnectionEnabled   bool
 }
 
 type SourceT struct {
