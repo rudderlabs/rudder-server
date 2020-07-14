@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -127,6 +128,8 @@ func (br *BlendoRegistry) deleteConfigFromRegistry(id string) (response []byte, 
 }
 
 // calculateDifferencesAndUpdateRegistry calculate the differences from the previous config and make the coresponding actions
+// we need to update blendo registry when the destination or source configuration or enabled status change
+// and delete from blendo registry when the connection is no longer exists or a source or destination is deleted
 func (br *BlendoRegistry) calculateDifferencesAndUpdateRegistry(sources []backendconfig.SourceT) {
 	prevSources := br.currentSourceJSON.Sources
 	for _, source := range sources {
@@ -140,7 +143,7 @@ func (br *BlendoRegistry) calculateDifferencesAndUpdateRegistry(sources []backen
 					sourceExists = true
 					for _, destination := range source.Destinations {
 						pipelineId := br.getPipelineId(source.ID, destination.ID)
-						// if source deleted delete all the pipelines from registry for this source
+						// if source deleted, delete all the pipelines from registry for this source
 						if source.Deleted != prevSource.Deleted {
 							br.deleteConfigFromRegistry(pipelineId)
 							continue
@@ -150,16 +153,22 @@ func (br *BlendoRegistry) calculateDifferencesAndUpdateRegistry(sources []backen
 								if prevDestination.ID == destination.ID {
 									destinationExists = true
 									// if destination deleted state has change (this means that deleted is true) remove the pipeline from registry
-									if destination.Deleted != prevDestination.Deleted {
+									if destination.Deleted != prevDestination.Deleted ||
+										(destination.IsConnectionEnabled != prevDestination.IsConnectionEnabled &&
+											!destination.IsConnectionEnabled) {
 										br.deleteConfigFromRegistry(pipelineId)
-										// if destination or source enabled status has change then update registry configuration
-									} else if destination.Enabled != prevDestination.Enabled || source.Enabled != prevSource.Enabled {
+										// if destination or source enabled or connection status or configuration has change then update registry configuration
+									} else if destination.IsProcessorEnabled != prevDestination.IsProcessorEnabled ||
+										(destination.IsConnectionEnabled != prevDestination.IsConnectionEnabled &&
+											prevDestination.IsConnectionEnabled) ||
+										!reflect.DeepEqual(destination.Config, prevDestination.Config) ||
+										!reflect.DeepEqual(source.Config, prevSource.Config) {
 										br.putConfigToRegistry(pipelineId, br.getConfig(source, destination))
 									}
 									break
 								}
 							}
-							// if destination not found in the previous destinations mean is new
+							// if destination not found in the previous destinations, means is new
 							if !destinationExists {
 								// if source or destination is deleted remove pipeline from blendo registry
 								if source.Deleted || destination.Deleted {
@@ -191,7 +200,7 @@ func (br *BlendoRegistry) calculateDifferencesAndUpdateRegistry(sources []backen
 	}
 }
 
-// deleteRemovedSourcesDestinations Removes pipelines from registry that no longer exists camparing the previous configuration
+// deleteRemovedSourcesDestinations Removes pipelines from registry that no longer exists comparing the previous configuration
 func (br *BlendoRegistry) deleteRemovedSourcesDestinations(sources []backendconfig.SourceT) {
 	prevSources := br.currentSourceJSON.Sources
 	for _, prevSource := range prevSources {
@@ -239,10 +248,19 @@ func (br *BlendoRegistry) getPipelineId(sourceId string, destinationId string) s
 }
 
 func (br *BlendoRegistry) mapDestinationconfig(config map[string]interface{}) map[string]interface{} {
-	config["username"] = config["user"]
-	port, _ := strconv.Atoi(config["port"].(string))
-	config["port"] = port
-	return config
+	desConfog := make(map[string]interface{})
+	for key, value := range config {
+		if key == "user" {
+			desConfog["username"] = value
+		} else if key == "port" {
+			port, _ := strconv.Atoi(value.(string))
+			desConfog["port"] = port
+		} else {
+			desConfog[key] = value
+
+		}
+	}
+	return desConfog
 }
 
 // getConfig returns the configuration of the pipeline
@@ -265,7 +283,7 @@ func (br *BlendoRegistry) getConfig(source backendconfig.SourceT, destination ba
 			Type: "once_per_hour",
 		},
 		Resources: resources,
-		Paused:    !source.Enabled || !destination.Enabled,
+		Paused:    !destination.IsProcessorEnabled,
 	}
 }
 

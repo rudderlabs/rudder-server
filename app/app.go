@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -29,8 +28,6 @@ type Interface interface {
 
 // Setup initializes application
 func (a *App) Setup() {
-	backendconfig.Setup()
-
 	// If cpuprofile flag is present, setup cpu profiling
 	if a.options.Cpuprofile != "" {
 		a.initCPUProfiling()
