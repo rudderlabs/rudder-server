@@ -22,11 +22,15 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	uuid "github.com/satori/go.uuid"
 )
 
 var (
-	stagingTablePrefix string
-	maxParallelLoads   int
+	stagingTablePrefix      string
+	maxParallelLoads        int
+	clickhouseDebugLogs     string
+	clickhouseLoadBatchSize string
+	clickhouseQueryPoolSize string
 )
 
 const (
@@ -92,13 +96,17 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
+// connect connects to warehouse with provided credentials
 func connect(cred credentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("tcp://%s:%s?debug=true&username=%s&password=%s&database=%s&block_size=1000&compress=true",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s",
 		cred.host,
 		cred.port,
 		cred.user,
 		cred.password,
 		cred.dbName,
+		clickhouseLoadBatchSize,
+		clickhouseQueryPoolSize,
+		clickhouseDebugLogs,
 	)
 
 	var err error
@@ -116,8 +124,13 @@ func init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	maxParallelLoads = config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3)
+	clickhouseDebugLogs = config.GetString("Warehouse.clickhouse.clickhouseDebugLogs", "false")
+	clickhouseLoadBatchSize = config.GetString("Warehouse.clickhouse.clickhouseLoadBatchSize", "1000")
+	clickhouseQueryPoolSize = config.GetString("Warehouse.clickhouse.clickhouseQueryPoolSize", "10")
+
 }
 
+// getConnectionCredentials gives clickhouse credentials
 func (ch *HandleT) getConnectionCredentials() credentialsT {
 	return credentialsT{
 		host:     warehouseutils.GetConfigValue(host, ch.Warehouse),
@@ -129,6 +142,7 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 	}
 }
 
+// columnsWithDataTypes creates columns and its datatype into sql format for creating table
 func columnsWithDataTypes(columns map[string]string, prefix string, sortKeyField string) string {
 	var arr []string
 	for name, dataType := range columns {
@@ -142,6 +156,7 @@ func columnsWithDataTypes(columns map[string]string, prefix string, sortKeyField
 	return strings.Join(arr[:], ",")
 }
 
+// columnsWithDataTypesForUsersTable creates columns and its datatype into sql format for creating users table
 func columnsWithDataTypesForUsersTable(columns map[string]string, prefix string, sortKeyField string) string {
 	var arr []string
 	for name, dataType := range columns {
@@ -159,22 +174,22 @@ func (ch *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	return
 }
 
-// FetchSchema queries postgres and returns the schema associated with provided namespace
+// FetchSchema queries clickhouse and returns the schema associated with provided namespace
 func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	ch.Warehouse = warehouse
-	ch.Db, err = connect(ch.getConnectionCredentials())
+	dbHandle, err := connect(ch.getConnectionCredentials())
 	if err != nil {
 		return
 	}
-
+	defer dbHandle.Close()
 	schema = make(map[string]map[string]string)
 	sqlStatement := fmt.Sprintf(`select table, name, type
 									from system.columns
 									where database = '%s'`, namespace)
 
-	rows, err := ch.Db.Query(sqlStatement)
+	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		logger.Errorf("ch: Error in fetching schema from postgres destination:%v, query: %v", ch.Warehouse.Destination.ID, sqlStatement)
+		logger.Errorf("CH: Error in fetching schema from postgres destination:%v, query: %v", ch.Warehouse.Destination.ID, sqlStatement)
 		return
 	}
 	if err == sql.ErrNoRows {
@@ -185,7 +200,7 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 		var tName, cName, cType string
 		err = rows.Scan(&tName, &cName, &cType)
 		if err != nil {
-			logger.Errorf("ch: Error in processing fetched schema from clickhouse destination:%v", ch.Warehouse.Destination.ID)
+			logger.Errorf("CH: Error in processing fetched schema from clickhouse destination:%v", ch.Warehouse.Destination.ID)
 			return
 		}
 		if _, ok := schema[tName]; !ok {
@@ -198,8 +213,9 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	return
 }
 
+// Export starts exporting data to clickhouse
 func (ch *HandleT) Export() (err error) {
-	logger.Infof("ch: Starting export to clickhouse for source:%s and wh_upload:%v", ch.Warehouse.Source.ID, ch.Upload.ID)
+	logger.Infof("CH: Starting export to clickhouse for source:%s and wh_upload:%v", ch.Warehouse.Source.ID, ch.Upload.ID)
 	err = warehouseutils.SetUploadStatus(ch.Upload, warehouseutils.ExportingDataState, ch.DbHandle)
 	if err != nil {
 		panic(err)
@@ -226,30 +242,31 @@ func (ch *HandleT) Export() (err error) {
 	return
 }
 
+// DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	objectLocations, _ := warehouseutils.GetLoadFileLocations(ch.DbHandle, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, tableName, ch.Upload.StartLoadFileID, ch.Upload.EndLoadFileID)
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		object, err := warehouseutils.GetObjectName(ch.Warehouse.Destination.Config, objectLocation)
 		if err != nil {
-			logger.Errorf("ch: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
+			logger.Errorf("CH: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
 			return nil, err
 		}
 		dirName := "/rudder-warehouse-load-uploads-tmp/"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
-			logger.Errorf("ch: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			logger.Errorf("CH: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + object
 		err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
 		if err != nil {
-			logger.Errorf("ch: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, objectLocation, err)
+			logger.Errorf("CH: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		objectFile, err := os.Create(ObjectPath)
 		if err != nil {
-			logger.Errorf("ch: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			logger.Errorf("CH: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		downloader, err := filemanager.New(&filemanager.SettingsT{
@@ -258,12 +275,12 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		})
 		err = downloader.Download(objectFile, object)
 		if err != nil {
-			logger.Errorf("ch: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			logger.Errorf("CH: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		fileName := objectFile.Name()
 		if err = objectFile.Close(); err != nil {
-			logger.Errorf("ch: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			logger.Errorf("CH: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		fileNames = append(fileNames, fileName)
@@ -284,7 +301,8 @@ func generateArgumentString(arg string, length int) string {
 	return argString
 }
 
-func getDataFromType(data string, datatype string) interface{} {
+// typeCastDataFromType typeCasts string data to the mentioned data type
+func typeCastDataFromType(data string, datatype string) interface{} {
 	switch datatype {
 	case "int":
 		i, err := strconv.Atoi(data)
@@ -317,6 +335,7 @@ func getDataFromType(data string, datatype string) interface{} {
 	return data
 }
 
+// loadTable loads table to clickhouse from the load files
 func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forceLoad bool) (stagingTableName string, err error) {
 	if !forceLoad {
 		status, _ := warehouseutils.GetTableUploadStatus(ch.Upload.ID, tableName, ch.DbHandle)
@@ -340,7 +359,6 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
 	fileNames, err := ch.DownloadLoadFiles(tableName)
-	//defer misc.RemoveFilePaths(fileNames...)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
@@ -352,19 +370,31 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
+	// create staging table
+	stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
+	err = ch.createTemporaryTable(tableName, columnMap, stagingTableName)
+	if err != nil {
+		logger.Errorf("ch: Error while creating staging table:%s: %v", stagingTableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
+		return
+	}
+	defer ch.dropStagingTable(stagingTableName)
 
-	stmt, err := txn.Prepare(fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s) `, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys))))
+	stmt, err := txn.Prepare(fmt.Sprintf(`INSERT INTO "%s" (%v) VALUES (%s)`, stagingTableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys))))
 	if err != nil {
 		logger.Errorf("ch: Error while preparing statement for  transaction in db for loading in staging table:%s: %v", stagingTableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
+
 	for _, objectFileName := range fileNames {
 		var gzipFile *os.File
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			logger.Errorf("ch: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
-			misc.RemoveFilePaths(objectFileName)
+			rruntime.Go(func() {
+				misc.RemoveFilePaths(objectFileName)
+			})
 			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 			return
 		}
@@ -373,7 +403,9 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
 			logger.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
-			misc.RemoveFilePaths(objectFileName)
+			rruntime.Go(func() {
+				misc.RemoveFilePaths(objectFileName)
+			})
 			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 			gzipFile.Close()
 			return
@@ -385,10 +417,10 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 			record, err = csvReader.Read()
 			if err != nil {
 				if err == io.EOF {
-					logger.Infof("PG: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
+					logger.Infof("CH: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
 					break
 				} else {
-					logger.Errorf("PG: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
+					logger.Errorf("CH: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
 					misc.RemoveFilePaths(objectFileName)
 					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 					txn.Rollback()
@@ -399,14 +431,14 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 			for key, value := range record {
 				columnName := sortedColumnKeys[key]
 				columnDataType := columnMap[columnName]
-				data := getDataFromType(value, columnDataType)
+				data := typeCastDataFromType(value, columnDataType)
 				recordInterface = append(recordInterface, data)
 
 			}
 
 			_, err = stmt.Exec(recordInterface...)
 			if err != nil {
-				logger.Errorf("PG: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
+				logger.Errorf("CH: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
 				misc.RemoveFilePaths(objectFileName)
 				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 				txn.Rollback()
@@ -416,28 +448,37 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		}
 		gzipReader.Close()
 		gzipFile.Close()
-		misc.RemoveFilePaths(objectFileName)
+		rruntime.Go(func() {
+			misc.RemoveFilePaths(objectFileName)
+		})
 	}
 	if err != nil && err != io.EOF {
 		txn.Rollback()
 		logger.Errorf("CH: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
-
 	}
 
 	if err = txn.Commit(); err != nil {
-
 		logger.Errorf("CH: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
 
+	// load to table name from staging table
+	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) SELECT %v from %s`, ch.Namespace, tableName, sortedColumnString, sortedColumnString, stagingTableName)
+	_, err = ch.Db.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("CH: Error while copying to table from staging table:%s: %v", stagingTableName, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
+		return
+	}
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, ch.Upload.ID, tableName, ch.DbHandle)
 	logger.Infof("CH: Complete load for table:%s", tableName)
 	return
 }
 
+// load tables into clickhouse
 func (ch *HandleT) load() (errList []error) {
 	logger.Infof("ch: Starting load for all %v tables\n", len(ch.Upload.Schema))
 	var wg sync.WaitGroup
@@ -465,14 +506,7 @@ func (ch *HandleT) load() (errList []error) {
 	return
 }
 
-func checkAndIgnoreAlreadyExistError(err error) bool {
-	if err != nil {
-		// TODO: throw error if column already exists but of different type
-		return false
-	}
-	return true
-}
-
+// createSchema creates a database in clickhouse
 func (ch *HandleT) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS "%s"`, ch.Namespace)
 	logger.Infof("CH: Creating database in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
@@ -480,6 +514,29 @@ func (ch *HandleT) createSchema() (err error) {
 	return
 }
 
+func (ch *HandleT) createTemporaryTable(tableName string, columns map[string]string, stagingTableName string) (err error) {
+	sortKeyField := "received_at"
+	if _, ok := columns["received_at"]; !ok {
+		sortKeyField = "uuid_ts"
+		if _, ok = columns["uuid_ts"]; !ok {
+			sortKeyField = "id"
+		}
+	}
+	sqlColumnsFormat := columnsWithDataTypes(columns, "", sortKeyField)
+	if tableName == warehouseutils.UsersTable {
+		sqlColumnsFormat = columnsWithDataTypesForUsersTable(columns, "", sortKeyField)
+	}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" (%v) engine = Memory()`, stagingTableName, sqlColumnsFormat)
+	logger.Infof("CH: Creating temporary table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
+	_, err = ch.Db.Exec(sqlStatement)
+	return
+}
+
+/*
+ createUsersTable creates a users table with engine AggregatingMergeTree,
+ this lets us choose aggregation logic before merging records with same user id.
+ current behaviour is to replace user  properties with latest non null values
+*/
 func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err error) {
 	sortKeyField := "received_at"
 	if _, ok := columns["received_at"]; !ok {
@@ -494,7 +551,7 @@ func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err
 	return
 }
 
-// createTable create a table in the database provided in control plane
+// createTable creates table with engine ReplacingMergeTree(), this is used for dedupe event data and replace it will latest data if duplicate data found. This logic is handled by clickhouse
 func (ch *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sortKeyField := "received_at"
 	if _, ok := columns["received_at"]; !ok {
@@ -515,12 +572,22 @@ func (ch *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
+func (ch *HandleT) dropStagingTable(stagingTableName string) {
+	logger.Infof("CH: dropping table %+v\n", stagingTableName)
+	_, err := ch.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, stagingTableName))
+	if err != nil {
+		logger.Errorf("CH:  Error dropping staging table %s in postgres: %v", stagingTableName, err)
+	}
+}
+
+// tableExists will check if tableName exists in the current namespace which is the database name
 func (ch *HandleT) tableExists(tableName string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(` EXISTS TABLE "%s"."%s"`, ch.Namespace, tableName)
 	err = ch.Db.QueryRow(sqlStatement).Scan(&exists)
 	return
 }
 
+// addColumn adds column:columnName with dataType columnType to the tableName
 func (ch *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, columnName, rudderDataTypesMapToClickHouse[columnType])
 	logger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
@@ -571,6 +638,7 @@ func (ch *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	return
 }
 
+// MigrateSchema will handle
 func (ch *HandleT) MigrateSchema() (err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", ch.Warehouse.Destination.ID)
 	timer.Start()
@@ -595,6 +663,7 @@ func (ch *HandleT) MigrateSchema() (err error) {
 	return
 }
 
+// Process starts processing to export to clickhouse
 func (ch *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	ch.DbHandle = config.DbHandle
 	ch.Warehouse = config.Warehouse
