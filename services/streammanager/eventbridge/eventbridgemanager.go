@@ -14,12 +14,9 @@ import (
 
 // Config is the config that is required to send data to EventBridge
 type Config struct {
-	Region       string
-	AccessKeyID  string
-	AccessKey    string
-	EventBusName string
-	ResourceID   []map[string]interface{}
-	DetailType   string
+	Region      string
+	AccessKeyID string
+	AccessKey   string
 }
 
 // NewProducer creates a producer based on destination config
@@ -27,9 +24,12 @@ func NewProducer(destinationConfig interface{}) (eventbridge.EventBridge, error)
 	config := Config{}
 
 	jsonConfig, err := json.Marshal(destinationConfig)
+	if err != nil {
+		return eventbridge.EventBridge{}, fmt.Errorf("[EventBridge] Error while marshalling destination config :: %w", err)
+	}
 	err = json.Unmarshal(jsonConfig, &config)
 	if err != nil {
-		return eventbridge.EventBridge{}, fmt.Errorf("EventBridge: Error while unmarshalling destination config : %v", err.Error())
+		return eventbridge.EventBridge{}, fmt.Errorf("[EventBridge] Error while unmarshalling destination config :: %w", err)
 	}
 
 	var s *session.Session
@@ -43,7 +43,7 @@ func NewProducer(destinationConfig interface{}) (eventbridge.EventBridge, error)
 			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")}))
 	}
 	var ebc *eventbridge.EventBridge = eventbridge.New(s)
-	return *ebc, err
+	return *ebc, nil
 }
 
 // Produce creates a producer and send data to EventBridge.
@@ -58,7 +58,10 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	// create eventbridge event
 	putRequestEntry := eventbridge.PutEventsRequestEntry{}
-	json.Unmarshal(jsonData, &putRequestEntry)
+	err := json.Unmarshal(jsonData, &putRequestEntry)
+	if err != nil {
+		return 400, "[EventBridge] Failed to create eventbridge event", err.Error()
+	}
 
 	// create eventbridge request
 	putRequestEntryList := []*eventbridge.PutEventsRequestEntry{&putRequestEntry}
@@ -68,7 +71,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	// send request to event bridge
 	putEventsOutput, err := ebc.PutEvents(&requestInput)
 	if err != nil {
-		logger.Errorf("Error while sending event to eventbridge :: %v", err.Error())
+		logger.Errorf("[EventBridge] Error while sending event :: %w", err)
 
 		// set default status code as 500
 		statusCode := 500
@@ -80,23 +83,27 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 		return statusCode, err.Error(), err.Error()
 	}
-	// if one of the required fields(Detail, DetailType, Source) is missing,
-	// the error returned by PutEvents will be nil but the request will eventually fail
-	if len(putEventsOutput.Entries) > 0 {
-		errorCode := putEventsOutput.Entries[0].ErrorCode
-		errorMessage := putEventsOutput.Entries[0].ErrorMessage
+
+	// Since we are sending only one event, Entries should have only one entry
+	if len(putEventsOutput.Entries) != 1 {
+		return 400, "Failed to send event to eventbridge", "Failed to send event to eventbridge"
+	}
+
+	// Considering only the first entry as we sent only one event
+	outputEntry := putEventsOutput.Entries[0]
+
+	// if one of the required fields(Detail, DetailType, Source) is missing, the error returned by PutEvents will be nil.
+	// In this case, outputEntry will contain the error code and message
+	errorCode := outputEntry.ErrorCode
+	errorMessage := outputEntry.ErrorMessage
+	if errorCode != nil && errorMessage != nil {
 		// request has failed if errorCode and errorMessage are not nil
-		if errorCode != nil && errorMessage != nil {
-			return 400, *errorCode, *errorMessage
-		}
+		return 400, *errorCode, *errorMessage
 	}
 
 	message := "Successfully sent event to eventbridge"
-	if len(putEventsOutput.Entries) > 0 {
-		if eventID := putEventsOutput.Entries[0].EventId; eventID != nil {
-			message += fmt.Sprintf(",with eventID: %v", *eventID)
-		}
+	if eventID := outputEntry.EventId; eventID != nil {
+		message += fmt.Sprintf(",with eventID: %v", *eventID)
 	}
-
 	return 200, "Success", message
 }
