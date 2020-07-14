@@ -97,7 +97,7 @@ var partitionKeyMap = map[string]string{
 
 // connect connects to warehouse with provided credentials
 func connect(cred credentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=1000&pool_size=1&debug=%s&compress=true",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=100&pool_size=1&debug=%s&compress=true",
 		cred.host,
 		cred.port,
 		cred.user,
