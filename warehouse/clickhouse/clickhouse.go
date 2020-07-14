@@ -110,6 +110,7 @@ func connect(cred credentialsT) (*sql.DB, error) {
 
 	var err error
 	var db *sql.DB
+
 	if db, err = sql.Open("clickhouse", url); err != nil {
 		return nil, fmt.Errorf("clickhouse connection error : (%v)", err)
 	}
