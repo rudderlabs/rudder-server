@@ -126,7 +126,7 @@ func loadConfig() {
 	maxParallelLoads = config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3)
 	clickhouseDebugLogs = config.GetString("Warehouse.clickhouse.clickhouseDebugLogs", "false")
 	clickhouseLoadBatchSize = config.GetString("Warehouse.clickhouse.clickhouseLoadBatchSize", "1000")
-	clickhouseQueryPoolSize = config.GetString("Warehouse.clickhouse.clickhouseQueryPoolSize", "10")
+	clickhouseQueryPoolSize = config.GetString("Warehouse.clickhouse.clickhouseQueryPoolSize", "1")
 
 }
 
@@ -255,7 +255,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		dirName := "/rudder-warehouse-load-uploads-tmp/"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
-			logger.Errorf("CH: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			logger.Errorf("CH: Error in getting tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + object
@@ -363,6 +363,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
+	defer misc.RemoveFilePaths(fileNames...)
 
 	txn, err := ch.Db.Begin()
 	if err != nil {
@@ -392,9 +393,6 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			logger.Errorf("ch: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
-			rruntime.Go(func() {
-				misc.RemoveFilePaths(objectFileName)
-			})
 			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 			return
 		}
@@ -421,7 +419,6 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 					break
 				} else {
 					logger.Errorf("CH: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
-					misc.RemoveFilePaths(objectFileName)
 					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 					txn.Rollback()
 					return
@@ -439,7 +436,6 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 			_, err = stmt.Exec(recordInterface...)
 			if err != nil {
 				logger.Errorf("CH: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
-				misc.RemoveFilePaths(objectFileName)
 				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 				txn.Rollback()
 				return
@@ -448,9 +444,6 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		}
 		gzipReader.Close()
 		gzipFile.Close()
-		rruntime.Go(func() {
-			misc.RemoveFilePaths(objectFileName)
-		})
 	}
 	if err != nil && err != io.EOF {
 		txn.Rollback()
