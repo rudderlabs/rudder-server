@@ -97,14 +97,14 @@ var partitionKeyMap = map[string]string{
 
 // connect connects to warehouse with provided credentials
 func connect(cred credentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=10000&debug=%s&compress=true",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s",
 		cred.host,
 		cred.port,
 		cred.user,
 		cred.password,
 		cred.dbName,
-		//clickhouseLoadBatchSize,
-		//clickhouseQueryPoolSize,
+		clickhouseLoadBatchSize,
+		clickhouseQueryPoolSize,
 		clickhouseDebugLogs,
 	)
 
@@ -126,7 +126,7 @@ func loadConfig() {
 	maxParallelLoads = config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3)
 	clickhouseDebugLogs = config.GetString("Warehouse.clickhouse.clickhouseDebugLogs", "false")
 	clickhouseLoadBatchSize = config.GetString("Warehouse.clickhouse.clickhouseLoadBatchSize", "1000")
-	clickhouseQueryPoolSize = config.GetString("Warehouse.clickhouse.clickhouseQueryPoolSize", "1")
+	clickhouseQueryPoolSize = config.GetString("Warehouse.clickhouse.clickhouseQueryPoolSize", "10")
 
 }
 
