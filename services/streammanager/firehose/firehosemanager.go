@@ -18,14 +18,19 @@ type Config struct {
 	Region      string
 	AccessKeyID string
 	AccessKey   string
-	MapEvents   []map[string]string
 }
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 	var config Config
 	jsonConfig, err := json.Marshal(destinationConfig)
+	if err != nil {
+		return firehose.Firehose{}, fmt.Errorf("[FireHose] Error while marshalling destination config :: %w", err)
+	}
 	err = json.Unmarshal(jsonConfig, &config)
+	if err != nil {
+		return firehose.Firehose{}, fmt.Errorf("[FireHose] error  :: error in firehose while unmarshelling destination config:: %w", err)
+	}
 	var s *session.Session
 
 	if config.AccessKeyID == "" || config.AccessKey == "" {
@@ -38,65 +43,102 @@ func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")}))
 	}
 	var fh *firehose.Firehose = firehose.New(s)
-	return *fh, err
+	return *fh, nil
 }
 
 // Produce creates a producer and send data to Firehose.
-func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string) {
+func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
 
 	parsedJSON := gjson.ParseBytes(jsonData)
 	var putOutput *firehose.PutRecordOutput = nil
 	var errorRec error
-	var message string
 
 	fh, ok := producer.(firehose.Firehose)
-	if !ok {
-		return 400, "Could not create producer", "Could not create producer"
-	}
 
+	if !ok {
+		respStatus = "Failure"
+		responseMessage = "[FireHose] error :: Could not create producer"
+		return 400, respStatus, responseMessage
+	}
 	var config Config
 	jsonConfig, err := json.Marshal(destConfig)
+	if err != nil {
+		respStatus = "Failure"
+		responseMessage = "[FireHose] error :: " + err.Error()
+		logger.Errorf("[FireHose] error  :: %w", err)
+		statusCode := 400
+		return statusCode, respStatus, responseMessage
+	}
 	err = json.Unmarshal(jsonConfig, &config)
-	data := parsedJSON.Get("message").Value().(interface{})
+	if err != nil {
+		respStatus = "Failure"
+		responseMessage = "[FireHose] error  :: " + err.Error()
+		logger.Errorf("[FireHose] error  :: %w", err)
+		statusCode := 400
+		return statusCode, respStatus, responseMessage
+	}
+	var data interface{}
+	if parsedJSON.Get("message").Value() != nil {
+		data = parsedJSON.Get("message").Value()
+	} else {
+		respStatus = "Failure"
+		responseMessage = "[FireHose] error :: message from payload not found"
+		return 400, respStatus, responseMessage
+	}
 	value, err := json.Marshal(data)
 
 	if err != nil {
-		logger.Errorf("error in firehose :: %v", err.Error())
-		statusCode := 500
-		return statusCode, err.Error(), err.Error()
+		respStatus = "Failure"
+		responseMessage = "[FireHose] error  :: " + err.Error()
+		logger.Errorf("[FireHose] error  :: %w", err)
+		statusCode := 400
+		return statusCode, respStatus, responseMessage
 	}
 
 	if parsedJSON.Get("deliveryStreamMapTo").Value() != nil {
 		deliveryStreamMapToInputString, ok := parsedJSON.Get("deliveryStreamMapTo").Value().(string)
 		if !ok {
-			var sendMessage string = "error in firehose :: Could not parse delivery stream to string"
-			logger.Error(sendMessage)
-			statusCode := 500
-			return statusCode, sendMessage, sendMessage
+			respStatus = "Failure"
+			responseMessage = "[FireHose] error :: Could not parse delivery stream to string"
+			logger.Error(responseMessage)
+			statusCode := 400
+			return statusCode, respStatus, responseMessage
+		}
+		if deliveryStreamMapToInputString == "" {
+			respStatus = "Failure"
+			responseMessage = "[FireHose] error :: empty delivery stream"
+			return 400, respStatus, responseMessage
 		}
 
 		putOutput, errorRec = fh.PutRecord(&firehose.PutRecordInput{
-			DeliveryStreamName: aws.String(string(deliveryStreamMapToInputString)),
+			DeliveryStreamName: aws.String(deliveryStreamMapToInputString),
 			Record:             &firehose.Record{Data: value},
 		})
 
 		if errorRec != nil {
 			statusCode := 500
+			respStatus = "Failure"
+			responseMessage = "[FireHose] error  :: " + errorRec.Error()
 			if awsErr, ok := errorRec.(awserr.Error); ok {
 				if reqErr, ok := errorRec.(awserr.RequestFailure); ok {
-					logger.Errorf("error in firehose :: %v + %v", awsErr.Code(), reqErr.Error())
+					responseMessage = "[FireHose] error  :: " + reqErr.Error()
+					respStatus = awsErr.Code()
 					statusCode = reqErr.StatusCode()
+					logger.Errorf("[FireHose] error  :: %v + %v", awsErr.Code(), reqErr.Error())
 				}
 			}
-			return statusCode, errorRec.Error(), errorRec.Error()
+			return statusCode, respStatus, responseMessage
 		}
 
 		if putOutput != nil {
-			message = fmt.Sprintf("Message delivered with Record information %v", putOutput)
+			responseMessage = fmt.Sprintf("Message delivered with Record information %v", putOutput)
 		}
-		return 200, "Success", message
+		respStatus = "Success"
+		return 200, respStatus, responseMessage
 	} else {
-		return 400, "Delivery Stream not found", "Delivery Stream not found"
+		respStatus = "Failure"
+		responseMessage = "[FireHose] error  :: Delivery Stream not found"
+		return 400, respStatus, responseMessage
 	}
 
 }
