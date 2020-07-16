@@ -211,6 +211,7 @@ func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT
 	configMap := config.(map[string]interface{})
 	var namespace string
 	if destType == "CLICKHOUSE" {
+		//TODO: Handle if configMap["database"] is nil
 		return configMap["database"].(string)
 	}
 	if configMap["namespace"] != nil {
