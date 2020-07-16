@@ -96,7 +96,7 @@ func (bq *HandleT) createTable(name string, columns map[string]string) (err erro
 	sampleSchema := getTableSchema(columns)
 	metaData := &bigquery.TableMetadata{
 		Schema:           sampleSchema,
-		TimePartitioning: &bigquery.TimePartitioning{Expiration: time.Duration(24*60) * time.Hour},
+		TimePartitioning: &bigquery.TimePartitioning{},
 	}
 	tableRef := bq.Db.Dataset(bq.Namespace).Table(name)
 	err = tableRef.Create(bq.BQContext, metaData)
@@ -396,6 +396,16 @@ func (bq *HandleT) Export() (err error) {
 	return
 }
 
+func (bq *HandleT) removePartitionExpiry() (err error) {
+	for tName := range bq.CurrentSchema {
+		_, err := bq.Db.Dataset(bq.Namespace).Table(tName).Update(bq.BQContext, bigquery.TableMetadataToUpdate{TimePartitioning: &bigquery.TimePartitioning{Expiration: time.Duration(0)}}, "")
+		if err != nil {
+			return err
+		}
+	}
+	return err
+}
+
 func (bq *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	return
 }
@@ -421,6 +431,12 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	}
 	bq.CurrentSchema = currSchema
 	bq.Namespace = bq.Upload.Namespace
+
+	err = bq.removePartitionExpiry()
+	if err != nil {
+		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
+		return err
+	}
 
 	if config.Stage == "ExportData" {
 		err = bq.Export()
