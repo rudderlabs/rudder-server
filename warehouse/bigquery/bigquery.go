@@ -165,15 +165,16 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	schema = make(map[string]map[string]string)
 	bq.Warehouse = warehouse
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
-	bq.Db, err = bq.connect(BQCredentialsT{
+	dbClient, err := bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	if err != nil {
 		return
 	}
+	defer dbClient.Close()
 
-	query := bq.Db.Query(fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
+	query := dbClient.Query(fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
 							 FROM %[1]s.INFORMATION_SCHEMA.TABLES as t JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c
 							 ON (t.table_name = c.table_name) and (t.table_type != 'VIEW')`, namespace))
 
@@ -275,8 +276,8 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 	logger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
 	gcsRef := bigquery.NewGCSReference(locations...)
 	gcsRef.SourceFormat = bigquery.JSON
-	gcsRef.MaxBadRecords = 100
-	gcsRef.IgnoreUnknownValues = true
+	gcsRef.MaxBadRecords = 0
+	gcsRef.IgnoreUnknownValues = false
 	// create partitioned table in format tableName$20191221
 	loader := bq.Db.Dataset(bq.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
 
