@@ -164,9 +164,9 @@ stagingFilesBatchSize = 240
     maxParallelLoads = 3
     [Warehouse.clickhouse]
     maxParallelLoads = 3
-    clickhouseDebugLogs = false
-    clickhouseLoadBatchSize = 1000
-    clickhouseQueryPoolSize = 10
+    queryDebugLogs = false
+    blockSize = 1000
+    poolSize = 10
 
 [Processor]
 loopSleepInMS = 10
