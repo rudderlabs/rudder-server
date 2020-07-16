@@ -202,12 +202,10 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 		if _, ok := schema[tName]; !ok {
 			schema[tName] = make(map[string]string)
 		}
-		fmt.Println(cType)
 		if datatype, ok := clickhouseDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
 		}
 	}
-	fmt.Println(schema["users"])
 	return
 }
 
