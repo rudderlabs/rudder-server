@@ -72,7 +72,7 @@ func loadConfig() {
 	enableRouter = config.GetBool("enableRouter", true)
 	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	// Enable suppress user feature. true by default
 	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
