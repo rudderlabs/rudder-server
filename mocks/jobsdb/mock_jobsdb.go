@@ -5,11 +5,10 @@
 package mocks_jobsdb
 
 import (
-	reflect "reflect"
-
 	gomock "github.com/golang/mock/gomock"
 	jobsdb "github.com/rudderlabs/rudder-server/jobsdb"
 	uuid "github.com/satori/go.uuid"
+	reflect "reflect"
 )
 
 // MockJobsDB is a mock of JobsDB interface
@@ -89,6 +88,20 @@ func (m *MockJobsDB) GetUnprocessed(arg0 []string, arg1 int, arg2 []jobsdb.Param
 func (mr *MockJobsDBMockRecorder) GetUnprocessed(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUnprocessed", reflect.TypeOf((*MockJobsDB)(nil).GetUnprocessed), arg0, arg1, arg2)
+}
+
+// Status mocks base method
+func (m *MockJobsDB) Status() interface{} {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Status")
+	ret0, _ := ret[0].(interface{})
+	return ret0
+}
+
+// Status indicates an expected call of Status
+func (mr *MockJobsDBMockRecorder) Status() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockJobsDB)(nil).Status))
 }
 
 // Store mocks base method

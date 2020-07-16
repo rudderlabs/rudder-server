@@ -38,6 +38,6 @@ func GetConnectionString() string {
 func FetchEventSchemaCount(dbHandle *sql.DB) int {
 	count := 0
 	dbHandle.QueryRow(fmt.Sprintf(`select count(*) from %s;`, "event_uploads")).Scan(&count)
-	
+
 	return count
 }

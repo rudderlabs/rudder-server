@@ -40,10 +40,11 @@ const (
 )
 
 const (
-	RS        = "RS"
-	BQ        = "BQ"
-	SNOWFLAKE = "SNOWFLAKE"
-	POSTGRES  = "POSTGRES"
+	RS         = "RS"
+	BQ         = "BQ"
+	SNOWFLAKE  = "SNOWFLAKE"
+	POSTGRES   = "POSTGRES"
+	CLICKHOUSE = "CLICKHOUSE"
 )
 
 const (
@@ -742,20 +743,19 @@ func SnowflakeCloudProvider(config interface{}) string {
 }
 
 func ObjectStorageType(destType string, config interface{}) string {
-	if destType != "SNOWFLAKE" && destType != "POSTGRES" {
+	if destType == "RS" || destType == "BQ" {
 		return ObjectStorageMap[destType]
 	}
-	if destType == "POSTGRES" {
-		c := config.(map[string]interface{})
-		provider, _ := c["bucketProvider"].(string)
-		return provider
-	}
 	c := config.(map[string]interface{})
-	provider, ok := c["cloudProvider"].(string)
-	if provider == "" || !ok {
-		provider = "AWS"
+	if destType == "SNOWFLAKE" {
+		provider, ok := c["cloudProvider"].(string)
+		if provider == "" || !ok {
+			provider = "AWS"
+		}
+		return SnowflakeStorageMap[provider]
 	}
-	return SnowflakeStorageMap[provider]
+	provider, _ := c["bucketProvider"].(string)
+	return provider
 }
 
 func GetConfigValue(key string, warehouse WarehouseT) (val string) {

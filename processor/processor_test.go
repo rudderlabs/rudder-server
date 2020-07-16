@@ -175,7 +175,7 @@ var sampleBackendConfig = backendconfig.SourcesT{
 						ID:          "enabled-destination-a-definition-id",
 						Name:        "enabled-destination-a-definition-name",
 						DisplayName: "enabled-destination-a-definition-display-name",
-						Config:      "",
+						Config:      map[string]interface{}{},
 					},
 				},
 				{
@@ -187,7 +187,7 @@ var sampleBackendConfig = backendconfig.SourcesT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",
 						DisplayName: "enabled-destination-b-definition-display-name",
-						Config:      "",
+						Config:      map[string]interface{}{},
 					},
 					Transformations: []backendconfig.TransformationT{
 						{
@@ -208,7 +208,7 @@ var sampleBackendConfig = backendconfig.SourcesT{
 						ID:          "destination-definition-disabled",
 						Name:        "destination-definition-name-disabled",
 						DisplayName: "destination-definition-display-name-disabled",
-						Config:      "",
+						Config:      map[string]interface{}{},
 					},
 				},
 			},
@@ -1417,7 +1417,7 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 	return func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
 		destinationDefinitionName := expectations.destinationDefinitionName
 
-		Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/%s?whSchemaVersion=", destinationDefinitionName)))
+		Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/%s", destinationDefinitionName)))
 		Expect(breakIntoBatchWhenUserChanges).To(BeFalse())
 
 		Expect(clientEvents).To(HaveLen(expectations.events))

@@ -1,17 +1,15 @@
 {
   "anonymousId": "49e4bdd1c280bc00",
   "channel": "android-sdk",
-  "destination_props": {
-    "AF": {
-      "af_uid": "1566363489499-3377330514807116178"
-    }
-  },
   "context": {
     "app": {
       "build": "1",
       "name": "RudderAndroidClient",
       "namespace": "com.rudderlabs.android.sdk",
       "version": "1.0"
+    },
+    "library": {
+      "name": "com.rudderstack.android.sdk.core"
     },
     "device": {
       "id": "49e4bdd1c280bc00",
@@ -35,8 +33,7 @@
   },
   "event": "Demo Track - New",
   "integrations": {
-    "All": true,
-    "Google Analytics": true
+    "All": true
   },
   "properties": {
     "label": "Demo Label",
