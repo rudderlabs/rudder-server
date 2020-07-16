@@ -520,7 +520,10 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 func (brt *HandleT) mainLoop() {
 	for {
 		time.Sleep(mainLoopSleep)
-		for _, batchDestination := range brt.batchDestinations {
+		configSubscriberLock.RLock()
+		batchDestinations := brt.batchDestinations
+		configSubscriberLock.RUnlock()
+		for _, batchDestination := range batchDestinations {
 			if isDestInProgress(batchDestination) {
 				logger.Debugf("BRT: Skipping batch router upload loop since destination %s:%s is in progress", batchDestination.Destination.DestinationDefinition.Name, batchDestination.Destination.ID)
 				continue
@@ -752,7 +755,7 @@ func loadConfig() {
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
@@ -794,4 +797,5 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	rruntime.Go(func() {
 		brt.mainLoop()
 	})
+	adminInstance.registerBatchRouter(destType, brt)
 }

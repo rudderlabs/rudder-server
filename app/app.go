@@ -61,6 +61,10 @@ func (a *App) initEnterpriseFeatures() {
 	if webhookFeatureSetup != nil {
 		a.features.Webhook = webhookFeatureSetup(a)
 	}
+
+	if suppressUserFeatureSetup != nil {
+		a.features.SuppressUser = suppressUserFeatureSetup(a)
+	}
 }
 
 // Options returns this application's options

@@ -144,6 +144,7 @@ func (trans *HandleT) transformWorker() {
 				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
 			}
 
+			// perform version compatability check only on success
 			if resp.StatusCode == http.StatusOK {
 				transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
 				if convErr != nil {

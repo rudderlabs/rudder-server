@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
@@ -13,10 +14,12 @@ import (
 
 var (
 	scheduledTimesCache map[string][]int
+	startUploadAlways   bool
 )
 
 func init() {
 	scheduledTimesCache = map[string][]int{}
+	admin.RegisterAdminHandler("Warehouse", &WarehouseAdmin{})
 }
 
 // ScheduledTimes returns all possible start times as per schedule
@@ -102,6 +105,10 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) (
 
 // canStartUpload indicates if a upload can be started now for the warehouse based on its configured schedule
 func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
+	// can be set from rudder-cli to force uploads always
+	if startUploadAlways {
+		return true
+	}
 	if warehouseSyncFreqIgnore {
 		return !uploadFrequencyExceeded(warehouse, "")
 	}

@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
+
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -84,13 +86,14 @@ const (
 )
 
 type HandleT struct {
-	destType           string
-	warehouses         []warehouseutils.WarehouseT
-	dbHandle           *sql.DB
-	notifier           pgnotifier.PgNotifierT
-	uploadToWarehouseQ chan []ProcessStagingFilesJobT
-	createLoadFilesQ   chan LoadFileJobT
-	isEnabled          bool
+	destType             string
+	warehouses           []warehouseutils.WarehouseT
+	dbHandle             *sql.DB
+	notifier             pgnotifier.PgNotifierT
+	uploadToWarehouseQ   chan []ProcessStagingFilesJobT
+	createLoadFilesQ     chan LoadFileJobT
+	isEnabled            bool
+	configSubscriberLock sync.RWMutex
 }
 
 type ProcessStagingFilesJobT struct {
@@ -132,7 +135,7 @@ func init() {
 func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
-	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
@@ -207,6 +210,10 @@ func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string
 func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
 	configMap := config.(map[string]interface{})
 	var namespace string
+	if destType == "CLICKHOUSE" {
+		//TODO: Handle if configMap["database"] is nil
+		return configMap["database"].(string)
+	}
 	if configMap["namespace"] != nil {
 		namespace = configMap["namespace"].(string)
 		if len(strings.TrimSpace(namespace)) > 0 {
@@ -387,6 +394,7 @@ func (wh *HandleT) areTableUploadsCreated(upload warehouseutils.UploadT) bool {
 }
 
 func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[string]map[string]string) (err error) {
+
 	//Using transactions for bulk copying
 	txn, err := wh.dbHandle.Begin()
 	if err != nil {
@@ -569,19 +577,30 @@ func NewWhManager(destType string) (WarehouseManager, error) {
 	case "POSTGRES":
 		var pg postgres.HandleT
 		return &pg, nil
+	case "CLICKHOUSE":
+		var ch clickhouse.HandleT
+		return &ch, nil
 	}
-	return nil, errors.New("No provider configured for WarehouseManager")
+
+	return nil, errors.New("no provider configured for WarehouseManager")
 }
 
 func (wh *HandleT) mainLoop() {
 	for {
+		wh.configSubscriberLock.RLock()
 		if !wh.isEnabled {
+			wh.configSubscriberLock.RUnlock()
 			time.Sleep(mainLoopSleep)
 			continue
 		}
-		for _, warehouse := range wh.warehouses {
+		wh.configSubscriberLock.RUnlock()
+
+		configSubscriberLock.RLock()
+		warehouses := wh.warehouses
+		configSubscriberLock.RUnlock()
+		for _, warehouse := range warehouses {
 			if isDestInProgress(warehouse) {
-				logger.Debugf("WH: Skipping upload loop since %s:%s upload in progess", wh.destType, warehouse.Destination.ID)
+				logger.Debugf("WH: Skipping upload loop since %s:%s upload in progress", wh.destType, warehouse.Destination.ID)
 				continue
 			}
 			setDestInProgress(warehouse, true)
@@ -1071,10 +1090,11 @@ func (wh *HandleT) Setup(whType string) {
 }
 
 var loadFileFormatMap = map[string]string{
-	"BQ":        "json",
-	"RS":        "csv",
-	"SNOWFLAKE": "csv",
-	"POSTGRES":  "csv",
+	"BQ":         "json",
+	"RS":         "csv",
+	"SNOWFLAKE":  "csv",
+	"POSTGRES":   "csv",
+	"CLICKHOUSE": "csv",
 }
 
 func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
@@ -1427,11 +1447,15 @@ func monitorDestRouters() {
 					if !ok {
 						logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 						var wh HandleT
+						wh.configSubscriberLock.Lock()
 						wh.Setup(destination.DestinationDefinition.Name)
+						wh.configSubscriberLock.Unlock()
 						dstToWhRouter[destination.DestinationDefinition.Name] = &wh
 					} else {
 						logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+						wh.configSubscriberLock.Lock()
 						wh.Enable()
+						wh.configSubscriberLock.Unlock()
 					}
 				}
 			}
@@ -1442,7 +1466,9 @@ func monitorDestRouters() {
 			if _, ok := enabledDestinations[key]; !ok {
 				if whHandle, ok := dstToWhRouter[key]; ok {
 					logger.Info("Disabling a existing warehouse destination: ", key)
+					whHandle.configSubscriberLock.Lock()
 					whHandle.Disable()
+					whHandle.configSubscriberLock.Unlock()
 				}
 			}
 		}
@@ -1644,7 +1670,7 @@ func Start() {
 
 	if isMaster() {
 		if warehouseMode != config.EmbeddedMode {
-			backendconfig.Setup()
+			backendconfig.Setup(false)
 		}
 		logger.Infof("WH: Starting warehouse master...")
 		err = notifier.AddTopic("process_staging_file")
