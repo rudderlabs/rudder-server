@@ -14,7 +14,7 @@ type FixedString struct {
 	scanType reflect.Type
 }
 
-func (str *FixedString) Read(decoder *binary.Decoder) (interface{}, error) {
+func (str *FixedString) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	v, err := decoder.Fixed(str.len)
 	if err != nil {
 		return "", err

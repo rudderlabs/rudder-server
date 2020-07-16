@@ -8,6 +8,12 @@ import (
 
 func NewDecoder(input io.Reader) *Decoder {
 	return &Decoder{
+		input: input,
+	}
+}
+
+func NewDecoderWithCompress(input io.Reader) *Decoder {
+	return &Decoder{
 		input:         input,
 		compressInput: NewCompressReader(input),
 	}
@@ -25,7 +31,7 @@ func (decoder *Decoder) SelectCompress(compress bool) {
 }
 
 func (decoder *Decoder) Get() io.Reader {
-	if decoder.compress {
+	if decoder.compress && decoder.compressInput != nil {
 		return decoder.compressInput
 	}
 	return decoder.input

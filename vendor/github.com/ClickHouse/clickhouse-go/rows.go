@@ -161,3 +161,22 @@ func (rows *rows) setError(err error) error {
 	rows.mutex.Unlock()
 	return err
 }
+
+func (rows *rows) ColumnTypeNullable(idx int) (nullable, ok bool) {
+	_, ok = rows.blockColumns[idx].(*column.Nullable)
+	return ok, true
+}
+
+func (rows *rows) ColumnTypePrecisionScale(idx int) (precision, scale int64, ok bool) {
+	decimalVal, ok := rows.blockColumns[idx].(*column.Decimal)
+	if !ok {
+		if nullable, nullOk := rows.blockColumns[idx].(*column.Nullable); nullOk {
+			decimalVal, ok = nullable.GetColumn().(*column.Decimal)
+		}
+	}
+	if ok {
+		return int64(decimalVal.GetPrecision()), int64(decimalVal.GetScale()), ok
+
+	}
+	return 0, 0, false
+}

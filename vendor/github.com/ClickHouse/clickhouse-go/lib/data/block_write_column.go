@@ -2,6 +2,7 @@ package data
 
 import (
 	"fmt"
+	"net"
 	"reflect"
 	"time"
 
@@ -86,6 +87,10 @@ func (block *Block) WriteString(c int, v string) error {
 }
 
 func (block *Block) WriteFixedString(c int, v []byte) error {
+	return block.Columns[c].Write(block.buffers[c].Column, v)
+}
+
+func (block *Block) WriteIP(c int, v net.IP) error {
 	return block.Columns[c].Write(block.buffers[c].Column, v)
 }
 

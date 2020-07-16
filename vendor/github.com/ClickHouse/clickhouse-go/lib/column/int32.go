@@ -6,7 +6,7 @@ import (
 
 type Int32 struct{ base }
 
-func (Int32) Read(decoder *binary.Decoder) (interface{}, error) {
+func (Int32) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	v, err := decoder.Int32()
 	if err != nil {
 		return int32(0), err

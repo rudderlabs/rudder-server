@@ -27,7 +27,7 @@ type Decimal struct {
 	scale     int
 }
 
-func (d *Decimal) Read(decoder *binary.Decoder) (interface{}, error) {
+func (d *Decimal) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	switch d.nobits {
 	case 32:
 		return decoder.Int32()
@@ -238,4 +238,12 @@ func parseDecimal(name, chType string) (Column, error) {
 	}
 
 	return decimal, nil
+}
+
+func (d *Decimal) GetPrecision() int {
+	return d.precision
+}
+
+func (d *Decimal) GetScale() int {
+	return d.scale
 }

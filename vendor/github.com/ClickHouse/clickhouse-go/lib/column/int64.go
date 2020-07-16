@@ -6,7 +6,7 @@ import (
 
 type Int64 struct{ base }
 
-func (Int64) Read(decoder *binary.Decoder) (interface{}, error) {
+func (Int64) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	v, err := decoder.Int64()
 	if err != nil {
 		return int64(0), err

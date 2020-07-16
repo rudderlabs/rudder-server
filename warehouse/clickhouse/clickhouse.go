@@ -63,6 +63,11 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"Nullable(String)":   "string",
 	"Nullable(DateTime)": "datetime",
 	"Nullable(UInt8)":    "boolean",
+	"SimpleAggregateFunction(anyLast, Nullable(Int64))":    "int",
+	"SimpleAggregateFunction(anyLast, Nullable(Floats64))": "float",
+	"SimpleAggregateFunction(anyLast, Nullable(String))":   "string",
+	"SimpleAggregateFunction(anyLast, Nullable(DateTime))": "datetime",
+	"SimpleAggregateFunction(anyLast, Nullable(UInt8))":    "boolean",
 }
 
 type HandleT struct {
@@ -88,11 +93,6 @@ var primaryKeyMap = map[string]string{
 	warehouseutils.UsersTable:      "id",
 	warehouseutils.IdentifiesTable: "id",
 	warehouseutils.DiscardsTable:   "row_id",
-}
-var partitionKeyMap = map[string]string{
-	warehouseutils.UsersTable:      "id",
-	warehouseutils.IdentifiesTable: "id",
-	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
 // connect connects to warehouse with provided credentials
@@ -138,36 +138,32 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 		user:     warehouseutils.GetConfigValue(user, ch.Warehouse),
 		password: warehouseutils.GetConfigValue(password, ch.Warehouse),
 		port:     warehouseutils.GetConfigValue(port, ch.Warehouse),
-		sslMode:  warehouseutils.GetConfigValue(sslMode, ch.Warehouse),
 	}
 }
 
 // columnsWithDataTypes creates columns and its datatype into sql format for creating table
-func columnsWithDataTypes(columns map[string]string, prefix string, sortKeyField string) string {
+func columnsWithDataTypes(tableName string, columns map[string]string, sortKeyFields []string) string {
 	var arr []string
-	for name, dataType := range columns {
-		if name == sortKeyField {
-			arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToClickHouse[dataType]))
+	for columnName, dataType := range columns {
+		if misc.ContainsString(sortKeyFields, columnName) {
+			arr = append(arr, fmt.Sprintf(`%s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], true)))
 		} else {
-			arr = append(arr, fmt.Sprintf(`%s%s Nullable(%s)`, prefix, name, rudderDataTypesMapToClickHouse[dataType]))
+			arr = append(arr, fmt.Sprintf(`%s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], false)))
 		}
 
 	}
 	return strings.Join(arr[:], ",")
 }
 
-// columnsWithDataTypesForUsersTable creates columns and its datatype into sql format for creating users table
-func columnsWithDataTypesForUsersTable(columns map[string]string, prefix string, sortKeyField string) string {
-	var arr []string
-	for name, dataType := range columns {
-		if name == sortKeyField {
-			arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, rudderDataTypesMapToClickHouse[dataType]))
-		} else {
-			arr = append(arr, fmt.Sprintf(`%s%s SimpleAggregateFunction(anyLast, Nullable(%s))`, prefix, name, rudderDataTypesMapToClickHouse[dataType]))
-		}
-
+// getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
+func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string, isSortKey bool) string {
+	if isSortKey {
+		return columnType
 	}
-	return strings.Join(arr[:], ",")
+	if tableName == warehouseutils.UsersTable {
+		return fmt.Sprintf(`SimpleAggregateFunction(anyLast, Nullable(%s))`, columnType)
+	}
+	return fmt.Sprintf(`Nullable(%s)`, columnType)
 }
 
 func (ch *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
@@ -206,10 +202,12 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 		if _, ok := schema[tName]; !ok {
 			schema[tName] = make(map[string]string)
 		}
+		fmt.Println(cType)
 		if datatype, ok := clickhouseDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
 		}
 	}
+	fmt.Println(schema["users"])
 	return
 }
 
@@ -336,7 +334,7 @@ func typeCastDataFromType(data string, datatype string) interface{} {
 }
 
 // loadTable loads table to clickhouse from the load files
-func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forceLoad bool) (stagingTableName string, err error) {
+func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forceLoad bool) (err error) {
 	if !forceLoad {
 		status, _ := warehouseutils.GetTableUploadStatus(ch.Upload.ID, tableName, ch.DbHandle)
 		if status == warehouseutils.ExportedDataState {
@@ -371,19 +369,10 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
-	// create staging table
-	//stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
-	//err = ch.createTemporaryTable(tableName, columnMap, stagingTableName)
-	if err != nil {
-		logger.Errorf("ch: Error while creating staging table:%s: %v", stagingTableName, err)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
-		return
-	}
-	//defer ch.dropStagingTable(stagingTableName)
 
 	stmt, err := txn.Prepare(fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys))))
 	if err != nil {
-		logger.Errorf("ch: Error while preparing statement for  transaction in db for loading in staging table:%s: %v", stagingTableName, err)
+		logger.Errorf("ch: Error while preparing statement for  transaction in db for loading in  table:%s: %v", tableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
@@ -415,18 +404,18 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 			record, err = csvReader.Read()
 			if err != nil {
 				if err == io.EOF {
-					logger.Infof("CH: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
+					logger.Infof("CH: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFileName)
 					break
 				} else {
-					logger.Errorf("CH: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
+					logger.Errorf("CH: Error while reading csv file for loading in table:%s: %v", tableName, err)
 					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 					txn.Rollback()
 					return
 				}
 			}
 			var recordInterface []interface{}
-			for key, value := range record {
-				columnName := sortedColumnKeys[key]
+			for index, value := range record {
+				columnName := sortedColumnKeys[index]
 				columnDataType := columnMap[columnName]
 				data := typeCastDataFromType(value, columnDataType)
 				recordInterface = append(recordInterface, data)
@@ -435,7 +424,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 
 			_, err = stmt.Exec(recordInterface...)
 			if err != nil {
-				logger.Errorf("CH: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
+				logger.Errorf("CH: Error in exec statement for loading in table:%s: %v", tableName, err)
 				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 				txn.Rollback()
 				return
@@ -447,25 +436,17 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string, forc
 	}
 	if err != nil && err != io.EOF {
 		txn.Rollback()
-		logger.Errorf("CH: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
+		logger.Errorf("CH: Rollback transaction as there was error while loading in table:%s: %v", tableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
 
 	if err = txn.Commit(); err != nil {
-		logger.Errorf("CH: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
+		logger.Errorf("CH: Error while committing transaction as there was error while loading in table:%s: %v", tableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
 
-	//// load to table name from staging table
-	//sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) SELECT %v from %s`, ch.Namespace, tableName, sortedColumnString, sortedColumnString, stagingTableName)
-	//_, err = ch.Db.Exec(sqlStatement)
-	//if err != nil {
-	//	logger.Errorf("CH: Error while copying to table from staging table:%s: %v", stagingTableName, err)
-	//	warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
-	//	return
-	//}
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, ch.Upload.ID, tableName, ch.DbHandle)
 	logger.Infof("CH: Complete load for table:%s", tableName)
 	return
@@ -478,15 +459,11 @@ func (ch *HandleT) load() (errList []error) {
 	loadChan := make(chan struct{}, maxParallelLoads)
 	wg.Add(len(ch.Upload.Schema))
 	for tableName, columnMap := range ch.Upload.Schema {
-		if tableName == warehouseutils.UsersTable || tableName == warehouseutils.IdentifiesTable {
-			wg.Done()
-			continue
-		}
 		tName := tableName
 		cMap := columnMap
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
-			_, loadError := ch.loadTable(tName, cMap, false)
+			loadError := ch.loadTable(tName, cMap, false)
 			if loadError != nil {
 				errList = append(errList, loadError)
 			}
@@ -507,23 +484,23 @@ func (ch *HandleT) createSchema() (err error) {
 	return
 }
 
-func (ch *HandleT) createTemporaryTable(tableName string, columns map[string]string, stagingTableName string) (err error) {
-	sortKeyField := "received_at"
-	if _, ok := columns["received_at"]; !ok {
-		sortKeyField = "uuid_ts"
-		if _, ok = columns["uuid_ts"]; !ok {
-			sortKeyField = "id"
-		}
-	}
-	sqlColumnsFormat := columnsWithDataTypes(columns, "", sortKeyField)
-	if tableName == warehouseutils.UsersTable {
-		sqlColumnsFormat = columnsWithDataTypesForUsersTable(columns, "", sortKeyField)
-	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" (%v) engine = Memory()`, stagingTableName, sqlColumnsFormat)
-	logger.Infof("CH: Creating temporary table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
-	_, err = ch.Db.Exec(sqlStatement)
-	return
-}
+//func (ch *HandleT) createTemporaryTable(tableName string, columns map[string]string, stagingTableName string) (err error) {
+//	sortKeyField := "received_at"
+//	if _, ok := columns["received_at"]; !ok {
+//		sortKeyField = "uuid_ts"
+//		if _, ok = columns["uuid_ts"]; !ok {
+//			sortKeyField = "id"
+//		}
+//	}
+//	sqlColumnsFormat := columnsWithDataTypes(columns, "", sortKeyField)
+//	if tableName == warehouseutils.UsersTable {
+//		sqlColumnsFormat = columnsWithDataTypesForUsersTable(columns, "", sortKeyField)
+//	}
+//	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" (%v) engine = Memory()`, stagingTableName, sqlColumnsFormat)
+//	logger.Infof("CH: Creating temporary table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
+//	_, err = ch.Db.Exec(sqlStatement)
+//	return
+//}
 
 /*
  createUsersTable creates a users table with engine AggregatingMergeTree,
@@ -531,47 +508,52 @@ func (ch *HandleT) createTemporaryTable(tableName string, columns map[string]str
  current behaviour is to replace user  properties with latest non null values
 */
 func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err error) {
-	sortKeyField := "received_at"
-	if _, ok := columns["received_at"]; !ok {
-		sortKeyField = "uuid_ts"
-		if _, ok = columns["uuid_ts"]; !ok {
-			sortKeyField = "id"
-		}
-	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = AggregatingMergeTree() order by %s `, ch.Namespace, name, columnsWithDataTypesForUsersTable(columns, "", sortKeyField), sortKeyField)
+	sortKeyFields := []string{"id"}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = AggregatingMergeTree() order by %s `, ch.Namespace, name, columnsWithDataTypes(name, columns, sortKeyFields), getSortKeyTuple(sortKeyFields))
 	logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
+}
+
+func getSortKeyTuple(sortKeyFields []string) string {
+	tuple := "("
+	for index, field := range sortKeyFields {
+		if index == len(sortKeyFields)-1 {
+			tuple += fmt.Sprintf(`"%s"`, field)
+		} else {
+			tuple += fmt.Sprintf(`"%s",`, field)
+		}
+
+	}
+	tuple += ")"
+	return tuple
 }
 
 // createTable creates table with engine ReplacingMergeTree(), this is used for dedupe event data and replace it will latest data if duplicate data found. This logic is handled by clickhouse
-func (ch *HandleT) createTable(name string, columns map[string]string) (err error) {
-	sortKeyField := "received_at"
-	if _, ok := columns["received_at"]; !ok {
-		sortKeyField = "uuid_ts"
-		if _, ok = columns["uuid_ts"]; !ok {
-			sortKeyField = "id"
-		}
+// The engine differs from MergeTree in that it removes duplicate entries with the same sorting key value.
+func (ch *HandleT) createTable(tableName string, columns map[string]string) (err error) {
+	sortKeyFields := []string{"received_at", "id"}
+	if tableName == warehouseutils.DiscardsTable {
+		sortKeyFields = []string{"uuid_ts"}
 	}
-
 	var sqlStatement string
-	if name == warehouseutils.UsersTable {
-		return ch.createUsersTable(name, columns)
+	if tableName == warehouseutils.UsersTable {
+		return ch.createUsersTable(tableName, columns)
 	}
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = ReplacingMergeTree() order by %s `, ch.Namespace, name, columnsWithDataTypes(columns, "", sortKeyField), sortKeyField)
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = ReplacingMergeTree() order by %s `, ch.Namespace, tableName, columnsWithDataTypes(tableName, columns, sortKeyFields), getSortKeyTuple(sortKeyFields))
 
 	logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
 }
 
-func (ch *HandleT) dropStagingTable(stagingTableName string) {
-	logger.Infof("CH: dropping table %+v\n", stagingTableName)
-	_, err := ch.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, stagingTableName))
-	if err != nil {
-		logger.Errorf("CH:  Error dropping staging table %s in postgres: %v", stagingTableName, err)
-	}
-}
+//func (ch *HandleT) dropStagingTable(stagingTableName string) {
+//	logger.Infof("CH: dropping table %+v\n", stagingTableName)
+//	_, err := ch.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, stagingTableName))
+//	if err != nil {
+//		logger.Errorf("CH:  Error dropping staging table %s in postgres: %v", stagingTableName, err)
+//	}
+//}
 
 // tableExists will check if tableName exists in the current namespace which is the database name
 func (ch *HandleT) tableExists(tableName string) (exists bool, err error) {
@@ -582,7 +564,7 @@ func (ch *HandleT) tableExists(tableName string) (exists bool, err error) {
 
 // addColumn adds column:columnName with dataType columnType to the tableName
 func (ch *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, columnName, rudderDataTypesMapToClickHouse[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[columnType], false))
 	logger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return

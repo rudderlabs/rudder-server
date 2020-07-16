@@ -16,7 +16,7 @@ type Array struct {
 	column Column
 }
 
-func (array *Array) Read(decoder *binary.Decoder) (interface{}, error) {
+func (array *Array) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	return nil, fmt.Errorf("do not use Read method for Array(T) column")
 }
 
@@ -26,38 +26,67 @@ func (array *Array) Write(encoder *binary.Encoder, v interface{}) error {
 
 func (array *Array) ReadArray(decoder *binary.Decoder, rows int) (_ []interface{}, err error) {
 	var (
+		offsets = make([][]uint64, array.depth)
 		values  = make([]interface{}, rows)
-		offsets = make([]uint64, rows)
 	)
-	for i := 0; i < rows; i++ {
-		offset, err := decoder.UInt64()
-		if err != nil {
-			return nil, err
+
+	// Read offsets
+	lastOffset := uint64(rows)
+	for i := 0; i < array.depth; i++ {
+		offset := make([]uint64, lastOffset)
+		for j := uint64(0); j < lastOffset; j++ {
+			if offset[j], err = decoder.UInt64(); err != nil {
+				return nil, err
+			}
 		}
 		offsets[i] = offset
-	}
-	for n, offset := range offsets {
-		ln := offset
-		if n != 0 {
-			ln = ln - offsets[n-1]
+		lastOffset = 0
+		if len(offset) > 0 {
+			lastOffset = offset[len(offset)-1]
 		}
-		if values[n], err = array.read(decoder, int(ln)); err != nil {
+	}
+
+	// Read values
+	for i := 0; i < rows; i++ {
+		if values[i], err = array.read(decoder, offsets, uint64(i), 0); err != nil {
 			return nil, err
 		}
 	}
 	return values, nil
 }
 
-func (array *Array) read(decoder *binary.Decoder, ln int) (interface{}, error) {
-	slice := reflect.MakeSlice(array.valueOf.Type(), 0, ln)
-	for i := 0; i < ln; i++ {
-		value, err := array.column.Read(decoder)
+func (array *Array) read(decoder *binary.Decoder, offsets [][]uint64, index uint64, level int) (interface{}, error) {
+	end := offsets[level][index]
+	start := uint64(0)
+	if index > 0 {
+		start = offsets[level][index-1]
+	}
+
+	slice := reflect.MakeSlice(array.arrayType(level), 0, int(end-start))
+	for i := start; i < end; i++ {
+		var (
+			value interface{}
+			err   error
+		)
+		if level == array.depth-1 {
+			value, err = array.column.Read(decoder, false)
+		} else {
+			value, err = array.read(decoder, offsets, i, level+1)
+		}
 		if err != nil {
 			return nil, err
 		}
 		slice = reflect.Append(slice, reflect.ValueOf(value))
 	}
 	return slice.Interface(), nil
+}
+
+func (array *Array) arrayType(level int) reflect.Type {
+	t := array.column.ScanType()
+	for i := 0; i < array.depth-level; i++ {
+		t = reflect.SliceOf(t)
+	}
+	return t
 }
 
 func (array *Array) Depth() int {

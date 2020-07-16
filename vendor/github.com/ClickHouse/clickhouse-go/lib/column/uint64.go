@@ -6,7 +6,7 @@ import (
 
 type UInt64 struct{ base }
 
-func (UInt64) Read(decoder *binary.Decoder) (interface{}, error) {
+func (UInt64) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	v, err := decoder.UInt64()
 	if err != nil {
 		return uint64(0), err

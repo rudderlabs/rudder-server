@@ -318,3 +318,18 @@ func (ch *clickhouse) watchCancel(ctx context.Context) func() {
 	}
 	return func() {}
 }
+
+func (ch *clickhouse) ExecContext(ctx context.Context, query string,
+	args []driver.NamedValue) (driver.Result, error) {
+	finish := ch.watchCancel(ctx)
+	defer finish()
+	stmt, err := ch.PrepareContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	dargs := make([]driver.Value, len(args))
+	for i, nv := range args {
+		dargs[i] = nv.Value
+	}
+	return stmt.Exec(dargs)
+}

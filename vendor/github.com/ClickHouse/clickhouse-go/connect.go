@@ -17,6 +17,8 @@ func (s openStrategy) String() string {
 	switch s {
 	case connOpenInOrder:
 		return "in_order"
+	case connOpenTimeRandom:
+		return "time_random"
 	}
 	return "random"
 }
@@ -24,6 +26,7 @@ func (s openStrategy) String() string {
 const (
 	connOpenRandom openStrategy = iota + 1
 	connOpenInOrder
+	connOpenTimeRandom
 )
 
 type connOptions struct {
@@ -55,6 +58,7 @@ func dial(options connOptions) (*connect, error) {
 		}
 		tlsConfig.InsecureSkipVerify = options.skipVerify
 	}
+	checkedHosts := make(map[int]struct{}, len(options.hosts))
 	for i := range options.hosts {
 		var num int
 		switch options.openStrategy {
@@ -62,6 +66,13 @@ func dial(options connOptions) (*connect, error) {
 			num = i
 		case connOpenRandom:
 			num = (ident + i) % len(options.hosts)
+		case connOpenTimeRandom:
+			// select host based on milliseconds
+			num = int((time.Now().UnixNano()/1000)%1000) % len(options.hosts)
+			for _, ok := checkedHosts[num]; ok; _, ok = checkedHosts[num] {
+				num = int(time.Now().UnixNano()) % len(options.hosts)
+			}
+			checkedHosts[num] = struct{}{}
 		}
 		switch {
 		case options.secure:

@@ -122,6 +122,7 @@ var querySettingList = []querySettingInfo{
 	{"max_fetch_partition_retries_count", uintQS},
 	{"http_max_multipart_form_data_size", uintQS},
 	{"max_partitions_per_insert_block", uintQS},
+	{"max_threads", uintQS},
 
 	{"network_zstd_compression_level", intQS},
 	{"http_zlib_compression_level", intQS},

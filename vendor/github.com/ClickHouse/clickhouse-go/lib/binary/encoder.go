@@ -10,6 +10,12 @@ import (
 
 func NewEncoder(w io.Writer) *Encoder {
 	return &Encoder{
+		output: w,
+	}
+}
+
+func NewEncoderWithCompress(w io.Writer) *Encoder {
+	return &Encoder{
 		output:         w,
 		compressOutput: NewCompressWriter(w),
 	}
@@ -23,6 +29,9 @@ type Encoder struct {
 }
 
 func (enc *Encoder) SelectCompress(compress bool) {
+	if enc.compressOutput == nil {
+		return
+	}
 	if enc.compress && !compress {
 		enc.Flush()
 	}
@@ -30,7 +39,7 @@ func (enc *Encoder) SelectCompress(compress bool) {
 }
 
 func (enc *Encoder) Get() io.Writer {
-	if enc.compress {
+	if enc.compress && enc.compressOutput != nil {
 		return enc.compressOutput
 	}
 	return enc.output

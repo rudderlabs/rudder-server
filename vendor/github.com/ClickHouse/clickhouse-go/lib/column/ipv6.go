@@ -10,7 +10,7 @@ type IPv6 struct {
 	base
 }
 
-func (*IPv6) Read(decoder *binary.Decoder) (interface{}, error) {
+func (*IPv6) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	v, err := decoder.Fixed(16)
 	if err != nil {
 		return nil, err

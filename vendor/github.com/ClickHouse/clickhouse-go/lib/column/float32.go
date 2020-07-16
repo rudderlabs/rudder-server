@@ -6,7 +6,7 @@ import (
 
 type Float32 struct{ base }
 
-func (Float32) Read(decoder *binary.Decoder) (interface{}, error) {
+func (Float32) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	v, err := decoder.Float32()
 	if err != nil {
 		return float32(0), err

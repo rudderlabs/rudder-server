@@ -10,7 +10,7 @@ type IPv4 struct {
 	base
 }
 
-func (*IPv4) Read(decoder *binary.Decoder) (interface{}, error) {
+func (*IPv4) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	v, err := decoder.Fixed(4)
 	if err != nil {
 		return nil, err

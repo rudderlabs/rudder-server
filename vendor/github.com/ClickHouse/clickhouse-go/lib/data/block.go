@@ -85,7 +85,7 @@ func (block *Block) Read(serverInfo *ServerInfo, decoder *binary.Decoder) (err e
 			}
 		default:
 			for row := 0; row < int(block.NumRows); row++ {
-				if value, err = column.Read(decoder); err != nil {
+				if value, err = column.Read(decoder, false); err != nil {
 					return err
 				}
 				block.Values[i] = append(block.Values[i], value)

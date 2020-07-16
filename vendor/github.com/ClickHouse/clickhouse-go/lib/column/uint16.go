@@ -6,7 +6,7 @@ import (
 
 type UInt16 struct{ base }
 
-func (UInt16) Read(decoder *binary.Decoder) (interface{}, error) {
+func (UInt16) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	v, err := decoder.UInt16()
 	if err != nil {
 		return uint16(0), err

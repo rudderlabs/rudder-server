@@ -15,7 +15,7 @@ type Enum struct {
 	baseType interface{}
 }
 
-func (enum *Enum) Read(decoder *binary.Decoder) (interface{}, error) {
+func (enum *Enum) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	var (
 		err   error
 		ident interface{}
@@ -30,7 +30,7 @@ func (enum *Enum) Read(decoder *binary.Decoder) (interface{}, error) {
 			return nil, err
 		}
 	}
-	if ident, found := enum.vi[ident]; found {
+	if ident, found := enum.vi[ident]; found || isNull {
 		return ident, nil
 	}
 	return nil, fmt.Errorf("invalid Enum value: %v", ident)

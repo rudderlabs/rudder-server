@@ -21,7 +21,7 @@ type UUID struct {
 	scanType reflect.Type
 }
 
-func (*UUID) Read(decoder *binary.Decoder) (interface{}, error) {
+func (*UUID) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	src, err := decoder.Fixed(UUIDLen)
 	if err != nil {
 		return "", err

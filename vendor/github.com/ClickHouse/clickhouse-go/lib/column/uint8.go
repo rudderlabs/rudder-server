@@ -6,7 +6,7 @@ import (
 
 type UInt8 struct{ base }
 
-func (UInt8) Read(decoder *binary.Decoder) (interface{}, error) {
+func (UInt8) Read(decoder *binary.Decoder, isNull bool) (interface{}, error) {
 	v, err := decoder.UInt8()
 	if err != nil {
 		return uint8(0), err
