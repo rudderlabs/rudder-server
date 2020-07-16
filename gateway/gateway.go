@@ -333,6 +333,10 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
 				continue
 			}
+
+			// store sourceID before call made to check if source is enabled
+			// this prevents not setting sourceID in gw job if disabled before setting it
+			sourceID := gateway.getSourceIDForWriteKey(writeKey)
 			if !gateway.isWriteKeyEnabled(writeKey) {
 				req.done <- GetStatus(InvalidWriteKey)
 				preDbStoreCount++
@@ -396,7 +400,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       gjson.GetBytes(body, "batch.0.anonymousId").Str,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, gateway.getSourceIDForWriteKey(writeKey), counter)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, sourceID, counter)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
