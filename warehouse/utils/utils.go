@@ -37,6 +37,7 @@ const (
 	AbortedState                  = "aborted"
 	GeneratingStagingFileFailed   = "generating_staging_file_failed"
 	GeneratedStagingFile          = "generated_staging_file"
+	FetchingSchemaFailed          = "fetching_schema_failed"
 )
 
 const (
