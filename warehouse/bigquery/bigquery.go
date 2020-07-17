@@ -407,13 +407,13 @@ func (bq *HandleT) removePartitionExpiry() (err error) {
 		return
 	}
 	for tName := range bq.CurrentSchema {
-		_, err := bq.Db.Dataset(bq.Namespace).Table(tName).Update(bq.BQContext, bigquery.TableMetadataToUpdate{TimePartitioning: &bigquery.TimePartitioning{Expiration: time.Duration(0)}}, "")
+		_, err = bq.Db.Dataset(bq.Namespace).Table(tName).Update(bq.BQContext, bigquery.TableMetadataToUpdate{TimePartitioning: &bigquery.TimePartitioning{Expiration: time.Duration(0)}}, "")
 		if err != nil {
-			return err
+			return
 		}
 	}
 	partitionExpiryUpdated[identifier] = true
-	return err
+	return
 }
 
 func (bq *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
@@ -445,6 +445,7 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	// done here to have access to latest schema in warehouse
 	err = bq.removePartitionExpiry()
 	if err != nil {
+		logger.Errorf("BQ: Removing Expiration on partition failed: %v", err)
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
 		return err
 	}

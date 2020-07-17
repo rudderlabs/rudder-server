@@ -954,7 +954,7 @@ func (wh *HandleT) initWorkers() {
 						if err != nil {
 							logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
 							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
-							warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
+							warehouseutils.SetUploadError(job.Upload, err, warehouseutils.FetchingSchemaFailed, wh.dbHandle)
 							wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 							break
 						}
