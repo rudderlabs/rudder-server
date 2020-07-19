@@ -127,7 +127,7 @@ type UploadInput struct {
 
 	// If x-amz-server-side-encryption is present and has the value of aws:kms,
 	// this header specifies the ID of the AWS Key Management Service (AWS KMS)
-	// symmetrical customer managed customer master key (CMK) that was used for
+	// symmetrical customer managed customer main key (CMK) that was used for
 	// the object.
 	//
 	// If the value of x-amz-server-side-encryption is aws:kms, this header specifies

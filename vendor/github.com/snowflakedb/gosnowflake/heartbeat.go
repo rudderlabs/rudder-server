@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	// One hour interval should be good enough to renew tokens for four hours master token validity
+	// One hour interval should be good enough to renew tokens for four hours main token validity
 	heartBeatInterval = 3600 * time.Second
 )
 

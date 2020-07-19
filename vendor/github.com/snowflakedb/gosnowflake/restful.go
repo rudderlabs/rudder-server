@@ -51,7 +51,7 @@ type snowflakeRestful struct {
 
 	Client      *http.Client
 	Token       string
-	MasterToken string
+	MainToken string
 	SessionID   int
 	HeartBeat   *heartbeat
 
@@ -99,7 +99,7 @@ type renewSessionResponse struct {
 type renewSessionResponseMain struct {
 	SessionToken        string        `json:"sessionToken"`
 	ValidityInSecondsST time.Duration `json:"validityInSecondsST"`
-	MasterToken         string        `json:"masterToken"`
+	MainToken         string        `json:"mainToken"`
 	ValidityInSecondsMT time.Duration `json:"validityInSecondsMT"`
 	SessionID           int           `json:"sessionId"`
 }
@@ -322,7 +322,7 @@ func renewRestfulSession(ctx context.Context, sr *snowflakeRestful) error {
 	headers["Content-Type"] = headerContentTypeApplicationJSON
 	headers["accept"] = headerAcceptTypeApplicationSnowflake
 	headers["User-Agent"] = userAgent
-	headers[headerAuthorizationKey] = fmt.Sprintf(headerSnowflakeToken, sr.MasterToken)
+	headers[headerAuthorizationKey] = fmt.Sprintf(headerSnowflakeToken, sr.MainToken)
 
 	body := make(map[string]string)
 	body["oldSessionToken"] = sr.Token
@@ -358,7 +358,7 @@ func renewRestfulSession(ctx context.Context, sr *snowflakeRestful) error {
 			}
 		}
 		sr.Token = respd.Data.SessionToken
-		sr.MasterToken = respd.Data.MasterToken
+		sr.MainToken = respd.Data.MainToken
 		return nil
 	}
 	b, err := ioutil.ReadAll(resp.Body)

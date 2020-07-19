@@ -730,8 +730,8 @@ func GetIP() string {
 	return serverIP
 }
 
-func GetSlaveWorkerId(workerIdx int, slaveID string) string {
-	return fmt.Sprintf("%v-%v-%v", GetIP(), workerIdx, slaveID)
+func GetSubordinateWorkerId(workerIdx int, subordinateID string) string {
+	return fmt.Sprintf("%v-%v-%v", GetIP(), workerIdx, subordinateID)
 }
 
 func SnowflakeCloudProvider(config interface{}) string {

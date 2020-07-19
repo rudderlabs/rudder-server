@@ -1297,13 +1297,13 @@ func (c *Kinesis) GetRecordsRequest(input *GetRecordsInput) (req *request.Reques
 //   The provided iterator exceeds the maximum age allowed.
 //
 //   * KMSDisabledException
-//   The request was rejected because the specified customer master key (CMK)
+//   The request was rejected because the specified customer main key (CMK)
 //   isn't enabled.
 //
 //   * KMSInvalidStateException
 //   The request was rejected because the state of the specified resource isn't
 //   valid for this request. For more information, see How Key State Affects Use
-//   of a Customer Master Key (http://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)
+//   of a Customer Main Key (http://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)
 //   in the AWS Key Management Service Developer Guide.
 //
 //   * KMSAccessDeniedException
@@ -2314,13 +2314,13 @@ func (c *Kinesis) PutRecordRequest(input *PutRecordInput) (req *request.Request,
 //   in the AWS General Reference.
 //
 //   * KMSDisabledException
-//   The request was rejected because the specified customer master key (CMK)
+//   The request was rejected because the specified customer main key (CMK)
 //   isn't enabled.
 //
 //   * KMSInvalidStateException
 //   The request was rejected because the state of the specified resource isn't
 //   valid for this request. For more information, see How Key State Affects Use
-//   of a Customer Master Key (http://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)
+//   of a Customer Main Key (http://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)
 //   in the AWS Key Management Service Developer Guide.
 //
 //   * KMSAccessDeniedException
@@ -2490,13 +2490,13 @@ func (c *Kinesis) PutRecordsRequest(input *PutRecordsInput) (req *request.Reques
 //   in the AWS General Reference.
 //
 //   * KMSDisabledException
-//   The request was rejected because the specified customer master key (CMK)
+//   The request was rejected because the specified customer main key (CMK)
 //   isn't enabled.
 //
 //   * KMSInvalidStateException
 //   The request was rejected because the state of the specified resource isn't
 //   valid for this request. For more information, see How Key State Affects Use
-//   of a Customer Master Key (http://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)
+//   of a Customer Main Key (http://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)
 //   in the AWS Key Management Service Developer Guide.
 //
 //   * KMSAccessDeniedException
@@ -2963,13 +2963,13 @@ func (c *Kinesis) StartStreamEncryptionRequest(input *StartStreamEncryptionInput
 //   correctly.
 //
 //   * KMSDisabledException
-//   The request was rejected because the specified customer master key (CMK)
+//   The request was rejected because the specified customer main key (CMK)
 //   isn't enabled.
 //
 //   * KMSInvalidStateException
 //   The request was rejected because the state of the specified resource isn't
 //   valid for this request. For more information, see How Key State Affects Use
-//   of a Customer Master Key (http://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)
+//   of a Customer Main Key (http://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)
 //   in the AWS Key Management Service Developer Guide.
 //
 //   * KMSAccessDeniedException
@@ -5299,7 +5299,7 @@ func (s KMSAccessDeniedException) RequestID() string {
 	return s.respMetadata.RequestID
 }
 
-// The request was rejected because the specified customer master key (CMK)
+// The request was rejected because the specified customer main key (CMK)
 // isn't enabled.
 type KMSDisabledException struct {
 	_            struct{} `type:"structure"`
@@ -5386,7 +5386,7 @@ func (s KMSDisabledException) RequestID() string {
 
 // The request was rejected because the state of the specified resource isn't
 // valid for this request. For more information, see How Key State Affects Use
-// of a Customer Master Key (http://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)
+// of a Customer Main Key (http://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)
 // in the AWS Key Management Service Developer Guide.
 type KMSInvalidStateException struct {
 	_            struct{} `type:"structure"`
@@ -7481,7 +7481,7 @@ type StartStreamEncryptionInput struct {
 	// The GUID for the customer-managed AWS KMS key to use for encryption. This
 	// value can be a globally unique identifier, a fully specified Amazon Resource
 	// Name (ARN) to either an alias or a key, or an alias name prefixed by "alias/".You
-	// can also use a master key owned by Kinesis Data Streams by specifying the
+	// can also use a main key owned by Kinesis Data Streams by specifying the
 	// alias aws/kinesis.
 	//
 	//    * Key ARN example: arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012
@@ -7492,7 +7492,7 @@ type StartStreamEncryptionInput struct {
 	//
 	//    * Alias name example: alias/MyAliasName
 	//
-	//    * Master key owned by Kinesis Data Streams: alias/aws/kinesis
+	//    * Main key owned by Kinesis Data Streams: alias/aws/kinesis
 	//
 	// KeyId is a required field
 	KeyId *string `min:"1" type:"string" required:"true"`
@@ -7633,7 +7633,7 @@ type StopStreamEncryptionInput struct {
 	// The GUID for the customer-managed AWS KMS key to use for encryption. This
 	// value can be a globally unique identifier, a fully specified Amazon Resource
 	// Name (ARN) to either an alias or a key, or an alias name prefixed by "alias/".You
-	// can also use a master key owned by Kinesis Data Streams by specifying the
+	// can also use a main key owned by Kinesis Data Streams by specifying the
 	// alias aws/kinesis.
 	//
 	//    * Key ARN example: arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012
@@ -7644,7 +7644,7 @@ type StopStreamEncryptionInput struct {
 	//
 	//    * Alias name example: alias/MyAliasName
 	//
-	//    * Master key owned by Kinesis Data Streams: alias/aws/kinesis
+	//    * Main key owned by Kinesis Data Streams: alias/aws/kinesis
 	//
 	// KeyId is a required field
 	KeyId *string `min:"1" type:"string" required:"true"`
@@ -7748,7 +7748,7 @@ type StreamDescription struct {
 	// The GUID for the customer-managed AWS KMS key to use for encryption. This
 	// value can be a globally unique identifier, a fully specified ARN to either
 	// an alias or a key, or an alias name prefixed by "alias/".You can also use
-	// a master key owned by Kinesis Data Streams by specifying the alias aws/kinesis.
+	// a main key owned by Kinesis Data Streams by specifying the alias aws/kinesis.
 	//
 	//    * Key ARN example: arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012
 	//
@@ -7758,7 +7758,7 @@ type StreamDescription struct {
 	//
 	//    * Alias name example: alias/MyAliasName
 	//
-	//    * Master key owned by Kinesis Data Streams: alias/aws/kinesis
+	//    * Main key owned by Kinesis Data Streams: alias/aws/kinesis
 	KeyId *string `min:"1" type:"string"`
 
 	// The current retention period, in hours.
@@ -7899,7 +7899,7 @@ type StreamDescriptionSummary struct {
 	// The GUID for the customer-managed AWS KMS key to use for encryption. This
 	// value can be a globally unique identifier, a fully specified ARN to either
 	// an alias or a key, or an alias name prefixed by "alias/".You can also use
-	// a master key owned by Kinesis Data Streams by specifying the alias aws/kinesis.
+	// a main key owned by Kinesis Data Streams by specifying the alias aws/kinesis.
 	//
 	//    * Key ARN example: arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012
 	//
@@ -7909,7 +7909,7 @@ type StreamDescriptionSummary struct {
 	//
 	//    * Alias name example: alias/MyAliasName
 	//
-	//    * Master key owned by Kinesis Data Streams: alias/aws/kinesis
+	//    * Main key owned by Kinesis Data Streams: alias/aws/kinesis
 	KeyId *string `min:"1" type:"string"`
 
 	// The number of open shards in the stream.

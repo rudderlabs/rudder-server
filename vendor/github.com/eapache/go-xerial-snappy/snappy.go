@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 
-	master "github.com/golang/snappy"
+	main "github.com/golang/snappy"
 )
 
 const (
@@ -33,7 +33,7 @@ func min(x, y int) int {
 
 // Encode encodes data as snappy with no framing header.
 func Encode(src []byte) []byte {
-	return master.Encode(nil, src)
+	return main.Encode(nil, src)
 }
 
 // EncodeStream *appends* to the specified 'dst' the compressed
@@ -56,7 +56,7 @@ func EncodeStream(dst, src []byte) []byte {
 
 	for pos < max {
 		newPos := min(pos + blockSize, max)
-		chunk = master.Encode(chunk[:cap(chunk)], src[pos:newPos])
+		chunk = main.Encode(chunk[:cap(chunk)], src[pos:newPos])
 
 		// First encode the compressed size (big-endian)
 		// Put* panics if the buffer is too small, so pad 4 bytes first
@@ -89,7 +89,7 @@ func DecodeInto(dst, src []byte) ([]byte, error) {
 	}
 
 	if !bytes.Equal(src[:8], xerialHeader) {
-		return master.Decode(dst[:cap(dst)], src)
+		return main.Decode(dst[:cap(dst)], src)
 	}
 
 	if max < sizeOffset+sizeBytes {
@@ -119,7 +119,7 @@ func DecodeInto(dst, src []byte) ([]byte, error) {
 			return nil, ErrMalformed
 		}
 
-		chunk, err = master.Decode(chunk[:cap(chunk)], src[pos:nextPos])
+		chunk, err = main.Decode(chunk[:cap(chunk)], src[pos:nextPos])
 
 		if err != nil {
 			return nil, err

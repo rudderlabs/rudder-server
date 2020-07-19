@@ -321,7 +321,7 @@ type Realm struct {
 	DefaultDomain string
 	KDC           []string
 	KPasswdServer []string //default admin_server:464
-	MasterKDC     []string
+	MainKDC     []string
 }
 
 // Parse the lines of a [realms] entry into the Realm struct.
@@ -330,7 +330,7 @@ func (r *Realm) parseLines(name string, lines []string) (err error) {
 	var adminServerFinal bool
 	var KDCFinal bool
 	var kpasswdServerFinal bool
-	var masterKDCFinal bool
+	var mainKDCFinal bool
 	var ignore bool
 	var c int // counts the depth of blocks within brackets { }
 	for _, line := range lines {
@@ -392,8 +392,8 @@ func (r *Realm) parseLines(name string, lines []string) (err error) {
 			appendUntilFinal(&r.KDC, v, &KDCFinal)
 		case "kpasswd_server":
 			appendUntilFinal(&r.KPasswdServer, v, &kpasswdServerFinal)
-		case "master_kdc":
-			appendUntilFinal(&r.MasterKDC, v, &masterKDCFinal)
+		case "main_kdc":
+			appendUntilFinal(&r.MainKDC, v, &mainKDCFinal)
 		default:
 			//Ignore the line
 			continue

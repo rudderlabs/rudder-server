@@ -2117,7 +2117,7 @@ func (s *DeliveryStreamDescription) SetVersionId(v string) *DeliveryStreamDescri
 }
 
 // Contains information about the server-side encryption (SSE) status for the
-// delivery stream, the type customer master key (CMK) in use, if any, and the
+// delivery stream, the type customer main key (CMK) in use, if any, and the
 // ARN of the CMK. You can get DeliveryStreamEncryptionConfiguration by invoking
 // the DescribeDeliveryStream operation.
 type DeliveryStreamEncryptionConfiguration struct {
@@ -2133,9 +2133,9 @@ type DeliveryStreamEncryptionConfiguration struct {
 	// doesn't contain a value for KeyARN.
 	KeyARN *string `min:"1" type:"string"`
 
-	// Indicates the type of customer master key (CMK) that is used for encryption.
+	// Indicates the type of customer main key (CMK) that is used for encryption.
 	// The default setting is AWS_OWNED_CMK. For more information about CMKs, see
-	// Customer Master Keys (CMKs) (https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#master_keys).
+	// Customer Main Keys (CMKs) (https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#master_keys).
 	KeyType *string `type:"string" enum:"KeyType"`
 
 	// This is the server-side encryption (SSE) status for the delivery stream.
@@ -2189,9 +2189,9 @@ type DeliveryStreamEncryptionConfigurationInput struct {
 	// Firehose uses a service-account CMK.
 	KeyARN *string `min:"1" type:"string"`
 
-	// Indicates the type of customer master key (CMK) to use for encryption. The
+	// Indicates the type of customer main key (CMK) to use for encryption. The
 	// default setting is AWS_OWNED_CMK. For more information about CMKs, see Customer
-	// Master Keys (CMKs) (https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#master_keys).
+	// Main Keys (CMKs) (https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#master_keys).
 	// When you invoke CreateDeliveryStream or StartDeliveryStreamEncryption with
 	// KeyType set to CUSTOMER_MANAGED_CMK, Kinesis Data Firehose invokes the Amazon
 	// KMS operation CreateGrant (https://docs.aws.amazon.com/kms/latest/APIReference/API_CreateGrant.html)

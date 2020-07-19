@@ -55,8 +55,8 @@ var (
 	WarehouseDestinations            []string
 	jobQueryBatchSize                int
 	noOfWorkers                      int
-	noOfSlaveWorkerRoutines          int
-	slaveWorkerRoutineBusy           []bool //Busy-true
+	noOfSubordinateWorkerRoutines          int
+	subordinateWorkerRoutineBusy           []bool //Busy-true
 	uploadFreqInS                    int64
 	stagingFilesSchemaPaginationSize int
 	mainLoopSleep                    time.Duration
@@ -79,9 +79,9 @@ var (
 
 // warehouses worker modes
 const (
-	MasterMode      = "master"
-	SlaveMode       = "slave"
-	MasterSlaveMode = "master_and_slave"
+	MainMode      = "main"
+	SubordinateMode       = "subordinate"
+	MainSubordinateMode = "main_and_subordinate"
 	EmbeddedMode    = "embedded"
 )
 
@@ -138,7 +138,7 @@ func loadConfig() {
 	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
-	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
+	noOfSubordinateWorkerRoutines = config.GetInt("Warehouse.noOfSubordinateWorkerRoutines", 4)
 	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
 	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
 	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 60) * time.Second
@@ -1558,22 +1558,22 @@ func startWebHandler() {
 	if isStandAlone() {
 		http.HandleFunc("/health", healthHandler)
 	}
-	if isMaster() {
+	if isMain() {
 		backendconfig.WaitForConfig()
 		http.HandleFunc("/v1/process", processHandler)
-		logger.Infof("WH: Starting warehouse master service in %d", webPort)
+		logger.Infof("WH: Starting warehouse main service in %d", webPort)
 	} else {
-		logger.Infof("WH: Starting warehouse slave service in %d", webPort)
+		logger.Infof("WH: Starting warehouse subordinate service in %d", webPort)
 	}
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
-func claimAndProcess(workerIdx int, slaveID string) {
-	logger.Infof("WH: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
-	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
+func claimAndProcess(workerIdx int, subordinateID string) {
+	logger.Infof("WH: Attempting to claim job by subordinate worker-%v-%v", workerIdx, subordinateID)
+	workerID := warehouseutils.GetSubordinateWorkerId(workerIdx, subordinateID)
 	claim, claimed := notifier.Claim(workerID)
 	if claimed {
-		logger.Infof("WH: Successfully claimed job:%v by slave worker-%v-%v", claim.ID, workerIdx, slaveID)
+		logger.Infof("WH: Successfully claimed job:%v by subordinate worker-%v-%v", claim.ID, workerIdx, subordinateID)
 		var payload PayloadT
 		json.Unmarshal(claim.Payload, &payload)
 		payload.BatchID = claim.BatchID
@@ -1592,13 +1592,13 @@ func claimAndProcess(workerIdx int, slaveID string) {
 		}
 		claim.ClaimResponseChan <- response
 	}
-	slaveWorkerRoutineBusy[workerIdx-1] = false
-	logger.Infof("WH: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
+	subordinateWorkerRoutineBusy[workerIdx-1] = false
+	logger.Infof("WH: Setting free subordinate worker %d: %v", workerIdx, subordinateWorkerRoutineBusy)
 }
 
-func setupSlave() {
-	slaveWorkerRoutineBusy = make([]bool, noOfSlaveWorkerRoutines)
-	slaveID := uuid.NewV4().String()
+func setupSubordinate() {
+	subordinateWorkerRoutineBusy = make([]bool, noOfSubordinateWorkerRoutines)
+	subordinateID := uuid.NewV4().String()
 	rruntime.Go(func() {
 		jobNotificationChannel, err := notifier.Subscribe("process_staging_file")
 		if err != nil {
@@ -1606,13 +1606,13 @@ func setupSlave() {
 		}
 		for {
 			ev := <-jobNotificationChannel
-			logger.Debugf("WH: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
-			for workerIdx := 1; workerIdx <= noOfSlaveWorkerRoutines; workerIdx++ {
-				if !slaveWorkerRoutineBusy[workerIdx-1] {
-					slaveWorkerRoutineBusy[workerIdx-1] = true
+			logger.Debugf("WH: Notification recieved, event: %v, workers: %v", ev, subordinateWorkerRoutineBusy)
+			for workerIdx := 1; workerIdx <= noOfSubordinateWorkerRoutines; workerIdx++ {
+				if !subordinateWorkerRoutineBusy[workerIdx-1] {
+					subordinateWorkerRoutineBusy[workerIdx-1] = true
 					idx := workerIdx
 					rruntime.Go(func() {
-						claimAndProcess(idx, slaveID)
+						claimAndProcess(idx, subordinateID)
 					})
 					break
 				}
@@ -1625,12 +1625,12 @@ func isStandAlone() bool {
 	return warehouseMode != EmbeddedMode
 }
 
-func isMaster() bool {
-	return warehouseMode == config.MasterMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
+func isMain() bool {
+	return warehouseMode == config.MainMode || warehouseMode == config.MainSubordinateMode || warehouseMode == config.EmbeddedMode
 }
 
-func isSlave() bool {
-	return warehouseMode == config.SlaveMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
+func isSubordinate() bool {
+	return warehouseMode == config.SubordinateMode || warehouseMode == config.MainSubordinateMode || warehouseMode == config.EmbeddedMode
 }
 
 func Start() {
@@ -1663,16 +1663,16 @@ func Start() {
 		panic(err)
 	}
 
-	if isSlave() {
-		logger.Infof("WH: Starting warehouse slave...")
-		setupSlave()
+	if isSubordinate() {
+		logger.Infof("WH: Starting warehouse subordinate...")
+		setupSubordinate()
 	}
 
-	if isMaster() {
+	if isMain() {
 		if warehouseMode != config.EmbeddedMode {
 			backendconfig.Setup(false)
 		}
-		logger.Infof("WH: Starting warehouse master...")
+		logger.Infof("WH: Starting warehouse main...")
 		err = notifier.AddTopic("process_staging_file")
 		if err != nil {
 			panic(err)
