@@ -29,7 +29,7 @@ type EventUploadT map[string]interface{}
 type EventUploadBatchT struct {
 	WriteKey   string
 	ReceivedAt string
-	Batch      []map[string]interface{}
+	Batch      []EventUploadT
 }
 
 var uploadEnabledWriteKeys []string
