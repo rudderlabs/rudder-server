@@ -42,6 +42,7 @@ type HandleT struct {
 const (
 	GCPProjectID   = "project"
 	GCPCredentials = "credentials"
+	GCPLocation    = "location"
 )
 
 // maps datatype stored in rudder to datatype in bigquery
@@ -144,6 +145,7 @@ func (bq *HandleT) addColumn(tableName string, columnName string, columnType str
 
 func (bq *HandleT) createSchema() (err error) {
 	logger.Infof("BQ: Creating bigquery dataset: %s in project: %s", bq.Namespace, bq.ProjectID)
+
 	ds := bq.Db.Dataset(bq.Namespace)
 	err = ds.Create(bq.BQContext, nil)
 	return
@@ -170,6 +172,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	dbClient, err := bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		location: warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
 	})
 	if err != nil {
 		return
@@ -329,13 +332,24 @@ func (bq *HandleT) load() (errList []error) {
 type BQCredentialsT struct {
 	projectID   string
 	credentials string
+	location    string
 }
 
 func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 	logger.Infof("BQ: Connecting to BigQuery in project: %s", cred.projectID)
 	bq.BQContext = context.Background()
 	client, err := bigquery.NewClient(bq.BQContext, cred.projectID, option.WithCredentialsJSON([]byte(cred.credentials)))
-	return client, err
+
+	if err != nil {
+		return nil, err
+	}
+
+	location := strings.TrimSpace(cred.location)
+	if location != "" {
+		client.Location = location
+	}
+
+	return client, nil
 }
 
 func loadConfig() {
@@ -429,6 +443,7 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	bq.Db, err = bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		location: warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
 	})
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
