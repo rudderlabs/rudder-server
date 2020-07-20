@@ -22,6 +22,9 @@ type GatewayEventBatchT struct {
 	eventBatch string
 }
 
+//EventUploadT is a structure to hold actual event data
+type EventUploadT map[string]interface{}
+
 //EventUploadBatchT is a structure to hold batch of events
 type EventUploadBatchT struct {
 	WriteKey   string
@@ -95,8 +98,8 @@ func Setup() {
 
 func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 	// Upload to a Config Backend
-	var res map[string][]map[string]interface{}
-	res = make(map[string][]map[string]interface{})
+	var res map[string][]EventUploadT
+	res = make(map[string][]EventUploadT)
 	for _, event := range eventBuffer {
 		batchedEvent := EventUploadBatchT{}
 		err := json.Unmarshal([]byte(event.eventBatch), &batchedEvent)
@@ -111,11 +114,11 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 			receivedAtTS = time.Now()
 		}
 
-		var arr []map[string]interface{}
+		var arr []EventUploadT
 		if value, ok := res[batchedEvent.WriteKey]; ok {
 			arr = value
 		} else {
-			arr = make([]map[string]interface{}, 0)
+			arr = make([]EventUploadT, 0)
 		}
 
 		for _, ev := range batchedEvent.Batch {
