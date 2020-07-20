@@ -2,6 +2,8 @@ package clickhouse
 
 import (
 	"compress/gzip"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"encoding/csv"
 	"errors"
@@ -13,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ClickHouse/clickhouse-go"
 
 	_ "github.com/ClickHouse/clickhouse-go"
 	"github.com/rudderlabs/rudder-server/config"
@@ -33,12 +37,13 @@ var (
 )
 
 const (
-	host     = "host"
-	dbName   = "database"
-	user     = "user"
-	password = "password"
-	port     = "port"
-	sslMode  = "sslMode"
+	host          = "host"
+	dbName        = "database"
+	user          = "user"
+	password      = "password"
+	port          = "port"
+	secure        = "secure"
+	caCertificate = "caCertificate"
 )
 
 // clickhouse doesnt support bool, they recommend to use Uint8 and set 1,0
@@ -51,7 +56,6 @@ var rudderDataTypesMapToClickHouse = map[string]string{
 	"boolean":  "UInt8",
 }
 
-//TODO: add addition clickhouse types which maps to rudder transformer data types
 var clickhouseDataTypesMapToRudder = map[string]string{
 	"Int8":               "int",
 	"Int16":              "int",
@@ -93,12 +97,13 @@ type HandleT struct {
 }
 
 type credentialsT struct {
-	host     string
-	dbName   string
-	user     string
-	password string
-	port     string
-	sslMode  string
+	host          string
+	dbName        string
+	user          string
+	password      string
+	port          string
+	secure        bool
+	tlsConfigName string
 }
 
 var primaryKeyMap = map[string]string{
@@ -109,15 +114,18 @@ var primaryKeyMap = map[string]string{
 
 // connect connects to warehouse with provided credentials
 func connect(cred credentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=true&tls_config=%s",
 		cred.host,
-		cred.port,
+		"9440",
 		cred.user,
 		cred.password,
 		cred.dbName,
 		blockSize,
 		poolSize,
-		queryDebugLogs,
+		"true",
+		//cred.secure,
+		"true",
+		cred.tlsConfigName,
 	)
 
 	var err error
@@ -126,6 +134,7 @@ func connect(cred credentialsT) (*sql.DB, error) {
 	if db, err = sql.Open("clickhouse", url); err != nil {
 		return nil, fmt.Errorf("clickhouse connection error : (%v)", err)
 	}
+	fmt.Println(err)
 	return db, nil
 }
 
@@ -142,15 +151,55 @@ func loadConfig() {
 
 }
 
+func registerTLSConfig(key string, certificate string) {
+	tlsConfig := &tls.Config{}
+	caCert := []byte(certificate)
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+	tlsConfig.RootCAs = caCertPool
+	clickhouse.RegisterTLSConfig(key, tlsConfig)
+}
+
 // getConnectionCredentials gives clickhouse credentials
 func (ch *HandleT) getConnectionCredentials() credentialsT {
-	return credentialsT{
-		host:     warehouseutils.GetConfigValue(host, ch.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(dbName, ch.Warehouse),
-		user:     warehouseutils.GetConfigValue(user, ch.Warehouse),
-		password: warehouseutils.GetConfigValue(password, ch.Warehouse),
-		port:     warehouseutils.GetConfigValue(port, ch.Warehouse),
+	tlsName := ""
+	//certificate := warehouseutils.GetConfigValue(caCertificate, ch.Warehouse)
+	certificate := `
+    -----BEGIN CERTIFICATE-----
+	MIIDgDCCAmgCCQDfEJl2n9cZtDANBgkqhkiG9w0BAQsFADCBgTELMAkGA1UEBhMC
+	aW4xCzAJBgNVBAgMAnRsMQswCQYDVQQHDAJoeTEPMA0GA1UECgwGZ2FuZXNoMRQw
+	EgYDVQQLDAtnYW5lc2gtdGVzdDEPMA0GA1UEAwwGZ2FuZXNoMSAwHgYJKoZIhvcN
+	AQkBFhFnYW5lc2hAZ2FuZXNoLmNvbTAeFw0yMDA3MTcxMjM5NTNaFw0yMTA3MTcx
+	MjM5NTNaMIGBMQswCQYDVQQGEwJpbjELMAkGA1UECAwCdGwxCzAJBgNVBAcMAmh5
+	MQ8wDQYDVQQKDAZnYW5lc2gxFDASBgNVBAsMC2dhbmVzaC10ZXN0MQ8wDQYDVQQD
+	DAZnYW5lc2gxIDAeBgkqhkiG9w0BCQEWEWdhbmVzaEBnYW5lc2guY29tMIIBIjAN
+	BgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzkWu1v5a0Ek/Yya60HfkZr2VUaen
+	QvWutieSiVJLnIfhRLDhyUfObkKmFSsa9gQTGRtC8v205A7nXF/Zt3d4YkeuZ1tz
+	1mmc53CCpKcVSnUMsb4kStPAEIU+TxDLzlREqdgAEGqFt8rjShJGy1AiCTdLNJH9
+	tNyMSjrXECnyr69WM/x7evAhxyfSHO2QUgOF+e6ELZ/mhnZhOh1+QO8yEmRvP032
+	rjvQIc+A4L1MJtBuGvZXudbin8ZsNpQ8AfhBNPm97uIOfcneY6/l8O5LFxw+3Wpd
+	bg1Kw7XwkxQ/KU/SZx4H4JL/OVMWU0pRw6+nwjB0ojH/U+XIzVw1ocJc6QIDAQAB
+	MA0GCSqGSIb3DQEBCwUAA4IBAQBUibtq85HGPC1iW+o+lEm+krLbcAYaWzie8+ga
+	gDhHmfBcGuLWbcqXIee3DFHyoBOo6SX/m8AHWcFrbU5LX9jKSaJZEqDRZslFBT5e
+	erDmXvtyZs7nkxK5EhKuu4Zw4RXK28vqSutGrl2CzQjk4H/eWXpymv8G3wQpWnIf
+	tfo0l6grJ3vBCQ05ckF1TGvGlPBy3UPIX0oNpSmDLHXWuKpt8/Xi1Y16vKU96crE
+	d934M2pkheKCwtpX0mcvLYr312a+VygjCuRUiH0q4x5kpNvGimCF2rQDIy7ukDkB
+	QcPrz678xijo9OMRpYSsNcP05kIzQQOYRYJthcsHI2Gh/H6o
+	-----END CERTIFICATE-----`
+	if len(strings.TrimSpace(certificate)) != 0 {
+		tlsName = "tls"
+		registerTLSConfig(tlsName, certificate)
 	}
+	credentials := credentialsT{
+		host:          warehouseutils.GetConfigValue(host, ch.Warehouse),
+		dbName:        warehouseutils.GetConfigValue(dbName, ch.Warehouse),
+		user:          warehouseutils.GetConfigValue(user, ch.Warehouse),
+		password:      warehouseutils.GetConfigValue(password, ch.Warehouse),
+		port:          warehouseutils.GetConfigValue(port, ch.Warehouse),
+		secure:        warehouseutils.GetConfigValueBool(secure, ch.Warehouse),
+		tlsConfigName: tlsName,
+	}
+	return credentials
 }
 
 // columnsWithDataTypes creates columns and its datatype into sql format for creating table
