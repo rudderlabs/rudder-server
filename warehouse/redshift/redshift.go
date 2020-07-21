@@ -60,7 +60,7 @@ const (
 )
 
 var dataTypesMap = map[string]string{
-	"boolean":  "boolean",
+	"boolean":  "boolean encode runlength",
 	"int":      "bigint",
 	"bigint":   "bigint",
 	"float":    "double precision",
