@@ -565,6 +565,10 @@ func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {
 //Function to route incoming web requests to userWebRequestBatcher
 func (gateway *HandleT) webRequestRouter() {
 	for req := range gateway.webRequestQ {
+		//Returning without latency.
+		req.done <- ""
+		continue
+
 		userIDHeader := req.request.Header.Get("AnonymousId")
 		//If necessary fetch userID from request body.
 		if userIDHeader == "" {
