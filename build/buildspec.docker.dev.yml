@@ -26,7 +26,7 @@ phases:
       - export GO111MODULE=on
       - DATE=$(date "+%F,%T")
       - VERSION=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
-      - cat chandu
+      - echo chandu
       # Build Open source version
       #- make test
       - find . -name "profile.out" | while read file;do cat $file >> coverage.txt; echo "" >> coverage.txt;done
