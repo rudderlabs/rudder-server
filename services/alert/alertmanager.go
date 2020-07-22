@@ -1,7 +1,7 @@
 package alert
 
 import (
-	"errors"
+	"github.com/pkg/errors"
 
 	"github.com/rudderlabs/rudder-server/config"
 )

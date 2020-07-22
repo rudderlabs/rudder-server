@@ -1,11 +1,12 @@
 package filemanager
 
 import (
-	"errors"
 	"os"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"

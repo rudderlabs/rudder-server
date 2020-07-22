@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -21,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 
 	"github.com/bugsnag/bugsnag-go"

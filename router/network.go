@@ -19,104 +19,13 @@ type NetHandleT struct {
 	httpClient *http.Client
 }
 
-func (network *NetHandleT) processOldResponseType(jsonData []byte) (int, string, string) {
+func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string, error) { //TODO: Revisit this signature. Catch multiple things in the error
 	client := network.httpClient
 	//Parse the response to get parameters
-	postInfo := integrations.GetPostInfo(jsonData)
-
-	requestConfig, ok := postInfo.RequestConfig.(map[string]interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of postInfo.RequestConfig to map[string]interface{} failed"))
-	}
-	requestMethod, ok := requestConfig["requestMethod"].(string)
-	if !(ok && (requestMethod == "POST" || requestMethod == "GET")) {
-		panic(fmt.Errorf("typecast of requestConfig[\"requestMethod\"] to string failed. or requestMethod:%s is neither POST nor GET", requestMethod))
-	}
-	requestFormat := requestConfig["requestFormat"].(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of requestConfig[\"requestFormat\"] to string failed"))
-	}
-
-	switch requestFormat {
-	case "PARAMS":
-		postInfo.Type = integrations.PostDataKV
-	case "JSON":
-		postInfo.Type = integrations.PostDataJSON
-	default:
-		panic(fmt.Errorf("requestFormat:%s is neither PARAMS nor JSON", requestFormat))
-	}
-
-	var req *http.Request
-	var err error
-	if useTestSink {
-		req, err = http.NewRequest(requestMethod, testSinkURL, nil)
-		if err != nil {
-			panic(err)
-		}
-	} else {
-		req, err = http.NewRequest(requestMethod, postInfo.URL, nil)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	queryParams := req.URL.Query()
-	if postInfo.Type == integrations.PostDataKV {
-		payloadKV, ok := postInfo.Payload.(map[string]interface{})
-		if !ok {
-			panic(fmt.Errorf("typecast of postInfo.Payload to map[string]interface{} failed"))
-		}
-		for key, val := range payloadKV {
-			queryParams.Add(key, fmt.Sprint(val))
-		}
-	} else if postInfo.Type == integrations.PostDataJSON {
-		payloadJSON, ok := postInfo.Payload.(map[string]interface{})
-		if !ok {
-			panic(fmt.Errorf("typecast of postInfo.Payload to map[string]interface{} failed"))
-		}
-		jsonValue, err := json.Marshal(payloadJSON)
-		if err != nil {
-			panic(err)
-		}
-		req.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
-	} else {
-		//Not implemented yet
-		panic(fmt.Errorf("postInfo.Type : %d is not implemented", postInfo.Type))
-	}
-
-	req.URL.RawQuery = queryParams.Encode()
-
-	headerKV, ok := postInfo.Header.(map[string]interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of postInfo.Header to map[string]interface{} failed"))
-	}
-	for key, val := range headerKV {
-		req.Header.Add(key, val.(string))
-	}
-
-	req.Header.Add("User-Agent", "RudderLabs")
-
-	resp, err := client.Do(req)
-
-	var respBody []byte
-
-	if resp != nil && resp.Body != nil {
-		respBody, _ = ioutil.ReadAll(resp.Body)
-		defer resp.Body.Close()
-	}
-
+	postInfo, err := integrations.GetPostInfo(jsonData)
 	if err != nil {
-		logger.Error("Errored when sending request to the server", err)
-		return http.StatusGatewayTimeout, "", string(respBody)
+		return 0, "", "", err
 	}
-
-	return resp.StatusCode, resp.Status, string(respBody)
-}
-
-func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string, string) {
-	client := network.httpClient
-	//Parse the response to get parameters
-	postInfo := integrations.GetPostInfoNew(jsonData)
 
 	isRest := postInfo.Type == "REST"
 
@@ -215,28 +124,18 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 
 		if err != nil {
 			logger.Error("Errored when sending request to the server", err)
-			return http.StatusGatewayTimeout, "", string(respBody)
+			return http.StatusGatewayTimeout, "", string(respBody), nil
 		}
 
-		return resp.StatusCode, resp.Status, string(respBody)
+		return resp.StatusCode, resp.Status, string(respBody), nil
 
 	}
 
 	// returning 200 with a message in case of unsupported processing
 	// so that we don't process again. can change this code to anything
 	// to be not picked up by router again
-	return 200, "method not implemented", ""
+	return 200, "method not implemented", "", nil
 
-}
-
-func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
-	// Get response version
-	version := integrations.GetResponseVersion(jsonData)
-
-	if version == "0" {
-		return network.processOldResponseType(jsonData)
-	}
-	return network.processNewResponseType(jsonData)
 }
 
 //Setup initializes the module

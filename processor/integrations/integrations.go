@@ -38,113 +38,26 @@ const (
 	PostDataXML
 )
 
-//PostParameterT  has post related parameters, the URL and the data type
+// PostParameterT emulates parameters needed tp make a request
 type PostParameterT struct {
-	URL           string
-	Type          int
-	UserID        string
-	Payload       interface{}
-	Header        interface{}
-	RequestConfig interface{}
+	Type          string      `json:"type"`
+	URL           string      `json:"endpoint"`
+	RequestMethod string      `json:"method"`
+	UserID        string      `json:"userId"`
+	Headers       interface{} `json:"headers"`
+	QueryParams   interface{} `json:"params"`
+	Body          interface{} `json:"body"`
+	Files         interface{} `json:"files"`
 }
 
-// PostParameterNewT emulates parameters needed tp make a request
-type PostParameterNewT struct {
-	Type          string
-	URL           string
-	RequestMethod string
-	UserID        string
-	Headers       interface{}
-	QueryParams   interface{}
-	Body          interface{}
-	Files         interface{}
-}
-
-// GetResponseVersion Get version of the transformer response
-func GetResponseVersion(response json.RawMessage) string {
-	parsedResponse := gjson.ParseBytes(response)
-	if parsedResponse.Get("output").Exists() {
-		return "-1"
-	}
-	if !parsedResponse.Get("version").Exists() {
-		return "0"
-	}
-	version, ok := parsedResponse.Get("version").Value().(string)
-	if !ok {
-		panic(fmt.Errorf(""))
-	}
-	return version
-}
-
-// GetPostInfoNew parses the transformer response
-func GetPostInfoNew(transformRaw json.RawMessage) PostParameterNewT {
-	var postInfo PostParameterNewT
-	var ok bool
-	parsedJSON := gjson.ParseBytes(transformRaw)
-	if parsedJSON.Get("output").Exists() {
-		parsedJSON = parsedJSON.Get("output")
-	}
-	postInfo.Type, ok = parsedJSON.Get("type").Value().(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"type\") to string failed"))
-	}
-	postInfo.URL, ok = parsedJSON.Get("endpoint").Value().(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"endpoint\") to string failed"))
-	}
-	postInfo.RequestMethod, ok = parsedJSON.Get("method").Value().(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"method\") to string failed"))
-	}
-	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
-	if !ok {
-		postInfo.UserID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
-	}
-	postInfo.Body, ok = parsedJSON.Get("body").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"body\") to interface{} failed"))
-	}
-	postInfo.Headers, ok = parsedJSON.Get("headers").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"headers\") to interface{} failed"))
-	}
-	postInfo.QueryParams, ok = parsedJSON.Get("params").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"params\") to interface{} failed"))
-	}
-	postInfo.Files, ok = parsedJSON.Get("files").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"files\") to interface{} failed"))
-	}
-	return postInfo
-}
-
-//GetPostInfo provides the post parameters for this destination
-func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
+// GetPostInfo parses the transformer response
+func GetPostInfo(transformRaw json.RawMessage) (PostParameterT, error) {
 	var postInfo PostParameterT
-	var ok bool
-	parsedJSON := gjson.ParseBytes(transformRaw)
-	postInfo.URL, ok = parsedJSON.Get("endpoint").Value().(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"endpoint\") to string failed"))
+	err := json.Unmarshal(transformRaw, &postInfo)
+	if err != nil {
+		panic(err) //TODO: Handle error
 	}
-	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
-	if !ok {
-		postInfo.UserID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
-	}
-	postInfo.Payload, ok = parsedJSON.Get("payload").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"payload\") to interface{} failed"))
-	}
-	postInfo.Header, ok = parsedJSON.Get("header").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"header\") to interface{} failed"))
-	}
-	postInfo.RequestConfig, ok = parsedJSON.Get("requestConfig").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"requestConfig\") to interface{} failed"))
-	}
-	return postInfo
+	return postInfo, nil
 }
 
 // GetUserIDFromTransformerResponse parses the payload to get userId

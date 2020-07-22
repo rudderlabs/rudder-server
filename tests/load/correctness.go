@@ -11,7 +11,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -23,6 +22,8 @@ import (
 	"sort"
 	"sync/atomic"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/go-redis/redis"
 	"github.com/rudderlabs/rudder-server/config"

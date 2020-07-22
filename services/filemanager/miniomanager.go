@@ -1,11 +1,11 @@
 package filemanager
 
 import (
-	"errors"
 	"os"
 	"strings"
 
 	"github.com/minio/minio-go/v6"
+	"github.com/pkg/errors"
 )
 
 func (manager *MinioManager) ObjectUrl(objectName string) string {
