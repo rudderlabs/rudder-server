@@ -122,6 +122,7 @@ type HandleT struct {
 	rateLimiter                  ratelimiter.RateLimiter
 	stats                        stats.Stats
 	batchSizeStat                stats.RudderStats
+	dbWritesStat                 stats.RudderStats
 	trackSuccessCount            int
 	trackFailureCount            int
 	requestMetricLock            sync.RWMutex
@@ -212,6 +213,7 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 			case false:
 				gateway.jobsDB.Store(userWorkerBatchRequest.jobList)
 			}
+			gateway.dbWritesStat.Count(1)
 
 			gateway.writeToBadger(userWorkerBatchRequest.allMessageIdsSet)
 			userWorkerBatchRequest.respChannel <- errorMessagesMap
@@ -938,6 +940,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 
 	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
+	gateway.dbWritesStat = gateway.stats.NewStat("gateway.db_writes", stats.CountType)
 
 	if enableDedup {
 		gateway.openBadger(clearDB)
