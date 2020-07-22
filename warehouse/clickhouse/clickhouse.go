@@ -17,8 +17,6 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go"
-
-	_ "github.com/ClickHouse/clickhouse-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -136,7 +134,6 @@ func connect(cred credentialsT) (*sql.DB, error) {
 	if db, err = sql.Open("clickhouse", url); err != nil {
 		return nil, fmt.Errorf("clickhouse connection error : (%v)", err)
 	}
-	fmt.Println(err)
 	return db, nil
 }
 
