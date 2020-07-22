@@ -147,7 +147,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 			originalTimestamp := getTimestampFromEvent(ev, "originalTimestamp")
 			sentAt := getTimestampFromEvent(ev, "sentAt")
 
-			ev["originalTimestamp"] = misc.GetChronologicalTimeStamp(receivedAtTS, sentAt, originalTimestamp).Format(time.RFC3339)
+			ev["timestamp"] = misc.GetChronologicalTimeStamp(receivedAtTS, sentAt, originalTimestamp).Format(time.RFC3339)
 
 			arr = append(arr, ev)
 		}
