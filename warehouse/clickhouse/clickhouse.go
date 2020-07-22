@@ -43,6 +43,7 @@ const (
 	password      = "password"
 	port          = "port"
 	secure        = "secure"
+	skipVerify    = "skipVerify"
 	caCertificate = "caCertificate"
 )
 
@@ -102,7 +103,8 @@ type credentialsT struct {
 	user          string
 	password      string
 	port          string
-	secure        bool
+	secure        string
+	skipVerify    string
 	tlsConfigName string
 }
 
@@ -114,17 +116,17 @@ var primaryKeyMap = map[string]string{
 
 // connect connects to warehouse with provided credentials
 func connect(cred credentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=true&tls_config=%s",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s",
 		cred.host,
-		"9440",
+		cred.port,
 		cred.user,
 		cred.password,
 		cred.dbName,
 		blockSize,
 		poolSize,
-		"true",
-		//cred.secure,
-		"true",
+		queryDebugLogs,
+		cred.secure,
+		cred.skipVerify,
 		cred.tlsConfigName,
 	)
 
@@ -163,29 +165,7 @@ func registerTLSConfig(key string, certificate string) {
 // getConnectionCredentials gives clickhouse credentials
 func (ch *HandleT) getConnectionCredentials() credentialsT {
 	tlsName := ""
-	//certificate := warehouseutils.GetConfigValue(caCertificate, ch.Warehouse)
-	certificate := `
-    -----BEGIN CERTIFICATE-----
-	MIIDgDCCAmgCCQDfEJl2n9cZtDANBgkqhkiG9w0BAQsFADCBgTELMAkGA1UEBhMC
-	aW4xCzAJBgNVBAgMAnRsMQswCQYDVQQHDAJoeTEPMA0GA1UECgwGZ2FuZXNoMRQw
-	EgYDVQQLDAtnYW5lc2gtdGVzdDEPMA0GA1UEAwwGZ2FuZXNoMSAwHgYJKoZIhvcN
-	AQkBFhFnYW5lc2hAZ2FuZXNoLmNvbTAeFw0yMDA3MTcxMjM5NTNaFw0yMTA3MTcx
-	MjM5NTNaMIGBMQswCQYDVQQGEwJpbjELMAkGA1UECAwCdGwxCzAJBgNVBAcMAmh5
-	MQ8wDQYDVQQKDAZnYW5lc2gxFDASBgNVBAsMC2dhbmVzaC10ZXN0MQ8wDQYDVQQD
-	DAZnYW5lc2gxIDAeBgkqhkiG9w0BCQEWEWdhbmVzaEBnYW5lc2guY29tMIIBIjAN
-	BgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzkWu1v5a0Ek/Yya60HfkZr2VUaen
-	QvWutieSiVJLnIfhRLDhyUfObkKmFSsa9gQTGRtC8v205A7nXF/Zt3d4YkeuZ1tz
-	1mmc53CCpKcVSnUMsb4kStPAEIU+TxDLzlREqdgAEGqFt8rjShJGy1AiCTdLNJH9
-	tNyMSjrXECnyr69WM/x7evAhxyfSHO2QUgOF+e6ELZ/mhnZhOh1+QO8yEmRvP032
-	rjvQIc+A4L1MJtBuGvZXudbin8ZsNpQ8AfhBNPm97uIOfcneY6/l8O5LFxw+3Wpd
-	bg1Kw7XwkxQ/KU/SZx4H4JL/OVMWU0pRw6+nwjB0ojH/U+XIzVw1ocJc6QIDAQAB
-	MA0GCSqGSIb3DQEBCwUAA4IBAQBUibtq85HGPC1iW+o+lEm+krLbcAYaWzie8+ga
-	gDhHmfBcGuLWbcqXIee3DFHyoBOo6SX/m8AHWcFrbU5LX9jKSaJZEqDRZslFBT5e
-	erDmXvtyZs7nkxK5EhKuu4Zw4RXK28vqSutGrl2CzQjk4H/eWXpymv8G3wQpWnIf
-	tfo0l6grJ3vBCQ05ckF1TGvGlPBy3UPIX0oNpSmDLHXWuKpt8/Xi1Y16vKU96crE
-	d934M2pkheKCwtpX0mcvLYr312a+VygjCuRUiH0q4x5kpNvGimCF2rQDIy7ukDkB
-	QcPrz678xijo9OMRpYSsNcP05kIzQQOYRYJthcsHI2Gh/H6o
-	-----END CERTIFICATE-----`
+	certificate := warehouseutils.GetConfigValue(caCertificate, ch.Warehouse)
 	if len(strings.TrimSpace(certificate)) != 0 {
 		tlsName = "tls"
 		registerTLSConfig(tlsName, certificate)
@@ -196,7 +176,8 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 		user:          warehouseutils.GetConfigValue(user, ch.Warehouse),
 		password:      warehouseutils.GetConfigValue(password, ch.Warehouse),
 		port:          warehouseutils.GetConfigValue(port, ch.Warehouse),
-		secure:        warehouseutils.GetConfigValueBool(secure, ch.Warehouse),
+		secure:        warehouseutils.GetConfigValueBoolString(secure, ch.Warehouse),
+		skipVerify:    warehouseutils.GetConfigValueBoolString(skipVerify, ch.Warehouse),
 		tlsConfigName: tlsName,
 	}
 	return credentials
