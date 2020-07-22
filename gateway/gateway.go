@@ -108,6 +108,7 @@ type HandleT struct {
 	recvCount                                 uint64
 	rateLimiter                               *ratelimiter.HandleT
 	batchSizeStat, batchTimeStat, latencyStat *stats.RudderStats
+	dbWritesStat                              *stats.RudderStats
 }
 
 func updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -254,6 +255,7 @@ func (gateway *HandleT) webRequestBatchDBWriter(process int) {
 		}
 
 		errorMessagesMap := gateway.jobsDB.Store(jobList)
+		gateway.dbWritesStat.Count(1)
 
 		gateway.writeToBadger(allMessageIds)
 
@@ -542,6 +544,7 @@ func (gateway *HandleT) Setup(jobsDB *jobsdb.HandleT, rateLimiter *ratelimiter.H
 	gateway.latencyStat = stats.NewStat("gateway.response_time", stats.TimerType)
 	gateway.batchSizeStat = stats.NewStat("gateway.batch_size", stats.CountType)
 	gateway.batchTimeStat = stats.NewStat("gateway.batch_time", stats.TimerType)
+	gateway.dbWritesStat = stats.NewStat("gateway.db_writes", stats.CountType)
 
 	if enableDedup {
 		gateway.openBadger(clearDB)
