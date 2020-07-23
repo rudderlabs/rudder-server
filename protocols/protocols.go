@@ -70,8 +70,8 @@ type SchemaVersionT struct {
 //EventTypeIDMapT :	event_type's uuid to EventType Mapping
 type EventTypeIDMapT map[string]*EventTypeT
 
-//EventTypeMapT : <EvType, eventIdentifier> to Event Mapping
-type EventTypeMapT map[string]map[string]*EventTypeT
+//EventTypeMapT : <writeKey, evType, eventIdentifier> to EventType Mapping
+type EventTypeMapT map[string]map[string]map[string]*EventTypeT
 
 //SchemaVersionMapT : <event_id, schema_hash> to SchemaVersion Mapping
 type SchemaVersionMapT map[string]map[string]*SchemaVersionT
@@ -140,6 +140,18 @@ func (manager *ProtocolManagerT) RecordEventSchema(writeKey string, eventBatch s
 	return true
 }
 
+func (manager *ProtocolManagerT) getEventType(writeKey string, evType string, eventIdentifier string) *EventTypeT {
+	_, ok := manager.eventTypeMap[writeKey]
+	if !ok {
+		return nil
+	}
+	_, ok = manager.eventTypeMap[writeKey][evType]
+	if !ok {
+		return nil
+	}
+	return manager.eventTypeMap[writeKey][evType][eventIdentifier]
+}
+
 /*
  *
 | Event Type | ev_type  | event_identfier |
@@ -162,43 +174,47 @@ func (manager *ProtocolManagerT) RecordEventSchema(writeKey string, eventBatch s
 * but since this method does mostly in-memory operations and has locks, there might not be much perfomance improvement.
 */
 func (manager *ProtocolManagerT) handleEvent(writeKey string, event EventT) {
-	EvType := event["type"].(string)
+	evType := event["type"].(string)
 	eventIdentifier := ""
-	if EvType == "track" {
+	if evType == "track" {
 		eventIdentifier = event["event"].(string)
-	} else if EvType == "page" {
+	} else if evType == "page" {
 		eventIdentifier = event["name"].(string)
-	} else if EvType == "screen" {
+	} else if evType == "screen" {
 		eventIdentifier = event["name"].(string)
 	}
 
 	//TODO: Review the concurrency by scaling goroutines
 	manager.eventTypeLock.RLock()
-	eventType, ok := manager.eventTypeMap[EvType][eventIdentifier]
+	eventType := manager.getEventType(writeKey, evType, eventIdentifier)
 	manager.eventTypeLock.RUnlock()
-	if !ok {
+	if eventType == nil {
 		eventID := uuid.NewV4().String()
 		eventType = &EventTypeT{
 			UUID:            eventID,
 			WriteKey:        writeKey,
-			EvType:          EvType,
+			EvType:          evType,
 			EventIdentifier: eventIdentifier,
 		}
 
 		manager.eventTypeLock.Lock()
 		newEventTypes[eventID] = eventType
-		_, ok := manager.eventTypeMap[EvType][eventIdentifier]
+		_, ok := manager.eventTypeMap[writeKey]
 		if !ok {
-			manager.eventTypeMap[EvType] = make(map[string]*EventTypeT)
+			manager.eventTypeMap[writeKey] = make(map[string]map[string]*EventTypeT)
 		}
-		manager.eventTypeMap[EvType][eventIdentifier] = eventType
+		_, ok = manager.eventTypeMap[writeKey][evType]
+		if !ok {
+			manager.eventTypeMap[writeKey][evType] = make(map[string]*EventTypeT)
+		}
+		manager.eventTypeMap[writeKey][evType][eventIdentifier] = eventType
 		manager.eventTypeIDMap[eventID] = eventType
 		manager.eventTypeLock.Unlock()
 	}
 
 	schemaHash, schema := computeVersion(event)
 	manager.schemaVersionLock.Lock()
-	_, ok = manager.schemaVersionMap[eventType.UUID]
+	_, ok := manager.schemaVersionMap[eventType.UUID]
 	if !ok {
 		manager.schemaVersionMap[eventType.UUID] = make(map[string]*SchemaVersionT)
 	}
@@ -384,11 +400,15 @@ func (manager *ProtocolManagerT) populateEventTypes() (EventTypeIDMapT, EventTyp
 
 		assertError(err)
 		eventTypeIDMap[eventType.UUID] = &eventType
-		_, ok := eventTypeMap[eventType.EvType]
+		_, ok := eventTypeMap[eventType.WriteKey]
 		if !ok {
-			eventTypeMap[eventType.EvType] = make(map[string]*EventTypeT)
+			eventTypeMap[eventType.WriteKey] = make(map[string]map[string]*EventTypeT)
 		}
-		eventTypeMap[eventType.EvType][eventType.EventIdentifier] = &eventType
+		_, ok = eventTypeMap[eventType.WriteKey][eventType.EvType]
+		if !ok {
+			eventTypeMap[eventType.WriteKey][eventType.EvType] = make(map[string]*EventTypeT)
+		}
+		eventTypeMap[eventType.WriteKey][eventType.EvType][eventType.EventIdentifier] = &eventType
 	}
 
 	return eventTypeIDMap, eventTypeMap
