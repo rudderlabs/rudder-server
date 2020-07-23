@@ -808,6 +808,10 @@ func (gateway *HandleT) StartWebHandler() {
 		srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
 	}
 
+	// Protocols
+	srvMux.HandleFunc("/protocols/get-event-types", gateway.protocolManager.GetEventTypes)
+	srvMux.HandleFunc("/protocols/get-event-versions", gateway.protocolManager.GetEventVersions)
+
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,

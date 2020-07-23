@@ -1,46 +1,24 @@
 /*
  *
-
-
-//TODO: Find right name for e_type
-
 Table: event_types
-------------------------------------------------------------------
- uuid   | write_key | e_type     | event_identifier | created_at
-------------------------------------------------------------------
- uuid-1 | ksuid-1   | track      | logged_in        | 01, Jan 12: 00 PM
- uuid-2 | ksuid-1   | track      | signed_up        | 01, Jan 12: 00 PM
- uuid-3 | ksuid-1   | page       | Home Page        | 01, Jan 12: 00 PM
- uuid-4 | ksuid-2   | identify   |                  | 01, Jan 12: 00 PM
-------------------------------------------------------------------
+
+| id  | uuid   | write_key | e_type   | event_identifier | created_at        |
+| --- | ------ | --------- | -------- | ---------------- | ----------------- |
+| 1   | uuid-1 | ksuid-1   | track    | logged_in        | 01, Jan 12: 00 PM |
+| 2   | uuid-2 | ksuid-1   | track    | signed_up        | 01, Jan 12: 00 PM |
+| 3   | uuid-3 | ksuid-1   | page     | Home Page        | 01, Jan 12: 00 PM |
+| 4   | uuid-4 | ksuid-2   | identify |                  | 01, Jan 12: 00 PM |
 
 
 Table: schema_versions
-------------------------------------------------------------------------------------------------------
-uuid   | schema_hash| event_id | schema                    | metadata | first_seen         | last_seen
-------------------------------------------------------------------------------------------------------
-uuid-9 | hash-1    | uuid-1   | {                         | {}       | 01, Jan 12: 00 PM  | 01, June 12: 00 PM
-													"anonymousId": "string",
-													"email": "string"
-												}
 
-uuid-8 | hash-2    | uuid-2   | {                         | {}       | 01, Jan 12: 00 PM  | 01, June 12: 00 PM
-													"anonymousId": "string",
-													"email": "string",
-													"location": "string"
-												}
+| id  | uuid   | event_id | schema_hash | schema                          | metadata | first_seen        | last_seen          |
+| --- | ------ | -------- | ----------- | ------------------------------- | -------- | ----------------- | ------------------ |
+| 1   | uuid-9 | uuid-1   | hash-1      | {"a": "string", "b": "float64"} | {}       | 01, Jan 12: 00 PM | 01, June 12: 00 PM |
+| 2   | uuid-8 | uuid-2   | hash-2      | {"a": "string", "b": "string"}  | {}       | 01, Jan 12: 00 PM | 01, June 12: 00 PM |
+| 3   | uuid-7 | uuid-3   | hash-3      | {"a": "string", "c": "float64"} | {}       | 01, Jan 12: 00 PM | 01, June 12: 00 PM |
+| 4   | uuid-6 | uuid-2   | hash-1      | {"a": "string", "b": "float64"} | {}       | 01, Jan 12: 00 PM | 01, June 12: 00 PM |
 
-uuid-7 | hash-3    | uuid-3   | {                         | {}       | 01, Jan 12: 00 PM  | 01, June 12: 00 PM
-													"anonymousId": "string",
-													"email": "string",
-													"utm_source": "string"
-													"location": "string"
-												}
-uuid-6 | hash-4    | uuid-4   | {                         | {}       | 01, Jan 12: 00 PM  | 01, June 12: 00 PM
-													"path": "string",
-													"referrer": "string",
-													"location": "string"
-												}
 */
 
 package protocols
@@ -49,6 +27,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 	"sort"
 	"strings"
@@ -57,6 +36,7 @@ import (
 
 	"github.com/jeremywohl/flatten"
 	"github.com/lib/pq"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -72,7 +52,6 @@ type ProtocolManagerT struct {
 	eventTypeIDMap map[string]*EventTypeT
 
 	// <eType,eventIdentifier> to Event Mapping
-	//TODO: Remove if not needed
 	eventTypeMap map[string]map[string]*EventTypeT
 
 	// <event_id, schema_hash> to SchemaVersion Mapping
@@ -105,8 +84,10 @@ type SchemaVersionT struct {
 	EventType  *EventTypeT `json:"-"`
 }
 
-//TODO: Add a config variable for this
-const disableProtocols = false
+var enableProtocols bool
+var flushInterval time.Duration
+var adminUser string
+var adminPassword string
 
 const EVENT_TYPES_TABLE = "event_types"
 const SCHEMA_VERSIONS_TABLE = "schema_versions"
@@ -132,10 +113,24 @@ type EventPayloadT struct {
 	Batch      []EventT
 }
 
+func loadConfig() {
+	enableProtocols = config.GetBool("Protocols.enabled", true)
+	flushInterval = config.GetDuration("Protocols.syncIntervalInS", 5) * time.Second
+	adminUser = config.GetEnv("RUDDER_ADMIN_USER", "rudder")
+	adminPassword = config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
+
+	if adminPassword == "rudderstack" {
+		fmt.Println("[Protocols] You are using default password. Please change it by setting env variable RUDDER_ADMIN_PASSWORD")
+	}
+}
+
+func init() {
+	loadConfig()
+}
+
 //RecordEventSchema : Records event schema for every event in the batch
 func (manager *ProtocolManagerT) RecordEventSchema(writeKey string, eventBatch string) bool {
-	//if disableProtocols is true, return;
-	if disableProtocols {
+	if !enableProtocols {
 		return false
 	}
 
@@ -143,8 +138,27 @@ func (manager *ProtocolManagerT) RecordEventSchema(writeKey string, eventBatch s
 	return true
 }
 
-// TODO: Write doc here, how is this built
-// TODO: Add goroutines for parallelization
+/*
+ *
+| Event Type | e_type   | event_identfier |
+| ---------- | -------- | --------------- |
+| track      | track    | event["event"]  |
+| page       | page     | event["name"]   |
+| screen     | screen   | event["name"]   |
+| identify   | identify | ""              |
+| alias      | alias    | ""              |
+| group      | group    | ""              |
+*
+* All event types and schema versions are generated by grouping according to the table above.
+* Eg:
+*    <track, login> will always be of same event_type. Different payloads will result in different schema_versions
+*    <track, login> will always be of same event_type. Different payloads will result in different schema_versions
+*    <page, home-page> will always be of same event_type. Different payloads will result in different schema_versions
+*    <identify> There will be only identify event_type per source. Schema versions can change with different traits.
+*
+* This function is goroutine-safe. We can scale multiple go-routines calling this function,
+* but since this method does mostly in-memory operations and has locks, there might not be much perfomance improvement.
+*/
 func (manager *ProtocolManagerT) handleEvent(writeKey string, event EventT) {
 	eType := event["type"].(string)
 	eventIdentifier := ""
@@ -229,7 +243,7 @@ func (manager *ProtocolManagerT) recordEvents() {
 func (manager *ProtocolManagerT) flushEventSchemas() {
 	// This will run forever. If you want to quit in between, change it to ticker and call stop()
 	// Otherwise the ticker won't be GC'ed
-	ticker := time.Tick(5 * time.Second)
+	ticker := time.Tick(flushInterval)
 	for range ticker {
 
 		// If needed, copy the maps and release the lock immediately
@@ -242,33 +256,32 @@ func (manager *ProtocolManagerT) flushEventSchemas() {
 			continue
 		}
 
-		//TODO: Handle Rollback - Refer jobsdb
 		txn, err := manager.dbHandle.Begin()
 		assertError(err)
 
 		if len(newEventTypes) > 0 {
 			stmt, err := txn.Prepare(pq.CopyIn(EVENT_TYPES_TABLE, "uuid", "write_key", "e_type", "event_identifier"))
-			assertError(err)
+			assertTxnError(err, txn)
 			defer stmt.Close()
 			for eventID, eventType := range newEventTypes {
 				_, err = stmt.Exec(eventID, eventType.WriteKey, eventType.eType, eventType.EventIdentifier)
-				assertError(err)
+				assertTxnError(err, txn)
 			}
 			_, err = stmt.Exec()
-			assertError(err)
+			assertTxnError(err, txn)
 			logger.Debugf("[Protocols][Flush] %d new event types", len(newEventTypes))
 		}
 
 		if len(newSchemaVersions) > 0 {
 			stmt, err := txn.Prepare(pq.CopyIn(SCHEMA_VERSIONS_TABLE, "uuid", "event_id", "schema_hash", "schema", "last_seen"))
-			assertError(err)
+			assertTxnError(err, txn)
 			defer stmt.Close()
 			for versionID, schemaVersion := range newSchemaVersions {
 				_, err = stmt.Exec(versionID, schemaVersion.EventID, schemaVersion.SchemaHash, string(schemaVersion.Schema), "now()")
-				assertError(err)
+				assertTxnError(err, txn)
 			}
 			_, err = stmt.Exec()
-			assertError(err)
+			assertTxnError(err, txn)
 			logger.Debugf("[Protocols][Flush] %d new schema versions", len(newSchemaVersions))
 		}
 
@@ -281,7 +294,7 @@ func (manager *ProtocolManagerT) flushEventSchemas() {
 			}
 			updateLastSeenSQL := fmt.Sprintf(`UPDATE %s SET last_seen = now() WHERE uuid IN ('%s')`, SCHEMA_VERSIONS_TABLE, strings.Join(versionIDs, "', '"))
 			_, err := txn.Exec(updateLastSeenSQL)
-			assertError(err)
+			assertTxnError(err, txn)
 			logger.Debugf("[Protocols][Flush] %d last_seen updates", len(dirtySchemaVersions))
 		}
 
@@ -315,6 +328,13 @@ func createDBConnection() *sql.DB {
 
 func assertError(err error) {
 	if err != nil {
+		panic(err)
+	}
+}
+
+func assertTxnError(err error, txn *sql.Tx) {
+	if err != nil {
+		txn.Rollback()
 		panic(err)
 	}
 }
@@ -400,7 +420,6 @@ func computeVersion(event EventT) (schemaHash string, schema map[string]string) 
 }
 
 //TODO: Use Migrations library
-//TODO: Create indices
 func (manager *ProtocolManagerT) setupTables() {
 	createEventTypesSQL := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id SERIAL PRIMARY KEY,
@@ -413,6 +432,10 @@ func (manager *ProtocolManagerT) setupTables() {
 	`, EVENT_TYPES_TABLE)
 
 	_, err := manager.dbHandle.Exec(createEventTypesSQL)
+	assertError(err)
+
+	createWriteKeyIndexSQL := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS write_key_index ON %s (write_key)`, EVENT_TYPES_TABLE)
+	_, err = manager.dbHandle.Exec(createWriteKeyIndexSQL)
 	assertError(err)
 
 	createSchemaVersionsSQL := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -429,11 +452,19 @@ func (manager *ProtocolManagerT) setupTables() {
 
 	_, err = manager.dbHandle.Exec(createSchemaVersionsSQL)
 	assertError(err)
+
+	createEventIDIndexSQL := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS event_id_index ON %s (event_id)`, SCHEMA_VERSIONS_TABLE)
+	_, err = manager.dbHandle.Exec(createEventIDIndexSQL)
+	assertError(err)
+
+	createUniqueIndexSQL := fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS event_id_schema_hash_index ON %s (event_id, schema_hash)`, SCHEMA_VERSIONS_TABLE)
+	_, err = manager.dbHandle.Exec(createUniqueIndexSQL)
+	assertError(err)
 }
 
 func (manager *ProtocolManagerT) Setup() {
 
-	if disableProtocols {
+	if !enableProtocols {
 		logger.Info("[Protocols] Feature is disabled.")
 		return
 	}
@@ -463,5 +494,41 @@ func (manager *ProtocolManagerT) Setup() {
 	rruntime.Go(func() {
 		manager.flushEventSchemas()
 	})
+
 	logger.Info("[Protocols] Set up protocols successful.")
+}
+
+/*
+ * Handling HTTP requests to expose the schemas
+ *
+ */
+
+func handleBasicAuth(r *http.Request) error {
+	username, password, ok := r.BasicAuth()
+	if !ok {
+		return fmt.Errorf("Basic auth credentials missing")
+	}
+	if username != adminUser || password != adminPassword {
+		return fmt.Errorf("Invalid admin credentials")
+	}
+	return nil
+}
+
+func (manager *ProtocolManagerT) GetEventTypes(w http.ResponseWriter, r *http.Request) {
+	err := handleBasicAuth(r)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	w.Write([]byte("The time is: "))
+}
+
+func (manager *ProtocolManagerT) GetEventVersions(w http.ResponseWriter, r *http.Request) {
+	err := handleBasicAuth(r)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	w.Write([]byte("The time is: "))
 }
