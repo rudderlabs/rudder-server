@@ -300,7 +300,7 @@ func CreateTMPDIR() (string, error) {
 		_, err := os.Stat(fallbackPath)
 		if err == nil {
 			tmpdirPath = fallbackPath
-			logger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
+			logger.Debugf("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
 		}
 	}
 	if tmpdirPath == "" {
@@ -556,6 +556,17 @@ func MakeJSONArray(bytesArray [][]byte) []byte {
 	// append ']'
 	joinedArray = append(joinedArray, ']')
 	return joinedArray
+}
+
+func SingleQuotedJoin(slice []string) string {
+	var str string
+	for index, key := range slice {
+		if index > 0 {
+			str += fmt.Sprintf(`, `)
+		}
+		str += fmt.Sprintf(`'%s'`, key)
+	}
+	return str
 }
 
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number

@@ -38,6 +38,8 @@ const (
 	GeneratingStagingFileFailed   = "generating_staging_file_failed"
 	GeneratedStagingFile          = "generated_staging_file"
 	FetchingSchemaFailed          = "fetching_schema_failed"
+	PreLoadingIdentities          = "pre_loading_identities"
+	PreLoadIdentitiesFailed       = "pre_load_identities_failed"
 )
 
 const (
@@ -66,9 +68,12 @@ const (
 )
 
 const (
-	DiscardsTable = "rudder_discards"
-	SyncFrequency = "syncFrequency"
-	SyncStartAt   = "syncStartAt"
+	DiscardsTable           = "rudder_discards"
+	IdentityMergeRulesTable = "rudder_identity_merge_rules"
+	IdentityMappingsTable   = "rudder_identity_mappings"
+	AliasTable              = "aliases"
+	SyncFrequency           = "syncFrequency"
+	SyncStartAt             = "syncStartAt"
 )
 
 const (
@@ -87,8 +92,9 @@ const (
 )
 
 var (
-	maxRetry int
-	serverIP string
+	maxRetry                  int
+	serverIP                  string
+	IdentityEnabledWarehouses []string
 )
 
 var ObjectStorageMap = map[string]string{
@@ -108,6 +114,7 @@ func init() {
 
 func loadConfig() {
 	maxRetry = config.GetInt("Warehouse.maxRetry", 3)
+	IdentityEnabledWarehouses = []string{"SNOWFLAKE"}
 }
 
 type WarehouseT struct {
@@ -393,7 +400,7 @@ func SetTableUploadError(status string, uploadID int64, tableName string, status
 }
 
 func GetTableUploadStatus(uploadID int64, tableName string, dbHandle *sql.DB) (status string, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s'`, WarehouseTableUploadsTable, uploadID, tableName)
+	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s' ORDER BY id DESC`, WarehouseTableUploadsTable, uploadID, tableName)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&status)
 	return
 }
@@ -521,20 +528,33 @@ func GetObjectFolder(provider string, location string) (folder string) {
 	return
 }
 
+// GetObjectFolder returns the folder path for the storage object based on the storage provider
+// eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
+func GetObjectLocation(provider string, location string) (folder string) {
+	switch provider {
+	case "S3":
+		folder, _ = GetS3Location(location)
+		break
+	case "GCS":
+		folder = GetGCSLocation(location, GCSLocationOptionsT{TLDFormat: "gcs"})
+		break
+	case "AZURE_BLOB":
+		folder = GetAzureBlobLocation(location)
+		break
+	}
+	return
+}
+
 // GetObjectName extracts object/key objectName from different buckets locations
 // ex: https://bucket-endpoint/bucket-name/object -> object
-func GetObjectName(providerConfig interface{}, location string) (objectName string, err error) {
+func GetObjectName(location string, providerConfig interface{}, objectProvider string) (objectName string, err error) {
 	var config map[string]interface{}
 	var ok bool
-	var bucketProvider string
 	if config, ok = providerConfig.(map[string]interface{}); !ok {
 		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
 	}
-	if bucketProvider, ok = config["bucketProvider"].(string); !ok {
-		return "", errors.New("failed to get bucket information")
-	}
 	fm, err := filemanager.New(&filemanager.SettingsT{
-		Provider: bucketProvider,
+		Provider: objectProvider,
 		Config:   config,
 	})
 	if err != nil {
@@ -774,4 +794,12 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	}
 	sort.Strings(columnKeys)
 	return columnKeys
+}
+
+func IdentityMergeRulesTableName(warehouse WarehouseT) string {
+	return fmt.Sprintf(`%s_%s`, IdentityMergeRulesTable, warehouse.Destination.ID)
+}
+
+func IdentityMappingsTableName(warehouse WarehouseT) string {
+	return fmt.Sprintf(`%s_%s`, IdentityMappingsTable, warehouse.Destination.ID)
 }

@@ -380,6 +380,15 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 		warehouseutils.ToProviderCase(destType, "uuid_ts"):      "datetime",
 	}
 	currSchema[warehouseutils.ToProviderCase(destType, warehouseutils.DiscardsTable)] = discards
+
+	// add rudder_identity_mappings table
+	identityMappings := map[string]string{
+		warehouseutils.ToProviderCase(destType, "merge_property_type"):  "string",
+		warehouseutils.ToProviderCase(destType, "merge_property_value"): "string",
+		warehouseutils.ToProviderCase(destType, "rudder_id"):            "string",
+		warehouseutils.ToProviderCase(destType, "updated_at"):           "datetime",
+	}
+	currSchema[warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable)] = identityMappings
 	return currSchema
 }
 
@@ -409,6 +418,12 @@ func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[st
 	tables := make([]string, 0, len(schema))
 	for t := range schema {
 		tables = append(tables, t)
+		// also track upload to rudder_identity_mappings if the upload has records for rudder_identity_merge_rules
+		if misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) && t == warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMergeRulesTable) {
+			if _, ok := schema[warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMappingsTable)]; !ok {
+				tables = append(tables, warehouseutils.ToProviderCase(upload.DestinationType, warehouseutils.IdentityMappingsTable))
+			}
+		}
 	}
 
 	now := timeutil.Now()
@@ -513,6 +528,26 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 	return uploads, anyPending
 }
 
+func (wh *HandleT) getPendingPreLoad(warehouse warehouseutils.WarehouseT) (upload warehouseutils.UploadT, found bool) {
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.preLoadDestType())
+
+	var schema json.RawMessage
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
+	if err == sql.ErrNoRows {
+		return
+	}
+	if err != nil {
+		panic(err)
+	}
+	found = true
+	upload.Schema = warehouseutils.JSONSchemaToMap(schema)
+	return
+}
+
+func (wh *HandleT) preLoadDestType() string {
+	return wh.destType + "_IDENTITY_PRE_LOAD"
+}
+
 func connectionString(warehouse warehouseutils.WarehouseT) string {
 	return fmt.Sprintf(`source:%s:destination:%s`, warehouse.Source.ID, warehouse.Destination.ID)
 }
@@ -555,6 +590,171 @@ func setLastExec(warehouse warehouseutils.WarehouseT) {
 	lastExecMapLock.Lock()
 	defer lastExecMapLock.Unlock()
 	lastExecMap[connectionString(warehouse)] = timeutil.Now().Unix()
+}
+
+func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.WarehouseT) bool {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s`, warehouseutils.IdentityMergeRulesTableName(warehouse))
+	var count int
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
+	if err != nil {
+		// TOOD: Handle this
+		panic(err)
+	}
+	return count > 0
+}
+
+func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.WarehouseT) bool {
+	// TODO: Change logic to check if warehouse has data in tables
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE destination_id='%s' AND status='%s'`, warehouseutils.WarehouseUploadsTable, warehouse.Destination.ID, warehouseutils.ExportedDataState)
+	var count int
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
+	if err != nil {
+		// TOOD: Handle this
+		panic(err)
+	}
+	return count > 0
+}
+
+func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
+	var x sql.NullString
+	sqlStatement := fmt.Sprintf(`SELECT to_regclass('%s')`, warehouseutils.IdentityMappingsTableName(warehouse))
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&x)
+	if err != nil {
+		panic(err)
+	}
+	if len(x.String) > 0 {
+		return
+	}
+	// create tables
+
+	sqlStatement = fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			id BIGSERIAL PRIMARY KEY,
+			merge_property_1_type VARCHAR(64) NOT NULL,
+			merge_property_1_value TEXT NOT NULL,
+			merge_property_2_type VARCHAR(64),
+			merge_property_2_value TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW());
+		`, warehouseutils.IdentityMergeRulesTableName(warehouse),
+	)
+
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+
+	sqlStatement = fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			id BIGSERIAL PRIMARY KEY,
+			merge_property_type VARCHAR(64) NOT NULL,
+			merge_property_value TEXT NOT NULL,
+			rudder_id VARCHAR(64) NOT NULL,
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW());
+		`, warehouseutils.IdentityMappingsTableName(warehouse),
+	)
+
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+
+	sqlStatement = fmt.Sprintf(`
+		ALTER TABLE %s
+			ADD CONSTRAINT unique_merge_property_%s UNIQUE (merge_property_type, merge_property_value);
+		`, warehouseutils.IdentityMappingsTableName(warehouse), warehouse.Destination.ID,
+	)
+
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (wh *HandleT) initPreLoadUpload(warehouse warehouseutils.WarehouseT) warehouseutils.UploadT {
+	schema := make(map[string]map[string]string)
+	// TODO: DRY this code
+	identityRules := map[string]string{
+		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_type"):  "string",
+		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_value"): "string",
+		warehouseutils.ToProviderCase(wh.destType, "merge_property_2_type"):  "string",
+		warehouseutils.ToProviderCase(wh.destType, "merge_property_2_value"): "string",
+	}
+	schema[warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMergeRulesTable)] = identityRules
+
+	// add rudder_identity_mappings table
+	identityMappings := map[string]string{
+		warehouseutils.ToProviderCase(wh.destType, "merge_property_type"):  "string",
+		warehouseutils.ToProviderCase(wh.destType, "merge_property_value"): "string",
+		warehouseutils.ToProviderCase(wh.destType, "rudder_id"):            "string",
+		warehouseutils.ToProviderCase(wh.destType, "updated_at"):           "datetime",
+	}
+	schema[warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMappingsTable)] = identityMappings
+
+	marshalledSchema, err := json.Marshal(schema)
+	if err != nil {
+		panic(err)
+	}
+
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, status, schema, error, created_at, updated_at, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id)	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13) RETURNING id`, warehouseutils.WarehouseUploadsTable)
+	stmt, err := wh.dbHandle.Prepare(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+	defer stmt.Close()
+
+	now := timeutil.Now()
+	row := stmt.QueryRow(warehouse.Source.ID, warehouse.Namespace, warehouse.Destination.ID, wh.preLoadDestType(), warehouseutils.WaitingState, marshalledSchema, "{}", now, now, 0, 0, 0, 0)
+
+	var uploadID int64
+	err = row.Scan(&uploadID)
+	if err != nil {
+		panic(err)
+	}
+
+	upload := warehouseutils.UploadT{
+		ID:              uploadID,
+		Namespace:       warehouse.Namespace,
+		SourceID:        warehouse.Source.ID,
+		DestinationID:   warehouse.Destination.ID,
+		DestinationType: wh.preLoadDestType(),
+		Status:          warehouseutils.WaitingState,
+		Schema:          schema,
+	}
+
+	err = wh.initTableUploads(upload, upload.Schema)
+	if err != nil {
+		panic(err)
+	}
+
+	return upload
+}
+
+func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) {
+
+	// check for pending preLoads
+	var upload warehouseutils.UploadT
+	var found bool
+	if upload, found = wh.getPendingPreLoad(warehouse); !found {
+		upload = wh.initPreLoadUpload(warehouse)
+	}
+
+	whManager, err := NewWhManager(wh.destType)
+	if err != nil {
+		panic(err)
+	}
+
+	err = whManager.Process(warehouseutils.ConfigT{
+		DbHandle:  wh.dbHandle,
+		Upload:    upload,
+		Warehouse: warehouse,
+		Stage:     warehouseutils.PreLoadingIdentities,
+	})
+
+	if err != nil {
+		panic(err)
+	}
+
+	// call Process() with additional flag
 }
 
 type WarehouseManager interface {
@@ -604,6 +804,20 @@ func (wh *HandleT) mainLoop() {
 				continue
 			}
 			setDestInProgress(warehouse, true)
+
+			if misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
+				wh.setupIdentityTables(warehouse)
+
+				// check if identity tables have records locally and
+				// check if warehouse has data
+				if !wh.hasLocalIdentityData(warehouse) && wh.hasWarehouseData(warehouse) {
+					logger.Infof("WH: Did not find local identity tables..")
+					logger.Infof("WH: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
+					wh.preLoadIdentityTables(warehouse)
+					setDestInProgress(warehouse, false)
+					continue
+				}
+			}
 
 			_, ok := inRecoveryMap[warehouse.Destination.ID]
 			if ok {
@@ -1111,6 +1325,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	if err != nil {
 		panic(err)
 	}
+	defer os.Remove(jsonPath)
 
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig),
@@ -1128,7 +1343,6 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		return loadFileIDs, err
 	}
 	jsonFile.Close()
-	defer os.Remove(jsonPath)
 	timer.End()
 
 	fi, err := os.Stat(jsonPath)

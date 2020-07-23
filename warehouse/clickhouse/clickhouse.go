@@ -255,7 +255,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	objectLocations, _ := warehouseutils.GetLoadFileLocations(ch.DbHandle, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, tableName, ch.Upload.StartLoadFileID, ch.Upload.EndLoadFileID)
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
-		object, err := warehouseutils.GetObjectName(ch.Warehouse.Destination.Config, objectLocation)
+		object, err := warehouseutils.GetObjectName(objectLocation, ch.Warehouse.Destination.Config, ch.ObjectStorage)
 		if err != nil {
 			logger.Errorf("CH: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
 			return nil, err
