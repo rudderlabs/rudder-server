@@ -96,7 +96,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 			row2Values = fmt.Sprintf(`, (%s)`, misc.SingleQuotedJoin(row2))
 		}
 
-		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, fmt.Sprintf(`unique_merge_property_%s`, idr.Upload.DestinationID))
+		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, fmt.Sprintf(`unique_merge_property_%s`, idr.Warehouse.Destination.ID))
 		logger.Debugf(`IDR: Inserting properties from merge_rule into mappings table: %v`, sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
@@ -207,15 +207,13 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 					return
 				}
 			}
-			var recordInterface []interface{}
-			for _, value := range record {
-				if strings.TrimSpace(value) == "" {
-					recordInterface = append(recordInterface, nil)
-				} else {
-					recordInterface = append(recordInterface, value)
+			var recordInterface [4]interface{}
+			for idx, value := range record {
+				if strings.TrimSpace(value) != "" {
+					recordInterface[idx] = value
 				}
 			}
-			_, err = stmt.Exec(recordInterface...)
+			_, err = stmt.Exec(recordInterface[:]...)
 		}
 		gzipReader.Close()
 		gzipFile.Close()

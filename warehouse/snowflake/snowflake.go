@@ -574,7 +574,6 @@ func (sf *HandleT) loadIdentityTables() (err error) {
 			err = idr.Resolve(false)
 			if err != nil {
 				logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
-				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, usersTable, errors.New("Failed to upload rudder_identity_merge_rules table"), sf.DbHandle)
 				return
 			}
 		}
@@ -582,7 +581,7 @@ func (sf *HandleT) loadIdentityTables() (err error) {
 		if !sf.isTableExported(identityMergeRulesTable) {
 			err = sf.loadMergeRulesTable()
 			if err != nil {
-				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, usersTable, errors.New("Failed to upload rudder_identity_merge_rules table"), sf.DbHandle)
+				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, identityMergeRulesTable, err, sf.DbHandle)
 				return
 			}
 		}
@@ -590,7 +589,7 @@ func (sf *HandleT) loadIdentityTables() (err error) {
 		if !sf.isTableExported(identityMappingsTable) {
 			err = sf.loadMappingsTable()
 			if err != nil {
-				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, usersTable, errors.New("Failed to upload rudder_identity_mappings table"), sf.DbHandle)
+				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, identityMappingsTable, err, sf.DbHandle)
 				return
 			}
 		}

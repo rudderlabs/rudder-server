@@ -380,7 +380,7 @@ func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHan
 		execValues = append(execValues, timeutil.Now())
 	}
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 %s WHERE wh_upload_id=$3 AND table_name=$4`, WarehouseTableUploadsTable, lastExec)
-	logger.Infof("WH: Setting table upload status: %v", sqlStatement)
+	logger.Debugf("WH: Setting table upload status: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, execValues...)
 	if err != nil {
 		panic(err)
@@ -391,7 +391,7 @@ func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHan
 func SetTableUploadError(status string, uploadID int64, tableName string, statusError error, dbHandle *sql.DB) (err error) {
 	logger.Errorf("WH: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, error=$3 WHERE wh_upload_id=$4 AND table_name=$5`, WarehouseTableUploadsTable)
-	logger.Infof("WH: Setting table upload error: %v", sqlStatement)
+	logger.Debugf("WH: Setting table upload error: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), misc.QuoteLiteral(statusError.Error()), uploadID, tableName)
 	if err != nil {
 		panic(err)

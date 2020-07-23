@@ -813,6 +813,7 @@ func (wh *HandleT) mainLoop() {
 				if !wh.hasLocalIdentityData(warehouse) && wh.hasWarehouseData(warehouse) {
 					logger.Infof("WH: Did not find local identity tables..")
 					logger.Infof("WH: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
+					// TODO: make this async and not block other warehouses
 					wh.preLoadIdentityTables(warehouse)
 					setDestInProgress(warehouse, false)
 					continue
