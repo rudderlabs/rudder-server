@@ -150,6 +150,10 @@ func loadConfig() {
 
 }
 
+/*
+ registerTLSConfig will create a global map, use different names for the different tls config.
+ clickhouse will access the config by mentioning the key in connection string
+*/
 func registerTLSConfig(key string, certificate string) {
 	tlsConfig := &tls.Config{}
 	caCert := []byte(certificate)
@@ -164,7 +168,8 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 	tlsName := ""
 	certificate := warehouseutils.GetConfigValue(caCertificate, ch.Warehouse)
 	if len(strings.TrimSpace(certificate)) != 0 {
-		tlsName = "tls"
+		// each destination will have separate tls config, hence using destination id as tlsName
+		tlsName = ch.Warehouse.Destination.ID
 		registerTLSConfig(tlsName, certificate)
 	}
 	credentials := credentialsT{
