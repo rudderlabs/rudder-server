@@ -29,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	protocols "github.com/rudderlabs/rudder-server/protocols"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
@@ -130,6 +131,7 @@ type HandleT struct {
 	userWebRequestWorkers        []*userWebRequestWorkerT
 	webhookHandler               types.WebHookI
 	suppressUserHandler          types.SuppressUserI
+	protocolManager              protocols.ProtocolManagerT
 	versionHandler               func(w http.ResponseWriter, r *http.Request)
 }
 
@@ -434,8 +436,10 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			jobIDReqMap[job.UUID].done <- err
 		}
 		//Sending events to config backend
-		for _, event := range eventBatchesToRecord {
-			sourcedebugger.RecordEvent(gjson.Get(event, "writeKey").Str, event)
+		for _, eventBatch := range eventBatchesToRecord {
+			writeKey := gjson.Get(eventBatch, "writeKey").Str
+			sourcedebugger.RecordEvent(writeKey, eventBatch)
+			gateway.protocolManager.RecordEventSchema(writeKey, eventBatch)
 		}
 
 		userWebRequestWorker.batchTimeStat.End()
@@ -950,6 +954,8 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.jobsDB = jobsDB
 
 	gateway.versionHandler = versionHandler
+
+	gateway.protocolManager.Setup()
 
 	admin.RegisterStatusHandler("Gateway", &GatewayAdmin{handle: gateway})
 
