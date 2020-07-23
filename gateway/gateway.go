@@ -208,20 +208,32 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 	}
 }
 
+//TODO find size and allocate size for jobList and messageIdsArr?
 func (gateway *HandleT) dbWriterWorkerProcess(process int) {
+	gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
-		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
-			var errorMessagesMap map[uuid.UUID]string
-			gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
-			switch gwAllowPartialWriteWithErrors {
-			case true:
-				errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(userWorkerBatchRequest.jobList)
-			case false:
-				gateway.jobsDB.Store(userWorkerBatchRequest.jobList)
-			}
-			gateway.dbWritesStat.Count(1)
+		jobList := make([]*jobsdb.JobT, 0)
+		var errorMessagesMap map[uuid.UUID]string
+		messageIdsArr := make([]string, 0)
 
-			gateway.writeToBadger(userWorkerBatchRequest.allMessageIdsSet)
+		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
+			jobList = append(jobList, userWorkerBatchRequest.jobList...)
+
+			for k := range userWorkerBatchRequest.allMessageIdsSet {
+				messageIdsArr = append(messageIdsArr, k)
+			}
+		}
+
+		switch gwAllowPartialWriteWithErrors {
+		case true:
+			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
+		case false:
+			gateway.jobsDB.Store(jobList)
+		}
+		gateway.dbWritesStat.Count(1)
+		gateway.writeToBadger(messageIdsArr)
+
+		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
 			userWorkerBatchRequest.respChannel <- errorMessagesMap
 		}
 	}
@@ -429,7 +441,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		errorMessagesMap := <-userWebRequestWorker.reponseQ
 
 		if preDbStoreCount+len(jobList) != len(breq.batchRequest) {
-			panic(fmt.Errorf("preDbStoreCount:%d+len(errorMessagesMap):%d != len(breq.batchRequest):%d",
+			panic(fmt.Errorf("preDbStoreCount:%d+len(jobList):%d != len(breq.batchRequest):%d",
 				preDbStoreCount, len(jobList), len(breq.batchRequest)))
 		}
 		for _, job := range jobList {
@@ -532,12 +544,7 @@ func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSe
 	}
 }
 
-func (gateway *HandleT) writeToBadger(set map[string]struct{}) {
-	messageIDs := make([]string, 0, len(set))
-	for k := range set {
-		messageIDs = append(messageIDs, k)
-	}
-
+func (gateway *HandleT) writeToBadger(messageIDs []string) {
 	if enableDedup {
 		err := gateway.badgerDB.Update(func(txn *badger.Txn) error {
 			for _, messageID := range messageIDs {
