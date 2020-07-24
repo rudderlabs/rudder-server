@@ -768,6 +768,17 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 	}
 	return val
 }
+func GetConfigValueBoolString(key string, warehouse WarehouseT) string {
+	config := warehouse.Destination.Config
+	if config[key] != nil {
+		if val, ok := config[key].(bool); ok {
+			if val {
+				return "true"
+			}
+		}
+	}
+	return "false"
+}
 
 func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	columnKeys := make([]string, 0, len(columnMap))
