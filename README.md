@@ -1,8 +1,6 @@
 ![Build Status][build status]
 [![Release]][release]
 
-[Build](https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiOW0vREcyTDh3QXcyTkRyd0FPOUV1eTdvMXViTGFuQzAwZ0NHbllZdTJKelVVb0srN3kyVTczSHJ0Y3BzeW1BT3RNaCtITjZoc0Q3bW9kZEZiVlV1L0djPSIsIml2UGFyYW1ldGVyU3BlYyI6Im0vL01Rc09wNXJmMDI1Z2QiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master)
-
 # [![RudderStack](https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png)](https://rudderstack.com)
 
 # What is RudderStack?

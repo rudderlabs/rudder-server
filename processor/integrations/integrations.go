@@ -20,7 +20,7 @@ var (
 	destTransformURL, userTransformURL string
 	customDestination                  []string
 	whSchemaVersion                    string
-	postParamenterFields               []string
+	postParamentersTFields               []string
 )
 
 func init() {
@@ -32,12 +32,16 @@ func loadConfig() {
 	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
 }
 
-//TODO: Add a comment
+// This is called in init and it should be a one time call. Having reflect calls happening during runtime is not a great idea.
+// We unmarshal json response from transformer into PostParametersT struct.
+// Since unmarshal doesn't check if the fields are present in the json or not and instead just initialze to zero value, we have to manually do this check on all fields before unmarshaling
+// This function gets a list of fields tagged as json from the struct and populates in postParamentersTFields
+
 func populatePostParamenterFields() {
-	v := reflect.TypeOf(PostParameterT{})
-	postParamenterFields = make([]string, v.NumField(), v.NumField())
+	v := reflect.TypeOf(PostParametersT{})
+	postParamentersTFields = make([]string, v.NumField(), v.NumField())
 	for i := 0; i < v.NumField(); i++ {
-		postParamenterFields[i] = strings.Split(v.Field(i).Tag.Get("json"), ",")[0]
+		postParamentersTFields[i] = strings.Split(v.Field(i).Tag.Get("json"), ",")[0]
 	}
 }
 
@@ -50,8 +54,8 @@ const (
 	PostDataXML
 )
 
-// PostParameterT emulates parameters needed tp make a request
-type PostParameterT struct {
+// PostParametersT is a struct for holding all the values from transformerResponse and use them to publish an event to a destination 
+type PostParametersT struct {
 	Type          string      `json:"type"`
 	URL           string      `json:"endpoint"`
 	RequestMethod string      `json:"method"`
@@ -63,9 +67,9 @@ type PostParameterT struct {
 }
 
 // GetPostInfo parses the transformer response
-func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParameterT) {
+func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT) {
 	parsedJSON := gjson.ParseBytes(transformRaw)
-	for _, v := range postParamenterFields {
+	for _, v := range postParamentersTFields {
 		if !parsedJSON.Get(v).Exists() {
 			panic(fmt.Errorf("missing expected field : %s in transformer response : %v", v, parsedJSON))
 		}
