@@ -3,6 +3,7 @@ package integrations
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/warehouse"
@@ -19,14 +20,25 @@ var (
 	destTransformURL, userTransformURL string
 	customDestination                  []string
 	whSchemaVersion                    string
+	postParamenterFields               []string
 )
 
 func init() {
 	loadConfig()
+	populatePostParamenterFields()
 }
 
 func loadConfig() {
 	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+}
+
+//TODO: Add a comment
+func populatePostParamenterFields() {
+	v := reflect.TypeOf(PostParameterT{})
+	postParamenterFields = make([]string, v.NumField(), v.NumField())
+	for i := 0; i < v.NumField(); i++ {
+		postParamenterFields[i] = strings.Split(v.Field(i).Tag.Get("json"), ",")[0]
+	}
 }
 
 const (
@@ -51,13 +63,18 @@ type PostParameterT struct {
 }
 
 // GetPostInfo parses the transformer response
-func GetPostInfo(transformRaw json.RawMessage) (PostParameterT, error) {
-	var postInfo PostParameterT
+func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParameterT) {
+	parsedJSON := gjson.ParseBytes(transformRaw)
+	for _, v := range postParamenterFields {
+		if !parsedJSON.Get(v).Exists() {
+			panic(fmt.Errorf("missing expected field : %s in transformer response : %v", v, parsedJSON))
+		}
+	}
 	err := json.Unmarshal(transformRaw, &postInfo)
 	if err != nil {
-		panic(err) //TODO: Handle error
+		panic(err)
 	}
-	return postInfo, nil
+	return postInfo
 }
 
 // GetUserIDFromTransformerResponse parses the payload to get userId

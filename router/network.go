@@ -19,13 +19,10 @@ type NetHandleT struct {
 	httpClient *http.Client
 }
 
-func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string, error) { //TODO: Revisit this signature. Catch multiple things in the error
+func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	client := network.httpClient
 	//Parse the response to get parameters
-	postInfo, err := integrations.GetPostInfo(jsonData)
-	if err != nil {
-		return 0, "", "", err
-	}
+	postInfo := integrations.GetPostInfo(jsonData)
 
 	isRest := postInfo.Type == "REST"
 
@@ -38,8 +35,14 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string, error
 	// so, code addition should be done here instead of version bumping of response.
 	if isRest && !isMultipart {
 		requestMethod := postInfo.RequestMethod
-		requestBody := postInfo.Body.(map[string]interface{})
-		requestQueryParams := postInfo.QueryParams.(map[string]interface{})
+		requestBody, ok := postInfo.Body.(map[string]interface{})
+		if !ok {
+			panic(fmt.Errorf("typecast of postInfo.Body to map[string]interface{} failed"))
+		}
+		requestQueryParams, ok := postInfo.QueryParams.(map[string]interface{})
+		if !ok {
+			panic(fmt.Errorf("typecast of postInfo.QueryParams to map[string]interface{} failed"))
+		}
 		var bodyFormat string
 		var bodyValue map[string]interface{}
 		for k, v := range requestBody {
@@ -61,7 +64,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string, error
 		} else {
 			req, err = http.NewRequest(requestMethod, postInfo.URL, nil)
 			if err != nil {
-				panic(err)
+				return 400, "", fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
 			}
 		}
 
@@ -124,17 +127,17 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string, error
 
 		if err != nil {
 			logger.Error("Errored when sending request to the server", err)
-			return http.StatusGatewayTimeout, "", string(respBody), nil
+			return http.StatusGatewayTimeout, "", string(respBody)
 		}
 
-		return resp.StatusCode, resp.Status, string(respBody), nil
+		return resp.StatusCode, resp.Status, string(respBody)
 
 	}
 
 	// returning 200 with a message in case of unsupported processing
 	// so that we don't process again. can change this code to anything
 	// to be not picked up by router again
-	return 200, "method not implemented", "", nil
+	return 200, "method not implemented", ""
 
 }
 
@@ -145,7 +148,7 @@ func (network *NetHandleT) Setup(destID string) {
 	defaultRoundTripper := http.DefaultTransport
 	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
 	if !ok {
-		panic(fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed"))
+		panic(fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed")) //TODO: Handle error
 	}
 	var defaultTransportCopy http.Transport
 	//Not safe to copy DefaultTransport
