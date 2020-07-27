@@ -46,7 +46,7 @@ import (
 // EventModelT is a struct that represents EVENT_MODELS_TABLE
 type EventModelT struct {
 	ID              int
-	UUID            string `json:"eventModelID"`
+	UUID            string `json:"eventID"`
 	WriteKey        string `json:"writeKey"`
 	EventType       string `json:"eventType"`
 	EventIdentifier string `json:"eventIdentifier"`
