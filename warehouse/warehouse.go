@@ -158,7 +158,7 @@ func loadConfig() {
 	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
 	stagingFilesSchemaPaginationSize = config.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100)
 	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
-	preLoadedIdentitiesMap = map[string]bool
+	preLoadedIdentitiesMap = map[string]bool{}
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
