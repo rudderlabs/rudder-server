@@ -212,7 +212,7 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 	gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
 		jobList := make([]*jobsdb.JobT, 0)
-		var errorMessagesMap map[uuid.UUID]string
+		errorMessagesMap := make(map[uuid.UUID]string)
 		messageIdsArr := make([]string, 0)
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
@@ -223,13 +223,18 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 			}
 		}
 
-		if gwAllowPartialWriteWithErrors {
-			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
-		} else {
-			gateway.jobsDB.Store(jobList)
+		if len(jobList) > 0 {
+			if gwAllowPartialWriteWithErrors {
+				errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
+			} else {
+				gateway.jobsDB.Store(jobList)
+			}
+			gateway.dbWritesStat.Count(1)
 		}
-		gateway.dbWritesStat.Count(1)
-		gateway.writeToBadger(messageIdsArr)
+
+		if len(messageIdsArr) > 0 {
+			gateway.writeToBadger(messageIdsArr)
+		}
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
 			userWorkerBatchRequest.respChannel <- errorMessagesMap
