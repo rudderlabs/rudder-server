@@ -809,8 +809,8 @@ func (gateway *HandleT) StartWebHandler() {
 	}
 
 	// Protocols
-	srvMux.HandleFunc("/protocols/get-event-models", gateway.protocolManager.GetEventModels)
-	srvMux.HandleFunc("/protocols/get-event-versions", gateway.protocolManager.GetEventVersions)
+	srvMux.HandleFunc("/protocols/event-models", gateway.protocolManager.GetEventModels)
+	srvMux.HandleFunc("/protocols/event-versions", gateway.protocolManager.GetEventVersions)
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,

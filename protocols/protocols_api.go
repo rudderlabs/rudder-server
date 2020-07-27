@@ -28,6 +28,11 @@ func (manager *ProtocolManagerT) GetEventModels(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	if r.Method != http.MethodGet {
+		http.Error(w, "Only HTTP GET method is supported", 400)
+		return
+	}
+
 	writeKeys, ok := r.URL.Query()["writeKey"]
 	writeKey := ""
 	if ok && writeKeys[0] != "" {
@@ -49,6 +54,11 @@ func (manager *ProtocolManagerT) GetEventVersions(w http.ResponseWriter, r *http
 	err := handleBasicAuth(r)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Only HTTP GET method is supported", 400)
 		return
 	}
 
