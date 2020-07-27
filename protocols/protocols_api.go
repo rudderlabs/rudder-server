@@ -21,7 +21,7 @@ func handleBasicAuth(r *http.Request) error {
 	return nil
 }
 
-func (manager *ProtocolManagerT) GetEventTypes(w http.ResponseWriter, r *http.Request) {
+func (manager *ProtocolManagerT) GetEventModels(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
@@ -34,7 +34,7 @@ func (manager *ProtocolManagerT) GetEventTypes(w http.ResponseWriter, r *http.Re
 		writeKey = writeKeys[0]
 	}
 
-	eventTypes := manager.fetchEventTypesByWriteKey(writeKey)
+	eventTypes := manager.fetchEventModelsByWriteKey(writeKey)
 
 	eventTypesJSON, err := json.Marshal(eventTypes)
 	if err != nil {
@@ -69,30 +69,30 @@ func (manager *ProtocolManagerT) GetEventVersions(w http.ResponseWriter, r *http
 	w.Write(schemaVersionsJSON)
 }
 
-func (manager *ProtocolManagerT) fetchEventTypesByWriteKey(writeKey string) []*EventTypeT {
-	var eventTypesSelectSQL string
+func (manager *ProtocolManagerT) fetchEventModelsByWriteKey(writeKey string) []*EventModelT {
+	var eventModelsSelectSQL string
 	if writeKey == "" {
-		eventTypesSelectSQL = fmt.Sprintf(`SELECT * FROM %s`, EVENT_TYPES_TABLE)
+		eventModelsSelectSQL = fmt.Sprintf(`SELECT * FROM %s`, EVENT_MODELS_TABLE)
 	} else {
-		eventTypesSelectSQL = fmt.Sprintf(`SELECT * FROM %s WHERE write_key = '%s'`, EVENT_TYPES_TABLE, writeKey)
+		eventModelsSelectSQL = fmt.Sprintf(`SELECT * FROM %s WHERE write_key = '%s'`, EVENT_MODELS_TABLE, writeKey)
 	}
 
-	rows, err := manager.dbHandle.Query(eventTypesSelectSQL)
+	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
 	assertError(err)
 	defer rows.Close()
 
-	eventTypes := make([]*EventTypeT, 0)
+	eventModels := make([]*EventModelT, 0)
 
 	for rows.Next() {
-		var eventType EventTypeT
-		err := rows.Scan(&eventType.ID, &eventType.UUID, &eventType.WriteKey, &eventType.EvType,
-			&eventType.EventIdentifier, &eventType.CreatedAt)
+		var eventModel EventModelT
+		err := rows.Scan(&eventModel.ID, &eventModel.UUID, &eventModel.WriteKey, &eventModel.EventType,
+			&eventModel.EventIdentifier, &eventModel.CreatedAt)
 		assertError(err)
 
-		eventTypes = append(eventTypes, &eventType)
+		eventModels = append(eventModels, &eventModel)
 	}
 
-	return eventTypes
+	return eventModels
 }
 
 func (manager *ProtocolManagerT) fetchSchemaVersionsByEventID(eventID string) []*SchemaVersionT {
@@ -106,7 +106,7 @@ func (manager *ProtocolManagerT) fetchSchemaVersionsByEventID(eventID string) []
 
 	for rows.Next() {
 		var schemaVersion SchemaVersionT
-		err := rows.Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventID, &schemaVersion.SchemaHash,
+		err := rows.Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash,
 			&schemaVersion.Schema, &schemaVersion.Metadata, &schemaVersion.FirstSeen, &schemaVersion.LastSeen)
 		assertError(err)
 

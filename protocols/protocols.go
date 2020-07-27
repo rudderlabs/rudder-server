@@ -1,8 +1,8 @@
 /*
  *
-Table: event_types
+Table: event_models
 
-| id  | uuid   | write_key | ev_type  | event_identifier | created_at        |
+| id  | uuid   | write_key | event_type  | event_model_identifier | created_at        |
 | --- | ------ | --------- | -------- | ---------------- | ----------------- |
 | 1   | uuid-1 | ksuid-1   | track    | logged_in        | 01, Jan 12: 00 PM |
 | 2   | uuid-2 | ksuid-1   | track    | signed_up        | 01, Jan 12: 00 PM |
@@ -12,7 +12,7 @@ Table: event_types
 
 Table: schema_versions
 
-| id  | uuid   | event_id | schema_hash | schema                          | metadata | first_seen        | last_seen          |
+| id  | uuid   | event_model_id | schema_hash | schema                          | metadata | first_seen        | last_seen          |
 | --- | ------ | -------- | ----------- | ------------------------------- | -------- | ----------------- | ------------------ |
 | 1   | uuid-9 | uuid-1   | hash-1      | {"a": "string", "b": "float64"} | {}       | 01, Jan 12: 00 PM | 01, June 12: 00 PM |
 | 2   | uuid-8 | uuid-2   | hash-2      | {"a": "string", "b": "string"}  | {}       | 01, Jan 12: 00 PM | 01, June 12: 00 PM |
@@ -43,44 +43,44 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
-// EventTypeT is a struct that represents EVENT_TYPES_TABLE
-type EventTypeT struct {
+// EventModelT is a struct that represents EVENT_MODELS_TABLE
+type EventModelT struct {
 	ID              int
-	UUID            string `json:"eventID"`
+	UUID            string `json:"eventModelID"`
 	WriteKey        string `json:"writeKey"`
-	EvType          string `json:"eventType"`
+	EventType       string `json:"eventType"`
 	EventIdentifier string `json:"eventIdentifier"`
 	CreatedAt       time.Time
 }
 
 // SchemaVersionT is a struct that represents SCHEMA_VERSIONS_TABLE
 type SchemaVersionT struct {
-	ID         int64
-	UUID       string `json:"versionID"`
-	SchemaHash string `json:"-"`
-	EventID    string
-	Schema     json.RawMessage
-	Metadata   json.RawMessage
-	FirstSeen  time.Time
-	LastSeen   time.Time
+	ID           int64
+	UUID         string `json:"versionID"`
+	SchemaHash   string `json:"-"`
+	EventModelID string
+	Schema       json.RawMessage
+	Metadata     json.RawMessage
+	FirstSeen    time.Time
+	LastSeen     time.Time
 }
 
-//EventTypeIDMapT :	event_type's uuid to EventType Mapping
-type EventTypeIDMapT map[string]*EventTypeT
+//EventModelIDMapT :	event_model's uuid to EventModel Mapping
+type EventModelIDMapT map[string]*EventModelT
 
-//EventTypeMapT : <writeKey, evType, eventIdentifier> to EventType Mapping
-type EventTypeMapT map[string]map[string]map[string]*EventTypeT
+//EventModelMapT : <writeKey, eventType, eventIdentifier> to EventModel Mapping
+type EventModelMapT map[string]map[string]map[string]*EventModelT
 
-//SchemaVersionMapT : <event_id, schema_hash> to SchemaVersion Mapping
+//SchemaVersionMapT : <event_model_id, schema_hash> to SchemaVersion Mapping
 type SchemaVersionMapT map[string]map[string]*SchemaVersionT
 
 // ProtocolManagerT handles all protocols related features
 type ProtocolManagerT struct {
 	dbHandle          *sql.DB
-	eventTypeIDMap    EventTypeIDMapT
-	eventTypeMap      EventTypeMapT
+	eventModelIDMap   EventModelIDMapT
+	eventModelMap     EventModelMapT
 	schemaVersionMap  SchemaVersionMapT
-	eventTypeLock     sync.RWMutex
+	eventModelLock    sync.RWMutex
 	schemaVersionLock sync.RWMutex
 }
 
@@ -89,12 +89,12 @@ var flushInterval time.Duration
 var adminUser string
 var adminPassword string
 
-const EVENT_TYPES_TABLE = "event_types"
+const EVENT_MODELS_TABLE = "event_models"
 const SCHEMA_VERSIONS_TABLE = "schema_versions"
 
 var eventSchemaChannel chan *GatewayEventBatchT
 
-var newEventTypes map[string]*EventTypeT
+var newEventModels map[string]*EventModelT
 var newSchemaVersions map[string]*SchemaVersionT
 var dirtySchemaVersions map[string]*SchemaVersionT
 
@@ -139,38 +139,38 @@ func (manager *ProtocolManagerT) RecordEventSchema(writeKey string, eventBatch s
 	return true
 }
 
-func (manager *ProtocolManagerT) updateEventTypeCache(eventType *EventTypeT, isNew bool) {
-	eventID := eventType.UUID
-	writeKey := eventType.WriteKey
-	evType := eventType.EvType
-	eventIdentifier := eventType.EventIdentifier
+func (manager *ProtocolManagerT) updateEventModelCache(eventModel *EventModelT, isNew bool) {
+	eventModelID := eventModel.UUID
+	writeKey := eventModel.WriteKey
+	eventType := eventModel.EventType
+	eventIdentifier := eventModel.EventIdentifier
 
-	_, ok := manager.eventTypeMap[writeKey]
+	_, ok := manager.eventModelMap[writeKey]
 	if !ok {
-		manager.eventTypeMap[writeKey] = make(map[string]map[string]*EventTypeT)
+		manager.eventModelMap[writeKey] = make(map[string]map[string]*EventModelT)
 	}
-	_, ok = manager.eventTypeMap[writeKey][evType]
+	_, ok = manager.eventModelMap[writeKey][eventType]
 	if !ok {
-		manager.eventTypeMap[writeKey][evType] = make(map[string]*EventTypeT)
+		manager.eventModelMap[writeKey][eventType] = make(map[string]*EventModelT)
 	}
-	manager.eventTypeMap[writeKey][evType][eventIdentifier] = eventType
-	manager.eventTypeIDMap[eventID] = eventType
+	manager.eventModelMap[writeKey][eventType][eventIdentifier] = eventModel
+	manager.eventModelIDMap[eventModelID] = eventModel
 
 	if isNew {
-		newEventTypes[eventID] = eventType
+		newEventModels[eventModelID] = eventModel
 	}
 }
 
 func (manager *ProtocolManagerT) updateSchemaVersionCache(schemaVersion *SchemaVersionT, isNew bool, isDirty bool) {
-	eventID := schemaVersion.EventID
+	eventModelID := schemaVersion.EventModelID
 	schemaHash := schemaVersion.SchemaHash
 	versionID := schemaVersion.UUID
 
-	_, ok := manager.schemaVersionMap[eventID]
+	_, ok := manager.schemaVersionMap[eventModelID]
 	if !ok {
-		manager.schemaVersionMap[eventID] = make(map[string]*SchemaVersionT)
+		manager.schemaVersionMap[eventModelID] = make(map[string]*SchemaVersionT)
 	}
-	manager.schemaVersionMap[eventID][schemaHash] = schemaVersion
+	manager.schemaVersionMap[eventModelID][schemaHash] = schemaVersion
 
 	if isNew {
 		newSchemaVersions[versionID] = schemaVersion
@@ -185,7 +185,7 @@ func (manager *ProtocolManagerT) updateSchemaVersionCache(schemaVersion *SchemaV
 
 /*
  *
-| Event Type | ev_type  | event_identfier |
+| Event Type | event_type  | event_model_identfier |
 | ---------- | -------- | --------------- |
 | track      | track    | event["event"]  |
 | page       | page     | event["name"]   |
@@ -196,57 +196,69 @@ func (manager *ProtocolManagerT) updateSchemaVersionCache(schemaVersion *SchemaV
 *
 * All event types and schema versions are generated by grouping according to the table above.
 * Eg:
-*    <track, login> will always be of same event_type. Different payloads will result in different schema_versions
-*    <track, login> will always be of same event_type. Different payloads will result in different schema_versions
-*    <page, home-page> will always be of same event_type. Different payloads will result in different schema_versions
-*    <identify> There will be only identify event_type per source. Schema versions can change with different traits.
+*    <track, login> will always be of same event_model. Different payloads will result in different schema_versions
+*    <track, login> will always be of same event_model. Different payloads will result in different schema_versions
+*    <page, home-page> will always be of same event_model. Different payloads will result in different schema_versions
+*    <identify> There will be only identify event_model per source. Schema versions can change with different traits.
 *
 * This function is goroutine-safe. We can scale multiple go-routines calling this function,
 * but since this method does mostly in-memory operations and has locks, there might not be much perfomance improvement.
 */
 func (manager *ProtocolManagerT) handleEvent(writeKey string, event EventT) {
-	evType := event["type"].(string)
+	eventType, ok := event["type"].(string)
+	if !ok {
+		logger.Debugf("[Protocols] Invalid or no eventType")
+		return
+	}
 	eventIdentifier := ""
-	if evType == "track" {
-		eventIdentifier = event["event"].(string)
-	} else if evType == "page" {
-		eventIdentifier = event["name"].(string)
-	} else if evType == "screen" {
-		eventIdentifier = event["name"].(string)
+	if eventType == "track" {
+		eventIdentifier, ok = event["event"].(string)
+	} else if eventType == "page" {
+		eventIdentifier, ok = event["name"].(string)
+	} else if eventType == "screen" {
+		eventIdentifier, ok = event["name"].(string)
+	}
+	if !ok {
+		logger.Debugf("[Protocols] Invalid event idenitfier")
+		return
 	}
 
-	//TODO: Create locks on every event_type to improve scaling this
-	manager.eventTypeLock.Lock()
+	//TODO: Create locks on every event_model to improve scaling this
+	manager.eventModelLock.Lock()
 	manager.schemaVersionLock.Lock()
-	defer manager.eventTypeLock.Unlock()
+	defer manager.eventModelLock.Unlock()
 	defer manager.schemaVersionLock.Unlock()
 
-	eventType := manager.eventTypeMap[writeKey][evType][eventIdentifier]
-	if eventType == nil {
-		eventID := uuid.NewV4().String()
-		eventType = &EventTypeT{
-			UUID:            eventID,
+	eventModel, ok := manager.eventModelMap[writeKey][eventType][eventIdentifier]
+	if !ok {
+		eventModelID := uuid.NewV4().String()
+		eventModel = &EventModelT{
+			UUID:            eventModelID,
 			WriteKey:        writeKey,
-			EvType:          evType,
+			EventType:       eventType,
 			EventIdentifier: eventIdentifier,
 		}
 
-		manager.updateEventTypeCache(eventType, true)
-		newEventTypes[eventID] = eventType
+		manager.updateEventModelCache(eventModel, true)
+		newEventModels[eventModelID] = eventModel
 	}
 
-	schemaHash, schema := computeVersion(event)
-	schemaVersion, ok := manager.schemaVersionMap[eventType.UUID][schemaHash]
+	schemaHash, schema, err := computeVersion(event)
+	if err != nil {
+		logger.Debug(err.Error())
+		return
+	}
+	schemaVersion, ok := manager.schemaVersionMap[eventModel.UUID][schemaHash]
 
 	if !ok {
 		schemaJSON, err := json.Marshal(schema)
 		assertError(err)
 		versionID := uuid.NewV4().String()
 		schemaVersion = &SchemaVersionT{
-			UUID:       versionID,
-			SchemaHash: schemaHash,
-			EventID:    eventType.UUID,
-			Schema:     schemaJSON,
+			UUID:         versionID,
+			SchemaHash:   schemaHash,
+			EventModelID: eventModel.UUID,
+			Schema:       schemaJSON,
 		}
 		manager.updateSchemaVersionCache(schemaVersion, true, false)
 	} else {
@@ -272,11 +284,11 @@ func (manager *ProtocolManagerT) flushEventSchemas() {
 	for range ticker {
 
 		// If needed, copy the maps and release the lock immediately
-		manager.eventTypeLock.Lock()
+		manager.eventModelLock.Lock()
 		manager.schemaVersionLock.Lock()
 
-		if len(newEventTypes) == 0 && len(newSchemaVersions) == 0 && len(dirtySchemaVersions) == 0 {
-			manager.eventTypeLock.Unlock()
+		if len(newEventModels) == 0 && len(newSchemaVersions) == 0 && len(dirtySchemaVersions) == 0 {
+			manager.eventModelLock.Unlock()
 			manager.schemaVersionLock.Unlock()
 			continue
 		}
@@ -284,25 +296,25 @@ func (manager *ProtocolManagerT) flushEventSchemas() {
 		txn, err := manager.dbHandle.Begin()
 		assertError(err)
 
-		if len(newEventTypes) > 0 {
-			stmt, err := txn.Prepare(pq.CopyIn(EVENT_TYPES_TABLE, "uuid", "write_key", "ev_type", "event_identifier"))
+		if len(newEventModels) > 0 {
+			stmt, err := txn.Prepare(pq.CopyIn(EVENT_MODELS_TABLE, "uuid", "write_key", "event_type", "event_model_identifier"))
 			assertTxnError(err, txn)
 			defer stmt.Close()
-			for eventID, eventType := range newEventTypes {
-				_, err = stmt.Exec(eventID, eventType.WriteKey, eventType.EvType, eventType.EventIdentifier)
+			for eventModelID, eventType := range newEventModels {
+				_, err = stmt.Exec(eventModelID, eventType.WriteKey, eventType.EventType, eventType.EventIdentifier)
 				assertTxnError(err, txn)
 			}
 			_, err = stmt.Exec()
 			assertTxnError(err, txn)
-			logger.Debugf("[Protocols][Flush] %d new event types", len(newEventTypes))
+			logger.Debugf("[Protocols][Flush] %d new event types", len(newEventModels))
 		}
 
 		if len(newSchemaVersions) > 0 {
-			stmt, err := txn.Prepare(pq.CopyIn(SCHEMA_VERSIONS_TABLE, "uuid", "event_id", "schema_hash", "schema", "last_seen"))
+			stmt, err := txn.Prepare(pq.CopyIn(SCHEMA_VERSIONS_TABLE, "uuid", "event_model_id", "schema_hash", "schema", "last_seen"))
 			assertTxnError(err, txn)
 			defer stmt.Close()
 			for versionID, schemaVersion := range newSchemaVersions {
-				_, err = stmt.Exec(versionID, schemaVersion.EventID, schemaVersion.SchemaHash, string(schemaVersion.Schema), "now()")
+				_, err = stmt.Exec(versionID, schemaVersion.EventModelID, schemaVersion.SchemaHash, string(schemaVersion.Schema), "now()")
 				assertTxnError(err, txn)
 			}
 			_, err = stmt.Exec()
@@ -326,12 +338,12 @@ func (manager *ProtocolManagerT) flushEventSchemas() {
 		err = txn.Commit()
 		assertError(err)
 
-		newEventTypes = make(map[string]*EventTypeT)
+		newEventModels = make(map[string]*EventModelT)
 		newSchemaVersions = make(map[string]*SchemaVersionT)
 		dirtySchemaVersions = make(map[string]*SchemaVersionT)
 
 		manager.schemaVersionLock.Unlock()
-		manager.eventTypeLock.Unlock()
+		manager.eventModelLock.Unlock()
 	}
 }
 
@@ -364,21 +376,21 @@ func assertTxnError(err error, txn *sql.Tx) {
 	}
 }
 
-func (manager *ProtocolManagerT) populateEventTypes() {
+func (manager *ProtocolManagerT) populateEventModels() {
 
-	eventTypesSelectSQL := fmt.Sprintf(`SELECT * FROM %s`, EVENT_TYPES_TABLE)
+	eventModelsSelectSQL := fmt.Sprintf(`SELECT * FROM %s`, EVENT_MODELS_TABLE)
 
-	rows, err := manager.dbHandle.Query(eventTypesSelectSQL)
+	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
 	assertError(err)
 	defer rows.Close()
 
 	for rows.Next() {
-		var eventType EventTypeT
-		err := rows.Scan(&eventType.ID, &eventType.UUID, &eventType.WriteKey, &eventType.EvType,
-			&eventType.EventIdentifier, &eventType.CreatedAt)
+		var eventModel EventModelT
+		err := rows.Scan(&eventModel.ID, &eventModel.UUID, &eventModel.WriteKey, &eventModel.EventType,
+			&eventModel.EventIdentifier, &eventModel.CreatedAt)
 
 		assertError(err)
-		manager.updateEventTypeCache(&eventType, false)
+		manager.updateEventModelCache(&eventModel, false)
 	}
 }
 
@@ -392,7 +404,7 @@ func (manager *ProtocolManagerT) populateSchemaVersions() {
 
 	for rows.Next() {
 		var schemaVersion SchemaVersionT
-		err := rows.Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventID, &schemaVersion.SchemaHash,
+		err := rows.Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash,
 			&schemaVersion.Schema, &schemaVersion.Metadata, &schemaVersion.FirstSeen, &schemaVersion.LastSeen)
 		assertError(err)
 
@@ -402,30 +414,27 @@ func (manager *ProtocolManagerT) populateSchemaVersions() {
 
 // This should be called during the Setup() to populate existing event Schemas
 func (manager *ProtocolManagerT) populateEventSchemas() {
-	manager.populateEventTypes()
+	manager.populateEventModels()
 	manager.populateSchemaVersions()
 }
 
 //TODO: Support for prefix based
-func computeVersion(event EventT) (schemaHash string, schema map[string]string) {
+func computeVersion(event EventT) (schemaHash string, schema map[string]string, err error) {
 
 	eventMap := map[string]interface{}(event)
 
 	flattenedEvent, err := flatten.Flatten((eventMap), "", flatten.DotStyle)
 
 	if err != nil {
-		fmt.Println(err)
-		panic("Failed to flatten the event")
+		return "", nil, fmt.Errorf("[Protocols] Failed to flatten the event +%w", eventMap)
 	} else {
-		fmt.Println(flattenedEvent)
 		finalSchema := make(map[string]string)
-		keys := make([]string, 0, len(finalSchema))
+		keys := make([]string, 0, len(flattenedEvent))
 		for k, v := range flattenedEvent {
 			keys = append(keys, k)
 			reflectType := reflect.TypeOf(v)
 			finalSchema[k] = reflectType.String()
 		}
-		fmt.Println(finalSchema)
 		sort.Strings(keys)
 
 		var sb strings.Builder
@@ -435,33 +444,33 @@ func computeVersion(event EventT) (schemaHash string, schema map[string]string) 
 			sb.WriteString(finalSchema[k])
 			sb.WriteString(",")
 		}
-		return misc.GetMD5Hash(sb.String()), finalSchema
+		return misc.GetMD5Hash(sb.String()), finalSchema, err
 	}
 }
 
 //TODO: Use Migrations library
 func (manager *ProtocolManagerT) setupTables() {
-	createEventTypesSQL := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+	createEventModelsSQL := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id SERIAL PRIMARY KEY,
 		uuid VARCHAR(36) NOT NULL,
 		write_key VARCHAR(32) NOT NULL,
-		ev_type TEXT NOT NULL,
-		event_identifier TEXT NOT NULL DEFAULT '',
+		event_type TEXT NOT NULL,
+		event_model_identifier TEXT NOT NULL DEFAULT '',
 		created_at TIMESTAMP NOT NULL DEFAULT NOW()
 	)
-	`, EVENT_TYPES_TABLE)
+	`, EVENT_MODELS_TABLE)
 
-	_, err := manager.dbHandle.Exec(createEventTypesSQL)
+	_, err := manager.dbHandle.Exec(createEventModelsSQL)
 	assertError(err)
 
-	createWriteKeyIndexSQL := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS write_key_index ON %s (write_key)`, EVENT_TYPES_TABLE)
+	createWriteKeyIndexSQL := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS write_key_index ON %s (write_key)`, EVENT_MODELS_TABLE)
 	_, err = manager.dbHandle.Exec(createWriteKeyIndexSQL)
 	assertError(err)
 
 	createSchemaVersionsSQL := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id BIGSERIAL PRIMARY KEY,
 		uuid VARCHAR(36) NOT NULL, 
-		event_id VARCHAR(36) NOT NULL,
+		event_model_id VARCHAR(36) NOT NULL,
 		schema_hash VARCHAR(32) NOT NULL,
 		schema JSONB NOT NULL,
 		metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -473,11 +482,11 @@ func (manager *ProtocolManagerT) setupTables() {
 	_, err = manager.dbHandle.Exec(createSchemaVersionsSQL)
 	assertError(err)
 
-	createEventIDIndexSQL := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS event_id_index ON %s (event_id)`, SCHEMA_VERSIONS_TABLE)
-	_, err = manager.dbHandle.Exec(createEventIDIndexSQL)
+	createEventModelIDIndexSQL := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS event_model_id_index ON %s (event_model_id)`, SCHEMA_VERSIONS_TABLE)
+	_, err = manager.dbHandle.Exec(createEventModelIDIndexSQL)
 	assertError(err)
 
-	createUniqueIndexSQL := fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS event_id_schema_hash_index ON %s (event_id, schema_hash)`, SCHEMA_VERSIONS_TABLE)
+	createUniqueIndexSQL := fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS event_model_id_schema_hash_index ON %s (event_model_id, schema_hash)`, SCHEMA_VERSIONS_TABLE)
 	_, err = manager.dbHandle.Exec(createUniqueIndexSQL)
 	assertError(err)
 }
@@ -494,12 +503,12 @@ func (manager *ProtocolManagerT) Setup() {
 	manager.dbHandle = createDBConnection()
 
 	// Following data structures store events and schemas since last flush
-	newEventTypes = make(map[string]*EventTypeT)
+	newEventModels = make(map[string]*EventModelT)
 	newSchemaVersions = make(map[string]*SchemaVersionT)
 	dirtySchemaVersions = make(map[string]*SchemaVersionT)
 
-	manager.eventTypeIDMap = make(EventTypeIDMapT)
-	manager.eventTypeMap = make(EventTypeMapT)
+	manager.eventModelIDMap = make(EventModelIDMapT)
+	manager.eventModelMap = make(EventModelMapT)
 	manager.schemaVersionMap = make(SchemaVersionMapT)
 
 	manager.setupTables()
