@@ -166,11 +166,13 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		// and has been previously added to it
 		if isWarehouse && gjson.GetBytes(job.EventPayload, "metadata.isMergeRule").Bool() {
 			anonymousID := gjson.GetBytes(job.EventPayload, "metadata.anonymousId").String()
+			userID := gjson.GetBytes(job.EventPayload, "metadata.userId").String()
+			userIdentifier := fmt.Sprintf(`%s::%s`, anonymousID, userID)
 			encounteredAnonymousIDMapLock.Lock()
-			if _, ok := encounteredAnonymousIDMap[identifier][anonymousID]; ok {
+			if _, ok := encounteredAnonymousIDMap[identifier][userIdentifier]; ok {
 				continue
 			} else {
-				encounteredAnonymousIDMap[identifier][anonymousID] = true
+				encounteredAnonymousIDMap[identifier][userIdentifier] = true
 			}
 			encounteredAnonymousIDMapLock.Unlock()
 		}
