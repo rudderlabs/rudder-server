@@ -1217,8 +1217,6 @@ func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []
 	err := jd.storeJobsDS(ds, copyID, jobList)
 	if err == nil {
 		return
-	} else { //TODO remove else.
-		panic(err)
 	}
 
 	for _, job := range jobList {

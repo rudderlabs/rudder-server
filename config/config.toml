@@ -55,7 +55,7 @@ noOfBucketsInWindow=12
 [Gateway]
 webPort = 8080
 maxUserWebRequestWorkerProcess = 64
-maxDBWriterProcess = 64
+maxDBWriterProcess = 256
 CustomVal = "GW"
 maxUserRequestBatchSize = 32
 maxDBBatchSize = 32
@@ -64,7 +64,7 @@ dbBatchWriteTimeoutInMS = 5
 maxReqSizeInKB = 100000
 enableDedup = false
 enableRateLimit = false
-enableSuppressUserFeature = false
+enableSuppressUserFeature = true
 dedupWindowInS = 86400
 allowPartialWriteWithErrors = true
 
