@@ -208,7 +208,6 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 	}
 }
 
-//TODO find size and allocate size for jobList and messageIdsArr?
 func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 	gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
