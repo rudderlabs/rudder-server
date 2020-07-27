@@ -224,10 +224,9 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 			}
 		}
 
-		switch gwAllowPartialWriteWithErrors {
-		case true:
+		if gwAllowPartialWriteWithErrors {
 			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
-		case false:
+		} else {
 			gateway.jobsDB.Store(jobList)
 		}
 		gateway.dbWritesStat.Count(1)

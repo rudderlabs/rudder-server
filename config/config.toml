@@ -17,7 +17,7 @@
 #
 # Eg 3:
 # [Gateway]
-# maxDBWriterProcess = 64
+# maxDBWriterProcess = 256
 #
 # RSERVER_GATEWAY_MAX_DBWRITER_PROCESS=64
 #
