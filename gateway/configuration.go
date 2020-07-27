@@ -10,7 +10,7 @@ func loadConfig() {
 	//Port where GW is running
 	webPort = config.GetInt("Gateway.webPort", 8080)
 	//Number of incoming requests that are batched before handing off to write workers
-	maxUserWebRequestBatchSize = config.GetInt("Gateway.maxUserRequestBatchSize", 4)
+	maxUserWebRequestBatchSize = config.GetInt("Gateway.maxUserRequestBatchSize", 32)
 	//Number of userWorkerBatchRequest that are batched before initiating write
 	maxDBBatchSize = config.GetInt("Gateway.maxDBBatchSize", 32)
 	//Timeout after which batch is formed anyway with whatever requests
@@ -20,7 +20,7 @@ func loadConfig() {
 	//Multiple workers are used to batch user web requests
 	maxUserWebRequestWorkerProcess = config.GetInt("Gateway.maxUserWebRequestWorkerProcess", 64)
 	//Multiple DB writers are used to write data to DB
-	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess", 64)
+	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess", 256)
 	// CustomVal is used as a key in the jobsDB customval column
 	CustomVal = config.GetString("Gateway.CustomVal", "GW")
 	// Maximum request size to gateway

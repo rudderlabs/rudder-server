@@ -172,7 +172,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	dbClient, err := bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
-		location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
+		// location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
 	})
 	if err != nil {
 		return
@@ -339,17 +339,17 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 	logger.Infof("BQ: Connecting to BigQuery in project: %s", cred.projectID)
 	bq.BQContext = context.Background()
 	client, err := bigquery.NewClient(bq.BQContext, cred.projectID, option.WithCredentialsJSON([]byte(cred.credentials)))
+	return client, err
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	if err != nil {
-		return nil, err
-	}
+	// location := strings.TrimSpace(cred.location)
+	// if location != "" {
+	// 	client.Location = location
+	// }
 
-	location := strings.TrimSpace(cred.location)
-	if location != "" {
-		client.Location = location
-	}
-
-	return client, nil
+	// return client, nil
 }
 
 func loadConfig() {
@@ -450,7 +450,7 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	bq.Db, err = bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
-		location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
+		// location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
 	})
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
