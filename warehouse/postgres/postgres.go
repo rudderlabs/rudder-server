@@ -140,6 +140,10 @@ func (pg *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	return
 }
 
+func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+	return
+}
+
 // FetchSchema queries postgres and returns the schema associated with provided namespace
 func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	pg.Warehouse = warehouse

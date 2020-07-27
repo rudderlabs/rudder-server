@@ -214,6 +214,10 @@ func (ch *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	return
 }
 
+func (ch *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+	return
+}
+
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
 func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	ch.Warehouse = warehouse

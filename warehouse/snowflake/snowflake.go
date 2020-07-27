@@ -955,6 +955,42 @@ func (sf *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	return
 }
 
+func (sf *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+	empty = true
+
+	sf.Warehouse = warehouse
+	sf.Namespace = warehouse.Namespace
+	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	if err != nil {
+		return
+	}
+	defer sf.Db.Close()
+
+	tables := []string{"TRACKS", "PAGES", "SCREENS", "IDENTIFIES", "ALIASES"}
+	for _, tableName := range tables {
+		var exists bool
+		exists, err = sf.tableExists(tableName)
+		if err != nil {
+			return
+		}
+		if exists {
+			sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s`, sf.Namespace, tableName)
+			var count int64
+			err = sf.Db.QueryRow(sqlStatement).Scan(&count)
+			if err != nil {
+				return
+			}
+			if count > 0 {
+				empty = false
+				return
+			}
+		} else {
+			continue
+		}
+	}
+	return
+}
+
 type OptionalCredsT struct {
 	schemaName string
 }

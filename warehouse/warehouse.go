@@ -603,16 +603,27 @@ func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.WarehouseT) boo
 	return count > 0
 }
 
-func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.WarehouseT) bool {
-	// TODO: Change logic to check if warehouse has data in tables
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE destination_id='%s' AND status='%s'`, warehouseutils.WarehouseUploadsTable, warehouse.Destination.ID, warehouseutils.ExportedDataState)
-	var count int
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
+func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.WarehouseT) (bool, error) {
+	whManager, err := NewWhManager(wh.destType)
 	if err != nil {
-		// TOOD: Handle this
 		panic(err)
 	}
-	return count > 0
+
+	empty, err := whManager.IsEmpty(warehouse)
+	if err != nil {
+		return false, err
+	}
+	return !empty, nil
+
+	// TODO: Change logic to check if warehouse has data in tables
+	// sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE destination_id='%s' AND status='%s'`, warehouseutils.WarehouseUploadsTable, warehouse.Destination.ID, warehouseutils.ExportedDataState)
+	// var count int
+	// err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
+	// if err != nil {
+	// 	// TOOD: Handle this
+	// 	panic(err)
+	// }
+	// return count > 0
 }
 
 func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
@@ -729,10 +740,9 @@ func (wh *HandleT) initPreLoadUpload(warehouse warehouseutils.WarehouseT) wareho
 	return upload
 }
 
-func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) {
+func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) (upload warehouseutils.UploadT, err error) {
 
 	// check for pending preLoads
-	var upload warehouseutils.UploadT
 	var found bool
 	if upload, found = wh.getPendingPreLoad(warehouse); !found {
 		upload = wh.initPreLoadUpload(warehouse)
@@ -750,17 +760,14 @@ func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) {
 		Stage:     warehouseutils.PreLoadingIdentities,
 	})
 
-	if err != nil {
-		panic(err)
-	}
-
-	// call Process() with additional flag
+	return
 }
 
 type WarehouseManager interface {
 	Process(config warehouseutils.ConfigT) error
 	CrashRecover(config warehouseutils.ConfigT) (err error)
 	FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (map[string]map[string]string, error)
+	IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error)
 }
 
 func NewWhManager(destType string) (WarehouseManager, error) {
@@ -810,13 +817,26 @@ func (wh *HandleT) mainLoop() {
 
 				// check if identity tables have records locally and
 				// check if warehouse has data
-				if !wh.hasLocalIdentityData(warehouse) && wh.hasWarehouseData(warehouse) {
-					logger.Infof("WH: Did not find local identity tables..")
-					logger.Infof("WH: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
-					// TODO: make this async and not block other warehouses
-					wh.preLoadIdentityTables(warehouse)
-					setDestInProgress(warehouse, false)
-					continue
+				if !wh.hasLocalIdentityData(warehouse) {
+					hasData, err := wh.hasWarehouseData(warehouse)
+					if err != nil {
+						logger.Errorf(`WH: Error checking for data in %s:%s:%s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name)
+						warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
+						continue
+					}
+					if hasData {
+						logger.Infof("WH: Did not find local identity tables..")
+						logger.Infof("WH: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
+						// TODO: make this async and not block other warehouses
+						var upload warehouseutils.UploadT
+						upload, err = wh.preLoadIdentityTables(warehouse)
+						if err != nil {
+							warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
+						}
+						wh.recordDeliveryStatus(warehouse.Destination.ID, upload.ID)
+						setDestInProgress(warehouse, false)
+						continue
+					}
 				}
 			}
 

@@ -808,6 +808,10 @@ func (rs *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	return
 }
 
+func (rs *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+	return
+}
+
 func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	rs.DbHandle = config.DbHandle
 	rs.Warehouse = config.Warehouse
