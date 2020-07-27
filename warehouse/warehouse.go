@@ -71,7 +71,10 @@ var (
 	warehouseMode                    string
 	warehouseSyncPreFetchCount       int
 	warehouseSyncFreqIgnore          bool
+	preLoadedIdentitiesMap           map[string]bool
+	preLoadedIdentitiesMapLock       sync.RWMutex
 )
+
 var (
 	host, user, password, dbname string
 	port                         int
@@ -572,6 +575,22 @@ func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 	return false
 }
 
+func isDestPreLoaded(warehouse warehouseutils.WarehouseT) bool {
+	preLoadedIdentitiesMapLock.RLock()
+	if preLoadedIdentitiesMap[connectionString(warehouse)] {
+		preLoadedIdentitiesMapLock.RUnlock()
+		return true
+	}
+	preLoadedIdentitiesMapLock.RUnlock()
+	return false
+}
+
+func setDestPreLoaded(warehouse warehouseutils.WarehouseT) {
+	preLoadedIdentitiesMapLock.Lock()
+	preLoadedIdentitiesMap[connectionString(warehouse)] = true
+	preLoadedIdentitiesMapLock.Unlock()
+}
+
 func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency string) bool {
 	freqInS := uploadFreqInS
 	if syncFrequency != "" {
@@ -627,13 +646,13 @@ func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.WarehouseT) (bool, 
 }
 
 func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
-	var x sql.NullString
+	var name sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT to_regclass('%s')`, warehouseutils.IdentityMappingsTableName(warehouse))
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&x)
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&name)
 	if err != nil {
 		panic(err)
 	}
-	if len(x.String) > 0 {
+	if len(name.String) > 0 {
 		return
 	}
 	// create tables
@@ -806,6 +825,9 @@ func (wh *HandleT) mainLoop() {
 		warehouses := wh.warehouses
 		configSubscriberLock.RUnlock()
 		for _, warehouse := range warehouses {
+			if !warehouse.Destination.Enabled {
+				continue
+			}
 			if isDestInProgress(warehouse) {
 				logger.Debugf("WH: Skipping upload loop since %s:%s upload in progress", wh.destType, warehouse.Destination.ID)
 				continue
@@ -813,6 +835,10 @@ func (wh *HandleT) mainLoop() {
 			setDestInProgress(warehouse, true)
 
 			if misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
+				if isDestPreLoaded(warehouse) {
+					continue
+				}
+
 				wh.setupIdentityTables(warehouse)
 
 				// check if identity tables have records locally and
@@ -832,6 +858,8 @@ func (wh *HandleT) mainLoop() {
 						upload, err = wh.preLoadIdentityTables(warehouse)
 						if err != nil {
 							warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
+						} else {
+							setDestPreLoaded(warehouse)
 						}
 						wh.recordDeliveryStatus(warehouse.Destination.ID, upload.ID)
 						setDestInProgress(warehouse, false)

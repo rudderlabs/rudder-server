@@ -760,7 +760,7 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 	}
 
 	alterStatement := fmt.Sprintf(`ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`)
-	logger.Infof("SF: Altering session with abort_detached_query for snowflake: %v", alterStatement)
+	logger.Infof("SF: Altering session with abort_detached_query for snowflake account:%s, database:%s %v", cred.account, cred.dbName, alterStatement)
 	_, err = db.Exec(alterStatement)
 	if err != nil {
 		return nil, fmt.Errorf("SF: snowflake alter session error : (%v)", err)
@@ -850,7 +850,7 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 		var offset int64
 		for {
 			sqlStatement = fmt.Sprintf(`SELECT DISTINCT anonymous_id, user_id FROM %s.%s LIMIT %d OFFSET %d`, sf.Namespace, tableName, batchSize, offset)
-
+			logger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s", sqlStatement)
 			var rows *sql.Rows
 			rows, err = sf.Db.Query(sqlStatement)
 			if err != nil {
