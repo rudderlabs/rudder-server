@@ -249,7 +249,6 @@ var _ = Describe("Gateway Enterprise", func() {
 			suppressedUserEventData := fmt.Sprintf("{\"batch\":[{\"userId\": \"%s\"}]}", SuppressedUserID)
 
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("batch-size"))
-			c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
@@ -538,7 +537,6 @@ var _ = Describe("Gateway", func() {
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes().Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(true).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-			c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 			c.expectWriteKeyStat("gateway.work_space_dropped_requests", workspaceID, 1)
@@ -562,7 +560,6 @@ var _ = Describe("Gateway", func() {
 			It("should reject requests without Authorization header", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-				c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 				c.expectWriteKeyStat("gateway.write_key_requests", "", 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", "noWriteKey", 1)
@@ -573,7 +570,6 @@ var _ = Describe("Gateway", func() {
 			It("should reject requests without username in Authorization header", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-				c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 				c.expectWriteKeyStat("gateway.write_key_requests", "", 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", "noWriteKey", 1)
@@ -584,7 +580,6 @@ var _ = Describe("Gateway", func() {
 			It("should reject requests without request body", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-				c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
 
@@ -596,7 +591,6 @@ var _ = Describe("Gateway", func() {
 
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-				c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyInvalid, 1)
@@ -613,7 +607,6 @@ var _ = Describe("Gateway", func() {
 
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-				c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyInvalid, 1)
@@ -628,7 +621,6 @@ var _ = Describe("Gateway", func() {
 
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-				c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyInvalid, 1)
@@ -643,7 +635,6 @@ var _ = Describe("Gateway", func() {
 
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-				c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyDisabled, 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyDisabled, 1)
