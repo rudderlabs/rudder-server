@@ -41,7 +41,7 @@ const (
 	// ErrCodeKMSDisabledException for service response error code
 	// "KMSDisabledException".
 	//
-	// The request was rejected because the specified customer master key (CMK)
+	// The request was rejected because the specified customer main key (CMK)
 	// isn't enabled.
 	ErrCodeKMSDisabledException = "KMSDisabledException"
 
@@ -50,7 +50,7 @@ const (
 	//
 	// The request was rejected because the state of the specified resource isn't
 	// valid for this request. For more information, see How Key State Affects Use
-	// of a Customer Master Key (http://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)
+	// of a Customer Main Key (http://docs.aws.amazon.com/kms/latest/developerguide/key-state.html)
 	// in the AWS Key Management Service Developer Guide.
 	ErrCodeKMSInvalidStateException = "KMSInvalidStateException"
 

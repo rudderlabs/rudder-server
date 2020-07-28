@@ -744,7 +744,7 @@ func (c *S3) CreateMultipartUploadRequest(input *CreateMultipartUploadInput) (re
 // You can optionally request server-side encryption. For server-side encryption,
 // Amazon S3 encrypts your data as it writes it to disks in its data centers
 // and decrypts it when you access it. You can provide your own encryption key,
-// or use AWS Key Management Service (AWS KMS) customer master keys (CMKs) or
+// or use AWS Key Management Service (AWS KMS) customer main keys (CMKs) or
 // Amazon S3-managed encryption keys. If you choose to provide your own encryption
 // key, the request headers you provide in UploadPart) and UploadPartCopy) requests
 // must match the headers you used in the request to initiate the upload by
@@ -789,7 +789,7 @@ func (c *S3) CreateMultipartUploadRequest(input *CreateMultipartUploadInput) (re
 // it when you access it. The option you use depends on whether you want to
 // use AWS managed encryption keys or provide your own encryption key.
 //
-//    * Use encryption keys managed by Amazon S3 or customer master keys (CMKs)
+//    * Use encryption keys managed by Amazon S3 or customer main keys (CMKs)
 //    stored in AWS Key Management Service (AWS KMS) – If you want AWS to
 //    manage the keys used to encrypt data, specify the following headers in
 //    the request. x-amz-server-side​-encryption x-amz-server-side-encryption-aws-kms-key-id
@@ -6824,7 +6824,7 @@ func (c *S3) PutBucketEncryptionRequest(input *PutBucketEncryptionInput) (req *r
 //
 // This implementation of the PUT operation sets default encryption for a bucket
 // using server-side encryption with Amazon S3-managed keys SSE-S3 or AWS KMS
-// customer master keys (CMKs) (SSE-KMS).
+// customer main keys (CMKs) (SSE-KMS).
 //
 // This operation requires AWS Signature Version 4. For more information, see
 // Authenticating Requests (AWS Signature Version 4) (sig-v4-authenticating-requests.html).
@@ -8453,7 +8453,7 @@ func (c *S3) PutObjectRequest(input *PutObjectInput) (req *request.Request, outp
 // it when you access it. The option you use depends on whether you want to
 // use AWS managed encryption keys or provide your own encryption key.
 //
-//    * Use encryption keys managed by Amazon S3 or customer master keys (CMKs)
+//    * Use encryption keys managed by Amazon S3 or customer main keys (CMKs)
 //    stored in AWS Key Management Service (AWS KMS) – If you want AWS to
 //    manage the keys used to encrypt data, specify the following headers in
 //    the request. x-amz-server-side​-encryption x-amz-server-side-encryption-aws-kms-key-id
@@ -8521,7 +8521,7 @@ func (c *S3) PutObjectRequest(input *PutObjectInput) (req *request.Request, outp
 // it when you access it. The option you use depends on whether you want to
 // use AWS-managed encryption keys or provide your own encryption key.
 //
-//    * Use encryption keys managed by Amazon S3 or customer master keys (CMKs)
+//    * Use encryption keys managed by Amazon S3 or customer main keys (CMKs)
 //    stored in AWS Key Management Service (AWS KMS) – If you want AWS to
 //    manage the keys used to encrypt data, specify the following headers in
 //    the request. x-amz-server-side​-encryption x-amz-server-side-encryption-aws-kms-key-id
@@ -9555,7 +9555,7 @@ func (c *S3) SelectObjectContentRequest(input *SelectObjectContentInput) (req *r
 //    Encryption Keys) (https://docs.aws.amazon.com/AmazonS3/latest/dev/ServerSideEncryptionCustomerKeys.html)
 //    in the Amazon Simple Storage Service Developer Guide. For objects that
 //    are encrypted with Amazon S3 managed encryption keys (SSE-S3) and customer
-//    master keys (CMKs) stored in AWS Key Management Service (SSE-KMS), server-side
+//    main keys (CMKs) stored in AWS Key Management Service (SSE-KMS), server-side
 //    encryption is handled transparently, so you don't need to specify anything.
 //    For more information about server-side encryption, including SSE-S3 and
 //    SSE-KMS, see Protecting Data Using Server-Side Encryption (https://docs.aws.amazon.com/AmazonS3/latest/dev/serv-side-encryption.html)
@@ -11362,12 +11362,12 @@ type CompleteMultipartUploadOutput struct {
 	RequestCharged *string `location:"header" locationName:"x-amz-request-charged" type:"string" enum:"RequestCharged"`
 
 	// If present, specifies the ID of the AWS Key Management Service (AWS KMS)
-	// symmetric customer managed customer master key (CMK) that was used for the
+	// symmetric customer managed customer main key (CMK) that was used for the
 	// object.
 	SSEKMSKeyId *string `location:"header" locationName:"x-amz-server-side-encryption-aws-kms-key-id" type:"string" sensitive:"true"`
 
 	// If you specified server-side encryption either with an Amazon S3-managed
-	// encryption key or an AWS KMS customer master key (CMK) in your initiate multipart
+	// encryption key or an AWS KMS customer main key (CMK) in your initiate multipart
 	// upload request, the response includes this header. It confirms the encryption
 	// algorithm that Amazon S3 used to encrypt the object.
 	ServerSideEncryption *string `location:"header" locationName:"x-amz-server-side-encryption" type:"string" enum:"ServerSideEncryption"`
@@ -12062,7 +12062,7 @@ type CopyObjectOutput struct {
 	SSEKMSEncryptionContext *string `location:"header" locationName:"x-amz-server-side-encryption-context" type:"string" sensitive:"true"`
 
 	// If present, specifies the ID of the AWS Key Management Service (AWS KMS)
-	// symmetric customer managed customer master key (CMK) that was used for the
+	// symmetric customer managed customer main key (CMK) that was used for the
 	// object.
 	SSEKMSKeyId *string `location:"header" locationName:"x-amz-server-side-encryption-aws-kms-key-id" type:"string" sensitive:"true"`
 
@@ -12769,7 +12769,7 @@ type CreateMultipartUploadOutput struct {
 	SSEKMSEncryptionContext *string `location:"header" locationName:"x-amz-server-side-encryption-context" type:"string" sensitive:"true"`
 
 	// If present, specifies the ID of the AWS Key Management Service (AWS KMS)
-	// symmetric customer managed customer master key (CMK) that was used for the
+	// symmetric customer managed customer main key (CMK) that was used for the
 	// object.
 	SSEKMSKeyId *string `location:"header" locationName:"x-amz-server-side-encryption-aws-kms-key-id" type:"string" sensitive:"true"`
 
@@ -14741,7 +14741,7 @@ type EncryptionConfiguration struct {
 	_ struct{} `type:"structure"`
 
 	// Specifies the ID (Key ARN or Alias ARN) of the customer managed customer
-	// master key (CMK) stored in AWS Key Management Service (KMS) for the destination
+	// main key (CMK) stored in AWS Key Management Service (KMS) for the destination
 	// bucket. Amazon S3 uses this key to encrypt replica objects. Amazon S3 only
 	// supports symmetric customer managed CMKs. For more information, see Using
 	// Symmetric and Asymmetric Keys (https://docs.aws.amazon.com/kms/latest/developerguide/symmetric-asymmetric.html)
@@ -17747,7 +17747,7 @@ type GetObjectOutput struct {
 	SSECustomerKeyMD5 *string `location:"header" locationName:"x-amz-server-side-encryption-customer-key-MD5" type:"string"`
 
 	// If present, specifies the ID of the AWS Key Management Service (AWS KMS)
-	// symmetric customer managed customer master key (CMK) that was used for the
+	// symmetric customer managed customer main key (CMK) that was used for the
 	// object.
 	SSEKMSKeyId *string `location:"header" locationName:"x-amz-server-side-encryption-aws-kms-key-id" type:"string" sensitive:"true"`
 
@@ -19018,12 +19018,12 @@ type HeadObjectOutput struct {
 	SSECustomerKeyMD5 *string `location:"header" locationName:"x-amz-server-side-encryption-customer-key-MD5" type:"string"`
 
 	// If present, specifies the ID of the AWS Key Management Service (AWS KMS)
-	// symmetric customer managed customer master key (CMK) that was used for the
+	// symmetric customer managed customer main key (CMK) that was used for the
 	// object.
 	SSEKMSKeyId *string `location:"header" locationName:"x-amz-server-side-encryption-aws-kms-key-id" type:"string" sensitive:"true"`
 
 	// If the object is stored using server-side encryption either with an AWS KMS
-	// customer master key (CMK) or an Amazon S3-managed encryption key, the response
+	// customer main key (CMK) or an Amazon S3-managed encryption key, the response
 	// includes this header with the value of the server-side encryption algorithm
 	// used when storing this object in Amazon S3 (for example, AES256, aws:kms).
 	ServerSideEncryption *string `location:"header" locationName:"x-amz-server-side-encryption" type:"string" enum:"ServerSideEncryption"`
@@ -24068,7 +24068,7 @@ type PutBucketEncryptionInput struct {
 	_ struct{} `locationName:"PutBucketEncryptionRequest" type:"structure" payload:"ServerSideEncryptionConfiguration"`
 
 	// Specifies default encryption for a bucket using server-side encryption with
-	// Amazon S3-managed keys (SSE-S3) or customer master keys stored in AWS KMS
+	// Amazon S3-managed keys (SSE-S3) or customer main keys stored in AWS KMS
 	// (SSE-KMS). For information about the Amazon S3 default encryption feature,
 	// see Amazon S3 Default Bucket Encryption (https://docs.aws.amazon.com/AmazonS3/latest/dev/bucket-encryption.html)
 	// in the Amazon Simple Storage Service Developer Guide.
@@ -25753,7 +25753,7 @@ type PutObjectInput struct {
 
 	// If x-amz-server-side-encryption is present and has the value of aws:kms,
 	// this header specifies the ID of the AWS Key Management Service (AWS KMS)
-	// symmetrical customer managed customer master key (CMK) that was used for
+	// symmetrical customer managed customer main key (CMK) that was used for
 	// the object.
 	//
 	// If the value of x-amz-server-side-encryption is aws:kms, this header specifies
@@ -26329,11 +26329,11 @@ type PutObjectOutput struct {
 
 	// If x-amz-server-side-encryption is present and has the value of aws:kms,
 	// this header specifies the ID of the AWS Key Management Service (AWS KMS)
-	// symmetric customer managed customer master key (CMK) that was used for the
+	// symmetric customer managed customer main key (CMK) that was used for the
 	// object.
 	SSEKMSKeyId *string `location:"header" locationName:"x-amz-server-side-encryption-aws-kms-key-id" type:"string" sensitive:"true"`
 
-	// If you specified server-side encryption either with an AWS KMS customer master
+	// If you specified server-side encryption either with an AWS KMS customer main
 	// key (CMK) or Amazon S3-managed encryption key in your PUT request, the response
 	// includes this header. It confirms the encryption algorithm that Amazon S3
 	// used to encrypt the object.
@@ -27222,7 +27222,7 @@ type ReplicationRule struct {
 	// objects that you want to replicate. You can choose to enable or disable the
 	// replication of these objects. Currently, Amazon S3 supports only the filter
 	// that you can specify for objects created with server-side encryption using
-	// a customer master key (CMK) stored in AWS Key Management Service (SSE-KMS).
+	// a customer main key (CMK) stored in AWS Key Management Service (SSE-KMS).
 	SourceSelectionCriteria *SourceSelectionCriteria `type:"structure"`
 
 	// Specifies whether the rule is enabled.
@@ -28061,7 +28061,7 @@ type SSEKMS struct {
 	_ struct{} `locationName:"SSE-KMS" type:"structure"`
 
 	// Specifies the ID of the AWS Key Management Service (AWS KMS) symmetric customer
-	// managed customer master key (CMK) to use for encrypting inventory reports.
+	// managed customer main key (CMK) to use for encrypting inventory reports.
 	//
 	// KeyId is a required field
 	KeyId *string `type:"string" required:"true" sensitive:"true"`
@@ -28623,9 +28623,9 @@ func (s *SelectParameters) SetOutputSerialization(v *OutputSerialization) *Selec
 type ServerSideEncryptionByDefault struct {
 	_ struct{} `type:"structure"`
 
-	// KMS master key ID to use for the default encryption. This parameter is allowed
+	// KMS main key ID to use for the default encryption. This parameter is allowed
 	// if and only if SSEAlgorithm is set to aws:kms.
-	KMSMasterKeyID *string `type:"string" sensitive:"true"`
+	KMSMainKeyID *string `type:"string" sensitive:"true"`
 
 	// Server-side encryption algorithm to use for the default encryption.
 	//
@@ -28656,9 +28656,9 @@ func (s *ServerSideEncryptionByDefault) Validate() error {
 	return nil
 }
 
-// SetKMSMasterKeyID sets the KMSMasterKeyID field's value.
-func (s *ServerSideEncryptionByDefault) SetKMSMasterKeyID(v string) *ServerSideEncryptionByDefault {
-	s.KMSMasterKeyID = &v
+// SetKMSMainKeyID sets the KMSMainKeyID field's value.
+func (s *ServerSideEncryptionByDefault) SetKMSMainKeyID(v string) *ServerSideEncryptionByDefault {
+	s.KMSMainKeyID = &v
 	return s
 }
 
@@ -28763,7 +28763,7 @@ func (s *ServerSideEncryptionRule) SetApplyServerSideEncryptionByDefault(v *Serv
 // objects that you want to replicate. You can choose to enable or disable the
 // replication of these objects. Currently, Amazon S3 supports only the filter
 // that you can specify for objects created with server-side encryption using
-// a customer master key (CMK) stored in AWS Key Management Service (SSE-KMS).
+// a customer main key (CMK) stored in AWS Key Management Service (SSE-KMS).
 type SourceSelectionCriteria struct {
 	_ struct{} `type:"structure"`
 
@@ -28810,7 +28810,7 @@ type SseKmsEncryptedObjects struct {
 	_ struct{} `type:"structure"`
 
 	// Specifies whether Amazon S3 replicates objects created with server-side encryption
-	// using a customer master key (CMK) stored in AWS Key Management Service.
+	// using a customer main key (CMK) stored in AWS Key Management Service.
 	//
 	// Status is a required field
 	Status *string `type:"string" required:"true" enum:"SseKmsEncryptedObjectsStatus"`
@@ -29665,7 +29665,7 @@ type UploadPartCopyOutput struct {
 	SSECustomerKeyMD5 *string `location:"header" locationName:"x-amz-server-side-encryption-customer-key-MD5" type:"string"`
 
 	// If present, specifies the ID of the AWS Key Management Service (AWS KMS)
-	// symmetric customer managed customer master key (CMK) that was used for the
+	// symmetric customer managed customer main key (CMK) that was used for the
 	// object.
 	SSEKMSKeyId *string `location:"header" locationName:"x-amz-server-side-encryption-aws-kms-key-id" type:"string" sensitive:"true"`
 
@@ -29940,7 +29940,7 @@ type UploadPartOutput struct {
 	SSECustomerKeyMD5 *string `location:"header" locationName:"x-amz-server-side-encryption-customer-key-MD5" type:"string"`
 
 	// If present, specifies the ID of the AWS Key Management Service (AWS KMS)
-	// symmetric customer managed customer master key (CMK) was used for the object.
+	// symmetric customer managed customer main key (CMK) was used for the object.
 	SSEKMSKeyId *string `location:"header" locationName:"x-amz-server-side-encryption-aws-kms-key-id" type:"string" sensitive:"true"`
 
 	// The server-side encryption algorithm used when storing this object in Amazon

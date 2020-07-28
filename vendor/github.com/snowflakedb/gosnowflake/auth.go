@@ -164,8 +164,8 @@ type authResponseSessionInfo struct {
 type authResponseMain struct {
 	Token               string                  `json:"token,omitempty"`
 	Validity            time.Duration           `json:"validityInSeconds,omitempty"`
-	MasterToken         string                  `json:"masterToken,omitempty"`
-	MasterValidity      time.Duration           `json:"masterValidityInSeconds"`
+	MainToken         string                  `json:"mainToken,omitempty"`
+	MainValidity      time.Duration           `json:"mainValidityInSeconds"`
 	DisplayUserName     string                  `json:"displayUserName"`
 	ServerVersion       string                  `json:"serverVersion"`
 	FirstLogin          bool                    `json:"firstLogin"`
@@ -356,7 +356,7 @@ func authenticate(
 		glog.V(1).Infoln("Authentication FAILED")
 		glog.Flush()
 		sc.rest.Token = ""
-		sc.rest.MasterToken = ""
+		sc.rest.MainToken = ""
 		sc.rest.SessionID = -1
 		code, err := strconv.Atoi(respd.Code)
 		if err != nil {
@@ -371,7 +371,7 @@ func authenticate(
 	}
 	glog.V(2).Info("Authentication SUCCESS")
 	sc.rest.Token = respd.Data.Token
-	sc.rest.MasterToken = respd.Data.MasterToken
+	sc.rest.MainToken = respd.Data.MainToken
 	sc.rest.SessionID = respd.Data.SessionID
 	return &respd.Data, nil
 }

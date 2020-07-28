@@ -190,12 +190,12 @@ var dbErrorMap = map[string]string{
 // pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
 func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
 	// for replay server, we are changing the gateway backup to false in main.go
-	masterBackupEnabled := config.GetBool("JobsDB.backup.enabled", false)
+	mainBackupEnabled := config.GetBool("JobsDB.backup.enabled", false)
 	instanceBackupEnabled := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix), false)
 	instanceBackupFailedAndAborted := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix), false)
 	pathPrefix := config.GetString(fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix), jd.tablePrefix)
 
-	backupSettings := BackupSettingsT{BackupEnabled: masterBackupEnabled && instanceBackupEnabled,
+	backupSettings := BackupSettingsT{BackupEnabled: mainBackupEnabled && instanceBackupEnabled,
 		FailedOnly: instanceBackupFailedAndAborted, PathPrefix: strings.TrimSpace(pathPrefix)}
 
 	return &backupSettings

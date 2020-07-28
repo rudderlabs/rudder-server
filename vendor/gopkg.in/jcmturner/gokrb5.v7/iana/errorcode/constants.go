@@ -9,8 +9,8 @@ const (
 	KDC_ERR_NAME_EXP                      int32 = 1  //Client's entry in database has expired
 	KDC_ERR_SERVICE_EXP                   int32 = 2  //Server's entry in database has expired
 	KDC_ERR_BAD_PVNO                      int32 = 3  //Requested protocol version number not supported
-	KDC_ERR_C_OLD_MAST_KVNO               int32 = 4  //Client's key encrypted in old master key
-	KDC_ERR_S_OLD_MAST_KVNO               int32 = 5  //Server's key encrypted in old master key
+	KDC_ERR_C_OLD_MAST_KVNO               int32 = 4  //Client's key encrypted in old main key
+	KDC_ERR_S_OLD_MAST_KVNO               int32 = 5  //Server's key encrypted in old main key
 	KDC_ERR_C_PRINCIPAL_UNKNOWN           int32 = 6  //Client not found in Kerberos database
 	KDC_ERR_S_PRINCIPAL_UNKNOWN           int32 = 7  //Server not found in Kerberos database
 	KDC_ERR_PRINCIPAL_NOT_UNIQUE          int32 = 8  //Multiple principal entries in database
@@ -88,8 +88,8 @@ var errorcodeLookup = map[int32]string{
 	KDC_ERR_NAME_EXP:                      "KDC_ERR_NAME_EXP Client's entry in database has expired",
 	KDC_ERR_SERVICE_EXP:                   "KDC_ERR_SERVICE_EXP Server's entry in database has expired",
 	KDC_ERR_BAD_PVNO:                      "KDC_ERR_BAD_PVNO Requested protocol version number not supported",
-	KDC_ERR_C_OLD_MAST_KVNO:               "KDC_ERR_C_OLD_MAST_KVNO Client's key encrypted in old master key",
-	KDC_ERR_S_OLD_MAST_KVNO:               "KDC_ERR_S_OLD_MAST_KVNO Server's key encrypted in old master key",
+	KDC_ERR_C_OLD_MAST_KVNO:               "KDC_ERR_C_OLD_MAST_KVNO Client's key encrypted in old main key",
+	KDC_ERR_S_OLD_MAST_KVNO:               "KDC_ERR_S_OLD_MAST_KVNO Server's key encrypted in old main key",
 	KDC_ERR_C_PRINCIPAL_UNKNOWN:           "KDC_ERR_C_PRINCIPAL_UNKNOWN Client not found in Kerberos database",
 	KDC_ERR_S_PRINCIPAL_UNKNOWN:           "KDC_ERR_S_PRINCIPAL_UNKNOWN Server not found in Kerberos database",
 	KDC_ERR_PRINCIPAL_NOT_UNIQUE:          "KDC_ERR_PRINCIPAL_NOT_UNIQUE Multiple principal entries in database",

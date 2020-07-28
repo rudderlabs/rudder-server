@@ -21,9 +21,9 @@ var (
 
 const (
 	EmbeddedMode    = "embedded"
-	MasterMode      = "master"
-	MasterSlaveMode = "master_and_slave"
-	SlaveMode       = "slave"
+	MainMode      = "main"
+	MainSubordinateMode = "main_and_subordinate"
+	SubordinateMode       = "subordinate"
 	OffMode         = "off"
 )
 
