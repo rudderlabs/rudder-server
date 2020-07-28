@@ -287,36 +287,37 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	return stagingFilesList, nil
 }
 
-func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schemaList []map[string]map[string]string) map[string]map[string]string {
-	schemaMap := make(map[string]map[string]string)
+func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schemaList []map[string]map[string]string, currentMergedSchema map[string]map[string]string) map[string]map[string]string {
+	if len(currentMergedSchema) == 0 {
+		currentMergedSchema = make(map[string]map[string]string)
+	}
 	for _, schema := range schemaList {
 		for tableName, columnMap := range schema {
-			if schemaMap[tableName] == nil {
-				schemaMap[tableName] = make(map[string]string)
+			if currentMergedSchema[tableName] == nil {
+				currentMergedSchema[tableName] = make(map[string]string)
 			}
 			for columnName, columnType := range columnMap {
 				// if column already has a type in db, use that
 				if len(currentSchema) > 0 {
-
 					if _, ok := currentSchema[tableName]; ok {
 						if columnTypeInDB, ok := currentSchema[tableName][columnName]; ok {
 							if columnTypeInDB == "string" && columnType == "text" {
-								schemaMap[tableName][columnName] = columnType
+								currentMergedSchema[tableName][columnName] = columnType
 								continue
 							}
-							schemaMap[tableName][columnName] = columnTypeInDB
+							currentMergedSchema[tableName][columnName] = columnTypeInDB
 							continue
 						}
 					}
 				}
-				// check if we already set the columnType in schemaMap
-				if _, ok := schemaMap[tableName][columnName]; !ok {
-					schemaMap[tableName][columnName] = columnType
+				// check if we already set the columnType in currentMergedSchema
+				if _, ok := currentMergedSchema[tableName][columnName]; !ok {
+					currentMergedSchema[tableName][columnName] = columnType
 				}
 			}
 		}
 	}
-	return schemaMap
+	return currentMergedSchema
 }
 
 func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) map[string]map[string]string {
@@ -324,8 +325,8 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 	if err != nil {
 		panic(err)
 	}
-	currSchema := schemaInDB
 
+	consolidatedSchema := make(map[string]map[string]string)
 	count := 0
 	for {
 		lastIndex := count + stagingFilesSchemaPaginationSize
@@ -361,7 +362,7 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 		}
 		rows.Close()
 
-		currSchema = wh.mergeSchema(currSchema, schemas)
+		consolidatedSchema = wh.mergeSchema(schemaInDB, schemas, consolidatedSchema)
 
 		count += stagingFilesSchemaPaginationSize
 		if count >= len(jsonUploadsList) {
@@ -379,8 +380,8 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 		warehouseutils.ToProviderCase(destType, "received_at"):  "datetime",
 		warehouseutils.ToProviderCase(destType, "uuid_ts"):      "datetime",
 	}
-	currSchema[warehouseutils.ToProviderCase(destType, warehouseutils.DiscardsTable)] = discards
-	return currSchema
+	consolidatedSchema[warehouseutils.ToProviderCase(destType, warehouseutils.DiscardsTable)] = discards
+	return consolidatedSchema
 }
 
 func (wh *HandleT) areTableUploadsCreated(upload warehouseutils.UploadT) bool {
@@ -969,6 +970,7 @@ func (wh *HandleT) initWorkers() {
 
 						if len(job.Upload.Schema) == 0 || hasSchemaChanged {
 							// merge schemas over all staging files in this batch
+							logger.Infof("WH: Consolidating upload schema with schema in wh_schemas...")
 							consolidatedSchema := wh.consolidateSchema(job.Warehouse, job.List)
 							marshalledSchema, err := json.Marshal(consolidatedSchema)
 							if err != nil {
@@ -1197,6 +1199,8 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		if !ok {
 			continue
 		}
+		discardsTable := warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
+		eventsCountMap[discardsTable] = 0
 		if _, ok := outputFileMap[tableName]; !ok {
 			outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 			gzWriter, err := misc.CreateGZ(outputFilePath)
@@ -1236,7 +1240,8 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 					columnData[columnName] = int(floatVal)
 				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
-				dataTypeInSchema := job.Schema[tableName][columnName]
+				var dataTypeInSchema string
+				dataTypeInSchema, ok = job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
 					if dataTypeInSchema == "string" {
 						// cast to string since string type column can accomodate any kind of value
@@ -1255,7 +1260,6 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						rowID, hasID := columnData[warehouseutils.ToProviderCase(job.DestinationType, "id")]
 						receivedAt, hasReceivedAt := columnData[warehouseutils.ToProviderCase(job.DestinationType, "received_at")]
 						if hasID && hasReceivedAt {
-							discardsTable := warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
 							if _, ok := outputFileMap[discardsTable]; !ok {
 								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
@@ -1279,6 +1283,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 								return loadFileIDs, err
 							}
 							outputFileMap[discardsTable].WriteGZ(string(dLine) + "\n")
+							eventsCountMap[discardsTable]++
 						}
 						continue
 					}
@@ -1334,7 +1339,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 					columnVal = int(floatVal)
 				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
-				dataTypeInSchema := job.Schema[tableName][columnName]
+				dataTypeInSchema, ok := job.Schema[tableName][columnName]
 				if ok && columnType != dataTypeInSchema {
 					if dataTypeInSchema == "string" || dataTypeInSchema == "text" {
 						// pass it along since string type column can accomodate any kind of value
@@ -1352,7 +1357,6 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						rowID, hasID := columnData[warehouseutils.ToProviderCase(job.DestinationType, "id")]
 						receivedAt, hasReceivedAt := columnData[warehouseutils.ToProviderCase(job.DestinationType, "received_at")]
 						if hasID && hasReceivedAt {
-							discardsTable := warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
 							if _, ok := outputFileMap[discardsTable]; !ok {
 								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
@@ -1371,6 +1375,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 							dCsvWriter.Write(discardRow)
 							dCsvWriter.Flush()
 							outputFileMap[discardsTable].WriteGZ(dBuff.String())
+							eventsCountMap[discardsTable]++
 						}
 						continue
 					}

@@ -65,6 +65,10 @@ func (a *App) initEnterpriseFeatures() {
 	if suppressUserFeatureSetup != nil {
 		a.features.SuppressUser = suppressUserFeatureSetup(a)
 	}
+
+	if protocolsFeatureSetup != nil {
+		a.features.Protocols = protocolsFeatureSetup(a)
+	}
 }
 
 // Options returns this application's options

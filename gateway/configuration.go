@@ -10,7 +10,7 @@ func loadConfig() {
 	//Port where GW is running
 	webPort = config.GetInt("Gateway.webPort", 8080)
 	//Number of incoming requests that are batched before handing off to write workers
-	maxUserWebRequestBatchSize = config.GetInt("Gateway.maxUserRequestBatchSize", 4)
+	maxUserWebRequestBatchSize = config.GetInt("Gateway.maxUserRequestBatchSize", 32)
 	//Number of userWorkerBatchRequest that are batched before initiating write
 	maxDBBatchSize = config.GetInt("Gateway.maxDBBatchSize", 32)
 	//Timeout after which batch is formed anyway with whatever requests
@@ -20,7 +20,7 @@ func loadConfig() {
 	//Multiple workers are used to batch user web requests
 	maxUserWebRequestWorkerProcess = config.GetInt("Gateway.maxUserWebRequestWorkerProcess", 64)
 	//Multiple DB writers are used to write data to DB
-	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess", 64)
+	maxDBWriterProcess = config.GetInt("Gateway.maxDBWriterProcess", 256)
 	// CustomVal is used as a key in the jobsDB customval column
 	CustomVal = config.GetString("Gateway.CustomVal", "GW")
 	// Maximum request size to gateway
@@ -31,8 +31,10 @@ func loadConfig() {
 	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 	// Enable rate limit on incoming events. false by default
 	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
-	// Enable suppress user feature. true by default
+	// Enable suppress user feature. false by default
 	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
+	// Protocols feature. false by default
+	enableProtocolsFeature = config.GetBool("Protocols.enableProtocolsFeature", false)
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
 }
