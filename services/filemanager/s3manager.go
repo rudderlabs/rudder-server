@@ -3,6 +3,7 @@ package filemanager
 import (
 	"errors"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -101,12 +102,12 @@ func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string
 GetObjectNameFromLocation gets the object name/key name from the object location url
 	https://bucket-name.s3.amazonaws.com/key - >> key
 */
-func (manager *S3Manager) GetObjectNameFromLocation(location string) string {
-	var baseUrl string
-	baseUrl += "https://"
-	baseUrl += manager.Config.Bucket + "."
-	baseUrl += "s3.amazonaws.com" + "/"
-	return location[len(baseUrl):]
+func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, error) {
+	reg, err := regexp.Compile(`^https.+\.s3\..*amazonaws\.com\/`)
+	if err != nil {
+		return "", err
+	}
+	return reg.ReplaceAllString(location, ""), nil
 }
 
 type S3Object struct {

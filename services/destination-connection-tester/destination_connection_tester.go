@@ -23,9 +23,9 @@ const destinationConnectionTesterEndpoint = "dataplane/testConnectionResponse"
 
 type DestinationConnectionTesterResponse struct {
 	DestinationId string    `json:"destinationId"`
-	InstanceId    string    `json:instanceId`
-	Error         string    `json: error`
-	TestedAt      time.Time `json:testedAt`
+	InstanceId    string    `json:"instanceId"`
+	Error         string    `json:"error"`
+	TestedAt      time.Time `json:"testedAt"`
 }
 
 func init() {
@@ -48,6 +48,7 @@ func UploadDestinationConnectionTesterResponse(payload DestinationConnectionTest
 }
 
 func makePostRequest(url string, payload interface{}) error {
+	fmt.Println(payload)
 	rawJSON, err := json.Marshal(payload)
 	if err != nil {
 		logger.Debugf(string(rawJSON))

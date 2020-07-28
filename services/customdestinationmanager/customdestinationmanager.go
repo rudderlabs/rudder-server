@@ -42,13 +42,12 @@ func init() {
 }
 
 func loadConfig() {
-	objectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB"}
+	objectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE"}
 	streamDestinationsMap = make(map[string]StreamDestination)
 }
 
 // newProducer delegates the call to the appropriate manager based on parameter destination for creating producer
 func newProducer(destinationConfig interface{}, destination string) (interface{}, error) {
-
 	switch {
 	case misc.ContainsString(objectStreamDestinations, destination):
 		return streammanager.NewProducer(destinationConfig, destination)

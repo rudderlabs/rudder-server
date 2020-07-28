@@ -81,11 +81,11 @@ func (manager *GCSManager) Download(output *os.File, key string) error {
 GetObjectNameFromLocation gets the object name/key name from the object location url
 	https://storage.googleapis.com/bucket-name/key - >> key
 */
-func (manager *GCSManager) GetObjectNameFromLocation(location string) string {
-	var baseUrl string
-	baseUrl += "https://storage.googleapis.com" + "/"
-	baseUrl += manager.Config.Bucket + "/"
-	return location[len(baseUrl):]
+func (manager *GCSManager) GetObjectNameFromLocation(location string) (string, error) {
+	var baseURL string
+	baseURL += "https://storage.googleapis.com" + "/"
+	baseURL += manager.Config.Bucket + "/"
+	return location[len(baseURL):], nil
 }
 
 //TODO complete this

@@ -75,7 +75,7 @@ export default class DestinationsCatalogue extends React.Component<
           <Heading>
             <HeaderDiv color={theme.color.primary}>Destinations</HeaderDiv>
             <LabelMedium color={theme.color.grey300}>
-              {destinationDefsListStore!.destinationDefs.length}
+              {destinationDefsListStore!.destinationDefs.filter(dest => !dest.config.preview).length}
               &nbsp;Available
             </LabelMedium>
           </Heading>

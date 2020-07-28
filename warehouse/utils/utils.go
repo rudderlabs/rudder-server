@@ -37,13 +37,15 @@ const (
 	AbortedState                  = "aborted"
 	GeneratingStagingFileFailed   = "generating_staging_file_failed"
 	GeneratedStagingFile          = "generated_staging_file"
+	FetchingSchemaFailed          = "fetching_schema_failed"
 )
 
 const (
-	RS        = "RS"
-	BQ        = "BQ"
-	SNOWFLAKE = "SNOWFLAKE"
-	POSTGRES  = "POSTGRES"
+	RS         = "RS"
+	BQ         = "BQ"
+	SNOWFLAKE  = "SNOWFLAKE"
+	POSTGRES   = "POSTGRES"
+	CLICKHOUSE = "CLICKHOUSE"
 )
 
 const (
@@ -186,16 +188,18 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[st
 }
 
 type SchemaDiffT struct {
-	Tables        []string
-	ColumnMaps    map[string]map[string]string
-	UpdatedSchema map[string]map[string]string
+	Tables                         []string
+	ColumnMaps                     map[string]map[string]string
+	UpdatedSchema                  map[string]map[string]string
+	StringColumnsToBeAlteredToText map[string][]string
 }
 
 func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (diff SchemaDiffT) {
 	diff = SchemaDiffT{
-		Tables:        []string{},
-		ColumnMaps:    make(map[string]map[string]string),
-		UpdatedSchema: make(map[string]map[string]string),
+		Tables:                         []string{},
+		ColumnMaps:                     make(map[string]map[string]string),
+		UpdatedSchema:                  make(map[string]map[string]string),
+		StringColumnsToBeAlteredToText: make(map[string][]string),
 	}
 
 	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
@@ -213,13 +217,16 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 			diff.UpdatedSchema[tableName] = uploadColumnMap
 		} else {
 			diff.ColumnMaps[tableName] = make(map[string]string)
-			for columnName, columnVal := range uploadColumnMap {
+			for columnName, columnType := range uploadColumnMap {
 				if _, ok := currentColumnsMap[columnName]; !ok {
-					diff.ColumnMaps[tableName][columnName] = columnVal
-					diff.UpdatedSchema[tableName][columnName] = columnVal
+					diff.ColumnMaps[tableName][columnName] = columnType
+					diff.UpdatedSchema[tableName][columnName] = columnType
+				} else if columnType == "text" && currentColumnsMap[columnName] == "string" {
+					diff.StringColumnsToBeAlteredToText[tableName] = append(diff.StringColumnsToBeAlteredToText[tableName], columnName)
 				}
 			}
 		}
+
 	}
 	return
 }
@@ -533,7 +540,7 @@ func GetObjectName(providerConfig interface{}, location string) (objectName stri
 	if err != nil {
 		return "", err
 	}
-	return fm.GetObjectNameFromLocation(location), nil
+	return fm.GetObjectNameFromLocation(location)
 }
 
 // GetS3Location parses path-style location http url to return in s3:// format
@@ -737,20 +744,19 @@ func SnowflakeCloudProvider(config interface{}) string {
 }
 
 func ObjectStorageType(destType string, config interface{}) string {
-	if destType != "SNOWFLAKE" && destType != "POSTGRES" {
+	if destType == "RS" || destType == "BQ" {
 		return ObjectStorageMap[destType]
 	}
-	if destType == "POSTGRES" {
-		c := config.(map[string]interface{})
-		provider, _ := c["bucketProvider"].(string)
-		return provider
-	}
 	c := config.(map[string]interface{})
-	provider, ok := c["cloudProvider"].(string)
-	if provider == "" || !ok {
-		provider = "AWS"
+	if destType == "SNOWFLAKE" {
+		provider, ok := c["cloudProvider"].(string)
+		if provider == "" || !ok {
+			provider = "AWS"
+		}
+		return SnowflakeStorageMap[provider]
 	}
-	return SnowflakeStorageMap[provider]
+	provider, _ := c["bucketProvider"].(string)
+	return provider
 }
 
 func GetConfigValue(key string, warehouse WarehouseT) (val string) {
@@ -759,6 +765,17 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 		val, _ = config[key].(string)
 	}
 	return val
+}
+func GetConfigValueBoolString(key string, warehouse WarehouseT) string {
+	config := warehouse.Destination.Config
+	if config[key] != nil {
+		if val, ok := config[key].(bool); ok {
+			if val {
+				return "true"
+			}
+		}
+	}
+	return "false"
 }
 
 func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {

@@ -1,6 +1,7 @@
 import { action, observable } from 'mobx';
 import { apiCaller } from '@services/apiCaller';
 import { IRootStore } from '.';
+import _ from 'lodash';
 
 export interface IDestinationDefsListStore {
   destinationDefs: IDestinationDef[];
@@ -13,6 +14,7 @@ export interface IDestinationDef {
   id: string;
   name: string;
   displayName: string;
+  config: any;
 }
 
 export class DestinationDefsListStore implements IDestinationDefsListStore {
@@ -25,8 +27,12 @@ export class DestinationDefsListStore implements IDestinationDefsListStore {
 
   @action.bound
   public async getDestinationDefs() {
-    const res = await apiCaller().get(`/destination-definitions`);
-    this.destinationDefs = res.data;
+    const res = await apiCaller().get(`/open-destination-definitions`);
+    this.destinationDefs = _.orderBy(
+      res.data,
+      [dest => dest.displayName.toString().toLowerCase()],
+      ['asc'],
+    );
   }
 
   public getDestinationDef(id: string) {

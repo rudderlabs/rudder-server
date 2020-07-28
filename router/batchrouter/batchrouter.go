@@ -87,7 +87,8 @@ func (brt *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == brt.destType {
 						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
-						if destination.Config["testConnection"] == true {
+						if destination.Config["testConnection"].(bool) == true {
+							destination := destination
 							rruntime.Go(func() {
 								testBatchDestinationConnection(destination)
 							})
@@ -179,6 +180,7 @@ func testBatchDestinationConnection(destination backendconfig.DestinationT) {
 		TestedAt:      time.Now(),
 		DestinationId: destination.ID,
 	}
+
 	destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse)
 	return
 
@@ -326,6 +328,11 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 		for columnName, columnType := range columns {
 			if _, ok := schemaMap[tableName][columnName]; !ok {
 				schemaMap[tableName][columnName] = columnType
+			} else {
+				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
+				if columnType == "text" && schemaMap[tableName][columnName] == "string" {
+					schemaMap[tableName][columnName] = columnType
+				}
 			}
 		}
 	}
@@ -587,7 +594,10 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 func (brt *HandleT) mainLoop() {
 	for {
 		time.Sleep(mainLoopSleep)
-		for _, batchDestination := range brt.batchDestinations {
+		configSubscriberLock.RLock()
+		batchDestinations := brt.batchDestinations
+		configSubscriberLock.RUnlock()
+		for _, batchDestination := range batchDestinations {
 			if isDestInProgress(batchDestination) {
 				logger.Debugf("BRT: Skipping batch router upload loop since destination %s:%s is in progress", batchDestination.Destination.DestinationDefinition.Name, batchDestination.Destination.ID)
 				continue
@@ -819,7 +829,7 @@ func loadConfig() {
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
@@ -861,4 +871,5 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	rruntime.Go(func() {
 		brt.mainLoop()
 	})
+	adminInstance.registerBatchRouter(destType, brt)
 }

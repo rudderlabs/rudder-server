@@ -2,9 +2,10 @@ package filemanager
 
 import (
 	"errors"
-	"github.com/minio/minio-go/v6"
 	"os"
 	"strings"
+
+	"github.com/minio/minio-go/v6"
 )
 
 func (manager *MinioManager) ObjectUrl(objectName string) string {
@@ -64,16 +65,16 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 	https://minio-endpoint/bucket-name/key1 - >> key1
 	http://minio-endpoint/bucket-name/key2 - >> key2
 */
-func (manager *MinioManager) GetObjectNameFromLocation(location string) string {
-	var baseUrl string
+func (manager *MinioManager) GetObjectNameFromLocation(location string) (string, error) {
+	var baseURL string
 	if manager.Config.UseSSL {
-		baseUrl += "https://"
+		baseURL += "https://"
 	} else {
-		baseUrl += "http://"
+		baseURL += "http://"
 	}
-	baseUrl += manager.Config.EndPoint + "/"
-	baseUrl += manager.Config.Bucket + "/"
-	return location[len(baseUrl):]
+	baseURL += manager.Config.EndPoint + "/"
+	baseURL += manager.Config.Bucket + "/"
+	return location[len(baseURL):], nil
 }
 
 //TODO complete this
