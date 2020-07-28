@@ -1,10 +1,9 @@
 package filemanager
 
 import (
+	"errors"
 	"os"
 	"strings"
-
-	"errors"
 
 	"github.com/minio/minio-go/v6"
 )

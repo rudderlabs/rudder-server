@@ -2,6 +2,7 @@ package integrations
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -10,7 +11,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
-	"github.com/pkg/errors"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -77,7 +77,7 @@ func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err er
 		}
 	}
 	unMarshalError := json.Unmarshal(transformRaw, &postInfo)
-	err = errors.Wrapf(unMarshalError, fmt.Sprintf("Error while unmarshalling response from transformer %s", transformRaw))
+	err = fmt.Errorf("Error while unmarshalling response from transformer : %s, Error: %w", transformRaw, unMarshalError)
 
 	return postInfo, err
 }
