@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/pkg/errors"
+	"errors"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
