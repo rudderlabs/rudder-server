@@ -160,10 +160,12 @@ type StagingFileT struct {
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
 	var rawSchema json.RawMessage
 	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[2]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, WarehouseSchemasTable, warehouse.Destination.ID, warehouse.Namespace)
+	logger.Infof("WH: Fetching current schema from wh postgresql: %s", sqlStatement)
 
 	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
+			logger.Infof("WH: No current schema found for %s with namespace: %s", warehouse.Destination.ID, warehouse.Namespace)
 			return nil, nil
 		}
 		if err != nil {
@@ -176,13 +178,13 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[st
 		panic(err)
 	}
 	schema := make(map[string]map[string]string)
-	for key, val := range schemaMapInterface {
-		y := make(map[string]string)
-		x := val.(map[string]interface{})
-		for k, v := range x {
-			y[k] = v.(string)
+	for tname, columnMapInterface := range schemaMapInterface {
+		columnMap := make(map[string]string)
+		columns := columnMapInterface.(map[string]interface{})
+		for cName, cTypeInterface := range columns {
+			columnMap[cName] = cTypeInterface.(string)
 		}
-		schema[key] = y
+		schema[tname] = columnMap
 	}
 	return schema, nil
 }
@@ -765,6 +767,17 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 		val, _ = config[key].(string)
 	}
 	return val
+}
+func GetConfigValueBoolString(key string, warehouse WarehouseT) string {
+	config := warehouse.Destination.Config
+	if config[key] != nil {
+		if val, ok := config[key].(bool); ok {
+			if val {
+				return "true"
+			}
+		}
+	}
+	return "false"
 }
 
 func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {

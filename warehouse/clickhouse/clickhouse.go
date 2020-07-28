@@ -2,6 +2,8 @@ package clickhouse
 
 import (
 	"compress/gzip"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"encoding/csv"
 	"errors"
@@ -14,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/ClickHouse/clickhouse-go"
+	"github.com/ClickHouse/clickhouse-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -33,12 +35,14 @@ var (
 )
 
 const (
-	host     = "host"
-	dbName   = "database"
-	user     = "user"
-	password = "password"
-	port     = "port"
-	sslMode  = "sslMode"
+	host          = "host"
+	dbName        = "database"
+	user          = "user"
+	password      = "password"
+	port          = "port"
+	secure        = "secure"
+	skipVerify    = "skipVerify"
+	caCertificate = "caCertificate"
 )
 
 // clickhouse doesnt support bool, they recommend to use Uint8 and set 1,0
@@ -51,7 +55,6 @@ var rudderDataTypesMapToClickHouse = map[string]string{
 	"boolean":  "UInt8",
 }
 
-//TODO: add addition clickhouse types which maps to rudder transformer data types
 var clickhouseDataTypesMapToRudder = map[string]string{
 	"Int8":               "int",
 	"Int16":              "int",
@@ -93,12 +96,14 @@ type HandleT struct {
 }
 
 type credentialsT struct {
-	host     string
-	dbName   string
-	user     string
-	password string
-	port     string
-	sslMode  string
+	host          string
+	dbName        string
+	user          string
+	password      string
+	port          string
+	secure        string
+	skipVerify    string
+	tlsConfigName string
 }
 
 var primaryKeyMap = map[string]string{
@@ -109,7 +114,7 @@ var primaryKeyMap = map[string]string{
 
 // connect connects to warehouse with provided credentials
 func connect(cred credentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s",
 		cred.host,
 		cred.port,
 		cred.user,
@@ -118,6 +123,9 @@ func connect(cred credentialsT) (*sql.DB, error) {
 		blockSize,
 		poolSize,
 		queryDebugLogs,
+		cred.secure,
+		cred.skipVerify,
+		cred.tlsConfigName,
 	)
 
 	var err error
@@ -142,15 +150,39 @@ func loadConfig() {
 
 }
 
+/*
+ registerTLSConfig will create a global map, use different names for the different tls config.
+ clickhouse will access the config by mentioning the key in connection string
+*/
+func registerTLSConfig(key string, certificate string) {
+	tlsConfig := &tls.Config{}
+	caCert := []byte(certificate)
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+	tlsConfig.RootCAs = caCertPool
+	clickhouse.RegisterTLSConfig(key, tlsConfig)
+}
+
 // getConnectionCredentials gives clickhouse credentials
 func (ch *HandleT) getConnectionCredentials() credentialsT {
-	return credentialsT{
-		host:     warehouseutils.GetConfigValue(host, ch.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(dbName, ch.Warehouse),
-		user:     warehouseutils.GetConfigValue(user, ch.Warehouse),
-		password: warehouseutils.GetConfigValue(password, ch.Warehouse),
-		port:     warehouseutils.GetConfigValue(port, ch.Warehouse),
+	tlsName := ""
+	certificate := warehouseutils.GetConfigValue(caCertificate, ch.Warehouse)
+	if len(strings.TrimSpace(certificate)) != 0 {
+		// each destination will have separate tls config, hence using destination id as tlsName
+		tlsName = ch.Warehouse.Destination.ID
+		registerTLSConfig(tlsName, certificate)
 	}
+	credentials := credentialsT{
+		host:          warehouseutils.GetConfigValue(host, ch.Warehouse),
+		dbName:        warehouseutils.GetConfigValue(dbName, ch.Warehouse),
+		user:          warehouseutils.GetConfigValue(user, ch.Warehouse),
+		password:      warehouseutils.GetConfigValue(password, ch.Warehouse),
+		port:          warehouseutils.GetConfigValue(port, ch.Warehouse),
+		secure:        warehouseutils.GetConfigValueBoolString(secure, ch.Warehouse),
+		skipVerify:    warehouseutils.GetConfigValueBoolString(skipVerify, ch.Warehouse),
+		tlsConfigName: tlsName,
+	}
+	return credentials
 }
 
 // columnsWithDataTypes creates columns and its datatype into sql format for creating table
