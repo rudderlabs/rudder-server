@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	protocols "github.com/rudderlabs/rudder-server/protocols"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
@@ -73,6 +72,7 @@ var (
 	enableDedup                                                 bool
 	enableRateLimit                                             bool
 	enableSuppressUserFeature                                   bool
+	enableProtocolsFeature                                      bool
 	dedupWindow, diagnosisTickerTime                            time.Duration
 )
 
@@ -131,7 +131,7 @@ type HandleT struct {
 	userWebRequestWorkers        []*userWebRequestWorkerT
 	webhookHandler               types.WebHookI
 	suppressUserHandler          types.SuppressUserI
-	protocolManager              protocols.ProtocolManagerT
+	protocolHandler              types.ProtocolsI
 	versionHandler               func(w http.ResponseWriter, r *http.Request)
 }
 
@@ -439,7 +439,9 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		for _, eventBatch := range eventBatchesToRecord {
 			writeKey := gjson.Get(eventBatch, "writeKey").Str
 			sourcedebugger.RecordEvent(writeKey, eventBatch)
-			gateway.protocolManager.RecordEventSchema(writeKey, eventBatch)
+			if enableProtocolsFeature && gateway.protocolHandler != nil {
+				gateway.protocolHandler.RecordEventSchema(writeKey, eventBatch)
+			}
 		}
 
 		userWebRequestWorker.batchTimeStat.End()
@@ -600,6 +602,38 @@ func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request
 		wrappedFunc(w, r)
 		latencyStat.End()
 	}
+}
+
+func (gateway *HandleT) webEventModelsHandler(w http.ResponseWriter, r *http.Request) {
+	if !enableProtocolsFeature {
+		logger.Debug("Protocols feature is disabled. You can enabled it through enableProtocolsFeature flag in config.toml")
+		http.Error(w, "Protocols feature is disabled", 400)
+		return
+	}
+
+	if gateway.protocolHandler == nil {
+		logger.Debug("Protocols feature is enterprise only feature.")
+		http.Error(w, "Protocols feature is enterprise only feature", 400)
+		return
+	}
+
+	gateway.protocolHandler.GetEventModels(w, r)
+}
+
+func (gateway *HandleT) webEventVersionsHandler(w http.ResponseWriter, r *http.Request) {
+	if !enableProtocolsFeature {
+		logger.Debug("Protocols feature is disabled. You can enabled it through enableProtocolsFeature flag in config.toml")
+		http.Error(w, "Protocols feature is disabled", 400)
+		return
+	}
+
+	if gateway.protocolHandler == nil {
+		logger.Debug("Protocols feature is enterprise only feature.")
+		http.Error(w, "Protocols feature is enterprise only feature", 400)
+		return
+	}
+
+	gateway.protocolHandler.GetEventVersions(w, r)
 }
 
 func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
@@ -809,8 +843,8 @@ func (gateway *HandleT) StartWebHandler() {
 	}
 
 	// Protocols
-	srvMux.HandleFunc("/protocols/event-models", gateway.protocolManager.GetEventModels)
-	srvMux.HandleFunc("/protocols/event-versions", gateway.protocolManager.GetEventVersions)
+	srvMux.HandleFunc("/protocols/event-models", gateway.webEventModelsHandler)
+	srvMux.HandleFunc("/protocols/event-versions", gateway.webEventVersionsHandler)
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
@@ -959,8 +993,6 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	gateway.versionHandler = versionHandler
 
-	gateway.protocolManager.Setup()
-
 	admin.RegisterStatusHandler("Gateway", &GatewayAdmin{handle: gateway})
 
 	//gateway.webhookHandler should be initialised before workspace config fetch.
@@ -968,9 +1000,12 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
 	}
 
-	features1 := gateway.application.Features()
-	if features1.SuppressUser != nil {
+	if gateway.application.Features().SuppressUser != nil {
 		gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
+	}
+
+	if gateway.application.Features().Protocols != nil {
+		gateway.protocolHandler = application.Features().Protocols.Setup()
 	}
 
 	rruntime.Go(func() {
