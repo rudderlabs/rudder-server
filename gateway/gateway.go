@@ -223,18 +223,14 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 			}
 		}
 
-		if len(jobList) > 0 {
-			if gwAllowPartialWriteWithErrors {
-				errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
-			} else {
-				gateway.jobsDB.Store(jobList)
-			}
-			gateway.dbWritesStat.Count(1)
+		if gwAllowPartialWriteWithErrors {
+			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
+		} else {
+			gateway.jobsDB.Store(jobList)
 		}
+		gateway.dbWritesStat.Count(1)
 
-		if len(messageIdsArr) > 0 {
-			gateway.writeToBadger(messageIdsArr)
-		}
+		gateway.writeToBadger(messageIdsArr)
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
 			userWorkerBatchRequest.respChannel <- errorMessagesMap
@@ -436,12 +432,15 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			jobEventCountMap[newJob.UUID] = totalEventsInReq
 		}
 
-		gateway.userWorkerBatchRequestQ <- &userWorkerBatchRequestT{jobList: jobList,
-			allMessageIdsSet: allMessageIdsSet,
-			respChannel:      userWebRequestWorker.reponseQ,
-		}
+		errorMessagesMap := make(map[uuid.UUID]string)
+		if len(jobList) > 0 {
+			gateway.userWorkerBatchRequestQ <- &userWorkerBatchRequestT{jobList: jobList,
+				allMessageIdsSet: allMessageIdsSet,
+				respChannel:      userWebRequestWorker.reponseQ,
+			}
 
-		errorMessagesMap := <-userWebRequestWorker.reponseQ
+			errorMessagesMap = <-userWebRequestWorker.reponseQ
+		}
 
 		if preDbStoreCount+len(jobList) != len(breq.batchRequest) {
 			panic(fmt.Errorf("preDbStoreCount:%d+len(jobList):%d != len(breq.batchRequest):%d",
