@@ -112,6 +112,7 @@ func (trans *HandleT) transformWorker() {
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
 	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
+	testTransformRequestTimerStat := stats.NewStat("processor.test_transformer_request_time", stats.TimerType)
 
 	for job := range trans.requestQ {
 		//Call remote transformation
@@ -126,8 +127,10 @@ func (trans *HandleT) transformWorker() {
 
 		for {
 			transformRequestTimerStat.Start()
+			testTransformRequestTimerStat.Start()
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
+			testTransformRequestTimerStat.End()
 			if err != nil {
 				transformRequestTimerStat.End()
 				reqFailed = true
