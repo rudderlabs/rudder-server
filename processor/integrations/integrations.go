@@ -2,7 +2,6 @@ package integrations
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -70,16 +69,23 @@ type PostParametersT struct {
 // GetPostInfo parses the transformer response
 func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err error) {
 	parsedJSON := gjson.ParseBytes(transformRaw)
+	errors := make([]string, 0)
 	for _, v := range postParametersTFields {
 		if !parsedJSON.Get(v).Exists() {
-			errMessage := fmt.Sprintf("missing expected field : %s in transformer response : %v", v, parsedJSON)
-			err = errors.New(errMessage)
+			errMessage := fmt.Sprintf("missing expected field : %s", v)
+			errors = append(errors, errMessage)
 		}
 	}
+	if len(errors) > 0 {
+		errors = append(errors, fmt.Sprintf("in transformer response : %v", parsedJSON))
+		err = errors.New(strings.Join(errors, "\n"))
+		return
+	}
 	unMarshalError := json.Unmarshal(transformRaw, &postInfo)
-	err = fmt.Errorf("Error while unmarshalling response from transformer : %s, Error: %w", transformRaw, unMarshalError)
-
-	return postInfo, err
+	if unMarshalError != nil {
+		err = fmt.Errorf("Error while unmarshalling response from transformer : %s, Error: %w", transformRaw, unMarshalError)
+	}
+	return
 }
 
 // GetUserIDFromTransformerResponse parses the payload to get userId
