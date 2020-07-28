@@ -231,6 +231,7 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 			gateway.jobsDB.Store(jobList)
 		}
 		gateway.dbWritesStat.Count(1)
+
 		gateway.writeToBadger(messageIdsArr)
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
@@ -433,12 +434,15 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			jobEventCountMap[newJob.UUID] = totalEventsInReq
 		}
 
-		gateway.userWorkerBatchRequestQ <- &userWorkerBatchRequestT{jobList: jobList,
-			allMessageIdsSet: allMessageIdsSet,
-			respChannel:      userWebRequestWorker.reponseQ,
-		}
+		errorMessagesMap := make(map[uuid.UUID]string)
+		if len(jobList) > 0 {
+			gateway.userWorkerBatchRequestQ <- &userWorkerBatchRequestT{jobList: jobList,
+				allMessageIdsSet: allMessageIdsSet,
+				respChannel:      userWebRequestWorker.reponseQ,
+			}
 
-		errorMessagesMap := <-userWebRequestWorker.reponseQ
+			errorMessagesMap = <-userWebRequestWorker.reponseQ
+		}
 
 		if preDbStoreCount+len(jobList) != len(breq.batchRequest) {
 			panic(fmt.Errorf("preDbStoreCount:%d+len(jobList):%d != len(breq.batchRequest):%d",
