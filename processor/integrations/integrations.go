@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/pkg/errors"
+
 	"github.com/rudderlabs/rudder-server/warehouse"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -20,12 +22,12 @@ var (
 	destTransformURL, userTransformURL string
 	customDestination                  []string
 	whSchemaVersion                    string
-	postParamentersTFields               []string
+	postParametersTFields              []string
 )
 
 func init() {
 	loadConfig()
-	populatePostParamenterFields()
+	populatePostParameterFields()
 }
 
 func loadConfig() {
@@ -35,13 +37,13 @@ func loadConfig() {
 // This is called in init and it should be a one time call. Having reflect calls happening during runtime is not a great idea.
 // We unmarshal json response from transformer into PostParametersT struct.
 // Since unmarshal doesn't check if the fields are present in the json or not and instead just initialze to zero value, we have to manually do this check on all fields before unmarshaling
-// This function gets a list of fields tagged as json from the struct and populates in postParamentersTFields
+// This function gets a list of fields tagged as json from the struct and populates in postParametersTFields
 
-func populatePostParamenterFields() {
+func populatePostParameterFields() {
 	v := reflect.TypeOf(PostParametersT{})
-	postParamentersTFields = make([]string, v.NumField(), v.NumField())
+	postParametersTFields = make([]string, v.NumField())
 	for i := 0; i < v.NumField(); i++ {
-		postParamentersTFields[i] = strings.Split(v.Field(i).Tag.Get("json"), ",")[0]
+		postParametersTFields[i] = strings.Split(v.Field(i).Tag.Get("json"), ",")[0]
 	}
 }
 
@@ -54,31 +56,31 @@ const (
 	PostDataXML
 )
 
-// PostParametersT is a struct for holding all the values from transformerResponse and use them to publish an event to a destination 
+// PostParametersT is a struct for holding all the values from transformerResponse and use them to publish an event to a destination
 type PostParametersT struct {
-	Type          string      `json:"type"`
-	URL           string      `json:"endpoint"`
-	RequestMethod string      `json:"method"`
-	UserID        string      `json:"userId"`
-	Headers       interface{} `json:"headers"`
-	QueryParams   interface{} `json:"params"`
-	Body          interface{} `json:"body"`
-	Files         interface{} `json:"files"`
+	Type          string                 `json:"type"`
+	URL           string                 `json:"endpoint"`
+	RequestMethod string                 `json:"method"`
+	UserID        string                 `json:"userId"`
+	Headers       map[string]interface{} `json:"headers"`
+	QueryParams   map[string]interface{} `json:"params"`
+	Body          map[string]interface{} `json:"body"`
+	Files         map[string]interface{} `json:"files"`
 }
 
 // GetPostInfo parses the transformer response
-func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT) {
+func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err error) {
 	parsedJSON := gjson.ParseBytes(transformRaw)
-	for _, v := range postParamentersTFields {
+	for _, v := range postParametersTFields {
 		if !parsedJSON.Get(v).Exists() {
-			panic(fmt.Errorf("missing expected field : %s in transformer response : %v", v, parsedJSON))
+			errMessage := fmt.Sprintf("missing expected field : %s in transformer response : %v", v, parsedJSON)
+			err = errors.New(errMessage)
 		}
 	}
-	err := json.Unmarshal(transformRaw, &postInfo)
-	if err != nil {
-		panic(err)
-	}
-	return postInfo
+	unMarshalError := json.Unmarshal(transformRaw, &postInfo)
+	err = errors.Wrapf(unMarshalError, fmt.Sprintf("Error while unmarshalling response from transformer %s", transformRaw))
+
+	return postInfo, err
 }
 
 // GetUserIDFromTransformerResponse parses the payload to get userId

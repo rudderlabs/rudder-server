@@ -22,11 +22,13 @@ type NetHandleT struct {
 func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	client := network.httpClient
 	//Parse the response to get parameters
-	postInfo := integrations.GetPostInfo(jsonData)
-
+	postInfo, err := integrations.GetPostInfo(jsonData)
+	if err != nil {
+		panic(err)
+	}
 	isRest := postInfo.Type == "REST"
 
-	isMultipart := len(postInfo.Files.(map[string]interface{})) > 0
+	isMultipart := len(postInfo.Files) > 0
 
 	// going forward we may want to support GraphQL and multipart requests
 	// the files key in the response is specifically to handle the multipart usecase
@@ -35,14 +37,8 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 	// so, code addition should be done here instead of version bumping of response.
 	if isRest && !isMultipart {
 		requestMethod := postInfo.RequestMethod
-		requestBody, ok := postInfo.Body.(map[string]interface{})
-		if !ok {
-			panic(fmt.Errorf("typecast of postInfo.Body to map[string]interface{} failed"))
-		}
-		requestQueryParams, ok := postInfo.QueryParams.(map[string]interface{})
-		if !ok {
-			panic(fmt.Errorf("typecast of postInfo.QueryParams to map[string]interface{} failed"))
-		}
+		requestBody := postInfo.Body
+		requestQueryParams := postInfo.QueryParams
 		var bodyFormat string
 		var bodyValue map[string]interface{}
 		for k, v := range requestBody {
@@ -106,10 +102,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
 			}
 		}
 
-		headerKV, ok := postInfo.Headers.(map[string]interface{})
-		if !ok {
-			panic(fmt.Errorf("typecast of postInfo.Headers to map[string]interface{} failed"))
-		}
+		headerKV := postInfo.Headers
 		for key, val := range headerKV {
 			req.Header.Add(key, val.(string))
 		}
