@@ -2,11 +2,10 @@ package backendconfig
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-
-	"errors"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"

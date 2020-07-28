@@ -2,13 +2,12 @@ package snowflake
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
-
-	"github.com/pkg/errors"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"

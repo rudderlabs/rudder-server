@@ -3,12 +3,11 @@ package filemanager
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
-
-	"github.com/pkg/errors"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/rudderlabs/rudder-server/utils/logger"

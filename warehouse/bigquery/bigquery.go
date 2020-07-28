@@ -3,12 +3,11 @@ package bigquery
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/pkg/errors"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/rudderlabs/rudder-server/config"

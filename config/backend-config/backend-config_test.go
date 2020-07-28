@@ -3,8 +3,7 @@ package backendconfig
 import (
 	"bytes"
 	"encoding/json"
-
-	"github.com/pkg/errors"
+	"errors"
 
 	"net/http"
 	"net/http/httptest"

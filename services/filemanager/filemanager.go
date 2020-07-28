@@ -1,10 +1,9 @@
 package filemanager
 
 import (
+	"errors"
 	"io/ioutil"
 	"os"
-
-	"github.com/pkg/errors"
 
 	"github.com/rudderlabs/rudder-server/config"
 )

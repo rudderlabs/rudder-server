@@ -6,12 +6,11 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/pkg/errors"
-
 	"github.com/rudderlabs/rudder-server/warehouse"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
+	"github.com/pkg/errors"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"

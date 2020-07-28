@@ -3,13 +3,12 @@ package warehouseutils
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
 	"sort"
 	"strings"
-
-	"github.com/pkg/errors"
 
 	"github.com/iancoleman/strcase"
 
