@@ -186,8 +186,10 @@ func (wh *HandleT) backendConfigSubscriber() {
 	}
 }
 
+// syncLiveWarehouseStatus fetch last 10 records order by updated_at desc and sends uploadIds in reverse order to recordDeliveryStatus.
+// that way we can fetch last 10 records order by updated_at asc
 func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string) {
-	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select id from (select id from %s where source_id='%s' and destination_id='%s' order by updated_at desc limit %d) as _ order by updated_at asc`, warehouseutils.WarehouseUploadsTable, sourceID, destinationID, warehouseSyncPreFetchCount))
+	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at desc limit %d`, warehouseutils.WarehouseUploadsTable, sourceID, destinationID, warehouseSyncPreFetchCount))
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
@@ -198,8 +200,9 @@ func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string
 		rows.Scan(&uploadID)
 		uploadIDs = append(uploadIDs, uploadID)
 	}
-	for _, uploadID := range uploadIDs {
-		wh.recordDeliveryStatus(destinationID, uploadID)
+
+	for index := range uploadIDs {
+		wh.recordDeliveryStatus(destinationID, uploadIDs[len(uploadIDs)-1-index])
 	}
 }
 
