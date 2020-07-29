@@ -10,6 +10,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
@@ -179,11 +180,12 @@ func (wh *HandleT) canStartPendingUplaod(upload warehouseutils.UploadT, warehous
 		return true
 	}
 
-	nextUploadTime := upload.LastTiming.Add(durationBeforeNextAttempt(upload.Attempts))
-	canStart = nextUploadTime.Sub(timeutil.Now()) <= 0
+	nextRetryTime := upload.LastTiming.Add(durationBeforeNextAttempt(upload.Attempts))
+	canStart = nextRetryTime.Sub(timeutil.Now()) <= 0
 	// set in cache if not staring, to access on next hit
 	if !canStart {
-		nextRetryTimeCache[connectionString(warehouse)] = nextUploadTime
+		logger.Infof("WH: Setting in nextRetryTimeCache for %s:%s, will retry again around %v", warehouse.Destination.Name, warehouse.Destination.ID, nextRetryTime)
+		nextRetryTimeCache[connectionString(warehouse)] = nextRetryTime
 	}
 
 	return
