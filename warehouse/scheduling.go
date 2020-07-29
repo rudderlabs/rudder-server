@@ -4,9 +4,12 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
@@ -14,12 +17,18 @@ import (
 
 var (
 	scheduledTimesCache map[string][]int
+	nextRetryTimeCache  map[string]time.Time
+	minUploadBackoff    time.Duration
+	maxUploadBackoff    time.Duration
 	startUploadAlways   bool
 )
 
 func init() {
 	scheduledTimesCache = map[string][]int{}
+	nextRetryTimeCache = map[string]time.Time{}
 	admin.RegisterAdminHandler("Warehouse", &WarehouseAdmin{})
+	minUploadBackoff = config.GetDuration("Warehouse.minUploadBackoffInS", time.Duration(60)) * time.Second
+	maxUploadBackoff = config.GetDuration("Warehouse.maxUploadBackoffInS", time.Duration(1800)) * time.Second
 }
 
 // ScheduledTimes returns all possible start times as per schedule
@@ -126,4 +135,56 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 		return !uploadFrequencyExceeded(warehouse, syncFrequency)
 	}
 	return false
+}
+
+func burstRetryCache(warehouse warehouseutils.WarehouseT) {
+	delete(nextRetryTimeCache, connectionString(warehouse))
+}
+
+func durationBeforeNextAttempt(attempt int64) (d time.Duration) {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = minUploadBackoff
+	b.MaxInterval = maxUploadBackoff
+	b.RandomizationFactor = 0
+	b.Reset()
+	for index := int64(0); index < attempt; index++ {
+		d = b.NextBackOff()
+	}
+	return
+}
+
+func (wh *HandleT) canStartPendingUplaod(upload warehouseutils.UploadT, warehouse warehouseutils.WarehouseT) (canStart bool) {
+	// can be set from rudder-cli to force uploads always
+	if startUploadAlways {
+		return true
+	}
+
+	// if not in failed status, retry without delay.
+	hasUploadFailed := strings.Contains(upload.Status, "failed")
+	if !hasUploadFailed {
+		return true
+	}
+
+	// check in cache
+	if nextRetryTime, ok := nextRetryTimeCache[connectionString(warehouse)]; ok {
+		canStart = nextRetryTime.Sub(timeutil.Now()) <= 0
+		// delete in cache if is going to be started
+		if canStart {
+			delete(nextRetryTimeCache, connectionString(warehouse))
+		}
+		return
+	}
+
+	if upload.LastTiming.IsZero() {
+		return true
+	}
+
+	nextUploadTime := upload.LastTiming.Add(durationBeforeNextAttempt(upload.Attempts))
+	canStart = nextUploadTime.Sub(timeutil.Now()) <= 0
+	// set in cache if not staring, to access on next hit
+	if !canStart {
+		nextRetryTimeCache[connectionString(warehouse)] = nextUploadTime
+	}
+
+	return
 }
