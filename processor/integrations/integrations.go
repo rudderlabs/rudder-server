@@ -79,13 +79,13 @@ func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err er
 	if len(errors) > 0 {
 		errors = append(errors, fmt.Sprintf("in transformer response : %v", parsedJSON))
 		err = errors.New(strings.Join(errors, "\n"))
-		return
+		return postInfo, err
 	}
 	unMarshalError := json.Unmarshal(transformRaw, &postInfo)
 	if unMarshalError != nil {
 		err = fmt.Errorf("Error while unmarshalling response from transformer : %s, Error: %w", transformRaw, unMarshalError)
 	}
-	return
+	return postInfo, err
 }
 
 // GetUserIDFromTransformerResponse parses the payload to get userId
