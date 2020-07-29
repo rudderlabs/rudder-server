@@ -680,7 +680,7 @@ func (gateway *HandleT) pixelTrackHandler(w http.ResponseWriter, r *http.Request
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
-	done := make(chan string, 1)
+	done := make(chan string)
 	gateway.AddToWebRequestQ(r, &w, done, reqType)
 
 	//Wait for batcher process to be done
