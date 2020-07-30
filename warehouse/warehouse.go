@@ -952,11 +952,12 @@ func (wh *HandleT) initWorkers() {
 							panic(err)
 						}
 
+						warehouseutils.SetUploadStatus(job.Upload, warehouseutils.FetchingSchemaState, wh.dbHandle)
 						syncedSchema, err := whManager.FetchSchema(job.Warehouse, job.Warehouse.Namespace)
 						if err != nil {
 							logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
 							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
-							warehouseutils.SetUploadError(job.Upload, err, warehouseutils.FetchingSchemaFailed, wh.dbHandle)
+							warehouseutils.SetUploadError(job.Upload, err, warehouseutils.FetchingSchemaFailedState, wh.dbHandle)
 							wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 							break
 						}
