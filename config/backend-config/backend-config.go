@@ -43,6 +43,7 @@ var (
 	LastSync                              string
 	LastRegulationSync                    string
 	maxRegulationsPerRequest              int
+	configEnvReplacer                     string
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
@@ -190,6 +191,7 @@ func loadConfig() {
 	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
 	maxRegulationsPerRequest = config.GetInt("BackendConfig.maxRegulationsPerRequest", 1000)
+	configEnvReplacer = config.GetString("BackendConfig.configEnvReplacer", "env.")
 }
 
 func MakePostRequest(url string, endpoint string, data interface{}) (response []byte, ok bool) {

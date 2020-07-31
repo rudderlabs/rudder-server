@@ -4,10 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/jeremywohl/flatten"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/tidwall/sjson"
 )
 
 type WorkspaceConfig struct {
@@ -44,6 +49,35 @@ func (workspaceConfig *WorkspaceConfig) GetRegulations() (RegulationsT, bool) {
 	}
 }
 
+func replaceConfigWithEnvVariables(response []byte) (updatedRespnse []byte) {
+	configMap := make(map[string]interface{}, 0)
+
+	err := json.Unmarshal(response, &configMap)
+	if err != nil {
+		log.Error("[Workspace-config] Error while parsing request", err, string(response))
+		return response
+	}
+
+	flattenedConfig, err := flatten.Flatten(configMap, "", flatten.DotStyle)
+
+	for configKey, v := range flattenedConfig {
+		reflectType := reflect.TypeOf(v)
+		if reflectType != nil && reflectType.String() == "string" {
+			valString := v.(string)
+			shouldReplace := strings.HasPrefix(strings.TrimSpace(valString), configEnvReplacer)
+			if shouldReplace {
+				envVariable := valString[len(configEnvReplacer):]
+				response, err = sjson.SetBytes(response, configKey, config.GetEnv(envVariable, ""))
+				if err != nil {
+					log.Error("[Workspace-config] Failed to set config for %s", configKey)
+				}
+			}
+		}
+	}
+
+	return response
+}
+
 // getFromApi gets the workspace config from api
 func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 	url := fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL)
@@ -67,8 +101,9 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 		return SourcesT{}, false
 	}
 
+	updatedResponseBody := replaceConfigWithEnvVariables(respBody)
 	var sourcesJSON SourcesT
-	err = json.Unmarshal(respBody, &sourcesJSON)
+	err = json.Unmarshal(updatedResponseBody, &sourcesJSON)
 	if err != nil {
 		log.Error("Error while parsing request", err, string(respBody), statusCode)
 		return SourcesT{}, false
