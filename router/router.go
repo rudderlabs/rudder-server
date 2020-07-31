@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cenkalti/backoff"
+	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	uuid "github.com/satori/go.uuid"
 
@@ -44,6 +46,8 @@ type HandleT struct {
 	diagnosisTicker          *time.Ticker
 	requestsMetric           []requestMetric
 	customDestinationManager customdestinationmanager.DestinationManager
+	throttler                *throttler.HandleT
+	throttlerMutex           sync.RWMutex
 }
 
 type jobResponseT struct {
@@ -60,12 +64,14 @@ type ParametersT struct {
 
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	channel          chan *jobsdb.JobT // the worker job channel
-	workerID         int               // identifies the worker
-	failedJobs       int               // counts the failed jobs of a worker till it gets reset by external channel
-	sleepTime        time.Duration     //the sleep duration for every job of the worker
-	failedJobIDMap   map[string]int64  //user to failed jobId
-	failedJobIDMutex sync.RWMutex      //lock to protect structure above
+	channel           chan *jobsdb.JobT    // the worker job channel
+	workerID          int                  // identifies the worker
+	failedJobs        int                  // counts the failed jobs of a worker till it gets reset by external channel
+	sleepTime         time.Duration        //the sleep duration for every job of the worker
+	failedJobIDMap    map[string]int64     //user to failed jobId
+	failedJobIDMutex  sync.RWMutex         //lock to protect structure above
+	retryForUserMap   map[string]time.Time //user to next retry time map
+	retryForUserMutex sync.RWMutex         //lock to protect structure above
 }
 
 var (
@@ -74,6 +80,7 @@ var (
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
 	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
 	testSinkURL                                                                    string
+	retryTimeWindow, minUploadBackoff, maxUploadBackoff                            time.Duration
 )
 
 type requestMetric struct {
@@ -104,6 +111,9 @@ func loadConfig() {
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
+	retryTimeWindow = config.GetDuration("Router.retryTimeWindowInMins", time.Duration(180)) * time.Minute
+	minUploadBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
+	maxUploadBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -187,6 +197,49 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				if previousFailedJobID != job.JobID {
 					panic(fmt.Errorf("previousFailedJobID:%d != job.JobID:%d", previousFailedJobID, job.JobID))
 				}
+				// if the job has failed before, check for next retry time
+				if nextRetryTime, ok := worker.retryForUserMap[userID]; ok && nextRetryTime.Sub(time.Now()) > 0 {
+					status := jobsdb.JobStatusT{
+						JobID:         job.JobID,
+						AttemptNum:    job.LastJobStatus.AttemptNum,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     respStatus,
+						JobState:      jobsdb.Failed.State,
+						ErrorResponse: []byte(fmt.Sprintf(`{"Error": "Less than next retry time: %v"}`, nextRetryTime)), // check
+					}
+					rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
+					continue
+				}
+			}
+		}
+
+		if rt.throttler.Enabled {
+			rt.throttlerMutex.Lock()
+			toThrottle := rt.throttler.LimitReached(rt.throttler.Key(paramaters.DestinationID, userID))
+			rt.throttlerMutex.Unlock()
+			if toThrottle {
+				// block other jobs of same user if userEventOrdering is required.
+				if rt.throttler.UserEventOrderingRequired {
+					if !isPrevFailedUser && keepOrderOnFailure && userID != "" {
+						logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destID, userID)
+						worker.failedJobIDMutex.Lock()
+						worker.failedJobIDMap[userID] = job.JobID
+						worker.failedJobIDMutex.Unlock()
+					}
+				}
+				logger.Debugf("[%v Router] :: throttling %v for destination: %v", job.JobID, rt.destID)
+				status := jobsdb.JobStatusT{
+					JobID:         job.JobID,
+					AttemptNum:    job.LastJobStatus.AttemptNum,
+					ExecTime:      time.Now(),
+					RetryTime:     time.Now(),
+					ErrorCode:     respStatus,
+					JobState:      jobsdb.Throttled.State,
+					ErrorResponse: []byte(`{}`), // check
+				}
+				rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
+				continue
 			}
 		}
 
@@ -281,33 +334,25 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				worker.failedJobIDMutex.Unlock()
 			}
 
-			switch {
-			case len(worker.failedJobIDMap) > 5:
-				//Lot of jobs are failing in this worker. Likely the sink is down
-				//We still mark the job failed but don't increment the AttemptNum
-				//This is a heuristic. Will fix it with Sayan's idea
-				status.JobState = jobsdb.Failed.State
-				status.AttemptNum = job.LastJobStatus.AttemptNum
-				logger.Debugf("[%v Router] :: Marking job as failed and not incrementing the AttemptNum since jobs from more than 5 users are failing for destination", rt.destID)
-				break
-			case status.AttemptNum >= maxFailedCountForJob:
-				//The job has failed enough number of times so mark it aborted
-				//The reason for doing this is to filter out jobs with bad payload
-				//which can never succeed.
-				//However, there is a risk that if sink is down, a set of jobs can
-				//reach maxCountFailure. In practice though, when sink goes down
-				//lot of jobs will fail and all will get retried in batch with
-				//doubling sleep in between. That case will be handled in case above
-				logger.Debugf("[%v Router] :: Aborting the job and deleting from user map", rt.destID)
-				status.JobState = jobsdb.Aborted.State
+			status.JobState = jobsdb.Failed.State
+			if respStatusCode >= 500 || respStatusCode == 429 {
+				// TODO: timeElapsed should be ideally from first attempt
+				timeElapsed := time.Now().Sub(job.CreatedAt)
 				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
-				eventsAbortedStat.Increment()
-				break
-			default:
-				status.JobState = jobsdb.Failed.State
+				if timeElapsed > retryTimeWindow {
+					status.JobState = jobsdb.Aborted.State
+					delete(worker.retryForUserMap, userID)
+				} else {
+					worker.retryForUserMutex.Lock()
+					worker.retryForUserMap[userID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
+					worker.retryForUserMutex.Unlock()
+				}
+			} else {
 				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
-				logger.Debugf("[%v Router] :: Marking job as failed and incrementing the AttemptNum", rt.destID)
-				break
+				if status.AttemptNum >= maxFailedCountForJob {
+					status.JobState = jobsdb.Aborted.State
+					eventsAbortedStat.Increment()
+				}
 			}
 			logger.Debugf("[%v Router] :: sending failed/aborted state as response", rt.destID)
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
@@ -331,6 +376,18 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 	}
 }
 
+func durationBeforeNextAttempt(attempt int) (d time.Duration) {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = minUploadBackoff
+	b.MaxInterval = maxUploadBackoff
+	b.RandomizationFactor = 0
+	b.Reset()
+	for index := 0; index < attempt; index++ {
+		d = b.NextBackOff()
+	}
+	return
+}
+
 func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
 	if diagnostics.EnableRouterMetric {
 		rt.requestsMetricLock.Lock()
@@ -350,11 +407,12 @@ func (rt *HandleT) initWorkers() {
 		logger.Info("Worker Started", i)
 		var worker *workerT
 		worker = &workerT{
-			channel:        make(chan *jobsdb.JobT, noOfJobsPerChannel),
-			failedJobIDMap: make(map[string]int64),
-			workerID:       i,
-			failedJobs:     0,
-			sleepTime:      minSleep}
+			channel:         make(chan *jobsdb.JobT, noOfJobsPerChannel),
+			failedJobIDMap:  make(map[string]int64),
+			retryForUserMap: make(map[string]time.Time),
+			workerID:        i,
+			failedJobs:      0,
+			sleepTime:       minSleep}
 		rt.workers[i] = worker
 		rruntime.Go(func() {
 			rt.workerProcess(worker)
@@ -601,6 +659,7 @@ func (rt *HandleT) generatorLoop() {
 			wrk.failedJobIDMutex.Lock()
 			for _, userID := range rt.toClearFailJobIDMap[idx] {
 				delete(wrk.failedJobIDMap, userID)
+				delete(wrk.retryForUserMap, userID)
 			}
 			wrk.failedJobIDMutex.Unlock()
 		}
@@ -613,14 +672,18 @@ func (rt *HandleT) generatorLoop() {
 		toQuery -= len(retryList)
 		waitList := rt.jobsDB.GetWaiting([]string{rt.destID}, toQuery, nil) //Jobs send to waiting state
 		toQuery -= len(waitList)
+		throttledList := rt.jobsDB.GetThrottled([]string{rt.destID}, toQuery, nil)
+		toQuery -= len(throttledList)
 		unprocessedList := rt.jobsDB.GetUnprocessed([]string{rt.destID}, toQuery, nil)
-		if len(waitList)+len(unprocessedList)+len(retryList) == 0 {
+
+		combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
+
+		if len(combinedList) == 0 {
 			logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destID: %s", rt.destID)
 			time.Sleep(readSleep)
 			continue
 		}
 
-		combinedList := append(waitList, append(unprocessedList, retryList...)...)
 		logger.Debugf("RT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", rt.destID, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
 
 		sort.Slice(combinedList, func(i, j int) bool {
@@ -735,6 +798,11 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destID)
 	rt.customDestinationManager = customdestinationmanager.New(destID)
+
+	var throttler throttler.HandleT
+	throttler.SetUp(rt.destID)
+	rt.throttler = &throttler
+
 	rt.initWorkers()
 	rruntime.Go(func() {
 		rt.collectMetrics()
