@@ -841,32 +841,31 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 			}
 			//Some sanity checks (see comment above)
 			//Insert before is never required on level3 or above.
-			jd.assert(levels <= 2, fmt.Sprintf("levels:%d  > 2", levels))
+			jd.assert(levels <=
+				2, fmt.Sprintf("levels:%d  > 2", levels))
 			if levelsPre == 1 {
-				//dsPre.Index 		1
-				//ds.Index 			2
-				//The level0 must be different by one
-				jd.assert(levelVals[0] == levelPreVals[0]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
+				// If the levelsPre is 1, then just add next to it
 				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], 1)
 			} else if levelsPre == 2 && levels == 1 {
 				//dsPre.Index 		1_1
 				//ds.Index 			2
-				//The level0 must be different by one
-				jd.assert(levelVals[0] == levelPreVals[0]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
 				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
 			} else if levelsPre == 2 && levels == 2 {
-				jd.assert(levelVals[0] == 0 && levelPreVals[0] == 0, fmt.Sprintf("levelsPre:%d != 3", levelsPre))
-				//dsPre.Index 		0_1
-				//ds.Index 			0_2
-				//The level1 must be different by one
-				jd.assert(levelVals[1] == levelPreVals[1]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
-				newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], 1)
+				if levelVals[0] == 0 && levelPreVals[0] == 0 {
+					//dsPre.Index 		0_1
+					//ds.Index 			0_2
+					//The level1 must be different by one
+					newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], 1)
+				} else {
+					//dsPre.Index 		1_1
+					//ds.Index 			2_1
+					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
+				}
+
 			} else if levelsPre == 3 && levels == 2 {
 				jd.assert(levelVals[0] == 0 && levelPreVals[0] == 0, fmt.Sprintf("levelsPre:%d != 3", levelsPre))
 				//dsPre.Index 		0_1_2
 				//ds.Index 			0_2
-				//The level1 must be different by one
-				jd.assert(levelVals[1] == levelPreVals[1]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
 				newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], levelPreVals[2]+1)
 			} else {
 				logger.Infof("Unhandled scenario. levelsPre : %v and levels : %v", levelsPre, levels)
@@ -1728,17 +1727,24 @@ func (jd *HandleT) mainCheckLoop() {
 
 		var migrateFrom []dataSetT
 		var insertBeforeDS dataSetT
-		var liveCount int
+		var liveJobCount int
+		var liveDSCount int
 		for idx, ds := range dsList {
+
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
 			logger.Debug("Migrate check", ifMigrate, ds)
-			if idx < len(dsList)-1 && ifMigrate && idx < maxMigrateOnce && liveCount < maxDSSize {
+
+			if liveDSCount > maxMigrateOnce || liveJobCount > maxDSSize || idx == len(dsList)-1 {
+				break
+			}
+
+			if ifMigrate {
 				migrateFrom = append(migrateFrom, ds)
 				insertBeforeDS = dsList[idx+1]
-				liveCount += remCount
-			} else {
-				//We migrate from the leftmost onwards
-				//If we cannot migrate one, we stop
+				liveJobCount += remCount
+				liveDSCount++
+			} else if liveDSCount > 0 {
+				// DS is not eligible for migration. But there are data sets on the left eligible to migrate, so break.
 				break
 			}
 		}
@@ -1746,7 +1752,7 @@ func (jd *HandleT) mainCheckLoop() {
 		migrationLoopStat.Start()
 		//Add a temp DS to append to
 		if len(migrateFrom) > 0 {
-			if liveCount > 0 {
+			if liveJobCount > 0 {
 				jd.dsListLock.Lock()
 				migrateTo := jd.addNewDS(insertForMigration, insertBeforeDS)
 				jd.dsListLock.Unlock()
