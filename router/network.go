@@ -26,7 +26,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, status str
 	//Parse the response to get parameters
 	postInfo, err := integrations.GetPostInfo(jsonData)
 	if err != nil {
-		panic(err)
+		return 500, "", fmt.Sprintf(`500 GetPostInfoFailed with error: %s`, err.Error())
 	}
 	isRest := postInfo.Type == "REST"
 

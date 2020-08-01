@@ -2,6 +2,7 @@ package integrations
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
@@ -69,16 +71,17 @@ type PostParametersT struct {
 // GetPostInfo parses the transformer response
 func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err error) {
 	parsedJSON := gjson.ParseBytes(transformRaw)
-	errors := make([]string, 0)
+	logger.Infof("%s", parsedJSON)
+	errorMessages := make([]string, 0)
 	for _, v := range postParametersTFields {
 		if !parsedJSON.Get(v).Exists() {
 			errMessage := fmt.Sprintf("missing expected field : %s", v)
-			errors = append(errors, errMessage)
+			errorMessages = append(errorMessages, errMessage)
 		}
 	}
-	if len(errors) > 0 {
-		errors = append(errors, fmt.Sprintf("in transformer response : %v", parsedJSON))
-		err = errors.New(strings.Join(errors, "\n"))
+	if len(errorMessages) > 0 {
+		errorMessages = append(errorMessages, fmt.Sprintf("in transformer response : %v", parsedJSON))
+		err = errors.New(strings.Join(errorMessages, "\n"))
 		return postInfo, err
 	}
 	unMarshalError := json.Unmarshal(transformRaw, &postInfo)
