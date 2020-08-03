@@ -870,7 +870,7 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 						| 2_3       | 3      | 2_4      |
 						| 2_3       | 4_2    | 2_4      |
 					*/
-
+					jd.assert(levelPreVals[0] != levelVals[0], fmt.Sprintf("Cannot have two ds with same levels[0]: %d", levelVals[0]))
 					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
 				}
 
@@ -883,6 +883,7 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 					| 0_1_2     | 1_3    | 0_1_3    |
 					| 0_1_2     | 2      | 0_1_3    |
 				*/
+				jd.assert(levelPreVals[0] == 0, fmt.Sprintf("Cannot have three levels except for cluster migration"))
 				newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], levelPreVals[2]+1)
 			} else {
 				logger.Infof("Unhandled scenario. levelsPre : %v and levels : %v", levelsPre, levels)
