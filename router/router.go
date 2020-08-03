@@ -214,9 +214,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			}
 		}
 
-		if rt.throttler.Enabled {
+		if rt.throttler.Enabled() {
 			rt.throttlerMutex.Lock()
-			toThrottle := rt.throttler.LimitReached(rt.throttler.Key(paramaters.DestinationID, userID))
+			toThrottle := rt.throttler.LimitReached(paramaters.DestinationID, userID)
 			rt.throttlerMutex.Unlock()
 			if toThrottle {
 				// block other jobs of same user if userEventOrdering is required.
