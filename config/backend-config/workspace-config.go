@@ -49,7 +49,7 @@ func (workspaceConfig *WorkspaceConfig) GetRegulations() (RegulationsT, bool) {
 	}
 }
 
-func replaceConfigWithEnvVariables(response []byte) (updatedRespnse []byte) {
+func replaceConfigWithEnvVariables(response []byte) (updatedResponse []byte) {
 	configMap := make(map[string]interface{}, 0)
 
 	err := json.Unmarshal(response, &configMap)
@@ -67,6 +67,11 @@ func replaceConfigWithEnvVariables(response []byte) (updatedRespnse []byte) {
 			shouldReplace := strings.HasPrefix(strings.TrimSpace(valString), configEnvReplacer)
 			if shouldReplace {
 				envVariable := valString[len(configEnvReplacer):]
+				envVarValue := config.GetEnv(envVariable, "")
+				if envVarValue == "" {
+					log.Fatalf("Missing mandatory envVariable: %s. Either set it as envVariable or remove %s from the destination config.", envVariable, configEnvReplacer)
+					return response
+				}
 				response, err = sjson.SetBytes(response, configKey, config.GetEnv(envVariable, ""))
 				if err != nil {
 					log.Error("[Workspace-config] Failed to set config for %s", configKey)
@@ -101,9 +106,9 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 		return SourcesT{}, false
 	}
 
-	updatedResponseBody := replaceConfigWithEnvVariables(respBody)
+	respBody = replaceConfigWithEnvVariables(respBody)
 	var sourcesJSON SourcesT
-	err = json.Unmarshal(updatedResponseBody, &sourcesJSON)
+	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
 		log.Error("Error while parsing request", err, string(respBody), statusCode)
 		return SourcesT{}, false
