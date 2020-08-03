@@ -841,31 +841,48 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 			}
 			//Some sanity checks (see comment above)
 			//Insert before is never required on level3 or above.
-			jd.assert(levels <=
-				2, fmt.Sprintf("levels:%d  > 2", levels))
+			jd.assert(levels <= 2, fmt.Sprintf("levels:%d  > 2", levels))
 			if levelsPre == 1 {
-				// If the levelsPre is 1, then just add next to it
+				/*
+					| levelsPre | levels | newDSIdx |
+					| --------- | ------ | -------- |
+					| 1         | 2      | 1_1      |
+					| 1         | 3_1    | 1_1      |
+				*/
 				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], 1)
-			} else if levelsPre == 2 && levels == 1 {
-				//dsPre.Index 		1_1
-				//ds.Index 			2
-				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
-			} else if levelsPre == 2 && levels == 2 {
-				if levelVals[0] == 0 && levelPreVals[0] == 0 {
-					//dsPre.Index 		0_1
-					//ds.Index 			0_2
-					//The level1 must be different by one
+			} else if levelsPre == 2 {
+				if levelPreVals[0] == 0 {
+					// This is from cluster migration
+					/*
+						| levelsPre | levels | newDSIdx |
+						| --------- | ------ | -------- |
+						| 0_2       | 1      | 0_2_1    |
+						| 0_2       | 0_4    | 0_2_1    |
+						| 0_2       | 0_5_1  | 0_2_1    |
+						| 0_2       | 3_2    | 0_2_1    |
+					*/
 					newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], 1)
+
 				} else {
-					//dsPre.Index 		1_1
-					//ds.Index 			2_1
+					/*
+						| levelsPre | levels | newDSIdx |
+						| --------- | ------ | -------- |
+						| 2_3       | 3      | 2_4      |
+						| 2_3       | 4_2    | 2_4      |
+					*/
+
 					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
 				}
 
-			} else if levelsPre == 3 && levels == 2 {
-				jd.assert(levelVals[0] == 0 && levelPreVals[0] == 0, fmt.Sprintf("levelsPre:%d != 3", levelsPre))
-				//dsPre.Index 		0_1_2
-				//ds.Index 			0_2
+			} else if levelsPre == 3 {
+				/*
+					| levelsPre | levels | newDSIdx |
+					| --------- | ------ | -------- |
+					| 0_1_2     | 0_2_2  | 0_1_3    |
+					| 0_1_2     | 0_3    | 0_1_3    |
+					| 0_1_2     | 1_3    | 0_1_3    |
+					| 0_1_2     | 2      | 0_1_3    |
+				*/
 				newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], levelPreVals[2]+1)
 			} else {
 				logger.Infof("Unhandled scenario. levelsPre : %v and levels : %v", levelsPre, levels)
@@ -1734,7 +1751,7 @@ func (jd *HandleT) mainCheckLoop() {
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
 			logger.Debug("Migrate check", ifMigrate, ds)
 
-			if liveDSCount > maxMigrateOnce || liveJobCount > maxDSSize || idx == len(dsList)-1 {
+			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idx == len(dsList)-1 {
 				break
 			}
 
