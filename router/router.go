@@ -221,7 +221,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			if toThrottle {
 				// block other jobs of same user if userEventOrdering is required.
 				if rt.throttler.UserEventOrderingRequired {
-					if !isPrevFailedUser && keepOrderOnFailure && userID != "" {
+					if !isPrevFailedUser && userID != "" {
 						logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destID, userID)
 						worker.failedJobIDMutex.Lock()
 						worker.failedJobIDMap[userID] = job.JobID
@@ -327,7 +327,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			status.ErrorResponse = []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody)))
 
 			//#JobOrder (see other #JobOrder comment)
-			if !isPrevFailedUser && keepOrderOnFailure && userID != "" {
+			if rt.throttler.UserEventOrderingRequired && !isPrevFailedUser && userID != "" {
 				logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destID, userID)
 				worker.failedJobIDMutex.Lock()
 				worker.failedJobIDMap[userID] = job.JobID
