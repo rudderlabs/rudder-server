@@ -1,10 +1,8 @@
 FROM alpine:latest
 RUN apk add --no-cache ca-certificates postgresql-client
 ADD rudder-server /
-RUN mkdir /app
-ADD . /app
+ADD ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
 ADD build/wait-for /
 ADD build/docker-entrypoint.sh /
-RUN ln -s /app/rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["/rudder-server"]
