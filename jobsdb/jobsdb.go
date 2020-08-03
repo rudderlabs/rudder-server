@@ -1151,27 +1151,43 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 	jd.assertError(err)
 	jobsToMigrate := append(unprocessedList, retryList...)
 	noJobsMigrated = len(jobsToMigrate)
-	//Copy the jobs over. Second parameter (true) makes sure job_id is copied over
-	//instead of getting auto-assigned
-	err = jd.storeJobsDS(destDS, true, jobsToMigrate) //TODO: switch to transaction
-	jd.assertError(err)
 
-	//Now copy over the latest status of the unfinished jobs
 	var statusList []*JobStatusT
 	for _, job := range retryList {
-		newStatus := JobStatusT{
-			JobID:         job.JobID,
-			JobState:      job.LastJobStatus.JobState,
-			AttemptNum:    job.LastJobStatus.AttemptNum,
-			ExecTime:      job.LastJobStatus.ExecTime,
-			RetryTime:     job.LastJobStatus.RetryTime,
-			ErrorCode:     job.LastJobStatus.ErrorCode,
-			ErrorResponse: job.LastJobStatus.ErrorResponse,
-		}
-		statusList = append(statusList, &newStatus)
+		job.LastJobStatus.JobID = job.JobID
+		statusList = append(statusList, &job.LastJobStatus)
 	}
-	err = jd.updateJobStatusDS(destDS, statusList, []string{}, nil) //TODO: switch to transaction
+
+	err = jd.writeJobsAndStatusesToDS(destDS, jobsToMigrate, statusList)
 	jd.assertError(err)
+	return
+}
+
+func (jd *HandleT) writeJobsAndStatusesToDS(destDS dataSetT, jobsToMigrate []*JobT, statusList []*JobStatusT) (err error) {
+	txn, err := jd.dbHandle.Begin()
+	if err != nil {
+		return err
+	}
+	//Copy the jobs over. Second parameter (true) makes sure job_id is copied over
+	//instead of getting auto-assigned
+	err = jd.storeJobsDSInTxn(txn, destDS, true, jobsToMigrate)
+	if err != nil {
+		txn.Rollback()
+		return err
+	}
+
+	//Now copy over the latest status of the unfinished jobs
+	stateFilters, err := jd.updateJobStatusDSInTxn(txn, destDS, statusList)
+	if err != nil {
+		txn.Rollback()
+		return err
+	}
+
+	err = txn.Commit()
+	if err != nil {
+		return err
+	}
+	jd.markClearEmptyResult(destDS, stateFilters, []string{}, nil, false)
 
 	return
 }
