@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/types"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -43,7 +44,8 @@ var (
 	LastSync                              string
 	LastRegulationSync                    string
 	maxRegulationsPerRequest              int
-	configEnvReplacer                     string
+	configEnvReplacementEnabled           bool
+	configEnvHandler                      types.ConfigEnvI
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
@@ -175,6 +177,7 @@ type BackendConfig interface {
 	Subscribe(channel chan utils.DataEvent, topic Topic)
 }
 type CommonBackendConfig struct {
+	configEnvHandler types.ConfigEnvI
 }
 
 func loadConfig() {
@@ -191,7 +194,7 @@ func loadConfig() {
 	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
 	maxRegulationsPerRequest = config.GetInt("BackendConfig.maxRegulationsPerRequest", 1000)
-	configEnvReplacer = config.GetString("BackendConfig.configEnvReplacer", "env.")
+	configEnvReplacementEnabled = config.GetBool("BackendConfig.envReplacementEnabled", true)
 }
 
 func MakePostRequest(url string, endpoint string, data interface{}) (response []byte, ok bool) {
@@ -410,11 +413,12 @@ func (bc *CommonBackendConfig) WaitForConfig() {
 }
 
 // Setup backend config
-func Setup(pollRegulations bool) {
+func Setup(pollRegulations bool, configEnvHandler types.ConfigEnvI) {
 	if isMultiWorkspace {
 		backendConfig = new(MultiWorkspaceConfig)
 	} else {
 		backendConfig = new(WorkspaceConfig)
+		backendConfig.(*WorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
 	}
 
 	backendConfig.SetUp()
