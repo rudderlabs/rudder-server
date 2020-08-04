@@ -1740,9 +1740,6 @@ func (jd *HandleT) mainCheckLoop() {
 			continue
 		}
 
-		//Take the lock and run actual migration
-		jd.dsMigrationLock.Lock()
-
 		var migrateFrom []dataSetT
 		var insertBeforeDS dataSetT
 		var liveJobCount int
@@ -1766,6 +1763,10 @@ func (jd *HandleT) mainCheckLoop() {
 				break
 			}
 		}
+
+		//Take the lock and run actual migration
+		jd.dsMigrationLock.Lock()
+
 		migrationLoopStat := stats.NewJobsDBStat("migration_loop", stats.TimerType, jd.tablePrefix)
 		migrationLoopStat.Start()
 		//Add a temp DS to append to
