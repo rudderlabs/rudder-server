@@ -1052,10 +1052,7 @@ func (jd *HandleT) terminateQueries() {
 	}
 	defer db.Close()
 
-	sqlStatement := `SELECT pg_terminate_backend(pg_stat_activity.pid)
-                           FROM pg_stat_activity
-                         WHERE datname = current_database()
-							AND pid <> pg_backend_pid()`
+	sqlStatement := fmt.Sprintf("SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid()", dbname)
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 }
