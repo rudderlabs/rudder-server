@@ -1044,11 +1044,19 @@ func (jd *HandleT) renameDS(ds dataSetT, allowMissing bool) {
 }
 
 func (jd *HandleT) terminateQueries() {
+	connInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=disable",
+		host, port, user, password)
+	db, err := sql.Open("postgres", connInfo)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
 	sqlStatement := `SELECT pg_terminate_backend(pg_stat_activity.pid)
                            FROM pg_stat_activity
                          WHERE datname = current_database()
-                            AND pid <> pg_backend_pid()`
-	_, err := jd.dbHandle.Exec(sqlStatement)
+							AND pid <> pg_backend_pid()`
+	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 }
 
