@@ -151,7 +151,7 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 		logger.Debug("User Web Request Worker Started", i)
 		var userWebRequestWorker *userWebRequestWorkerT
 		userWebRequestWorker = &userWebRequestWorkerT{
-			webRequestQ:    make(chan *webRequestT, maxUserWebRequestBatchSize),
+			webRequestQ:    make(chan *webRequestT),
 			batchRequestQ:  make(chan *batchWebRequestT),
 			reponseQ:       make(chan map[uuid.UUID]string),
 			workerID:       i,
@@ -1002,8 +1002,8 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	}
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
-	gateway.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, maxDBBatchSize)
-	gateway.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, maxDBWriterProcess)
+	gateway.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT)
+	gateway.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT)
 	gateway.jobsDB = jobsDB
 
 	gateway.versionHandler = versionHandler
