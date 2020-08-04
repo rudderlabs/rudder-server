@@ -46,6 +46,10 @@ func New(settings *SettingsT) (FileManager, error) {
 		return &MinioManager{
 			Config: GetMinioConfig(settings.Config),
 		}, nil
+	case "DIGITAL_OCEAN_SPACES":
+		return &DOspacesManager{
+			Config: GetDOspacesConfig(settings.Config),
+		}, nil
 	}
 	return nil, errors.New("No provider configured for FileManager")
 }
@@ -74,6 +78,13 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["accountName"] = config.GetEnv("AZURE_STORAGE_ACCOUNT", "")
 		providerConfig["accountKey"] = config.GetEnv("AZURE_STORAGE_ACCESS_KEY", "")
 	case "MINIO":
+		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
+		providerConfig["endPoint"] = config.GetEnv("MINIO_ENDPOINT", "localhost:9000")
+		providerConfig["accessKeyID"] = config.GetEnv("MINIO_ACCESS_KEY_ID", "minioadmin")
+		providerConfig["secretAccessKey"] = config.GetEnv("MINIO_SECRET_ACCESS_KEY", "minioadmin")
+		providerConfig["useSSL"] = config.GetEnvAsBool("MINIO_SSL", false)
+	case "DIGITAL_OCEAN_SPACES":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
 		providerConfig["endPoint"] = config.GetEnv("MINIO_ENDPOINT", "localhost:9000")
