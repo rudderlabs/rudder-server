@@ -71,6 +71,8 @@ var (
 	warehouseMode                    string
 	warehouseSyncPreFetchCount       int
 	warehouseSyncFreqIgnore          bool
+	activeWorkerCount                int
+	activeWorkerCountLock            sync.RWMutex
 )
 var (
 	host, user, password, dbname string
@@ -85,6 +87,9 @@ const (
 	EmbeddedMode    = "embedded"
 )
 
+// DisabledWarehousesWorkerName is the worker identifier for all jobs of warehouse with src/dest disabled
+const DisabledWarehousesWorkerName = "disabled_warehouses"
+
 type HandleT struct {
 	destType             string
 	warehouses           []warehouseutils.WarehouseT
@@ -94,6 +99,8 @@ type HandleT struct {
 	createLoadFilesQ     chan LoadFileJobT
 	isEnabled            bool
 	configSubscriberLock sync.RWMutex
+	workerChannelMap     map[string]chan []ProcessStagingFilesJobT
+	workerChannelMapLock sync.RWMutex
 }
 
 type ProcessStagingFilesJobT struct {
@@ -157,6 +164,162 @@ func loadConfig() {
 	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
 }
 
+// get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
+// returns DisabledWarehousesWorkerName if src/dest is disabled
+func workerIdentifier(warehouse warehouseutils.WarehouseT) string {
+	// shove all jobs from disabled source/dest to single worker
+	// this will prevent bloating of number of worker goroutine
+	if !warehouse.Source.Enabled || !warehouse.Destination.Enabled {
+		return DisabledWarehousesWorkerName
+	}
+	return fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
+}
+
+func (wh *HandleT) handleUploadJobs(processStagingFilesJobList []ProcessStagingFilesJobT) {
+	// infinite loop to check for active workers count and retry if not
+	// break after handling
+	for {
+		// check number of workers actively enagaged
+		// if limit hit, sleep and check again
+		// activeWorkerCount is across all wh.destType's
+		activeWorkerCountLock.Lock()
+		activeWorkers := activeWorkerCount
+		if activeWorkers >= noOfWorkers {
+			activeWorkerCountLock.Unlock()
+			logger.Debugf("WH: Setting to sleep and waiting till activeWorkers are less than %d", noOfWorkers)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		// increment number of workers actively engaged
+		activeWorkerCount++
+		activeWorkerCountLock.Unlock()
+
+		// START: processing of upload job
+
+		whOneFullPassTimer := warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", processStagingFilesJobList[0].Warehouse.Destination.ID)
+		whOneFullPassTimer.Start()
+		for _, job := range processStagingFilesJobList {
+			if len(job.List) == 0 {
+				warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
+				warehouseutils.SetUploadError(job.Upload, errors.New("no staging files found"), warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
+				wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
+				break
+			}
+			// consolidate schema if not already done
+			schemaInDB, err := warehouseutils.GetCurrentSchema(wh.dbHandle, job.Warehouse)
+			whManager, err := NewWhManager(wh.destType)
+			if err != nil {
+				panic(err)
+			}
+
+			syncedSchema, err := whManager.FetchSchema(job.Warehouse, job.Warehouse.Namespace)
+			if err != nil {
+				logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
+				warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
+				warehouseutils.SetUploadError(job.Upload, err, warehouseutils.FetchingSchemaFailed, wh.dbHandle)
+				wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
+				break
+			}
+
+			hasSchemaChanged := !warehouseutils.CompareSchema(schemaInDB, syncedSchema)
+			if hasSchemaChanged {
+				err = warehouseutils.UpdateCurrentSchema(job.Warehouse.Namespace, job.Warehouse, job.Upload.ID, syncedSchema, wh.dbHandle)
+				if err != nil {
+					panic(err)
+				}
+			}
+
+			if len(job.Upload.Schema) == 0 || hasSchemaChanged {
+				// merge schemas over all staging files in this batch
+				logger.Infof("WH: Consolidating upload schema with schema in wh_schemas...")
+				consolidatedSchema := wh.consolidateSchema(job.Warehouse, job.List)
+				marshalledSchema, err := json.Marshal(consolidatedSchema)
+				if err != nil {
+					panic(err)
+				}
+				warehouseutils.SetUploadColumns(
+					job.Upload,
+					wh.dbHandle,
+					warehouseutils.UploadColumnT{Column: warehouseutils.UploadSchemaField, Value: marshalledSchema},
+				)
+				job.Upload.Schema = consolidatedSchema
+			}
+			if !wh.areTableUploadsCreated(job.Upload) {
+				err := wh.initTableUploads(job.Upload, job.Upload.Schema)
+				if err != nil {
+					// TODO: Handle error / Retry
+					logger.Error("WH: Error creating records in wh_table_uploads", err)
+				}
+			}
+
+			createPlusUploadTimer := warehouseutils.DestStat(stats.TimerType, "stagingfileset_total_handling_time", job.Warehouse.Destination.ID)
+			createPlusUploadTimer.Start()
+
+			// generate load files only if not done before
+			// upload records have start_load_file_id and end_load_file_id set to 0 on creation
+			// and are updated on creation of load files
+			logger.Infof("WH: Processing %d staging files in upload job:%v with staging files from %v to %v for %s:%s", len(job.List), job.Upload.ID, job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
+			warehouseutils.SetUploadColumns(
+				job.Upload,
+				wh.dbHandle,
+				warehouseutils.UploadColumnT{Column: warehouseutils.UploadLastExecAtField, Value: timeutil.Now()},
+			)
+			if job.Upload.StartLoadFileID == 0 || hasSchemaChanged {
+				warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
+				err := wh.createLoadFiles(&job)
+				if err != nil {
+					//Unreachable code. So not modifying the stat 'failed_uploads', which is reused later for copying.
+					warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
+					warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
+					wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
+					break
+				}
+			}
+			err = wh.SyncLoadFilesToWarehouse(&job)
+			wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
+
+			createPlusUploadTimer.End()
+
+			if err != nil {
+				warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
+				break
+			}
+			warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.Warehouse.Destination.ID).Count(len(job.List))
+		}
+		if whOneFullPassTimer != nil {
+			whOneFullPassTimer.End()
+		}
+		setDestInProgress(processStagingFilesJobList[0].Warehouse, false)
+
+		// END: processing of upload job
+
+		// decrement number of workers actively engaged
+		activeWorkerCountLock.Lock()
+		activeWorkerCount--
+		activeWorkerCountLock.Unlock()
+
+		break
+	}
+}
+
+func (wh *HandleT) initWorker(identifier string) chan []ProcessStagingFilesJobT {
+	workerChan := make(chan []ProcessStagingFilesJobT, 100)
+	rruntime.Go(func() {
+		for {
+			processStagingFilesJobList, ok := <-workerChan
+
+			// shut down goroutine when close signal is received
+			if !ok {
+				break
+			}
+			wh.handleUploadJobs(processStagingFilesJobList)
+		}
+		logger.Infof("WH: Shutting down worker: %s for warehouse: %s", identifier, wh.destType)
+	})
+	return workerChan
+}
+
 func (wh *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
@@ -165,12 +328,28 @@ func (wh *HandleT) backendConfigSubscriber() {
 		configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
 		allSources := config.Data.(backendconfig.SourcesT)
+		// store all identifiers for workers
+		liveWorkers := map[string]bool{"disabled_warehouses": true} // map workerName -> true
+
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == wh.destType {
 						namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
-						wh.warehouses = append(wh.warehouses, warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace})
+						warehouse := warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace}
+						wh.warehouses = append(wh.warehouses, warehouse)
+
+						workerName := workerIdentifier(warehouse)
+						liveWorkers[workerName] = true
+						wh.workerChannelMapLock.Lock()
+						// spawn one worker for each unique destID_namespace
+						// and one for all warehouses with either src/dest disabled
+						if _, ok := wh.workerChannelMap[workerName]; !ok {
+							workerChan := wh.initWorker(workerName)
+							wh.workerChannelMap[workerName] = workerChan
+						}
+						wh.workerChannelMapLock.Unlock()
+
 						if destination.Config != nil && destination.Enabled && destination.Config["eventDelivery"] == true {
 							sourceID := source.ID
 							destinationID := destination.ID
@@ -182,6 +361,19 @@ func (wh *HandleT) backendConfigSubscriber() {
 				}
 			}
 		}
+
+		// find all workerNames not going to be used anymore
+		// close the channel for the workerName to shut down the worker goroutine
+		// also remove wh.workerChannelMap
+		for workerName, ch := range wh.workerChannelMap {
+			if _, ok := liveWorkers[workerName]; !ok {
+				close(ch)
+				wh.workerChannelMapLock.Lock()
+				delete(wh.workerChannelMap, workerName)
+				wh.workerChannelMapLock.Unlock()
+			}
+		}
+
 		configSubscriberLock.Unlock()
 	}
 }
@@ -644,7 +836,7 @@ func (wh *HandleT) mainLoop() {
 					logger.Debugf("WH: Adding job %+v", job)
 					jobs = append(jobs, job)
 				}
-				wh.uploadToWarehouseQ <- jobs
+				wh.enqueueUploadJobs(jobs, warehouse)
 			} else {
 				if !wh.canStartUpload(warehouse) {
 					logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
@@ -685,11 +877,22 @@ func (wh *HandleT) mainLoop() {
 						break
 					}
 				}
-				wh.uploadToWarehouseQ <- jobs
+				wh.enqueueUploadJobs(jobs, warehouse)
 			}
 		}
 		time.Sleep(mainLoopSleep)
 	}
+}
+
+func (wh *HandleT) enqueueUploadJobs(jobs []ProcessStagingFilesJobT, warehouse warehouseutils.WarehouseT) {
+	workerName := workerIdentifier(warehouse)
+	wh.workerChannelMapLock.Lock()
+	if _, ok := wh.workerChannelMap[workerName]; ok {
+		wh.workerChannelMap[workerName] <- jobs
+	} else {
+		logger.Infof("WH: Worker channel not found. Worker identifier: %s", workerName)
+	}
+	wh.workerChannelMapLock.Unlock()
 }
 
 type PayloadT struct {
@@ -931,113 +1134,6 @@ func (wh *HandleT) recordDeliveryStatus(destID string, uploadID int64) {
 	destinationdebugger.RecordEventDeliveryStatus(destinationID, &deliveryStatus)
 }
 
-func (wh *HandleT) initWorkers() {
-	for i := 0; i < noOfWorkers; i++ {
-		rruntime.Go(func() {
-			func() {
-				for {
-					// handle job to process staging files and convert them into load files
-					processStagingFilesJobList := <-wh.uploadToWarehouseQ
-					whOneFullPassTimer := warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", processStagingFilesJobList[0].Warehouse.Destination.ID)
-					whOneFullPassTimer.Start()
-					for _, job := range processStagingFilesJobList {
-						if len(job.List) == 0 {
-							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
-							warehouseutils.SetUploadError(job.Upload, errors.New("no staging files found"), warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
-							wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
-							break
-						}
-						// consolidate schema if not already done
-						schemaInDB, err := warehouseutils.GetCurrentSchema(wh.dbHandle, job.Warehouse)
-						whManager, err := NewWhManager(wh.destType)
-						if err != nil {
-							panic(err)
-						}
-
-						syncedSchema, err := whManager.FetchSchema(job.Warehouse, job.Warehouse.Namespace)
-						if err != nil {
-							logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
-							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
-							warehouseutils.SetUploadError(job.Upload, err, warehouseutils.FetchingSchemaFailed, wh.dbHandle)
-							wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
-							break
-						}
-
-						hasSchemaChanged := !warehouseutils.CompareSchema(schemaInDB, syncedSchema)
-						if hasSchemaChanged {
-							err = warehouseutils.UpdateCurrentSchema(job.Warehouse.Namespace, job.Warehouse, job.Upload.ID, syncedSchema, wh.dbHandle)
-							if err != nil {
-								panic(err)
-							}
-						}
-
-						if len(job.Upload.Schema) == 0 || hasSchemaChanged {
-							// merge schemas over all staging files in this batch
-							logger.Infof("WH: Consolidating upload schema with schema in wh_schemas...")
-							consolidatedSchema := wh.consolidateSchema(job.Warehouse, job.List)
-							marshalledSchema, err := json.Marshal(consolidatedSchema)
-							if err != nil {
-								panic(err)
-							}
-							warehouseutils.SetUploadColumns(
-								job.Upload,
-								wh.dbHandle,
-								warehouseutils.UploadColumnT{Column: warehouseutils.UploadSchemaField, Value: marshalledSchema},
-							)
-							job.Upload.Schema = consolidatedSchema
-						}
-						if !wh.areTableUploadsCreated(job.Upload) {
-							err := wh.initTableUploads(job.Upload, job.Upload.Schema)
-							if err != nil {
-								// TODO: Handle error / Retry
-								logger.Error("WH: Error creating records in wh_table_uploads", err)
-							}
-						}
-
-						createPlusUploadTimer := warehouseutils.DestStat(stats.TimerType, "stagingfileset_total_handling_time", job.Warehouse.Destination.ID)
-						createPlusUploadTimer.Start()
-
-						// generate load files only if not done before
-						// upload records have start_load_file_id and end_load_file_id set to 0 on creation
-						// and are updated on creation of load files
-						logger.Infof("WH: Processing %d staging files in upload job:%v with staging files from %v to %v for %s:%s", len(job.List), job.Upload.ID, job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
-						warehouseutils.SetUploadColumns(
-							job.Upload,
-							wh.dbHandle,
-							warehouseutils.UploadColumnT{Column: warehouseutils.UploadLastExecAtField, Value: timeutil.Now()},
-						)
-						if job.Upload.StartLoadFileID == 0 || hasSchemaChanged {
-							warehouseutils.SetUploadStatus(job.Upload, warehouseutils.GeneratingLoadFileState, wh.dbHandle)
-							err := wh.createLoadFiles(&job)
-							if err != nil {
-								//Unreachable code. So not modifying the stat 'failed_uploads', which is reused later for copying.
-								warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
-								warehouseutils.SetUploadError(job.Upload, err, warehouseutils.GeneratingLoadFileFailedState, wh.dbHandle)
-								wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
-								break
-							}
-						}
-						err = wh.SyncLoadFilesToWarehouse(&job)
-						wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
-
-						createPlusUploadTimer.End()
-
-						if err != nil {
-							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
-							break
-						}
-						warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.Warehouse.Destination.ID).Count(len(job.List))
-					}
-					if whOneFullPassTimer != nil {
-						whOneFullPassTimer.End()
-					}
-					setDestInProgress(processStagingFilesJobList[0].Warehouse, false)
-				}
-			}()
-		})
-	}
-}
-
 func getBucketFolder(batchID string, tableName string) string {
 	return fmt.Sprintf(`%v-%v`, batchID, tableName)
 }
@@ -1083,11 +1179,9 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
+	wh.workerChannelMap = make(map[string]chan []ProcessStagingFilesJobT)
 	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
-	})
-	rruntime.Go(func() {
-		wh.initWorkers()
 	})
 	rruntime.Go(func() {
 		wh.mainLoop()
