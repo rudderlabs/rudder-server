@@ -577,6 +577,17 @@ var _ = Describe("Gateway", func() {
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 400, NoWriteKeyInBasicAuth+"\n")
 			})
 
+			It("should reject requests with both userId and anonymousId not present", func() {
+				validBody := `{"data":"valid-json"}`
+				c.mockStatGatewayBatchSize.EXPECT().Count(1).
+					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
+
+				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
+				c.expectWriteKeyStat("gateway.write_key_failed_requests", "notIdentifiable", 1)
+
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 400, NonIdentifiableRequest+"\n")
+			})
+
 			It("should reject requests without request body", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
