@@ -157,9 +157,6 @@ func startWarehouseService() {
 func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintenanceMode bool) {
 	logger.Info("Main starting")
 
-	//TODO remove
-	time.Sleep(60 * time.Second)
-
 	if !validators.ValidateEnv() {
 		panic(errors.New("Failed to start rudder-server"))
 	}
