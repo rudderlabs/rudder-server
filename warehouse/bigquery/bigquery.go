@@ -489,5 +489,9 @@ func (bq *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
+	if err != nil {
+		return
+	}
+	defer bq.Db.Close()
 	return
 }

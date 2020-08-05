@@ -663,5 +663,9 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 func (sf *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
 	sf.Warehouse = config.Warehouse
 	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
-	return
+	if err != nil {
+		return
+	}
+	defer sf.Db.Close()
+	return sf.Db.Ping()
 }

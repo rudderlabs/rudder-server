@@ -87,7 +87,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == brt.destType {
 						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
-						if destination.Config["testConnection"].(bool) == true {
+						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
 							destination := destination
 							rruntime.Go(func() {
 								testBatchDestinationConnection(destination)
@@ -166,6 +166,38 @@ func UploadTestFileForBatchDestination(filename string, provider string, destina
 		logger.Errorf("BRT: Failed to upload test file %s for testing this destination id %s: err %v", filename, destination.ID, err)
 	}
 	return err
+}
+
+func DownloadTestFileForBatchDestination(testObjectKey string, provider string, destination backendconfig.DestinationT) (err error) {
+	downloader, err := filemanager.New(&filemanager.SettingsT{
+		Provider: provider,
+		Config:   misc.GetObjectStorageConfig(provider, destination.Config),
+	})
+	if err != nil {
+		logger.Errorf("BRT: Failed to get filemanager config for testing this destination id %s: err %v", destination.ID, err)
+		panic(err)
+	}
+
+	localTmpDirName := "/rudder-raw-data-dest-upload-crash-recovery/"
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
+	jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
+	err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
+	jsonFile, err := os.Create(jsonPath)
+	if err != nil {
+		panic(err)
+	}
+	err = downloader.Download(jsonFile, testObjectKey)
+	if err != nil {
+		logger.Errorf("BRT: Failed to download test file %s for testing this destination id %s: err %v", testObjectKey, destination.ID, err)
+	}
+
+	jsonFile.Close()
+	os.Remove(jsonPath)
+	return err
+
 }
 
 func testBatchDestinationConnection(destination backendconfig.DestinationT) {

@@ -850,5 +850,9 @@ func (rs *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
 		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
 		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
 	})
-	return
+	if err != nil {
+		return
+	}
+	defer rs.Db.Close()
+	return rs.Db.Ping()
 }

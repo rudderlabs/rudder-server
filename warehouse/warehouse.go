@@ -181,7 +181,8 @@ func (wh *HandleT) backendConfigSubscriber() {
 								wh.syncLiveWarehouseStatus(sourceID, destinationID)
 							})
 						}
-						if destination.Config["testConnection"] == true {
+						if val, ok := destination.Config["testConnection"].(bool); ok && val {
+							destination := destination
 							rruntime.Go(func() {
 								testWarehouseDestinationConnection(destination)
 							})
@@ -203,9 +204,13 @@ func testWarehouseDestinationConnection(destination backendconfig.DestinationT) 
 	testFileName := batchrouter.CreateTestFileForBatchDestination(destination.ID)
 	storageProvider := warehouseutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config)
 	err = batchrouter.UploadTestFileForBatchDestination(testFileName, storageProvider, destination)
-	var error map[string]string
+	error := map[string]string{}
 	if err != nil {
-		error[storageProvider] = err.Error()
+		error[storageProvider+"write:"] = err.Error()
+	}
+	err = batchrouter.DownloadTestFileForBatchDestination(testFileName, storageProvider, destination)
+	if err != nil {
+		error[storageProvider+"read:"] = err.Error()
 	}
 	err = whManager.TestConnection(warehouseutils.ConfigT{
 		Warehouse: warehouseutils.WarehouseT{

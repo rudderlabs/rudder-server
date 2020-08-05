@@ -615,10 +615,6 @@ func (ch *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	return
 }
 
-func (ch *HandleT) TestConnection(config warehouseutils.ConfigT) error {
-	return nil
-}
-
 // MigrateSchema will handle
 func (ch *HandleT) MigrateSchema() (err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", ch.Warehouse.Destination.ID)
@@ -668,4 +664,15 @@ func (ch *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		ch.Export()
 	}
 	return
+}
+
+// TestConnection is used destination connection tester to test the clickhouse connection
+func (ch *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	ch.Warehouse = config.Warehouse
+	ch.Db, err = connect(ch.getConnectionCredentials())
+	if err != nil {
+		return
+	}
+	defer ch.Db.Close()
+	return ch.Db.Ping()
 }

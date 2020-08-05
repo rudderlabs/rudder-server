@@ -703,5 +703,9 @@ func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 func (pg *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
 	pg.Warehouse = config.Warehouse
 	pg.Db, err = connect(pg.getConnectionCredentials())
-	return
+	if err != nil {
+		return
+	}
+	defer pg.Db.Close()
+	return pg.Db.Ping()
 }
