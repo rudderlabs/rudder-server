@@ -1798,7 +1798,13 @@ func (jd *HandleT) mainCheckLoop() {
 					noJobsMigrated, _ := jd.migrateJobs(ds, migrateTo)
 					totalJobsMigrated += noJobsMigrated
 				}
-				jd.assert(totalJobsMigrated > 0, "The number of jobs to migrate is 0 or less. Shouldn't be the case given we have a liveCount check")
+
+				if totalJobsMigrated <= 0 {
+					jd.dsListLock.Lock()
+					jd.dropDS(migrateTo, false)
+					jd.dsListLock.Unlock()
+				}
+
 				jd.JournalMarkDone(opID)
 			}
 
