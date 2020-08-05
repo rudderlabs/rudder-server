@@ -148,6 +148,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		}
 
 		//If sink is not enabled mark all jobs as waiting
+
+		// TODO: Should we fix this?
 		if !rt.isEnabled {
 			logger.Debug("Router is disabled")
 			status := jobsdb.JobStatusT{
@@ -173,6 +175,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		var previousFailedJobID int64
 		if canEventBeMappedToUser {
 			//If there is a failed jobID from this user, we cannot pass future jobs
+
+			// TODO: This function is getting too big (~200 lines now). Add a new function to handleFailedUsers() ?
+
 			worker.failedJobIDMutex.RLock()
 			previousFailedJobID, isPrevFailedUser = worker.failedJobIDMap[userID]
 			worker.failedJobIDMutex.RUnlock()
@@ -214,14 +219,19 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			}
 		}
 
+		// TODO: Move this to handleThrottle()
 		if rt.throttler.Enabled() {
 			rt.throttlerMutex.Lock()
+			// TODO: We need to differentiate between userThrottle and destinationThrottle.
+			// Destination throttle should block all events of the destination.
 			toThrottle := rt.throttler.LimitReached(paramaters.DestinationID, userID)
 			rt.throttlerMutex.Unlock()
 			if toThrottle {
 				// block other jobs of same user if userEventOrdering is required.
 				if rt.throttler.UserEventOrderingRequired {
 					if !isPrevFailedUser && userID != "" {
+						// TODO: Let's also change this error message to something more understandable
+						// "Request Failed for userID: %v. Adding user to failed users map to preserve ordering."
 						logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destID, userID)
 						worker.failedJobIDMutex.Lock()
 						worker.failedJobIDMap[userID] = job.JobID
@@ -246,6 +256,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		var reqMetric requestMetric
 		diagnosisStartTime := time.Now()
 		//We can execute thoe job
+		// Use backoff here instead of the loop
 		for attempts = 0; attempts < ser; attempts++ {
 			logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", rt.destID, attempts, ser)
 
@@ -266,6 +277,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			if !isSuccessStatus(respStatusCode) {
 				reqMetric.RequestRetries = reqMetric.RequestRetries + 1
 				if attempts == ser-1 {
+					//TODO: Fix this. This is not really aborted.
 					reqMetric.RequestAborted = reqMetric.RequestAborted + 1
 					reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
 				}
@@ -274,6 +286,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 					break
 				}
 				//Wait before the next retry
+				//TODO: Discuss handling this - use some internal loop variable instead of worker variable?
+				// This sleep keeps multiplying with the next job - Sleep should be only per job.
 				worker.sleepTime = 2*worker.sleepTime + 1*time.Second //+1 handles 0 sleepTime
 				if worker.sleepTime > maxSleep {
 					worker.sleepTime = maxSleep
@@ -335,9 +349,12 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			}
 
 			status.JobState = jobsdb.Failed.State
+			// TODO: 429 should mark this throttled?
+
 			if respStatusCode >= 500 || respStatusCode == 429 {
 				// TODO: timeElapsed should be ideally from first attempt
 				timeElapsed := time.Now().Sub(job.CreatedAt)
+				// TODO: Move this out of if-else?
 				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
 				if timeElapsed > retryTimeWindow {
 					status.JobState = jobsdb.Aborted.State
