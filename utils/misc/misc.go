@@ -28,6 +28,7 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
@@ -742,4 +743,10 @@ func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (re
 
 	logger.Debugf("Post request: Successful %s", string(body))
 	return body, resp.StatusCode, nil
+}
+
+//GetMD5UUID hashes the given string into md5 and returns it as auuid
+func GetMD5UUID(str string) (uuid.UUID, error) {
+	md5Sum := md5.Sum([]byte(str))
+	return uuid.FromBytes(md5Sum[:])
 }

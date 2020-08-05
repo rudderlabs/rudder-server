@@ -22,8 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
-	md5 "crypto/md5"
-
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/dgraph-io/badger"
 	. "github.com/onsi/ginkgo"
@@ -386,13 +384,11 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				anonIDFromReq := strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).String())
 				userIDFromReq := strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.userId`, index)).String())
 				if anonIDFromReq == "" {
-					var newAnonymousID uuid.UUID
 					if userIDFromReq == "" {
 						notIdentifiable = true
 						return false
 					}
-					md5Sum := md5.Sum([]byte(userIDFromReq))
-					newAnonymousID, err = uuid.FromBytes(md5Sum[:])
+					newAnonymousID, err := misc.GetMD5UUID(userIDFromReq)
 					if err != nil {
 						notIdentifiable = true
 						return false
@@ -446,7 +442,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				UserID:       gjson.GetBytes(body, "batch.0.userId").Str,
+				UserID:       gjson.GetBytes(body, "batch.0.anonymousId").Str,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, sourceID, counter)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
