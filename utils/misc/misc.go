@@ -695,7 +695,7 @@ func RunWithTimeout(f func(), onTimeout func(), d time.Duration) {
 IsValidUUID will check if provided string is a valid UUID
 */
 func IsValidUUID(uuid string) bool {
-	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$")
+	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
 	return r.MatchString(uuid)
 }
 
@@ -748,5 +748,8 @@ func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (re
 //GetMD5UUID hashes the given string into md5 and returns it as auuid
 func GetMD5UUID(str string) (uuid.UUID, error) {
 	md5Sum := md5.Sum([]byte(str))
-	return uuid.FromBytes(md5Sum[:])
+	u, err := uuid.FromBytes(md5Sum[:])
+	u.SetVersion(uuid.V4)
+	u.SetVariant(uuid.VariantRFC4122)
+	return u, err
 }
