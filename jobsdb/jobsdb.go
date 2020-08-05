@@ -449,6 +449,9 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		jd.mainCheckLoop()
 	})
 
+	rruntime.Go(func() {
+		jd.dsSizeCheckLoop()
+	})
 }
 
 /*
@@ -1720,11 +1723,10 @@ so take both the list and data lock
 
 */
 
-func (jd *HandleT) mainCheckLoop() {
-
+func (jd *HandleT) dsSizeCheckLoop() {
 	for {
 		time.Sleep(mainCheckSleepDuration)
-		logger.Debug("Main check:Start")
+		logger.Debug("dsSizeCheckLoop:Start")
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
 		jd.dsListLock.RUnlock()
@@ -1734,16 +1736,31 @@ func (jd *HandleT) mainCheckLoop() {
 			//Doesn't move any data so we only
 			//take the list lock
 			jd.dsListLock.Lock()
-			logger.Info("Main check:NewDS")
+			logger.Info("dsSizeCheckLoop:NewDS")
 			jd.addNewDS(appendToDsList, dataSetT{})
+			//Refresh the in-memory lists
+			jd.getDSList(true)
+			jd.getDSRangeList(true)
 			jd.dsListLock.Unlock()
 		}
+	}
+}
+
+func (jd *HandleT) mainCheckLoop() {
+
+	for {
+		time.Sleep(mainCheckSleepDuration)
+		logger.Debug("Main check:Start")
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
 			logger.Debugf("[[ MainCheckLoop ]]: migration mode = %s, so skipping internal migrations", jd.migrationState.migrationMode)
 			continue
 		}
+
+		jd.dsListLock.RLock()
+		dsList := jd.getDSList(false)
+		jd.dsListLock.RUnlock()
 
 		var migrateFrom []dataSetT
 		var insertBeforeDS dataSetT
@@ -2240,8 +2257,10 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 
 	var opTypes []string
 	switch goRoutineType {
+	case addDSGoRoutine:
+		opTypes = []string{addDSOperation}
 	case mainGoRoutine:
-		opTypes = []string{addDSOperation, migrateCopyOperation, postMigrateDSOperation, dropDSOperation}
+		opTypes = []string{migrateCopyOperation, postMigrateDSOperation, dropDSOperation}
 	case backupGoRoutine:
 		opTypes = []string{backupDSOperation, backupDropDSOperation}
 	case migratorRoutine:
@@ -2348,12 +2367,14 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 }
 
 const (
+	addDSGoRoutine  = "addDS"
 	mainGoRoutine   = "main"
 	backupGoRoutine = "backup"
 	migratorRoutine = "migrator"
 )
 
 func (jd *HandleT) recoverFromJournal() {
+	jd.recoverFromCrash(addDSGoRoutine)
 	jd.recoverFromCrash(mainGoRoutine)
 	jd.recoverFromCrash(backupGoRoutine)
 	if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
