@@ -556,7 +556,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		// common tests for all web handlers
-		assertHandler := func(handler http.HandlerFunc) {
+		assertHandler := func(handlerType string, handler http.HandlerFunc) {
 			It("should reject requests without Authorization header", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
@@ -578,12 +578,23 @@ var _ = Describe("Gateway", func() {
 			})
 
 			It("should reject requests with both userId and anonymousId not present", func() {
-				validBody := `{"data":"valid-json"}`
+				var validBody string
+				if handlerType == "batch" {
+					validBody = `{"batch": [{"data": "valid-json"}]}`
+				} else {
+					validBody = `{"data": "valid-json"}`
+				}
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", "notIdentifiable", 1)
+
+				if handlerType == "batch" {
+					c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
+				} else {
+					c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
+				}
 
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 400, NonIdentifiableRequest+"\n")
 			})
@@ -656,8 +667,8 @@ var _ = Describe("Gateway", func() {
 			})
 		}
 
-		for _, handler := range allHandlers(gateway) {
-			assertHandler(handler)
+		for handlerType, handler := range allHandlers(gateway) {
+			assertHandler(handlerType, handler)
 		}
 	})
 })
