@@ -22,6 +22,8 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
+	md5 "crypto/md5"
+
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/dgraph-io/badger"
 	. "github.com/onsi/ginkgo"
@@ -39,6 +41,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	uuid "github.com/satori/go.uuid"
+
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -376,10 +379,24 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			// set anonymousId if not set in payload
 			var index int
 			result := gjson.GetBytes(body, "batch")
-			newAnonymousID := uuid.NewV4().String()
+
 			var reqMessageIDs []string
+			var notIdentifiable bool
 			result.ForEach(func(_, _ gjson.Result) bool {
-				if strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).String()) == "" {
+				anonIDFromReq := strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).String())
+				userIDFromReq := strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.userId`, index)).String())
+				if anonIDFromReq == "" {
+					var newAnonymousID uuid.UUID
+					if userIDFromReq == "" {
+						notIdentifiable = true
+						return false
+					}
+					md5Sum := md5.Sum([]byte(userIDFromReq))
+					newAnonymousID, err = uuid.FromBytes(md5Sum[:])
+					if err != nil {
+						notIdentifiable = true
+						return false
+					}
 					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index), newAnonymousID)
 				}
 				if strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String()) == "" {
@@ -391,6 +408,13 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				index++
 				return true // keep iterating
 			})
+
+			if notIdentifiable {
+				req.done <- GetStatus(NonIdentifiableRequest)
+				preDbStoreCount++
+				//TODO: Stat this.
+				continue
+			}
 
 			if enableDedup {
 				gateway.dedup(&body, reqMessageIDs, allMessageIdsSet, writeKey, writeKeyDupStats)
@@ -422,7 +446,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				UserID:       gjson.GetBytes(body, "batch.0.anonymousId").Str,
+				UserID:       gjson.GetBytes(body, "batch.0.userId").Str,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, sourceID, counter)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
