@@ -6,6 +6,7 @@ import (
 	"runtime"
 
 	"github.com/bugsnag/bugsnag-go"
+	. "github.com/onsi/ginkgo"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -34,6 +35,7 @@ func Go(function func()) {
 
 				misc.RecordAppError(fmt.Errorf("%v", r))
 				logger.Fatal(r)
+				defer GinkgoRecover()
 				panic(r)
 			}
 		}()

@@ -341,7 +341,7 @@ var _ = Describe("Gateway", func() {
 		}
 
 		createValidBody := func(customProperty string, customValue string) []byte {
-			validData := `{"data":{"string":"valid-json","nested":{"child":1}}}`
+			validData := `{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}}}`
 			validDataWithProperty, _ := sjson.SetBytes([]byte(validData), customProperty, customValue)
 
 			return validDataWithProperty
@@ -528,7 +528,7 @@ var _ = Describe("Gateway", func() {
 			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
 			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 0)
 
-			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 200, "OK")
+			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(`{"userId":"dummyId"}`)), 200, "OK")
 		})
 
 		It("should reject messages if rate limit is reached for workspace", func() {
