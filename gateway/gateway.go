@@ -408,7 +408,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			if notIdentifiable {
 				req.done <- GetStatus(NonIdentifiableRequest)
 				preDbStoreCount++
-				//TODO: Stat this.
+				misc.IncrementMapByKey(writeKeyFailStats, "notIdentifiable", 1)
 				continue
 			}
 
