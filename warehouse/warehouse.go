@@ -508,16 +508,10 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 		}
 		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
 
-		// Set Upload's first/last timing, attempts
-		firstTimingObj := gjson.Parse(firstTiming.String).Map()
-		for _, t := range firstTimingObj {
-			upload.FirstTiming = t.Time()
-		}
-		lastTimingObj := gjson.Parse(lastTiming.String).Map()
-		for status, t := range lastTimingObj {
-			upload.LastTiming = t.Time()
-			upload.Attempts = gjson.Get(string(upload.Error), fmt.Sprintf(`%s.attempt`, status)).Int()
-		}
+		_, upload.FirstAttemptAt = warehouseutils.TimingFromJSONString(firstTiming)
+		var lastStatus string
+		lastStatus, upload.LastAttemptAt = warehouseutils.TimingFromJSONString(lastTiming)
+		upload.Attempts = gjson.Get(string(upload.Error), fmt.Sprintf(`%s.attempt`, lastStatus)).Int()
 
 		uploads = append(uploads, upload)
 	}
@@ -644,7 +638,7 @@ func (wh *HandleT) mainLoop() {
 				logger.Infof("WH: Found pending uploads: %v for %s:%s", len(pendingUploads), wh.destType, warehouse.Destination.ID)
 				jobs := []ProcessStagingFilesJobT{}
 				for _, pendingUpload := range pendingUploads {
-					if !wh.canStartPendingUplaod(pendingUpload, warehouse) {
+					if !wh.canStartPendingUpload(pendingUpload, warehouse) {
 						logger.Debugf("WH: Skipping pending upload for %s:%s since current time less than next retry time", wh.destType, warehouse.Destination.ID)
 						setDestInProgress(warehouse, false)
 						break
@@ -1046,7 +1040,7 @@ func (wh *HandleT) initWorkers() {
 							warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
 							break
 						}
-						burstRetryCache(job.Warehouse)
+						onSuccessfulUpload(job.Warehouse)
 
 						warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.Warehouse.Destination.ID).Count(len(job.List))
 					}

@@ -146,8 +146,8 @@ type UploadT struct {
 	Schema             map[string]map[string]string
 	Error              json.RawMessage
 	Timings            []map[string]string
-	FirstTiming        time.Time
-	LastTiming         time.Time
+	FirstAttemptAt     time.Time
+	LastAttemptAt      time.Time
 	Attempts           int64
 }
 
@@ -276,18 +276,23 @@ func GetNewTimings(upload UploadT, dbHandle *sql.DB, status string) []byte {
 	return marshalledTimings
 }
 
-func GetUploadFirstTiming(upload UploadT, dbHandle *sql.DB) (timing time.Time) {
+func GetUploadFirstAttemptTime(upload UploadT, dbHandle *sql.DB) (timing time.Time) {
 	var firstTiming sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT timings->0 as firstTimingObj FROM %s WHERE id=%d`, WarehouseUploadsTable, upload.ID)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&firstTiming)
 	if err != nil {
 		return
 	}
-	firstTimingObj := gjson.Parse(firstTiming.String).Map()
-	for _, t := range firstTimingObj {
-		timing = t.Time()
+	_, timing = TimingFromJSONString(firstTiming)
+	return timing
+}
+
+func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
+	timingsMap := gjson.Parse(str.String).Map()
+	for s, t := range timingsMap {
+		return s, t.Time()
 	}
-	return
+	return // zero values
 }
 
 func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB, additionalFields ...UploadColumnT) (err error) {
@@ -356,7 +361,7 @@ func SetUploadError(upload UploadT, statusError error, state string, dbHandle *s
 	}
 	// abort after configured retry attempts
 	if errorByState["attempt"].(int) > minRetryAttempts {
-		firstTiming := GetUploadFirstTiming(upload, dbHandle)
+		firstTiming := GetUploadFirstAttemptTime(upload, dbHandle)
 		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
 			state = AbortedState
 		}
