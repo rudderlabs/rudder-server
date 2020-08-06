@@ -11,7 +11,7 @@ RudderStack's backend is written in Go, with a rich UI written in React.js.
 
 You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) RudderStack instance to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro).
 
-Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord channel](https://discordapp.com/invite/xNEdEGw), or follow us on [ProductHunt](https://www.producthunt.com/posts/rudderstack) or [Twitter](https://twitter.com/rudderstack).
+Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord channel](https://discordapp.com/invite/xNEdEGw), and follow us on [ProductHunt](https://www.producthunt.com/posts/rudderstack) and [Twitter](https://twitter.com/rudderstack).
 
 # Why Use RudderStack?
 
@@ -58,7 +58,7 @@ You can also set up and use RudderStack on your platform of choice.
 - [Setting up RudderStack on a Native Installation](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/native-installation)
 - [Developer Machine Setup](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/developer-machine-setup)
 
-Once you have installed RudderStack, [send test events]() to verify the setup.
+Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack#how-to-send-test-events) to verify the setup.
 
 # UI Pages
 
