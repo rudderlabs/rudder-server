@@ -119,6 +119,7 @@ type dataSetRangeT struct {
 	maxJobID  int64
 	startTime int64
 	endTime   int64
+	isEmpty   bool
 	ds        dataSetT
 }
 
@@ -611,11 +612,19 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 		//We store ranges EXCEPT for the last element
 		//which is being actively written to.
 		if idx < len(dsList)-1 {
-			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
-			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v", idx, prevMax, minID.Int64))
+			if !minID.Valid || !maxID.Valid {
+				logger.Debug("Empty dataset found in between. Could be a migrateTo dataset. Table: %s", ds.JobTable)
+				//If the dataset is empty, setting dataSetRangeT minJobID and maxJobID to -1
+				jd.datasetRangeList = append(jd.datasetRangeList,
+					dataSetRangeT{minJobID: -1,
+						maxJobID: -1, ds: ds, isEmpty: true})
+				continue
+			}
+
+			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
 			jd.datasetRangeList = append(jd.datasetRangeList,
 				dataSetRangeT{minJobID: int64(minID.Int64),
-					maxJobID: int64(maxID.Int64), ds: ds})
+					maxJobID: int64(maxID.Int64), ds: ds, isEmpty: false})
 			prevMax = maxID.Int64
 		}
 	}
@@ -795,14 +804,8 @@ func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT 
 			jd.isStatNewDSPeriodInitialized = true
 		}
 	}()
-	newDS := jd.createDS(newDSIdx)
-	if appendLast {
-		newDSWithSeqNumber := jd.setSequenceNumber(newDSIdx)
-		return newDSWithSeqNumber
-	}
-	//This is the migration case. We don't yet update the in-memory list till
-	//we finish the migration
-	return newDS
+
+	return jd.createDS(newDSType, newDSIdx)
 }
 
 func (jd *HandleT) computeNewIdxForAppend() string {
@@ -907,7 +910,7 @@ type transactionHandler interface {
 	//Only the function that passes *sql.Tx should do the commit or rollback based on the error it receives
 }
 
-func (jd *HandleT) createDS(newDSIdx string) dataSetT {
+func (jd *HandleT) createDS(newDSType string, newDSIdx string) dataSetT {
 	var newDS dataSetT
 	newDS.JobTable, newDS.JobStatusTable = jd.createTableNames(newDSIdx)
 	newDS.Index = newDSIdx
@@ -944,8 +947,15 @@ func (jd *HandleT) createDS(newDSIdx string) dataSetT {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
-	jd.JournalMarkDone(opID)
+	if newDSType == appendToDsList {
+		newDSWithSeqNumber := jd.setSequenceNumber(newDSIdx)
+		jd.JournalMarkDone(opID)
+		return newDSWithSeqNumber
+	}
 
+	//This is the migration case. We don't yet update the in-memory list till
+	//we finish the migration
+	jd.JournalMarkDone(opID)
 	return newDS
 }
 
@@ -1738,9 +1748,6 @@ func (jd *HandleT) dsSizeCheckLoop() {
 			jd.dsListLock.Lock()
 			logger.Info("dsSizeCheckLoop:NewDS")
 			jd.addNewDS(appendToDsList, dataSetT{})
-			//Refresh the in-memory lists
-			jd.getDSList(true)
-			jd.getDSRangeList(true)
 			jd.dsListLock.Unlock()
 		}
 	}
@@ -2435,6 +2442,10 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 	dsRangeList := jd.getDSRangeList(false)
 	updatedStatesByDS = make(map[dataSetT][]string)
 	for _, ds := range dsRangeList {
+		if ds.isEmpty {
+			continue
+		}
+
 		minID := ds.minJobID
 		maxID := ds.maxJobID
 		//We have processed upto (but excluding) lastPos on statusList.
