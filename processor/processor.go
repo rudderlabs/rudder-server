@@ -565,7 +565,9 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 	event.Message["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
 	event.Message["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339Milli)
 	event.Message["sentAt"] = sentAt.Format(misc.RFC3339Milli)
-	event.Message["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339Milli)
+	if _, ok := event.Message["timestamp"]; !ok {
+		event.Message["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339Milli)
+	}
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
