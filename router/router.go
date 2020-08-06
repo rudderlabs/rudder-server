@@ -48,6 +48,7 @@ type HandleT struct {
 	customDestinationManager customdestinationmanager.DestinationManager
 	throttler                *throttler.HandleT
 	throttlerMutex           sync.RWMutex
+	keepOrderOnFailure       bool
 }
 
 type jobResponseT struct {
@@ -78,10 +79,15 @@ var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
 	maxFailedCountForJob                                                           int
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
-	randomWorkerAssign, useTestSink, keepOrderOnFailure                            bool
+	randomWorkerAssign, useTestSink                                                bool
 	testSinkURL                                                                    string
-	retryTimeWindow, minUploadBackoff, maxUploadBackoff                            time.Duration
+	retryTimeWindow, minRetryBackoff, maxRetryBackoff                              time.Duration
 )
+
+var userOrderingRequiredMap = map[string]bool{
+	"GA": true,
+	"AM": true, // make it false to disable
+}
 
 type requestMetric struct {
 	RequestRetries       int
@@ -105,15 +111,14 @@ func loadConfig() {
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
 	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
-	keepOrderOnFailure = config.GetBool("Router.keepOrderOnFailure", true)
 	useTestSink = config.GetBool("Router.useTestSink", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
 	retryTimeWindow = config.GetDuration("Router.retryTimeWindowInMins", time.Duration(180)) * time.Minute
-	minUploadBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
-	maxUploadBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
+	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
+	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -145,24 +150,6 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			canEventBeMappedToUser = true
 		} else {
 			userID, canEventBeMappedToUser = integrations.GetUserIDFromTransformerResponse(job.EventPayload)
-		}
-
-		//If sink is not enabled mark all jobs as waiting
-
-		// TODO: Should we fix this?
-		if !rt.isEnabled {
-			logger.Debug("Router is disabled")
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				ErrorCode:     "",
-				JobState:      jobsdb.Waiting.State,
-				ErrorResponse: []byte(`{"reason":"Router Disabled"}`), // check
-			}
-			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
-			continue
 		}
 
 		var paramaters ParametersT
@@ -228,15 +215,11 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			rt.throttlerMutex.Unlock()
 			if toThrottle {
 				// block other jobs of same user if userEventOrdering is required.
-				if rt.throttler.UserEventOrderingRequired {
-					if !isPrevFailedUser && userID != "" {
-						// TODO: Let's also change this error message to something more understandable
-						// "Request Failed for userID: %v. Adding user to failed users map to preserve ordering."
-						logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destID, userID)
-						worker.failedJobIDMutex.Lock()
-						worker.failedJobIDMap[userID] = job.JobID
-						worker.failedJobIDMutex.Unlock()
-					}
+				if rt.keepOrderOnFailure && !isPrevFailedUser && userID != "" {
+					logger.Errorf("[%v Router] :: Request Failed for userID: %v. Adding user to failed users map to preserve ordering.", rt.destID, userID)
+					worker.failedJobIDMutex.Lock()
+					worker.failedJobIDMap[userID] = job.JobID
+					worker.failedJobIDMutex.Unlock()
 				}
 				logger.Debugf("[%v Router] :: throttling %v for destination: %v", job.JobID, rt.destID)
 				status := jobsdb.JobStatusT{
@@ -341,7 +324,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			status.ErrorResponse = []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody)))
 
 			//#JobOrder (see other #JobOrder comment)
-			if rt.throttler.UserEventOrderingRequired && !isPrevFailedUser && userID != "" {
+			if rt.keepOrderOnFailure && !isPrevFailedUser && userID != "" {
 				logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destID, userID)
 				worker.failedJobIDMutex.Lock()
 				worker.failedJobIDMap[userID] = job.JobID
@@ -395,8 +378,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 
 func durationBeforeNextAttempt(attempt int) (d time.Duration) {
 	b := backoff.NewExponentialBackOff()
-	b.InitialInterval = minUploadBackoff
-	b.MaxInterval = maxUploadBackoff
+	b.InitialInterval = minRetryBackoff
+	b.MaxInterval = maxRetryBackoff
 	b.RandomizationFactor = 0
 	b.Reset()
 	for index := 0; index < attempt; index++ {
@@ -687,10 +670,10 @@ func (rt *HandleT) generatorLoop() {
 		toQuery := jobQueryBatchSize
 		retryList := rt.jobsDB.GetToRetry([]string{rt.destID}, toQuery, nil)
 		toQuery -= len(retryList)
-		waitList := rt.jobsDB.GetWaiting([]string{rt.destID}, toQuery, nil) //Jobs send to waiting state
-		toQuery -= len(waitList)
 		throttledList := rt.jobsDB.GetThrottled([]string{rt.destID}, toQuery, nil)
 		toQuery -= len(throttledList)
+		waitList := rt.jobsDB.GetWaiting([]string{rt.destID}, toQuery, nil) //Jobs send to waiting state
+		toQuery -= len(waitList)
 		unprocessedList := rt.jobsDB.GetUnprocessed([]string{rt.destID}, toQuery, nil)
 
 		combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
@@ -795,6 +778,15 @@ func (rt *HandleT) printStatsLoop() {
 	}
 }
 
+func (rt *HandleT) setUserEventsOrderingRequirement() {
+	// user event ordering is required by default unless specified
+	required := true
+	if _, ok := userOrderingRequiredMap[rt.destID]; ok {
+		required = userOrderingRequiredMap[rt.destID]
+	}
+	rt.keepOrderOnFailure = config.GetBool(fmt.Sprintf(`Router.%s.keepOrderOnFailure`, rt.destID), required)
+}
+
 func init() {
 	loadConfig()
 }
@@ -815,6 +807,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destID string) {
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destID)
 	rt.customDestinationManager = customdestinationmanager.New(destID)
+	rt.setUserEventsOrderingRequirement()
 
 	var throttler throttler.HandleT
 	throttler.SetUp(rt.destID)

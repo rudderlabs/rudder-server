@@ -138,8 +138,8 @@ keepOrderOnFailure = true
 kafkaWriteTimeoutInSec = 2
 kafkaDialTimeoutInSec = 10
 retryTimeWindowInMins = 180
-minUploadBackoffInS = 10
-maxUploadBackoffInS = 300
+minRetryBackoffInS = 10
+maxRetryBackoffInS = 300
 
 [BatchRouter]
 mainLoopSleepInS = 2

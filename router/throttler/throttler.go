@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	parameters map[string]map[string]interface{}
+	settings map[string]Settings
 )
 
 //Throttler is an interface for throttling functions
@@ -19,27 +19,26 @@ type Throttler interface {
 	IsEnabled() bool
 }
 
-//HandleT is a Handle for event limiter
-type HandleT struct {
-	UserEventOrderingRequired bool
-	enabled                   bool
-	destination               string
-	eventLimit                int
-	timeWindow                time.Duration
-	bucketsInWindow           int
-	userLevelThrottling       bool
-	userLevelThrottler        *UserHandleT
-	ratelimiter               *ratelimiter.RateLimiter
+type Limiter struct {
+	enabled     bool
+	eventLimit  int
+	timeWindow  time.Duration
+	ratelimiter *ratelimiter.RateLimiter
 }
 
-//UserHandleT is a handle for user level event limiter
-type UserHandleT struct {
-	enabled         bool
-	destination     string
-	eventLimit      int
-	timeWindow      time.Duration
-	bucketsInWindow int
-	ratelimiter     *ratelimiter.RateLimiter
+type Settings struct {
+	eventLimit             int
+	timeWindowInS          int
+	userLevelThrottling    bool
+	userLevelLimit         int
+	userLevelTimeWindowInS int
+}
+
+//HandleT is a Handle for event limiter
+type HandleT struct {
+	destinationName string
+	destLimiter     *Limiter
+	userLimiter     *Limiter
 }
 
 func init() {
@@ -47,85 +46,69 @@ func init() {
 }
 
 func loadConfig() {
-	parameters = map[string]map[string]interface{}{
+	settings = map[string]Settings{
 		// https://customer.io/docs/api/#api-documentationlimits
 		"CUSTOMERIO": {
-			"limit":                     30,
-			"timeWindowInS":             1,
-			"userEventOrderingRequired": true,
-			"userLevelThrottling":       false,
+			eventLimit:          30,
+			timeWindowInS:       1,
+			userLevelThrottling: false,
 		},
 		// https://help.amplitude.com/hc/en-us/articles/360032842391-HTTP-API-V2#upload-limit
 		"AM": {
-			"limit":                     1000,
-			"timeWindowInS":             1,
-			"userEventOrderingRequired": true,
-			"userLevelThrottling":       true,
-			"userLevelLimit":            10,
-			"userLevelTimeWindowInS":    1,
+			eventLimit:             1000,
+			timeWindowInS:          1,
+			userLevelThrottling:    true,
+			userLevelLimit:         10,
+			userLevelTimeWindowInS: 1,
 		},
 	}
 }
 
 func (throttler *HandleT) setLimits() {
+	destName := throttler.destinationName
+
 	// set eventLimit
-	defaultLimit, _ := parameters[throttler.destination]["limit"].(int)
-	throttler.eventLimit = config.GetInt(fmt.Sprintf(`Router.throttler.%s.limit`, throttler.destination), defaultLimit)
+	throttler.destLimiter.eventLimit = config.GetInt(fmt.Sprintf(`Router.throttler.%s.limit`, destName), settings[destName].eventLimit)
 
 	// set timeWindow
-	defaultTimeWindow, _ := parameters[throttler.destination]["timeWindowInS"].(int)
-	throttler.timeWindow = config.GetDuration(fmt.Sprintf(`Router.throttler.%s.timeWindowInS`, throttler.destination), time.Duration(defaultTimeWindow)) * time.Second
+	throttler.destLimiter.timeWindow = config.GetDuration(fmt.Sprintf(`Router.throttler.%s.timeWindowInS`, destName), time.Duration(settings[destName].timeWindowInS)) * time.Second
 
-	// set userEventOrderingRequired
-	defautOrderingRequired, ok := parameters[throttler.destination]["userEventOrderingRequired"].(bool)
-	if !ok {
-		defautOrderingRequired = true
-	}
-	throttler.UserEventOrderingRequired = config.GetBool(fmt.Sprintf(`Router.throttler.%s.userEventOrderingRequired`, throttler.destination), defautOrderingRequired)
-
-	// enable throttler
-	if throttler.eventLimit != 0 && throttler.timeWindow != 0 {
-		throttler.enabled = true
+	// enable dest throttler
+	if throttler.destLimiter.eventLimit != 0 && throttler.destLimiter.timeWindow != 0 {
+		throttler.destLimiter.enabled = true
 	}
 
-	defautUserLevelThrottling, _ := parameters[throttler.destination]["userLevelThrottling"].(bool)
-	throttler.userLevelThrottling = config.GetBool(fmt.Sprintf(`Router.throttler.%s.userLevelThrottling`, throttler.destination), defautUserLevelThrottling)
+	// set eventLimit
+	throttler.userLimiter.eventLimit = config.GetInt(fmt.Sprintf(`Router.throttler.%s.userLevelLimit`, destName), settings[destName].userLevelLimit)
 
-	if throttler.userLevelThrottling {
-		// set eventLimit for userLevelThrottler
-		userLevelDefaultLimit, _ := parameters[throttler.destination]["userLevelLimit"].(int)
-		throttler.userLevelThrottler.eventLimit = config.GetInt(fmt.Sprintf(`Router.throttler.%s.userLevelLimit`, throttler.destination), userLevelDefaultLimit)
+	// set timeWindow
+	throttler.userLimiter.timeWindow = config.GetDuration(fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindowInS`, destName), time.Duration(settings[destName].userLevelTimeWindowInS)) * time.Second
 
-		// set timeWindow for userLevelThrottler
-		userLevelDefaultTimeWindow, _ := parameters[throttler.destination]["userLevelTimeWindowInS"].(int)
-		throttler.userLevelThrottler.timeWindow = config.GetDuration(fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindowInS`, throttler.destination), time.Duration(userLevelDefaultTimeWindow)) * time.Second
-
-		// enable userLevelthrottler
-		if throttler.userLevelThrottler.eventLimit != 0 && throttler.userLevelThrottler.timeWindow != 0 {
-			throttler.userLevelThrottler.enabled = true
-		}
+	// enable dest throttler
+	if throttler.userLimiter.eventLimit != 0 && throttler.userLimiter.timeWindow != 0 {
+		throttler.userLimiter.enabled = true
 	}
 }
 
 //SetUp eventLimiter
-func (throttler *HandleT) SetUp(destination string) {
-	throttler.destination = destination
-	var userLevelThrottler UserHandleT
-	throttler.userLevelThrottler = &userLevelThrottler
+func (throttler *HandleT) SetUp(destName string) {
+	throttler.destinationName = destName
+	// var userLevelThrottler UserHandleT
+	// throttler.userLevelThrottler = &userLevelThrottler
+	throttler.destLimiter = &Limiter{}
+	throttler.userLimiter = &Limiter{}
 
 	// check if it has throttling config for destination
 	throttler.setLimits()
 
-	if throttler.enabled {
-		dataStore := ratelimiter.NewMapLimitStore(2*throttler.timeWindow, 10*time.Second)
-		throttler.ratelimiter = ratelimiter.New(dataStore, int64(throttler.eventLimit), throttler.timeWindow)
-		throttler.enabled = true
+	if throttler.destLimiter.enabled {
+		dataStore := ratelimiter.NewMapLimitStore(2*throttler.destLimiter.timeWindow, 10*time.Second)
+		throttler.destLimiter.ratelimiter = ratelimiter.New(dataStore, int64(throttler.destLimiter.eventLimit), throttler.destLimiter.timeWindow)
 	}
 
-	if throttler.userLevelThrottler.enabled {
-		dataStore := ratelimiter.NewMapLimitStore(2*throttler.userLevelThrottler.timeWindow, 10*time.Second)
-		throttler.userLevelThrottler.ratelimiter = ratelimiter.New(dataStore, int64(throttler.userLevelThrottler.eventLimit), throttler.userLevelThrottler.timeWindow)
-		throttler.enabled = true
+	if throttler.userLimiter.enabled {
+		dataStore := ratelimiter.NewMapLimitStore(2*throttler.userLimiter.timeWindow, 10*time.Second)
+		throttler.userLimiter.ratelimiter = ratelimiter.New(dataStore, int64(throttler.userLimiter.eventLimit), throttler.userLimiter.timeWindow)
 	}
 }
 
@@ -134,26 +117,26 @@ func (throttler *HandleT) LimitReached(destID string, userID string) bool {
 	// do not call LimitReached in single if statement even though both throttlers are enabled
 	// as restrictor.LimitReached has side-effect of incrementing the count for the key
 
-	var destLevelLimitReached bool
-	destKey := fmt.Sprintf(`%s_%s`, throttler.destination, destID)
-	userKey := fmt.Sprintf(`%s_%s_%s`, throttler.destination, destID, userID)
+	destKey := fmt.Sprintf(`%s_%s`, throttler.destinationName, destID)
+	userKey := fmt.Sprintf(`%s_%s_%s`, throttler.destinationName, destID, userID)
 
-	if throttler.enabled {
-		limitStatus, err := throttler.ratelimiter.Check(destKey)
+	var destLevelLimitReached bool
+	if throttler.destLimiter.enabled {
+		limitStatus, err := throttler.destLimiter.ratelimiter.Check(destKey)
 		if err != nil {
 			// TODO: handle this
-			logger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, throttler.destination, err)
+			logger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, throttler.destinationName, err)
 		} else {
 			destLevelLimitReached = limitStatus.IsLimited
 		}
 	}
 
 	var userLevelLimitReached bool
-	if !destLevelLimitReached && throttler.userLevelThrottler.enabled {
-		limitStatus, err := throttler.userLevelThrottler.ratelimiter.Check(userKey)
+	if !destLevelLimitReached && throttler.userLimiter.enabled {
+		limitStatus, err := throttler.userLimiter.ratelimiter.Check(userKey)
 		if err != nil {
 			// TODO: handle this
-			logger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, throttler.destination, err)
+			logger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, throttler.destinationName, err)
 		} else {
 			userLevelLimitReached = limitStatus.IsLimited
 		}
@@ -162,11 +145,11 @@ func (throttler *HandleT) LimitReached(destID string, userID string) bool {
 	limitReached := destLevelLimitReached || userLevelLimitReached
 
 	if !limitReached {
-		if throttler.enabled {
-			throttler.ratelimiter.Inc(destKey)
+		if throttler.destLimiter.enabled {
+			throttler.destLimiter.ratelimiter.Inc(destKey)
 		}
-		if throttler.userLevelThrottler.enabled {
-			throttler.userLevelThrottler.ratelimiter.Inc(userKey)
+		if throttler.userLimiter.enabled {
+			throttler.userLimiter.ratelimiter.Inc(userKey)
 		}
 	}
 
@@ -174,5 +157,5 @@ func (throttler *HandleT) LimitReached(destID string, userID string) bool {
 }
 
 func (throttler *HandleT) IsEnabled() bool {
-	return throttler.enabled || throttler.userLevelThrottler.enabled
+	return throttler.destLimiter.enabled || throttler.userLimiter.enabled
 }

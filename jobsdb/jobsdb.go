@@ -2506,6 +2506,9 @@ GetUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
 func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
+	if count == 0 {
+		return []*JobT{}
+	}
 
 	var queryStat stats.RudderStats
 	statName := ""
@@ -2553,6 +2556,9 @@ can return the same set of events. It is the responsibility of the caller to cal
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
 func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
+	if count == 0 {
+		return []*JobT{}
+	}
 
 	var queryStat stats.RudderStats
 	statName := ""
