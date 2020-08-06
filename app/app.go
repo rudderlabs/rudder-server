@@ -69,6 +69,10 @@ func (a *App) initEnterpriseFeatures() {
 	if protocolsFeatureSetup != nil {
 		a.features.Protocols = protocolsFeatureSetup(a)
 	}
+
+	if configEnvFeatureSetup != nil {
+		a.features.ConfigEnv = configEnvFeatureSetup(a)
+	}
 }
 
 // Options returns this application's options
