@@ -60,6 +60,7 @@ var (
 	uploadFreqInS                    int64
 	stagingFilesSchemaPaginationSize int
 	mainLoopSleep                    time.Duration
+	workerRetrySleep                 time.Duration
 	stagingFilesBatchSize            int
 	configSubscriberLock             sync.RWMutex
 	crashRecoverWarehouses           []string
@@ -149,6 +150,7 @@ func loadConfig() {
 	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
 	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
 	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 60) * time.Second
+	workerRetrySleep = config.GetDuration("Warehouse.workerRetrySleepInS", 5) * time.Second
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
@@ -187,7 +189,8 @@ func (wh *HandleT) handleUploadJobs(processStagingFilesJobList []ProcessStagingF
 		if activeWorkers >= noOfWorkers {
 			activeWorkerCountLock.Unlock()
 			logger.Debugf("WH: Setting to sleep and waiting till activeWorkers are less than %d", noOfWorkers)
-			time.Sleep(5 * time.Second)
+			// TODO: add randomness to this ?
+			time.Sleep(workerRetrySleep)
 			continue
 		}
 
