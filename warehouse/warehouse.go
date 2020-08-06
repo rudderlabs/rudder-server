@@ -859,11 +859,7 @@ func (wh *HandleT) mainLoop() {
 func (wh *HandleT) enqueueUploadJobs(jobs []ProcessStagingFilesJobT, warehouse warehouseutils.WarehouseT) {
 	workerName := workerIdentifier(warehouse)
 	wh.workerChannelMapLock.Lock()
-	if _, ok := wh.workerChannelMap[workerName]; ok {
-		wh.workerChannelMap[workerName] <- jobs
-	} else {
-		logger.Infof("WH: Worker channel not found. Worker identifier: %s", workerName)
-	}
+	wh.workerChannelMap[workerName] <- jobs
 	wh.workerChannelMapLock.Unlock()
 }
 
