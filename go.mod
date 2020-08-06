@@ -32,6 +32,7 @@ require (
 	github.com/google/uuid v1.1.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.6.6
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334
+	github.com/jeremywohl/flatten v1.0.1
 	github.com/joho/godotenv v1.3.0
 	github.com/lib/pq v1.3.0
 	github.com/mattn/go-ieproxy v0.0.0-20200203040449-2dbc853185d9 // indirect

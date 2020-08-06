@@ -211,6 +211,8 @@ github.com/iancoleman/strcase
 # github.com/jcmturner/gofork v1.0.0
 github.com/jcmturner/gofork/encoding/asn1
 github.com/jcmturner/gofork/x/crypto/pbkdf2
+# github.com/jeremywohl/flatten v1.0.1
+github.com/jeremywohl/flatten
 # github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af
 github.com/jmespath/go-jmespath
 # github.com/joho/godotenv v1.3.0
