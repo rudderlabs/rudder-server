@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	uuid "github.com/satori/go.uuid"
@@ -220,7 +220,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		}
 
 		// TODO: Move this to handleThrottle()
-		if rt.throttler.Enabled() {
+		if rt.throttler.IsEnabled() {
 			rt.throttlerMutex.Lock()
 			// TODO: We need to differentiate between userThrottle and destinationThrottle.
 			// Destination throttle should block all events of the destination.
