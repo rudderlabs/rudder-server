@@ -341,7 +341,7 @@ var _ = Describe("Gateway", func() {
 		}
 
 		createValidBody := func(customProperty string, customValue string) []byte {
-			validData := `{"data":{"string":"valid-json","nested":{"child":1}}}`
+			validData := `{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}}}`
 			validDataWithProperty, _ := sjson.SetBytes([]byte(validData), customProperty, customValue)
 
 			return validDataWithProperty
@@ -528,7 +528,7 @@ var _ = Describe("Gateway", func() {
 			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
 			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 0)
 
-			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 200, "OK")
+			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(`{"userId":"dummyId"}`)), 200, "OK")
 		})
 
 		It("should reject messages if rate limit is reached for workspace", func() {
@@ -556,7 +556,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		// common tests for all web handlers
-		assertHandler := func(handler http.HandlerFunc) {
+		assertHandler := func(handlerType string, handler http.HandlerFunc) {
 			It("should reject requests without Authorization header", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
@@ -575,6 +575,28 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", "noWriteKey", 1)
 
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 400, NoWriteKeyInBasicAuth+"\n")
+			})
+
+			It("should reject requests with both userId and anonymousId not present", func() {
+				var validBody string
+				if handlerType == "batch" {
+					validBody = `{"batch": [{"data": "valid-json"}]}`
+				} else {
+					validBody = `{"data": "valid-json"}`
+				}
+				c.mockStatGatewayBatchSize.EXPECT().Count(1).
+					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
+
+				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
+				c.expectWriteKeyStat("gateway.write_key_failed_requests", "notIdentifiable", 1)
+
+				if handlerType == "batch" {
+					c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
+				} else {
+					c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
+				}
+
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 400, NonIdentifiableRequest+"\n")
 			})
 
 			It("should reject requests without request body", func() {
@@ -645,8 +667,8 @@ var _ = Describe("Gateway", func() {
 			})
 		}
 
-		for _, handler := range allHandlers(gateway) {
-			assertHandler(handler)
+		for handlerType, handler := range allHandlers(gateway) {
+			assertHandler(handlerType, handler)
 		}
 	})
 })

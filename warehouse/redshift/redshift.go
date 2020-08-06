@@ -525,7 +525,8 @@ func (rs *HandleT) loadUserTables() (err error) {
 	var userColNames, firstValProps []string
 	firstValPropsForIdentifies := []string{fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY anonymous_id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, "user_id")}
 	for colName := range userColMap {
-		if colName == "id" || colName == "user_id" {
+		// do not reference uuid in queries as it can be an autoincrementing field set by segment compatible tables
+		if colName == "id" || colName == "user_id" || colName == "uuid" {
 			continue
 		}
 		userColNames = append(userColNames, colName)

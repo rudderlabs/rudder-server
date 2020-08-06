@@ -39,3 +39,8 @@ type ProtocolsI interface {
 	GetEventModels(w http.ResponseWriter, r *http.Request)
 	GetEventVersions(w http.ResponseWriter, r *http.Request)
 }
+
+// ConfigEnvI is interface to inject env variables into config
+type ConfigEnvI interface {
+	ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte)
+}

@@ -845,30 +845,47 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 			//Insert before is never required on level3 or above.
 			jd.assert(levels <= 2, fmt.Sprintf("levels:%d  > 2", levels))
 			if levelsPre == 1 {
-				//dsPre.Index 		1
-				//ds.Index 			2
-				//The level0 must be different by one
-				jd.assert(levelVals[0] == levelPreVals[0]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
+				/*
+					| levelsPre | levels | newDSIdx |
+					| --------- | ------ | -------- |
+					| 1         | 2      | 1_1      |
+					| 1         | 3_1    | 1_1      |
+				*/
 				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], 1)
-			} else if levelsPre == 2 && levels == 1 {
-				//dsPre.Index 		1_1
-				//ds.Index 			2
-				//The level0 must be different by one
-				jd.assert(levelVals[0] == levelPreVals[0]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
-				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
-			} else if levelsPre == 2 && levels == 2 {
-				jd.assert(levelVals[0] == 0 && levelPreVals[0] == 0, fmt.Sprintf("levelsPre:%d != 3", levelsPre))
-				//dsPre.Index 		0_1
-				//ds.Index 			0_2
-				//The level1 must be different by one
-				jd.assert(levelVals[1] == levelPreVals[1]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
-				newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], 1)
-			} else if levelsPre == 3 && levels == 2 {
-				jd.assert(levelVals[0] == 0 && levelPreVals[0] == 0, fmt.Sprintf("levelsPre:%d != 3", levelsPre))
-				//dsPre.Index 		0_1_2
-				//ds.Index 			0_2
-				//The level1 must be different by one
-				jd.assert(levelVals[1] == levelPreVals[1]+1, fmt.Sprintf("levelVals[0]:%d != (levelPreVals[0]:%d)+1", levelVals[0], levelPreVals[0]))
+			} else if levelsPre == 2 {
+				if levelPreVals[0] == 0 {
+					// This is from cluster migration
+					/*
+						| levelsPre | levels | newDSIdx |
+						| --------- | ------ | -------- |
+						| 0_2       | 1      | 0_2_1    |
+						| 0_2       | 0_4    | 0_2_1    |
+						| 0_2       | 0_5_1  | 0_2_1    |
+						| 0_2       | 3_2    | 0_2_1    |
+					*/
+					newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], 1)
+
+				} else {
+					/*
+						| levelsPre | levels | newDSIdx |
+						| --------- | ------ | -------- |
+						| 2_3       | 3      | 2_4      |
+						| 2_3       | 4_2    | 2_4      |
+					*/
+					jd.assert(levelPreVals[0] != levelVals[0], fmt.Sprintf("Cannot have two ds with same levels[0]: %d", levelVals[0]))
+					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
+				}
+
+			} else if levelsPre == 3 {
+				/*
+					| levelsPre | levels | newDSIdx |
+					| --------- | ------ | -------- |
+					| 0_1_2     | 0_2_2  | 0_1_3    |
+					| 0_1_2     | 0_3    | 0_1_3    |
+					| 0_1_2     | 1_3    | 0_1_3    |
+					| 0_1_2     | 2      | 0_1_3    |
+				*/
+				jd.assert(levelPreVals[0] == 0, fmt.Sprintf("Cannot have three levels except for cluster migration"))
 				newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], levelPreVals[2]+1)
 			} else {
 				logger.Infof("Unhandled scenario. levelsPre : %v and levels : %v", levelsPre, levels)
@@ -1730,17 +1747,24 @@ func (jd *HandleT) mainCheckLoop() {
 
 		var migrateFrom []dataSetT
 		var insertBeforeDS dataSetT
-		var liveCount int
+		var liveJobCount int
+		var liveDSCount int
 		for idx, ds := range dsList {
+
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
 			logger.Debug("Migrate check", ifMigrate, ds)
-			if idx < len(dsList)-1 && ifMigrate && idx < maxMigrateOnce && liveCount < maxDSSize {
+
+			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idx == len(dsList)-1 {
+				break
+			}
+
+			if ifMigrate {
 				migrateFrom = append(migrateFrom, ds)
 				insertBeforeDS = dsList[idx+1]
-				liveCount += remCount
-			} else {
-				//We migrate from the leftmost onwards
-				//If we cannot migrate one, we stop
+				liveJobCount += remCount
+				liveDSCount++
+			} else if liveDSCount > 0 {
+				// DS is not eligible for migration. But there are data sets on the left eligible to migrate, so break.
 				break
 			}
 		}
@@ -1748,7 +1772,7 @@ func (jd *HandleT) mainCheckLoop() {
 		migrationLoopStat.Start()
 		//Add a temp DS to append to
 		if len(migrateFrom) > 0 {
-			if liveCount > 0 {
+			if liveJobCount > 0 {
 				jd.dsListLock.Lock()
 				migrateTo := jd.addNewDS(insertForMigration, insertBeforeDS)
 				jd.dsListLock.Unlock()

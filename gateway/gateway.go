@@ -39,6 +39,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	uuid "github.com/satori/go.uuid"
+
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -151,7 +152,7 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 		logger.Debug("User Web Request Worker Started", i)
 		var userWebRequestWorker *userWebRequestWorkerT
 		userWebRequestWorker = &userWebRequestWorkerT{
-			webRequestQ:    make(chan *webRequestT),
+			webRequestQ:    make(chan *webRequestT, maxUserWebRequestBatchSize),
 			batchRequestQ:  make(chan *batchWebRequestT),
 			reponseQ:       make(chan map[uuid.UUID]string),
 			workerID:       i,
@@ -376,10 +377,22 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			// set anonymousId if not set in payload
 			var index int
 			result := gjson.GetBytes(body, "batch")
-			newAnonymousID := uuid.NewV4().String()
+
 			var reqMessageIDs []string
+			var notIdentifiable bool
 			result.ForEach(func(_, _ gjson.Result) bool {
-				if strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).String()) == "" {
+				anonIDFromReq := strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).String())
+				userIDFromReq := strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.userId`, index)).String())
+				if anonIDFromReq == "" {
+					if userIDFromReq == "" {
+						notIdentifiable = true
+						return false
+					}
+					newAnonymousID, err := misc.GetMD5UUID(userIDFromReq)
+					if err != nil {
+						notIdentifiable = true
+						return false
+					}
 					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index), newAnonymousID)
 				}
 				if strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String()) == "" {
@@ -391,6 +404,13 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				index++
 				return true // keep iterating
 			})
+
+			if notIdentifiable {
+				req.done <- GetStatus(NonIdentifiableRequest)
+				preDbStoreCount++
+				misc.IncrementMapByKey(writeKeyFailStats, "notIdentifiable", 1)
+				continue
+			}
 
 			if enableDedup {
 				gateway.dedup(&body, reqMessageIDs, allMessageIdsSet, writeKey, writeKeyDupStats)
@@ -591,20 +611,6 @@ func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {
 	return ""
 }
 
-//Function to route incoming web requests to userWebRequestBatcher
-func (gateway *HandleT) webRequestRouter() {
-	for req := range gateway.webRequestQ {
-		userIDHeader := req.request.Header.Get("AnonymousId")
-		//If necessary fetch userID from request body.
-		if userIDHeader == "" {
-			//If the request comes through proxy, proxy would already send this. So this shouldn't be happening in that case
-			userIDHeader = uuid.NewV4().String()
-		}
-		userWebRequestWorker := gateway.findUserWebRequestWorker(userIDHeader)
-		userWebRequestWorker.webRequestQ <- req
-	}
-}
-
 func (gateway *HandleT) printStats() {
 	for {
 		time.Sleep(10 * time.Second)
@@ -694,9 +700,8 @@ func (gateway *HandleT) pixelTrackHandler(w http.ResponseWriter, r *http.Request
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
-	done := make(chan string)
-	req := webRequestT{request: r, writer: &w, done: done, reqType: reqType}
-	gateway.webRequestQ <- &req
+	done := make(chan string, 1)
+	gateway.AddToWebRequestQ(r, &w, done, reqType)
 
 	//Wait for batcher process to be done
 	errorMessage := <-done
@@ -951,8 +956,17 @@ Public methods on GatewayWebhookI
 
 // AddToWebRequestQ provides access to add a request to the gateway's webRequestQ
 func (gateway *HandleT) AddToWebRequestQ(req *http.Request, writer *http.ResponseWriter, done chan string, reqType string) {
+
+	userIDHeader := req.Header.Get("AnonymousId")
+	//If necessary fetch userID from request body.
+	if userIDHeader == "" {
+		//If the request comes through proxy, proxy would already send this. So this shouldn't be happening in that case
+		userIDHeader = uuid.NewV4().String()
+	}
+	userWebRequestWorker := gateway.findUserWebRequestWorker(userIDHeader)
+
 	webReq := webRequestT{request: req, writer: writer, done: done, reqType: reqType}
-	gateway.webRequestQ <- &webReq
+	userWebRequestWorker.webRequestQ <- &webReq
 }
 
 // IncrementRecvCount increments the received count for gateway requests
@@ -1008,9 +1022,8 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	}
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
-	gateway.webRequestQ = make(chan *webRequestT)
-	gateway.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT)
-	gateway.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT)
+	gateway.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, maxDBBatchSize)
+	gateway.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, maxDBWriterProcess)
 	gateway.jobsDB = jobsDB
 
 	gateway.versionHandler = versionHandler
@@ -1031,17 +1044,14 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	}
 
 	rruntime.Go(func() {
-		gateway.webRequestRouter()
-	})
-	rruntime.Go(func() {
 		gateway.backendConfigSubscriber()
 	})
 
 	gateway.initUserWebRequestWorkers()
-	gateway.initDBWriterWorkers()
 	rruntime.Go(func() {
 		gateway.userWorkerRequestBatcher()
 	})
+	gateway.initDBWriterWorkers()
 
 	gateway.backendConfig.WaitForConfig()
 	rruntime.Go(func() {
