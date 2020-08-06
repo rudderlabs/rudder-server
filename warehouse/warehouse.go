@@ -21,8 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -41,6 +39,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
@@ -87,9 +86,6 @@ const (
 	MasterSlaveMode = "master_and_slave"
 	EmbeddedMode    = "embedded"
 )
-
-// DisabledWarehousesWorkerName is the worker identifier for all jobs of warehouse with src/dest disabled
-const DisabledWarehousesWorkerName = "disabled_warehouses"
 
 type HandleT struct {
 	destType             string
@@ -167,13 +163,7 @@ func loadConfig() {
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
-// returns DisabledWarehousesWorkerName if src/dest is disabled
 func workerIdentifier(warehouse warehouseutils.WarehouseT) string {
-	// shove all jobs from disabled source/dest to single worker
-	// this will prevent bloating of number of worker goroutine
-	if !warehouse.Source.Enabled || !warehouse.Destination.Enabled {
-		return DisabledWarehousesWorkerName
-	}
 	return fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
 }
 
@@ -310,15 +300,9 @@ func (wh *HandleT) initWorker(identifier string) chan []ProcessStagingFilesJobT 
 	workerChan := make(chan []ProcessStagingFilesJobT, 100)
 	rruntime.Go(func() {
 		for {
-			processStagingFilesJobList, ok := <-workerChan
-
-			// shut down goroutine when close signal is received
-			if !ok {
-				break
-			}
+			processStagingFilesJobList := <-workerChan
 			wh.handleUploadJobs(processStagingFilesJobList)
 		}
-		logger.Infof("WH: Shutting down worker: %s for warehouse: %s", identifier, wh.destType)
 	})
 	return workerChan
 }
@@ -331,8 +315,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 		configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
 		allSources := config.Data.(backendconfig.SourcesT)
-		// store all identifiers for workers
-		liveWorkers := map[string]bool{"disabled_warehouses": true} // map workerName -> true
 
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
@@ -343,10 +325,10 @@ func (wh *HandleT) backendConfigSubscriber() {
 						wh.warehouses = append(wh.warehouses, warehouse)
 
 						workerName := workerIdentifier(warehouse)
-						liveWorkers[workerName] = true
 						wh.workerChannelMapLock.Lock()
 						// spawn one worker for each unique destID_namespace
-						// and one for all warehouses with either src/dest disabled
+						// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/4a0a10e5faa2c337c457f14c3ad1c32e2abfb006
+						// to avoid creating goroutine for disabled sources/destiantions
 						if _, ok := wh.workerChannelMap[workerName]; !ok {
 							workerChan := wh.initWorker(workerName)
 							wh.workerChannelMap[workerName] = workerChan
@@ -364,19 +346,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 				}
 			}
 		}
-
-		// find all workerNames not going to be used anymore
-		// close the channel for the workerName to shut down the worker goroutine
-		// also remove wh.workerChannelMap
-		for workerName, ch := range wh.workerChannelMap {
-			if _, ok := liveWorkers[workerName]; !ok {
-				close(ch)
-				wh.workerChannelMapLock.Lock()
-				delete(wh.workerChannelMap, workerName)
-				wh.workerChannelMapLock.Unlock()
-			}
-		}
-
 		configSubscriberLock.Unlock()
 	}
 }
