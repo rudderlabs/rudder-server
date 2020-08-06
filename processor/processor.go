@@ -541,13 +541,10 @@ func getBackendEnabledDestinationTypes(writeKey string) map[string]backendconfig
 
 func getTimestampFromEvent(event types.SingularEventT, field string) time.Time {
 	var timestamp time.Time
-	var err error
-	if _, ok := event[field]; ok {
-		timestampStr, typecasted := event[field].(string)
-		if typecasted {
-			timestamp, err = dateparse.ParseAny(timestampStr)
-		}
-		if !typecasted || err != nil {
+	var err bool
+	if evTimestamp, ok := event[field]; ok {
+		timestamp, err = getParsedTimestamp(evTimestamp)
+		if err {
 			timestamp = time.Now()
 		}
 	} else {
@@ -556,18 +553,37 @@ func getTimestampFromEvent(event types.SingularEventT, field string) time.Time {
 	return timestamp
 }
 
+func getParsedTimestamp(timestamp interface{}) (time.Time, bool) {
+	var parsedTimestamp time.Time
+	var err error
+	timestampStr, typecasted := timestamp.(string)
+	if typecasted {
+		parsedTimestamp, err = dateparse.ParseAny(timestampStr)
+	}
+	return parsedTimestamp, !typecasted || err != nil
+}
+
 func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMap types.SingularEventT, receivedAt time.Time) {
 	// set timestamp skew based on timestamp fields from SDKs
 	originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
 	sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
+	var timestamp time.Time
+
+	if evTimestamp, ok := event.Message["timestamp"]; ok {
+		var err bool
+		timestamp, err = getParsedTimestamp(evTimestamp)
+		if err {
+			timestamp = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp)
+		}
+	} else {
+		timestamp = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp)
+	}
 
 	// set all timestamps in RFC3339 format
 	event.Message["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
 	event.Message["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339Milli)
 	event.Message["sentAt"] = sentAt.Format(misc.RFC3339Milli)
-	if _, ok := event.Message["timestamp"]; !ok {
-		event.Message["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339Milli)
-	}
+	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
