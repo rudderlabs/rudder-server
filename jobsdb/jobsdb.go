@@ -593,6 +593,7 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 
 	var minID, maxID sql.NullInt64
 	var prevMax int64
+	var prevIndex string
 
 	if !refreshFromDB {
 		return jd.datasetRangeList
@@ -621,14 +622,47 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 				continue
 			}
 
-			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
+			jd.assert(idx == 0 || jd.arePreLevelsSame(prevIndex, ds.Index) || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
 			jd.datasetRangeList = append(jd.datasetRangeList,
 				dataSetRangeT{minJobID: int64(minID.Int64),
 					maxJobID: int64(maxID.Int64), ds: ds, isEmpty: false})
 			prevMax = maxID.Int64
+			prevIndex = ds.Index
 		}
 	}
 	return jd.datasetRangeList
+}
+
+func (jd *HandleT) arePreLevelsSame(dsIndex1, dsIndex2 string) bool {
+	if len(dsIndex1) == 0 || len(dsIndex2) == 0 {
+		return false
+	}
+
+	srcTokens := strings.Split(dsIndex1, "_")
+	dstTokens := strings.Split(dsIndex2, "_")
+
+	if len(srcTokens) == len(dstTokens) {
+		srcTokens = srcTokens[:len(srcTokens)-1]
+		dstTokens = dstTokens[:len(dstTokens)-1]
+	} else if len(srcTokens) > len(dstTokens) {
+		srcTokens = srcTokens[:len(srcTokens)-1]
+	} else {
+		dstTokens = dstTokens[:len(dstTokens)-1]
+	}
+
+	for _, str1 := range srcTokens {
+		for _, str2 := range dstTokens {
+			if str1 != str2 {
+				return false
+			}
+		}
+	}
+
+	if len(srcTokens) == 0 || len(dstTokens) == 0 {
+		return false
+	}
+
+	return true
 }
 
 /*
