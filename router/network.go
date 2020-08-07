@@ -62,6 +62,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, status str
 		} else {
 			req, err = http.NewRequest(requestMethod, postInfo.URL, nil)
 			if err != nil {
+				logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
 				return 400, "", fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
 			}
 		}
