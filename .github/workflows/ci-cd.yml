@@ -1,0 +1,207 @@
+name: CI_CD
+
+on:
+  pull_request:
+    branches:
+      - stage
+    types: [opened, reopened, edited, synchronize, closed]
+  push:
+    branches:
+      - stage
+      
+jobs:
+  CI_CD:
+    name: CI_CD
+    runs-on: ubuntu-latest
+    
+    steps:
+
+    # Set App Name
+
+    - id: set-app-name
+      name: Set App Name
+      uses: actions/github-script@v2
+      with:
+        result-encoding: string
+        script: |
+          return context.payload.repository.full_name.replace('snapyrautomation/', '')
+
+    - name: Set App CamelCase Name
+      id: set-app-camelcase-name
+      env:
+        CFG_APP_NAME: ${{ steps.set-app-name.outputs.result }}
+      run: |
+        echo "::set-env name=CFG_APP_NAME_CAMELCASE::$(echo "-$CFG_APP_NAME" | sed -r 's/(^|-)([a-z])/\U\2/g')"
+
+    # Checkout code, run tests, build image
+
+    - name: Checkout
+      uses: actions/checkout@v2
+      
+    - name: Test, Build
+      run: docker build -t container-image .
+
+    # Push image to AWS ECR
+
+    - name: Configure AWS credentials - Stage
+      if: github.event_name == 'push' && github.ref == 'refs/heads/stage'
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_STAGE_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_STAGE_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+        
+    - name: Configure AWS credentials - Master
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_MASTER_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_MASTER_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Login to Amazon ECR
+      if: github.event_name == 'push'
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Tag and push image to Amazon ECR
+      if: github.event_name == 'push'
+      id: push-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ steps.set-app-name.outputs.result }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker tag container-image $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+    # Update snapyrautomation/snapyr-infra repo (CD)
+
+    - name: Checkout infra
+      uses: actions/checkout@v2
+      if: github.event_name == 'push'
+      with:
+        repository: snapyrautomation/snapyr-infra
+        token: ${{ secrets.CD_GITHUB_PAT }}
+        path: infra
+        ref: ${{ github.ref }}
+        persist-credentials: false
+        fetch-depth: 0
+
+    - name: Generate the app config
+      if: github.event_name == 'push'
+      env:
+        CFG_APP_NAME: ${{ steps.set-app-name.outputs.result }}
+        CFG_ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        CFG_ECR_IMAGE_HASH: ${{ github.sha }}
+      run: |
+        cd ./infra/_build_apps
+        echo "{\"app-name\": \"$CFG_APP_NAME\", \"app-name-camel-case\": \"$CFG_APP_NAME_CAMELCASE\", \"ecr-registry\": \"$CFG_ECR_REGISTRY\", \"ecr-image-hash\": \"$CFG_ECR_IMAGE_HASH\"}" > app-build.config.json
+        cat ./app-build.config.json
+
+    - name: Build the app terraform files
+      if: github.event_name == 'push'
+      run: |
+        cd ./infra/_build_apps
+        docker build -t app-builder .
+        cd ../
+        docker run -v `pwd`:/app/build --rm app-builder
+        cd ./apps/ecrs
+        
+    - name: Commit files
+      if: github.event_name == 'push'
+      run: |
+        cd ./infra
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add --all
+        git commit -m "Deploy app" -a
+        
+    - name: Push changes
+      uses: snapyrautomation/github-push-action@master
+      if: github.event_name == 'push'
+      with:
+        github_token: ${{ secrets.CD_GITHUB_PAT }}
+        branch: ${{ github.ref }}
+        directory: ./infra
+        repository: snapyrautomation/snapyr-infra
+
+    # Update Asana
+
+    - uses: snapyrautomation/github-asana-action@master
+      name: Verify Asana link exists
+      if: github.event_name == 'pull_request'
+      with:
+        asana-pat: ${{ secrets.ASANA_PAT }}
+        action: assert-link
+        link-required: true
+        github-token: ${{ github.token }}
+
+    - id: set-pr-number
+      name: Set PR Number
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v2
+      with:
+        result-encoding: string
+        script: |
+          return context.ref.split('/')[2]
+          
+    - id: set-pr-status
+      name: Set PR Status
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v2
+      with:
+        result-encoding: string
+        script: |
+          return 'Status: ' + context.payload.action
+          
+    - id: set-repo
+      name: Set Repo
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v2
+      with:
+        result-encoding: string
+        script: |
+          return 'https://github.com/' + context.payload.repository.full_name
+          
+    - id: set-asana-column
+      name: Set Asana Column
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v2
+      with:
+        result-encoding: string
+        script: |
+          if (context.payload.action != 'closed') {
+            return 'Code Review';
+          } else if (context.payload.action == 'closed' && context.payload.pull_request.merged) {
+            return 'Merged';
+          } else {
+            return 'Doing';
+          }
+
+    - uses: snapyrautomation/github-asana-action@master
+      name: Remove any existing Asana comments
+      if: github.event_name == 'pull_request'
+      with:
+        asana-pat: ${{ secrets.ASANA_PAT }}
+        action: 'remove-comment'
+        comment-id: "#PullRequest:${{ steps.set-repo.outputs.result }}/pull/${{ steps.set-pr-number.outputs.result }}"
+
+    - uses: snapyrautomation/github-asana-action@master
+      name: Add a new Asana comment
+      if: github.event_name == 'pull_request'
+      with:
+        asana-pat: ${{ secrets.ASANA_PAT }}
+        action: 'add-comment'
+        comment-id: "#PullRequest:${{ steps.set-repo.outputs.result }}/pull/${{ steps.set-pr-number.outputs.result }}"
+        text: ${{ steps.set-pr-status.outputs.result }}
+        is-pinned: true
+
+    - uses: snapyrautomation/github-asana-action@master
+      name: Move the Asana task to a new section
+      if: github.event_name == 'pull_request' && github.event.pull_request.action != 'closed'
+      with:
+        asana-pat: ${{ secrets.ASANA_PAT }}
+        action: 'move-section'
+        targets: '[{"project": "Snapyr Dev", "section": "${{ steps.set-asana-column.outputs.result }}"}]'
