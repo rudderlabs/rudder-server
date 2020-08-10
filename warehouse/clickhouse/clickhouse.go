@@ -186,10 +186,10 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 }
 
 // columnsWithDataTypes creates columns and its datatype into sql format for creating table
-func columnsWithDataTypes(tableName string, columns map[string]string, sortKeyFields []string) string {
+func columnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
-		if misc.ContainsString(sortKeyFields, columnName) {
+		if misc.ContainsString(notNullableColumns, columnName) {
 			arr = append(arr, fmt.Sprintf(`%s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], true)))
 		} else {
 			arr = append(arr, fmt.Sprintf(`%s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], false)))
@@ -200,8 +200,8 @@ func columnsWithDataTypes(tableName string, columns map[string]string, sortKeyFi
 }
 
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
-func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string, isSortKey bool) string {
-	if isSortKey {
+func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string, notNullableKey bool) string {
+	if notNullableKey {
 		return columnType
 	}
 	if tableName == warehouseutils.UsersTable {
@@ -519,7 +519,9 @@ func (ch *HandleT) createSchema() (err error) {
 */
 func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"id"}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = AggregatingMergeTree() order by %s `, ch.Namespace, name, columnsWithDataTypes(name, columns, sortKeyFields), getSortKeyTuple(sortKeyFields))
+	partitionField := "received_at"
+	notNullableColumns := []string{"received_at", "id"}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) ENGINE = AggregatingMergeTree() ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, columnsWithDataTypes(name, columns, notNullableColumns), getSortKeyTuple(sortKeyFields), partitionField)
 	logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -546,11 +548,12 @@ func (ch *HandleT) createTable(tableName string, columns map[string]string) (err
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"uuid_ts"}
 	}
+	partitionField := "received_at"
 	var sqlStatement string
 	if tableName == warehouseutils.UsersTable {
 		return ch.createUsersTable(tableName, columns)
 	}
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = ReplacingMergeTree() order by %s `, ch.Namespace, tableName, columnsWithDataTypes(tableName, columns, sortKeyFields), getSortKeyTuple(sortKeyFields))
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) ENGINE = ReplacingMergeTree() ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, columnsWithDataTypes(tableName, columns, sortKeyFields), getSortKeyTuple(sortKeyFields), partitionField)
 
 	logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
