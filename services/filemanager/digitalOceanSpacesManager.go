@@ -8,7 +8,7 @@ import (
 	"github.com/minio/minio-go/v6"
 )
 
-func (manager *DOspacesManager) ObjectUrl(objectName string) string {
+func (manager *DOSpacesManager) ObjectUrl(objectName string) string {
 	var protocol = "http"
 	if manager.Config.UseSSL == true {
 		protocol = "https"
@@ -16,7 +16,7 @@ func (manager *DOspacesManager) ObjectUrl(objectName string) string {
 	return protocol + "://" + manager.Config.EndPoint + "/" + manager.Config.Bucket + "/" + objectName
 }
 
-func (manager *DOspacesManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
+func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
 	if manager.Config.Bucket == "" {
 		return UploadOutput{}, errors.New("no storage bucket configured to uploader")
 	}
@@ -51,7 +51,7 @@ func (manager *DOspacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 	return UploadOutput{Location: manager.ObjectUrl(fileName), ObjectName: fileName}, nil
 }
 
-func (manager *DOspacesManager) Download(file *os.File, key string) error {
+func (manager *DOSpacesManager) Download(file *os.File, key string) error {
 	minioClient, err := minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
 	if err != nil {
 		return err
@@ -65,7 +65,7 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 	https://minio-endpoint/bucket-name/key1 - >> key1
 	http://minio-endpoint/bucket-name/key2 - >> key2
 */
-func (manager *DOspacesManager) GetObjectNameFromLocation(location string) (string, error) {
+func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (string, error) {
 	var baseURL string
 	if manager.Config.UseSSL {
 		baseURL += "https://"
@@ -78,11 +78,11 @@ func (manager *DOspacesManager) GetObjectNameFromLocation(location string) (stri
 }
 
 //TODO complete this
-func (manager *DOspacesManager) GetDownloadKeyFromFileLocation(location string) string {
+func (manager *DOSpacesManager) GetDownloadKeyFromFileLocation(location string) string {
 	return location
 }
 
-func GetDOspacesConfig(config map[string]interface{}) *DOspacesConfig {
+func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey string
 	var useSSL, ok bool
 	if config["bucketName"] != nil {
@@ -106,7 +106,7 @@ func GetDOspacesConfig(config map[string]interface{}) *DOspacesConfig {
 		}
 	}
 
-	return &DOspacesConfig{
+	return &DOSpacesConfig{
 		Bucket:          bucketName,
 		Prefix:          prefix,
 		EndPoint:        endPoint,
@@ -116,11 +116,11 @@ func GetDOspacesConfig(config map[string]interface{}) *DOspacesConfig {
 	}
 }
 
-type DOspacesManager struct {
-	Config *DOspacesConfig
+type DOSpacesManager struct {
+	Config *DOSpacesConfig
 }
 
-type DOspacesConfig struct {
+type DOSpacesConfig struct {
 	Bucket          string
 	Prefix          string
 	EndPoint        string

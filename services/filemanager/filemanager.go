@@ -47,8 +47,8 @@ func New(settings *SettingsT) (FileManager, error) {
 			Config: GetMinioConfig(settings.Config),
 		}, nil
 	case "DIGITAL_OCEAN_SPACES":
-		return &DOspacesManager{
-			Config: GetDOspacesConfig(settings.Config),
+		return &DOSpacesManager{
+			Config: GetDOSpacesConfig(settings.Config),
 		}, nil
 	}
 	return nil, errors.New("No provider configured for FileManager")
