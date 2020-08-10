@@ -179,7 +179,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		}
 
 		// mark job as throttled if either dest level event limit reached or dest user level limit reached
-		hasBeenThrottled := rt.throttle(job, paramaters, userID, worker, isPrevFailedUser)
+		hasBeenThrottled := rt.handleThrottle(job, paramaters, userID, worker, isPrevFailedUser)
 		if hasBeenThrottled {
 			continue
 		}
@@ -322,7 +322,7 @@ func (rt *HandleT) handleBackoff(job *jobsdb.JobT, userID string, worker *worker
 	return false
 }
 
-func (rt *HandleT) throttle(job *jobsdb.JobT, paramaters ParametersT, userID string, worker *workerT, isPrevFailedUser bool) bool {
+func (rt *HandleT) handleThrottle(job *jobsdb.JobT, paramaters ParametersT, userID string, worker *workerT, isPrevFailedUser bool) bool {
 	if !rt.throttler.IsEnabled() {
 		return false
 	}
@@ -357,6 +357,8 @@ func durationBeforeNextAttempt(attempt int) (d time.Duration) {
 	b.InitialInterval = minRetryBackoff
 	b.MaxInterval = maxRetryBackoff
 	b.RandomizationFactor = 0
+	b.MaxElapsedTime = 0
+	b.Multiplier = 2
 	b.Reset()
 	for index := 0; index < attempt; index++ {
 		d = b.NextBackOff()

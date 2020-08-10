@@ -93,8 +93,6 @@ func (throttler *HandleT) setLimits() {
 //SetUp eventLimiter
 func (throttler *HandleT) SetUp(destName string) {
 	throttler.destinationName = destName
-	// var userLevelThrottler UserHandleT
-	// throttler.userLevelThrottler = &userLevelThrottler
 	throttler.destLimiter = &Limiter{}
 	throttler.userLimiter = &Limiter{}
 
@@ -114,9 +112,6 @@ func (throttler *HandleT) SetUp(destName string) {
 
 //LimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
 func (throttler *HandleT) LimitReached(destID string, userID string) bool {
-	// do not call LimitReached in single if statement even though both throttlers are enabled
-	// as restrictor.LimitReached has side-effect of incrementing the count for the key
-
 	destKey := fmt.Sprintf(`%s_%s`, throttler.destinationName, destID)
 	userKey := fmt.Sprintf(`%s_%s_%s`, throttler.destinationName, destID, userID)
 
