@@ -2583,14 +2583,17 @@ those whose state hasn't been marked in the DB
 */
 func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 
-	var queryStat stats.RudderStats
+	var queryStat, lockStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
 	}
 	queryStat = stats.NewJobsDBStat(statName+"unprocessed", stats.TimerType, jd.tablePrefix)
+	lockStat = stats.NewJobsDBStat(statName+"unprocessed_lock", stats.TimerType, jd.tablePrefix)
 	queryStat.Start()
 	defer queryStat.End()
+
+	lockStat.Start()
 
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
@@ -2599,6 +2602,8 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
 	defer jd.dsListLock.RUnlock()
+
+	lockStat.End()
 
 	dsList := jd.getDSList(false)
 	outJobs := make([]*JobT, 0)
