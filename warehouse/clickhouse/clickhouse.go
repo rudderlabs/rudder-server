@@ -665,5 +665,6 @@ func (ch *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	if err = ch.MigrateSchema(); err == nil {
 		ch.Export()
 	}
+
 	return
 }
