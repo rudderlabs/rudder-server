@@ -151,6 +151,8 @@ func durationBeforeNextAttempt(attempt int64) time.Duration {
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = minUploadBackoff
 	b.MaxInterval = maxUploadBackoff
+	b.MaxElapsedTime = 0
+	b.Multiplier = 2
 	b.RandomizationFactor = 0
 	b.Reset()
 	for index := int64(0); index < attempt; index++ {
