@@ -67,6 +67,11 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 		return SourcesT{}, false
 	}
 
+	configEnvHandler := workspaceConfig.CommonBackendConfig.configEnvHandler
+	if configEnvReplacementEnabled && configEnvHandler != nil {
+		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
+	}
+
 	var sourcesJSON SourcesT
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {

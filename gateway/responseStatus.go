@@ -39,6 +39,8 @@ const (
 	SourceTransformerInvalidOutputFormatInResponse = "Invalid output format in source transformer response"
 	//SourceTransformerInvalidOutputJSON - Invalid output json in source transformer response
 	SourceTransformerInvalidOutputJSON = "Invalid output json in source transformer response"
+	//NonIdentifiableRequest - Request neither has anonymousId nor userId
+	NonIdentifiableRequest = "Request neither has anonymousId nor userId"
 )
 
 var (
@@ -71,6 +73,7 @@ func loadStatusMap() {
 	statusMap[SourceTransformerInvalidResponseFormat] = ResponseStatus{message: SourceTransformerInvalidResponseFormat, code: http.StatusBadRequest}
 	statusMap[SourceTransformerInvalidOutputFormatInResponse] = ResponseStatus{message: SourceTransformerInvalidOutputFormatInResponse, code: http.StatusBadRequest}
 	statusMap[SourceTransformerInvalidOutputJSON] = ResponseStatus{message: SourceTransformerInvalidOutputJSON, code: http.StatusBadRequest}
+	statusMap[NonIdentifiableRequest] = ResponseStatus{message: NonIdentifiableRequest, code: http.StatusBadRequest}
 }
 
 func GetStatus(key string) string {

@@ -22,7 +22,7 @@ type GatewayWebhookI interface {
 	GetWebhookSourceDefName(writeKey string) (name string, ok bool)
 }
 
-// WebhookI is interface to access Webhook feature
+// WebHookI is interface to access Webhook feature
 type WebHookI interface {
 	RequestHandler(w http.ResponseWriter, r *http.Request)
 	Register(name string)
@@ -31,4 +31,16 @@ type WebHookI interface {
 // SuppressUserI is interface to access Suppress user feature
 type SuppressUserI interface {
 	IsSuppressedUser(userID, sourceID, writeKey string) bool
+}
+
+// ProtocolsI is interface to access Protocols user feature
+type ProtocolsI interface {
+	RecordEventSchema(writeKey string, eventBatch string) bool
+	GetEventModels(w http.ResponseWriter, r *http.Request)
+	GetEventVersions(w http.ResponseWriter, r *http.Request)
+}
+
+// ConfigEnvI is interface to inject env variables into config
+type ConfigEnvI interface {
+	ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte)
 }

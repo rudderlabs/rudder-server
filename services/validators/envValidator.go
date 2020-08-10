@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -164,9 +165,18 @@ func ValidateEnv() bool {
 	return true
 }
 
-//InitializeEnv validates the current environment available for the server
+//InitializeEnv initializes the environment for the server
 func InitializeEnv() {
 	dbHandle := createDBConnection()
+
+	m := &migrator.Migrator{
+		Handle:          dbHandle,
+		MigrationsTable: "node_migrations",
+	}
+	err := m.Migrate("node")
+	if err != nil {
+		panic(fmt.Errorf("Could not run node migrations: %w", err))
+	}
 
 	//create workspace table and insert token
 	createWorkspaceTable(dbHandle)

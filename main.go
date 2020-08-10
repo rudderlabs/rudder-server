@@ -38,6 +38,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse"
 
 	// This is necessary for compatibility with enterprise features
@@ -74,7 +75,7 @@ func loadConfig() {
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	// Enable suppress user feature. true by default
+	// Enable suppress user feature. false by default
 	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
 }
 
@@ -322,7 +323,13 @@ func main() {
 			logger.Info("Suppress User feature is enterprise only. Unable to poll regulations.")
 		}
 	}
-	backendconfig.Setup(pollRegulations)
+
+	var configEnvHandler types.ConfigEnvI
+	if application.Features().ConfigEnv != nil {
+		configEnvHandler = application.Features().ConfigEnv.Setup()
+	}
+
+	backendconfig.Setup(pollRegulations, configEnvHandler)
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)

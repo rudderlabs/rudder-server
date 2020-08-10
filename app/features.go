@@ -53,9 +53,45 @@ func RegisterSuppressUserFeature(f SuppressUserFeatureSetup) {
 	suppressUserFeatureSetup = f
 }
 
+// ProtocolsFeature handles event schemas
+type ProtocolsFeature interface {
+	Setup() types.ProtocolsI
+}
+
+// ProtocolsFeatureSetup is a function that initializes a Protocols feature, based on application instance
+type ProtocolsFeatureSetup func(Interface) ProtocolsFeature
+
+var protocolsFeatureSetup ProtocolsFeatureSetup
+
+// RegisterProtocolsFeature registers a protocols feature implementation
+func RegisterProtocolsFeature(f ProtocolsFeatureSetup) {
+	protocolsFeatureSetup = f
+}
+
+/*********************************
+DestinationConfig Env Support
+*********************************/
+
+// ProtocolsFeature handles event schemas
+type ConfigEnvFeature interface {
+	Setup() types.ConfigEnvI
+}
+
+// ProtocolsFeatureSetup is a function that initializes a Protocols feature, based on application instance
+type ConfigEnvFeatureSetup func(Interface) ConfigEnvFeature
+
+var configEnvFeatureSetup ConfigEnvFeatureSetup
+
+// RegisterProtocolsFeature registers a protocols feature implementation
+func RegisterConfigEnvFeature(f ConfigEnvFeatureSetup) {
+	configEnvFeatureSetup = f
+}
+
 // Features contains optional implementations of Enterprise only features.
 type Features struct {
 	Migrator     MigratorFeature
 	Webhook      WebhookFeature
 	SuppressUser SuppressUserFeature
+	Protocols    ProtocolsFeature
+	ConfigEnv    ConfigEnvFeature
 }

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/services/streammanager/firehose"
 	"github.com/rudderlabs/rudder-server/services/streammanager/eventbridge"
+	"github.com/rudderlabs/rudder-server/services/streammanager/firehose"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
 )
@@ -48,6 +48,10 @@ func CloseProducer(producer interface{}, destination string) error {
 		return fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
 	}
 
+}
+
+type StreamProducer interface {
+	Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string)
 }
 
 // Produce delegates call to appropriate manager based on parameter destination
