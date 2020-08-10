@@ -706,6 +706,15 @@ func (pg *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
 	if err != nil {
 		return
 	}
+	pingResultChannel := make(chan error, 1)
 	defer pg.Db.Close()
-	return pg.Db.Ping()
+	rruntime.Go(func() {
+		pingResultChannel <- pg.Db.Ping()
+	})
+	select {
+	case err = <-pingResultChannel:
+	case <-time.After(5 * time.Second):
+		err = errors.New("connection testing timed out")
+	}
+	return
 }

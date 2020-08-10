@@ -41,14 +41,20 @@ func loadConfig() {
 
 }
 
-func UploadDestinationConnectionTesterResponse(payload DestinationConnectionTesterResponse) {
-	payload.InstanceId = misc.GetNodeID()
+func UploadDestinationConnectionTesterResponse(testResponse string, destinationId string) {
+	payload := DestinationConnectionTesterResponse{
+		Error:         testResponse,
+		TestedAt:      time.Now(),
+		DestinationId: destinationId,
+		InstanceId:    misc.GetNodeID(),
+	}
 	url := fmt.Sprintf("%s/%s", configBackendURL, destinationConnectionTesterEndpoint)
-	makePostRequest(url, payload)
+	if err := makePostRequest(url, payload); err != nil {
+		logger.Errorf("failed to send destination connection response: %v", err)
+	}
 }
 
 func makePostRequest(url string, payload interface{}) error {
-	fmt.Println(payload)
 	rawJSON, err := json.Marshal(payload)
 	if err != nil {
 		logger.Debugf(string(rawJSON))
@@ -70,9 +76,9 @@ func makePostRequest(url string, payload interface{}) error {
 
 		resp, err = client.Do(req)
 		if err != nil {
-			logger.Error("Config Backend connection error", err)
+			logger.Errorf("Config Backend connection error", err)
 			if retryCount > maxRetry {
-				logger.Errorf("Max retries exceeded trying to connect to config backend")
+				logger.Error("Max retries exceeded trying to connect to config backend")
 				return err
 			}
 			retryCount++

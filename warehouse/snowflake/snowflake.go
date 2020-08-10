@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -667,5 +668,14 @@ func (sf *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
 		return
 	}
 	defer sf.Db.Close()
-	return sf.Db.Ping()
+	pingResultChannel := make(chan error, 1)
+	rruntime.Go(func() {
+		pingResultChannel <- sf.Db.Ping()
+	})
+	select {
+	case err = <-pingResultChannel:
+	case <-time.After(5 * time.Second):
+		err = errors.New("connection testing timed out")
+	}
+	return
 }

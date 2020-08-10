@@ -13,13 +13,14 @@ import (
 	"sync"
 	"time"
 
+	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
+
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -90,7 +91,8 @@ func (brt *HandleT) backendConfigSubscriber() {
 						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
 							destination := destination
 							rruntime.Go(func() {
-								testBatchDestinationConnection(destination)
+								testResponse := testBatchDestinationConnection(destination)
+								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 							})
 						}
 					}
@@ -128,7 +130,7 @@ func CreateTestFileForBatchDestination(destinationID string) string {
 		logger.Errorf("BRT: Failed to create tmp dir for testing this destination id %s: err %v", destinationID, err)
 		panic(err)
 	}
-	testFolder := "rudder-test-payload"
+	testFolder := config.GetEnv("WAREHOUSE_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload")
 	path := fmt.Sprintf("%v/%v.txt", tmpDirPath+"/"+testFolder, fmt.Sprintf("%v.%v", destinationID, uuid))
 
 	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
@@ -147,7 +149,7 @@ func CreateTestFileForBatchDestination(destinationID string) string {
 	return gzipFilePath
 }
 
-func UploadTestFileForBatchDestination(filename string, provider string, destination backendconfig.DestinationT) (err error) {
+func UploadTestFileForBatchDestination(filename string, keyPrefixes []string, provider string, destination backendconfig.DestinationT) (err error) {
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config:   misc.GetObjectStorageConfig(provider, destination.Config),
@@ -161,7 +163,9 @@ func UploadTestFileForBatchDestination(filename string, provider string, destina
 		logger.Errorf("BRT: Failed to open file %s for testing this destination id %s: err %v", filename, destination.ID, err)
 		panic(err)
 	}
-	_, err = uploader.Upload(uploadFile)
+	defer misc.RemoveFilePaths(filename)
+	defer uploadFile.Close()
+	_, err = uploader.Upload(uploadFile, keyPrefixes...)
 	if err != nil {
 		logger.Errorf("BRT: Failed to upload test file %s for testing this destination id %s: err %v", filename, destination.ID, err)
 	}
@@ -200,22 +204,15 @@ func DownloadTestFileForBatchDestination(testObjectKey string, provider string, 
 
 }
 
-func testBatchDestinationConnection(destination backendconfig.DestinationT) {
+func testBatchDestinationConnection(destination backendconfig.DestinationT) string {
 	testFileName := CreateTestFileForBatchDestination(destination.ID)
-	err := UploadTestFileForBatchDestination(testFileName, destination.DestinationDefinition.Name, destination)
+	keyPrefixes := []string{config.GetEnv("WAREHOUSE_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload"), destination.ID, time.Now().Format("01-02-2006")}
+	err := UploadTestFileForBatchDestination(testFileName, keyPrefixes, destination.DestinationDefinition.Name, destination)
 	var error string
 	if err != nil {
 		error = err.Error()
 	}
-	testResponse := destinationConnectionTester.DestinationConnectionTesterResponse{
-		Error:         error,
-		TestedAt:      time.Now(),
-		DestinationId: destination.ID,
-	}
-
-	destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse)
-	return
-
+	return error
 }
 
 func updateDestStatusStats(id string, count int, isSuccess bool) {

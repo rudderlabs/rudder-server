@@ -184,7 +184,8 @@ func (wh *HandleT) backendConfigSubscriber() {
 						if val, ok := destination.Config["testConnection"].(bool); ok && val {
 							destination := destination
 							rruntime.Go(func() {
-								testWarehouseDestinationConnection(destination)
+								testResponse := testWarehouseDestinationConnection(destination)
+								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 							})
 						}
 					}
@@ -195,22 +196,24 @@ func (wh *HandleT) backendConfigSubscriber() {
 	}
 }
 
-func testWarehouseDestinationConnection(destination backendconfig.DestinationT) {
+func testWarehouseDestinationConnection(destination backendconfig.DestinationT) string {
 	provider := destination.DestinationDefinition.Name
 	whManager, err := NewWhManager(provider)
 	if err != nil {
 		panic(err)
 	}
-	testFileName := batchrouter.CreateTestFileForBatchDestination(destination.ID)
+	testFileNameWithPath := batchrouter.CreateTestFileForBatchDestination(destination.ID)
 	storageProvider := warehouseutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config)
-	err = batchrouter.UploadTestFileForBatchDestination(testFileName, storageProvider, destination)
-	error := map[string]string{}
+	keyPrefixes := []string{config.GetEnv("WAREHOUSE_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload"), destination.ID, time.Now().Format("01-02-2006")}
+	err = batchrouter.UploadTestFileForBatchDestination(testFileNameWithPath, keyPrefixes, storageProvider, destination)
 	if err != nil {
-		error[storageProvider+"write:"] = err.Error()
+		return err.Error()
 	}
-	err = batchrouter.DownloadTestFileForBatchDestination(testFileName, storageProvider, destination)
+	fileSplit := strings.Split(testFileNameWithPath, "/")
+	keyName := strings.Join(append(keyPrefixes, fileSplit[len(fileSplit)-1]), "/")
+	err = batchrouter.DownloadTestFileForBatchDestination(keyName, storageProvider, destination)
 	if err != nil {
-		error[storageProvider+"read:"] = err.Error()
+		return err.Error()
 	}
 	err = whManager.TestConnection(warehouseutils.ConfigT{
 		Warehouse: warehouseutils.WarehouseT{
@@ -218,17 +221,9 @@ func testWarehouseDestinationConnection(destination backendconfig.DestinationT) 
 		},
 	})
 	if err != nil {
-		error[destination.DestinationDefinition.Name] = err.Error()
+		return err.Error()
 	}
-	errByte, _ := json.Marshal(error)
-	testResponse := destinationConnectionTester.DestinationConnectionTesterResponse{
-		Error:         string(errByte),
-		TestedAt:      time.Now(),
-		DestinationId: destination.ID,
-	}
-	destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse)
-	return
-
+	return ""
 }
 
 func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string) {

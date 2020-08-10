@@ -674,5 +674,14 @@ func (ch *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
 		return
 	}
 	defer ch.Db.Close()
-	return ch.Db.Ping()
+	pingResultChannel := make(chan error, 1)
+	rruntime.Go(func() {
+		pingResultChannel <- ch.Db.Ping()
+	})
+	select {
+	case err = <-pingResultChannel:
+	case <-time.After(5 * time.Second):
+		err = errors.New("connection testing timed out")
+	}
+	return
 }
