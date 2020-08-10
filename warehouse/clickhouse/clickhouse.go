@@ -44,6 +44,7 @@ const (
 	skipVerify    = "skipVerify"
 	caCertificate = "caCertificate"
 )
+const partitionField = "received_at"
 
 // clickhouse doesnt support bool, they recommend to use Uint8 and set 1,0
 
@@ -519,7 +520,6 @@ func (ch *HandleT) createSchema() (err error) {
 */
 func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"id"}
-	partitionField := "received_at"
 	notNullableColumns := []string{"received_at", "id"}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) ENGINE = AggregatingMergeTree() ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, columnsWithDataTypes(name, columns, notNullableColumns), getSortKeyTuple(sortKeyFields), partitionField)
 	logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
@@ -548,7 +548,6 @@ func (ch *HandleT) createTable(tableName string, columns map[string]string) (err
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"uuid_ts"}
 	}
-	partitionField := "received_at"
 	var sqlStatement string
 	if tableName == warehouseutils.UsersTable {
 		return ch.createUsersTable(tableName, columns)
