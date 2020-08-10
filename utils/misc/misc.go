@@ -407,7 +407,7 @@ func GetIPFromReq(req *http.Request) string {
 	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
 	if addresses[0] == "" {
 		splits := strings.Split(req.RemoteAddr, ":")
-		logger.Infof("%#v",req)
+		logger.Debugf("%#v", req)
 		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
 	}
 
