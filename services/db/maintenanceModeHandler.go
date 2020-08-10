@@ -26,7 +26,24 @@ func (handler *MaintenanceModeHandler) HasThresholdReached() bool {
 func (handler *MaintenanceModeHandler) Handle() {
 	logger.Info("Starting Maintenance Mode. Connecting to default DB 'postgres'")
 	dbname := config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
-	misc.ReplaceDB(dbname, "original_"+dbname+"_"+strconv.FormatInt(time.Now().Unix(), 10))
+	targetName := "original_" + dbname + "_" + strconv.FormatInt(time.Now().Unix(), 10)
+	misc.ReplaceDB(dbname, targetName)
+	loadDBConfig(targetName)
+	dbHandle := createDBConnection()
+	createWorkspaceTable(dbHandle)
+	token, created_at, parameters := getWorkspaceData(targetName)
+	insertWorkspaceParams := fmt.Sprintf(`INSERT INTO workspace (token, created_at, parameters)
+									   VALUES ($1, $2, $3)`)
+	stmt, err := dbHandle.Prepare(insertWorkspaceParams)
+	if err != nil {
+		panic(err)
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(token, created_at, parameters)
+	if err != nil {
+		panic(err)
+	}
 	degradedModeHandler := &DegradedModeHandler{recoveryData: handler.recoveryData}
 	degradedModeHandler.Handle()
 }
