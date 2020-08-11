@@ -94,6 +94,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 
 	producerLock, ok := producerDestinationLockMap[destID]
 	if !ok {
+		logger.Errorf("[%s Destination manager] Could not acquire producer lock for destination: %s", customManager.destination, destID)
 		return 400, "Producer Lock not acquired", "Could not acquire Producer Lock"
 	}
 	producerLock.RLock()
