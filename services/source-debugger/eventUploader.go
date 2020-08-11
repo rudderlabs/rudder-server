@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/araddon/dateparse"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -95,17 +94,6 @@ func Setup() {
 	rruntime.Go(func() {
 		flushEvents()
 	})
-}
-
-func getParsedTimestamp(input interface{}) (parsedTimestamp time.Time, valid bool) {
-	if timestampStr, typecasted := input.(string); typecasted {
-		var err error
-		parsedTimestamp, err = dateparse.ParseAny(timestampStr)
-		if err == nil {
-			valid = true
-		}
-	}
-	return
 }
 
 func uploadEvents(eventBuffer []*GatewayEventBatchT) {
