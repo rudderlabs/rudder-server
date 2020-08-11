@@ -1,4 +1,4 @@
-package gateway
+package response
 
 import (
 	"net/http"
@@ -51,6 +51,10 @@ var (
 type ResponseStatus struct {
 	message string
 	code    int
+}
+
+func init() {
+	loadStatusMap()
 }
 
 func loadStatusMap() {

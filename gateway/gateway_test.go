@@ -20,6 +20,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
@@ -541,7 +542,7 @@ var _ = Describe("Gateway", func() {
 			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 			c.expectWriteKeyStat("gateway.work_space_dropped_requests", workspaceID, 1)
 
-			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 400, TooManyRequests+"\n")
+			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 400, response.TooManyRequests+"\n")
 		})
 	})
 
@@ -564,7 +565,7 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_requests", "", 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", "noWriteKey", 1)
 
-				expectHandlerResponse(handler, unauthorizedRequest(nil), 400, NoWriteKeyInBasicAuth+"\n")
+				expectHandlerResponse(handler, unauthorizedRequest(nil), 400, response.NoWriteKeyInBasicAuth+"\n")
 			})
 
 			It("should reject requests without username in Authorization header", func() {
@@ -574,7 +575,7 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_requests", "", 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", "noWriteKey", 1)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 400, NoWriteKeyInBasicAuth+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 400, response.NoWriteKeyInBasicAuth+"\n")
 			})
 
 			It("should reject requests with both userId and anonymousId not present", func() {
@@ -596,7 +597,7 @@ var _ = Describe("Gateway", func() {
 					c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
 				}
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 400, NonIdentifiableRequest+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 400, response.NonIdentifiableRequest+"\n")
 			})
 
 			It("should reject requests without request body", func() {
@@ -605,7 +606,7 @@ var _ = Describe("Gateway", func() {
 
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), 400, RequestBodyNil+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), 400, response.RequestBodyNil+"\n")
 			})
 
 			It("should reject requests without valid json in request body", func() {
@@ -617,7 +618,7 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyInvalid, 1)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(invalidBody)), 400, InvalidJSON+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(invalidBody)), 400, response.InvalidJSON+"\n")
 			})
 
 			It("should reject requests with request bodies larger than configured limit", func() {
@@ -635,7 +636,7 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyInvalid, 0)
 				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyInvalid, 0)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(body)), 400, RequestBodyTooLarge+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(body)), 400, response.RequestBodyTooLarge+"\n")
 			})
 
 			It("should reject requests with invalid write keys", func() {
@@ -649,7 +650,7 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyInvalid, 0)
 				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyInvalid, 0)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), 400, InvalidWriteKey+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), 400, response.InvalidWriteKey+"\n")
 			})
 
 			It("should reject requests with disabled write keys", func() {
@@ -663,7 +664,7 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyDisabled, 0)
 				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyDisabled, 0)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), 400, InvalidWriteKey+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), 400, response.InvalidWriteKey+"\n")
 			})
 		}
 
