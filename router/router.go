@@ -126,7 +126,6 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		var respStatusCode, attempts int
 		var respStatus, respBody string
 		batchTimeStat.Start()
-		logger.Debugf("Router :: trying to send payload to %s. Payload: ", rt.destID, job.EventPayload)
 
 		var userID string
 		var canEventBeMappedToUser bool
@@ -194,7 +193,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		diagnosisStartTime := time.Now()
 		//We can execute thoe job
 		for attempts = 0; attempts < ser; attempts++ {
-			logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", rt.destID, attempts, ser)
+			logger.Debugf("[%v Router] :: Sending payload attempt no. %v of max attempts %v", rt.destID, attempts, ser)
 
 			deliveryTimeStat.Start()
 
@@ -211,6 +210,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				break
 			}
 			if !isSuccessStatus(respStatusCode) {
+				logger.Debugf("[%v Router] :: failed to send payload to %s. Payload: ", rt.destID, string(job.EventPayload))
+
 				reqMetric.RequestRetries = reqMetric.RequestRetries + 1
 				if attempts == ser-1 {
 					reqMetric.RequestAborted = reqMetric.RequestAborted + 1
