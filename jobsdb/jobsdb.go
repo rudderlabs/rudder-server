@@ -1810,7 +1810,7 @@ func (jd *HandleT) migrateDSLoop() {
 		var insertBeforeDS dataSetT
 		var liveJobCount int
 		var liveDSCount int
-		fmt.Println("migrateDSLoop: dslist ", dsList)
+		logger.Info("migrateDSLoop: dslist ", dsList)
 		for idx, ds := range dsList {
 
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
