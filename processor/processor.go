@@ -539,28 +539,23 @@ func getBackendEnabledDestinationTypes(writeKey string) map[string]backendconfig
 	return enabledDestinationTypes
 }
 
-func getTimestampFromEvent(event types.SingularEventT, field string) time.Time {
-	var timestamp time.Time
-	var err bool
-	if evTimestamp, ok := event[field]; ok {
-		timestamp, err = getParsedTimestamp(evTimestamp)
-		if err {
-			timestamp = time.Now()
-		}
-	} else {
+func getTimestampFromEvent(event types.SingularEventT, field string) (timestamp time.Time) {
+	var ok bool
+	if timestamp, ok = getParsedTimestamp(event[field]); !ok {
 		timestamp = time.Now()
 	}
-	return timestamp
+	return
 }
 
-func getParsedTimestamp(timestamp interface{}) (time.Time, bool) {
-	var parsedTimestamp time.Time
-	var err error
-	timestampStr, typecasted := timestamp.(string)
-	if typecasted {
+func getParsedTimestamp(input interface{}) (parsedTimestamp time.Time, valid bool) {
+	if timestampStr, typecasted := input.(string); typecasted {
+		var err error
 		parsedTimestamp, err = dateparse.ParseAny(timestampStr)
+		if err == nil {
+			valid = true
+		}
 	}
-	return parsedTimestamp, !typecasted || err != nil
+	return
 }
 
 func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMap types.SingularEventT, receivedAt time.Time) {
@@ -568,14 +563,12 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 	originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
 	sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
 	var timestamp time.Time
+	var ok bool
 
-	if evTimestamp, ok := event.Message["timestamp"]; ok {
-		var err bool
-		timestamp, err = getParsedTimestamp(evTimestamp)
-		if err {
-			timestamp = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp)
-		}
-	} else {
+	// use existing timestamp if it exists in the event, add new timestamp otherwise
+	if timestamp, ok = getParsedTimestamp(event.Message["timestamp"]); !ok {
+		// calculate new timestamp using using the formula
+		// timestamp = receivedAt - (sentAt - originalTimestamp)
 		timestamp = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp)
 	}
 
