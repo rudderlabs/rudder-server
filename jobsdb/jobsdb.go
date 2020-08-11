@@ -333,7 +333,8 @@ var (
 	maxDSSize, maxMigrateOnce                  int
 	maxTableSize                               int64
 	jobDoneMigrateThres, jobStatusMigrateThres float64
-	mainCheckSleepDuration                     time.Duration
+	migrateDSLoopSleepDuration                 time.Duration
+	addNewDSLoopSleepDuration                  time.Duration
 	backupCheckSleepDuration                   time.Duration
 	useJoinForUnprocessed                      bool
 	backupRowsBatchSize                        int64
@@ -360,7 +361,8 @@ func loadConfig() {
 	maxDSSize: Maximum size of a DS. The process which adds new DS runs in the background
 			(every few seconds) so a DS may go beyond this size
 	maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
-	mainCheckSleepDuration: How often is the loop (which checks for adding/migrating DS) run
+	migrateDSLoopSleepDuration: How often is the loop (which checks for migrating DS) run
+	addNewDSLoopSleepDuration: How often is the loop (which checks for adding new DS) run
 	maxTableSizeInMB: Maximum Table size in MB
 	*/
 	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres", 0.8)
@@ -369,7 +371,8 @@ func loadConfig() {
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	maxTableSize = (config.GetInt64("JobsDB.maxTableSizeInMB", 300) * 1000000)
 	backupRowsBatchSize = config.GetInt64("JobsDB.backupRowsBatchSize", 10000)
-	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(5)) * time.Second)
+	migrateDSLoopSleepDuration = (config.GetDuration("JobsDB.migrateDSLoopSleepDurationInS", time.Duration(5)) * time.Second)
+	addNewDSLoopSleepDuration = (config.GetDuration("JobsDB.addNewDSLoopSleepDurationInS", time.Duration(5)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 
@@ -447,11 +450,11 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		})
 	}
 	rruntime.Go(func() {
-		jd.mainCheckLoop()
+		jd.migrateDSLoop()
 	})
 
 	rruntime.Go(func() {
-		jd.dsSizeCheckLoop()
+		jd.addNewDSLoop()
 	})
 }
 
@@ -1100,7 +1103,7 @@ func (jd *HandleT) terminateQueries() {
 	defer db.Close()
 
 	sqlStatement := fmt.Sprintf("SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid()", dbname)
-	_, err = jd.dbHandle.Exec(sqlStatement)
+	_, err = db.Exec(sqlStatement)
 	jd.assertError(err)
 }
 
@@ -1767,10 +1770,10 @@ so take both the list and data lock
 
 */
 
-func (jd *HandleT) dsSizeCheckLoop() {
+func (jd *HandleT) addNewDSLoop() {
 	for {
-		time.Sleep(mainCheckSleepDuration)
-		logger.Debug("dsSizeCheckLoop:Start")
+		time.Sleep(addNewDSLoopSleepDuration)
+		logger.Debug("addNewDSLoop:Start")
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
 		jd.dsListLock.RUnlock()
@@ -1780,22 +1783,22 @@ func (jd *HandleT) dsSizeCheckLoop() {
 			//Doesn't move any data so we only
 			//take the list lock
 			jd.dsListLock.Lock()
-			logger.Info("dsSizeCheckLoop:NewDS")
+			logger.Info("addNewDSLoop:NewDS")
 			jd.addNewDS(appendToDsList, dataSetT{})
 			jd.dsListLock.Unlock()
 		}
 	}
 }
 
-func (jd *HandleT) mainCheckLoop() {
+func (jd *HandleT) migrateDSLoop() {
 
 	for {
-		time.Sleep(mainCheckSleepDuration)
-		logger.Debug("Main check:Start")
+		time.Sleep(migrateDSLoopSleepDuration)
+		logger.Debug("migrateDSLoop:Start")
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
-			logger.Debugf("[[ MainCheckLoop ]]: migration mode = %s, so skipping internal migrations", jd.migrationState.migrationMode)
+			logger.Debugf("[[ migrateDSLoop ]]: migration mode = %s, so skipping internal migrations", jd.migrationState.migrationMode)
 			continue
 		}
 
@@ -1852,7 +1855,7 @@ func (jd *HandleT) mainCheckLoop() {
 
 				totalJobsMigrated := 0
 				for _, ds := range migrateFrom {
-					logger.Info("Main check:Migrate", ds, migrateTo)
+					logger.Info("migrateDSLoop:Migrate", ds, migrateTo)
 					noJobsMigrated, _ := jd.migrateJobs(ds, migrateTo)
 					totalJobsMigrated += noJobsMigrated
 				}
@@ -2463,7 +2466,7 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 		return statusList[i].JobID < statusList[j].JobID
 	})
 
-	//The order of lock is very important. The mainCheckLoop
+	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
 	jd.dsMigrationLock.RLock()
@@ -2592,7 +2595,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 	queryStat.Start()
 	defer queryStat.End()
 
-	//The order of lock is very important. The mainCheckLoop
+	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
 	jd.dsMigrationLock.RLock()
@@ -2642,7 +2645,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	queryStat.Start()
 	defer queryStat.End()
 
-	//The order of lock is very important. The mainCheckLoop
+	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
 	jd.dsMigrationLock.RLock()
