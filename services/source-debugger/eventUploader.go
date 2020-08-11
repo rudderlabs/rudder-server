@@ -97,14 +97,6 @@ func Setup() {
 	})
 }
 
-func getTimestampFromEvent(event EventUploadT, field string) (timestamp time.Time) {
-	var ok bool
-	if timestamp, ok = getParsedTimestamp(event[field]); !ok {
-		timestamp = time.Now()
-	}
-	return timestamp
-}
-
 func getParsedTimestamp(input interface{}) (parsedTimestamp time.Time, valid bool) {
 	if timestampStr, typecasted := input.(string); typecasted {
 		var err error
