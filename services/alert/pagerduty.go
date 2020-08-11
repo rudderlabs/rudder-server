@@ -11,18 +11,48 @@ import (
 
 var pagerDutyEndPoint = "https://events.pagerduty.com/v2/enqueue"
 
-func (ops *PagerDuty) Alert(message string) {
+var pagerdutyMessageTypesMap = map[string]string{
+	"CRITICAL": "critical",
+	"RECOVERY": "info",
+}
 
-	payload := map[string]interface{}{
-		"summary":  message,
-		"severity": "critical",
+func (ops *PagerDuty) messageType(payload PayloadT) string {
+	var messageType string
+	var ok bool
+	if messageType, ok = pagerdutyMessageTypesMap[payload.MessageType]; !ok {
+		messageType = "CRITICAL"
+	}
+	return messageType
+}
+
+func (ops *PagerDuty) incidentID(payload PayloadT) string {
+	incidentID := payload.IncidentID
+	if incidentID == "" {
+		incidentID = ops.instanceName
+	}
+	return incidentID
+}
+
+func (ops *PagerDuty) action(payload PayloadT) string {
+	eventAction := "trigger"
+	if payload.MessageType == "RECOVERY" {
+		eventAction = "resolve"
+	}
+	return eventAction
+}
+
+func (ops *PagerDuty) Alert(payload PayloadT) {
+	eventDetails := map[string]interface{}{
+		"summary":  payload.Message,
+		"severity": ops.messageType(payload),
 		"source":   ops.instanceName,
 	}
 
 	event := map[string]interface{}{
-		"payload":      payload,
-		"event_action": "trigger",
+		"payload":      eventDetails,
+		"event_action": ops.action(payload),
 		"routing_key":  ops.routingKey,
+		"dedup_key":    ops.incidentID(payload),
 	}
 
 	eventJSON, _ := json.Marshal(event)

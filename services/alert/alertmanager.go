@@ -13,6 +13,11 @@ var (
 	victorOpsRoutingKey string
 )
 
+const (
+	CRITICAL = "CRITICAL"
+	RESOLVED = "RECOVERY"
+)
+
 func init() {
 	loadConfig()
 }
@@ -24,9 +29,15 @@ func loadConfig() {
 	victorOpsRoutingKey = config.GetEnv("VICTOROPS_ROUTING_KEY", "")
 }
 
+type PayloadT struct {
+	IncidentID  string
+	Message     string
+	MessageType string
+}
+
 // AlertManager interface
 type AlertManager interface {
-	Alert(string)
+	Alert(payload PayloadT)
 }
 
 // New returns FileManager backed by configured privider
