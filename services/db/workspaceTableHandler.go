@@ -66,16 +66,6 @@ func createDBConnection() *sql.DB {
 	return dbHandle
 }
 
-func createOriginalDBConnection() *sql.DB {
-	psqlInfo := GetOriginalDBConnectionString()
-	var err error
-	dbHandle, err := sql.Open("postgres", psqlInfo)
-	if err != nil {
-		panic(err)
-	}
-	return dbHandle
-}
-
 func closeDBConnection(handle *sql.DB) {
 	err := handle.Close()
 	if err != nil {
@@ -83,27 +73,9 @@ func closeDBConnection(handle *sql.DB) {
 	}
 }
 
-func closeOriginalDBConnection(handle *sql.DB) {
-	err := handle.Close()
-	if err != nil {
-		panic(err)
-	}
-}
-
-func copyWorkspaceData(originalDBname string) {
-	loadOriginalDBConfig(originalDBname)
-	ogDBhandle := createOriginalDBConnection()
-	insertWorkspaceParams := fmt.Sprintf("INSERT INTO jobsdb.workspace (SELECT * FROM \"%s\".workspace)", originalDBname)
-	_, err := ogDBhandle.Exec(insertWorkspaceParams)
-	if err != nil {
-		panic(err)
-	}
-	closeOriginalDBConnection(ogDBhandle)
-}
-
 func getWorkspaceData(originalDBname string) (string, string, string) {
 	loadOriginalDBConfig(originalDBname)
-	ogDBhandle := createOriginalDBConnection()
+	ogDBhandle := createDBConnection()
 	var token string
 	var created_at string
 	var parameters string
@@ -123,11 +95,6 @@ func getWorkspaceData(originalDBname string) (string, string, string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	closeDBConnection(ogDBhandle)
 	return token, created_at, parameters
-}
-
-func GetOriginalDBConnectionString() string {
-	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
 }

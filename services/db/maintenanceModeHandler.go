@@ -44,6 +44,7 @@ func (handler *MaintenanceModeHandler) Handle() {
 	if err != nil {
 		panic(err)
 	}
+	closeDBConnection(dbHandle)
 	degradedModeHandler := &DegradedModeHandler{recoveryData: handler.recoveryData}
 	degradedModeHandler.Handle()
 }
