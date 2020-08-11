@@ -756,7 +756,9 @@ func GetMD5UUID(str string) (uuid.UUID, error) {
 }
 
 // GetParsedTimestamp returns the parsed timestamp
-func GetParsedTimestamp(input interface{}) (parsedTimestamp time.Time, valid bool) {
+func GetParsedTimestamp(input interface{}) (time.Time, bool){
+	var parsedTimestamp time.Time
+	var valid bool
 	if timestampStr, typecasted := input.(string); typecasted {
 		var err error
 		parsedTimestamp, err = dateparse.ParseAny(timestampStr)
@@ -764,5 +766,5 @@ func GetParsedTimestamp(input interface{}) (parsedTimestamp time.Time, valid boo
 			valid = true
 		}
 	}
-	return
+	return parsedTimestamp, valid
 }
