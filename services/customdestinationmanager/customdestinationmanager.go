@@ -16,9 +16,9 @@ import (
 )
 
 var (
-	objectStreamDestinations []string
-	streamDestinationsMap    map[string]StreamDestination
-	producerLock             sync.RWMutex
+	objectStreamDestinations   []string
+	streamDestinationsMap      map[string]StreamDestination
+	producerDestinationLockMap map[string]*sync.RWMutex
 )
 
 // DestinationManager implements the method to send the events to custom destinations
@@ -44,6 +44,7 @@ func init() {
 func loadConfig() {
 	objectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE"}
 	streamDestinationsMap = make(map[string]StreamDestination)
+	producerDestinationLockMap = make(map[string]*sync.RWMutex)
 }
 
 // newProducer delegates the call to the appropriate manager based on parameter destination for creating producer
@@ -91,6 +92,10 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 
 	streamDestination := StreamDestination{}
 
+	producerLock, ok := producerDestinationLockMap[destID]
+	if !ok {
+		return 400, "Producer Lock not acquired", "Could not acquire Producer Lock"
+	}
 	producerLock.RLock()
 	if streamDestinationsMap[key] != (StreamDestination{}) {
 
@@ -193,6 +198,11 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == customManager.destination && misc.ContainsString(objectStreamDestinations, customManager.destination) {
+						producerLock, ok := producerDestinationLockMap[destination.ID]
+						if !ok {
+							producerLock = &sync.RWMutex{}
+							producerDestinationLockMap[destination.ID] = producerLock
+						}
 						producerLock.Lock()
 						// Producers of stream destinations are created or closed while server starts up or workspace config gets changed
 						createOrUpdateProducer(source.ID, destination.ID, customManager.destination, source.Name, destination)
