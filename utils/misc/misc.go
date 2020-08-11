@@ -25,6 +25,7 @@ import (
 	//"runtime/debug"
 	"time"
 
+	"github.com/araddon/dateparse"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -753,4 +754,18 @@ func GetMD5UUID(str string) (uuid.UUID, error) {
 	u.SetVersion(uuid.V4)
 	u.SetVariant(uuid.VariantRFC4122)
 	return u, err
+}
+
+// GetParsedTimestamp returns the parsed timestamp
+func GetParsedTimestamp(input interface{}) (time.Time, bool){
+	var parsedTimestamp time.Time
+	var valid bool
+	if timestampStr, typecasted := input.(string); typecasted {
+		var err error
+		parsedTimestamp, err = dateparse.ParseAny(timestampStr)
+		if err == nil {
+			valid = true
+		}
+	}
+	return parsedTimestamp, valid
 }
