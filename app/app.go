@@ -58,10 +58,6 @@ func (a *App) initEnterpriseFeatures() {
 		a.features.Migrator = migratorFeatureSetup(a)
 	}
 
-	if webhookFeatureSetup != nil {
-		a.features.Webhook = webhookFeatureSetup(a)
-	}
-
 	if suppressUserFeatureSetup != nil {
 		a.features.SuppressUser = suppressUserFeatureSetup(a)
 	}
