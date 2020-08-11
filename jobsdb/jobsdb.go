@@ -1773,7 +1773,7 @@ so take both the list and data lock
 func (jd *HandleT) addNewDSLoop() {
 	for {
 		time.Sleep(addNewDSLoopSleepDuration)
-		logger.Debug("addNewDSLoop:Start")
+		logger.Info("addNewDSLoop:Start")
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
 		jd.dsListLock.RUnlock()
@@ -1794,7 +1794,7 @@ func (jd *HandleT) migrateDSLoop() {
 
 	for {
 		time.Sleep(migrateDSLoopSleepDuration)
-		logger.Debug("migrateDSLoop:Start")
+		logger.Info("migrateDSLoop:Start")
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
@@ -1810,10 +1810,11 @@ func (jd *HandleT) migrateDSLoop() {
 		var insertBeforeDS dataSetT
 		var liveJobCount int
 		var liveDSCount int
+		fmt.Println("migrateDSLoop: dslist ", dsList)
 		for idx, ds := range dsList {
 
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
-			logger.Debug("Migrate check", ifMigrate, ds)
+			logger.Info("Migrate check", ifMigrate, ds)
 
 			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idx == len(dsList)-1 {
 				break
