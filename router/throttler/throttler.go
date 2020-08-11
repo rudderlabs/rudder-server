@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	settings map[string]Settings
+	destSettingsMap map[string]Settings
 )
 
 //Throttler is an interface for throttling functions
@@ -46,7 +46,7 @@ func init() {
 }
 
 func loadConfig() {
-	settings = map[string]Settings{
+	destSettingsMap = map[string]Settings{
 		// https://customer.io/docs/api/#api-documentationlimits
 		"CUSTOMERIO": {
 			eventLimit:          30,
@@ -68,10 +68,10 @@ func (throttler *HandleT) setLimits() {
 	destName := throttler.destinationName
 
 	// set eventLimit
-	throttler.destLimiter.eventLimit = config.GetInt(fmt.Sprintf(`Router.throttler.%s.limit`, destName), settings[destName].eventLimit)
+	throttler.destLimiter.eventLimit = config.GetInt(fmt.Sprintf(`Router.throttler.%s.limit`, destName), destSettingsMap[destName].eventLimit)
 
 	// set timeWindow
-	throttler.destLimiter.timeWindow = config.GetDuration(fmt.Sprintf(`Router.throttler.%s.timeWindowInS`, destName), time.Duration(settings[destName].timeWindowInS)) * time.Second
+	throttler.destLimiter.timeWindow = config.GetDuration(fmt.Sprintf(`Router.throttler.%s.timeWindowInS`, destName), time.Duration(destSettingsMap[destName].timeWindowInS)) * time.Second
 
 	// enable dest throttler
 	if throttler.destLimiter.eventLimit != 0 && throttler.destLimiter.timeWindow != 0 {
@@ -79,10 +79,10 @@ func (throttler *HandleT) setLimits() {
 	}
 
 	// set eventLimit
-	throttler.userLimiter.eventLimit = config.GetInt(fmt.Sprintf(`Router.throttler.%s.userLevelLimit`, destName), settings[destName].userLevelLimit)
+	throttler.userLimiter.eventLimit = config.GetInt(fmt.Sprintf(`Router.throttler.%s.userLevelLimit`, destName), destSettingsMap[destName].userLevelLimit)
 
 	// set timeWindow
-	throttler.userLimiter.timeWindow = config.GetDuration(fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindowInS`, destName), time.Duration(settings[destName].userLevelTimeWindowInS)) * time.Second
+	throttler.userLimiter.timeWindow = config.GetDuration(fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindowInS`, destName), time.Duration(destSettingsMap[destName].userLevelTimeWindowInS)) * time.Second
 
 	// enable dest throttler
 	if throttler.userLimiter.eventLimit != 0 && throttler.userLimiter.timeWindow != 0 {

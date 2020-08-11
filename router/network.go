@@ -52,19 +52,10 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, status str
 
 		}
 
-		var req *http.Request
-		var err error
-		if useTestSink {
-			req, err = http.NewRequest(requestMethod, testSinkURL, nil)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			req, err = http.NewRequest(requestMethod, postInfo.URL, nil)
-			if err != nil {
-				logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
-				return 400, "", fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
-			}
+		req, err := http.NewRequest(requestMethod, postInfo.URL, nil)
+		if err != nil {
+			logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
+			return 400, "", fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
 		}
 
 		// add queryparams to the url

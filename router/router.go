@@ -56,8 +56,8 @@ type jobResponseT struct {
 	userID string
 }
 
-//ParametersT struct holds source id and destination id of a job
-type ParametersT struct {
+//JobParametersT struct holds source id and destination id of a job
+type JobParametersT struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
 }
@@ -78,7 +78,7 @@ var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
 	maxFailedCountForJob                                                           int
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
-	randomWorkerAssign, useTestSink                                                bool
+	randomWorkerAssign                                                             bool
 	testSinkURL                                                                    string
 	retryTimeWindow, minRetryBackoff, maxRetryBackoff                              time.Duration
 )
@@ -110,7 +110,6 @@ func loadConfig() {
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
 	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
-	useTestSink = config.GetBool("Router.useTestSink", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
@@ -151,7 +150,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			userID, canEventBeMappedToUser = integrations.GetUserIDFromTransformerResponse(job.EventPayload)
 		}
 
-		var paramaters ParametersT
+		var paramaters JobParametersT
 		err := json.Unmarshal(job.Parameters, &paramaters)
 		if err != nil {
 			logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
@@ -166,15 +165,17 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			worker.failedJobIDMutex.RUnlock()
 
 			// mark job as waiting if prev job from same user has not succeeded yet
-			skipSending := isPrevFailedUser && rt.handlePrevFailedUserJob(job, paramaters, userID, worker, previousFailedJobID)
-			if skipSending {
-				continue
+			if isPrevFailedUser {
+				markedAsWaiting := rt.handleJobForPrevFailedUser(job, paramaters, userID, worker, previousFailedJobID)
+				if markedAsWaiting {
+					continue
+				}
 			}
 		}
 
 		// mark job as failed (without incrementing attempts) if same job has failed before and backoff duration not elapsed
-		toBackoff := rt.handleBackoff(job, userID, worker)
-		if toBackoff {
+		shouldBackoff := rt.handleBackoff(job, userID, worker)
+		if shouldBackoff {
 			continue
 		}
 
@@ -184,7 +185,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			continue
 		}
 
-		// START: request to destiantion endpoint
+		// START: request to destination endpoint
 
 		logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", rt.destName, attempts, ser)
 
@@ -202,12 +203,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 
 		deliveryTimeStat.End()
 
-		// END: request to destiantion endpoint
+		// END: request to destination endpoint
 
-		if useTestSink {
-			//Internal test. No reason to sleep
-			break
-		}
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			ExecTime:      time.Now(),
@@ -282,7 +279,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 	}
 }
 
-func (rt *HandleT) handlePrevFailedUserJob(job *jobsdb.JobT, paramaters ParametersT, userID string, worker *workerT, previousFailedJobID int64) bool {
+func (rt *HandleT) handleJobForPrevFailedUser(job *jobsdb.JobT, paramaters JobParametersT, userID string, worker *workerT, previousFailedJobID int64) (markedAsWaiting bool) {
 	// job is behind in queue of failed job from same user
 	if previousFailedJobID < job.JobID {
 		logger.Debugf("[%v Router] :: skipping processing job for userID: %v since prev failed job exists, prev id %v, current id %v", rt.destName, userID, previousFailedJobID, job.JobID)
@@ -304,7 +301,7 @@ func (rt *HandleT) handlePrevFailedUserJob(job *jobsdb.JobT, paramaters Paramete
 	return false
 }
 
-func (rt *HandleT) handleBackoff(job *jobsdb.JobT, userID string, worker *workerT) bool {
+func (rt *HandleT) handleBackoff(job *jobsdb.JobT, userID string, worker *workerT) (shouldBackoff bool) {
 	// if the same job has failed before, check for next retry time
 	if nextRetryTime, ok := worker.retryForJobMap[job.JobID]; ok && nextRetryTime.Sub(time.Now()) > 0 {
 		logger.Debugf("[%v Router] :: Less than next retry time: %v", rt.destName, nextRetryTime)
@@ -322,7 +319,7 @@ func (rt *HandleT) handleBackoff(job *jobsdb.JobT, userID string, worker *worker
 	return false
 }
 
-func (rt *HandleT) handleThrottle(job *jobsdb.JobT, paramaters ParametersT, userID string, worker *workerT, isPrevFailedUser bool) bool {
+func (rt *HandleT) handleThrottle(job *jobsdb.JobT, paramaters JobParametersT, userID string, worker *workerT, isPrevFailedUser bool) (hasBeenThrottled bool) {
 	if !rt.throttler.IsEnabled() {
 		return false
 	}
