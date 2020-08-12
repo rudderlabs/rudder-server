@@ -386,9 +386,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	}
 
 	worker := rt.workers[index]
-	if worker == nil {
-		panic(fmt.Errorf("worker is nil"))
-	}
 
 	if !canEventBeMappedToUser {
 		return worker
