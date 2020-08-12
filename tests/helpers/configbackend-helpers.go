@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	host, user, password, dbname string
-	port                         int
+	host, user, password, dbname, sslmode string
+	port                                  int
 )
 
 func init() {
@@ -24,12 +24,13 @@ func loadConfig() {
 	dbname = config.GetEnv("CONFIG_DB_DB_NAME", "postgresDB")
 	port, _ = strconv.Atoi(config.GetEnv("CONFIG_DB_PORT", "5433"))
 	password = config.GetEnv("CONFIG_DB_PASSWORD", "postgres")
+	sslmode = config.GetEnv("JOBS_DB_SSL_MODE", "disable")
 }
 
 func GetConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+		"password=%s dbname=%s sslmode=%s",
+		host, port, user, password, dbname, sslmode)
 }
 
 // FetchEventSchemaCount returns count of event_uploads table

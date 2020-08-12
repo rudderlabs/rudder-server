@@ -65,9 +65,10 @@ func (r *ReplayProcessorT) getDBConnectionString() string {
 	dbname := config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
 	port, _ := strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
 	password := config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+	sslmode := config.GetEnv("JOBS_DB_SSL_MODE", "disable")
 	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+		"password=%s dbname=%s sslmode=%s",
+		host, port, user, password, dbname, sslmode)
 }
 
 func (r *ReplayProcessorT) Setup(gatewayDB *jobsdb.HandleT) {
