@@ -842,7 +842,7 @@ func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT 
 		}
 	}()
 
-	return jd.createDS(newDSType, newDSIdx)
+	return jd.createDS(appendLast, newDSIdx)
 }
 
 func (jd *HandleT) computeNewIdxForAppend() string {
@@ -947,7 +947,7 @@ type transactionHandler interface {
 	//Only the function that passes *sql.Tx should do the commit or rollback based on the error it receives
 }
 
-func (jd *HandleT) createDS(newDSType string, newDSIdx string) dataSetT {
+func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	var newDS dataSetT
 	newDS.JobTable, newDS.JobStatusTable = jd.createTableNames(newDSIdx)
 	newDS.Index = newDSIdx
@@ -984,7 +984,7 @@ func (jd *HandleT) createDS(newDSType string, newDSIdx string) dataSetT {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
-	if newDSType == appendToDsList {
+	if appendLast {
 		newDSWithSeqNumber := jd.setSequenceNumber(newDSIdx)
 		jd.JournalMarkDone(opID)
 		return newDSWithSeqNumber
@@ -1773,7 +1773,7 @@ so take both the list and data lock
 func (jd *HandleT) addNewDSLoop() {
 	for {
 		time.Sleep(addNewDSLoopSleepDuration)
-		logger.Info("addNewDSLoop:Start")
+		logger.Infof("[[ %s : addNewDSLoop ]]: Start", jd.tablePrefix)
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
 		jd.dsListLock.RUnlock()
@@ -1783,7 +1783,7 @@ func (jd *HandleT) addNewDSLoop() {
 			//Doesn't move any data so we only
 			//take the list lock
 			jd.dsListLock.Lock()
-			logger.Info("addNewDSLoop:NewDS")
+			logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
 			jd.addNewDS(appendToDsList, dataSetT{})
 			jd.dsListLock.Unlock()
 		}
@@ -1794,11 +1794,11 @@ func (jd *HandleT) migrateDSLoop() {
 
 	for {
 		time.Sleep(migrateDSLoopSleepDuration)
-		logger.Info("migrateDSLoop:Start")
+		logger.Infof("[[ %s : migrateDSLoop ]]: Start", jd.tablePrefix)
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
-			logger.Debugf("[[ migrateDSLoop ]]: migration mode = %s, so skipping internal migrations", jd.migrationState.migrationMode)
+			logger.Debugf("[[ %s : migrateDSLoop ]]: migration mode = %s, so skipping internal migrations", jd.tablePrefix, jd.migrationState.migrationMode)
 			continue
 		}
 
@@ -1810,11 +1810,11 @@ func (jd *HandleT) migrateDSLoop() {
 		var insertBeforeDS dataSetT
 		var liveJobCount int
 		var liveDSCount int
-		logger.Info("migrateDSLoop: dslist ", dsList)
+		logger.Infof("[[ %s : migrateDSLoop ]]: dslist %v", jd.tablePrefix, dsList)
 		for idx, ds := range dsList {
 
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
-			logger.Info("Migrate check", ifMigrate, ds)
+			logger.Infof("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
 
 			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idx == len(dsList)-1 {
 				break
@@ -1843,9 +1843,9 @@ func (jd *HandleT) migrateDSLoop() {
 				migrateTo := jd.addNewDS(insertForMigration, insertBeforeDS)
 				jd.dsListLock.Unlock()
 
-				logger.Info("Migrate from:", migrateFrom)
-				logger.Info("Next:", insertBeforeDS)
-				logger.Info("To:", migrateTo)
+				logger.Info("[[ %s : migrateDSLoop ]]: Migrate from: %v", jd.tablePrefix, migrateFrom)
+				logger.Info("[[ %s : migrateDSLoop ]]: Next: %v", jd.tablePrefix, insertBeforeDS)
+				logger.Info("[[ %s : migrateDSLoop ]]: To: %v", jd.tablePrefix, migrateTo)
 				//Mark the start of copy operation. If we fail here
 				//we just delete the new DS being copied into. The
 				//sources are still around
@@ -1856,7 +1856,7 @@ func (jd *HandleT) migrateDSLoop() {
 
 				totalJobsMigrated := 0
 				for _, ds := range migrateFrom {
-					logger.Info("migrateDSLoop:Migrate", ds, migrateTo)
+					logger.Info("[[ %s : migrateDSLoop ]]: Migrate: %v to: %v", jd.tablePrefix, ds, migrateTo)
 					noJobsMigrated, _ := jd.migrateJobs(ds, migrateTo)
 					totalJobsMigrated += noJobsMigrated
 				}
