@@ -413,6 +413,9 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	jd.BackupSettings = jd.getBackUpSettings()
 
+	//Kill any pending queries
+	jd.terminateQueries()
+
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
 
@@ -420,9 +423,6 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.assertError(err)
 
 	logger.Infof("Connected to %s DB", tablePrefix)
-
-	//Kill any pending queries
-	jd.terminateQueries()
 
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
