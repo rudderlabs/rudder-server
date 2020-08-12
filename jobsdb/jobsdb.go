@@ -119,7 +119,6 @@ type dataSetRangeT struct {
 	maxJobID  int64
 	startTime int64
 	endTime   int64
-	isEmpty   bool
 	ds        dataSetT
 }
 
@@ -613,14 +612,15 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 		err := row.Scan(&minID, &maxID)
 		jd.assertError(err)
 		logger.Debug(sqlStatement, minID, maxID)
-		//We store ranges EXCEPT for the last element
-		//which is being actively written to.
+		//We store ranges EXCEPT for
+		// 1. the last element (which is being actively written to)
+		// 2. Migration target ds
 		if idx < len(dsList)-1 && (jd.inProgressMigrationTargetDS == nil || jd.inProgressMigrationTargetDS.Index != ds.Index) {
 			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
 			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
 			jd.datasetRangeList = append(jd.datasetRangeList,
 				dataSetRangeT{minJobID: int64(minID.Int64),
-					maxJobID: int64(maxID.Int64), ds: ds, isEmpty: false})
+					maxJobID: int64(maxID.Int64), ds: ds})
 			prevMax = maxID.Int64
 		}
 	}
@@ -2442,10 +2442,6 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 	dsRangeList := jd.getDSRangeList(false)
 	updatedStatesByDS = make(map[dataSetT][]string)
 	for _, ds := range dsRangeList {
-		if ds.isEmpty {
-			continue
-		}
-
 		minID := ds.minJobID
 		maxID := ds.maxJobID
 		//We have processed upto (but excluding) lastPos on statusList.
@@ -2486,9 +2482,9 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 
 	//The last (most active DS) might not have range element as it is being written to
 	if lastPos < len(statusList) {
-		//Make sure the last range is missing
+		//Make sure range is missing for the last ds and migration ds (if at all present)
 		dsList := jd.getDSList(false)
-		jd.assert(len(dsRangeList) == len(dsList)-1, fmt.Sprintf("len(dsRangeList):%d != len(dsList):%d-1", len(dsRangeList), len(dsList)))
+		jd.assert(len(dsRangeList) >= len(dsList)-2, fmt.Sprintf("len(dsRangeList):%d < len(dsList):%d-2", len(dsRangeList), len(dsList)))
 		//Update status in the last element
 		logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
 		var updatedStates []string
