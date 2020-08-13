@@ -1,7 +1,7 @@
 ![Build Status][build status]
 [![Release]][release]
 
-# [![RudderStack](https://user-images.githubusercontent.com/7383674/90139466-0bbd2700-dd96-11ea-88d8-0fba53535921.png)](https://rudderstack.com)
+# [![RudderStack](https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png)](https://rudderstack.com)
 
 # What is RudderStack?
 
