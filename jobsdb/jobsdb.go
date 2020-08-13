@@ -156,6 +156,7 @@ type HandleT struct {
 	isStatDropDSPeriodInitialized bool
 	jobsdbQueryTimeStat           stats.RudderStats
 	migrationState                MigrationState
+	inProgressMigrationTargetDS   *dataSetT
 }
 
 //The struct which is written to the journal
@@ -329,13 +330,14 @@ var (
 )
 
 var (
-	maxDSSize, maxMigrateOnce                  int
-	maxTableSize                               int64
-	jobDoneMigrateThres, jobStatusMigrateThres float64
-	mainCheckSleepDuration                     time.Duration
-	backupCheckSleepDuration                   time.Duration
-	useJoinForUnprocessed                      bool
-	backupRowsBatchSize                        int64
+	maxDSSize, maxMigrateOnce, maxMigrateDSProbe int
+	maxTableSize                                 int64
+	jobDoneMigrateThres, jobStatusMigrateThres   float64
+	migrateDSLoopSleepDuration                   time.Duration
+	addNewDSLoopSleepDuration                    time.Duration
+	backupCheckSleepDuration                     time.Duration
+	useJoinForUnprocessed                        bool
+	backupRowsBatchSize                          int64
 )
 
 //Different scenarios for addNewDS
@@ -359,16 +361,20 @@ func loadConfig() {
 	maxDSSize: Maximum size of a DS. The process which adds new DS runs in the background
 			(every few seconds) so a DS may go beyond this size
 	maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
-	mainCheckSleepDuration: How often is the loop (which checks for adding/migrating DS) run
+	maxMigrateDSProbe: Maximum number of DSs that are checked from left to right if they are eligible for migration
+	migrateDSLoopSleepDuration: How often is the loop (which checks for migrating DS) run
+	addNewDSLoopSleepDuration: How often is the loop (which checks for adding new DS) run
 	maxTableSizeInMB: Maximum Table size in MB
 	*/
 	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres", 0.8)
 	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres", 5)
 	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
+	maxMigrateDSProbe = config.GetInt("JobsDB.maxMigrateDSProbe", 10)
 	maxTableSize = (config.GetInt64("JobsDB.maxTableSizeInMB", 300) * 1000000)
 	backupRowsBatchSize = config.GetInt64("JobsDB.backupRowsBatchSize", 10000)
-	mainCheckSleepDuration = (config.GetDuration("JobsDB.mainCheckSleepDurationInS", time.Duration(2)) * time.Second)
+	migrateDSLoopSleepDuration = (config.GetDuration("JobsDB.migrateDSLoopSleepDurationInS", time.Duration(30)) * time.Second)
+	addNewDSLoopSleepDuration = (config.GetDuration("JobsDB.addNewDSLoopSleepDurationInS", time.Duration(5)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 
@@ -408,6 +414,9 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	jd.BackupSettings = jd.getBackUpSettings()
 
+	//Kill any pending queries
+	jd.terminateQueries()
+
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
 
@@ -415,9 +424,6 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.assertError(err)
 
 	logger.Infof("Connected to %s DB", tablePrefix)
-
-	//Kill any pending queries
-	jd.terminateQueries()
 
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
@@ -446,9 +452,12 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		})
 	}
 	rruntime.Go(func() {
-		jd.mainCheckLoop()
+		jd.migrateDSLoop()
 	})
 
+	rruntime.Go(func() {
+		jd.addNewDSLoop()
+	})
 }
 
 /*
@@ -605,11 +614,12 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 		err := row.Scan(&minID, &maxID)
 		jd.assertError(err)
 		logger.Debug(sqlStatement, minID, maxID)
-		//We store ranges EXCEPT for the last element
-		//which is being actively written to.
-		if idx < len(dsList)-1 {
+		//We store ranges EXCEPT for
+		// 1. the last element (which is being actively written to)
+		// 2. Migration target ds
+		if idx < len(dsList)-1 && (jd.inProgressMigrationTargetDS == nil || jd.inProgressMigrationTargetDS.Index != ds.Index) {
 			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
-			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v", idx, prevMax, minID.Int64))
+			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
 			jd.datasetRangeList = append(jd.datasetRangeList,
 				dataSetRangeT{minJobID: int64(minID.Int64),
 					maxJobID: int64(maxID.Int64), ds: ds})
@@ -792,14 +802,8 @@ func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT 
 			jd.isStatNewDSPeriodInitialized = true
 		}
 	}()
-	newDS := jd.createDS(newDSIdx)
-	if appendLast {
-		newDSWithSeqNumber := jd.setSequenceNumber(newDSIdx)
-		return newDSWithSeqNumber
-	}
-	//This is the migration case. We don't yet update the in-memory list till
-	//we finish the migration
-	return newDS
+
+	return jd.createDS(appendLast, newDSIdx)
 }
 
 func (jd *HandleT) computeNewIdxForAppend() string {
@@ -904,7 +908,7 @@ type transactionHandler interface {
 	//Only the function that passes *sql.Tx should do the commit or rollback based on the error it receives
 }
 
-func (jd *HandleT) createDS(newDSIdx string) dataSetT {
+func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	var newDS dataSetT
 	newDS.JobTable, newDS.JobStatusTable = jd.createTableNames(newDSIdx)
 	newDS.Index = newDSIdx
@@ -941,8 +945,15 @@ func (jd *HandleT) createDS(newDSIdx string) dataSetT {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
-	jd.JournalMarkDone(opID)
+	if appendLast {
+		newDSWithSeqNumber := jd.setSequenceNumber(newDSIdx)
+		jd.JournalMarkDone(opID)
+		return newDSWithSeqNumber
+	}
 
+	//This is the migration case. We don't yet update the in-memory list till
+	//we finish the migration
+	jd.JournalMarkDone(opID)
 	return newDS
 }
 
@@ -954,8 +965,8 @@ func (jd *HandleT) setSequenceNumber(newDSIdx string) dataSetT {
 	dList := jd.getDSList(true)
 	dRangeList := jd.getDSRangeList(true)
 
-	//We should not have range values for the last element (the new DS)
-	jd.assert(len(dList) == len(dRangeList)+1, fmt.Sprintf("len(dList):%d != len(dRangeList):%d+1", len(dList), len(dRangeList)))
+	//We should not have range values for the last element (the new DS) and migrationTargetDS (if found)
+	jd.assert(len(dList) == len(dRangeList)+1 || len(dList) == len(dRangeList)+2, fmt.Sprintf("len(dList):%d != len(dRangeList):%d (+1 || +2)", len(dList), len(dRangeList)))
 
 	//Now set the min JobID for the new DS just added to be 1 more than previous max
 	if len(dRangeList) > 0 {
@@ -1044,11 +1055,16 @@ func (jd *HandleT) renameDS(ds dataSetT, allowMissing bool) {
 }
 
 func (jd *HandleT) terminateQueries() {
-	sqlStatement := `SELECT pg_terminate_backend(pg_stat_activity.pid)
-                           FROM pg_stat_activity
-                         WHERE datname = current_database()
-                            AND pid <> pg_backend_pid()`
-	_, err := jd.dbHandle.Exec(sqlStatement)
+	connInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=disable",
+		host, port, user, password)
+	db, err := sql.Open("postgres", connInfo)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	sqlStatement := fmt.Sprintf("SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid()", dbname)
+	_, err = db.Exec(sqlStatement)
 	jd.assertError(err)
 }
 
@@ -1186,6 +1202,8 @@ func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 			jd.dropDS(ds, false)
 		}
 	}
+
+	jd.inProgressMigrationTargetDS = nil
 
 	//Refresh the in-memory lists
 	jd.getDSList(true)
@@ -1715,11 +1733,10 @@ so take both the list and data lock
 
 */
 
-func (jd *HandleT) mainCheckLoop() {
-
+func (jd *HandleT) addNewDSLoop() {
 	for {
-		time.Sleep(mainCheckSleepDuration)
-		logger.Debug("Main check:Start")
+		time.Sleep(addNewDSLoopSleepDuration)
+		logger.Infof("[[ %s : addNewDSLoop ]]: Start", jd.tablePrefix)
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
 		jd.dsListLock.RUnlock()
@@ -1729,28 +1746,38 @@ func (jd *HandleT) mainCheckLoop() {
 			//Doesn't move any data so we only
 			//take the list lock
 			jd.dsListLock.Lock()
-			logger.Info("Main check:NewDS")
+			logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
 			jd.addNewDS(appendToDsList, dataSetT{})
 			jd.dsListLock.Unlock()
 		}
+	}
+}
+
+func (jd *HandleT) migrateDSLoop() {
+
+	for {
+		time.Sleep(migrateDSLoopSleepDuration)
+		logger.Infof("[[ %s : migrateDSLoop ]]: Start", jd.tablePrefix)
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
-			logger.Debugf("[[ MainCheckLoop ]]: migration mode = %s, so skipping internal migrations", jd.migrationState.migrationMode)
+			logger.Debugf("[[ %s : migrateDSLoop ]]: migration mode = %s, so skipping internal migrations", jd.tablePrefix, jd.migrationState.migrationMode)
 			continue
 		}
 
-		//Take the lock and run actual migration
-		jd.dsMigrationLock.Lock()
+		jd.dsListLock.RLock()
+		dsList := jd.getDSList(false)
+		jd.dsListLock.RUnlock()
 
 		var migrateFrom []dataSetT
 		var insertBeforeDS dataSetT
 		var liveJobCount int
 		var liveDSCount int
+		var migrateDSProbeCount int
 		for idx, ds := range dsList {
 
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
-			logger.Debug("Migrate check", ifMigrate, ds)
+			logger.Infof("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
 
 			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idx == len(dsList)-1 {
 				break
@@ -1761,11 +1788,17 @@ func (jd *HandleT) mainCheckLoop() {
 				insertBeforeDS = dsList[idx+1]
 				liveJobCount += remCount
 				liveDSCount++
-			} else if liveDSCount > 0 {
+			} else if liveDSCount > 0 || migrateDSProbeCount > maxMigrateDSProbe {
 				// DS is not eligible for migration. But there are data sets on the left eligible to migrate, so break.
 				break
 			}
+
+			migrateDSProbeCount++
 		}
+
+		//Take the lock and run actual migration
+		jd.dsMigrationLock.Lock()
+
 		migrationLoopStat := stats.NewJobsDBStat("migration_loop", stats.TimerType, jd.tablePrefix)
 		migrationLoopStat.Start()
 		//Add a temp DS to append to
@@ -1773,11 +1806,12 @@ func (jd *HandleT) mainCheckLoop() {
 			if liveJobCount > 0 {
 				jd.dsListLock.Lock()
 				migrateTo := jd.addNewDS(insertForMigration, insertBeforeDS)
+				jd.inProgressMigrationTargetDS = &migrateTo
 				jd.dsListLock.Unlock()
 
-				logger.Info("Migrate from:", migrateFrom)
-				logger.Info("Next:", insertBeforeDS)
-				logger.Info("To:", migrateTo)
+				logger.Infof("[[ %s : migrateDSLoop ]]: Migrate from: %v", jd.tablePrefix, migrateFrom)
+				logger.Infof("[[ %s : migrateDSLoop ]]: Next: %v", jd.tablePrefix, insertBeforeDS)
+				logger.Infof("[[ %s : migrateDSLoop ]]: To: %v", jd.tablePrefix, migrateTo)
 				//Mark the start of copy operation. If we fail here
 				//we just delete the new DS being copied into. The
 				//sources are still around
@@ -1788,11 +1822,18 @@ func (jd *HandleT) mainCheckLoop() {
 
 				totalJobsMigrated := 0
 				for _, ds := range migrateFrom {
-					logger.Info("Main check:Migrate", ds, migrateTo)
+					logger.Infof("[[ %s : migrateDSLoop ]]: Migrate: %v to: %v", jd.tablePrefix, ds, migrateTo)
 					noJobsMigrated, _ := jd.migrateJobs(ds, migrateTo)
 					totalJobsMigrated += noJobsMigrated
 				}
-				jd.assert(totalJobsMigrated > 0, "The number of jobs to migrate is 0 or less. Shouldn't be the case given we have a liveCount check")
+
+				if totalJobsMigrated <= 0 {
+					jd.dsListLock.Lock()
+					jd.dropDS(migrateTo, false)
+					jd.inProgressMigrationTargetDS = nil
+					jd.dsListLock.Unlock()
+				}
+
 				jd.JournalMarkDone(opID)
 			}
 
@@ -2228,8 +2269,10 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 
 	var opTypes []string
 	switch goRoutineType {
+	case addDSGoRoutine:
+		opTypes = []string{addDSOperation}
 	case mainGoRoutine:
-		opTypes = []string{addDSOperation, migrateCopyOperation, postMigrateDSOperation, dropDSOperation}
+		opTypes = []string{migrateCopyOperation, postMigrateDSOperation, dropDSOperation}
 	case backupGoRoutine:
 		opTypes = []string{backupDSOperation, backupDropDSOperation}
 	case migratorRoutine:
@@ -2336,12 +2379,14 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 }
 
 const (
+	addDSGoRoutine  = "addDS"
 	mainGoRoutine   = "main"
 	backupGoRoutine = "backup"
 	migratorRoutine = "migrator"
 )
 
 func (jd *HandleT) recoverFromJournal() {
+	jd.recoverFromCrash(addDSGoRoutine)
 	jd.recoverFromCrash(mainGoRoutine)
 	jd.recoverFromCrash(backupGoRoutine)
 	if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
@@ -2389,7 +2434,7 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 		return statusList[i].JobID < statusList[j].JobID
 	})
 
-	//The order of lock is very important. The mainCheckLoop
+	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
 	jd.dsMigrationLock.RLock()
@@ -2442,9 +2487,9 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 
 	//The last (most active DS) might not have range element as it is being written to
 	if lastPos < len(statusList) {
-		//Make sure the last range is missing
+		//Make sure range is missing for the last ds and migration ds (if at all present)
 		dsList := jd.getDSList(false)
-		jd.assert(len(dsRangeList) == len(dsList)-1, fmt.Sprintf("len(dsRangeList):%d != len(dsList):%d-1", len(dsRangeList), len(dsList)))
+		jd.assert(len(dsRangeList) >= len(dsList)-2, fmt.Sprintf("len(dsRangeList):%d < len(dsList):%d-2", len(dsRangeList), len(dsList)))
 		//Update status in the last element
 		logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
 		var updatedStates []string
@@ -2514,7 +2559,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 	queryStat.Start()
 	defer queryStat.End()
 
-	//The order of lock is very important. The mainCheckLoop
+	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
 	jd.dsMigrationLock.RLock()
@@ -2564,7 +2609,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	queryStat.Start()
 	defer queryStat.End()
 
-	//The order of lock is very important. The mainCheckLoop
+	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
 	jd.dsMigrationLock.RLock()

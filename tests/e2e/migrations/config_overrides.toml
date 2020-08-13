@@ -1,6 +1,7 @@
 [JobsDB]
 maxDSSize = 10
-mainCheckSleepDurationInS = 2
+migrateDSLoopSleepDurationInS = 2
+addNewDSLoopSleepDurationInS = 2
 backupCheckSleepDurationIns = 5
 enableBackup = false
 
