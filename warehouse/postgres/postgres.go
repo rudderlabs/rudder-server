@@ -711,10 +711,11 @@ func (pg *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
 	rruntime.Go(func() {
 		pingResultChannel <- pg.Db.Ping()
 	})
+	var timeOut time.Duration = 5
 	select {
 	case err = <-pingResultChannel:
-	case <-time.After(5 * time.Second):
-		err = errors.New("connection testing timed out")
+	case <-time.After(timeOut * time.Second):
+		err = errors.New(fmt.Sprintf("connection testing timed out after %v sec", timeOut))
 	}
 	return
 }

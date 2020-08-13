@@ -21,12 +21,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/warehousemanager"
+
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
@@ -40,11 +41,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
@@ -204,7 +200,7 @@ func (wh *HandleT) handleUploadJobs(processStagingFilesJobList []ProcessStagingF
 			}
 			// consolidate schema if not already done
 			schemaInDB, err := warehouseutils.GetCurrentSchema(wh.dbHandle, job.Warehouse)
-			whManager, err := NewWhManager(wh.destType)
+			whManager, err := warehousemanager.NewWhManager(wh.destType)
 			if err != nil {
 				panic(err)
 			}
@@ -349,7 +345,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 						if val, ok := destination.Config["testConnection"].(bool); ok && val {
 							destination := destination
 							rruntime.Go(func() {
-								testResponse := testWarehouseDestinationConnection(destination)
+								testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination)
 								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 							})
 						}
@@ -359,36 +355,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 		}
 		configSubscriberLock.Unlock()
 	}
-}
-
-func testWarehouseDestinationConnection(destination backendconfig.DestinationT) string {
-	provider := destination.DestinationDefinition.Name
-	whManager, err := NewWhManager(provider)
-	if err != nil {
-		panic(err)
-	}
-	testFileNameWithPath := batchrouter.CreateTestFileForBatchDestination(destination.ID)
-	storageProvider := warehouseutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config)
-	keyPrefixes := []string{config.GetEnv("WAREHOUSE_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload"), destination.ID, time.Now().Format("01-02-2006")}
-	err = batchrouter.UploadTestFileForBatchDestination(testFileNameWithPath, keyPrefixes, storageProvider, destination)
-	if err != nil {
-		return err.Error()
-	}
-	fileSplit := strings.Split(testFileNameWithPath, "/")
-	keyName := strings.Join(append(keyPrefixes, fileSplit[len(fileSplit)-1]), "/")
-	err = batchrouter.DownloadTestFileForBatchDestination(keyName, storageProvider, destination)
-	if err != nil {
-		return err.Error()
-	}
-	err = whManager.TestConnection(warehouseutils.ConfigT{
-		Warehouse: warehouseutils.WarehouseT{
-			Destination: destination,
-		},
-	})
-	if err != nil {
-		return err.Error()
-	}
-	return ""
 }
 
 // syncLiveWarehouseStatus fetch last 10 records order by updated_at desc and sends uploadIds in reverse order to recordDeliveryStatus.
@@ -774,35 +740,6 @@ func setLastExec(warehouse warehouseutils.WarehouseT) {
 	lastExecMap[connectionString(warehouse)] = timeutil.Now().Unix()
 }
 
-type WarehouseManager interface {
-	Process(config warehouseutils.ConfigT) error
-	CrashRecover(config warehouseutils.ConfigT) (err error)
-	FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (map[string]map[string]string, error)
-	TestConnection(config warehouseutils.ConfigT) error
-}
-
-func NewWhManager(destType string) (WarehouseManager, error) {
-	switch destType {
-	case "RS":
-		var rs redshift.HandleT
-		return &rs, nil
-	case "BQ":
-		var bq bigquery.HandleT
-		return &bq, nil
-	case "SNOWFLAKE":
-		var sf snowflake.HandleT
-		return &sf, nil
-	case "POSTGRES":
-		var pg postgres.HandleT
-		return &pg, nil
-	case "CLICKHOUSE":
-		var ch clickhouse.HandleT
-		return &ch, nil
-	}
-
-	return nil, errors.New("no provider configured for WarehouseManager")
-}
-
 func (wh *HandleT) mainLoop() {
 	for {
 		wh.configSubscriberLock.RLock()
@@ -825,7 +762,7 @@ func (wh *HandleT) mainLoop() {
 
 			_, ok := inRecoveryMap[warehouse.Destination.ID]
 			if ok {
-				whManager, err := NewWhManager(wh.destType)
+				whManager, err := warehousemanager.NewWhManager(wh.destType)
 				if err != nil {
 					panic(err)
 				}
@@ -1067,7 +1004,7 @@ func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err e
 		}
 	}
 	logger.Infof("WH: Starting load flow for %s:%s", wh.destType, job.Warehouse.Destination.ID)
-	whManager, err := NewWhManager(wh.destType)
+	whManager, err := warehousemanager.NewWhManager(wh.destType)
 	if err != nil {
 		panic(err)
 	}

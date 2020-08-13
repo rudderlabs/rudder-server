@@ -53,8 +53,6 @@ var (
 	warehouseServiceMaxRetryTimeinHr   time.Duration
 )
 
-var batchRouterTestPayload = "ok"
-
 type HandleT struct {
 	destType                string
 	batchDestinations       []DestinationT
@@ -91,7 +89,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
 							destination := destination
 							rruntime.Go(func() {
-								testResponse := testBatchDestinationConnection(destination)
+								testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
 								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 							})
 						}
@@ -121,98 +119,6 @@ type StorageUploadOutput struct {
 
 type ErrorResponseT struct {
 	Error string
-}
-
-func CreateTestFileForBatchDestination(destinationID string) string {
-	uuid := uuid.NewV4()
-	tmpDirPath, err := misc.CreateTMPDIR()
-	if err != nil {
-		logger.Errorf("BRT: Failed to create tmp dir for testing this destination id %s: err %v", destinationID, err)
-		panic(err)
-	}
-	testFolder := config.GetEnv("WAREHOUSE_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload")
-	path := fmt.Sprintf("%v/%v.txt", tmpDirPath+"/"+testFolder, fmt.Sprintf("%v.%v", destinationID, uuid))
-
-	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
-	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
-	if err != nil {
-		logger.Errorf("BRT: Failed to make dir %s for testing this destination id %s: err %v", gzipFilePath, destinationID, err)
-		panic(err)
-	}
-	gzWriter, err := misc.CreateGZ(gzipFilePath)
-	if err != nil {
-		logger.Errorf("BRT: Failed to create gzip writer for testing this destination id %s: err %v", gzipFilePath, destinationID, err)
-		panic(err)
-	}
-	gzWriter.WriteGZ(batchRouterTestPayload)
-	gzWriter.CloseGZ()
-	return gzipFilePath
-}
-
-func UploadTestFileForBatchDestination(filename string, keyPrefixes []string, provider string, destination backendconfig.DestinationT) (err error) {
-	uploader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: provider,
-		Config:   misc.GetObjectStorageConfig(provider, destination.Config),
-	})
-	if err != nil {
-		logger.Errorf("BRT: Failed to get filemanager config for testing this destination id %s: err %v", destination.ID, err)
-		panic(err)
-	}
-	uploadFile, err := os.Open(filename)
-	if err != nil {
-		logger.Errorf("BRT: Failed to open file %s for testing this destination id %s: err %v", filename, destination.ID, err)
-		panic(err)
-	}
-	defer misc.RemoveFilePaths(filename)
-	defer uploadFile.Close()
-	_, err = uploader.Upload(uploadFile, keyPrefixes...)
-	if err != nil {
-		logger.Errorf("BRT: Failed to upload test file %s for testing this destination id %s: err %v", filename, destination.ID, err)
-	}
-	return err
-}
-
-func DownloadTestFileForBatchDestination(testObjectKey string, provider string, destination backendconfig.DestinationT) (err error) {
-	downloader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: provider,
-		Config:   misc.GetObjectStorageConfig(provider, destination.Config),
-	})
-	if err != nil {
-		logger.Errorf("BRT: Failed to get filemanager config for testing this destination id %s: err %v", destination.ID, err)
-		panic(err)
-	}
-
-	localTmpDirName := "/rudder-raw-data-dest-upload-crash-recovery/"
-	tmpDirPath, err := misc.CreateTMPDIR()
-	if err != nil {
-		panic(err)
-	}
-	jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
-	err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
-	jsonFile, err := os.Create(jsonPath)
-	if err != nil {
-		panic(err)
-	}
-	err = downloader.Download(jsonFile, testObjectKey)
-	if err != nil {
-		logger.Errorf("BRT: Failed to download test file %s for testing this destination id %s: err %v", testObjectKey, destination.ID, err)
-	}
-
-	jsonFile.Close()
-	os.Remove(jsonPath)
-	return err
-
-}
-
-func testBatchDestinationConnection(destination backendconfig.DestinationT) string {
-	testFileName := CreateTestFileForBatchDestination(destination.ID)
-	keyPrefixes := []string{config.GetEnv("WAREHOUSE_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload"), destination.ID, time.Now().Format("01-02-2006")}
-	err := UploadTestFileForBatchDestination(testFileName, keyPrefixes, destination.DestinationDefinition.Name, destination)
-	var error string
-	if err != nil {
-		error = err.Error()
-	}
-	return error
 }
 
 func updateDestStatusStats(id string, count int, isSuccess bool) {
