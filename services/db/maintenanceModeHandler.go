@@ -28,10 +28,10 @@ func (handler *MaintenanceModeHandler) Handle() {
 	dbname := config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
 	targetName := "original_" + dbname + "_" + strconv.FormatInt(time.Now().Unix(), 10)
 	misc.ReplaceDB(dbname, targetName)
-	loadDBConfig(targetName)
+	loadDBConfig()
 	dbHandle := createDBConnection()
 	createWorkspaceTable(dbHandle)
-	token, created_at, parameters := getWorkspaceData(targetName)
+	workspaceData := getWorkspaceData(targetName)
 	insertWorkspaceParams := fmt.Sprintf(`INSERT INTO workspace (token, created_at, parameters)
 									   VALUES ($1, $2, $3)`)
 	stmt, err := dbHandle.Prepare(insertWorkspaceParams)
@@ -40,7 +40,7 @@ func (handler *MaintenanceModeHandler) Handle() {
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(token, created_at, parameters)
+	_, err = stmt.Exec(workspaceData.token, workspaceData.created_at, workspaceData.parameters)
 	if err != nil {
 		panic(err)
 	}

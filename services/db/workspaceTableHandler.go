@@ -14,6 +14,12 @@ var (
 	port                         int
 )
 
+type WorkspaceDataT struct {
+	token      string
+	created_at string
+	parameters string
+}
+
 func loadOriginalDBConfig(originalDBname string) {
 	host = config.GetEnv("JOBS_DB_HOST", "localhost")
 	user = config.GetEnv("JOBS_DB_USER", "ubuntu")
@@ -23,7 +29,7 @@ func loadOriginalDBConfig(originalDBname string) {
 
 }
 
-func loadDBConfig(originalDBname string) {
+func loadDBConfig() {
 	host = config.GetEnv("JOBS_DB_HOST", "localhost")
 	user = config.GetEnv("JOBS_DB_USER", "ubuntu")
 	dbname = config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
@@ -73,12 +79,10 @@ func closeDBConnection(handle *sql.DB) {
 	}
 }
 
-func getWorkspaceData(originalDBname string) (string, string, string) {
+func getWorkspaceData(originalDBname string) WorkspaceDataT {
+	workspaceData := WorkspaceDataT{}
 	loadOriginalDBConfig(originalDBname)
 	ogDBhandle := createDBConnection()
-	var token string
-	var created_at string
-	var parameters string
 	sqlStatement := fmt.Sprintf(`SELECT * FROM workspace`)
 	rows, err := ogDBhandle.Query(sqlStatement)
 	if err != nil {
@@ -86,7 +90,7 @@ func getWorkspaceData(originalDBname string) (string, string, string) {
 	}
 	defer rows.Close()
 	for rows.Next() {
-		err := rows.Scan(&token, &created_at, &parameters)
+		err := rows.Scan(&workspaceData.token, &workspaceData.created_at, &workspaceData.parameters)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -96,5 +100,5 @@ func getWorkspaceData(originalDBname string) (string, string, string) {
 		log.Fatal(err)
 	}
 	closeDBConnection(ogDBhandle)
-	return token, created_at, parameters
+	return workspaceData
 }
