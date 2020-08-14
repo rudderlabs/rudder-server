@@ -324,8 +324,8 @@ func (jd *HandleT) checkValidJobState(stateFilters []string) {
 }
 
 var (
-	host, user, password, dbname, sslmode 	string
-	port                         			int
+	host, user, password, dbname, sslmode string
+	port                                  int
 )
 
 var (
