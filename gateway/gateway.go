@@ -20,11 +20,12 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/dgraph-io/badger"
-	. "github.com/onsi/ginkgo"
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -89,7 +90,6 @@ var BatchEvent = []byte(`
 
 func init() {
 	loadConfig()
-	loadStatusMap()
 }
 
 type userWorkerBatchRequestT struct {
@@ -133,7 +133,7 @@ type HandleT struct {
 	diagnosisTicker                               *time.Ticker
 	webRequestBatchCount                          uint64
 	userWebRequestWorkers                         []*userWebRequestWorkerT
-	webhookHandler                                types.WebHookI
+	webhookHandler                                *webhook.HandleT
 	suppressUserHandler                           types.SuppressUserI
 	protocolHandler                               types.ProtocolsI
 	versionHandler                                func(w http.ResponseWriter, r *http.Request)
@@ -285,7 +285,6 @@ func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebReque
 }
 
 func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
-	defer GinkgoRecover()
 	for breq := range userWebRequestWorker.batchRequestQ {
 		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
 		var jobList []*jobsdb.JobT
@@ -310,7 +309,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			writeKey, _, ok := req.request.BasicAuth()
 			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if !ok || writeKey == "" {
-				req.done <- GetStatus(NoWriteKeyInBasicAuth)
+				req.done <- response.GetStatus(response.NoWriteKeyInBasicAuth)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
 				continue
@@ -318,7 +317,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 			ipAddr := misc.GetIPFromReq(req.request)
 			if req.request.Body == nil {
-				req.done <- GetStatus(RequestBodyNil)
+				req.done <- response.GetStatus(response.RequestBodyNil)
 				preDbStoreCount++
 				continue
 			}
@@ -329,7 +328,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
 				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 				if gateway.rateLimiter.LimitReached(restrictorKey) {
-					req.done <- GetStatus(TooManyRequests)
+					req.done <- response.GetStatus(response.TooManyRequests)
 					preDbStoreCount++
 					misc.IncrementMapByKey(workspaceDropRequestStats, restrictorKey, 1)
 					continue
@@ -337,13 +336,13 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			if err != nil {
-				req.done <- GetStatus(RequestBodyReadFailed)
+				req.done <- response.GetStatus(response.RequestBodyReadFailed)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
 			}
 			if !gjson.ValidBytes(body) {
-				req.done <- GetStatus(InvalidJSON)
+				req.done <- response.GetStatus(response.InvalidJSON)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
@@ -351,7 +350,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(writeKeyEventStats, writeKey, totalEventsInReq)
 			if len(body) > maxReqSize {
-				req.done <- GetStatus(RequestBodyTooLarge)
+				req.done <- response.GetStatus(response.RequestBodyTooLarge)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
@@ -362,7 +361,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			// this prevents not setting sourceID in gw job if disabled before setting it
 			sourceID := gateway.getSourceIDForWriteKey(writeKey)
 			if !gateway.isWriteKeyEnabled(writeKey) {
-				req.done <- GetStatus(InvalidWriteKey)
+				req.done <- response.GetStatus(response.InvalidWriteKey)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
@@ -406,7 +405,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			})
 
 			if notIdentifiable {
-				req.done <- GetStatus(NonIdentifiableRequest)
+				req.done <- response.GetStatus(response.NonIdentifiableRequest)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, "notIdentifiable", 1)
 				continue
@@ -711,8 +710,8 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 		logger.Debug(errorMessage)
 		http.Error(w, errorMessage, 400)
 	} else {
-		logger.Debug(GetStatus(Ok))
-		w.Write([]byte(GetStatus(Ok)))
+		logger.Debug(response.GetStatus(response.Ok))
+		w.Write([]byte(response.GetStatus(response.Ok)))
 	}
 }
 
@@ -812,10 +811,10 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 			// send req to webHandler
 			gateway.webHandler(w, req, reqType)
 		} else {
-			http.Error(w, NoWriteKeyInQueryParams, http.StatusUnauthorized)
+			http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
 		}
 	} else {
-		http.Error(w, InvalidRequestMethod, http.StatusBadRequest)
+		http.Error(w, response.InvalidRequestMethod, http.StatusBadRequest)
 	}
 }
 
@@ -861,10 +860,7 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
 	srvMux.HandleFunc("/version", gateway.versionHandler)
-
-	if gateway.application.Features().Webhook != nil {
-		srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
-	}
+	srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
 
 	// Protocols
 	srvMux.HandleFunc("/protocols/event-models", gateway.webEventModelsHandler)
@@ -905,7 +901,7 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				enabledWriteKeysSourceMap[source.WriteKey] = source.ID
-				if gateway.application.Features().Webhook != nil && source.SourceDefinition.Category == "webhook" {
+				if source.SourceDefinition.Category == "webhook" {
 					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
 					gateway.webhookHandler.Register(source.SourceDefinition.Name)
 				}
@@ -1028,12 +1024,9 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	gateway.versionHandler = versionHandler
 
-	admin.RegisterStatusHandler("Gateway", &GatewayAdmin{handle: gateway})
+	gateway.webhookHandler = webhook.Setup(gateway)
 
-	//gateway.webhookHandler should be initialised before workspace config fetch.
-	if gateway.application.Features().Webhook != nil {
-		gateway.webhookHandler = application.Features().Webhook.Setup(gateway)
-	}
+	admin.RegisterStatusHandler("Gateway", &GatewayAdmin{handle: gateway})
 
 	if gateway.application.Features().SuppressUser != nil {
 		gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
