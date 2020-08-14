@@ -1266,7 +1266,6 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 							if _, ok := outputFileMap[discardsTable]; !ok {
 								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
-								defer gzWriter.CloseGZ()
 								if err != nil {
 									return nil, err
 								}
@@ -1363,7 +1362,6 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 							if _, ok := outputFileMap[discardsTable]; !ok {
 								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
-								defer gzWriter.CloseGZ()
 								if err != nil {
 									return nil, err
 								}
@@ -1446,13 +1444,12 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		if err != nil {
 			panic(err)
 		}
-		defer stmt.Close()
-
 		var fileID int64
 		err = stmt.QueryRow(job.StagingFileID, uploadLocation.Location, job.SourceID, job.DestinationID, job.DestinationType, tableName, eventsCountMap[tableName], timeutil.Now()).Scan(&fileID)
 		if err != nil {
 			panic(err)
 		}
+		stmt.Close()
 		loadFileIDs = append(loadFileIDs, fileID)
 	}
 	timer.End()
