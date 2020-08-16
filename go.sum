@@ -381,8 +381,6 @@ github.com/nakagami/firebirdsql v0.0.0-20190310045651-3c02a58cfed8/go.mod h1:86w
 github.com/neo4j-drivers/gobolt v1.7.4/go.mod h1:O9AUbip4Dgre+CD3p40dnMD4a4r52QBIfblg5k7CTbE=
 github.com/neo4j/neo4j-go-driver v1.7.4/go.mod h1:aPO0vVr+WnhEJne+FgFjfsjzAnssPFLucHgGZ76Zb/U=
 github.com/oklog/ulid v1.3.1/go.mod h1:CirwcVhetQ6Lv90oh/F+FBtV6XMibvdAFo93nm5qn4U=
-github.com/onsi/d v0.0.0-20170123170539-1e9f90ec95b8 h1:oKu217jCIAAOCqdRtxmqW3Jvkc71KCGGjfdAjzi94pE=
-github.com/onsi/d v0.0.0-20170123170539-1e9f90ec95b8/go.mod h1:87In6zIY4rgnWG+3cTqzLFJ9JwuVlWPLQiPzODo1+Mk=
 github.com/onsi/ginkgo v1.6.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+WWjE=
 github.com/onsi/ginkgo v1.7.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+WWjE=
 github.com/onsi/ginkgo v1.10.1 h1:q/mM8GF/n0shIN8SaAZ0V+jnLPzen6WIVZdiwrRlMlo=
@@ -448,13 +446,7 @@ github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c h1:rsRTAcCR5CeN
 github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c/go.mod h1:kJ9mm9YmoWSkk+oQ+5Cj8DEoRCX2JT6As4kEtIIOp1M=
 github.com/segmentio/ksuid v1.0.2 h1:9yBfKyw4ECGTdALaF09Snw3sLJmYIX6AbPJrAy6MrDc=
 github.com/segmentio/ksuid v1.0.2/go.mod h1:BXuJDr2byAiHuQaQtSKoXh1J0YmUDurywOXgB2w+OSU=
-github.com/shanemhansen/countish v0.0.0-20170731142240-ef3623535edd h1:ub6mYNNDiglFuzdU+mUtUyRgU7b0EEN8iZwi7fUdWK8=
-github.com/shanemhansen/countish v0.0.0-20170731142240-ef3623535edd/go.mod h1:e6uY5QI7g6+LtFtxEiSOI7Crw2+//lhsNf+kSuxl5kw=
 github.com/shopspring/decimal v0.0.0-20180709203117-cd690d0c9e24/go.mod h1:M+9NzErvs504Cn4c5DxATwIqPbtswREoFCre64PpcG4=
-github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749 h1:bUGsEnyNbVPw06Bs80sCeARAlK8lhwqGyi6UT8ymuGk=
-github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749/go.mod h1:ZY1cvUeJuFPAdZ/B6v7RHavJWZn2YPVFQ1OSXhCGOkg=
-github.com/shurcooL/vfsgen v0.0.0-20200627165143-92b8a710ab6c h1:XLPw6rny9Vrrvrzhw8pNLrC2+x/kH0a/3gOx5xWDa6Y=
-github.com/shurcooL/vfsgen v0.0.0-20200627165143-92b8a710ab6c/go.mod h1:TrYk7fJVaAttu97ZZKrO9UbRa8izdowaMIZcxYMbVaw=
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMBDgk/93Q=
 github.com/sirupsen/logrus v1.4.2 h1:SPIRibHv4MatM3XXNO2BJeFLZwZ2LvZgfQ5+UNI2im4=
