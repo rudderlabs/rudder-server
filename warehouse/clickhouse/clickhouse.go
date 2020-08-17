@@ -667,3 +667,24 @@ func (ch *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	}
 	return
 }
+
+// TestConnection is used destination connection tester to test the clickhouse connection
+func (ch *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	ch.Warehouse = config.Warehouse
+	ch.Db, err = connect(ch.getConnectionCredentials())
+	if err != nil {
+		return
+	}
+	defer ch.Db.Close()
+	pingResultChannel := make(chan error, 1)
+	rruntime.Go(func() {
+		pingResultChannel <- ch.Db.Ping()
+	})
+	var timeOut time.Duration = 5
+	select {
+	case err = <-pingResultChannel:
+	case <-time.After(timeOut * time.Second):
+		err = errors.New(fmt.Sprintf("connection testing timed out after %v sec", timeOut))
+	}
+	return
+}
