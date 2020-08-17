@@ -20,6 +20,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
@@ -101,10 +102,15 @@ type context struct {
 	mockRateLimiter   *mocksRateLimiter.MockRateLimiter
 	mockStats         *mocksStats.MockStats
 
-	mockStatGatewayResponseTime *mocksStats.MockRudderStats
-	mockStatGatewayBatchSize    *mocksStats.MockRudderStats
-	mockStatGatewayBatchTime    []*mocksStats.MockRudderStats
-	mockVersionHandler          func(w http.ResponseWriter, r *http.Request)
+	mockStatGatewayResponseTime     *mocksStats.MockRudderStats
+	mockStatGatewayBatchSize        *mocksStats.MockRudderStats
+	mockStatDBWritesStat            *mocksStats.MockRudderStats
+	mockStatDBWorkersBufferFullStat *mocksStats.MockRudderStats
+	mockStatDBWorkersTimeOutStat    *mocksStats.MockRudderStats
+	mockStatGatewayBatchTime        []*mocksStats.MockRudderStats
+	mockStatGatewayBufferFullStat   []*mocksStats.MockRudderStats
+	mockStatGatewayTimeOutStat      []*mocksStats.MockRudderStats
+	mockVersionHandler              func(w http.ResponseWriter, r *http.Request)
 
 	//Enterprise mocks
 	mockSuppressUser        *mocksTypes.MockSuppressUserI
@@ -113,21 +119,39 @@ type context struct {
 
 func (c *context) initializeSetupStats() {
 	c.mockStatGatewayBatchSize = mocksStats.NewMockRudderStats(c.mockCtrl)
+	c.mockStatDBWritesStat = mocksStats.NewMockRudderStats(c.mockCtrl)
+	c.mockStatDBWorkersBufferFullStat = mocksStats.NewMockRudderStats(c.mockCtrl)
+	c.mockStatDBWorkersTimeOutStat = mocksStats.NewMockRudderStats(c.mockCtrl)
 	c.mockStatGatewayBatchTime = make([]*mocksStats.MockRudderStats, maxUserWebRequestWorkerProcess)
+	c.mockStatGatewayBufferFullStat = make([]*mocksStats.MockRudderStats, maxUserWebRequestWorkerProcess)
+	c.mockStatGatewayTimeOutStat = make([]*mocksStats.MockRudderStats, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
 		c.mockStatGatewayBatchTime[i] = mocksStats.NewMockRudderStats(c.mockCtrl)
+		c.mockStatGatewayBufferFullStat[i] = mocksStats.NewMockRudderStats(c.mockCtrl)
+		c.mockStatGatewayTimeOutStat[i] = mocksStats.NewMockRudderStats(c.mockCtrl)
 		//Since we have 64 User request batch workers, not all workers might get
 		//Start and End calls while running tests. So using AnyTimes() instead of Times(1)
 		c.mockStatGatewayBatchTime[i].EXPECT().Start().AnyTimes()
 		c.mockStatGatewayBatchTime[i].EXPECT().End().AnyTimes()
+		c.mockStatGatewayBufferFullStat[i].EXPECT().Count(1).AnyTimes()
+		c.mockStatGatewayTimeOutStat[i].EXPECT().Count(1).AnyTimes()
 	}
 
 	// During Setup, gateway always creates the following stats
 	c.mockStats.EXPECT().NewStat("gateway.batch_size", stats.CountType).Return(c.mockStatGatewayBatchSize).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_size.new"))
+	c.mockStats.EXPECT().NewStat("gateway.db_writes", stats.CountType).Return(c.mockStatDBWritesStat).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.db_writes.new"))
+	c.mockStats.EXPECT().NewStat("gateway.db_workers_buffer_full", stats.CountType).Return(c.mockStatDBWorkersBufferFullStat).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.db_workers_buffer_full.new"))
+	c.mockStats.EXPECT().NewStat("gateway.db_workers_time_out", stats.CountType).Return(c.mockStatDBWorkersTimeOutStat).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.db_workers_time_out.new"))
 
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
 		c.mockStats.EXPECT().NewBatchStat("gateway.batch_time", stats.TimerType, i).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_time.new")).DoAndReturn(func(Name string, StatType string, index int) *mocksStats.MockRudderStats {
 			return c.mockStatGatewayBatchTime[index]
+		})
+		c.mockStats.EXPECT().NewBatchStat(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full", i), stats.CountType, i).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full.new", i))).DoAndReturn(func(Name string, StatType string, index int) *mocksStats.MockRudderStats {
+			return c.mockStatGatewayBufferFullStat[index]
+		})
+		c.mockStats.EXPECT().NewBatchStat(fmt.Sprintf("gateway.user_request_worker_%d_time_out", i), stats.CountType, i).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("gateway.user_request_worker_%d_time_out.new", i))).DoAndReturn(func(Name string, StatType string, index int) *mocksStats.MockRudderStats {
+			return c.mockStatGatewayTimeOutStat[index]
 		})
 	}
 }
@@ -225,7 +249,6 @@ var _ = Describe("Gateway Enterprise", func() {
 		It("should not accept events from suppress users", func() {
 			suppressedUserEventData := fmt.Sprintf("{\"batch\":[{\"userId\": \"%s\"}]}", SuppressedUserID)
 
-			c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job"))
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("batch-size"))
 
 			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
@@ -239,6 +262,8 @@ var _ = Describe("Gateway Enterprise", func() {
 
 			c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job"))
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("batch-size"))
+			c.mockStatDBWritesStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_writes"))
+			c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 			c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 1)
@@ -317,7 +342,7 @@ var _ = Describe("Gateway", func() {
 		}
 
 		createValidBody := func(customProperty string, customValue string) []byte {
-			validData := `{"data":{"string":"valid-json","nested":{"child":1}}}`
+			validData := `{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}}}`
 			validDataWithProperty, _ := sjson.SetBytes([]byte(validData), customProperty, customValue)
 
 			return validDataWithProperty
@@ -351,6 +376,8 @@ var _ = Describe("Gateway", func() {
 
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_size.count"))
+				c.mockStatDBWritesStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_writes"))
+				c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 				c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 1)
@@ -416,6 +443,8 @@ var _ = Describe("Gateway", func() {
 
 		// 	c.mockStatGatewayBatchSize.EXPECT().Count(4).
 		// 		Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
+		//  c.mockStatDBWritesStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_writes"))
+		//	c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 		// 	callStart := c.mockStatGatewayBatchTime.EXPECT().Start().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 
@@ -492,28 +521,28 @@ var _ = Describe("Gateway", func() {
 			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(false).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 			c.mockJobsDB.EXPECT().StoreWithRetryEach(gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
+			c.mockStatDBWritesStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_writes"))
+			c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
 			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 			c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 1)
 			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
 			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 0)
 
-			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 200, "OK")
+			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(`{"userId":"dummyId"}`)), 200, "OK")
 		})
 
 		It("should reject messages if rate limit is reached for workspace", func() {
 			workspaceID := "some-workspace-id"
-			var emptyJobsList []*jobsdb.JobT
 
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes().Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(true).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-			c.mockJobsDB.EXPECT().StoreWithRetryEach(emptyJobsList).DoAndReturn(jobsToEmptyErrors).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 
 			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 			c.expectWriteKeyStat("gateway.work_space_dropped_requests", workspaceID, 1)
 
-			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 400, TooManyRequests+"\n")
+			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 400, response.TooManyRequests+"\n")
 		})
 	})
 
@@ -524,20 +553,11 @@ var _ = Describe("Gateway", func() {
 		)
 
 		BeforeEach(func() {
-			// all of these request errors will cause JobsDB.Store to be called with an empty job list
-			var emptyJobsList []*jobsdb.JobT
-
-			c.mockJobsDB.
-				EXPECT().StoreWithRetryEach(emptyJobsList).
-				Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("")).
-				Return(jobsToEmptyErrors(emptyJobsList)).
-				Times(1)
-
 			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockStats, &clearDB, c.mockVersionHandler)
 		})
 
 		// common tests for all web handlers
-		assertHandler := func(handler http.HandlerFunc) {
+		assertHandler := func(handlerType string, handler http.HandlerFunc) {
 			It("should reject requests without Authorization header", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
@@ -545,7 +565,7 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_requests", "", 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", "noWriteKey", 1)
 
-				expectHandlerResponse(handler, unauthorizedRequest(nil), 400, NoWriteKeyInBasicAuth+"\n")
+				expectHandlerResponse(handler, unauthorizedRequest(nil), 400, response.NoWriteKeyInBasicAuth+"\n")
 			})
 
 			It("should reject requests without username in Authorization header", func() {
@@ -555,7 +575,29 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_requests", "", 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", "noWriteKey", 1)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 400, NoWriteKeyInBasicAuth+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 400, response.NoWriteKeyInBasicAuth+"\n")
+			})
+
+			It("should reject requests with both userId and anonymousId not present", func() {
+				var validBody string
+				if handlerType == "batch" {
+					validBody = `{"batch": [{"data": "valid-json"}]}`
+				} else {
+					validBody = `{"data": "valid-json"}`
+				}
+				c.mockStatGatewayBatchSize.EXPECT().Count(1).
+					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
+
+				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
+				c.expectWriteKeyStat("gateway.write_key_failed_requests", "notIdentifiable", 1)
+
+				if handlerType == "batch" {
+					c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
+				} else {
+					c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
+				}
+
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 400, response.NonIdentifiableRequest+"\n")
 			})
 
 			It("should reject requests without request body", func() {
@@ -564,7 +606,7 @@ var _ = Describe("Gateway", func() {
 
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), 400, RequestBodyNil+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), 400, response.RequestBodyNil+"\n")
 			})
 
 			It("should reject requests without valid json in request body", func() {
@@ -576,7 +618,7 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyInvalid, 1)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(invalidBody)), 400, InvalidJSON+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(invalidBody)), 400, response.InvalidJSON+"\n")
 			})
 
 			It("should reject requests with request bodies larger than configured limit", func() {
@@ -594,7 +636,7 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyInvalid, 0)
 				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyInvalid, 0)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(body)), 400, RequestBodyTooLarge+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(body)), 400, response.RequestBodyTooLarge+"\n")
 			})
 
 			It("should reject requests with invalid write keys", func() {
@@ -608,7 +650,7 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyInvalid, 0)
 				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyInvalid, 0)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), 400, InvalidWriteKey+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), 400, response.InvalidWriteKey+"\n")
 			})
 
 			It("should reject requests with disabled write keys", func() {
@@ -622,12 +664,12 @@ var _ = Describe("Gateway", func() {
 				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyDisabled, 0)
 				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyDisabled, 0)
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), 400, InvalidWriteKey+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), 400, response.InvalidWriteKey+"\n")
 			})
 		}
 
-		for _, handler := range allHandlers(gateway) {
-			assertHandler(handler)
+		for handlerType, handler := range allHandlers(gateway) {
+			assertHandler(handlerType, handler)
 		}
 	})
 })
