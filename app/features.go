@@ -1,6 +1,6 @@
 package app
 
-//go:generate mockgen -destination=../mocks/app/mock_features.go -package=mock_app github.com/rudderlabs/rudder-server/app MigratorFeature,WebhookFeature,SuppressUserFeature
+//go:generate mockgen -destination=../mocks/app/mock_features.go -package=mock_app github.com/rudderlabs/rudder-server/app MigratorFeature,SuppressUserFeature
 
 import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -21,21 +21,6 @@ var migratorFeatureSetup MigratorFeatureSetup
 // RegisterMigratorFeature registers a Migration implementation
 func RegisterMigratorFeature(f MigratorFeatureSetup) {
 	migratorFeatureSetup = f
-}
-
-// WebhookFeature handles webhook event requests
-type WebhookFeature interface {
-	Setup(types.GatewayWebhookI) types.WebHookI
-}
-
-// WebhookFeatureSetup is a function that initializes a Webhook feature, based on application instance
-type WebhookFeatureSetup func(Interface) WebhookFeature
-
-var webhookFeatureSetup WebhookFeatureSetup
-
-// RegisterWebhookFeature registers a Webhook implementation
-func RegisterWebhookFeature(f WebhookFeatureSetup) {
-	webhookFeatureSetup = f
 }
 
 // SuppressUserFeature handles webhook event requests
@@ -90,7 +75,6 @@ func RegisterConfigEnvFeature(f ConfigEnvFeatureSetup) {
 // Features contains optional implementations of Enterprise only features.
 type Features struct {
 	Migrator     MigratorFeature
-	Webhook      WebhookFeature
 	SuppressUser SuppressUserFeature
 	Protocols    ProtocolsFeature
 	ConfigEnv    ConfigEnvFeature

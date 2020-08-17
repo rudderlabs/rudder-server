@@ -3,16 +3,17 @@ package misc
 import (
 	"database/sql"
 	"fmt"
-	"github.com/lib/pq"
 	"strconv"
+
+	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
-	host, user, password string
-	port                 int
+	host, user, password, sslmode string
+	port                          int
 )
 
 func loadConfig() {
@@ -20,6 +21,7 @@ func loadConfig() {
 	user = config.GetEnv("JOBS_DB_USER", "ubuntu")
 	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+	sslmode = config.GetEnv("JOBS_DB_SSL_MODE", "disable")
 }
 
 /*
@@ -28,8 +30,8 @@ Since we are not journaling, this should be idemponent
 */
 func ReplaceDB(dbName, targetName string) {
 	loadConfig()
-	connInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=disable",
-		host, port, user, password)
+	connInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=%s",
+		host, port, user, password, sslmode)
 	db, err := sql.Open("postgres", connInfo)
 	if err != nil {
 		panic(err)
@@ -61,6 +63,6 @@ func ReplaceDB(dbName, targetName string) {
 	}
 }
 
-func QuoteLiteral(literal string) string{
+func QuoteLiteral(literal string) string {
 	return pq.QuoteLiteral(literal)
 }

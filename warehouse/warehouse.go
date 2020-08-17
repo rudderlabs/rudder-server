@@ -74,8 +74,8 @@ var (
 	activeWorkerCountLock            sync.RWMutex
 )
 var (
-	host, user, password, dbname string
-	port                         int
+	host, user, password, dbname, sslmode string
+	port                                  int
 )
 
 // warehouses worker modes
@@ -156,6 +156,7 @@ func loadConfig() {
 	dbname = config.GetEnv("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
 	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+	sslmode = config.GetEnv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
 	stagingFilesSchemaPaginationSize = config.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100)
 	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
@@ -1615,8 +1616,8 @@ func getConnectionString() string {
 		return jobsdb.GetConnectionString()
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+		"password=%s dbname=%s sslmode=%s",
+		host, port, user, password, dbname, sslmode)
 }
 
 func startWebHandler() {
@@ -1635,7 +1636,7 @@ func startWebHandler() {
 }
 
 func claimAndProcess(workerIdx int, slaveID string) {
-	logger.Infof("WH: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
+	logger.Debugf("WH: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
 	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
 	claim, claimed := notifier.Claim(workerID)
 	if claimed {
@@ -1659,7 +1660,7 @@ func claimAndProcess(workerIdx int, slaveID string) {
 		claim.ClaimResponseChan <- response
 	}
 	slaveWorkerRoutineBusy[workerIdx-1] = false
-	logger.Infof("WH: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
+	logger.Debugf("WH: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
 }
 
 func setupSlave() {

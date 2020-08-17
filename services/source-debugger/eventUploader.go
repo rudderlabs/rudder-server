@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/araddon/dateparse"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -97,23 +96,6 @@ func Setup() {
 	})
 }
 
-func getTimestampFromEvent(event EventUploadT, field string) time.Time {
-	var timestamp time.Time
-	var err error
-	if _, ok := event[field]; ok {
-		timestampStr, typecasted := event[field].(string)
-		if typecasted {
-			timestamp, err = dateparse.ParseAny(timestampStr)
-		}
-		if !typecasted || err != nil {
-			timestamp = time.Now()
-		}
-	} else {
-		timestamp = time.Now()
-	}
-	return timestamp
-}
-
 func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 	// Upload to a Config Backend
 	var res map[string][]EventUploadT
@@ -131,6 +113,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 		if err != nil {
 			receivedAtTS = time.Now()
 		}
+		receivedAtStr := receivedAtTS.Format(misc.RFC3339Milli)
 
 		var arr []EventUploadT
 		if value, ok := res[batchedEvent.WriteKey]; ok {
@@ -140,15 +123,8 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 		}
 
 		for _, ev := range batchedEvent.Batch {
-			//filterValues(&ev)
-
-			//updating originalTimestamp in the event using the formula
-			//receivedAt - (sentAt - originalTimeStamp)
-			originalTimestamp := getTimestampFromEvent(ev, "originalTimestamp")
-			sentAt := getTimestampFromEvent(ev, "sentAt")
-
-			ev["originalTimestamp"] = originalTimestamp.Format(time.RFC3339)
-			ev["timestamp"] = misc.GetChronologicalTimeStamp(receivedAtTS, sentAt, originalTimestamp).Format(time.RFC3339)
+			// add the receivedAt time to each event
+			ev["receivedAt"] = receivedAtStr
 
 			arr = append(arr, ev)
 		}
