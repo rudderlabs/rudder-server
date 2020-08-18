@@ -390,7 +390,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 						return false
 					}
 				}
-				// hashing combination of userIDFromReq + anonIDFromReq
+				// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
 				rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 				if err != nil {
 					notIdentifiable = true
