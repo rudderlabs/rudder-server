@@ -389,12 +389,13 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 						notIdentifiable = true
 						return false
 					}
-					newAnonymousID, err := misc.GetMD5UUID(userIDFromReq)
+					// hashing combination of userIDFromReq + anonIDFromReq. adding a colon as delimiter
+					rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 					if err != nil {
 						notIdentifiable = true
 						return false
 					}
-					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index), newAnonymousID)
+					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.rudderId`, index), rudderId)
 				}
 				if strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String()) == "" {
 					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index), uuid.NewV4().String())
@@ -443,7 +444,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				UserID:       gjson.GetBytes(body, "batch.0.anonymousId").Str,
+				UserID:       gjson.GetBytes(body, "batch.0.rudderId").Str,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, sourceID, counter)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
