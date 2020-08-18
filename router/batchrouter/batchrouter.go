@@ -643,15 +643,21 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		}
 
 		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s at key: %s\n", object.Provider, object.Key)
-		err = downloader.Download(jsonFile, object.Key)
+
+		var objKey string
+		if prefix, ok := object.Config["prefix"]; ok && strings.TrimSpace(prefix.(string)) != "" {
+			objKey += fmt.Sprint("/%s", objKey)
+		}
+		objKey += object.Key
+
+		err = downloader.Download(jsonFile, objKey)
 		if err != nil {
-			logger.Debugf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
+			logger.Errorf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
 			continue
 		}
 
 		jsonFile.Close()
 		defer os.Remove(jsonPath)
-
 		rawf, err := os.Open(jsonPath)
 		if err != nil {
 			panic(err)
