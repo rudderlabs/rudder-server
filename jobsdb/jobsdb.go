@@ -1737,7 +1737,7 @@ so take both the list and data lock
 func (jd *HandleT) addNewDSLoop() {
 	for {
 		time.Sleep(addNewDSLoopSleepDuration)
-		logger.Infof("[[ %s : addNewDSLoop ]]: Start", jd.tablePrefix)
+		logger.Debugf("[[ %s : addNewDSLoop ]]: Start", jd.tablePrefix)
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
 		jd.dsListLock.RUnlock()
@@ -1758,7 +1758,7 @@ func (jd *HandleT) migrateDSLoop() {
 
 	for {
 		time.Sleep(migrateDSLoopSleepDuration)
-		logger.Infof("[[ %s : migrateDSLoop ]]: Start", jd.tablePrefix)
+		logger.Debugf("[[ %s : migrateDSLoop ]]: Start", jd.tablePrefix)
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
@@ -1778,7 +1778,7 @@ func (jd *HandleT) migrateDSLoop() {
 		for idx, ds := range dsList {
 
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
-			logger.Infof("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
+			logger.Debugf("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
 
 			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idx == len(dsList)-1 {
 				break

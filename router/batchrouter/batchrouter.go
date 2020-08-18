@@ -409,13 +409,13 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 	if err != nil {
 		jobState = jobsdb.Failed.State
 		if isWarehouse {
-			jobState = warehouseutils.GeneratingStagingFileFailed
+			jobState = warehouseutils.GeneratingStagingFileFailedState
 		}
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 	} else {
 		jobState = jobsdb.Succeeded.State
 		if isWarehouse {
-			jobState = warehouseutils.GeneratedStagingFile
+			jobState = warehouseutils.GeneratedStagingFileState
 		}
 		errorResp = []byte(`{"success":"OK"}`)
 	}
@@ -533,14 +533,19 @@ func (brt *HandleT) mainLoop() {
 		batchDestinations := brt.batchDestinations
 		configSubscriberLock.RUnlock()
 		for _, batchDestination := range batchDestinations {
+			logger.Infof("BRT: MM: Selecting batch destination:  %+v", batchDestination)
 			if isDestInProgress(batchDestination) {
 				logger.Debugf("BRT: Skipping batch router upload loop since destination %s:%s is in progress", batchDestination.Destination.DestinationDefinition.Name, batchDestination.Destination.ID)
 				continue
 			}
+			logger.Infof("BRT: MM: Dest not in progress. Continuing")
+
 			if uploadFrequencyExceeded(batchDestination) {
 				logger.Debugf("BRT: Skipping batch router upload loop since %s:%s upload freq not exceeded", batchDestination.Destination.DestinationDefinition.Name, batchDestination.Destination.ID)
 				continue
 			}
+			logger.Infof("BRT: MM: Upload Frequency is fine. Continuing")
+
 			setDestInProgress(batchDestination, true)
 
 			toQuery := jobQueryBatchSize
@@ -559,11 +564,17 @@ func (brt *HandleT) mainLoop() {
 			brtQueryStat.Start()
 
 			retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, parameterFilters)
+			logger.Infof("BRT: MM: Get to Retry: %v", len(retryList))
+
 			toQuery -= len(retryList)
 			waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, parameterFilters) //Jobs send to waiting state
+			logger.Infof("BRT: MM: Get to Waiting: %v", len(waitList))
+
 			toQuery -= len(waitList)
 			unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, parameterFilters)
 			brtQueryStat.End()
+
+			logger.Infof("BRT: MM: Get Unprocessed: %v", len(unprocessedList))
 
 			combinedList := append(waitList, append(unprocessedList, retryList...)...)
 			if len(combinedList) == 0 {
@@ -601,6 +612,8 @@ func (brt *HandleT) mainLoop() {
 			}
 			//Mark the jobs as executing
 			brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
+			logger.Infof("BRT: MM: Adding combined list to process Q")
+
 			brt.processQ <- BatchJobsT{Jobs: combinedList, BatchDestination: batchDestination}
 		}
 	}
