@@ -409,13 +409,13 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 	if err != nil {
 		jobState = jobsdb.Failed.State
 		if isWarehouse {
-			jobState = warehouseutils.GeneratingStagingFileFailed
+			jobState = warehouseutils.GeneratingStagingFileFailedState
 		}
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 	} else {
 		jobState = jobsdb.Succeeded.State
 		if isWarehouse {
-			jobState = warehouseutils.GeneratedStagingFile
+			jobState = warehouseutils.GeneratedStagingFileState
 		}
 		errorResp = []byte(`{"success":"OK"}`)
 	}
