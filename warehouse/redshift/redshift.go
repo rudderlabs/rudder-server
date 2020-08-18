@@ -841,3 +841,29 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	}
 	return
 }
+
+func (rs *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	rs.Warehouse = config.Warehouse
+	rs.Db, err = connect(RedshiftCredentialsT{
+		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
+		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
+		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
+		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
+		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
+	})
+	if err != nil {
+		return
+	}
+	defer rs.Db.Close()
+	pingResultChannel := make(chan error, 1)
+	rruntime.Go(func() {
+		pingResultChannel <- rs.Db.Ping()
+	})
+	var timeOut time.Duration = 5
+	select {
+	case err = <-pingResultChannel:
+	case <-time.After(timeOut * time.Second):
+		err = errors.New(fmt.Sprintf("connection testing timed out after %v sec", timeOut))
+	}
+	return
+}

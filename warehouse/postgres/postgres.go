@@ -699,3 +699,23 @@ func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	}
 	return
 }
+
+func (pg *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	pg.Warehouse = config.Warehouse
+	pg.Db, err = connect(pg.getConnectionCredentials())
+	if err != nil {
+		return
+	}
+	pingResultChannel := make(chan error, 1)
+	defer pg.Db.Close()
+	rruntime.Go(func() {
+		pingResultChannel <- pg.Db.Ping()
+	})
+	var timeOut time.Duration = 5
+	select {
+	case err = <-pingResultChannel:
+	case <-time.After(timeOut * time.Second):
+		err = errors.New(fmt.Sprintf("connection testing timed out after %v sec", timeOut))
+	}
+	return
+}
