@@ -387,14 +387,14 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 						notIdentifiable = true
 						return false
 					}
-					// hashing combination of userIDFromReq + anonIDFromReq. adding a colon as delimiter
-					rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
-					if err != nil {
-						notIdentifiable = true
-						return false
-					}
-					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.rudderId`, index), rudderId)
 				}
+				// hashing combination of userIDFromReq + anonIDFromReq
+				rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+				if err != nil {
+					notIdentifiable = true
+					return false
+				}
+				body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.rudderId`, index), rudderId)
 				if strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String()) == "" {
 					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index), uuid.NewV4().String())
 				}
