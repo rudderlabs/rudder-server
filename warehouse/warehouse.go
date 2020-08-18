@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
@@ -206,11 +207,12 @@ func (wh *HandleT) handleUploadJobs(processStagingFilesJobList []ProcessStagingF
 				panic(err)
 			}
 
+			warehouseutils.SetUploadStatus(job.Upload, warehouseutils.FetchingSchemaState, wh.dbHandle)
 			syncedSchema, err := whManager.FetchSchema(job.Warehouse, job.Warehouse.Namespace)
 			if err != nil {
 				logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
 				warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
-				warehouseutils.SetUploadError(job.Upload, err, warehouseutils.FetchingSchemaFailed, wh.dbHandle)
+				warehouseutils.SetUploadError(job.Upload, err, warehouseutils.FetchingSchemaFailedState, wh.dbHandle)
 				wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 				break
 			}
@@ -1239,6 +1241,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	timer.Start()
 
 	lineBytesCounter := 0
+	var interfaceSliceSample []interface{}
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
 		lineBytesCounter += len(lineBytes)
@@ -1324,7 +1327,6 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 							if _, ok := outputFileMap[discardsTable]; !ok {
 								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
-								defer gzWriter.CloseGZ()
 								if err != nil {
 									return nil, err
 								}
@@ -1422,7 +1424,6 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 							if _, ok := outputFileMap[discardsTable]; !ok {
 								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
-								defer gzWriter.CloseGZ()
 								if err != nil {
 									return nil, err
 								}
@@ -1432,6 +1433,18 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 							discardRow := []string{}
 							var dBuff bytes.Buffer
 							dCsvWriter := csv.NewWriter(&dBuff)
+
+							// if val is an []interface{}, marshal it
+							// eg. [{"product_name": "pen", "product_price": 10}, {"product_name": "pencil", "product_price": 2}]
+							if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
+								marshalledVal, err := json.Marshal(columnVal)
+								if err != nil {
+									logger.Errorf("WH: Error in marshalling rudder_discard []interface{} columnVal: %v", err)
+									continue
+								}
+								columnVal = string(marshalledVal)
+							}
+
 							// sorted discard columns: column_name, column_value, received_at, row_id, table_name, uuid_ts
 							discardRow = append(discardRow, columnName, fmt.Sprintf("%v", columnVal), fmt.Sprintf("%v", receivedAt), fmt.Sprintf("%v", rowID), tableName, uuidTS.Format(misc.RFC3339Milli))
 							dCsvWriter.Write(discardRow)
@@ -1441,6 +1454,17 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						}
 						continue
 					}
+				}
+				// if val is an []interface{}, marshal it
+				// eg. [{"product_name": "pen", "product_price": 10}, {"product_name": "pencil", "product_price": 2}]
+				if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
+					marshalledVal, err := json.Marshal(columnVal)
+					if err != nil {
+						logger.Errorf("WH: Error in marshalling []interface{} columnVal: %v", err)
+						csvRow = append(csvRow, "")
+						continue
+					}
+					columnVal = string(marshalledVal)
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
@@ -1482,13 +1506,12 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		if err != nil {
 			panic(err)
 		}
-		defer stmt.Close()
-
 		var fileID int64
 		err = stmt.QueryRow(job.StagingFileID, uploadLocation.Location, job.SourceID, job.DestinationID, job.DestinationType, tableName, eventsCountMap[tableName], timeutil.Now()).Scan(&fileID)
 		if err != nil {
 			panic(err)
 		}
+		stmt.Close()
 		loadFileIDs = append(loadFileIDs, fileID)
 	}
 	timer.End()
