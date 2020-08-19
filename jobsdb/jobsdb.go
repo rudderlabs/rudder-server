@@ -20,7 +20,6 @@ package jobsdb
 //go:generate mockgen -destination=../mocks/jobsdb/mock_jobsdb.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb JobsDB
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -2056,7 +2055,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			panic(err)
 		}
 
-		var rows []interface{}
+		/*var rows []interface{}
 		err = json.Unmarshal(rawJSONRows, &rows)
 		if err != nil {
 			panic(err)
@@ -2070,8 +2069,8 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			contentSlice[idx] = rowBytes
 		}
 		// append new line character at end, before next backupRowsBatch is appended to same file
-		content := append(bytes.Join(contentSlice[:], []byte("\n")), []byte("\n")...)
-		gzWriter.Write(content)
+		content := append(bytes.Join(contentSlice[:], []byte("\n")), []byte("\n")...)*/
+		gzWriter.Write(rawJSONRows)
 		offset += backupRowsBatchSize
 		if offset >= totalCount {
 			break
