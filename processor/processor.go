@@ -538,7 +538,7 @@ func getBackendEnabledDestinationTypes(writeKey string) map[string]backendconfig
 	return enabledDestinationTypes
 }
 
-func getTimestampFromEvent(event types.SingularEventT, field string) (time.Time) {
+func getTimestampFromEvent(event types.SingularEventT, field string) time.Time {
 	var timestamp time.Time
 	var ok bool
 	if timestamp, ok = misc.GetParsedTimestamp(event[field]); !ok {
