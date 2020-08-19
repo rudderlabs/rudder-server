@@ -300,6 +300,8 @@ func main() {
 
 	logger.Setup()
 
+	//TODO Remove
+
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 
