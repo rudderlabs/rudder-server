@@ -14,12 +14,15 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/warehousemanager"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/lib/pq"
@@ -28,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
+	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -38,11 +42,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
@@ -76,8 +75,8 @@ var (
 	activeWorkerCountLock            sync.RWMutex
 )
 var (
-	host, user, password, dbname string
-	port                         int
+	host, user, password, dbname, sslmode string
+	port                                  int
 )
 
 // warehouses worker modes
@@ -158,6 +157,7 @@ func loadConfig() {
 	dbname = config.GetEnv("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
 	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+	sslmode = config.GetEnv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
 	stagingFilesSchemaPaginationSize = config.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100)
 	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
@@ -202,16 +202,17 @@ func (wh *HandleT) handleUploadJobs(processStagingFilesJobList []ProcessStagingF
 			}
 			// consolidate schema if not already done
 			schemaInDB, err := warehouseutils.GetCurrentSchema(wh.dbHandle, job.Warehouse)
-			whManager, err := NewWhManager(wh.destType)
+			whManager, err := warehousemanager.NewWhManager(wh.destType)
 			if err != nil {
 				panic(err)
 			}
 
+			warehouseutils.SetUploadStatus(job.Upload, warehouseutils.FetchingSchemaState, wh.dbHandle)
 			syncedSchema, err := whManager.FetchSchema(job.Warehouse, job.Warehouse.Namespace)
 			if err != nil {
 				logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
 				warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
-				warehouseutils.SetUploadError(job.Upload, err, warehouseutils.FetchingSchemaFailed, wh.dbHandle)
+				warehouseutils.SetUploadError(job.Upload, err, warehouseutils.FetchingSchemaFailedState, wh.dbHandle)
 				wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
 				break
 			}
@@ -342,6 +343,13 @@ func (wh *HandleT) backendConfigSubscriber() {
 							destinationID := destination.ID
 							rruntime.Go(func() {
 								wh.syncLiveWarehouseStatus(sourceID, destinationID)
+							})
+						}
+						if val, ok := destination.Config["testConnection"].(bool); ok && val {
+							destination := destination
+							rruntime.Go(func() {
+								testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination)
+								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 							})
 						}
 					}
@@ -735,34 +743,6 @@ func setLastExec(warehouse warehouseutils.WarehouseT) {
 	lastExecMap[connectionString(warehouse)] = timeutil.Now().Unix()
 }
 
-type WarehouseManager interface {
-	Process(config warehouseutils.ConfigT) error
-	CrashRecover(config warehouseutils.ConfigT) (err error)
-	FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (map[string]map[string]string, error)
-}
-
-func NewWhManager(destType string) (WarehouseManager, error) {
-	switch destType {
-	case "RS":
-		var rs redshift.HandleT
-		return &rs, nil
-	case "BQ":
-		var bq bigquery.HandleT
-		return &bq, nil
-	case "SNOWFLAKE":
-		var sf snowflake.HandleT
-		return &sf, nil
-	case "POSTGRES":
-		var pg postgres.HandleT
-		return &pg, nil
-	case "CLICKHOUSE":
-		var ch clickhouse.HandleT
-		return &ch, nil
-	}
-
-	return nil, errors.New("no provider configured for WarehouseManager")
-}
-
 func (wh *HandleT) mainLoop() {
 	for {
 		wh.configSubscriberLock.RLock()
@@ -785,7 +765,7 @@ func (wh *HandleT) mainLoop() {
 
 			_, ok := inRecoveryMap[warehouse.Destination.ID]
 			if ok {
-				whManager, err := NewWhManager(wh.destType)
+				whManager, err := warehousemanager.NewWhManager(wh.destType)
 				if err != nil {
 					panic(err)
 				}
@@ -1027,7 +1007,7 @@ func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err e
 		}
 	}
 	logger.Infof("WH: Starting load flow for %s:%s", wh.destType, job.Warehouse.Destination.ID)
-	whManager, err := NewWhManager(wh.destType)
+	whManager, err := warehousemanager.NewWhManager(wh.destType)
 	if err != nil {
 		panic(err)
 	}
@@ -1261,6 +1241,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	timer.Start()
 
 	lineBytesCounter := 0
+	var interfaceSliceSample []interface{}
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
 		lineBytesCounter += len(lineBytes)
@@ -1346,7 +1327,6 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 							if _, ok := outputFileMap[discardsTable]; !ok {
 								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
-								defer gzWriter.CloseGZ()
 								if err != nil {
 									return nil, err
 								}
@@ -1440,10 +1420,10 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						rowID, hasID := columnData[warehouseutils.ToProviderCase(job.DestinationType, "id")]
 						receivedAt, hasReceivedAt := columnData[warehouseutils.ToProviderCase(job.DestinationType, "received_at")]
 						if hasID && hasReceivedAt {
+							discardsTable := warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
 							if _, ok := outputFileMap[discardsTable]; !ok {
 								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
-								defer gzWriter.CloseGZ()
 								if err != nil {
 									return nil, err
 								}
@@ -1453,6 +1433,18 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 							discardRow := []string{}
 							var dBuff bytes.Buffer
 							dCsvWriter := csv.NewWriter(&dBuff)
+
+							// if val is an []interface{}, marshal it
+							// eg. [{"product_name": "pen", "product_price": 10}, {"product_name": "pencil", "product_price": 2}]
+							if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
+								marshalledVal, err := json.Marshal(columnVal)
+								if err != nil {
+									logger.Errorf("WH: Error in marshalling rudder_discard []interface{} columnVal: %v", err)
+									continue
+								}
+								columnVal = string(marshalledVal)
+							}
+
 							// sorted discard columns: column_name, column_value, received_at, row_id, table_name, uuid_ts
 							discardRow = append(discardRow, columnName, fmt.Sprintf("%v", columnVal), fmt.Sprintf("%v", receivedAt), fmt.Sprintf("%v", rowID), tableName, uuidTS.Format(misc.RFC3339Milli))
 							dCsvWriter.Write(discardRow)
@@ -1462,6 +1454,17 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						}
 						continue
 					}
+				}
+				// if val is an []interface{}, marshal it
+				// eg. [{"product_name": "pen", "product_price": 10}, {"product_name": "pencil", "product_price": 2}]
+				if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
+					marshalledVal, err := json.Marshal(columnVal)
+					if err != nil {
+						logger.Errorf("WH: Error in marshalling []interface{} columnVal: %v", err)
+						csvRow = append(csvRow, "")
+						continue
+					}
+					columnVal = string(marshalledVal)
 				}
 				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
 			}
@@ -1503,13 +1506,12 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		if err != nil {
 			panic(err)
 		}
-		defer stmt.Close()
-
 		var fileID int64
 		err = stmt.QueryRow(job.StagingFileID, uploadLocation.Location, job.SourceID, job.DestinationID, job.DestinationType, tableName, eventsCountMap[tableName], timeutil.Now()).Scan(&fileID)
 		if err != nil {
 			panic(err)
 		}
+		stmt.Close()
 		loadFileIDs = append(loadFileIDs, fileID)
 	}
 	timer.End()
@@ -1637,8 +1639,8 @@ func getConnectionString() string {
 		return jobsdb.GetConnectionString()
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+		"password=%s dbname=%s sslmode=%s",
+		host, port, user, password, dbname, sslmode)
 }
 
 func startWebHandler() {
@@ -1657,7 +1659,7 @@ func startWebHandler() {
 }
 
 func claimAndProcess(workerIdx int, slaveID string) {
-	logger.Infof("WH: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
+	logger.Debugf("WH: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
 	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
 	claim, claimed := notifier.Claim(workerID)
 	if claimed {
@@ -1681,7 +1683,7 @@ func claimAndProcess(workerIdx int, slaveID string) {
 		claim.ClaimResponseChan <- response
 	}
 	slaveWorkerRoutineBusy[workerIdx-1] = false
-	logger.Infof("WH: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
+	logger.Debugf("WH: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
 }
 
 func setupSlave() {

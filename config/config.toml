@@ -101,8 +101,10 @@ jobDoneMigrateThres = 0.8
 jobStatusMigrateThres = 5
 maxDSSize = 100000
 maxMigrateOnce = 10
+maxMigrateDSProbe = 10
 maxTableSizeInMB = 300
-mainCheckSleepDurationInS = 5
+migrateDSLoopSleepDurationInS = 30
+addNewDSLoopSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
 backupRowsBatchSize = 10000
 

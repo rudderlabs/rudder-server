@@ -37,6 +37,7 @@ require (
 	github.com/lib/pq v1.3.0
 	github.com/mattn/go-ieproxy v0.0.0-20200203040449-2dbc853185d9 // indirect
 	github.com/minio/minio-go/v6 v6.0.49
+	github.com/onsi/d v0.0.0-20170123170539-1e9f90ec95b8 // indirect
 	github.com/onsi/ginkgo v1.10.1
 	github.com/onsi/gomega v1.7.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect

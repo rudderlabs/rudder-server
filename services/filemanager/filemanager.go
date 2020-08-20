@@ -27,7 +27,7 @@ type SettingsT struct {
 	Config   map[string]interface{}
 }
 
-// New returns FileManager backed by configured privider
+// New returns FileManager backed by configured provider
 func New(settings *SettingsT) (FileManager, error) {
 	switch settings.Provider {
 	case "S3":
