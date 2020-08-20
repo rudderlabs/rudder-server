@@ -660,6 +660,22 @@ func (gateway *HandleT) webEventVersionsHandler(w http.ResponseWriter, r *http.R
 	gateway.protocolHandler.GetEventVersions(w, r)
 }
 
+func (gateway *HandleT) webEventMetadataHandler(w http.ResponseWriter, r *http.Request) {
+	if !enableProtocolsFeature {
+		logger.Debug("Protocols feature is disabled. You can enabled it through enableProtocolsFeature flag in config.toml")
+		http.Error(w, "Protocols feature is disabled", 400)
+		return
+	}
+
+	if gateway.protocolHandler == nil {
+		logger.Debug("Protocols feature is enterprise only feature.")
+		http.Error(w, "Protocols feature is enterprise only feature", 400)
+		return
+	}
+
+	gateway.protocolHandler.GetSchemaVersionMetadata(w, r)
+}
+
 func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webHandler(w, r, "batch")
 }
@@ -865,6 +881,7 @@ func (gateway *HandleT) StartWebHandler() {
 	// Protocols
 	srvMux.HandleFunc("/protocols/event-models", gateway.webEventModelsHandler)
 	srvMux.HandleFunc("/protocols/event-versions", gateway.webEventVersionsHandler)
+	srvMux.HandleFunc("/protocols/event-metadata", gateway.webEventMetadataHandler)
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,

@@ -22,6 +22,7 @@ type ProtocolsI interface {
 	RecordEventSchema(writeKey string, eventBatch string) bool
 	GetEventModels(w http.ResponseWriter, r *http.Request)
 	GetEventVersions(w http.ResponseWriter, r *http.Request)
+	GetSchemaVersionMetadata(w http.ResponseWriter, r *http.Request)
 }
 
 // ConfigEnvI is interface to inject env variables into config
