@@ -529,7 +529,7 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 func (brt *HandleT) mainLoop() {
 	// var sourceIDs = []string{"1bXIZlimg6pXO7T5VJBXRfiJ68p", "1bXIYKhwN54BRqVCAYlInhwkZEQ", "1aoeoC5XOrEgGpxWiRTHHrwDmxm", "1aoejOs9xGPOT6aFCIdEyPOL8sF"}
 
-	var sourceIDs = []string{"1aoejOs9xGPOT6aFCIdEyPOL8sF", "1bXIZlimg6pXO7T5VJBXRfiJ68p", "1aoeoC5XOrEgGpxWiRTHHrwDmxm", "1bXIYKhwN54BRqVCAYlInhwkZEQ", "1ZaH28wEYrAiQ6rpZtW2H6Veeyd"}
+	var sourceIDs = []string{"1aoejOs9xGPOT6aFCIdEyPOL8sF"}
 	for {
 		time.Sleep(mainLoopSleep)
 		configSubscriberLock.RLock()
