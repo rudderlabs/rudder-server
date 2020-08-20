@@ -270,6 +270,7 @@ github.com/onsi/ginkgo/types
 # github.com/onsi/gomega v1.7.0
 github.com/onsi/gomega
 github.com/onsi/gomega/format
+github.com/onsi/gomega/ghttp
 github.com/onsi/gomega/internal/assertion
 github.com/onsi/gomega/internal/asyncassertion
 github.com/onsi/gomega/internal/oraclematcher
