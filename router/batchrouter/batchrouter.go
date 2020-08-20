@@ -527,13 +527,21 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 }
 
 func (brt *HandleT) mainLoop() {
+	// var sourceIDs = []string{"1bXIZlimg6pXO7T5VJBXRfiJ68p", "1bXIYKhwN54BRqVCAYlInhwkZEQ", "1aoeoC5XOrEgGpxWiRTHHrwDmxm", "1aoejOs9xGPOT6aFCIdEyPOL8sF"}
+
+	var sourceIDs = []string{"1aoejOs9xGPOT6aFCIdEyPOL8sF"}
 	for {
 		time.Sleep(mainLoopSleep)
 		configSubscriberLock.RLock()
 		batchDestinations := brt.batchDestinations
 		configSubscriberLock.RUnlock()
 		for _, batchDestination := range batchDestinations {
-			logger.Infof("BRT: MM: Selecting batch destination:  %+v", batchDestination)
+			if !misc.ContainsString(sourceIDs, batchDestination.Source.ID) {
+				logger.Infof("BRT: MM: Ignoring source ID: %s", batchDestination.Source.ID)
+				continue
+			}
+
+			logger.Infof("BRT: MM: Selecting batch destination: Src: %s and Dest: %s", batchDestination.Source.ID, batchDestination.Destination.ID)
 			if isDestInProgress(batchDestination) {
 				logger.Debugf("BRT: Skipping batch router upload loop since destination %s:%s is in progress", batchDestination.Destination.DestinationDefinition.Name, batchDestination.Destination.ID)
 				continue
