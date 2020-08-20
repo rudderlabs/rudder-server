@@ -3,35 +3,43 @@ package filemanager
 import (
 	"errors"
 	"os"
+	"regexp"
 	"strings"
+	"time"
 
-	"github.com/minio/minio-go/v6"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	SpacesManager "github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func (manager *DOSpacesManager) ObjectUrl(objectName string) string {
-	var protocol = "http"
-	if manager.Config.UseSSL == true {
-		protocol = "https"
-	}
-	return protocol + "://" + manager.Config.EndPoint + "/" + manager.Config.Bucket + "/" + objectName
-}
-
+// Upload passed in file to spaces
 func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
 	if manager.Config.Bucket == "" {
 		return UploadOutput{}, errors.New("no storage bucket configured to uploader")
 	}
-	minioClient, err := minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
-	if err != nil {
-		return UploadOutput{}, err
+
+	region := misc.GetSpacesLocation(manager.Config.EndPoint)
+	var uploadSession *session.Session
+	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
+		uploadSession = session.New(&aws.Config{
+			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			Region:      aws.String(region),
+			Endpoint:    aws.String(manager.Config.EndPoint),
+		})
+	} else {
+		uploadSession = session.New(&aws.Config{
+			Region:      aws.String(region),
+			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			Endpoint:    aws.String(manager.Config.EndPoint),
+		})
 	}
-	if err = minioClient.MakeBucket(manager.Config.Bucket, "us-east-1"); err != nil {
-		exists, err := minioClient.BucketExists(manager.Config.Bucket)
-		if !exists {
-			return UploadOutput{}, err
-		}
-	}
-	fileName := ""
+
+	s3Client := s3.New(uploadSession)
 	splitFileName := strings.Split(file.Name(), "/")
+	fileName := ""
 	if len(prefixes) > 0 {
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
@@ -43,48 +51,119 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 			fileName = manager.Config.Prefix + "/" + fileName
 		}
 	}
-	_, err = minioClient.FPutObject(manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
-	if err != nil {
-		return UploadOutput{}, nil
+	uploadInput := s3.PutObjectInput{
+		ACL:    aws.String("bucket-owner-full-control"),
+		Bucket: aws.String(manager.Config.Bucket),
+		Key:    aws.String(fileName),
+		Body:   file,
 	}
-
-	return UploadOutput{Location: manager.ObjectUrl(fileName), ObjectName: fileName}, nil
+	if manager.Config.EnableSSE {
+		uploadInput.ServerSideEncryption = aws.String("AES256")
+	}
+	_, err := s3Client.PutObject(&uploadInput)
+	if err != nil {
+		return UploadOutput{}, err
+	}
+	var location string
+	location = manager.Config.Bucket + "." + manager.Config.EndPoint + "." + fileName
+	return UploadOutput{Location: location, ObjectName: fileName}, err
 }
 
-func (manager *DOSpacesManager) Download(file *os.File, key string) error {
-	minioClient, err := minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
-	if err != nil {
-		return err
+func (manager *DOSpacesManager) Download(output *os.File, key string) error {
+
+	region := misc.GetSpacesLocation(manager.Config.EndPoint)
+	var downloadSession *session.Session
+	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
+		downloadSession = session.New(&aws.Config{
+			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			Region:      aws.String(region),
+			Endpoint:    aws.String(manager.Config.EndPoint),
+		})
+	} else {
+		downloadSession = session.New(&aws.Config{
+			Region:      aws.String(region),
+			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			Endpoint:    aws.String(manager.Config.EndPoint),
+		})
 	}
-	err = minioClient.FGetObject(manager.Config.Bucket, key, file.Name(), minio.GetObjectOptions{})
+
+	downloader := SpacesManager.NewDownloader(downloadSession)
+	_, err := downloader.Download(output,
+		&s3.GetObjectInput{
+			Bucket: aws.String(manager.Config.Bucket),
+			Key:    aws.String(key),
+		})
+
 	return err
+}
+
+func (manager *DOSpacesManager) GetDownloadKeyFromFileLocation(location string) string {
+	locationSlice := strings.Split(location, "amazonaws.com/")
+	return locationSlice[len(locationSlice)-1]
 }
 
 /*
 GetObjectNameFromLocation gets the object name/key name from the object location url
-	https://minio-endpoint/bucket-name/key1 - >> key1
-	http://minio-endpoint/bucket-name/key2 - >> key2
+	https://bucket-name.s3.amazonaws.com/key - >> key
 */
 func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (string, error) {
-	var baseURL string
-	if manager.Config.UseSSL {
-		baseURL += "https://"
-	} else {
-		baseURL += "http://"
+	reg, err := regexp.Compile(`^https.+\.s3\..*amazonaws\.com\/`)
+	if err != nil {
+		return "", err
 	}
-	baseURL += manager.Config.EndPoint + "/"
-	baseURL += manager.Config.Bucket + "/"
-	return location[len(baseURL):], nil
+	return reg.ReplaceAllString(location, ""), nil
 }
 
-//TODO complete this
-func (manager *DOSpacesManager) GetDownloadKeyFromFileLocation(location string) string {
-	return location
+type SpacesObject struct {
+	Key              string
+	LastModifiedTime time.Time
+}
+
+func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string) ([]*SpacesObject, error) {
+	SpacesObjects := make([]*SpacesObject, 0)
+
+	getRegionSession := session.Must(session.NewSession())
+	region, err := SpacesManager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
+
+	var sess *session.Session
+	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
+		sess = session.Must(session.NewSession(&aws.Config{
+			Region: aws.String(region),
+		}))
+	} else {
+		sess = session.Must(session.NewSession(&aws.Config{
+			Region:      aws.String(region),
+			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+		}))
+	}
+
+	// Create S3 service client
+	svc := s3.New(sess)
+
+	// Get the list of items
+	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{
+		Bucket: aws.String(manager.Config.Bucket),
+		Prefix: aws.String(prefix),
+		// Delimiter: aws.String("/"),
+	})
+	if err != nil {
+		return SpacesObjects, err
+	}
+
+	for _, item := range resp.Contents {
+		SpacesObjects = append(SpacesObjects, &SpacesObject{*item.Key, *item.LastModified})
+	}
+
+	return SpacesObjects, nil
+}
+
+type DOSpacesManager struct {
+	Config *DOSpacesConfig
 }
 
 func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
-	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey string
-	var useSSL, ok bool
+	var bucketName, prefix, endPoint, accessKeyID, accessKey string
+	var enableSSE, ok bool
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
 	}
@@ -97,34 +176,22 @@ func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 	if config["accessKeyID"] != nil {
 		accessKeyID = config["accessKeyID"].(string)
 	}
-	if config["secretAccessKey"] != nil {
-		secretAccessKey = config["secretAccessKey"].(string)
+	if config["accessKey"] != nil {
+		accessKey = config["accessKey"].(string)
 	}
-	if config["useSSL"] != nil {
-		if useSSL, ok = config["useSSL"].(bool); !ok {
-			useSSL = false
+	if config["enableSSE"] != nil {
+		if enableSSE, ok = config["enableSSE"].(bool); !ok {
+			enableSSE = false
 		}
 	}
-
-	return &DOSpacesConfig{
-		Bucket:          bucketName,
-		Prefix:          prefix,
-		EndPoint:        endPoint,
-		AccessKeyID:     accessKeyID,
-		SecretAccessKey: secretAccessKey,
-		UseSSL:          useSSL,
-	}
-}
-
-type DOSpacesManager struct {
-	Config *DOSpacesConfig
+	return &DOSpacesConfig{Bucket: bucketName, EndPoint: endPoint, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey, EnableSSE: enableSSE}
 }
 
 type DOSpacesConfig struct {
-	Bucket          string
-	Prefix          string
-	EndPoint        string
-	AccessKeyID     string
-	SecretAccessKey string
-	UseSSL          bool
+	Bucket      string
+	Prefix      string
+	EndPoint    string
+	AccessKeyID string
+	AccessKey   string
+	EnableSSE   bool
 }

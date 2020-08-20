@@ -87,10 +87,10 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 	case "DIGITAL_OCEAN_SPACES":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
-		providerConfig["endPoint"] = config.GetEnv("MINIO_ENDPOINT", "localhost:9000")
-		providerConfig["accessKeyID"] = config.GetEnv("MINIO_ACCESS_KEY_ID", "minioadmin")
-		providerConfig["secretAccessKey"] = config.GetEnv("MINIO_SECRET_ACCESS_KEY", "minioadmin")
-		providerConfig["useSSL"] = config.GetEnvAsBool("MINIO_SSL", false)
+		providerConfig["endPoint"] = config.GetEnv("DO_SPACES_ENDPOINT", "")
+		providerConfig["accessKeyID"] = config.GetEnv("DO_SPACES_ACCESS_KEY_ID", "")
+		providerConfig["secretAccessKey"] = config.GetEnv("DO_SPACES_SECRET_ACCESS_KEY", "")
+		providerConfig["useSSL"] = config.GetEnvAsBool("DO_SPACES_SSL", false)
 	}
 	return providerConfig
 }
