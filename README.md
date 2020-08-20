@@ -29,7 +29,7 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord cha
 
 # Our Trusted Customers
 
-![Customers](https://user-images.githubusercontent.com/59817155/90763785-ef286e00-e304-11ea-8d39-4b956725e069.PNG)
+[![1mg](https://user-images.githubusercontent.com/59817155/90764974-d325cc00-e306-11ea-9cc4-ed7c159f9738.PNG)](https://www.1mg.com/) [![Grofers](https://user-images.githubusercontent.com/59817155/90764982-d751e980-e306-11ea-9c45-fd261be00988.PNG)](https://grofers.com/) [![IFTTT](https://user-images.githubusercontent.com/59817155/90764989-d9b44380-e306-11ea-877f-409e9ba4e88c.PNG)](https://ifttt.com/) [![Mattermost](https://user-images.githubusercontent.com/59817155/90765001-dcaf3400-e306-11ea-887e-2d1f096bee01.PNG)](https://mattermost.com/) [![torpedo](https://user-images.githubusercontent.com/59817155/90765011-dfaa2480-e306-11ea-8f23-341c7456773f.PNG)]()
 
 # Key Features
 
