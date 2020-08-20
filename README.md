@@ -27,6 +27,10 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord cha
 
 - **User-specified Transformation**: RudderStack gives you the power to filter or transform your events before sending them to the desired destinations.
 
+# Our Trusted Customers
+
+![Customers](https://user-images.githubusercontent.com/59817155/90763785-ef286e00-e304-11ea-8d39-4b956725e069.PNG)
+
 # Key Features
 
 - **Segment API Compatible**: RudderStack is Segment API compatible. So you don't need to change your app if you are using Segment, just integrate the RudderStack SDKs into your app.
