@@ -188,6 +188,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 
 		logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", rt.destName, attempts, ser)
 
+		var reqMetric requestMetric
+		diagnosisStartTime := time.Now()
 		deliveryTimeStat.Start()
 
 		if job.LastJobStatus.AttemptNum > 0 {
@@ -217,6 +219,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			atomic.AddUint64(&rt.successCount, 1)
 			eventsDeliveredStat.Increment()
 			status.JobState = jobsdb.Succeeded.State
+			reqMetric.RequestSuccess = reqMetric.RequestSuccess + 1
+			reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
 			logger.Debugf("[%v Router] :: sending success status to response", rt.destName)
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		} else {
@@ -253,6 +257,11 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 					status.JobState = jobsdb.Aborted.State
 					eventsAbortedStat.Increment()
 				}
+			}
+			reqMetric.RequestRetries = reqMetric.RequestRetries + 1
+			reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
+			if status.JobState == jobsdb.Aborted.State {
+				reqMetric.RequestAborted = reqMetric.RequestAborted + 1
 			}
 			logger.Debugf("[%v Router] :: sending failed/aborted state as response", rt.destName)
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
