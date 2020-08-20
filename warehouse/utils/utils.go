@@ -25,21 +25,22 @@ import (
 )
 
 const (
-	WaitingState                  = "waiting"
-	ExecutingState                = "executing"
-	GeneratingLoadFileState       = "generating_load_file"
-	GeneratingLoadFileFailedState = "generating_load_file_failed"
-	GeneratedLoadFileState        = "generated_load_file"
-	UpdatingSchemaState           = "updating_schema"
-	UpdatingSchemaFailedState     = "updating_schema_failed"
-	UpdatedSchemaState            = "updated_schema"
-	ExportingDataState            = "exporting_data"
-	ExportingDataFailedState      = "exporting_data_failed"
-	ExportedDataState             = "exported_data"
-	AbortedState                  = "aborted"
-	GeneratingStagingFileFailed   = "generating_staging_file_failed"
-	GeneratedStagingFile          = "generated_staging_file"
-	FetchingSchemaFailed          = "fetching_schema_failed"
+	WaitingState                     = "waiting"
+	ExecutingState                   = "executing"
+	GeneratingLoadFileState          = "generating_load_file"
+	GeneratingLoadFileFailedState    = "generating_load_file_failed"
+	GeneratedLoadFileState           = "generated_load_file"
+	UpdatingSchemaState              = "updating_schema"
+	UpdatingSchemaFailedState        = "updating_schema_failed"
+	UpdatedSchemaState               = "updated_schema"
+	ExportingDataState               = "exporting_data"
+	ExportingDataFailedState         = "exporting_data_failed"
+	ExportedDataState                = "exported_data"
+	AbortedState                     = "aborted"
+	GeneratingStagingFileFailedState = "generating_staging_file_failed"
+	GeneratedStagingFileState        = "generated_staging_file"
+	FetchingSchemaState              = "fetching_schema"
+	FetchingSchemaFailedState        = "fetching_schema_failed"
 )
 
 const (

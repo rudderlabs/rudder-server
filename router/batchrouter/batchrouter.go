@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
+
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -84,6 +86,13 @@ func (brt *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == brt.destType {
 						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
+						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
+							destination := destination
+							rruntime.Go(func() {
+								testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
+								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
+							})
+						}
 					}
 				}
 			}
@@ -400,13 +409,13 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 	if err != nil {
 		jobState = jobsdb.Failed.State
 		if isWarehouse {
-			jobState = warehouseutils.GeneratingStagingFileFailed
+			jobState = warehouseutils.GeneratingStagingFileFailedState
 		}
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 	} else {
 		jobState = jobsdb.Succeeded.State
 		if isWarehouse {
-			jobState = warehouseutils.GeneratedStagingFile
+			jobState = warehouseutils.GeneratedStagingFileState
 		}
 		errorResp = []byte(`{"success":"OK"}`)
 	}
