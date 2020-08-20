@@ -9,10 +9,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-var (
-	destSettingsMap map[string]Settings
-)
-
 //Throttler is an interface for throttling functions
 type Throttler interface {
 	LimitReached(key string) bool
@@ -39,29 +35,6 @@ type HandleT struct {
 	destinationName string
 	destLimiter     *Limiter
 	userLimiter     *Limiter
-}
-
-func init() {
-	loadConfig()
-}
-
-func loadConfig() {
-	destSettingsMap = map[string]Settings{
-		// https://customer.io/docs/api/#api-documentationlimits
-		"CUSTOMERIO": {
-			eventLimit:          30,
-			timeWindowInS:       1,
-			userLevelThrottling: false,
-		},
-		// https://help.amplitude.com/hc/en-us/articles/360032842391-HTTP-API-V2#upload-limit
-		"AM": {
-			eventLimit:             1000,
-			timeWindowInS:          1,
-			userLevelThrottling:    true,
-			userLevelLimit:         10,
-			userLevelTimeWindowInS: 1,
-		},
-	}
 }
 
 func (throttler *HandleT) setLimits() {

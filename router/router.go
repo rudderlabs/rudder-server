@@ -71,7 +71,6 @@ type workerT struct {
 	failedJobIDMap   map[string]int64    //user to failed jobId
 	failedJobIDMutex sync.RWMutex        //lock to protect structure above
 	retryForJobMap   map[int64]time.Time //jobID to next retry time map
-	retryForJobMutex sync.RWMutex        //lock to protect structure above
 }
 
 var (
@@ -246,9 +245,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 					status.JobState = jobsdb.Aborted.State
 					delete(worker.retryForJobMap, job.JobID)
 				} else {
-					worker.retryForJobMutex.Lock()
 					worker.retryForJobMap[job.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
-					worker.retryForJobMutex.Unlock()
 				}
 			} else {
 				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
