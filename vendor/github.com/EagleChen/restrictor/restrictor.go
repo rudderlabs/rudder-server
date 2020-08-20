@@ -32,12 +32,8 @@ func (r *Restrictor) LimitReachedAtTime(now time.Time, key string) bool {
 
 	lmt, expireTime, found := r.store.GetLimiter(r.prefix + key)
 	if !found {
-		fmt.Println("init NewLimiter()")
 		lmt = NewLimiter()
 	}
-	fmt.Println("^^^")
-	fmt.Printf("%+v\n", lmt)
-	fmt.Println("^^^")
 	reached, lmtChanged, expireChanged := lmt.LimitReached(r.window,
 		r.upperLimit, r.bucketSpan, now)
 	if lmtChanged {
