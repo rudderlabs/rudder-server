@@ -11,13 +11,15 @@ default: build
 mocks: ## Generate all mocks
 	$(GO) generate ./...
 
-test: enterprise-prepare-build mocks ## Run all unit tests
+test: mocks ## Run all unit tests
 # removed -p(parallel) inorder to pass builds
 ifdef package
-	$(GINKGO) -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --skipPackage=tests $(package)
+	$(GINKGO) -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --progress --skipPackage=tests $(package)
 else
-	$(GINKGO) -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --skipPackage=tests ./...
+	$(GINKGO) -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --progress --skipPackage=tests ./...
 endif
+
+test-enterprise: enterprise-prepare-build test
 
 build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts
 
