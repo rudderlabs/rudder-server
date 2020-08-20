@@ -51,6 +51,8 @@ var (
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTimeinHr   time.Duration
+	enableFilterSources                bool
+	filterSources                      string
 )
 
 type HandleT struct {
@@ -527,7 +529,11 @@ func uploadFrequencyExceeded(batchDestination DestinationT) bool {
 }
 
 func (brt *HandleT) mainLoop() {
-	var sourceIDs = []string{"1aoejOs9xGPOT6aFCIdEyPOL8sF", "1bXIZlimg6pXO7T5VJBXRfiJ68p", "1aoeoC5XOrEgGpxWiRTHHrwDmxm", "1bXIYKhwN54BRqVCAYlInhwkZEQ", "1ZaH28wEYrAiQ6rpZtW2H6Veeyd"}
+
+	var sourceIDs = []string{}
+	if enableFilterSources {
+		sourceIDs = strings.Split(filterSources, ",")
+	}
 
 	// var sourceIDs = []string{"1aoejOs9xGPOT6aFCIdEyPOL8sF"}
 	for {
@@ -536,9 +542,11 @@ func (brt *HandleT) mainLoop() {
 		batchDestinations := brt.batchDestinations
 		configSubscriberLock.RUnlock()
 		for _, batchDestination := range batchDestinations {
-			if !misc.ContainsString(sourceIDs, batchDestination.Source.ID) {
-				logger.Infof("BRT: MM: Ignoring source ID: %s", batchDestination.Source.ID)
-				continue
+			if enableFilterSources {
+				if !misc.ContainsString(sourceIDs, batchDestination.Source.ID) {
+					logger.Infof("BRT: MM: Ignoring source ID: %s", batchDestination.Source.ID)
+					continue
+				}
 			}
 
 			logger.Infof("BRT: MM: Selecting batch destination: Src: %s and Dest: %s", batchDestination.Source.ID, batchDestination.Destination.ID)
@@ -789,6 +797,8 @@ func loadConfig() {
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
+	enableFilterSources = config.GetBool("BatchRouter.enableFilterSources", false)
+	filterSources = config.GetString("BatchRouter.filterSources", "none")
 	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
