@@ -628,52 +628,21 @@ func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request
 	}
 }
 
-func (gateway *HandleT) webEventModelsHandler(w http.ResponseWriter, r *http.Request) {
-	if !enableProtocolsFeature {
-		logger.Debug("Protocols feature is disabled. You can enabled it through enableProtocolsFeature flag in config.toml")
-		http.Error(w, "Protocols feature is disabled", 400)
-		return
+func (gateway *HandleT) protocolWebHandler(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !enableProtocolsFeature {
+			logger.Debug("Protocols feature is disabled. You can enabled it through enableProtocolsFeature flag in config.toml")
+			http.Error(w, "Protocols feature is disabled", 400)
+			return
+		}
+
+		if gateway.protocolHandler == nil {
+			logger.Debug("Protocols feature is enterprise only feature.")
+			http.Error(w, "Protocols feature is enterprise only feature", 400)
+			return
+		}
+		wrappedFunc(w, r)
 	}
-
-	if gateway.protocolHandler == nil {
-		logger.Debug("Protocols feature is enterprise only feature.")
-		http.Error(w, "Protocols feature is enterprise only feature", 400)
-		return
-	}
-
-	gateway.protocolHandler.GetEventModels(w, r)
-}
-
-func (gateway *HandleT) webEventVersionsHandler(w http.ResponseWriter, r *http.Request) {
-	if !enableProtocolsFeature {
-		logger.Debug("Protocols feature is disabled. You can enabled it through enableProtocolsFeature flag in config.toml")
-		http.Error(w, "Protocols feature is disabled", 400)
-		return
-	}
-
-	if gateway.protocolHandler == nil {
-		logger.Debug("Protocols feature is enterprise only feature.")
-		http.Error(w, "Protocols feature is enterprise only feature", 400)
-		return
-	}
-
-	gateway.protocolHandler.GetEventVersions(w, r)
-}
-
-func (gateway *HandleT) webEventMetadataHandler(w http.ResponseWriter, r *http.Request) {
-	if !enableProtocolsFeature {
-		logger.Debug("Protocols feature is disabled. You can enabled it through enableProtocolsFeature flag in config.toml")
-		http.Error(w, "Protocols feature is disabled", 400)
-		return
-	}
-
-	if gateway.protocolHandler == nil {
-		logger.Debug("Protocols feature is enterprise only feature.")
-		http.Error(w, "Protocols feature is enterprise only feature", 400)
-		return
-	}
-
-	gateway.protocolHandler.GetSchemaVersionMetadata(w, r)
 }
 
 func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
@@ -879,9 +848,9 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
 
 	// Protocols
-	srvMux.HandleFunc("/protocols/event-models", gateway.webEventModelsHandler)
-	srvMux.HandleFunc("/protocols/event-versions", gateway.webEventVersionsHandler)
-	srvMux.HandleFunc("/protocols/event-metadata", gateway.webEventMetadataHandler)
+	srvMux.HandleFunc("/protocols/event-models", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModels))
+	srvMux.HandleFunc("/protocols/event-versions", gateway.protocolWebHandler(gateway.protocolHandler.GetEventVersions))
+	srvMux.HandleFunc("/protocols/event-metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMetadata))
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
