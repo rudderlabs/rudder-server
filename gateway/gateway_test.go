@@ -360,7 +360,7 @@ var _ = Describe("Gateway", func() {
 
 		stripJobPayload := func(payload gjson.Result) string {
 			strippedPayload, _ := sjson.Delete(payload.String(), "messageId")
-			strippedPayload, _ = sjson.Delete(strippedPayload, "anonymousId")
+			strippedPayload, _ = sjson.Delete(strippedPayload, "rudderId")
 			strippedPayload, _ = sjson.Delete(strippedPayload, "type")
 
 			return strippedPayload
