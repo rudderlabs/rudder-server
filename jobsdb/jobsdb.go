@@ -1457,6 +1457,9 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	jd.checkValidJobState(stateFilters)
 
 	if jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
+		if jd.tablePrefix == "batch_rt" {
+			logger.Infof("[JobsDB] BRT: MM: [getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		}
 		logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
 		return []*JobT{}, nil
 	}
@@ -1577,6 +1580,9 @@ parameterFilters do a AND query on values included in the map
 func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	order bool, count int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
 	if jd.isEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters) {
+		if jd.tablePrefix == "batch_rt" {
+			logger.Infof("[JobsDB] BRT: MM: [getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+		}
 		logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		return []*JobT{}, nil
 	}
