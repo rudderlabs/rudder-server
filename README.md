@@ -27,10 +27,6 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord cha
 
 - **User-specified Transformation**: RudderStack gives you the power to filter or transform your events before sending them to the desired destinations.
 
-# Our Trusted Customers
-
-[![1mg](https://user-images.githubusercontent.com/59817155/90764974-d325cc00-e306-11ea-9cc4-ed7c159f9738.PNG)](https://www.1mg.com/) [![Grofers](https://user-images.githubusercontent.com/59817155/90764982-d751e980-e306-11ea-9c45-fd261be00988.PNG)](https://grofers.com/) [![IFTTT](https://user-images.githubusercontent.com/59817155/90764989-d9b44380-e306-11ea-877f-409e9ba4e88c.PNG)](https://ifttt.com/) [![Mattermost](https://user-images.githubusercontent.com/59817155/90765001-dcaf3400-e306-11ea-887e-2d1f096bee01.PNG)](https://mattermost.com/) [![torpedo](https://user-images.githubusercontent.com/59817155/90765011-dfaa2480-e306-11ea-8f23-341c7456773f.PNG)]()
-
 # Key Features
 
 - **Segment API Compatible**: RudderStack is Segment API compatible. So you don't need to change your app if you are using Segment, just integrate the RudderStack SDKs into your app.
@@ -46,6 +42,10 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord cha
 - **High Performance**: On a single m4.2xlarge AWS EC2 instance, RudderStack can process 3000 events/second.
 
 - **Enhanced Telemetry**: To help us improve RudderStack, we collect performance and diagnostic metrics about how you use RudderStack, and how it is working. **No customer data is present in the metrics**. For technical details, please check out our wiki page on [Telemetry](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Telemetry).
+
+# Our Customers
+
+[![1mg](https://user-images.githubusercontent.com/59817155/90764974-d325cc00-e306-11ea-9cc4-ed7c159f9738.PNG)](https://www.1mg.com/) [![Grofers](https://user-images.githubusercontent.com/59817155/90764982-d751e980-e306-11ea-9c45-fd261be00988.PNG)](https://grofers.com/) [![IFTTT](https://user-images.githubusercontent.com/59817155/90764989-d9b44380-e306-11ea-877f-409e9ba4e88c.PNG)](https://ifttt.com/) [![Mattermost](https://user-images.githubusercontent.com/59817155/90765001-dcaf3400-e306-11ea-887e-2d1f096bee01.PNG)](https://mattermost.com/) [![torpedo](https://user-images.githubusercontent.com/59817155/90765011-dfaa2480-e306-11ea-8f23-341c7456773f.PNG)]()
 
 # RudderStack Setup
 
