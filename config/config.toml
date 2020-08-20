@@ -145,7 +145,7 @@ maxRetryBackoffInS = 300
     # settings similar to below one can be used to throttle router
     # sending events to downstream destinations
     # [Router.throttler.AM]
-    # eventLimit = 1000
+    # limit = 1000
     # timeWindowInS =          1
     # userLevelThrottling =    true
     # userLevelLimit =         10
