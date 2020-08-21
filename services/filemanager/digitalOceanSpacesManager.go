@@ -22,20 +22,11 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 	}
 
 	region := misc.GetSpacesLocation(manager.Config.EndPoint)
-	var uploadSession *session.Session
-	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
-		uploadSession = session.New(&aws.Config{
-			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-			Region:      aws.String(region),
-			Endpoint:    aws.String(manager.Config.EndPoint),
-		})
-	} else {
-		uploadSession = session.New(&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-			Endpoint:    aws.String(manager.Config.EndPoint),
-		})
-	}
+	uploadSession := session.New(&aws.Config{
+		Region:      aws.String(region),
+		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+		Endpoint:    aws.String(manager.Config.EndPoint),
+	})
 
 	s3Client := s3.New(uploadSession)
 	splitFileName := strings.Split(file.Name(), "/")
@@ -61,28 +52,18 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 	if err != nil {
 		return UploadOutput{}, err
 	}
-	var location string
-	location = manager.Config.Bucket + "." + manager.Config.EndPoint + "." + fileName
+	location := manager.Config.Bucket + "." + manager.Config.EndPoint + "." + fileName
 	return UploadOutput{Location: location, ObjectName: fileName}, err
 }
 
 func (manager *DOSpacesManager) Download(output *os.File, key string) error {
 
 	region := misc.GetSpacesLocation(manager.Config.EndPoint)
-	var downloadSession *session.Session
-	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
-		downloadSession = session.New(&aws.Config{
-			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-			Region:      aws.String(region),
-			Endpoint:    aws.String(manager.Config.EndPoint),
-		})
-	} else {
-		downloadSession = session.New(&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-			Endpoint:    aws.String(manager.Config.EndPoint),
-		})
-	}
+	downloadSession := session.New(&aws.Config{
+		Region:      aws.String(region),
+		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+		Endpoint:    aws.String(manager.Config.EndPoint),
+	})
 
 	downloader := SpacesManager.NewDownloader(downloadSession)
 	_, err := downloader.Download(output,
@@ -94,17 +75,17 @@ func (manager *DOSpacesManager) Download(output *os.File, key string) error {
 	return err
 }
 
+//TODO complete this
 func (manager *DOSpacesManager) GetDownloadKeyFromFileLocation(location string) string {
-	locationSlice := strings.Split(location, "amazonaws.com/")
-	return locationSlice[len(locationSlice)-1]
+	return location
 }
 
 /*
 GetObjectNameFromLocation gets the object name/key name from the object location url
-	https://bucket-name.s3.amazonaws.com/key - >> key
+	https://rudder.sgp1.digitaloceanspaces.com/key - >> key
 */
 func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (string, error) {
-	reg, err := regexp.Compile(`^https.+\.s3\..*amazonaws\.com\/`)
+	reg, err := regexp.Compile(`^https.+digitaloceanspaces\.com\/`)
 	if err != nil {
 		return "", err
 	}
@@ -122,17 +103,10 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string) ([]*SpacesObj
 	getRegionSession := session.Must(session.NewSession())
 	region, err := SpacesManager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
 
-	var sess *session.Session
-	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
-		sess = session.Must(session.NewSession(&aws.Config{
-			Region: aws.String(region),
-		}))
-	} else {
-		sess = session.Must(session.NewSession(&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-		}))
-	}
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region:      aws.String(region),
+		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+	}))
 
 	// Create S3 service client
 	svc := s3.New(sess)
