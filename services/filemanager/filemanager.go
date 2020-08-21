@@ -90,7 +90,6 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["endPoint"] = config.GetEnv("DO_SPACES_ENDPOINT", "")
 		providerConfig["accessKeyID"] = config.GetEnv("DO_SPACES_ACCESS_KEY_ID", "")
 		providerConfig["accessKey"] = config.GetEnv("DO_SPACES_SECRET_ACCESS_KEY", "")
-		providerConfig["useSSL"] = config.GetEnvAsBool("DO_SPACES_SSL", false)
 	}
 	return providerConfig
 }

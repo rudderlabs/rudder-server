@@ -645,8 +645,8 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s at key: %s\n", object.Provider, object.Key)
 
 		var objKey string
-		if prefix, ok := object.Config["prefix"]; ok && strings.TrimSpace(prefix.(string)) != "" {
-			objKey += fmt.Sprint("/%s", objKey)
+		if prefix, ok := object.Config["prefix"]; ok && prefix != "" {
+			objKey += fmt.Sprint("/%s", strings.TrimSpace(prefix.(string)))
 		}
 		objKey += object.Key
 

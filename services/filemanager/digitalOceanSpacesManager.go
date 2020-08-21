@@ -57,9 +57,6 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 		Key:    aws.String(fileName),
 		Body:   file,
 	}
-	if manager.Config.EnableSSE {
-		uploadInput.ServerSideEncryption = aws.String("AES256")
-	}
 	_, err := s3Client.PutObject(&uploadInput)
 	if err != nil {
 		return UploadOutput{}, err
@@ -163,7 +160,6 @@ type DOSpacesManager struct {
 
 func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 	var bucketName, prefix, endPoint, accessKeyID, accessKey string
-	var enableSSE, ok bool
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
 	}
@@ -179,12 +175,7 @@ func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 	if config["accessKey"] != nil {
 		accessKey = config["accessKey"].(string)
 	}
-	if config["enableSSE"] != nil {
-		if enableSSE, ok = config["enableSSE"].(bool); !ok {
-			enableSSE = false
-		}
-	}
-	return &DOSpacesConfig{Bucket: bucketName, EndPoint: endPoint, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey, EnableSSE: enableSSE}
+	return &DOSpacesConfig{Bucket: bucketName, EndPoint: endPoint, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey}
 }
 
 type DOSpacesConfig struct {
@@ -193,5 +184,4 @@ type DOSpacesConfig struct {
 	EndPoint    string
 	AccessKeyID string
 	AccessKey   string
-	EnableSSE   bool
 }
