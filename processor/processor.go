@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/araddon/dateparse"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -539,18 +538,10 @@ func getBackendEnabledDestinationTypes(writeKey string) map[string]backendconfig
 	return enabledDestinationTypes
 }
 
-func getTimestampFromEvent(event types.SingularEventT, field string) time.Time {
+func getTimestampFromEvent(event types.SingularEventT, field string) (time.Time) {
 	var timestamp time.Time
-	var err error
-	if _, ok := event[field]; ok {
-		timestampStr, typecasted := event[field].(string)
-		if typecasted {
-			timestamp, err = dateparse.ParseAny(timestampStr)
-		}
-		if !typecasted || err != nil {
-			timestamp = time.Now()
-		}
-	} else {
+	var ok bool
+	if timestamp, ok = misc.GetParsedTimestamp(event[field]); !ok {
 		timestamp = time.Now()
 	}
 	return timestamp
@@ -560,12 +551,21 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 	// set timestamp skew based on timestamp fields from SDKs
 	originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
 	sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
+	var timestamp time.Time
+	var ok bool
+
+	// use existing timestamp if it exists in the event, add new timestamp otherwise
+	if timestamp, ok = misc.GetParsedTimestamp(event.Message["timestamp"]); !ok {
+		// calculate new timestamp using using the formula
+		// timestamp = receivedAt - (sentAt - originalTimestamp)
+		timestamp = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp)
+	}
 
 	// set all timestamps in RFC3339 format
 	event.Message["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
 	event.Message["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339Milli)
 	event.Message["sentAt"] = sentAt.Format(misc.RFC3339Milli)
-	event.Message["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339Milli)
+	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response

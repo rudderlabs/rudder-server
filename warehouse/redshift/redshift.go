@@ -525,7 +525,8 @@ func (rs *HandleT) loadUserTables() (err error) {
 	var userColNames, firstValProps []string
 	firstValPropsForIdentifies := []string{fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY anonymous_id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, "user_id")}
 	for colName := range userColMap {
-		if colName == "id" || colName == "user_id" {
+		// do not reference uuid in queries as it can be an autoincrementing field set by segment compatible tables
+		if colName == "id" || colName == "user_id" || colName == "uuid" {
 			continue
 		}
 		userColNames = append(userColNames, colName)
@@ -837,6 +838,32 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		if err == nil {
 			err = rs.Export()
 		}
+	}
+	return
+}
+
+func (rs *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	rs.Warehouse = config.Warehouse
+	rs.Db, err = connect(RedshiftCredentialsT{
+		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
+		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
+		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
+		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
+		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
+	})
+	if err != nil {
+		return
+	}
+	defer rs.Db.Close()
+	pingResultChannel := make(chan error, 1)
+	rruntime.Go(func() {
+		pingResultChannel <- rs.Db.Ping()
+	})
+	var timeOut time.Duration = 5
+	select {
+	case err = <-pingResultChannel:
+	case <-time.After(timeOut * time.Second):
+		err = errors.New(fmt.Sprintf("connection testing timed out after %v sec", timeOut))
 	}
 	return
 }

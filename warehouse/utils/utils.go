@@ -9,8 +9,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/iancoleman/strcase"
+	"github.com/tidwall/gjson"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -23,21 +25,22 @@ import (
 )
 
 const (
-	WaitingState                  = "waiting"
-	ExecutingState                = "executing"
-	GeneratingLoadFileState       = "generating_load_file"
-	GeneratingLoadFileFailedState = "generating_load_file_failed"
-	GeneratedLoadFileState        = "generated_load_file"
-	UpdatingSchemaState           = "updating_schema"
-	UpdatingSchemaFailedState     = "updating_schema_failed"
-	UpdatedSchemaState            = "updated_schema"
-	ExportingDataState            = "exporting_data"
-	ExportingDataFailedState      = "exporting_data_failed"
-	ExportedDataState             = "exported_data"
-	AbortedState                  = "aborted"
-	GeneratingStagingFileFailed   = "generating_staging_file_failed"
-	GeneratedStagingFile          = "generated_staging_file"
-	FetchingSchemaFailed          = "fetching_schema_failed"
+	WaitingState                     = "waiting"
+	ExecutingState                   = "executing"
+	GeneratingLoadFileState          = "generating_load_file"
+	GeneratingLoadFileFailedState    = "generating_load_file_failed"
+	GeneratedLoadFileState           = "generated_load_file"
+	UpdatingSchemaState              = "updating_schema"
+	UpdatingSchemaFailedState        = "updating_schema_failed"
+	UpdatedSchemaState               = "updated_schema"
+	ExportingDataState               = "exporting_data"
+	ExportingDataFailedState         = "exporting_data_failed"
+	ExportedDataState                = "exported_data"
+	AbortedState                     = "aborted"
+	GeneratingStagingFileFailedState = "generating_staging_file_failed"
+	GeneratedStagingFileState        = "generated_staging_file"
+	FetchingSchemaState              = "fetching_schema"
+	FetchingSchemaFailedState        = "fetching_schema_failed"
 )
 
 const (
@@ -87,8 +90,9 @@ const (
 )
 
 var (
-	maxRetry int
-	serverIP string
+	minRetryAttempts int
+	retryTimeWindow  time.Duration
+	serverIP         string
 )
 
 var ObjectStorageMap = map[string]string{
@@ -107,7 +111,8 @@ func init() {
 }
 
 func loadConfig() {
-	maxRetry = config.GetInt("Warehouse.maxRetry", 3)
+	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
+	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 }
 
 type WarehouseT struct {
@@ -142,6 +147,9 @@ type UploadT struct {
 	Schema             map[string]map[string]string
 	Error              json.RawMessage
 	Timings            []map[string]string
+	FirstAttemptAt     time.Time
+	LastAttemptAt      time.Time
+	Attempts           int64
 }
 
 type CurrentSchemaT struct {
@@ -269,6 +277,25 @@ func GetNewTimings(upload UploadT, dbHandle *sql.DB, status string) []byte {
 	return marshalledTimings
 }
 
+func GetUploadFirstAttemptTime(upload UploadT, dbHandle *sql.DB) (timing time.Time) {
+	var firstTiming sql.NullString
+	sqlStatement := fmt.Sprintf(`SELECT timings->0 as firstTimingObj FROM %s WHERE id=%d`, WarehouseUploadsTable, upload.ID)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&firstTiming)
+	if err != nil {
+		return
+	}
+	_, timing = TimingFromJSONString(firstTiming)
+	return timing
+}
+
+func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
+	timingsMap := gjson.Parse(str.String).Map()
+	for s, t := range timingsMap {
+		return s, t.Time()
+	}
+	return // zero values
+}
+
 func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB, additionalFields ...UploadColumnT) (err error) {
 	logger.Infof("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
 	marshalledTimings := GetNewTimings(upload, dbHandle, status)
@@ -334,8 +361,11 @@ func SetUploadError(upload UploadT, statusError error, state string, dbHandle *s
 		errorByState["errors"] = []string{statusError.Error()}
 	}
 	// abort after configured retry attempts
-	if errorByState["attempt"].(int) > maxRetry {
-		state = AbortedState
+	if errorByState["attempt"].(int) > minRetryAttempts {
+		firstTiming := GetUploadFirstAttemptTime(upload, dbHandle)
+		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
+			state = AbortedState
+		}
 	}
 	serializedErr, _ := json.Marshal(&e)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, WarehouseUploadsTable)
