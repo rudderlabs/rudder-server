@@ -109,7 +109,7 @@ func loadConfig() {
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
 	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
-	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 8)
+	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 3)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
@@ -245,14 +245,13 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			if respStatusCode >= 500 || respStatusCode == 429 {
 				// TODO: timeElapsed should be ideally from first attempt
 				timeElapsed := time.Now().Sub(job.CreatedAt)
-				if timeElapsed > retryTimeWindow {
+				if timeElapsed > retryTimeWindow && status.AttemptNum >= maxFailedCountForJob {
 					status.JobState = jobsdb.Aborted.State
 					delete(worker.retryForJobMap, job.JobID)
 				} else {
 					worker.retryForJobMap[job.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
 				}
 			} else {
-				status.AttemptNum = job.LastJobStatus.AttemptNum + 1
 				if status.AttemptNum >= maxFailedCountForJob {
 					status.JobState = jobsdb.Aborted.State
 					eventsAbortedStat.Increment()
