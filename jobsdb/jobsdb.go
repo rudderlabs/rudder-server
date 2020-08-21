@@ -263,6 +263,7 @@ var (
 	Waiting      = jobStateT{isValid: true, isTerminal: false, State: "waiting"}
 	WaitingRetry = jobStateT{isValid: true, isTerminal: false, State: "waiting_retry"}
 	Migrating    = jobStateT{isValid: true, isTerminal: false, State: "migrating"}
+	Throttled    = jobStateT{isValid: true, isTerminal: false, State: "throttled"}
 
 	//Valid, Terminal
 	Succeeded   = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
@@ -278,6 +279,7 @@ var jobStates []jobStateT = []jobStateT{
 	Executing,
 	Waiting,
 	WaitingRetry,
+	Throttled,
 	Migrating,
 	Succeeded,
 	Aborted,
@@ -2550,6 +2552,9 @@ GetUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
 func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
+	if count == 0 {
+		return []*JobT{}
+	}
 
 	var queryStat stats.RudderStats
 	statName := ""
@@ -2597,6 +2602,9 @@ can return the same set of events. It is the responsibility of the caller to cal
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
 func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
+	if count == 0 {
+		return []*JobT{}
+	}
 
 	var queryStat stats.RudderStats
 	statName := ""
@@ -2656,6 +2664,10 @@ This is a wrapper over GetProcessed call above
 */
 func (jd *HandleT) GetWaiting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 	return jd.GetProcessed([]string{Waiting.State}, customValFilters, count, parameterFilters)
+}
+
+func (jd *HandleT) GetThrottled(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
+	return jd.GetProcessed([]string{Throttled.State}, customValFilters, count, parameterFilters)
 }
 
 /*

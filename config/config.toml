@@ -135,10 +135,21 @@ minSleepInS = 0
 maxStatusUpdateWaitInS = 5
 randomWorkerAssign = false
 useTestSink = false
-maxFailedCountForJob = 8
+maxFailedCountForJob = 3
 keepOrderOnFailure = true
 kafkaWriteTimeoutInSec = 2
 kafkaDialTimeoutInSec = 10
+retryTimeWindowInMins = 180
+minRetryBackoffInS = 10
+maxRetryBackoffInS = 300
+    # settings similar to below one can be used to throttle router
+    # sending events to downstream destinations
+    # [Router.throttler.AM]
+    # limit = 1000
+    # timeWindowInS =          1
+    # userLevelThrottling =    true
+    # userLevelLimit =         10
+    # userLevelTimeWindowInS = 1
 
 [BatchRouter]
 mainLoopSleepInS = 2

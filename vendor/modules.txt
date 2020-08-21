@@ -104,6 +104,8 @@ github.com/cenkalti/backoff/v4
 github.com/cespare/xxhash
 # github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58
 github.com/cloudflare/golz4
+# github.com/coinpaprika/ratelimiter v0.2.1
+github.com/coinpaprika/ratelimiter
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
 # github.com/dgraph-io/badger v1.6.1
