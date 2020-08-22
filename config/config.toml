@@ -27,8 +27,10 @@
 #
 # RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH="./workspaceConfig.json"
 #
-#
-# RSERVER_JOBS_DB_ENABLE_BACKUP=true
+# Eg 5:
+# [JobsDB.backup]
+# enabled = true
+# RSERVER_JOBS_DB_BACKUP_ENABLED=true
 #
 
 
