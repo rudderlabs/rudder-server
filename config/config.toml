@@ -36,6 +36,11 @@
 # [Processor]
 # loopSleepInMS = 10
 # RSERVER_PROCESSOR_LOOP_SLEEP_IN_MS=10
+#
+# Eg 7:
+# [Router]
+# readSleepInMS = 1000
+# RSERVER_ROUTER_READ_SLEEP_IN_MS=1000
 
 
 
