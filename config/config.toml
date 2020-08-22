@@ -32,6 +32,10 @@
 # enabled = true
 # RSERVER_JOBS_DB_BACKUP_ENABLED=true
 #
+# Eg 6:
+# [Processor]
+# loopSleepInMS = 10
+# RSERVER_PROCESSOR_LOOP_SLEEP_IN_MS=10
 
 
 
