@@ -7,4 +7,4 @@ ALTER TABLE schema_versions
 ALTER TABLE schema_versions
 		ADD CONSTRAINT unique_uuid UNIQUE (uuid);
 ALTER TABLE schema_versions
-		ADD CONSTRAINT total_count BIGINT DEFAULT 0;
+		ADD COLUMN IF NOT EXISTS total_count BIGINT DEFAULT 0;
