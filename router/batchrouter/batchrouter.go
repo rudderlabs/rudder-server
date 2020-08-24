@@ -655,7 +655,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 
 		var objKey string
 		if prefix, ok := object.Config["prefix"]; ok && prefix != "" {
-			objKey += fmt.Sprint("/%s", strings.TrimSpace(prefix.(string)))
+			objKey += fmt.Sprintf("/%s", strings.TrimSpace(prefix.(string)))
 		}
 		objKey += object.Key
 
