@@ -546,7 +546,7 @@ func getSortKeyTuple(sortKeyFields []string) string {
 func (ch *HandleT) createTable(tableName string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"received_at", "id"}
 	if tableName == warehouseutils.DiscardsTable {
-		sortKeyFields = []string{"uuid_ts"}
+		sortKeyFields = []string{"received_at"}
 	}
 	var sqlStatement string
 	if tableName == warehouseutils.UsersTable {
