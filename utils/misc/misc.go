@@ -182,7 +182,7 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT
 
 //GetRudderID return the UserID from the object
 func GetRudderID(event types.SingularEventT) (string, bool) {
-	userID, ok := GetRudderEventVal("anonymousId", event)
+	userID, ok := GetRudderEventVal("rudderId", event)
 	if !ok {
 		return "", false
 	}
