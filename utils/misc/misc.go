@@ -180,7 +180,7 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT
 	return gatewayBatchEvent.Batch, true
 }
 
-//GetAnonymousID return the UserID from the object
+//GetRudderID return the UserID from the object
 func GetRudderID(event types.SingularEventT) (string, bool) {
 	userID, ok := GetRudderEventVal("anonymousId", event)
 	if !ok {
