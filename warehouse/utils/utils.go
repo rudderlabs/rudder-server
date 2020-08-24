@@ -90,7 +90,7 @@ const (
 )
 
 const (
-	BQLoadedAtFormat = "2006-01-02 15:04:05.99999 Z"
+	BQLoadedAtFormat = "2006-01-02 15:04:05.999999 Z"
 	BQUuidTSFormat   = "2006-01-02 15:04:05 Z"
 )
 
