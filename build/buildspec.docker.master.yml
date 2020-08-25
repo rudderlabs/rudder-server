@@ -51,7 +51,6 @@ phases:
       - docker build -t rudderlabs/rudder-server:$VERSION -f build/Dockerfile-aws .
       # Build Enterprise version
       - make enterprise-init
-
       - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' build/docker.env
       - docker-compose -f build/docker-compose.codebuild.yml up -d
       - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo -mod vendor tests/e2e"
