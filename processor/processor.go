@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -1009,8 +1008,6 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		proc.processJobsForDest(combinedList, nil)
 	}
 	proc.statLoopTime.End()
-
-	runtime.GC()
 
 	return true
 }
