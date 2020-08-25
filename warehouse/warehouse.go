@@ -557,6 +557,10 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 		warehouseutils.ToProviderCase(destType, "received_at"):  "datetime",
 		warehouseutils.ToProviderCase(destType, "uuid_ts"):      "datetime",
 	}
+	// add loaded_at for bq to be segment compatible
+	if destType == "BQ" {
+		discards[warehouseutils.ToProviderCase(destType, "loaded_at")] = "datetime"
+	}
 	consolidatedSchema[warehouseutils.ToProviderCase(destType, warehouseutils.DiscardsTable)] = discards
 	return consolidatedSchema
 }
@@ -1279,7 +1283,12 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 			for _, columnName := range sortedTableColumnMap[tableName] {
 				if columnName == warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts") {
 					// add uuid_ts to track when event was processed into load_file
-					columnData[warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts")] = uuidTS.Format("2006-01-02 15:04:05 Z")
+					columnData[warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts")] = uuidTS.Format(warehouseutils.BQUuidTSFormat)
+					continue
+				}
+				if columnName == warehouseutils.ToProviderCase(job.DestinationType, "loaded_at") {
+					// add loaded_at for segment compatability
+					columnData[warehouseutils.ToProviderCase(job.DestinationType, "loaded_at")] = uuidTS.Format(warehouseutils.BQLoadedAtFormat)
 					continue
 				}
 				columnVal, ok := columnData[columnName]
@@ -1339,7 +1348,8 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 								"received_at":  receivedAt,
 								"row_id":       rowID,
 								"table_name":   tableName,
-								"uuid_ts":      uuidTS.Format("2006-01-02 15:04:05 Z"),
+								"uuid_ts":      uuidTS.Format(warehouseutils.BQUuidTSFormat),
+								"loaded_at":    uuidTS.Format(warehouseutils.BQLoadedAtFormat),
 							}
 							dLine, err := json.Marshal(discardsData)
 							if err != nil {

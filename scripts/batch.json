@@ -1,6 +1,7 @@
 {
   "batch": [
     {
+      "anonymousId": "anon_id",
       "channel": "android-sdk",
       "context": {
         "app": {

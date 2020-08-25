@@ -10,4 +10,4 @@ fi
 
 #curl -u $1: -X POST http://$2:8080/v1/track -d @track.json --header "Content-Type: application/json"
 #curl -u $1: -X POST $2 -d @track.json --header "Content-Type: application/json"
-curl -u $1: -X POST $2 -d @batch.json --header "Content-Type: application/json" --header "Host: 127.0.0.1"
+curl -u $1: -X POST $2 -d @batch.json --header "Content-Type: application/json" # give absolute path for batch.json to test on local machine
