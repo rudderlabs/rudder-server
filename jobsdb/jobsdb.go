@@ -2057,21 +2057,13 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			panic(err)
 		}
 
-		/*var rows []interface{}
-		err = json.Unmarshal(rawJSONRows, &rows)
-		if err != nil {
-			panic(err)
+		if len(rawJSONRows) < 2 {
+			break
 		}
-		contentSlice := make([][]byte, len(rows))
-		for idx, row := range rows {
-			rowBytes, err := json.Marshal(row)
-			if err != nil {
-				panic(err)
-			}
-			contentSlice[idx] = rowBytes
-		}
-		// append new line character at end, before next backupRowsBatch is appended to same file
-		content := append(bytes.Join(contentSlice[:], []byte("\n")), []byte("\n")...)*/
+
+		rawJSONRows = rawJSONRows[1 : len(rawJSONRows)-1] //stripping starting '[' and ending ']'
+		rawJSONRows = append(rawJSONRows, '\n')           //appending '\n'
+
 		gzWriter.Write(rawJSONRows)
 		offset += backupRowsBatchSize
 		if offset >= totalCount {
