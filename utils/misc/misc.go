@@ -723,6 +723,16 @@ func GetObjectStorageConfig(provider string, objectStorageConfig interface{}) ma
 
 }
 
+func GetSpacesLocation(location string) (region string) {
+	r, _ := regexp.Compile("\\.*.*\\.digitaloceanspaces\\.com")
+	subLocation := r.FindString(location)
+	regionTokens := strings.Split(subLocation, ".")
+	if len(regionTokens) == 3 {
+		region = regionTokens[0]
+	}
+	return region
+}
+
 //GetNodeID returns the nodeId of the current node
 func GetNodeID() string {
 	nodeID := config.GetRequiredEnv("INSTANCE_ID")

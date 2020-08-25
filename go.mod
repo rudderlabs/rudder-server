@@ -20,6 +20,7 @@ require (
 	github.com/bugsnag/panicwrap v1.2.0 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.0.2
+	github.com/coinpaprika/ratelimiter v0.2.1
 	github.com/dgraph-io/badger v1.6.1
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/garyburd/redigo v1.6.0 // indirect

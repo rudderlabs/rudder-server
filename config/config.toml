@@ -27,9 +27,20 @@
 #
 # RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH="./workspaceConfig.json"
 #
+# Eg 5:
+# [JobsDB.backup]
+# enabled = true
+# RSERVER_JOBS_DB_BACKUP_ENABLED=true
 #
-# RSERVER_JOBS_DB_ENABLE_BACKUP=true
+# Eg 6:
+# [Processor]
+# loopSleepInMS = 10
+# RSERVER_PROCESSOR_LOOP_SLEEP_IN_MS=10
 #
+# Eg 7:
+# [Router]
+# readSleepInMS = 1000
+# RSERVER_ROUTER_READ_SLEEP_IN_MS=1000
 
 
 
@@ -135,10 +146,21 @@ minSleepInS = 0
 maxStatusUpdateWaitInS = 5
 randomWorkerAssign = false
 useTestSink = false
-maxFailedCountForJob = 8
+maxFailedCountForJob = 3
 keepOrderOnFailure = true
 kafkaWriteTimeoutInSec = 2
 kafkaDialTimeoutInSec = 10
+retryTimeWindowInMins = 180
+minRetryBackoffInS = 10
+maxRetryBackoffInS = 300
+    # settings similar to below one can be used to throttle router
+    # sending events to downstream destinations
+    # [Router.throttler.AM]
+    # limit = 1000
+    # timeWindowInS =          1
+    # userLevelThrottling =    true
+    # userLevelLimit =         10
+    # userLevelTimeWindowInS = 1
 
 [BatchRouter]
 mainLoopSleepInS = 2

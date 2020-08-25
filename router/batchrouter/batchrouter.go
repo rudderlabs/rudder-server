@@ -652,15 +652,21 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		}
 
 		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s at key: %s\n", object.Provider, object.Key)
-		err = downloader.Download(jsonFile, object.Key)
+
+		var objKey string
+		if prefix, ok := object.Config["prefix"]; ok && prefix != "" {
+			objKey += fmt.Sprintf("/%s", strings.TrimSpace(prefix.(string)))
+		}
+		objKey += object.Key
+
+		err = downloader.Download(jsonFile, objKey)
 		if err != nil {
-			logger.Debugf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
+			logger.Errorf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
 			continue
 		}
 
 		jsonFile.Close()
 		defer os.Remove(jsonPath)
-
 		rawf, err := os.Open(jsonPath)
 		if err != nil {
 			panic(err)
@@ -763,7 +769,7 @@ func loadConfig() {
 	maxFailedCountForJob = config.GetInt("BatchRouter.maxFailedCountForJob", 128)
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
-	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
+	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
