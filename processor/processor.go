@@ -210,7 +210,6 @@ var (
 	destinationTransformationEnabledMap map[string]bool
 	rawDataDestinations                 []string
 	configSubscriberLock                sync.RWMutex
-	isReplayServer                      bool
 	customDestinations                  []string
 )
 
@@ -225,8 +224,6 @@ func loadConfig() {
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
-
-	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -501,19 +498,6 @@ func (proc *HandleT) createSessions() {
 	}
 }
 
-func getReplayEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
-	var enabledDests []backendconfig.DestinationT
-	for _, dest := range writeKeyDestinationMap[writeKey] {
-		replay := dest.Config["Replay"]
-		if destinationName == dest.DestinationDefinition.Name && dest.Enabled && replay != nil && replay.(bool) {
-			enabledDests = append(enabledDests, dest)
-		}
-	}
-	return enabledDests
-}
-
 func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
@@ -538,7 +522,7 @@ func getBackendEnabledDestinationTypes(writeKey string) map[string]backendconfig
 	return enabledDestinationTypes
 }
 
-func getTimestampFromEvent(event types.SingularEventT, field string) (time.Time) {
+func getTimestampFromEvent(event types.SingularEventT, field string) time.Time {
 	var timestamp time.Time
 	var ok bool
 	if timestamp, ok = misc.GetParsedTimestamp(event[field]); !ok {
@@ -744,11 +728,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 				for _, destType := range enabledDestTypes {
 					var enabledDestinationsList []backendconfig.DestinationT
-					if isReplayServer {
-						enabledDestinationsList = getReplayEnabledDestinations(writeKey, destType)
-					} else {
-						enabledDestinationsList = getEnabledDestinations(writeKey, destType)
-					}
+					enabledDestinationsList = getEnabledDestinations(writeKey, destType)
 					enabledDestinationsMap[destType] = enabledDestinationsList
 
 					// Adding a singular event multiple times if there are multiple destinations of same type
