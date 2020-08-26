@@ -2027,7 +2027,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
 
-	var totalCount, patternMatchCount int64
+	var totalCount, rowEndPatternMatchCount int64
 	err = jd.dbHandle.QueryRow(countStmt).Scan(&totalCount)
 	if err != nil {
 		panic(err)
@@ -2048,7 +2048,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	gzWriter, err := misc.CreateGZ(path)
 	defer os.Remove(path)
 
-	var offset, replaceCount int64
+	var offset, batchCount int64
 	for {
 		stmt := jd.getBackUpQuery(backupDSRange, isJobStatusTable, offset)
 		var rawJSONRows json.RawMessage
@@ -2058,9 +2058,9 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			panic(err)
 		}
 
-		patternMatchCount += int64(bytes.Count(rawJSONRows, []byte("}, \n {")))
+		rowEndPatternMatchCount += int64(bytes.Count(rawJSONRows, []byte("}, \n {")))
 		rawJSONRows = bytes.Replace(rawJSONRows, []byte("}, \n {"), []byte("}\n{"), -1) //replacing ", \n " with "\n"
-		replaceCount++
+		batchCount++
 
 		//Asserting that the first character is '[' and last character is ']'
 		jd.assert(rawJSONRows[0] == byte('[') && rawJSONRows[len(rawJSONRows)-1] == byte(']'), fmt.Sprintf("json agg output is not in the expected format. Excepted format: JSON Array [{}]"))
@@ -2077,7 +2077,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	gzWriter.CloseGZ()
 	tableFileDumpTimeStat.End()
 
-	jd.assert(patternMatchCount == totalCount-replaceCount, fmt.Sprintf("patternMatchCount:%d != (totalCount:%d-replaceCount:%d). Ill formed json bytes could be written to a file. Panicking.", patternMatchCount, totalCount, replaceCount))
+	jd.assert(rowEndPatternMatchCount == totalCount-batchCount, fmt.Sprintf("rowEndPatternMatchCount:%d != (totalCount:%d-batchCount:%d). Ill formed json bytes could be written to a file. Panicking.", rowEndPatternMatchCount, totalCount, batchCount))
 
 	fileUploadTimeStat := stats.NewJobsDBStat("fileUpload_TimeStat", stats.TimerType, jd.tablePrefix)
 	fileUploadTimeStat.Start()
