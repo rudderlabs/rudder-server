@@ -140,6 +140,30 @@ func (pg *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	return
 }
 
+//fetchAutoIncrementingFieldsForUsersTable queries auto increment columns from users table
+func (pg *HandleT) fetchAutoIncrementingFieldsForUsersTable() (autoIncrementingFields []string) {
+	sqlStatement := fmt.Sprintf(`SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS
+									WHERE table_schema = '%s' and table_name= '%s' and is_identity='YES'`, pg.Namespace, warehouseutils.UsersTable)
+	rows, err := pg.Db.Query(sqlStatement)
+	if err != nil && err != sql.ErrNoRows {
+		logger.Errorf("RS: Error in fetching auto increment fields from postgres destination:%v, query: %v", pg.Warehouse.Destination.ID, sqlStatement)
+		return
+	}
+	if err == sql.ErrNoRows {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var colName string
+		err := rows.Scan(&colName)
+		if err != nil {
+			panic(err)
+		}
+		autoIncrementingFields = append(autoIncrementingFields, colName)
+	}
+	return
+}
+
 // FetchSchema queries postgres and returns the schema associated with provided namespace
 func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	pg.Warehouse = warehouse
@@ -429,8 +453,9 @@ func (pg *HandleT) loadUserTables() (err error) {
 
 	userColMap := pg.CurrentSchema[warehouseutils.UsersTable]
 	var userColNames, firstValProps []string
+	autoIncrementingFields := pg.fetchAutoIncrementingFieldsForUsersTable()
 	for colName := range userColMap {
-		if colName == "id" {
+		if colName == "id" || misc.ContainsString(autoIncrementingFields, colName) {
 			continue
 		}
 		userColNames = append(userColNames, colName)

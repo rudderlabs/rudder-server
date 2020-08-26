@@ -203,6 +203,30 @@ func (sf *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	return
 }
 
+//fetchAutoIncrementingFieldsForUsersTable queries auto increment columns from users table
+func (sf *HandleT) fetchAutoIncrementingFieldsForUsersTable() (autoIncrementingFields []string) {
+	sqlStatement := fmt.Sprintf(`SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS
+									WHERE table_schema = '%s' and table_name = '%s' and is_identity='YES'`, sf.Namespace, usersTable)
+	rows, err := sf.Db.Query(sqlStatement)
+	if err != nil && err != sql.ErrNoRows {
+		logger.Errorf("RS: Error in fetching auto increment fields from snowflake destination:%v, query: %v", sf.Warehouse.Destination.ID, sqlStatement)
+		return
+	}
+	if err == sql.ErrNoRows {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var colName string
+		err := rows.Scan(&colName)
+		if err != nil {
+			panic(err)
+		}
+		autoIncrementingFields = append(autoIncrementingFields, colName)
+	}
+	return
+}
+
 // FetchSchema queries snowflake and returns the schema assoiciated with provided namespace
 func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	sf.Warehouse = warehouse
@@ -411,8 +435,9 @@ func (sf *HandleT) loadUserTables() (err error) {
 
 	userColMap := sf.CurrentSchema[usersTable]
 	var userColNames, firstValProps []string
+	autoIncrementingFields := sf.fetchAutoIncrementingFieldsForUsersTable()
 	for colName := range userColMap {
-		if colName == "ID" {
+		if colName == "ID" || misc.ContainsString(autoIncrementingFields, colName) {
 			continue
 		}
 		userColNames = append(userColNames, colName)

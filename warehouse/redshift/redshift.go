@@ -226,6 +226,31 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	return
 }
 
+//fetchAutoIncrementingFieldsForUsersTable queries auto increment columns from users table
+func (rs *HandleT) fetchAutoIncrementingFieldsForUsersTable() (autoIncrementingFields []string) {
+	sqlStatement := fmt.Sprintf(`SELECT column_name
+									FROM INFORMATION_SCHEMA.COLUMNS
+									WHERE table_schema = '%s' and table_name like '%s' and  column_default like '%%identity%%'`, rs.Namespace, warehouseutils.UsersTable)
+	rows, err := rs.Db.Query(sqlStatement)
+	if err != nil && err != sql.ErrNoRows {
+		logger.Errorf("RS: Error in fetching auto increment fields from redshift destination:%v, query: %v", rs.Warehouse.Destination.ID, sqlStatement)
+		return
+	}
+	if err == sql.ErrNoRows {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var colName string
+		err := rows.Scan(&colName)
+		if err != nil {
+			panic(err)
+		}
+		autoIncrementingFields = append(autoIncrementingFields, colName)
+	}
+	return
+}
+
 // FetchSchema queries redshift and returns the schema assoiciated with provided namespace
 func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	rs.Warehouse = warehouse
@@ -524,9 +549,10 @@ func (rs *HandleT) loadUserTables() (err error) {
 	userColMap := rs.CurrentSchema["users"]
 	var userColNames, firstValProps []string
 	firstValPropsForIdentifies := []string{fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY anonymous_id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, "user_id")}
+	autoIncrementingFields := rs.fetchAutoIncrementingFieldsForUsersTable()
 	for colName := range userColMap {
-		// do not reference uuid in queries as it can be an autoincrementing field set by segment compatible tables
-		if colName == "id" || colName == "user_id" || colName == "uuid" {
+		// do not reference auto incrementing field in queries
+		if colName == "id" || colName == "user_id" || misc.ContainsString(autoIncrementingFields, colName) {
 			continue
 		}
 		userColNames = append(userColNames, colName)
