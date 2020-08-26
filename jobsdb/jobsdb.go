@@ -2048,7 +2048,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	gzWriter, err := misc.CreateGZ(path)
 	defer os.Remove(path)
 
-	var offset int64
+	var offset, replaceCount int64
 	for {
 		stmt := jd.getBackUpQuery(backupDSRange, isJobStatusTable, offset)
 		var rawJSONRows json.RawMessage
@@ -2060,6 +2060,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 		patternMatchCount += int64(bytes.Count(rawJSONRows, []byte("}, \n {")))
 		rawJSONRows = bytes.Replace(rawJSONRows, []byte("}, \n {"), []byte("}\n{"), -1) //replacing ", \n " with "\n"
+		replaceCount++
 
 		//Asserting that the first character is '[' and last character is ']'
 		jd.assert(rawJSONRows[0] == byte('[') && rawJSONRows[len(rawJSONRows)-1] == byte(']'), fmt.Sprintf("json agg output is not in the expected format. Excepted format: JSON Array [{}]"))
@@ -2076,7 +2077,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	gzWriter.CloseGZ()
 	tableFileDumpTimeStat.End()
 
-	jd.assert(patternMatchCount == totalCount-1, fmt.Sprintf("patternMatchCount != totalCount-1. Ill formed json bytes could be written to a file. Panicking."))
+	jd.assert(patternMatchCount == totalCount-replaceCount, fmt.Sprintf("patternMatchCount:%d != (totalCount:%d-replaceCount:%d). Ill formed json bytes could be written to a file. Panicking.", patternMatchCount, totalCount, replaceCount))
 
 	fileUploadTimeStat := stats.NewJobsDBStat("fileUpload_TimeStat", stats.TimerType, jd.tablePrefix)
 	fileUploadTimeStat.Start()
