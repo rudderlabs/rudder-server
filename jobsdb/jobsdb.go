@@ -2027,7 +2027,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
 
-	var totalCount int64
+	var totalCount, patternMatchCount int64
 	err = jd.dbHandle.QueryRow(countStmt).Scan(&totalCount)
 	if err != nil {
 		panic(err)
@@ -2058,13 +2058,13 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			panic(err)
 		}
 
-		if len(rawJSONRows) < 2 {
-			break
-		}
+		patternMatchCount += int64(bytes.Count(rawJSONRows, []byte("}, \n {")))
+		rawJSONRows = bytes.Replace(rawJSONRows, []byte("}, \n {"), []byte("}\n{"), -1) //replacing ", \n " with "\n"
 
-		rawJSONRows = bytes.Replace(rawJSONRows, []byte(", \n "), []byte("\n"), -1) //replacing ", \n " with "\n"
-		rawJSONRows = rawJSONRows[1 : len(rawJSONRows)-1]                           //stripping starting '[' and ending ']'
-		rawJSONRows = append(rawJSONRows, '\n')                                     //appending '\n'
+		//Asserting that the first character is '[' and last character is ']'
+		jd.assert(rawJSONRows[0] == byte('[') && rawJSONRows[len(rawJSONRows)-1] == byte(']'), fmt.Sprintf("json agg output is not in the expected format. Excepted format: JSON Array [{}]"))
+		rawJSONRows = rawJSONRows[1 : len(rawJSONRows)-1] //stripping starting '[' and ending ']'
+		rawJSONRows = append(rawJSONRows, '\n')           //appending '\n'
 
 		gzWriter.Write(rawJSONRows)
 		offset += backupRowsBatchSize
@@ -2075,6 +2075,8 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	gzWriter.CloseGZ()
 	tableFileDumpTimeStat.End()
+
+	jd.assert(patternMatchCount == totalCount-1, fmt.Sprintf("patternMatchCount != totalCount-1. Ill formed json bytes could be written to a file. Panicking."))
 
 	fileUploadTimeStat := stats.NewJobsDBStat("fileUpload_TimeStat", stats.TimerType, jd.tablePrefix)
 	fileUploadTimeStat.Start()
