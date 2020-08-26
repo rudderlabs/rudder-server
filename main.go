@@ -16,7 +16,6 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 
-	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -51,7 +50,6 @@ var (
 	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
 	enableProcessor, enableRouter    bool
-	isReplayServer                   bool
 	enabledDestinations              []backendconfig.DestinationT
 	configSubscriberLock             sync.RWMutex
 	objectStorageDestinations        []string
@@ -71,7 +69,6 @@ func loadConfig() {
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
-	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
@@ -183,11 +180,6 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
 
-	//Forcing enableBackup false for gatewaydb if this server is for handling replayed events
-	if isReplayServer {
-		config.SetBool("JobsDB.backup.gw.enabled", false)
-	}
-
 	migrationMode := application.Options().MigrationMode
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode, false)
 	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode, true)
@@ -253,11 +245,6 @@ func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jo
 		var processor = processor.NewProcessor()
 		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, stats.DefaultStats)
 		processor.Start()
-
-		if !isReplayServer {
-			var replay replay.ReplayProcessorT
-			replay.Setup(gatewayDB)
-		}
 
 		processorLoaded = true
 	}
