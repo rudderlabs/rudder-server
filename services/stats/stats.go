@@ -46,7 +46,6 @@ var rc runtimeStatsCollector
 var DefaultStats Stats
 
 func init() {
-	config.Initialize()
 	statsEnabled = config.GetBool("enableStats", false)
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
 	instanceID = config.GetEnv("INSTANCE_ID", "")
@@ -60,6 +59,8 @@ func init() {
 // Stats manages provisioning of RudderStats
 type Stats interface {
 	NewStat(Name string, StatType string) (rStats RudderStats)
+	NewLatencyStat(Name string, StatType string) (rStats RudderStats)
+	NewBatchStat(Name string, StatType string, index int) (rStats RudderStats)
 	NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats RudderStats)
 	NewBatchDestStat(Name string, StatType string, destID string) RudderStats
 	NewDestStat(Name string, StatType string, destID string) RudderStats
@@ -121,6 +122,17 @@ func (s *HandleT) NewStat(Name string, StatType string) (rStats RudderStats) {
 		StatType: StatType,
 		Client:   client,
 	}
+}
+
+// NewLatencyStat creates a new RudderStats with provided Name and Type
+// This function is introduced with the intention to sample stats in the future.
+func (s *HandleT) NewLatencyStat(Name string, StatType string) (rStats RudderStats) {
+	return s.NewStat(Name, StatType)
+}
+
+// NewBatchStat creates a new RudderStats with provided Name and Type
+func (s *HandleT) NewBatchStat(Name string, StatType string, index int) (rStats RudderStats) {
+	return s.NewStat(Name, StatType)
 }
 
 // NewStat creates a new RudderStats with provided Name and Type

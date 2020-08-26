@@ -12,7 +12,7 @@ cloud.google.com/go/internal/version
 cloud.google.com/go/bigquery
 # cloud.google.com/go/storage v1.6.0
 cloud.google.com/go/storage
-# github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96
+# github.com/AndreasBriese/bbloom v0.0.0-20190306092124-e2d15f34fcf9
 github.com/AndreasBriese/bbloom
 # github.com/Azure/azure-pipeline-go v0.2.2
 github.com/Azure/azure-pipeline-go/pipeline
@@ -20,6 +20,17 @@ github.com/Azure/azure-pipeline-go/pipeline
 github.com/Azure/azure-storage-blob-go/azblob
 # github.com/BurntSushi/toml v0.3.1
 github.com/BurntSushi/toml
+# github.com/ClickHouse/clickhouse-go v1.4.1
+github.com/ClickHouse/clickhouse-go
+github.com/ClickHouse/clickhouse-go/lib/binary
+github.com/ClickHouse/clickhouse-go/lib/cityhash102
+github.com/ClickHouse/clickhouse-go/lib/column
+github.com/ClickHouse/clickhouse-go/lib/data
+github.com/ClickHouse/clickhouse-go/lib/leakypool
+github.com/ClickHouse/clickhouse-go/lib/lz4
+github.com/ClickHouse/clickhouse-go/lib/protocol
+github.com/ClickHouse/clickhouse-go/lib/types
+github.com/ClickHouse/clickhouse-go/lib/writebuffer
 # github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d
 github.com/EagleChen/mapmutex
 # github.com/EagleChen/restrictor v0.0.0-20180420073700-9b81bbf8df1d
@@ -68,6 +79,8 @@ github.com/aws/aws-sdk-go/private/protocol/query/queryutil
 github.com/aws/aws-sdk-go/private/protocol/rest
 github.com/aws/aws-sdk-go/private/protocol/restxml
 github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil
+github.com/aws/aws-sdk-go/service/eventbridge
+github.com/aws/aws-sdk-go/service/firehose
 github.com/aws/aws-sdk-go/service/kinesis
 github.com/aws/aws-sdk-go/service/s3
 github.com/aws/aws-sdk-go/service/s3/internal/arn
@@ -83,21 +96,30 @@ github.com/bugsnag/bugsnag-go/headers
 github.com/bugsnag/bugsnag-go/sessions
 # github.com/bugsnag/panicwrap v1.2.0
 github.com/bugsnag/panicwrap
+# github.com/cenkalti/backoff v2.2.1+incompatible
+github.com/cenkalti/backoff
 # github.com/cenkalti/backoff/v4 v4.0.2
 github.com/cenkalti/backoff/v4
+# github.com/cespare/xxhash v1.1.0
+github.com/cespare/xxhash
+# github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58
+github.com/cloudflare/golz4
+# github.com/coinpaprika/ratelimiter v0.2.1
+github.com/coinpaprika/ratelimiter
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
-# github.com/dgraph-io/badger v1.6.0
+# github.com/dgraph-io/badger v1.6.1
 github.com/dgraph-io/badger
 github.com/dgraph-io/badger/options
 github.com/dgraph-io/badger/pb
 github.com/dgraph-io/badger/skl
 github.com/dgraph-io/badger/table
+github.com/dgraph-io/badger/trie
 github.com/dgraph-io/badger/y
+# github.com/dgraph-io/ristretto v0.0.2
+github.com/dgraph-io/ristretto/z
 # github.com/dgrijalva/jwt-go v3.2.0+incompatible
 github.com/dgrijalva/jwt-go
-# github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13
-github.com/dgryski/go-farm
 # github.com/dustin/go-humanize v1.0.0
 github.com/dustin/go-humanize
 # github.com/eapache/go-resiliency v1.2.0
@@ -124,12 +146,21 @@ github.com/gofrs/uuid
 # github.com/gogo/protobuf v1.3.1
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/sortkeys
+# github.com/golang-migrate/migrate/v4 v4.11.0
+github.com/golang-migrate/migrate/v4
+github.com/golang-migrate/migrate/v4/database
+github.com/golang-migrate/migrate/v4/database/postgres
+github.com/golang-migrate/migrate/v4/internal/url
+github.com/golang-migrate/migrate/v4/source
+github.com/golang-migrate/migrate/v4/source/go_bindata
+github.com/golang-migrate/migrate/v4/source/httpfs
 # github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 github.com/golang/glog
 # github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
 github.com/golang/groupcache/lru
 # github.com/golang/mock v1.4.3
 github.com/golang/mock/gomock
+github.com/golang/mock/mockgen/model
 # github.com/golang/protobuf v1.3.4
 github.com/golang/protobuf/proto
 github.com/golang/protobuf/protoc-gen-go
@@ -148,8 +179,12 @@ github.com/golang/snappy
 github.com/google/uuid
 # github.com/googleapis/gax-go/v2 v2.0.5
 github.com/googleapis/gax-go/v2
+# github.com/hashicorp/errwrap v1.0.0
+github.com/hashicorp/errwrap
 # github.com/hashicorp/go-cleanhttp v0.5.1
 github.com/hashicorp/go-cleanhttp
+# github.com/hashicorp/go-multierror v1.1.0
+github.com/hashicorp/go-multierror
 # github.com/hashicorp/go-retryablehttp v0.6.6
 github.com/hashicorp/go-retryablehttp
 # github.com/hashicorp/go-uuid v1.0.2
@@ -176,6 +211,8 @@ github.com/iancoleman/strcase
 # github.com/jcmturner/gofork v1.0.0
 github.com/jcmturner/gofork/encoding/asn1
 github.com/jcmturner/gofork/x/crypto/pbkdf2
+# github.com/jeremywohl/flatten v1.0.1
+github.com/jeremywohl/flatten
 # github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af
 github.com/jmespath/go-jmespath
 # github.com/joho/godotenv v1.3.0
@@ -235,6 +272,7 @@ github.com/onsi/ginkgo/types
 # github.com/onsi/gomega v1.7.0
 github.com/onsi/gomega
 github.com/onsi/gomega/format
+github.com/onsi/gomega/ghttp
 github.com/onsi/gomega/internal/assertion
 github.com/onsi/gomega/internal/asyncassertion
 github.com/onsi/gomega/internal/oraclematcher
@@ -270,7 +308,7 @@ github.com/segmentio/backo-go
 github.com/segmentio/ksuid
 # github.com/snowflakedb/gosnowflake v1.3.4
 github.com/snowflakedb/gosnowflake
-# github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72
+# github.com/spaolacci/murmur3 v1.1.0
 github.com/spaolacci/murmur3
 # github.com/spf13/afero v1.2.2
 github.com/spf13/afero
@@ -325,7 +363,7 @@ go.uber.org/zap/internal/bufferpool
 go.uber.org/zap/internal/color
 go.uber.org/zap/internal/exit
 go.uber.org/zap/zapcore
-# golang.org/x/crypto v0.0.0-20200221231518-2aa609cf4a9d
+# golang.org/x/crypto v0.0.0-20200302210943-78000ba7a073
 golang.org/x/crypto/argon2
 golang.org/x/crypto/blake2b
 golang.org/x/crypto/md4

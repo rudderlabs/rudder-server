@@ -23,18 +23,7 @@ type GatewayEventBatchT struct {
 }
 
 //EventUploadT is a structure to hold actual event data
-type EventUploadT struct {
-	Event             string      `json:"event,omitempty"`
-	Integrations      interface{} `json:"integrations,omitempty"`
-	Properties        interface{} `json:"properties,omitempty"`
-	OriginalTimestamp string      `json:"originalTimestamp,omitempty"`
-	AnonymousID       string      `json:"anonymousId,omitempty"`
-	UserID            string      `json:"userId,omitempty"`
-	MessageID         string      `json:"messageId,omitempty"`
-	Name              string      `json:"name,omitempty"`
-	SentAt            string      `json:"sentAt,omitempty"`
-	Type              string      `json:"type,omitempty"`
-}
+type EventUploadT map[string]interface{}
 
 //EventUploadBatchT is a structure to hold batch of events
 type EventUploadBatchT struct {
@@ -57,7 +46,6 @@ var (
 )
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
@@ -95,6 +83,8 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 func Setup() {
 	// TODO: Fix the buffer size
 	eventBatchChannel = make(chan *GatewayEventBatchT)
+	eventBuffer = make([]*GatewayEventBatchT, 0)
+
 	rruntime.Go(func() {
 		backendConfigSubscriber()
 	})
@@ -123,6 +113,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 		if err != nil {
 			receivedAtTS = time.Now()
 		}
+		receivedAtStr := receivedAtTS.Format(misc.RFC3339Milli)
 
 		var arr []EventUploadT
 		if value, ok := res[batchedEvent.WriteKey]; ok {
@@ -132,21 +123,8 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 		}
 
 		for _, ev := range batchedEvent.Batch {
-			//filterValues(&ev)
-
-			//updating originalTimestamp in the event using the formula
-			//receivedAt - (sentAt - originalTimeStamp)
-			orgTS, err := time.Parse(time.RFC3339, ev.OriginalTimestamp)
-			if err != nil {
-				orgTS = time.Now()
-			}
-
-			sentAtTS, err := time.Parse(time.RFC3339, ev.SentAt)
-			if err != nil {
-				sentAtTS = time.Now()
-			}
-
-			ev.OriginalTimestamp = misc.GetChronologicalTimeStamp(receivedAtTS, sentAtTS, orgTS).Format(time.RFC3339)
+			// add the receivedAt time to each event
+			ev["receivedAt"] = receivedAtStr
 
 			arr = append(arr, ev)
 		}
@@ -198,15 +176,6 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 	}
 }
 
-// filterValues removes the values of the event properties and just sends only the keys of the event properties
-func filterValues(message *EventUploadT) {
-	if message.Properties == nil {
-		message.Properties = make([]string, 0)
-	} else {
-		message.Properties = getKeys(message.Properties.(map[string]interface{}))
-	}
-}
-
 func getKeys(dataMap map[string]interface{}) []string {
 	keys := make([]string, 0, len(dataMap))
 	for k := range dataMap {
@@ -217,8 +186,6 @@ func getKeys(dataMap map[string]interface{}) []string {
 }
 
 func handleEvents() {
-	eventBuffer = make([]*GatewayEventBatchT, 0)
-
 	for {
 		select {
 		case eventSchema := <-eventBatchChannel:
@@ -272,7 +239,7 @@ func updateConfig(sources backendconfig.SourcesT) {
 	uploadEnabledWriteKeys = []string{}
 	for _, source := range sources.Sources {
 		if source.Config != nil {
-			if source.Enabled && source.Config.(map[string]interface{})["eventUpload"] == true {
+			if source.Enabled && source.Config["eventUpload"] == true {
 				uploadEnabledWriteKeys = append(uploadEnabledWriteKeys, source.WriteKey)
 			}
 		}

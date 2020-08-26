@@ -33,11 +33,16 @@ func transformKey(s string) string {
 	return "RSERVER_" + strings.ToUpper(snake)
 }
 
-// Initialize initializes the config
+// Initialize used to initialize config package
+// Deprecated - There is no need to directly call Initialize, config is initialized via its package init()
 func Initialize() {
+}
+
+func init() {
 	if err := godotenv.Load(); err != nil {
 		fmt.Println("ERROR: No .env file found")
 	}
+
 	configPath := GetEnv("CONFIG_PATH", "./config/config.toml")
 
 	viper.SetConfigFile(configPath)
@@ -45,12 +50,18 @@ func Initialize() {
 	err := viper.ReadInConfig() // Find and read the config file
 	// Don't panic if config.toml is not found or error with parsing. Use the default config values instead
 	if err != nil {
-		fmt.Println("[Config] :: Failed to parse Config toml, using default values", err)
+		fmt.Println("[Config] :: Failed to parse Config toml, using default values:", err)
 	}
 }
 
 //GetBool is a wrapper for viper's GetBool
-func GetBool(key string, defaultValue bool) bool {
+func GetBool(key string, defaultValue bool) (value bool) {
+	defer func() {
+		if value != defaultValue {
+			viper.Set(key, value)
+		}
+	}()
+
 	envVal := GetEnv(transformKey(key), "")
 	if envVal != "" {
 		return cast.ToBool(envVal)
@@ -63,7 +74,13 @@ func GetBool(key string, defaultValue bool) bool {
 }
 
 // GetInt is wrapper for viper's GetInt
-func GetInt(key string, defaultValue int) int {
+func GetInt(key string, defaultValue int) (value int) {
+	defer func() {
+		if value != defaultValue {
+			viper.Set(key, value)
+		}
+	}()
+
 	envVal := GetEnv(transformKey(key), "")
 	if envVal != "" {
 		return cast.ToInt(envVal)
@@ -76,7 +93,13 @@ func GetInt(key string, defaultValue int) int {
 }
 
 // GetInt64 is wrapper for viper's GetInt
-func GetInt64(key string, defaultValue int64) int64 {
+func GetInt64(key string, defaultValue int64) (value int64) {
+	defer func() {
+		if value != defaultValue {
+			viper.Set(key, value)
+		}
+	}()
+
 	envVal := GetEnv(transformKey(key), "")
 	if envVal != "" {
 		return cast.ToInt64(envVal)
@@ -89,7 +112,13 @@ func GetInt64(key string, defaultValue int64) int64 {
 }
 
 // GetFloat64 is wrapper for viper's GetFloat64
-func GetFloat64(key string, defaultValue float64) float64 {
+func GetFloat64(key string, defaultValue float64) (value float64) {
+	defer func() {
+		if value != defaultValue {
+			viper.Set(key, value)
+		}
+	}()
+
 	envVal := GetEnv(transformKey(key), "")
 	if envVal != "" {
 		return cast.ToFloat64(envVal)
@@ -102,7 +131,13 @@ func GetFloat64(key string, defaultValue float64) float64 {
 }
 
 // GetString is wrapper for viper's GetString
-func GetString(key string, defaultValue string) string {
+func GetString(key string, defaultValue string) (value string) {
+	defer func() {
+		if value != defaultValue {
+			viper.Set(key, value)
+		}
+	}()
+
 	envVal := GetEnv(transformKey(key), "")
 	if envVal != "" {
 		return envVal
@@ -115,7 +150,13 @@ func GetString(key string, defaultValue string) string {
 }
 
 // GetDuration is wrapper for viper's GetDuration
-func GetDuration(key string, defaultValue time.Duration) time.Duration {
+func GetDuration(key string, defaultValue time.Duration) (value time.Duration) {
+	defer func() {
+		if value != defaultValue {
+			viper.Set(key, value)
+		}
+	}()
+
 	envVal := GetEnv(transformKey(key), "")
 	if envVal != "" {
 		return cast.ToDuration(envVal)
@@ -207,4 +248,8 @@ func SetWHSchemaVersion(version string) {
 
 func GetWHSchemaVersion() string {
 	return whSchemaVersion
+}
+
+func GetVarCharMaxForRS() bool {
+	return GetBool("Warehouse.redshift.setVarCharMax", false)
 }

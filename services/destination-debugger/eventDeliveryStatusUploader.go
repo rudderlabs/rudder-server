@@ -27,7 +27,7 @@ type DeliveryStatusT struct {
 	ErrorResponse json.RawMessage `json:"errorResponse"`
 }
 
-var uploadEnabledDestinationIDs []string
+var uploadEnabledDestinationIDs map[string]bool
 var configSubscriberLock sync.RWMutex
 var deliveryStatusesBatchChannel chan *DeliveryStatusT
 var deliveryStatusesBufferLock sync.RWMutex
@@ -41,7 +41,6 @@ var (
 )
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
@@ -67,7 +66,7 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 	// Check if destinationID part of enabled destinations
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	if !misc.ContainsString(uploadEnabledDestinationIDs, destinationID) {
+	if _, ok := uploadEnabledDestinationIDs[destinationID]; !ok {
 		return false
 	}
 
@@ -75,9 +74,18 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 	return true
 }
 
+func HasUploadEnabled(destID string) bool {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+	_, ok := uploadEnabledDestinationIDs[destID]
+	return ok
+}
+
 //Setup initializes this module
 func Setup() {
 	deliveryStatusesBatchChannel = make(chan *DeliveryStatusT)
+	deliveryStatusesBuffer = make([]*DeliveryStatusT, 0)
+
 	rruntime.Go(func() {
 		backendConfigSubscriber()
 	})
@@ -149,8 +157,6 @@ func uploadJobs(deliveryStatusesBuffer []*DeliveryStatusT) {
 }
 
 func handleJobs() {
-	deliveryStatusesBuffer = make([]*DeliveryStatusT, 0)
-
 	for {
 		select {
 		case deliveryStatus := <-deliveryStatusesBatchChannel:
@@ -201,12 +207,12 @@ func flushJobs() {
 
 func updateConfig(sources backendconfig.SourcesT) {
 	configSubscriberLock.Lock()
-	uploadEnabledDestinationIDs = []string{}
+	uploadEnabledDestinationIDs = make(map[string]bool)
 	for _, source := range sources.Sources {
 		for _, destination := range source.Destinations {
 			if destination.Config != nil {
-				if destination.Enabled && destination.Config.(map[string]interface{})["eventDelivery"] == true {
-					uploadEnabledDestinationIDs = append(uploadEnabledDestinationIDs, destination.ID)
+				if destination.Enabled && destination.Config["eventDelivery"] == true {
+					uploadEnabledDestinationIDs[destination.ID] = true
 				}
 			}
 		}

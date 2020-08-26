@@ -34,6 +34,7 @@ var (
 	warehouseUploadsTable string
 	stagingTablePrefix    string
 	maxParallelLoads      int
+	setVarCharMax         bool
 )
 
 type HandleT struct {
@@ -55,14 +56,16 @@ const (
 	RSDbName            = "database"
 	RSUserName          = "user"
 	RSPassword          = "password"
+	rudderStringLength  = 512
 )
 
 var dataTypesMap = map[string]string{
-	"boolean":  "boolean",
+	"boolean":  "boolean encode runlength",
 	"int":      "bigint",
 	"bigint":   "bigint",
 	"float":    "double precision",
 	"string":   "varchar(512)",
+	"text":     "varchar(max)",
 	"datetime": "timestamp",
 }
 
@@ -103,10 +106,14 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
+// getRSDataType gets datatype for rs which is mapped with rudderstack datatype
+func getRSDataType(columnType string) string {
+	return dataTypesMap[columnType]
+}
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	arr := []string{}
 	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[dataType]))
+		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, getRSDataType(dataType)))
 	}
 	return strings.Join(arr[:], ",")
 }
@@ -119,7 +126,11 @@ func (rs *HandleT) createTable(name string, columns map[string]string) (err erro
 			sortKeyField = "id"
 		}
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) SORTKEY("%s")`, name, columnsWithDataTypes(columns, ""), sortKeyField)
+	var distKeySql string
+	if _, ok := columns["id"]; ok {
+		distKeySql = `DISTSTYLE KEY DISTKEY("id")`
+	}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY("%s") `, name, columnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
 	logger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
@@ -136,8 +147,16 @@ func (rs *HandleT) tableExists(tableName string) (exists bool, err error) {
 }
 
 func (rs *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, dataTypesMap[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, getRSDataType(columnType))
 	logger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	_, err = rs.Db.Exec(sqlStatement)
+	return
+}
+
+// alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift
+func (rs *HandleT) alterStringToText(tableName string, columnName string) (err error) {
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ALTER COLUMN "%s" TYPE %s`, tableName, columnName, getRSDataType("text"))
+	logger.Infof("Altering column type in redshift from string to text(varchar(max)) RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -191,13 +210,26 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 			}
 		}
 	}
+	if setVarCharMax {
+		for tableName, stringColumnsToBeAlteredToText := range diff.StringColumnsToBeAlteredToText {
+			if len(stringColumnsToBeAlteredToText) > 0 {
+				for _, columnName := range stringColumnsToBeAlteredToText {
+					err := rs.alterStringToText(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName)
+					if err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+	}
+
 	return
 }
 
 // FetchSchema queries redshift and returns the schema assoiciated with provided namespace
 func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
 	rs.Warehouse = warehouse
-	rs.Db, err = connect(RedshiftCredentialsT{
+	dbHandle, err := connect(RedshiftCredentialsT{
 		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
 		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
 		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
@@ -207,13 +239,14 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	if err != nil {
 		return
 	}
+	defer dbHandle.Close()
 
 	schema = make(map[string]map[string]string)
-	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type
+	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type, character_maximum_length
 									FROM INFORMATION_SCHEMA.COLUMNS
 									WHERE table_schema = '%s' and table_name not like '%s%s'`, namespace, stagingTablePrefix, "%")
 
-	rows, err := rs.Db.Query(sqlStatement)
+	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		logger.Errorf("RS: Error in fetching schema from redshift destination:%v, query: %v", rs.Warehouse.Destination.ID, sqlStatement)
 		return
@@ -224,7 +257,8 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	defer rows.Close()
 	for rows.Next() {
 		var tName, cName, cType string
-		err = rows.Scan(&tName, &cName, &cType)
+		var charLength sql.NullInt64
+		err = rows.Scan(&tName, &cName, &cType, &charLength)
 		if err != nil {
 			logger.Errorf("RS: Error in processing fetched schema from redshift destination:%v", rs.Warehouse.Destination.ID)
 			return
@@ -233,6 +267,9 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 			schema[tName] = make(map[string]string)
 		}
 		if datatype, ok := dataTypesMapToRudder[cType]; ok {
+			if datatype == "string" && charLength.Int64 > rudderStringLength {
+				datatype = "text"
+			}
 			schema[tName][cName] = datatype
 		}
 	}
@@ -480,14 +517,21 @@ func (rs *HandleT) loadUserTables() (err error) {
 	}
 	defer rs.dropStagingTables([]string{identifyStagingTable})
 
+	if _, ok := rs.Upload.Schema["users"]; !ok {
+		return
+	}
+
 	userColMap := rs.CurrentSchema["users"]
 	var userColNames, firstValProps []string
+	firstValPropsForIdentifies := []string{fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY anonymous_id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, "user_id")}
 	for colName := range userColMap {
-		if colName == "id" {
+		// do not reference uuid in queries as it can be an autoincrementing field set by segment compatible tables
+		if colName == "id" || colName == "user_id" || colName == "uuid" {
 			continue
 		}
 		userColNames = append(userColNames, colName)
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
+		firstValPropsForIdentifies = append(firstValPropsForIdentifies, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY anonymous_id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), "users"), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
@@ -496,10 +540,10 @@ func (rs *HandleT) loadUserTables() (err error) {
 											id, %[3]s
 											FROM (
 												(
-													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT user_id FROM "%[1]s"."%[5]s")
+													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT user_id FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL)
 												) UNION
 												(
-													SELECT user_id, %[6]s FROM "%[1]s"."%[5]s"
+													SELECT user_id, %[6]s FROM (SELECT %[7]s FROM "%[1]s"."%[8]s") WHERE user_id IS NOT NULL
 												)
 											)
 										)
@@ -510,6 +554,8 @@ func (rs *HandleT) loadUserTables() (err error) {
 		warehouseutils.UsersTable,
 		identifyStagingTable,
 		strings.Join(userColNames, ","),
+		strings.Join(firstValPropsForIdentifies, ","),
+		warehouseutils.IdentifiesTable,
 	)
 
 	// BEGIN TRANSACTION
@@ -564,7 +610,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 
 func (rs *HandleT) load() (errList []error) {
 	logger.Infof("RS: Starting load for all %v tables\n", len(rs.Upload.Schema))
-	if _, ok := rs.Upload.Schema["users"]; ok {
+	if _, ok := rs.Upload.Schema["identifies"]; ok {
 		err := rs.loadUserTables()
 		if err != nil {
 			errList = append(errList, err)
@@ -646,10 +692,10 @@ func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "rudder_staging_"
 	maxParallelLoads = config.GetInt("Warehouse.redshift.maxParallelLoads", 3)
+	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
@@ -752,6 +798,7 @@ func (rs *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	if err != nil {
 		return err
 	}
+	defer rs.Db.Close()
 	currSchema, err := warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
 	if err != nil {
 		panic(err)
@@ -791,6 +838,32 @@ func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		if err == nil {
 			err = rs.Export()
 		}
+	}
+	return
+}
+
+func (rs *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	rs.Warehouse = config.Warehouse
+	rs.Db, err = connect(RedshiftCredentialsT{
+		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
+		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
+		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
+		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
+		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
+	})
+	if err != nil {
+		return
+	}
+	defer rs.Db.Close()
+	pingResultChannel := make(chan error, 1)
+	rruntime.Go(func() {
+		pingResultChannel <- rs.Db.Ping()
+	})
+	var timeOut time.Duration = 5
+	select {
+	case err = <-pingResultChannel:
+	case <-time.After(timeOut * time.Second):
+		err = errors.New(fmt.Sprintf("connection testing timed out after %v sec", timeOut))
 	}
 	return
 }

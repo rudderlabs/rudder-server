@@ -25,9 +25,13 @@ import (
 	//"runtime/debug"
 	"time"
 
+	"github.com/araddon/dateparse"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	uuid "github.com/satori/go.uuid"
+
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
 )
 
@@ -153,24 +157,10 @@ func GetMD5Hash(input string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-//GetRudderEventMap returns the event structure from the client payload
-func GetRudderEventMap(rudderEvent interface{}) (map[string]interface{}, bool) {
-
-	rudderEventMap, ok := rudderEvent.(map[string]interface{})
-	if !ok {
-		return nil, false
-	}
-	return rudderEventMap, true
-}
-
 //GetRudderEventVal returns the value corresponding to the key in the message structure
-func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) {
+func GetRudderEventVal(key string, rudderEvent types.SingularEventT) (interface{}, bool) {
 
-	rudderEventMap, ok := GetRudderEventMap(rudderEvent)
-	if !ok {
-		return nil, false
-	}
-	rudderVal, ok := rudderEventMap[key]
+	rudderVal, ok := rudderEvent[key]
 	if !ok {
 		return nil, false
 	}
@@ -178,28 +168,19 @@ func GetRudderEventVal(key string, rudderEvent interface{}) (interface{}, bool) 
 }
 
 //ParseRudderEventBatch looks for the batch structure inside event
-func ParseRudderEventBatch(eventPayload json.RawMessage) ([]interface{}, bool) {
-	var eventListJSON map[string]interface{}
-	err := json.Unmarshal(eventPayload, &eventListJSON)
+func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT, bool) {
+	var gatewayBatchEvent types.GatewayBatchRequestT
+	err := json.Unmarshal(eventPayload, &gatewayBatchEvent)
 	if err != nil {
 		logger.Debug("json parsing of event payload failed ", string(eventPayload))
 		return nil, false
 	}
-	_, ok := eventListJSON["batch"]
-	if !ok {
-		logger.Debug("error retrieving value for batch key ", string(eventPayload))
-		return nil, false
-	}
-	eventListJSONBatchType, ok := eventListJSON["batch"].([]interface{})
-	if !ok {
-		logger.Error("error casting batch value to list of maps ", string(eventPayload))
-		return nil, false
-	}
-	return eventListJSONBatchType, true
+
+	return gatewayBatchEvent.Batch, true
 }
 
 //GetAnonymousID return the UserID from the object
-func GetAnonymousID(event interface{}) (string, bool) {
+func GetAnonymousID(event types.SingularEventT) (string, bool) {
 	userID, ok := GetRudderEventVal("anonymousId", event)
 	if !ok {
 		return "", false
@@ -376,6 +357,13 @@ func (stats *PerfStats) Print() {
 	}
 }
 
+func (stats *PerfStats) Status() map[string]interface{} {
+	return map[string]interface{}{
+		"total-events": stats.eventCount,
+		"overall-rate": float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime),
+	}
+}
+
 //Copy copies the exported fields from src to dest
 //Used for copying the default transport
 func Copy(dst, src interface{}) {
@@ -420,6 +408,7 @@ func GetIPFromReq(req *http.Request) string {
 	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
 	if addresses[0] == "" {
 		splits := strings.Split(req.RemoteAddr, ":")
+		logger.Debugf("%#v", req)
 		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
 	}
 
@@ -734,6 +723,16 @@ func GetObjectStorageConfig(provider string, objectStorageConfig interface{}) ma
 
 }
 
+func GetSpacesLocation(location string) (region string) {
+	r, _ := regexp.Compile("\\.*.*\\.digitaloceanspaces\\.com")
+	subLocation := r.FindString(location)
+	regionTokens := strings.Split(subLocation, ".")
+	if len(regionTokens) == 3 {
+		region = regionTokens[0]
+	}
+	return region
+}
+
 //GetNodeID returns the nodeId of the current node
 func GetNodeID() string {
 	nodeID := config.GetRequiredEnv("INSTANCE_ID")
@@ -756,4 +755,27 @@ func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (re
 
 	logger.Debugf("Post request: Successful %s", string(body))
 	return body, resp.StatusCode, nil
+}
+
+//GetMD5UUID hashes the given string into md5 and returns it as auuid
+func GetMD5UUID(str string) (uuid.UUID, error) {
+	md5Sum := md5.Sum([]byte(str))
+	u, err := uuid.FromBytes(md5Sum[:])
+	u.SetVersion(uuid.V4)
+	u.SetVariant(uuid.VariantRFC4122)
+	return u, err
+}
+
+// GetParsedTimestamp returns the parsed timestamp
+func GetParsedTimestamp(input interface{}) (time.Time, bool){
+	var parsedTimestamp time.Time
+	var valid bool
+	if timestampStr, typecasted := input.(string); typecasted {
+		var err error
+		parsedTimestamp, err = dateparse.ParseAny(timestampStr)
+		if err == nil {
+			valid = true
+		}
+	}
+	return parsedTimestamp, valid
 }

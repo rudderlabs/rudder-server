@@ -17,7 +17,7 @@ type UploadOutput struct {
 type FileManager interface {
 	Upload(*os.File, ...string) (UploadOutput, error)
 	Download(*os.File, string) error
-	GetObjectNameFromLocation(string) string
+	GetObjectNameFromLocation(string) (string, error)
 	GetDownloadKeyFromFileLocation(location string) string
 }
 
@@ -27,7 +27,7 @@ type SettingsT struct {
 	Config   map[string]interface{}
 }
 
-// New returns FileManager backed by configured privider
+// New returns FileManager backed by configured provider
 func New(settings *SettingsT) (FileManager, error) {
 	switch settings.Provider {
 	case "S3":
@@ -45,6 +45,10 @@ func New(settings *SettingsT) (FileManager, error) {
 	case "MINIO":
 		return &MinioManager{
 			Config: GetMinioConfig(settings.Config),
+		}, nil
+	case "DIGITAL_OCEAN_SPACES":
+		return &DOSpacesManager{
+			Config: GetDOSpacesConfig(settings.Config),
 		}, nil
 	}
 	return nil, errors.New("No provider configured for FileManager")
@@ -80,6 +84,12 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 		providerConfig["accessKeyID"] = config.GetEnv("MINIO_ACCESS_KEY_ID", "minioadmin")
 		providerConfig["secretAccessKey"] = config.GetEnv("MINIO_SECRET_ACCESS_KEY", "minioadmin")
 		providerConfig["useSSL"] = config.GetEnvAsBool("MINIO_SSL", false)
+	case "DIGITAL_OCEAN_SPACES":
+		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
+		providerConfig["endPoint"] = config.GetEnv("DO_SPACES_ENDPOINT", "")
+		providerConfig["accessKeyID"] = config.GetEnv("DO_SPACES_ACCESS_KEY_ID", "")
+		providerConfig["accessKey"] = config.GetEnv("DO_SPACES_SECRET_ACCESS_KEY", "")
 	}
 	return providerConfig
 }

@@ -21,8 +21,10 @@ import (
 )
 
 var (
-	warehouseUploadsTable string
-	maxParallelLoads      int
+	warehouseUploadsTable      string
+	maxParallelLoads           int
+	partitionExpiryUpdated     map[string]bool
+	partitionExpiryUpdatedLock sync.RWMutex
 )
 
 type HandleT struct {
@@ -40,6 +42,7 @@ type HandleT struct {
 const (
 	GCPProjectID   = "project"
 	GCPCredentials = "credentials"
+	GCPLocation    = "location"
 )
 
 // maps datatype stored in rudder to datatype in bigquery
@@ -96,7 +99,7 @@ func (bq *HandleT) createTable(name string, columns map[string]string) (err erro
 	sampleSchema := getTableSchema(columns)
 	metaData := &bigquery.TableMetadata{
 		Schema:           sampleSchema,
-		TimePartitioning: &bigquery.TimePartitioning{Expiration: time.Duration(24*60) * time.Hour},
+		TimePartitioning: &bigquery.TimePartitioning{},
 	}
 	tableRef := bq.Db.Dataset(bq.Namespace).Table(name)
 	err = tableRef.Create(bq.BQContext, metaData)
@@ -109,9 +112,14 @@ func (bq *HandleT) createTable(name string, columns map[string]string) (err erro
 		partitionKey = column
 	}
 
+	var viewOrderByStmt string
+	if _, ok := columns["loaded_at"]; ok {
+		viewOrderByStmt = " ORDER BY loaded_at DESC "
+	}
+
 	// assuming it has field named id upon which dedup is done in view
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
 					AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
 			)
 		WHERE __row_number = 1`
@@ -142,8 +150,15 @@ func (bq *HandleT) addColumn(tableName string, columnName string, columnType str
 
 func (bq *HandleT) createSchema() (err error) {
 	logger.Infof("BQ: Creating bigquery dataset: %s in project: %s", bq.Namespace, bq.ProjectID)
+	location := strings.TrimSpace(warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse))
+	if location == "" {
+		location = "US"
+	}
 	ds := bq.Db.Dataset(bq.Namespace)
-	err = ds.Create(bq.BQContext, nil)
+	meta := &bigquery.DatasetMetadata{
+		Location: location,
+	}
+	err = ds.Create(bq.BQContext, meta)
 	return
 }
 
@@ -165,15 +180,17 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	schema = make(map[string]map[string]string)
 	bq.Warehouse = warehouse
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
-	bq.Db, err = bq.connect(BQCredentialsT{
+	dbClient, err := bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		// location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
 	})
 	if err != nil {
 		return
 	}
+	defer dbClient.Close()
 
-	query := bq.Db.Query(fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
+	query := dbClient.Query(fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
 							 FROM %[1]s.INFORMATION_SCHEMA.TABLES as t JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c
 							 ON (t.table_name = c.table_name) and (t.table_type != 'VIEW')`, namespace))
 
@@ -275,8 +292,8 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 	logger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
 	gcsRef := bigquery.NewGCSReference(locations...)
 	gcsRef.SourceFormat = bigquery.JSON
-	gcsRef.MaxBadRecords = 100
-	gcsRef.IgnoreUnknownValues = true
+	gcsRef.MaxBadRecords = 0
+	gcsRef.IgnoreUnknownValues = false
 	// create partitioned table in format tableName$20191221
 	loader := bq.Db.Dataset(bq.Namespace).Table(fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(time.Now().Format("2006-01-02"), "-", ""))).LoaderFrom(gcsRef)
 
@@ -294,8 +311,8 @@ func (bq *HandleT) loadTable(tableName string) (err error) {
 	}
 
 	if status.Err() != nil {
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
-		return
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, status.Err(), bq.DbHandle)
+		return status.Err()
 	}
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, bq.Upload.ID, tableName, bq.DbHandle)
 	return
@@ -326,6 +343,7 @@ func (bq *HandleT) load() (errList []error) {
 type BQCredentialsT struct {
 	projectID   string
 	credentials string
+	location    string
 }
 
 func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
@@ -333,15 +351,25 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 	bq.BQContext = context.Background()
 	client, err := bigquery.NewClient(bq.BQContext, cred.projectID, option.WithCredentialsJSON([]byte(cred.credentials)))
 	return client, err
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// location := strings.TrimSpace(cred.location)
+	// if location != "" {
+	// 	client.Location = location
+	// }
+
+	// return client, nil
 }
 
 func loadConfig() {
 	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	maxParallelLoads = config.GetInt("Warehouse.bigquery.maxParallelLoads", 20)
+	partitionExpiryUpdated = make(map[string]bool)
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
@@ -396,6 +424,30 @@ func (bq *HandleT) Export() (err error) {
 	return
 }
 
+func (bq *HandleT) removePartitionExpiry() (err error) {
+	partitionExpiryUpdatedLock.Lock()
+	defer partitionExpiryUpdatedLock.Unlock()
+	identifier := fmt.Sprintf(`%s::%s`, bq.Upload.SourceID, bq.Upload.DestinationID)
+	if _, ok := partitionExpiryUpdated[identifier]; ok {
+		return
+	}
+	for tName := range bq.CurrentSchema {
+		var m *bigquery.TableMetadata
+		m, err = bq.Db.Dataset(bq.Namespace).Table(tName).Metadata(bq.BQContext)
+		if err != nil {
+			return
+		}
+		if m.TimePartitioning != nil && m.TimePartitioning.Expiration > 0 {
+			_, err = bq.Db.Dataset(bq.Namespace).Table(tName).Update(bq.BQContext, bigquery.TableMetadataToUpdate{TimePartitioning: &bigquery.TimePartitioning{Expiration: time.Duration(0)}}, "")
+			if err != nil {
+				return
+			}
+		}
+	}
+	partitionExpiryUpdated[identifier] = true
+	return
+}
+
 func (bq *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
 	return
 }
@@ -409,6 +461,7 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	bq.Db, err = bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+		// location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
 	})
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
@@ -422,6 +475,14 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	bq.CurrentSchema = currSchema
 	bq.Namespace = bq.Upload.Namespace
 
+	// done here to have access to latest schema in warehouse
+	err = bq.removePartitionExpiry()
+	if err != nil {
+		logger.Errorf("BQ: Removing Expiration on partition failed: %v", err)
+		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
+		return err
+	}
+
 	if config.Stage == "ExportData" {
 		err = bq.Export()
 	} else {
@@ -430,5 +491,18 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 			err = bq.Export()
 		}
 	}
+	return
+}
+
+func (bq *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	bq.Warehouse = config.Warehouse
+	bq.Db, err = bq.connect(BQCredentialsT{
+		projectID:   bq.ProjectID,
+		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+	})
+	if err != nil {
+		return
+	}
+	defer bq.Db.Close()
 	return
 }

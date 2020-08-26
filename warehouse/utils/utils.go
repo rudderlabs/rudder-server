@@ -9,8 +9,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/iancoleman/strcase"
+	"github.com/tidwall/gjson"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -23,27 +25,30 @@ import (
 )
 
 const (
-	WaitingState                  = "waiting"
-	ExecutingState                = "executing"
-	GeneratingLoadFileState       = "generating_load_file"
-	GeneratingLoadFileFailedState = "generating_load_file_failed"
-	GeneratedLoadFileState        = "generated_load_file"
-	UpdatingSchemaState           = "updating_schema"
-	UpdatingSchemaFailedState     = "updating_schema_failed"
-	UpdatedSchemaState            = "updated_schema"
-	ExportingDataState            = "exporting_data"
-	ExportingDataFailedState      = "exporting_data_failed"
-	ExportedDataState             = "exported_data"
-	AbortedState                  = "aborted"
-	GeneratingStagingFileFailed   = "generating_staging_file_failed"
-	GeneratedStagingFile          = "generated_staging_file"
+	WaitingState                     = "waiting"
+	ExecutingState                   = "executing"
+	GeneratingLoadFileState          = "generating_load_file"
+	GeneratingLoadFileFailedState    = "generating_load_file_failed"
+	GeneratedLoadFileState           = "generated_load_file"
+	UpdatingSchemaState              = "updating_schema"
+	UpdatingSchemaFailedState        = "updating_schema_failed"
+	UpdatedSchemaState               = "updated_schema"
+	ExportingDataState               = "exporting_data"
+	ExportingDataFailedState         = "exporting_data_failed"
+	ExportedDataState                = "exported_data"
+	AbortedState                     = "aborted"
+	GeneratingStagingFileFailedState = "generating_staging_file_failed"
+	GeneratedStagingFileState        = "generated_staging_file"
+	FetchingSchemaState              = "fetching_schema"
+	FetchingSchemaFailedState        = "fetching_schema_failed"
 )
 
 const (
-	RS        = "RS"
-	BQ        = "BQ"
-	SNOWFLAKE = "SNOWFLAKE"
-	POSTGRES  = "POSTGRES"
+	RS         = "RS"
+	BQ         = "BQ"
+	SNOWFLAKE  = "SNOWFLAKE"
+	POSTGRES   = "POSTGRES"
+	CLICKHOUSE = "CLICKHOUSE"
 )
 
 const (
@@ -52,6 +57,15 @@ const (
 	StagingFileExecutingState = "executing"
 	StagingFileAbortedState   = "aborted"
 	StagingFileWaitingState   = "waiting"
+)
+
+// warehouse table names
+const (
+	WarehouseStagingFilesTable = "wh_staging_files"
+	WarehouseLoadFilesTable    = "wh_load_files"
+	WarehouseUploadsTable      = "wh_uploads"
+	WarehouseTableUploadsTable = "wh_table_uploads"
+	WarehouseSchemasTable      = "wh_schemas"
 )
 
 const (
@@ -75,14 +89,15 @@ const (
 	IdentifiesTable = "identifies"
 )
 
+const (
+	BQLoadedAtFormat = "2006-01-02 15:04:05.999999 Z"
+	BQUuidTSFormat   = "2006-01-02 15:04:05 Z"
+)
+
 var (
-	warehouseUploadsTable      string
-	warehouseTableUploadsTable string
-	warehouseSchemasTable      string
-	warehouseLoadFilesTable    string
-	warehouseStagingFilesTable string
-	maxRetry                   int
-	serverIP                   string
+	minRetryAttempts int
+	retryTimeWindow  time.Duration
+	serverIP         string
 )
 
 var ObjectStorageMap = map[string]string{
@@ -97,17 +112,12 @@ var SnowflakeStorageMap = map[string]string{
 }
 
 func init() {
-	config.Initialize()
 	loadConfig()
 }
 
 func loadConfig() {
-	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
-	warehouseTableUploadsTable = config.GetString("Warehouse.tableUploadsTable", "wh_table_uploads")
-	warehouseSchemasTable = config.GetString("Warehouse.schemasTable", "wh_schemas")
-	warehouseLoadFilesTable = config.GetString("Warehouse.loadFilesTable", "wh_load_files")
-	warehouseStagingFilesTable = config.GetString("Warehouse.stagingFilesTable", "wh_staging_files")
-	maxRetry = config.GetInt("Warehouse.maxRetry", 3)
+	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
+	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 }
 
 type WarehouseT struct {
@@ -142,6 +152,9 @@ type UploadT struct {
 	Schema             map[string]map[string]string
 	Error              json.RawMessage
 	Timings            []map[string]string
+	FirstAttemptAt     time.Time
+	LastAttemptAt      time.Time
+	Attempts           int64
 }
 
 type CurrentSchemaT struct {
@@ -159,11 +172,13 @@ type StagingFileT struct {
 
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
 	var rawSchema json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[2]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, warehouseSchemasTable, warehouse.Destination.ID, warehouse.Namespace)
+	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[2]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, WarehouseSchemasTable, warehouse.Destination.ID, warehouse.Namespace)
+	logger.Infof("WH: Fetching current schema from wh postgresql: %s", sqlStatement)
 
 	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
+			logger.Infof("WH: No current schema found for %s with namespace: %s", warehouse.Destination.ID, warehouse.Namespace)
 			return nil, nil
 		}
 		if err != nil {
@@ -176,28 +191,30 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[st
 		panic(err)
 	}
 	schema := make(map[string]map[string]string)
-	for key, val := range schemaMapInterface {
-		y := make(map[string]string)
-		x := val.(map[string]interface{})
-		for k, v := range x {
-			y[k] = v.(string)
+	for tname, columnMapInterface := range schemaMapInterface {
+		columnMap := make(map[string]string)
+		columns := columnMapInterface.(map[string]interface{})
+		for cName, cTypeInterface := range columns {
+			columnMap[cName] = cTypeInterface.(string)
 		}
-		schema[key] = y
+		schema[tname] = columnMap
 	}
 	return schema, nil
 }
 
 type SchemaDiffT struct {
-	Tables        []string
-	ColumnMaps    map[string]map[string]string
-	UpdatedSchema map[string]map[string]string
+	Tables                         []string
+	ColumnMaps                     map[string]map[string]string
+	UpdatedSchema                  map[string]map[string]string
+	StringColumnsToBeAlteredToText map[string][]string
 }
 
 func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (diff SchemaDiffT) {
 	diff = SchemaDiffT{
-		Tables:        []string{},
-		ColumnMaps:    make(map[string]map[string]string),
-		UpdatedSchema: make(map[string]map[string]string),
+		Tables:                         []string{},
+		ColumnMaps:                     make(map[string]map[string]string),
+		UpdatedSchema:                  make(map[string]map[string]string),
+		StringColumnsToBeAlteredToText: make(map[string][]string),
 	}
 
 	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
@@ -215,13 +232,16 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 			diff.UpdatedSchema[tableName] = uploadColumnMap
 		} else {
 			diff.ColumnMaps[tableName] = make(map[string]string)
-			for columnName, columnVal := range uploadColumnMap {
+			for columnName, columnType := range uploadColumnMap {
 				if _, ok := currentColumnsMap[columnName]; !ok {
-					diff.ColumnMaps[tableName][columnName] = columnVal
-					diff.UpdatedSchema[tableName][columnName] = columnVal
+					diff.ColumnMaps[tableName][columnName] = columnType
+					diff.UpdatedSchema[tableName][columnName] = columnType
+				} else if columnType == "text" && currentColumnsMap[columnName] == "string" {
+					diff.StringColumnsToBeAlteredToText[tableName] = append(diff.StringColumnsToBeAlteredToText[tableName], columnName)
 				}
 			}
 		}
+
 	}
 	return
 }
@@ -240,7 +260,7 @@ type UploadColumnT struct {
 // eg. timings: [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
 func GetUploadTimings(upload UploadT, dbHandle *sql.DB) (timings []map[string]string) {
 	var rawJSON json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT timings FROM %s WHERE id=%d`, warehouseUploadsTable, upload.ID)
+	sqlStatement := fmt.Sprintf(`SELECT timings FROM %s WHERE id=%d`, WarehouseUploadsTable, upload.ID)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&rawJSON)
 	if err != nil {
 		return
@@ -262,6 +282,25 @@ func GetNewTimings(upload UploadT, dbHandle *sql.DB, status string) []byte {
 	return marshalledTimings
 }
 
+func GetUploadFirstAttemptTime(upload UploadT, dbHandle *sql.DB) (timing time.Time) {
+	var firstTiming sql.NullString
+	sqlStatement := fmt.Sprintf(`SELECT timings->0 as firstTimingObj FROM %s WHERE id=%d`, WarehouseUploadsTable, upload.ID)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&firstTiming)
+	if err != nil {
+		return
+	}
+	_, timing = TimingFromJSONString(firstTiming)
+	return timing
+}
+
+func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
+	timingsMap := gjson.Parse(str.String).Map()
+	for s, t := range timingsMap {
+		return s, t.Time()
+	}
+	return // zero values
+}
+
 func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB, additionalFields ...UploadColumnT) (err error) {
 	logger.Infof("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
 	marshalledTimings := GetNewTimings(upload, dbHandle, status)
@@ -281,7 +320,7 @@ func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB, additional
 	return
 }
 
-// SetUploadColumns sets any column values passed as args in UploadColumnT format for warehouseUploadsTable
+// SetUploadColumns sets any column values passed as args in UploadColumnT format for WarehouseUploadsTable
 func SetUploadColumns(upload UploadT, dbHandle *sql.DB, fields ...UploadColumnT) (err error) {
 	var columns string
 	values := []interface{}{upload.ID}
@@ -294,7 +333,7 @@ func SetUploadColumns(upload UploadT, dbHandle *sql.DB, fields ...UploadColumnT)
 		}
 		values = append(values, f.Value)
 	}
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, warehouseUploadsTable, columns)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, WarehouseUploadsTable, columns)
 	_, err = dbHandle.Exec(sqlStatement, values...)
 	if err != nil {
 		panic(err)
@@ -327,11 +366,14 @@ func SetUploadError(upload UploadT, statusError error, state string, dbHandle *s
 		errorByState["errors"] = []string{statusError.Error()}
 	}
 	// abort after configured retry attempts
-	if errorByState["attempt"].(int) > maxRetry {
-		state = AbortedState
+	if errorByState["attempt"].(int) > minRetryAttempts {
+		firstTiming := GetUploadFirstAttemptTime(upload, dbHandle)
+		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
+			state = AbortedState
+		}
 	}
 	serializedErr, _ := json.Marshal(&e)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseUploadsTable)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, WarehouseUploadsTable)
 	_, err = dbHandle.Exec(sqlStatement, state, serializedErr, timeutil.Now(), upload.ID)
 	if err != nil {
 		panic(err)
@@ -340,7 +382,7 @@ func SetUploadError(upload UploadT, statusError error, state string, dbHandle *s
 }
 
 func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err error) {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseStagingFilesTable)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, WarehouseStagingFilesTable)
 	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), pq.Array(ids))
 	if err != nil {
 		panic(err)
@@ -350,7 +392,7 @@ func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err er
 
 func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusError error) (err error) {
 	logger.Errorf("WH: Failed processing staging files: %v", statusError.Error())
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseStagingFilesTable)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, WarehouseStagingFilesTable)
 	_, err = dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), pq.Array(ids))
 	if err != nil {
 		panic(err)
@@ -367,7 +409,7 @@ func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHan
 		lastExec = fmt.Sprintf(`, last_exec_time=$%d`, len(execValues)+1)
 		execValues = append(execValues, timeutil.Now())
 	}
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 %s WHERE wh_upload_id=$3 AND table_name=$4`, warehouseTableUploadsTable, lastExec)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 %s WHERE wh_upload_id=$3 AND table_name=$4`, WarehouseTableUploadsTable, lastExec)
 	logger.Infof("WH: Setting table upload status: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, execValues...)
 	if err != nil {
@@ -378,7 +420,7 @@ func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHan
 
 func SetTableUploadError(status string, uploadID int64, tableName string, statusError error, dbHandle *sql.DB) (err error) {
 	logger.Errorf("WH: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, error=$3 WHERE wh_upload_id=$4 AND table_name=$5`, warehouseTableUploadsTable)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, error=$3 WHERE wh_upload_id=$4 AND table_name=$5`, WarehouseTableUploadsTable)
 	logger.Infof("WH: Setting table upload error: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), misc.QuoteLiteral(statusError.Error()), uploadID, tableName)
 	if err != nil {
@@ -388,13 +430,13 @@ func SetTableUploadError(status string, uploadID int64, tableName string, status
 }
 
 func GetTableUploadStatus(uploadID int64, tableName string, dbHandle *sql.DB) (status string, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseTableUploadsTable, uploadID, tableName)
+	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s'`, WarehouseTableUploadsTable, uploadID, tableName)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&status)
 	return
 }
 
 func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
-	sqlStatement := fmt.Sprintf(`SELECT namespace FROM %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC`, warehouseSchemasTable, source.ID, destination.ID)
+	sqlStatement := fmt.Sprintf(`SELECT namespace FROM %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC`, WarehouseSchemasTable, source.ID, destination.ID)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
@@ -404,7 +446,7 @@ func GetNamespace(source backendconfig.SourceT, destination backendconfig.Destin
 
 func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, schema map[string]map[string]string, dbHandle *sql.DB) (err error) {
 	var count int
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE source_id='%s' AND destination_id='%s' AND namespace='%s'`, warehouseSchemasTable, wh.Source.ID, wh.Destination.ID, namespace)
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE source_id='%s' AND destination_id='%s' AND namespace='%s'`, WarehouseSchemasTable, wh.Source.ID, wh.Destination.ID, namespace)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&count)
 	if err != nil {
 		panic(err)
@@ -413,7 +455,7 @@ func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, schema
 	marshalledSchema, err := json.Marshal(schema)
 	if count == 0 {
 		sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_upload_id, source_id, namespace, destination_id, destination_type, schema, created_at)
-									   VALUES ($1, $2, $3, $4, $5, $6, $7)`, warehouseSchemasTable)
+									   VALUES ($1, $2, $3, $4, $5, $6, $7)`, WarehouseSchemasTable)
 		stmt, err := dbHandle.Prepare(sqlStatement)
 		if err != nil {
 			panic(err)
@@ -422,7 +464,7 @@ func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, schema
 
 		_, err = stmt.Exec(uploadID, wh.Source.ID, namespace, wh.Destination.ID, wh.Destination.DestinationDefinition.Name, marshalledSchema, timeutil.Now())
 	} else {
-		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3 AND namespace=$4`, warehouseSchemasTable)
+		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3 AND namespace=$4`, WarehouseSchemasTable)
 		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, wh.Source.ID, wh.Destination.ID, namespace)
 	}
 	if err != nil {
@@ -434,7 +476,7 @@ func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, schema
 func HasLoadFiles(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) bool {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s
 								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)`,
-		warehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
+		WarehouseLoadFilesTable, sourceId, destinationId, tableName, start, end)
 	var count int64
 	err := dbHandle.QueryRow(sqlStatement).Scan(&count)
 	if err != nil {
@@ -453,7 +495,7 @@ func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId strin
 			AND id <= %[6]v)
 		GROUP BY staging_file_id ) uniqueStagingFiles
 		ON  wh_load_files.id = uniqueStagingFiles.id `,
-		warehouseLoadFilesTable,
+		WarehouseLoadFilesTable,
 		sourceId,
 		destinationId,
 		tableName,
@@ -486,7 +528,7 @@ func GetLoadFileLocation(dbHandle *sql.DB, sourceId string, destinationId string
 			AND id <= %[6]v)
 		GROUP BY staging_file_id ) uniqueStagingFiles
 		ON  wh_load_files.id = uniqueStagingFiles.id `,
-		warehouseLoadFilesTable,
+		WarehouseLoadFilesTable,
 		sourceId,
 		destinationId,
 		tableName,
@@ -535,7 +577,7 @@ func GetObjectName(providerConfig interface{}, location string) (objectName stri
 	if err != nil {
 		return "", err
 	}
-	return fm.GetObjectNameFromLocation(location), nil
+	return fm.GetObjectNameFromLocation(location)
 }
 
 // GetS3Location parses path-style location http url to return in s3:// format
@@ -739,28 +781,38 @@ func SnowflakeCloudProvider(config interface{}) string {
 }
 
 func ObjectStorageType(destType string, config interface{}) string {
-	if destType != "SNOWFLAKE" && destType != "POSTGRES" {
+	if destType == "RS" || destType == "BQ" {
 		return ObjectStorageMap[destType]
 	}
-	if destType == "POSTGRES" {
-		c := config.(map[string]interface{})
-		provider, _ := c["bucketProvider"].(string)
-		return provider
-	}
 	c := config.(map[string]interface{})
-	provider, ok := c["cloudProvider"].(string)
-	if provider == "" || !ok {
-		provider = "AWS"
+	if destType == "SNOWFLAKE" {
+		provider, ok := c["cloudProvider"].(string)
+		if provider == "" || !ok {
+			provider = "AWS"
+		}
+		return SnowflakeStorageMap[provider]
 	}
-	return SnowflakeStorageMap[provider]
+	provider, _ := c["bucketProvider"].(string)
+	return provider
 }
 
 func GetConfigValue(key string, warehouse WarehouseT) (val string) {
-	config := warehouse.Destination.Config.(map[string]interface{})
+	config := warehouse.Destination.Config
 	if config[key] != nil {
 		val, _ = config[key].(string)
 	}
 	return val
+}
+func GetConfigValueBoolString(key string, warehouse WarehouseT) string {
+	config := warehouse.Destination.Config
+	if config[key] != nil {
+		if val, ok := config[key].(bool); ok {
+			if val {
+				return "true"
+			}
+		}
+	}
+	return "false"
 }
 
 func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {

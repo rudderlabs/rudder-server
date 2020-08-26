@@ -95,7 +95,7 @@ func (jd *HandleT) CheckpointInTxn(txHandler transactionHandler, migrationCheckp
 		stmt *sql.Stmt
 		err  error
 	)
-	logger.Infof("Checkpointing with query : %s with migrationCheckpoint %+v", sqlStatement, migrationCheckpoint)
+	logger.Debugf("Checkpointing with query : %s with migrationCheckpoint %+v", sqlStatement, migrationCheckpoint)
 	var mcID int64
 
 	stmt, err = txHandler.Prepare(sqlStatement)
@@ -173,7 +173,7 @@ func (jd *HandleT) SetupCheckpointTable() {
 		start_sequence BIGINT,
 		payload JSONB,
 		time_stamp TIMESTAMP NOT NULL DEFAULT NOW(),
-		CONSTRAINT %s UNIQUE(migration_type, from_node, to_node, file_location, status)
+		CONSTRAINT %s UNIQUE(migration_type, from_node, to_node, file_location)
 		);`, jd.getCheckpointTableName(), jd.getUniqueConstraintName())
 
 	_, err := jd.dbHandle.Exec(sqlStatement)
@@ -260,12 +260,20 @@ func (jd *HandleT) GetSetupCheckpoint(migrationType MigrationOp) (MigrationCheck
 
 //GetCheckpoints gets all checkpoints and
 func (jd *HandleT) GetCheckpoints(migrationType MigrationOp, status string) []MigrationCheckpointT {
-	sqlStatement := fmt.Sprintf(`SELECT * from %s WHERE migration_type = $1 AND status = $2 ORDER BY ID ASC`, jd.getCheckpointTableName())
+	queryString := fmt.Sprintf(`SELECT * from %s WHERE migration_type = $1`, jd.getCheckpointTableName())
+	var statusFilter string
+	if status != "" {
+		statusFilter = fmt.Sprintf(` AND status = '%s'`, status)
+	}
+	orderByString := " ORDER BY ID ASC"
+
+	sqlStatement := fmt.Sprintf("%s%s%s", queryString, statusFilter, orderByString)
+
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
 
-	rows, err := stmt.Query(migrationType, status)
+	rows, err := stmt.Query(migrationType)
 	if err != nil {
 		panic("Unable to query")
 	}

@@ -13,6 +13,7 @@ _is_sourced() {
 
 _main() {
     echo "Executing docker entrypoint script"
+    mkdir -p $RUDDER_TMPDIR 2>/dev/null
     if [ "$COMPUTE_DB_HOST_IN_K8S" = true ]; then
         _pod_index=${HOSTNAME##*-}
         if [ -z ${POSTGRES_POD_NAME} ]; then echo "POSTGRES_POD_NAME env variable is required"; exit 1; fi
