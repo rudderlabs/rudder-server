@@ -19,108 +19,18 @@ type NetHandleT struct {
 	httpClient *http.Client
 }
 
-func (network *NetHandleT) processOldResponseType(jsonData []byte) (int, string, string) {
+//sendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
+//this returns the statusCode, status and response body from the response of the destination call
+func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, status string, respBody string) {
 	client := network.httpClient
 	//Parse the response to get parameters
-	postInfo := integrations.GetPostInfo(jsonData)
-
-	requestConfig, ok := postInfo.RequestConfig.(map[string]interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of postInfo.RequestConfig to map[string]interface{} failed"))
-	}
-	requestMethod, ok := requestConfig["requestMethod"].(string)
-	if !(ok && (requestMethod == "POST" || requestMethod == "GET")) {
-		panic(fmt.Errorf("typecast of requestConfig[\"requestMethod\"] to string failed. or requestMethod:%s is neither POST nor GET", requestMethod))
-	}
-	requestFormat := requestConfig["requestFormat"].(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of requestConfig[\"requestFormat\"] to string failed"))
-	}
-
-	switch requestFormat {
-	case "PARAMS":
-		postInfo.Type = integrations.PostDataKV
-	case "JSON":
-		postInfo.Type = integrations.PostDataJSON
-	default:
-		panic(fmt.Errorf("requestFormat:%s is neither PARAMS nor JSON", requestFormat))
-	}
-
-	var req *http.Request
-	var err error
-	if useTestSink {
-		req, err = http.NewRequest(requestMethod, testSinkURL, nil)
-		if err != nil {
-			panic(err)
-		}
-	} else {
-		req, err = http.NewRequest(requestMethod, postInfo.URL, nil)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	queryParams := req.URL.Query()
-	if postInfo.Type == integrations.PostDataKV {
-		payloadKV, ok := postInfo.Payload.(map[string]interface{})
-		if !ok {
-			panic(fmt.Errorf("typecast of postInfo.Payload to map[string]interface{} failed"))
-		}
-		for key, val := range payloadKV {
-			queryParams.Add(key, fmt.Sprint(val))
-		}
-	} else if postInfo.Type == integrations.PostDataJSON {
-		payloadJSON, ok := postInfo.Payload.(map[string]interface{})
-		if !ok {
-			panic(fmt.Errorf("typecast of postInfo.Payload to map[string]interface{} failed"))
-		}
-		jsonValue, err := json.Marshal(payloadJSON)
-		if err != nil {
-			panic(err)
-		}
-		req.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
-	} else {
-		//Not implemented yet
-		panic(fmt.Errorf("postInfo.Type : %d is not implemented", postInfo.Type))
-	}
-
-	req.URL.RawQuery = queryParams.Encode()
-
-	headerKV, ok := postInfo.Header.(map[string]interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of postInfo.Header to map[string]interface{} failed"))
-	}
-	for key, val := range headerKV {
-		req.Header.Add(key, val.(string))
-	}
-
-	req.Header.Add("User-Agent", "RudderLabs")
-
-	resp, err := client.Do(req)
-
-	var respBody []byte
-
-	if resp != nil && resp.Body != nil {
-		respBody, _ = ioutil.ReadAll(resp.Body)
-		defer resp.Body.Close()
-	}
-
+	postInfo, err := integrations.GetPostInfo(jsonData)
 	if err != nil {
-		logger.Error("Errored when sending request to the server", err)
-		return http.StatusGatewayTimeout, "", string(respBody)
+		return 500, "", fmt.Sprintf(`500 GetPostInfoFailed with error: %s`, err.Error())
 	}
-
-	return resp.StatusCode, resp.Status, string(respBody)
-}
-
-func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string, string) {
-	client := network.httpClient
-	//Parse the response to get parameters
-	postInfo := integrations.GetPostInfoNew(jsonData)
-
 	isRest := postInfo.Type == "REST"
 
-	isMultipart := len(postInfo.Files.(map[string]interface{})) > 0
+	isMultipart := len(postInfo.Files) > 0
 
 	// going forward we may want to support GraphQL and multipart requests
 	// the files key in the response is specifically to handle the multipart usecase
@@ -129,8 +39,8 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 	// so, code addition should be done here instead of version bumping of response.
 	if isRest && !isMultipart {
 		requestMethod := postInfo.RequestMethod
-		requestBody := postInfo.Body.(map[string]interface{})
-		requestQueryParams := postInfo.QueryParams.(map[string]interface{})
+		requestBody := postInfo.Body
+		requestQueryParams := postInfo.QueryParams
 		var bodyFormat string
 		var bodyValue map[string]interface{}
 		for k, v := range requestBody {
@@ -142,18 +52,10 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 
 		}
 
-		var req *http.Request
-		var err error
-		if useTestSink {
-			req, err = http.NewRequest(requestMethod, testSinkURL, nil)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			req, err = http.NewRequest(requestMethod, postInfo.URL, nil)
-			if err != nil {
-				panic(err)
-			}
+		req, err := http.NewRequest(requestMethod, postInfo.URL, nil)
+		if err != nil {
+			logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
+			return 400, "", fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
 		}
 
 		// add queryparams to the url
@@ -194,10 +96,7 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 			}
 		}
 
-		headerKV, ok := postInfo.Headers.(map[string]interface{})
-		if !ok {
-			panic(fmt.Errorf("typecast of postInfo.Headers to map[string]interface{} failed"))
-		}
+		headerKV := postInfo.Headers
 		for key, val := range headerKV {
 			req.Header.Add(key, val.(string))
 		}
@@ -229,16 +128,6 @@ func (network *NetHandleT) processNewResponseType(jsonData []byte) (int, string,
 
 }
 
-func (network *NetHandleT) sendPost(jsonData []byte) (int, string, string) {
-	// Get response version
-	version := integrations.GetResponseVersion(jsonData)
-
-	if version == "0" {
-		return network.processOldResponseType(jsonData)
-	}
-	return network.processNewResponseType(jsonData)
-}
-
 //Setup initializes the module
 func (network *NetHandleT) Setup(destID string) {
 	logger.Info("Network Handler Startup")
@@ -246,7 +135,7 @@ func (network *NetHandleT) Setup(destID string) {
 	defaultRoundTripper := http.DefaultTransport
 	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
 	if !ok {
-		panic(fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed"))
+		panic(fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed")) //TODO: Handle error
 	}
 	var defaultTransportCopy http.Transport
 	//Not safe to copy DefaultTransport

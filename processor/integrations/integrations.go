@@ -2,8 +2,11 @@ package integrations
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/rudderlabs/rudder-server/warehouse"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
@@ -17,10 +20,17 @@ var (
 	destTransformURL, userTransformURL string
 	customDestination                  []string
 	whSchemaVersion                    string
+	postParametersTFields              []string
 )
 
 func init() {
 	loadConfig()
+
+	// This is called in init and it should be a one time call. Making reflect calls during runtime is not a great idea.
+	// We unmarshal json response from transformer into PostParametersT struct.
+	// Since unmarshal doesn't check if the fields are present in the json or not and instead just initialze to zero value, we have to manually do this check on all fields before unmarshaling
+	// This function gets a list of fields tagged as json from the struct and populates in postParametersTFields
+	postParametersTFields = misc.GetMandatoryJSONFieldNames(PostParametersT{})
 }
 
 func loadConfig() {
@@ -36,125 +46,49 @@ const (
 	PostDataXML
 )
 
-//PostParameterT  has post related parameters, the URL and the data type
-type PostParameterT struct {
-	URL           string
-	Type          int
-	UserID        string
-	Payload       interface{}
-	Header        interface{}
-	RequestConfig interface{}
+// PostParametersT is a struct for holding all the values from transformerResponse and use them to publish an event to a destination
+type PostParametersT struct {
+	Type          string                 `json:"type"`
+	URL           string                 `json:"endpoint"`
+	RequestMethod string                 `json:"method"`
+	UserID        string                 `json:"userId,,optional"`
+	Headers       map[string]interface{} `json:"headers"`
+	QueryParams   map[string]interface{} `json:"params"`
+	Body          map[string]interface{} `json:"body"`
+	Files         map[string]interface{} `json:"files"`
 }
 
-// PostParameterNewT emulates parameters needed tp make a request
-type PostParameterNewT struct {
-	Type          string
-	URL           string
-	RequestMethod string
-	UserID        string
-	Headers       interface{}
-	QueryParams   interface{}
-	Body          interface{}
-	Files         interface{}
-}
-
-// GetResponseVersion Get version of the transformer response
-func GetResponseVersion(response json.RawMessage) string {
-	parsedResponse := gjson.ParseBytes(response)
-	if parsedResponse.Get("output").Exists() {
-		return "-1"
-	}
-	if !parsedResponse.Get("version").Exists() {
-		return "0"
-	}
-	version, ok := parsedResponse.Get("version").Value().(string)
-	if !ok {
-		panic(fmt.Errorf(""))
-	}
-	return version
-}
-
-// GetPostInfoNew parses the transformer response
-func GetPostInfoNew(transformRaw json.RawMessage) PostParameterNewT {
-	var postInfo PostParameterNewT
-	var ok bool
+// GetPostInfo parses the transformer response
+func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err error) {
 	parsedJSON := gjson.ParseBytes(transformRaw)
-	if parsedJSON.Get("output").Exists() {
-		parsedJSON = parsedJSON.Get("output")
+	errorMessages := make([]string, 0)
+	for _, v := range postParametersTFields {
+		if !parsedJSON.Get(v).Exists() {
+			errMessage := fmt.Sprintf("missing expected field : %s", v)
+			errorMessages = append(errorMessages, errMessage)
+		}
 	}
-	postInfo.Type, ok = parsedJSON.Get("type").Value().(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"type\") to string failed"))
+	if len(errorMessages) > 0 {
+		errorMessages = append(errorMessages, fmt.Sprintf("in transformer response : %v", parsedJSON))
+		err = errors.New(strings.Join(errorMessages, "\n"))
+		return postInfo, err
 	}
-	postInfo.URL, ok = parsedJSON.Get("endpoint").Value().(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"endpoint\") to string failed"))
+	unMarshalError := json.Unmarshal(transformRaw, &postInfo)
+	if unMarshalError != nil {
+		err = fmt.Errorf("Error while unmarshalling response from transformer : %s, Error: %w", transformRaw, unMarshalError)
 	}
-	postInfo.RequestMethod, ok = parsedJSON.Get("method").Value().(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"method\") to string failed"))
-	}
-	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
-	if !ok {
-		postInfo.UserID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
-	}
-	postInfo.Body, ok = parsedJSON.Get("body").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"body\") to interface{} failed"))
-	}
-	postInfo.Headers, ok = parsedJSON.Get("headers").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"headers\") to interface{} failed"))
-	}
-	postInfo.QueryParams, ok = parsedJSON.Get("params").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"params\") to interface{} failed"))
-	}
-	postInfo.Files, ok = parsedJSON.Get("files").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"files\") to interface{} failed"))
-	}
-	return postInfo
-}
-
-//GetPostInfo provides the post parameters for this destination
-func GetPostInfo(transformRaw json.RawMessage) PostParameterT {
-	var postInfo PostParameterT
-	var ok bool
-	parsedJSON := gjson.ParseBytes(transformRaw)
-	postInfo.URL, ok = parsedJSON.Get("endpoint").Value().(string)
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"endpoint\") to string failed"))
-	}
-	postInfo.UserID, ok = parsedJSON.Get("userId").Value().(string)
-	if !ok {
-		postInfo.UserID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
-	}
-	postInfo.Payload, ok = parsedJSON.Get("payload").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"payload\") to interface{} failed"))
-	}
-	postInfo.Header, ok = parsedJSON.Get("header").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"header\") to interface{} failed"))
-	}
-	postInfo.RequestConfig, ok = parsedJSON.Get("requestConfig").Value().(interface{})
-	if !ok {
-		panic(fmt.Errorf("typecast of parsedJSON.Get(\"requestConfig\") to interface{} failed"))
-	}
-	return postInfo
+	return postInfo, err
 }
 
 // GetUserIDFromTransformerResponse parses the payload to get userId
-func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) string {
-
-	var userID string
+func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) (userID string, found bool) {
 	parsedJSON := gjson.ParseBytes(transformRaw)
-	var ok bool
-	if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
-		userID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())
+	userIDVal := parsedJSON.Get("userId").Value()
+
+	if userIDVal != nil {
+		return fmt.Sprintf("%v", userIDVal), true
 	}
-	return userID
+	return
 }
 
 //FilterClientIntegrations parses the destination names from the
@@ -182,8 +116,18 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 }
 
 //GetDestinationURL returns node URL
-func GetDestinationURL(destID string) string {
-	return fmt.Sprintf("%s/v0/%s?whSchemaVersion=%s", destTransformURL, strings.ToLower(destID), config.GetWHSchemaVersion())
+func GetDestinationURL(destType string) string {
+	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
+	if misc.Contains(warehouse.WarehouseDestinations, destType) {
+		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s", config.GetWHSchemaVersion())
+		if destType == "RS" {
+			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
+			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + rsAlterStringToTextQueryParam
+		}
+		return destinationEndPoint + "?" + whSchemaVersionQueryParam
+	}
+	return destinationEndPoint
+
 }
 
 //GetUserTransformURL returns the port of running user transform

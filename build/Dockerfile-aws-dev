@@ -2,8 +2,8 @@ FROM frolvlad/alpine-glibc
 RUN apk add --no-cache ca-certificates postgresql-client
 ADD rudder-server /
 ADD rudder-server-with-race /
-RUN mkdir /app
-ADD . /app
+ADD ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
+ADD ./config/config.toml /app/config/config.toml
 ADD build/wait-for /
 ADD build/docker-entrypoint.sh /
 ENTRYPOINT ["/docker-entrypoint.sh"]

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/araddon/dateparse"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -210,7 +210,6 @@ var (
 	destinationTransformationEnabledMap map[string]bool
 	rawDataDestinations                 []string
 	configSubscriberLock                sync.RWMutex
-	isReplayServer                      bool
 	customDestinations                  []string
 )
 
@@ -223,10 +222,8 @@ func loadConfig() {
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
-	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES"}
+	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
-
-	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -290,7 +287,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 		logger.Debug("[Processor: addJobsToSessions] Adding a new session id for the user")
 		_, ok = proc.userToSessionIDMap[userID]
 		if !ok {
-			proc.userToSessionIDMap[userID] = uuid.NewV4().String()
+			proc.userToSessionIDMap[userID] = fmt.Sprintf("%s:%s", userID, strconv.FormatInt(time.Now().UnixNano()/1000000, 10))
 		}
 		//Add the job to the userID specific lists
 		proc.userJobListMap[userID] = append(proc.userJobListMap[userID], job)
@@ -501,19 +498,6 @@ func (proc *HandleT) createSessions() {
 	}
 }
 
-func getReplayEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
-	var enabledDests []backendconfig.DestinationT
-	for _, dest := range writeKeyDestinationMap[writeKey] {
-		replay := dest.Config["Replay"]
-		if destinationName == dest.DestinationDefinition.Name && dest.Enabled && replay != nil && replay.(bool) {
-			enabledDests = append(enabledDests, dest)
-		}
-	}
-	return enabledDests
-}
-
 func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
@@ -540,16 +524,8 @@ func getBackendEnabledDestinationTypes(writeKey string) map[string]backendconfig
 
 func getTimestampFromEvent(event types.SingularEventT, field string) time.Time {
 	var timestamp time.Time
-	var err error
-	if _, ok := event[field]; ok {
-		timestampStr, typecasted := event[field].(string)
-		if typecasted {
-			timestamp, err = dateparse.ParseAny(timestampStr)
-		}
-		if !typecasted || err != nil {
-			timestamp = time.Now()
-		}
-	} else {
+	var ok bool
+	if timestamp, ok = misc.GetParsedTimestamp(event[field]); !ok {
 		timestamp = time.Now()
 	}
 	return timestamp
@@ -559,12 +535,21 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 	// set timestamp skew based on timestamp fields from SDKs
 	originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
 	sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
+	var timestamp time.Time
+	var ok bool
+
+	// use existing timestamp if it exists in the event, add new timestamp otherwise
+	if timestamp, ok = misc.GetParsedTimestamp(event.Message["timestamp"]); !ok {
+		// calculate new timestamp using using the formula
+		// timestamp = receivedAt - (sentAt - originalTimestamp)
+		timestamp = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp)
+	}
 
 	// set all timestamps in RFC3339 format
 	event.Message["receivedAt"] = receivedAt.Format(misc.RFC3339Milli)
 	event.Message["originalTimestamp"] = originalTimestamp.Format(misc.RFC3339Milli)
 	event.Message["sentAt"] = sentAt.Format(misc.RFC3339Milli)
-	event.Message["timestamp"] = misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp).Format(misc.RFC3339Milli)
+	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
@@ -660,13 +645,21 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, metadata
 		}
 
 		id := uuid.NewV4()
+		// marshal error to escape any quotes in error string etc.
+		marshalledErr, err := json.Marshal(failedEvent.Error)
+		if err != nil {
+			logger.Errorf(`[Processor: getFailedEventJobs] Failed to marshal failedEvent error: %v`, failedEvent.Error)
+			marshalledErr = []byte(`"Unknown error: rudder-server failed to marshal error returned by rudder-transformer"`)
+		}
+
 		newFailedJob := jobsdb.JobT{
 			UUID:         id,
 			EventPayload: payload,
-			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "error": "%v", "status_code": "%v", "stage": "%s"}`, metadata.SourceID, metadata.DestinationID, failedEvent.Error, failedEvent.StatusCode, stage)),
+			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "error": %s, "status_code": "%v", "stage": "%s"}`, metadata.SourceID, metadata.DestinationID, string(marshalledErr), failedEvent.StatusCode, stage)),
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			CustomVal:    metadata.DestinationType,
+			UserID:       failedEvent.Metadata.UserID, // will be nil if it went throgh user transformation
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 	}
@@ -735,11 +728,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 				for _, destType := range enabledDestTypes {
 					var enabledDestinationsList []backendconfig.DestinationT
-					if isReplayServer {
-						enabledDestinationsList = getReplayEnabledDestinations(writeKey, destType)
-					} else {
-						enabledDestinationsList = getEnabledDestinations(writeKey, destType)
-					}
+					enabledDestinationsList = getEnabledDestinations(writeKey, destType)
 					enabledDestinationsMap[destType] = enabledDestinationsList
 
 					// Adding a singular event multiple times if there are multiple destinations of same type

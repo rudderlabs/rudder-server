@@ -16,9 +16,9 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 
-	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -37,6 +37,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse"
 
 	// This is necessary for compatibility with enterprise features
@@ -49,7 +50,6 @@ var (
 	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
 	enableProcessor, enableRouter    bool
-	isReplayServer                   bool
 	enabledDestinations              []backendconfig.DestinationT
 	configSubscriberLock             sync.RWMutex
 	objectStorageDestinations        []string
@@ -57,6 +57,7 @@ var (
 	moduleLoadLock                   sync.Mutex
 	routerLoaded                     bool
 	processorLoaded                  bool
+	enableSuppressUserFeature        bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -68,10 +69,11 @@ func loadConfig() {
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
-	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
-	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES"}
+	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
+	// Enable suppress user feature. false by default
+	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
 }
 
 // Test Function
@@ -158,15 +160,12 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	validators.InitializeEnv()
 
 	// Check if there is a probable inconsistent state of Data
-	misc.AppStartTime = time.Now().Unix()
 	if diagnostics.EnableServerStartMetric {
 		diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
 			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
 		})
 	}
 
-	migrationMode := application.Options().MigrationMode
-	db.HandleRecovery(normalMode, degradedMode, maintenanceMode, migrationMode, misc.AppStartTime)
 	//Reload Config
 	loadConfig()
 
@@ -178,19 +177,14 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintena
 	runtime.GOMAXPROCS(maxProcess)
 	logger.Info("Clearing DB ", *clearDB)
 
-	backendconfig.Setup()
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
 
-	//Forcing enableBackup false for gatewaydb if this server is for handling replayed events
-	if isReplayServer {
-		config.SetBool("JobsDB.backup.gw.enabled", false)
-	}
-
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode)
-	procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode)
+	migrationMode := application.Options().MigrationMode
+	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode, false)
+	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode, true)
+	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode, true)
+	procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
 
 	enableGateway := true
 
@@ -252,11 +246,6 @@ func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jo
 		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, stats.DefaultStats)
 		processor.Start()
 
-		if !isReplayServer {
-			var replay replay.ReplayProcessorT
-			replay.Setup(gatewayDB)
-		}
-
 		processorLoaded = true
 	}
 }
@@ -310,7 +299,24 @@ func main() {
 
 	http.HandleFunc("/version", versionHandler)
 
+	//application & backend setup should be done before starting any new goroutines.
 	application.Setup()
+
+	var pollRegulations bool
+	if enableSuppressUserFeature {
+		if application.Features().SuppressUser != nil {
+			pollRegulations = true
+		} else {
+			logger.Info("Suppress User feature is enterprise only. Unable to poll regulations.")
+		}
+	}
+
+	var configEnvHandler types.ConfigEnvI
+	if application.Features().ConfigEnv != nil {
+		configEnvHandler = application.Features().ConfigEnv.Setup()
+	}
+
+	backendconfig.Setup(pollRegulations, configEnvHandler)
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -325,7 +331,10 @@ func main() {
 		os.Exit(1)
 	}()
 
+	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
+		db.HandleRecovery(options.NormalMode, options.DegradedMode, options.MaintenanceMode, options.MigrationMode, misc.AppStartTime)
+
 		rruntime.Go(func() {
 			startRudderCore(&options.ClearDB, options.NormalMode, options.DegradedMode, options.MaintenanceMode)
 		})
@@ -337,6 +346,8 @@ func main() {
 			startWarehouseService()
 		})
 	}
+
+	rruntime.Go(admin.StartServer)
 
 	misc.KeepProcessAlive()
 }
