@@ -211,8 +211,6 @@ github.com/iancoleman/strcase
 # github.com/jcmturner/gofork v1.0.0
 github.com/jcmturner/gofork/encoding/asn1
 github.com/jcmturner/gofork/x/crypto/pbkdf2
-# github.com/jeremywohl/flatten v1.0.1
-github.com/jeremywohl/flatten
 # github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af
 github.com/jmespath/go-jmespath
 # github.com/joho/godotenv v1.3.0
@@ -298,7 +296,7 @@ github.com/pkg/errors
 github.com/rcrowley/go-metrics
 # github.com/rs/cors v1.7.0
 github.com/rs/cors
-# github.com/rudderlabs/analytics-go v3.1.0+incompatible
+# github.com/rudderlabs/analytics-go v3.2.1+incompatible
 github.com/rudderlabs/analytics-go
 # github.com/satori/go.uuid v1.2.0
 github.com/satori/go.uuid
@@ -308,8 +306,6 @@ github.com/segmentio/backo-go
 github.com/segmentio/ksuid
 # github.com/snowflakedb/gosnowflake v1.3.4
 github.com/snowflakedb/gosnowflake
-# github.com/spaolacci/murmur3 v1.1.0
-github.com/spaolacci/murmur3
 # github.com/spf13/afero v1.2.2
 github.com/spf13/afero
 github.com/spf13/afero/mem
