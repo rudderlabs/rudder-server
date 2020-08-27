@@ -350,6 +350,19 @@ func (bq *HandleT) loadUserTables() (err error) {
 		return fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, column)
 	}
 
+	loadedAtFilter := func() string {
+		// get first event received_at time in this upload for identifies table
+		// firstEventAt := func() string {
+		// 	return warehouseutils.GetTableFirstEventAt(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, warehouseutils.IdentifiesTable, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
+		// }
+
+		// TODO: Add this filter to optimize reading from identifies table since first event in upload
+		// rather than entire day's records
+		// commented it since firstEventAt is not stored in UTC format in earlier versions
+		// return fmt.Sprintf(`AND loaded_at >= TIMESTAMP('%s')`, firstEventAt())
+		return ""
+	}
+
 	userColMap := bq.CurrentSchema["users"]
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
@@ -365,7 +378,7 @@ func (bq *HandleT) loadUserTables() (err error) {
 	bqUsersTable := bqTable(warehouseutils.UsersTable)
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", partitionDate)
-	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL`, bqIdentifiesTable, partition)
+	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
 	sqlStatement := fmt.Sprintf(`SELECT DISTINCT * FROM (
 			SELECT id, %[1]s FROM (
 				(
@@ -383,6 +396,7 @@ func (bq *HandleT) loadUserTables() (err error) {
 		identifiesFrom,                   // 4
 	)
 
+	logger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
 	partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
 	query := bq.Db.Query(sqlStatement)
 	query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(partitionedUsersTable)
