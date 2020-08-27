@@ -11,7 +11,7 @@ RudderStack's backend is written in Go, with a rich UI written in React.js.
 
 You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) RudderStack instance to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro).
 
-Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord channel](https://discordapp.com/invite/xNEdEGw), or follow us on [ProductHunt](https://www.producthunt.com/posts/rudderstack) or [Twitter](https://twitter.com/rudderstack).
+Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord channel](https://discordapp.com/invite/xNEdEGw) or read about us on [ProductHunt](https://www.producthunt.com/posts/rudderstack).
 
 # Why Use RudderStack?
 
@@ -44,21 +44,24 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [discord cha
 
 - **Enhanced Telemetry**: To help us improve RudderStack, we collect performance and diagnostic metrics about how you use RudderStack, and how it is working. **No customer data is present in the metrics**. For technical details, please check out our wiki page on [Telemetry](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Telemetry).
 
+# Our Customers
+
+[![1mg](https://user-images.githubusercontent.com/59817155/90764974-d325cc00-e306-11ea-9cc4-ed7c159f9738.PNG)](https://www.1mg.com/) [![Grofers](https://user-images.githubusercontent.com/59817155/90764982-d751e980-e306-11ea-9c45-fd261be00988.PNG)](https://grofers.com/) [![IFTTT](https://user-images.githubusercontent.com/59817155/90764989-d9b44380-e306-11ea-877f-409e9ba4e88c.PNG)](https://ifttt.com/) [![Mattermost](https://user-images.githubusercontent.com/59817155/90765001-dcaf3400-e306-11ea-887e-2d1f096bee01.PNG)](https://mattermost.com/)
+
 # RudderStack Setup
 
 The easiest way to try RudderStack is through our hosted service. Please signup [here](https://app.rudderstack.com/signup?type=freetrial) to get started.
 
-You can also set up and use RudderStack on your platform of choice. 
+You can also set up and use RudderStack on your platform of choice.
 
-
-**Note:** If you are planning to use RudderStack in production, we **strongly** recommend the Kubernetes helm charts. We update our docker images with bug fixes etc much more frequently than our GitHub repo (where we release once a month). 
+**Note:** If you are planning to use RudderStack in production, we **strongly** recommend the Kubernetes helm charts. We update our docker images with bug fixes etc much more frequently than our GitHub repo (where we release once a month).
 
 - [Setting up RudderStack on Docker](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/docker)
 - [Setting up RudderStack on Kubernetes](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/kubernetes)
 - [Setting up RudderStack on a Native Installation](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/native-installation)
 - [Developer Machine Setup](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/developer-machine-setup)
 
-Once you have installed RudderStack, [send test events]() to verify the setup.
+Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack#how-to-send-test-events) to verify the setup.
 
 # UI Pages
 
@@ -80,7 +83,6 @@ RudderStack has two major components, namely:
   - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. **Please note that you cannot create transformations or Live Debugger with the RudderStack Config Generator**.
 
 - **Data Plane**: This is the core engine that is responsible for:
-
   - Receiving and buffering the event data
   - Transforming the event data into the required destination format, and
   - Relaying it to the destination

@@ -1,6 +1,6 @@
 package app
 
-//go:generate mockgen -destination=../mocks/app/mock_features.go -package=mock_app github.com/rudderlabs/rudder-server/app MigratorFeature,WebhookFeature,SuppressUserFeature
+//go:generate mockgen -destination=../mocks/app/mock_features.go -package=mock_app github.com/rudderlabs/rudder-server/app MigratorFeature,SuppressUserFeature
 
 import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -23,21 +23,6 @@ func RegisterMigratorFeature(f MigratorFeatureSetup) {
 	migratorFeatureSetup = f
 }
 
-// WebhookFeature handles webhook event requests
-type WebhookFeature interface {
-	Setup(types.GatewayWebhookI) types.WebHookI
-}
-
-// WebhookFeatureSetup is a function that initializes a Webhook feature, based on application instance
-type WebhookFeatureSetup func(Interface) WebhookFeature
-
-var webhookFeatureSetup WebhookFeatureSetup
-
-// RegisterWebhookFeature registers a Webhook implementation
-func RegisterWebhookFeature(f WebhookFeatureSetup) {
-	webhookFeatureSetup = f
-}
-
 // SuppressUserFeature handles webhook event requests
 type SuppressUserFeature interface {
 	Setup(backendConfig backendconfig.BackendConfig) types.SuppressUserI
@@ -53,9 +38,44 @@ func RegisterSuppressUserFeature(f SuppressUserFeatureSetup) {
 	suppressUserFeatureSetup = f
 }
 
+// ProtocolsFeature handles event schemas
+type ProtocolsFeature interface {
+	Setup() types.ProtocolsI
+}
+
+// ProtocolsFeatureSetup is a function that initializes a Protocols feature, based on application instance
+type ProtocolsFeatureSetup func(Interface) ProtocolsFeature
+
+var protocolsFeatureSetup ProtocolsFeatureSetup
+
+// RegisterProtocolsFeature registers a protocols feature implementation
+func RegisterProtocolsFeature(f ProtocolsFeatureSetup) {
+	protocolsFeatureSetup = f
+}
+
+/*********************************
+DestinationConfig Env Support
+*********************************/
+
+// ProtocolsFeature handles event schemas
+type ConfigEnvFeature interface {
+	Setup() types.ConfigEnvI
+}
+
+// ProtocolsFeatureSetup is a function that initializes a Protocols feature, based on application instance
+type ConfigEnvFeatureSetup func(Interface) ConfigEnvFeature
+
+var configEnvFeatureSetup ConfigEnvFeatureSetup
+
+// RegisterProtocolsFeature registers a protocols feature implementation
+func RegisterConfigEnvFeature(f ConfigEnvFeatureSetup) {
+	configEnvFeatureSetup = f
+}
+
 // Features contains optional implementations of Enterprise only features.
 type Features struct {
 	Migrator     MigratorFeature
-	Webhook      WebhookFeature
 	SuppressUser SuppressUserFeature
+	Protocols    ProtocolsFeature
+	ConfigEnv    ConfigEnvFeature
 }

@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
+
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -93,6 +95,13 @@ func (brt *HandleT) backendConfigSubscriber() {
 							if _, ok := encounteredAnonymousIDMap[identifier]; !ok {
 								encounteredAnonymousIDMap[identifier] = make(map[string]bool)
 							}
+						}
+						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
+							destination := destination
+							rruntime.Go(func() {
+								testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
+								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
+							})
 						}
 					}
 				}
@@ -426,13 +435,13 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 	if err != nil {
 		jobState = jobsdb.Failed.State
 		if isWarehouse {
-			jobState = warehouseutils.GeneratingStagingFileFailed
+			jobState = warehouseutils.GeneratingStagingFileFailedState
 		}
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 	} else {
 		jobState = jobsdb.Succeeded.State
 		if isWarehouse {
-			jobState = warehouseutils.GeneratedStagingFile
+			jobState = warehouseutils.GeneratedStagingFileState
 		}
 		errorResp = []byte(`{"success":"OK"}`)
 	}
@@ -669,15 +678,21 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		}
 
 		logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s at key: %s\n", object.Provider, object.Key)
-		err = downloader.Download(jsonFile, object.Key)
+
+		var objKey string
+		if prefix, ok := object.Config["prefix"]; ok && prefix != "" {
+			objKey += fmt.Sprintf("/%s", strings.TrimSpace(prefix.(string)))
+		}
+		objKey += object.Key
+
+		err = downloader.Download(jsonFile, objKey)
 		if err != nil {
-			logger.Debugf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
+			logger.Errorf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
 			continue
 		}
 
 		jsonFile.Close()
 		defer os.Remove(jsonPath)
-
 		rawf, err := os.Open(jsonPath)
 		if err != nil {
 			panic(err)
@@ -780,7 +795,7 @@ func loadConfig() {
 	maxFailedCountForJob = config.GetInt("BatchRouter.maxFailedCountForJob", 128)
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
-	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
+	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}

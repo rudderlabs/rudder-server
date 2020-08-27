@@ -112,9 +112,14 @@ func (bq *HandleT) createTable(name string, columns map[string]string) (err erro
 		partitionKey = column
 	}
 
+	var viewOrderByStmt string
+	if _, ok := columns["loaded_at"]; ok {
+		viewOrderByStmt = " ORDER BY loaded_at DESC "
+	}
+
 	// assuming it has field named id upon which dedup is done in view
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
 					AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
 			)
 		WHERE __row_number = 1`
@@ -145,8 +150,15 @@ func (bq *HandleT) addColumn(tableName string, columnName string, columnType str
 
 func (bq *HandleT) createSchema() (err error) {
 	logger.Infof("BQ: Creating bigquery dataset: %s in project: %s", bq.Namespace, bq.ProjectID)
+	location := strings.TrimSpace(warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse))
+	if location == "" {
+		location = "US"
+	}
 	ds := bq.Db.Dataset(bq.Namespace)
-	err = ds.Create(bq.BQContext, nil)
+	meta := &bigquery.DatasetMetadata{
+		Location: location,
+	}
+	err = ds.Create(bq.BQContext, meta)
 	return
 }
 
@@ -171,7 +183,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	dbClient, err := bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
-		location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
+		// location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
 	})
 	if err != nil {
 		return
@@ -339,6 +351,16 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 	bq.BQContext = context.Background()
 	client, err := bigquery.NewClient(bq.BQContext, cred.projectID, option.WithCredentialsJSON([]byte(cred.credentials)))
 	return client, err
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// location := strings.TrimSpace(cred.location)
+	// if location != "" {
+	// 	client.Location = location
+	// }
+
+	// return client, nil
 }
 
 func loadConfig() {
@@ -443,7 +465,7 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	bq.Db, err = bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
-		location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
+		// location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
 	})
 	if err != nil {
 		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
@@ -473,5 +495,18 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 			err = bq.Export()
 		}
 	}
+	return
+}
+
+func (bq *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	bq.Warehouse = config.Warehouse
+	bq.Db, err = bq.connect(BQCredentialsT{
+		projectID:   bq.ProjectID,
+		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+	})
+	if err != nil {
+		return
+	}
+	defer bq.Db.Close()
 	return
 }

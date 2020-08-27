@@ -58,12 +58,16 @@ func (a *App) initEnterpriseFeatures() {
 		a.features.Migrator = migratorFeatureSetup(a)
 	}
 
-	if webhookFeatureSetup != nil {
-		a.features.Webhook = webhookFeatureSetup(a)
-	}
-
 	if suppressUserFeatureSetup != nil {
 		a.features.SuppressUser = suppressUserFeatureSetup(a)
+	}
+
+	if protocolsFeatureSetup != nil {
+		a.features.Protocols = protocolsFeatureSetup(a)
+	}
+
+	if configEnvFeatureSetup != nil {
+		a.features.ConfigEnv = configEnvFeatureSetup(a)
 	}
 }
 

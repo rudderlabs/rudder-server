@@ -44,6 +44,7 @@ const (
 	skipVerify    = "skipVerify"
 	caCertificate = "caCertificate"
 )
+const partitionField = "received_at"
 
 // clickhouse doesnt support bool, they recommend to use Uint8 and set 1,0
 
@@ -186,10 +187,10 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 }
 
 // columnsWithDataTypes creates columns and its datatype into sql format for creating table
-func columnsWithDataTypes(tableName string, columns map[string]string, sortKeyFields []string) string {
+func columnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
-		if misc.ContainsString(sortKeyFields, columnName) {
+		if misc.ContainsString(notNullableColumns, columnName) {
 			arr = append(arr, fmt.Sprintf(`%s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], true)))
 		} else {
 			arr = append(arr, fmt.Sprintf(`%s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], false)))
@@ -200,8 +201,8 @@ func columnsWithDataTypes(tableName string, columns map[string]string, sortKeyFi
 }
 
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
-func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string, isSortKey bool) string {
-	if isSortKey {
+func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string, notNullableKey bool) string {
+	if notNullableKey {
 		return columnType
 	}
 	if tableName == warehouseutils.UsersTable {
@@ -523,7 +524,8 @@ func (ch *HandleT) createSchema() (err error) {
 */
 func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"id"}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = AggregatingMergeTree() order by %s `, ch.Namespace, name, columnsWithDataTypes(name, columns, sortKeyFields), getSortKeyTuple(sortKeyFields))
+	notNullableColumns := []string{"received_at", "id"}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) ENGINE = AggregatingMergeTree() ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, columnsWithDataTypes(name, columns, notNullableColumns), getSortKeyTuple(sortKeyFields), partitionField)
 	logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -548,13 +550,13 @@ func getSortKeyTuple(sortKeyFields []string) string {
 func (ch *HandleT) createTable(tableName string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"received_at", "id"}
 	if tableName == warehouseutils.DiscardsTable {
-		sortKeyFields = []string{"uuid_ts"}
+		sortKeyFields = []string{"received_at"}
 	}
 	var sqlStatement string
 	if tableName == warehouseutils.UsersTable {
 		return ch.createUsersTable(tableName, columns)
 	}
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) engine = ReplacingMergeTree() order by %s `, ch.Namespace, tableName, columnsWithDataTypes(tableName, columns, sortKeyFields), getSortKeyTuple(sortKeyFields))
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) ENGINE = ReplacingMergeTree() ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, columnsWithDataTypes(tableName, columns, sortKeyFields), getSortKeyTuple(sortKeyFields), partitionField)
 
 	logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
@@ -666,6 +668,27 @@ func (ch *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	defer ch.Db.Close()
 	if err = ch.MigrateSchema(); err == nil {
 		ch.Export()
+	}
+	return
+}
+
+// TestConnection is used destination connection tester to test the clickhouse connection
+func (ch *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	ch.Warehouse = config.Warehouse
+	ch.Db, err = connect(ch.getConnectionCredentials())
+	if err != nil {
+		return
+	}
+	defer ch.Db.Close()
+	pingResultChannel := make(chan error, 1)
+	rruntime.Go(func() {
+		pingResultChannel <- ch.Db.Ping()
+	})
+	var timeOut time.Duration = 5
+	select {
+	case err = <-pingResultChannel:
+	case <-time.After(timeOut * time.Second):
+		err = errors.New(fmt.Sprintf("connection testing timed out after %v sec", timeOut))
 	}
 	return
 }

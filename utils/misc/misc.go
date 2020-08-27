@@ -21,13 +21,16 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"unicode"
 
 	//"runtime/debug"
 	"time"
 
+	"github.com/araddon/dateparse"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
@@ -406,6 +409,7 @@ func GetIPFromReq(req *http.Request) string {
 	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
 	if addresses[0] == "" {
 		splits := strings.Split(req.RemoteAddr, ":")
+		logger.Debugf("%#v", req)
 		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
 	}
 
@@ -606,17 +610,32 @@ func CreateGZ(s string) (w GZipWriter, err error) {
 }
 
 func (w GZipWriter) WriteGZ(s string) {
-	w.BufWriter.WriteString(s)
+	count, err := w.BufWriter.WriteString(s)
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error writing string of length %d by GZipWriter.WriteGZ. Bytes written: %d. Error: %v`, len(s), count, err)
+	}
 }
 
 func (w GZipWriter) Write(b []byte) {
-	w.BufWriter.Write(b)
+	count, err := w.BufWriter.Write(b)
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error writing bytes of length %d by GZipWriter.Write. Bytes written: %d. Error: %v`, len(b), count, err)
+	}
 }
 
 func (w GZipWriter) CloseGZ() {
-	w.BufWriter.Flush()
+	err := w.BufWriter.Flush()
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error flushing GZipWriter.BufWriter : %v`, err)
+	}
 	w.GzWriter.Close()
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error closing GZipWriter : %v`, err)
+	}
 	w.File.Close()
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
+	}
 }
 
 func GetMacAddress() string {
@@ -731,6 +750,16 @@ func GetObjectStorageConfig(provider string, objectStorageConfig interface{}) ma
 
 }
 
+func GetSpacesLocation(location string) (region string) {
+	r, _ := regexp.Compile("\\.*.*\\.digitaloceanspaces\\.com")
+	subLocation := r.FindString(location)
+	regionTokens := strings.Split(subLocation, ".")
+	if len(regionTokens) == 3 {
+		region = regionTokens[0]
+	}
+	return region
+}
+
 //GetNodeID returns the nodeId of the current node
 func GetNodeID() string {
 	nodeID := config.GetRequiredEnv("INSTANCE_ID")
@@ -753,4 +782,71 @@ func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (re
 
 	logger.Debugf("Post request: Successful %s", string(body))
 	return body, resp.StatusCode, nil
+}
+
+//GetMD5UUID hashes the given string into md5 and returns it as auuid
+func GetMD5UUID(str string) (uuid.UUID, error) {
+	md5Sum := md5.Sum([]byte(str))
+	u, err := uuid.FromBytes(md5Sum[:])
+	u.SetVersion(uuid.V4)
+	u.SetVariant(uuid.VariantRFC4122)
+	return u, err
+}
+
+// GetParsedTimestamp returns the parsed timestamp
+func GetParsedTimestamp(input interface{}) (time.Time, bool) {
+	var parsedTimestamp time.Time
+	var valid bool
+	if timestampStr, typecasted := input.(string); typecasted {
+		var err error
+		parsedTimestamp, err = dateparse.ParseAny(timestampStr)
+		if err == nil {
+			valid = true
+		}
+	}
+	return parsedTimestamp, valid
+}
+
+func isValidTag(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		switch {
+		case strings.ContainsRune("!#$%&()*+-./:<=>?@[]^_{|}~ ", c):
+			// Backslash and quote chars are reserved, but
+			// otherwise any punctuation chars are allowed
+			// in a tag name.
+		case !unicode.IsLetter(c) && !unicode.IsDigit(c):
+			return false
+		}
+	}
+	return true
+}
+
+func parseTag(tag string) (string, string) {
+	if idx := strings.Index(tag, ","); idx != -1 {
+		return tag[:idx], tag[idx+1:]
+	}
+	return tag, ""
+}
+
+//GetMandatoryJSONFieldNames returns all the json field names defined against the json tag for each field.
+func GetMandatoryJSONFieldNames(st interface{}) []string {
+	v := reflect.TypeOf(st)
+	mandatoryJSONFieldNames := make([]string, 0, v.NumField())
+	for i := 0; i < v.NumField(); i++ {
+		jsonTag, ok := v.Field(i).Tag.Lookup("json")
+		if !ok {
+			continue
+		}
+		name, tags := parseTag(jsonTag)
+		if !strings.Contains(tags, "optional") {
+			if !isValidTag(name) {
+				name = v.Field(i).Name
+			}
+			mandatoryJSONFieldNames = append(mandatoryJSONFieldNames, name)
+		}
+	}
+	return mandatoryJSONFieldNames
 }

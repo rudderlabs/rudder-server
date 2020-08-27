@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -1044,6 +1045,25 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		if err == nil {
 			err = sf.Export()
 		}
+	}
+	return
+}
+
+func (sf *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
+	sf.Warehouse = config.Warehouse
+	sf.Db, err = connect(sf.getConnectionCredentials(OptionalCredsT{}))
+	if err != nil {
+		return
+	}
+	defer sf.Db.Close()
+	pingResultChannel := make(chan error, 1)
+	rruntime.Go(func() {
+		pingResultChannel <- sf.Db.Ping()
+	})
+	select {
+	case err = <-pingResultChannel:
+	case <-time.After(5 * time.Second):
+		err = errors.New("connection testing timed out")
 	}
 	return
 }
