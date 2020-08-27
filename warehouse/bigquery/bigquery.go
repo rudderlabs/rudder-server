@@ -150,9 +150,15 @@ func (bq *HandleT) addColumn(tableName string, columnName string, columnType str
 
 func (bq *HandleT) createSchema() (err error) {
 	logger.Infof("BQ: Creating bigquery dataset: %s in project: %s", bq.Namespace, bq.ProjectID)
-
+	location := strings.TrimSpace(warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse))
+	if location == "" {
+		location = "US"
+	}
 	ds := bq.Db.Dataset(bq.Namespace)
-	err = ds.Create(bq.BQContext, nil)
+	meta := &bigquery.DatasetMetadata{
+		Location: location,
+	}
+	err = ds.Create(bq.BQContext, meta)
 	return
 }
 

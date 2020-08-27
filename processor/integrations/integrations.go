@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/warehouse"
@@ -26,24 +25,16 @@ var (
 
 func init() {
 	loadConfig()
-	populatePostParameterFields()
+
+	// This is called in init and it should be a one time call. Making reflect calls during runtime is not a great idea.
+	// We unmarshal json response from transformer into PostParametersT struct.
+	// Since unmarshal doesn't check if the fields are present in the json or not and instead just initialze to zero value, we have to manually do this check on all fields before unmarshaling
+	// This function gets a list of fields tagged as json from the struct and populates in postParametersTFields
+	postParametersTFields = misc.GetMandatoryJSONFieldNames(PostParametersT{})
 }
 
 func loadConfig() {
 	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-}
-
-// This is called in init and it should be a one time call. Having reflect calls happening during runtime is not a great idea.
-// We unmarshal json response from transformer into PostParametersT struct.
-// Since unmarshal doesn't check if the fields are present in the json or not and instead just initialze to zero value, we have to manually do this check on all fields before unmarshaling
-// This function gets a list of fields tagged as json from the struct and populates in postParametersTFields
-
-func populatePostParameterFields() {
-	v := reflect.TypeOf(PostParametersT{})
-	postParametersTFields = make([]string, v.NumField())
-	for i := 0; i < v.NumField(); i++ {
-		postParametersTFields[i] = strings.Split(v.Field(i).Tag.Get("json"), ",")[0]
-	}
 }
 
 const (
@@ -60,7 +51,7 @@ type PostParametersT struct {
 	Type          string                 `json:"type"`
 	URL           string                 `json:"endpoint"`
 	RequestMethod string                 `json:"method"`
-	UserID        string                 `json:"userId"`
+	UserID        string                 `json:"userId,,optional"`
 	Headers       map[string]interface{} `json:"headers"`
 	QueryParams   map[string]interface{} `json:"params"`
 	Body          map[string]interface{} `json:"body"`
