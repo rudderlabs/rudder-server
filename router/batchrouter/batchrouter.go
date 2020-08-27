@@ -183,8 +183,23 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	// assumes events from warehouse have receivedAt in metadata
 	var firstEventAt, lastEventAt string
 	if isWarehouse {
-		firstEventAt = gjson.GetBytes(batchJobs.Jobs[0].EventPayload, "metadata.receivedAt").String()
-		lastEventAt = gjson.GetBytes(batchJobs.Jobs[len(batchJobs.Jobs)-1].EventPayload, "metadata.receivedAt").String()
+		firstEventAtStr := gjson.GetBytes(batchJobs.Jobs[0].EventPayload, "metadata.receivedAt").String()
+		lastEventAtStr := gjson.GetBytes(batchJobs.Jobs[len(batchJobs.Jobs)-1].EventPayload, "metadata.receivedAt").String()
+
+		// received_at set in rudder-server has timezone component
+		// whereas first_event_at column in wh_staging_files is of type 'timestamp without time zone'
+		// convert it to UTC before saving to wh_staging_files
+		firstEventAtWithTimeZone, err := time.Parse(misc.RFC3339Milli, firstEventAtStr)
+		if err != nil {
+			logger.Errorf(`BRT: Unable to parse receivedAt in RFC3339Milli format from eventPayload: %v. Error: %v`, firstEventAtStr, err)
+		}
+		lastEventAtWithTimeZone, err := time.Parse(misc.RFC3339Milli, lastEventAtStr)
+		if err != nil {
+			logger.Errorf(`BRT: Unable to parse receivedAt in RFC3339Milli format from eventPayload: %v. Error: %v`, lastEventAtStr, err)
+		}
+
+		firstEventAt = firstEventAtWithTimeZone.UTC().Format(time.RFC3339)
+		lastEventAt = lastEventAtWithTimeZone.UTC().Format(time.RFC3339)
 	}
 
 	logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
