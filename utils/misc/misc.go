@@ -599,17 +599,32 @@ func CreateGZ(s string) (w GZipWriter, err error) {
 }
 
 func (w GZipWriter) WriteGZ(s string) {
-	w.BufWriter.WriteString(s)
+	count, err := w.BufWriter.WriteString(s)
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error writing string of length %d by GZipWriter.WriteGZ. Bytes written: %d. Error: %v`, len(s), count, err)
+	}
 }
 
 func (w GZipWriter) Write(b []byte) {
-	w.BufWriter.Write(b)
+	count, err := w.BufWriter.Write(b)
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error writing bytes of length %d by GZipWriter.Write. Bytes written: %d. Error: %v`, len(b), count, err)
+	}
 }
 
 func (w GZipWriter) CloseGZ() {
-	w.BufWriter.Flush()
+	err := w.BufWriter.Flush()
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error flushing GZipWriter.BufWriter : %v`, err)
+	}
 	w.GzWriter.Close()
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error closing GZipWriter : %v`, err)
+	}
 	w.File.Close()
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
+	}
 }
 
 func GetMacAddress() string {
