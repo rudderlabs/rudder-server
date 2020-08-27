@@ -631,15 +631,23 @@ func (rt *HandleT) generatorLoop() {
 
 		//#JobOrder (See comment marked #JobOrder
 		rt.toClearFailJobIDMutex.Lock()
+		toDeleteIdxs := []int{}
 		for idx := range rt.toClearFailJobIDMap {
 			wrk := rt.workers[idx]
+			if len(wrk.channel) > 0 {
+				continue
+			}
+
 			wrk.failedJobIDMutex.Lock()
 			for _, userID := range rt.toClearFailJobIDMap[idx] {
 				delete(wrk.failedJobIDMap, userID)
 			}
 			wrk.failedJobIDMutex.Unlock()
+			toDeleteIdxs = append(toDeleteIdxs, idx)
 		}
-		rt.toClearFailJobIDMap = make(map[int][]string)
+		for _, toDeleteIdx := range toDeleteIdxs {
+			delete(rt.toClearFailJobIDMap, toDeleteIdx)
+		}
 		rt.toClearFailJobIDMutex.Unlock()
 		//End of #JobOrder
 
@@ -706,6 +714,10 @@ func (rt *HandleT) generatorLoop() {
 			wrkJob.worker.channel <- wrkJob.job
 		}
 
+		if len(toProcess) == 0 {
+			time.Sleep(readSleep)
+		}
+
 		countStat.Count(len(combinedList))
 		generatorStat.End()
 	}
@@ -714,7 +726,7 @@ func (rt *HandleT) generatorLoop() {
 func (rt *HandleT) crashRecover() {
 
 	for {
-		execList := rt.jobsDB.GetExecuting([]string{rt.destName}, jobQueryBatchSize, nil)
+		execList := rt.jobsDB.GetToCrashRecover([]string{rt.destName}, jobQueryBatchSize, nil)
 
 		if len(execList) == 0 {
 			break
@@ -731,7 +743,7 @@ func (rt *HandleT) crashRecover() {
 				RetryTime:     time.Now(),
 				JobState:      jobsdb.Failed.State,
 				ErrorCode:     "",
-				ErrorResponse: []byte(`{"Error": "Rudder server crashed while sending job to destination"}`), // check
+				ErrorResponse: []byte(`{"Error": "Rudder server crashed while sending/waiting to retry job to destination"}`), // check
 			}
 			statusList = append(statusList, &status)
 		}

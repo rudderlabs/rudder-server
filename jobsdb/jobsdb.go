@@ -313,6 +313,23 @@ func getValidNonTerminalStates() (validNonTerminalStates []string) {
 	return
 }
 
+func getValidNonTerminalStatesExcept(excludeStates []string) (validNonTerminalStates []string) {
+	for _, js := range jobStates {
+		var excludedState bool
+		for _, excludeJs := range excludeStates {
+			if js.State == excludeJs {
+				excludedState = true
+				break
+			}
+		}
+
+		if !excludedState && js.isValid && !js.isTerminal {
+			validNonTerminalStates = append(validNonTerminalStates, js.State)
+		}
+	}
+	return
+}
+
 func (jd *HandleT) checkValidJobState(stateFilters []string) {
 	jobStateMap := make(map[string]jobStateT)
 	for _, js := range jobStates {
@@ -2674,6 +2691,13 @@ GetExecuting returns events which  in executing state
 */
 func (jd *HandleT) GetExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 	return jd.GetProcessed([]string{Executing.State}, customValFilters, count, parameterFilters)
+}
+
+/*
+GetToCrashRecover returns events which needs to be recovered after crash
+*/
+func (jd *HandleT) GetToCrashRecover(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
+	return jd.GetProcessed(getValidNonTerminalStatesExcept([]string{Failed.State}), customValFilters, count, parameterFilters)
 }
 
 /*
