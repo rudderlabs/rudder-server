@@ -739,25 +739,6 @@ func (rt *HandleT) crashRecover() {
 	}
 }
 
-func (rt *HandleT) printStatsLoop() {
-	for {
-		time.Sleep(60 * time.Second)
-		logger.Debug("Network Success/Fail", rt.successCount, rt.failCount)
-		logger.Debug("++++++++++++++++++++++++++++++")
-		rt.toClearFailJobIDMutex.Lock()
-		logger.Debug(rt.toClearFailJobIDMap)
-		rt.toClearFailJobIDMutex.Unlock()
-		logger.Debug("++++++++++++++++++++++++++++++")
-		for _, w := range rt.workers {
-			logger.Debug("--------------------------------", w.workerID)
-			w.failedJobIDMutex.RLock()
-			logger.Debug(w.failedJobIDMap)
-			w.failedJobIDMutex.RUnlock()
-			logger.Debug("--------------------------------", w.workerID)
-		}
-	}
-}
-
 func (rt *HandleT) setUserEventsOrderingRequirement() {
 	// user event ordering is required by default unless specified
 	required := true
@@ -796,9 +777,6 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.initWorkers()
 	rruntime.Go(func() {
 		rt.collectMetrics()
-	})
-	rruntime.Go(func() {
-		rt.printStatsLoop()
 	})
 	rruntime.Go(func() {
 		rt.statusInsertLoop()
