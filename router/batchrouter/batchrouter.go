@@ -203,8 +203,8 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		}
 	}
 	gzWriter.CloseGZ()
-	if !isWarehouse && !eventsFound {
-		logger.Infof("BRT: All events in this batch for %s are de-deuplicated...", provider)
+	if !eventsFound {
+		logger.Infof("BRT: No events in this batch for upload to %s. Events are either de-deuplicated or skipped", provider)
 		return StorageUploadOutput{
 			LocalFilePaths: []string{gzipFilePath},
 		}
