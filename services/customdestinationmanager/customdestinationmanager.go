@@ -42,7 +42,7 @@ func init() {
 }
 
 func loadConfig() {
-	objectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE"}
+	objectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB"}
 	streamDestinationsMap = make(map[string]StreamDestination)
 	producerDestinationLockMap = make(map[string]*sync.RWMutex)
 }
