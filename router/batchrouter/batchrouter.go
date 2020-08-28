@@ -90,7 +90,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 						batchDestination := DestinationT{Source: source, Destination: destination}
 						brt.batchDestinations = append(brt.batchDestinations, batchDestination)
 						// initialize map to track encountered anonymousIds for a warehouse destination
-						if misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
+						if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
 							identifier := connectionString(batchDestination)
 							encounteredMergeRuleMapLock.Lock()
 							if _, ok := encounteredMergeRuleMap[identifier]; !ok {
@@ -175,7 +175,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	for _, job := range batchJobs.Jobs {
 		// do not add to staging file if the event is a rudder_identity_merge_rules record
 		// and has been previously added to it
-		if isWarehouse && gjson.GetBytes(job.EventPayload, "metadata.isMergeRule").Bool() {
+		if isWarehouse && warehouseutils.IDResolutionEnabled() && gjson.GetBytes(job.EventPayload, "metadata.isMergeRule").Bool() {
 			mergeProp1 := gjson.GetBytes(job.EventPayload, "metadata.mergePropOne").String()
 			mergeProp2 := gjson.GetBytes(job.EventPayload, "metadata.mergePropTwo").String()
 			ruleIdentifier := fmt.Sprintf(`%s::%s`, mergeProp1, mergeProp2)
@@ -212,8 +212,23 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	// assumes events from warehouse have receivedAt in metadata
 	var firstEventAt, lastEventAt string
 	if isWarehouse {
-		firstEventAt = gjson.GetBytes(batchJobs.Jobs[0].EventPayload, "metadata.receivedAt").String()
-		lastEventAt = gjson.GetBytes(batchJobs.Jobs[len(batchJobs.Jobs)-1].EventPayload, "metadata.receivedAt").String()
+		firstEventAtStr := gjson.GetBytes(batchJobs.Jobs[0].EventPayload, "metadata.receivedAt").String()
+		lastEventAtStr := gjson.GetBytes(batchJobs.Jobs[len(batchJobs.Jobs)-1].EventPayload, "metadata.receivedAt").String()
+
+		// received_at set in rudder-server has timezone component
+		// whereas first_event_at column in wh_staging_files is of type 'timestamp without time zone'
+		// convert it to UTC before saving to wh_staging_files
+		firstEventAtWithTimeZone, err := time.Parse(misc.RFC3339Milli, firstEventAtStr)
+		if err != nil {
+			logger.Errorf(`BRT: Unable to parse receivedAt in RFC3339Milli format from eventPayload: %v. Error: %v`, firstEventAtStr, err)
+		}
+		lastEventAtWithTimeZone, err := time.Parse(misc.RFC3339Milli, lastEventAtStr)
+		if err != nil {
+			logger.Errorf(`BRT: Unable to parse receivedAt in RFC3339Milli format from eventPayload: %v. Error: %v`, lastEventAtStr, err)
+		}
+
+		firstEventAt = firstEventAtWithTimeZone.UTC().Format(time.RFC3339)
+		lastEventAt = lastEventAtWithTimeZone.UTC().Format(time.RFC3339)
 	}
 
 	logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)

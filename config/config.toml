@@ -184,6 +184,7 @@ maxUploadBackoffInS = 1800
 warehouseSyncPreFetchCount = 10
 warehouseSyncFreqIgnore = false
 stagingFilesBatchSize = 240
+enableIDResolution = true
     [Warehouse.redshift]
     maxParallelLoads = 3
     setVarCharMax = false

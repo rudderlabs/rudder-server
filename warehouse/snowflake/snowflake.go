@@ -526,6 +526,89 @@ func (sf *HandleT) isTableExported(tableName string) bool {
 	return status == warehouseutils.ExportedDataState
 }
 
+func (sf *HandleT) loadUserTables() (err error) {
+	if _, ok := sf.Upload.Schema[identifiesTable]; !ok {
+		return
+	}
+	logger.Infof("SF: Starting load for identifies and users tables\n")
+	resp, err := sf.loadTable(identifiesTable, sf.Upload.Schema[identifiesTable], nil, true, true)
+	if err != nil {
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, warehouseutils.IdentifiesTable, err, sf.DbHandle)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), sf.DbHandle)
+		return
+	}
+	defer resp.dbHandle.Close()
+
+	userColMap := sf.CurrentSchema[usersTable]
+	var userColNames, firstValProps []string
+	for colName := range userColMap {
+		if colName == "ID" {
+			continue
+		}
+		userColNames = append(userColNames, colName)
+		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
+	}
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), usersTable), 127)
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[2]s AS (SELECT DISTINCT * FROM
+										(
+											SELECT
+											ID, %[3]s
+											FROM (
+												(
+													SELECT ID, %[6]s FROM "%[1]s"."%[4]s" WHERE ID in (SELECT USER_ID FROM %[5]s)
+												) UNION
+												(
+													SELECT USER_ID, %[6]s FROM %[5]s
+												)
+											)
+										)
+									)`,
+		sf.Namespace,
+		stagingTableName,
+		strings.Join(firstValProps, ","),
+		usersTable,
+		resp.stagingTable,
+		strings.Join(userColNames, ","),
+	)
+	logger.Infof("SF: Creating staging table for users: %s\n", sqlStatement)
+	_, err = resp.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("SF: Error creating temporary table for table:%s: %v\n", usersTable, err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, warehouseutils.IdentifiesTable, err, sf.DbHandle)
+		return
+	}
+
+	primaryKey := "ID"
+	columnNames := append([]string{"ID"}, userColNames...)
+	columnNamesStr := strings.Join(columnNames, ",")
+	columnsWithValuesArr := []string{}
+	stagingColumnValuesArr := []string{}
+	for _, colName := range columnNames {
+		columnsWithValuesArr = append(columnsWithValuesArr, fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName))
+		stagingColumnValuesArr = append(stagingColumnValuesArr, fmt.Sprintf(`staging.%s`, colName))
+	}
+	columnsWithValues := strings.Join(columnsWithValuesArr, ",")
+	stagingColumnValues := strings.Join(stagingColumnValuesArr, ",")
+
+	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
+									USING (
+										SELECT %[3]s FROM %[2]s
+									) AS staging
+									ON (original.%[4]s = staging.%[4]s)
+									WHEN MATCHED THEN
+									UPDATE SET %[5]s
+									WHEN NOT MATCHED THEN
+									INSERT (%[3]s) VALUES (%[6]s)`, usersTable, stagingTableName, columnNamesStr, primaryKey, columnsWithValues, stagingColumnValues)
+	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", usersTable, sqlStatement)
+	_, err = resp.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
+		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, usersTable, err, sf.DbHandle)
+		return
+	}
+	return
+}
+
 func (sf *HandleT) loadIdentityTables() (err error) {
 	logger.Infof("SF: Starting load for identity tables\n")
 
@@ -703,8 +786,15 @@ func (sf *HandleT) loadIdentityTables() (err error) {
 
 func (sf *HandleT) load() (errList []error) {
 	logger.Infof("SF: Starting load for all %v tables\n", len(sf.Upload.Schema))
-	identityTables := []string{identifiesTable, usersTable, aliasTable, identityMergeRulesTable, identityMappingsTable}
-	err := sf.loadIdentityTables()
+	identityTables := []string{}
+	var err error
+	if warehouseutils.IDResolutionEnabled() {
+		identityTables = []string{identifiesTable, usersTable, aliasTable, identityMergeRulesTable, identityMappingsTable}
+		err = sf.loadIdentityTables()
+	} else {
+		identityTables = []string{identifiesTable, usersTable, identityMergeRulesTable, identityMappingsTable}
+		err = sf.loadUserTables()
+	}
 	if err != nil {
 		errList = append(errList, err)
 	}
@@ -1028,25 +1118,23 @@ func (sf *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 	}
 	defer sf.Db.Close()
 
-	if config.Stage == warehouseutils.PreLoadingIdentities {
-		err = sf.MigrateSchema()
-		if err != nil {
-			return
-		}
+	err = sf.MigrateSchema()
+	if err != nil {
+		return
+	}
+
+	if warehouseutils.IDResolutionEnabled() && config.Stage == warehouseutils.PreLoadingIdentities {
 		err = sf.PreLoadIdentityTables()
 		if err != nil {
-			err = warehouseutils.SetUploadError(sf.Upload, err, warehouseutils.PreLoadIdentitiesFailed, sf.DbHandle)
-			if err != nil {
-				panic(err)
+			uploadError := warehouseutils.SetUploadError(sf.Upload, err, warehouseutils.PreLoadIdentitiesFailed, sf.DbHandle)
+			if uploadError != nil {
+				panic(uploadError)
 			}
 		}
 	} else {
-		err = sf.MigrateSchema()
-		if err == nil {
-			err = sf.Export()
-		}
+		err = sf.Export()
 	}
-	return
+	return err
 }
 
 func (sf *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
