@@ -90,7 +90,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 						batchDestination := DestinationT{Source: source, Destination: destination}
 						brt.batchDestinations = append(brt.batchDestinations, batchDestination)
 						// initialize map to track encountered anonymousIds for a warehouse destination
-						if misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
+						if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
 							identifier := connectionString(batchDestination)
 							if _, ok := encounteredAnonymousIDMap[identifier]; !ok {
 								encounteredAnonymousIDMap[identifier] = make(map[string]bool)
@@ -173,7 +173,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	for _, job := range batchJobs.Jobs {
 		// do not add to staging file if the event is a rudder_identity_merge_rules record
 		// and has been previously added to it
-		if isWarehouse && gjson.GetBytes(job.EventPayload, "metadata.isMergeRule").Bool() {
+		if isWarehouse && warehouseutils.IDResolutionEnabled() && gjson.GetBytes(job.EventPayload, "metadata.isMergeRule").Bool() {
 			anonymousID := gjson.GetBytes(job.EventPayload, "metadata.anonymousId").String()
 			userID := gjson.GetBytes(job.EventPayload, "metadata.userId").String()
 			userIdentifier := fmt.Sprintf(`%s::%s`, anonymousID, userID)

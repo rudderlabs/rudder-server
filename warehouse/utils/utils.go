@@ -104,6 +104,7 @@ var (
 	IdentityEnabledWarehouses []string
 	minRetryAttempts          int
 	retryTimeWindow           time.Duration
+	enableIDResolution        bool
 )
 
 var ObjectStorageMap = map[string]string{
@@ -125,6 +126,7 @@ func loadConfig() {
 	IdentityEnabledWarehouses = []string{"SNOWFLAKE"}
 	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
 	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
+	enableIDResolution = config.GetBool("Warehouse.enableIDResolution", false)
 }
 
 type WarehouseT struct {
@@ -175,6 +177,10 @@ type StagingFileT struct {
 	FirstEventAt     string
 	LastEventAt      string
 	TotalEvents      int
+}
+
+func IDResolutionEnabled() bool {
+	return enableIDResolution
 }
 
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
