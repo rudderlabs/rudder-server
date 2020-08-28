@@ -473,7 +473,7 @@ func (pg *HandleT) loadUserTables() (err error) {
 		unionStagingTableName,
 	)
 
-	logger.Infof("PG: Creating staging table for users: %s\n", sqlStatement)
+	logger.Debugf("PG: Creating staging table for users: %s\n", sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, err, pg.DbHandle)
