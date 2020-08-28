@@ -111,7 +111,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		return 200, respStatus, responseMessage
 	} else {
 		respStatus = "Failure"
-		responseMessage = "[GooglePubSub] error  :: Delivery Stream not found"
+		responseMessage = "[GooglePubSub] error  :: Topic Id not found"
 		return 400, respStatus, responseMessage
 	}
 }
