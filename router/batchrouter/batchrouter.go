@@ -51,8 +51,8 @@ var (
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTimeinHr   time.Duration
-	encounteredAnonymousIDMap          map[string]map[string]bool
-	encounteredAnonymousIDMapLock      sync.RWMutex
+	encounteredMergeRuleMap            map[string]map[string]bool
+	encounteredMergeRuleMapLock        sync.RWMutex
 )
 
 type HandleT struct {
@@ -92,9 +92,11 @@ func (brt *HandleT) backendConfigSubscriber() {
 						// initialize map to track encountered anonymousIds for a warehouse destination
 						if misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
 							identifier := connectionString(batchDestination)
-							if _, ok := encounteredAnonymousIDMap[identifier]; !ok {
-								encounteredAnonymousIDMap[identifier] = make(map[string]bool)
+							encounteredMergeRuleMapLock.Lock()
+							if _, ok := encounteredMergeRuleMap[identifier]; !ok {
+								encounteredMergeRuleMap[identifier] = make(map[string]bool)
 							}
+							encounteredMergeRuleMapLock.Unlock()
 						}
 						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
 							destination := destination
@@ -174,16 +176,17 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		// do not add to staging file if the event is a rudder_identity_merge_rules record
 		// and has been previously added to it
 		if isWarehouse && gjson.GetBytes(job.EventPayload, "metadata.isMergeRule").Bool() {
-			anonymousID := gjson.GetBytes(job.EventPayload, "metadata.anonymousId").String()
-			userID := gjson.GetBytes(job.EventPayload, "metadata.userId").String()
-			userIdentifier := fmt.Sprintf(`%s::%s`, anonymousID, userID)
-			encounteredAnonymousIDMapLock.Lock()
-			if _, ok := encounteredAnonymousIDMap[identifier][userIdentifier]; ok {
+			mergeProp1 := gjson.GetBytes(job.EventPayload, "metadata.mergePropOne").String()
+			mergeProp2 := gjson.GetBytes(job.EventPayload, "metadata.mergePropTwo").String()
+			ruleIdentifier := fmt.Sprintf(`%s::%s`, mergeProp1, mergeProp2)
+			encounteredMergeRuleMapLock.Lock()
+			if _, ok := encounteredMergeRuleMap[identifier][ruleIdentifier]; ok {
+				encounteredMergeRuleMapLock.Unlock()
 				continue
 			} else {
-				encounteredAnonymousIDMap[identifier][userIdentifier] = true
+				encounteredMergeRuleMap[identifier][ruleIdentifier] = true
+				encounteredMergeRuleMapLock.Unlock()
 			}
-			encounteredAnonymousIDMapLock.Unlock()
 		}
 
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
@@ -804,7 +807,7 @@ func loadConfig() {
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
-	encounteredAnonymousIDMap = map[string]map[string]bool{}
+	encounteredMergeRuleMap = map[string]map[string]bool{}
 }
 
 func init() {
