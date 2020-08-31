@@ -1,6 +1,8 @@
 package warehouse
 
 import (
+	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -53,4 +55,117 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, c
 		gzWriter.WriteGZ(eventData)
 	}
 	return nil
+}
+
+func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schemaList []map[string]map[string]string, currentMergedSchema map[string]map[string]string) map[string]map[string]string {
+	if len(currentMergedSchema) == 0 {
+		currentMergedSchema = make(map[string]map[string]string)
+	}
+	for _, schema := range schemaList {
+		for tableName, columnMap := range schema {
+			if currentMergedSchema[tableName] == nil {
+				currentMergedSchema[tableName] = make(map[string]string)
+			}
+			for columnName, columnType := range columnMap {
+				// if column already has a type in db, use that
+				if len(currentSchema) > 0 {
+					if _, ok := currentSchema[tableName]; ok {
+						if columnTypeInDB, ok := currentSchema[tableName][columnName]; ok {
+							if columnTypeInDB == "string" && columnType == "text" {
+								currentMergedSchema[tableName][columnName] = columnType
+								continue
+							}
+							currentMergedSchema[tableName][columnName] = columnTypeInDB
+							continue
+						}
+					}
+				}
+				// check if we already set the columnType in currentMergedSchema
+				if _, ok := currentMergedSchema[tableName][columnName]; !ok {
+					currentMergedSchema[tableName][columnName] = columnType
+				}
+			}
+		}
+	}
+	return currentMergedSchema
+}
+
+func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) map[string]map[string]string {
+	schemaInDB, err := warehouseutils.GetCurrentSchema(wh.dbHandle, warehouse)
+	if err != nil {
+		panic(err)
+	}
+
+	consolidatedSchema := make(map[string]map[string]string)
+	count := 0
+	for {
+		lastIndex := count + stagingFilesSchemaPaginationSize
+		if lastIndex >= len(jsonUploadsList) {
+			lastIndex = len(jsonUploadsList)
+		}
+
+		var ids []int64
+		for _, upload := range jsonUploadsList[count:lastIndex] {
+			ids = append(ids, upload.ID)
+		}
+
+		sqlStatement := fmt.Sprintf(`SELECT schema FROM %s WHERE id IN (%s)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(ids, ","))
+		rows, err := wh.dbHandle.Query(sqlStatement)
+		if err != nil && err != sql.ErrNoRows {
+			panic(err)
+		}
+
+		var schemas []map[string]map[string]string
+		for rows.Next() {
+			var s json.RawMessage
+			err := rows.Scan(&s)
+			if err != nil {
+				panic(err)
+			}
+			var schema map[string]map[string]string
+			err = json.Unmarshal(s, &schema)
+			if err != nil {
+				panic(err)
+			}
+
+			schemas = append(schemas, schema)
+		}
+		rows.Close()
+
+		consolidatedSchema = wh.mergeSchema(schemaInDB, schemas, consolidatedSchema)
+
+		count += stagingFilesSchemaPaginationSize
+		if count >= len(jsonUploadsList) {
+			break
+		}
+	}
+
+	// add rudder_discards table
+	destType := warehouse.Destination.DestinationDefinition.Name
+	discards := map[string]string{
+		warehouseutils.ToProviderCase(destType, "table_name"):   "string",
+		warehouseutils.ToProviderCase(destType, "row_id"):       "string",
+		warehouseutils.ToProviderCase(destType, "column_name"):  "string",
+		warehouseutils.ToProviderCase(destType, "column_value"): "string",
+		warehouseutils.ToProviderCase(destType, "received_at"):  "datetime",
+		warehouseutils.ToProviderCase(destType, "uuid_ts"):      "datetime",
+	}
+	// add loaded_at for bq to be segment compatible
+	if destType == "BQ" {
+		discards[warehouseutils.ToProviderCase(destType, "loaded_at")] = "datetime"
+	}
+	consolidatedSchema[warehouseutils.ToProviderCase(destType, warehouseutils.DiscardsTable)] = discards
+
+	// add rudder_identity_mappings table
+	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
+		identityMappings := map[string]string{
+			warehouseutils.ToProviderCase(destType, "merge_property_type"):  "string",
+			warehouseutils.ToProviderCase(destType, "merge_property_value"): "string",
+			warehouseutils.ToProviderCase(destType, "rudder_id"):            "string",
+			warehouseutils.ToProviderCase(destType, "updated_at"):           "datetime",
+		}
+		consolidatedSchema[warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable)] = identityMappings
+	}
+
+	return consolidatedSchema
 }
