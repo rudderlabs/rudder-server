@@ -583,26 +583,6 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]war
 	return uploads, anyPending
 }
 
-func (wh *HandleT) getPendingPreLoad(warehouse warehouseutils.WarehouseT) (upload warehouseutils.UploadT, found bool) {
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.preLoadDestType())
-
-	var schema json.RawMessage
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
-	if err == sql.ErrNoRows {
-		return
-	}
-	if err != nil {
-		panic(err)
-	}
-	found = true
-	upload.Schema = warehouseutils.JSONSchemaToMap(schema)
-	return
-}
-
-func (wh *HandleT) preLoadDestType() string {
-	return wh.destType + "_IDENTITY_PRE_LOAD"
-}
-
 func connectionString(warehouse warehouseutils.WarehouseT) string {
 	return fmt.Sprintf(`source:%s:destination:%s`, warehouse.Source.ID, warehouse.Destination.ID)
 }

@@ -173,7 +173,7 @@ warehouseServiceMaxRetryTimeinHr = 3
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
 webPort = 8082
-uploadFreqInS = 1800
+uploadFreqInS = 30
 noOfWorkers = 8
 noOfSlaveWorkerRoutines = 4
 mainLoopSleepInS = 60
@@ -182,7 +182,7 @@ retryTimeWindowInMins = 180
 minUploadBackoffInS = 60
 maxUploadBackoffInS = 1800
 warehouseSyncPreFetchCount = 10
-warehouseSyncFreqIgnore = false
+warehouseSyncFreqIgnore = true
 stagingFilesBatchSize = 240
 enableIDResolution = true
     [Warehouse.redshift]

@@ -40,7 +40,22 @@
       "properties": {
         "label": "Demo Label",
         "category": "Demo Category",
-        "value": 5
+        "value": 5,
+        "testMap": {
+          "t1": "a",
+          "t2": 4
+        },
+        "floatVal": 4.501,
+        "testArray": [
+          {
+            "id": "elem1",
+            "value": "e1"
+          },
+          {
+            "id": "elem2",
+            "value": "e2"
+          }
+        ]
       },
       "type": "track",
       "originalTimestamp": "2019-08-12T05:08:30.909Z",
