@@ -852,6 +852,8 @@ func (gateway *HandleT) StartWebHandler() {
 		srvMux.HandleFunc("/protocols/event-models", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModels))
 		srvMux.HandleFunc("/protocols/event-versions", gateway.protocolWebHandler(gateway.protocolHandler.GetEventVersions))
 		srvMux.HandleFunc("/protocols/event-metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMetadata))
+		srvMux.HandleFunc("/protocols/missing-keys", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMissingKeys))
+		srvMux.HandleFunc("/protocols/key-counts", gateway.protocolWebHandler(gateway.protocolHandler.GetKeyCounts))
 	}
 
 	c := cors.New(cors.Options{
