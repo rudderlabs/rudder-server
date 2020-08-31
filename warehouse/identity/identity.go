@@ -96,7 +96,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 			row2Values = fmt.Sprintf(`, (%s)`, misc.SingleQuotedJoin(row2))
 		}
 
-		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, fmt.Sprintf(`unique_merge_property_%s`, idr.Warehouse.Destination.ID))
+		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.Warehouse))
 		logger.Debugf(`IDR: Inserting properties from merge_rule into mappings table: %v`, sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
@@ -142,7 +142,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 			return
 		}
 
-		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, fmt.Sprintf(`unique_merge_property_%s`, idr.Upload.DestinationID))
+		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.Warehouse))
 		logger.Debugf(`IDR: Insert new mappings into %s: %v`, idr.mappingsTable(), sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {

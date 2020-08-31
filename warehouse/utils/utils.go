@@ -871,9 +871,13 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 }
 
 func IdentityMergeRulesTableName(warehouse WarehouseT) string {
-	return fmt.Sprintf(`%s_%s`, IdentityMergeRulesTable, warehouse.Destination.ID)
+	return fmt.Sprintf(`%s_%s_%s`, IdentityMergeRulesTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
 func IdentityMappingsTableName(warehouse WarehouseT) string {
-	return fmt.Sprintf(`%s_%s`, IdentityMappingsTable, warehouse.Destination.ID)
+	return fmt.Sprintf(`%s_%s_%s`, IdentityMappingsTable, warehouse.Namespace, warehouse.Destination.ID)
+}
+
+func IdentityMappingsUniqueMappingConstraintName(warehouse WarehouseT) string {
+	return fmt.Sprintf(`unique_merge_property_%s_%s`, warehouse.Namespace, warehouse.Destination.ID)
 }
