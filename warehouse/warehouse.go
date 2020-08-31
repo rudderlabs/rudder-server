@@ -884,8 +884,8 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
 
 	sqlStatement = fmt.Sprintf(`
 		ALTER TABLE %s
-			ADD CONSTRAINT unique_merge_property_%s UNIQUE (merge_property_type, merge_property_value);
-		`, warehouseutils.IdentityMappingsTableName(warehouse), warehouse.Destination.ID,
+			ADD CONSTRAINT %s UNIQUE (merge_property_type, merge_property_value);
+		`, warehouseutils.IdentityMappingsTableName(warehouse), warehouseutils.IdentityMappingsUniqueMappingConstraintName(warehouse),
 	)
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
