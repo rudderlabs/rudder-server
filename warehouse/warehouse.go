@@ -20,11 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	"github.com/rudderlabs/rudder-server/warehouse/warehousemanager"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -571,7 +566,7 @@ func (wh *HandleT) consolidateSchema(warehouse warehouseutils.WarehouseT, jsonUp
 	consolidatedSchema[warehouseutils.ToProviderCase(destType, warehouseutils.DiscardsTable)] = discards
 
 	// add rudder_identity_mappings table
-	if misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
+	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
 		identityMappings := map[string]string{
 			warehouseutils.ToProviderCase(destType, "merge_property_type"):  "string",
 			warehouseutils.ToProviderCase(destType, "merge_property_value"): "string",
@@ -820,7 +815,7 @@ func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.WarehouseT) boo
 }
 
 func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.WarehouseT) (bool, error) {
-	whManager, err := NewWhManager(wh.destType)
+	whManager, err := warehousemanager.NewWhManager(wh.destType)
 	if err != nil {
 		panic(err)
 	}
@@ -964,7 +959,7 @@ func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) (u
 		upload = wh.initPreLoadUpload(warehouse)
 	}
 
-	whManager, err := NewWhManager(wh.destType)
+	whManager, err := warehousemanager.NewWhManager(wh.destType)
 	if err != nil {
 		panic(err)
 	}
@@ -977,35 +972,6 @@ func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) (u
 	})
 
 	return
-}
-
-type WarehouseManager interface {
-	Process(config warehouseutils.ConfigT) error
-	CrashRecover(config warehouseutils.ConfigT) (err error)
-	FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (map[string]map[string]string, error)
-	IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error)
-}
-
-func NewWhManager(destType string) (WarehouseManager, error) {
-	switch destType {
-	case "RS":
-		var rs redshift.HandleT
-		return &rs, nil
-	case "BQ":
-		var bq bigquery.HandleT
-		return &bq, nil
-	case "SNOWFLAKE":
-		var sf snowflake.HandleT
-		return &sf, nil
-	case "POSTGRES":
-		var pg postgres.HandleT
-		return &pg, nil
-	case "CLICKHOUSE":
-		var ch clickhouse.HandleT
-		return &ch, nil
-	}
-
-	return nil, errors.New("no provider configured for WarehouseManager")
 }
 
 func (wh *HandleT) mainLoop() {
@@ -1022,16 +988,18 @@ func (wh *HandleT) mainLoop() {
 		warehouses := wh.warehouses
 		configSubscriberLock.RUnlock()
 		for _, warehouse := range warehouses {
-			if !warehouse.Destination.Enabled {
-				continue
-			}
 			if isDestInProgress(warehouse) {
 				logger.Debugf("[WH]: Skipping upload loop since %s:%s upload in progress", wh.destType, warehouse.Destination.ID)
 				continue
 			}
 			setDestInProgress(warehouse, true)
 
-			if misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
+			// ---- start: check and preload local identity tables with existing data from warehouse -----
+			if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
+				if !warehouse.Destination.Enabled {
+					continue
+				}
+
 				if isDestPreLoaded(warehouse) {
 					continue
 				}
@@ -1064,6 +1032,7 @@ func (wh *HandleT) mainLoop() {
 					}
 				}
 			}
+			// ---- end: check and preload local identity tables with existing data from warehouse -----
 
 			_, ok := inRecoveryMap[warehouse.Destination.ID]
 			if ok {

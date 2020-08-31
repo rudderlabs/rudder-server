@@ -16,6 +16,7 @@ type WarehouseManager interface {
 	CrashRecover(config warehouseutils.ConfigT) (err error)
 	FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (map[string]map[string]string, error)
 	TestConnection(config warehouseutils.ConfigT) error
+	IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error)
 }
 
 func NewWhManager(destType string) (WarehouseManager, error) {
