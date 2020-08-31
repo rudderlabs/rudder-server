@@ -2,10 +2,8 @@ package warehouse
 
 import (
 	"bufio"
-	"bytes"
 	"compress/gzip"
 	"database/sql"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -188,7 +186,7 @@ func (wh *HandleT) handleUploadJobs(processStagingFilesJobList []ProcessStagingF
 		activeWorkers := activeWorkerCount
 		if activeWorkers >= noOfWorkers {
 			activeWorkerCountLock.Unlock()
-			logger.Debugf("WH: Setting to sleep and waiting till activeWorkers are less than %d", noOfWorkers)
+			logger.Debugf("[WH]: Setting to sleep and waiting till activeWorkers are less than %d", noOfWorkers)
 			// TODO: add randomness to this ?
 			time.Sleep(workerRetrySleep)
 			continue
@@ -236,7 +234,7 @@ func (wh *HandleT) handleUploadJobs(processStagingFilesJobList []ProcessStagingF
 
 			if len(job.Upload.Schema) == 0 || hasSchemaChanged {
 				// merge schemas over all staging files in this batch
-				logger.Infof("WH: Consolidating upload schema with schema in wh_schemas...")
+				logger.Infof("[WH]: Consolidating upload schema with schema in wh_schemas...")
 				consolidatedSchema := wh.consolidateSchema(job.Warehouse, job.List)
 				marshalledSchema, err := json.Marshal(consolidatedSchema)
 				if err != nil {
@@ -253,7 +251,7 @@ func (wh *HandleT) handleUploadJobs(processStagingFilesJobList []ProcessStagingF
 				err := wh.initTableUploads(job.Upload, job.Upload.Schema)
 				if err != nil {
 					// TODO: Handle error / Retry
-					logger.Error("WH: Error creating records in wh_table_uploads", err)
+					logger.Error("[WH]: Error creating records in wh_table_uploads", err)
 				}
 			}
 
@@ -263,7 +261,7 @@ func (wh *HandleT) handleUploadJobs(processStagingFilesJobList []ProcessStagingF
 			// generate load files only if not done before
 			// upload records have start_load_file_id and end_load_file_id set to 0 on creation
 			// and are updated on creation of load files
-			logger.Infof("WH: Processing %d staging files in upload job:%v with staging files from %v to %v for %s:%s", len(job.List), job.Upload.ID, job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
+			logger.Infof("[WH]: Processing %d staging files in upload job:%v with staging files from %v to %v for %s:%s", len(job.List), job.Upload.ID, job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
 			warehouseutils.SetUploadColumns(
 				job.Upload,
 				wh.dbHandle,
@@ -648,7 +646,7 @@ func (wh *HandleT) initTableUploads(upload warehouseutils.UploadT, schema map[st
 func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) warehouseutils.UploadT {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, first_event_at, last_event_at, created_at, updated_at)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`, warehouseutils.WarehouseUploadsTable)
-	logger.Infof("WH: %s: Creating record in %s table: %v", wh.destType, warehouseutils.WarehouseUploadsTable, sqlStatement)
+	logger.Infof("[WH]: %s: Creating record in %s table: %v", wh.destType, warehouseutils.WarehouseUploadsTable, sqlStatement)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -1028,7 +1026,7 @@ func (wh *HandleT) mainLoop() {
 				continue
 			}
 			if isDestInProgress(warehouse) {
-				logger.Debugf("WH: Skipping upload loop since %s:%s upload in progress", wh.destType, warehouse.Destination.ID)
+				logger.Debugf("[WH]: Skipping upload loop since %s:%s upload in progress", wh.destType, warehouse.Destination.ID)
 				continue
 			}
 			setDestInProgress(warehouse, true)
@@ -1050,8 +1048,8 @@ func (wh *HandleT) mainLoop() {
 						continue
 					}
 					if hasData {
-						logger.Infof("WH: Did not find local identity tables..")
-						logger.Infof("WH: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
+						logger.Infof("[WH]: Did not find local identity tables..")
+						logger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
 						// TODO: make this async and not block other warehouses
 						var upload warehouseutils.UploadT
 						upload, err = wh.preLoadIdentityTables(warehouse)
@@ -1073,7 +1071,7 @@ func (wh *HandleT) mainLoop() {
 				if err != nil {
 					panic(err)
 				}
-				logger.Infof("WH: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
+				logger.Infof("[WH]: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
 				err = whManager.CrashRecover(warehouseutils.ConfigT{
 					DbHandle:  wh.dbHandle,
 					Warehouse: warehouse,
@@ -1087,11 +1085,11 @@ func (wh *HandleT) mainLoop() {
 			// fetch any pending wh_uploads records (query for not successful/aborted uploads)
 			pendingUploads, ok := wh.getPendingUploads(warehouse)
 			if ok {
-				logger.Infof("WH: Found pending uploads: %v for %s:%s", len(pendingUploads), wh.destType, warehouse.Destination.ID)
+				logger.Infof("[WH]: Found pending uploads: %v for %s:%s", len(pendingUploads), wh.destType, warehouse.Destination.ID)
 				jobs := []ProcessStagingFilesJobT{}
 				for _, pendingUpload := range pendingUploads {
 					if !wh.canStartPendingUpload(pendingUpload, warehouse) {
-						logger.Debugf("WH: Skipping pending upload for %s:%s since current time less than next retry time", wh.destType, warehouse.Destination.ID)
+						logger.Debugf("[WH]: Skipping pending upload for %s:%s since current time less than next retry time", wh.destType, warehouse.Destination.ID)
 						setDestInProgress(warehouse, false)
 						break
 					}
@@ -1104,7 +1102,7 @@ func (wh *HandleT) mainLoop() {
 						Warehouse: warehouse,
 						Upload:    pendingUpload,
 					}
-					logger.Debugf("WH: Adding job %+v", job)
+					logger.Debugf("[WH]: Adding job %+v", job)
 					jobs = append(jobs, job)
 				}
 				if len(jobs) == 0 {
@@ -1113,7 +1111,7 @@ func (wh *HandleT) mainLoop() {
 				wh.enqueueUploadJobs(jobs, warehouse)
 			} else {
 				if !wh.canStartUpload(warehouse) {
-					logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
+					logger.Debugf("[WH]: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
 					setDestInProgress(warehouse, false)
 					continue
 				}
@@ -1124,11 +1122,11 @@ func (wh *HandleT) mainLoop() {
 					panic(err)
 				}
 				if len(stagingFilesList) == 0 {
-					logger.Debugf("WH: Found no pending staging files for %s:%s", wh.destType, warehouse.Destination.ID)
+					logger.Debugf("[WH]: Found no pending staging files for %s:%s", wh.destType, warehouse.Destination.ID)
 					setDestInProgress(warehouse, false)
 					continue
 				}
-				logger.Infof("WH: Found %v pending staging files for %s:%s", len(stagingFilesList), wh.destType, warehouse.Destination.ID)
+				logger.Infof("[WH]: Found %v pending staging files for %s:%s", len(stagingFilesList), wh.destType, warehouse.Destination.ID)
 
 				count := 0
 				var jobs []ProcessStagingFilesJobT
@@ -1144,7 +1142,7 @@ func (wh *HandleT) mainLoop() {
 						Warehouse: warehouse,
 						Upload:    upload,
 					}
-					logger.Debugf("WH: Adding job %+v", job)
+					logger.Debugf("[WH]: Adding job %+v", job)
 					jobs = append(jobs, job)
 					count += stagingFilesBatchSize
 					if count >= len(stagingFilesList) {
@@ -1178,6 +1176,16 @@ type PayloadT struct {
 	LoadFileIDs         []int64
 }
 
+// Temporary store for processing staging file to load file
+type JobRunT struct {
+	job                  PayloadT
+	stagingFilePath      string
+	uuidTS               time.Time
+	outputFileWritersMap map[string]misc.GZipWriter
+	tableEventCountMap   map[string]int
+	stagingFileReader    *gzip.Reader
+}
+
 func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	// stat for time taken to process staging files in a single job
 	timer := warehouseutils.DestStat(stats.TimerType, "process_staging_files_batch_time", job.Warehouse.Destination.ID)
@@ -1189,7 +1197,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	}
 	warehouseutils.SetStagingFilesStatus(jsonIDs, warehouseutils.StagingFileExecutingState, wh.dbHandle)
 
-	logger.Debugf("WH: Starting batch processing %v stage files with %v workers for %s:%s", len(job.List), noOfWorkers, wh.destType, job.Warehouse.Destination.ID)
+	logger.Debugf("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", len(job.List), noOfWorkers, wh.destType, job.Warehouse.Destination.ID)
 	var messages []pgnotifier.MessageT
 	for _, stagingFile := range job.List {
 		payload := PayloadT{
@@ -1213,7 +1221,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 		messages = append(messages, message)
 	}
 
-	logger.Infof("WH: Publishing %d staging files to PgNotifier", len(messages))
+	logger.Infof("[WH]: Publishing %d staging files to PgNotifier", len(messages))
 	var loadFileIDs []int64
 	ch, err := wh.notifier.Publish("process_staging_file", messages)
 	if err != nil {
@@ -1221,7 +1229,7 @@ func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	}
 
 	responses := <-ch
-	logger.Infof("WH: Received responses from PgNotifier")
+	logger.Infof("[WH]: Received responses from PgNotifier")
 	for _, resp := range responses {
 		// TODO: make it aborted
 		if resp.Status == "aborted" {
@@ -1310,7 +1318,7 @@ func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT) (err e
 			panic(err)
 		}
 	}
-	logger.Infof("WH: Starting load flow for %s:%s", wh.destType, job.Warehouse.Destination.ID)
+	logger.Infof("[WH]: Starting load flow for %s:%s", wh.destType, job.Warehouse.Destination.ID)
 	whManager, err := warehousemanager.NewWhManager(wh.destType)
 	if err != nil {
 		panic(err)
@@ -1441,7 +1449,7 @@ func (wh *HandleT) setInterruptedDestinations() (err error) {
 }
 
 func (wh *HandleT) Setup(whType string) {
-	logger.Infof("WH: Warehouse Router started: %s", whType)
+	logger.Infof("[WH]: Warehouse Router started: %s", whType)
 	wh.dbHandle = dbHandle
 	wh.notifier = notifier
 	wh.destType = whType
@@ -1466,50 +1474,143 @@ var loadFileFormatMap = map[string]string{
 	"CLICKHOUSE": "csv",
 }
 
-func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
-	logger.Debugf("WH: Starting processing staging file: %v at %v for %s:%s", job.StagingFileID, job.StagingFileLocation, job.DestinationType, job.DestinationID)
-	// download staging file into a temp dir
+func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
+
+	job := jobRun.job
+	logger.Debugf("Starting read from downloaded staging file: %s", job.StagingFileLocation)
+	rawf, err := os.Open(jobRun.stagingFilePath)
+	if err != nil {
+		logger.Errorf("[WH]: Error opening file using os.Open at path:%s downloaded from %s", jobRun.stagingFilePath, job.StagingFileLocation)
+		panic(err)
+	}
+	reader, err = gzip.NewReader(rawf)
+	if err != nil {
+		if err.Error() == "EOF" {
+			return nil, true
+		}
+		logger.Errorf("[WH]: Error reading file using gzip.NewReader at path:%s downloaded from %s", jobRun.stagingFilePath, job.StagingFileLocation)
+		panic(err)
+	}
+
+	jobRun.stagingFileReader = reader
+	return reader, false
+}
+
+/*
+ * Get download path for the job. Also creates missing directories for this path
+ */
+func (jobRun *JobRunT) setStagingFileDownloadPath() (filePath string) {
+	job := jobRun.job
 	dirName := "/rudder-warehouse-json-uploads-tmp/"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
+		logger.Errorf("[WH]: Failed to create tmp DIR")
 		panic(err)
 	}
-	jsonPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, job.DestinationType, job.DestinationID) + job.StagingFileLocation
-	err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
-	jsonFile, err := os.Create(jsonPath)
+	filePath = tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, job.DestinationType, job.DestinationID) + job.StagingFileLocation
+	err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
 	if err != nil {
 		panic(err)
 	}
-	defer os.Remove(jsonPath)
+	jobRun.stagingFilePath = filePath
+	return filePath
+}
 
-	downloader, err := filemanager.New(&filemanager.SettingsT{
+// Get fileManager
+func (job *PayloadT) getFileManager() (filemanager.FileManager, error) {
+	fileManager, err := filemanager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig),
 		Config:   misc.GetObjectStorageConfig(warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), job.DestinationConfig),
 	})
+	return fileManager, err
+}
+
+/*
+ * Download Staging file for the job
+ */
+func (jobRun *JobRunT) downloadStagingFile() error {
+	filePath := jobRun.stagingFilePath
+	file, err := os.Create(filePath)
 	if err != nil {
-		return loadFileIDs, err
+		panic(err)
+	}
+
+	job := jobRun.job
+	downloader, err := jobRun.job.getFileManager()
+	if err != nil {
+		logger.Errorf("[WH]: Failed to initialize downloader")
+		return err
 	}
 
 	timer := warehouseutils.DestStat(stats.TimerType, "download_staging_file_time", job.DestinationID)
 	timer.Start()
 
-	err = downloader.Download(jsonFile, job.StagingFileLocation)
+	err = downloader.Download(file, job.StagingFileLocation)
 	if err != nil {
-		return loadFileIDs, err
+		logger.Errorf("[WH]: Failed to download file")
+		return err
 	}
-	jsonFile.Close()
+	file.Close()
 	timer.End()
 
-	fi, err := os.Stat(jsonPath)
+	fi, err := os.Stat(filePath)
 	if err != nil {
-		logger.Errorf("WH: Error getting file size of downloaded staging file: ", err)
+		logger.Errorf("[WH]: Error getting file size of downloaded staging file: ", err)
 	}
 	fileSize := fi.Size()
-	logger.Debugf("WH: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
+	logger.Debugf("[WH]: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
 	warehouseutils.DestStat(stats.CountType, "downloaded_staging_file_size", job.DestinationID).Count(int(fileSize))
 
+	return nil
+}
+
+func (job *PayloadT) getDiscardsTable() string {
+	return warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
+}
+
+func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
+	job := jobRun.job
+	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
+}
+
+func (job *PayloadT) getColumnName(columnName string) string {
+	return warehouseutils.ToProviderCase(job.DestinationType, columnName)
+}
+
+func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile *misc.GZipWriter, tableName string) (filemanager.UploadOutput, error) {
+	job := jobRun.job
+	uploadFile.CloseGZ()
+	file, err := os.Open(uploadFile.File.Name())
+	if err != nil {
+		logger.Errorf("[WH]: Failed to Open File: %s", uploadFile.File.Name())
+		return filemanager.UploadOutput{}, err
+	}
+
+	defer os.Remove(uploadFile.File.Name())
+	logger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
+	uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.BatchID, tableName))
+	return uploadLocation, err
+}
+
+func (job *PayloadT) markLoadFileUploadSuccess(tableName string, uploadLocation string, numEvents int) int64 {
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, warehouseutils.WarehouseLoadFilesTable)
+	stmt, err := dbHandle.Prepare(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+	var fileID int64
+	err = stmt.QueryRow(job.StagingFileID, uploadLocation, job.SourceID, job.DestinationID, job.DestinationType, tableName, numEvents, timeutil.Now()).Scan(&fileID)
+	if err != nil {
+		panic(err)
+	}
+	stmt.Close()
+	return fileID
+}
+
+// Sort columns per table to maintain same order in load file (needed in case of csv load file)
+func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
 	sortedTableColumnMap := make(map[string][]string)
-	// sort columns per table so as to maintaining same order in load file (needed in case of csv load file)
 	for tableName, columnMap := range job.Schema {
 		sortedTableColumnMap[tableName] = []string{}
 		for k := range columnMap {
@@ -1517,318 +1618,228 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		}
 		sort.Strings(sortedTableColumnMap[tableName])
 	}
+	return sortedTableColumnMap
+}
 
-	logger.Debugf("Starting read from downloaded staging file: %s", job.StagingFileLocation)
-	rawf, err := os.Open(jsonPath)
-	if err != nil {
-		logger.Errorf("WH: Error opening file using os.Open at path:%s downloaded from %s", jsonPath, job.StagingFileLocation)
-		panic(err)
-	}
-	reader, err := gzip.NewReader(rawf)
-	if err != nil {
-		if err.Error() == "EOF" {
-			return loadFileIDs, nil
+func (jobRun *JobRunT) getWriter(tableName string) (misc.GZipWriter, error) {
+	writer, ok := jobRun.outputFileWritersMap[tableName]
+	if !ok {
+		outputFilePath := jobRun.getLoadFilePath(tableName)
+		var err error
+		writer, err = misc.CreateGZ(outputFilePath)
+		if err != nil {
+			return misc.GZipWriter{}, err
 		}
-		logger.Errorf("WH: Error reading file using gzip.NewReader at path:%s downloaded from %s", jsonPath, job.StagingFileLocation)
-		panic(err)
+		jobRun.outputFileWritersMap[tableName] = writer
+		jobRun.tableEventCountMap[tableName] = 0
 	}
+	return writer, nil
+}
+
+func (jobRun *JobRunT) cleanup() {
+	if jobRun.stagingFileReader != nil {
+		err := jobRun.stagingFileReader.Close()
+		logger.Errorf("[WH]: Failed to close staging file: %w", err)
+	}
+
+	if jobRun.stagingFilePath != "" {
+		err := os.Remove(jobRun.stagingFilePath)
+		if err != nil {
+			logger.Errorf("[WH]: Failed to remove staging file: %w", err)
+		}
+	}
+
+	if jobRun.outputFileWritersMap != nil {
+		for _, writer := range jobRun.outputFileWritersMap {
+			err := writer.CloseGZ()
+			if err != nil {
+				logger.Errorf("[WH]: Failed to closed output load file: %w", err)
+			}
+		}
+	}
+}
+
+func (event *BatchRouterEventT) getColumnInfo(columnName string) (columnInfo ColumnInfoT, ok bool) {
+	columnVal, ok := event.Data[columnName]
+	if !ok {
+		return ColumnInfoT{}, false
+	}
+	columnType, ok := event.Metadata.Columns[columnName]
+	if !ok {
+		return ColumnInfoT{}, false
+	}
+	return ColumnInfoT{ColumnVal: columnVal, ColumnType: columnType}, true
+}
+
+//
+// This function is triggered when warehouse-master creates a new entry in wh_uploads table
+// This is executed in the context of the warehouse-slave/worker and does the following:
+//
+// 1. Download the Staging file into a tmp directory
+// 2. Transform the staging file into multiple load files (One file per output table)
+// 3. Uploads these load files to Object storage
+// 4. Save entries for the generated load files in wh_load_files table
+// 5. Delete the staging and load files from tmp directory
+//
+
+func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
+	logger.Debugf("[WH]: Starting processing staging file: %v at %v for %s:%s", job.StagingFileID, job.StagingFileLocation, job.DestinationType, job.DestinationID)
+
+	jobRun := JobRunT{job: job}
+	defer jobRun.cleanup()
+
+	jobRun.setStagingFileDownloadPath()
+
+	// This creates the file, so on successful creation remove it
+	err = jobRun.downloadStagingFile()
+	if err != nil {
+		return loadFileIDs, err
+	}
+
+	sortedTableColumnMap := job.getSortedColumnMapForAllTables()
+
+	reader, endOfFile := jobRun.setStagingFileReader()
+	if endOfFile {
+		// If empty file, return nothing
+		return loadFileIDs, nil
+	}
+	scanner := bufio.NewScanner(reader)
 
 	// read from staging file and write a separate load file for each table in warehouse
-	// tableContentMap := make(map[string]string)
-	outputFileMap := make(map[string]misc.GZipWriter)
-	eventsCountMap := make(map[string]int)
-	uuidTS := timeutil.Now()
-	sc := bufio.NewScanner(reader)
+	jobRun.outputFileWritersMap = make(map[string]misc.GZipWriter)
+	jobRun.tableEventCountMap = make(map[string]int)
+	jobRun.uuidTS = timeutil.Now()
 	misc.PrintMemUsage()
 
-	timer = warehouseutils.DestStat(stats.TimerType, "process_staging_file_to_csv_time", job.DestinationID)
+	// Initilize Discards Table
+	discardsTable := job.getDiscardsTable()
+	jobRun.tableEventCountMap[discardsTable] = 0
+
+	timer := warehouseutils.DestStat(stats.TimerType, "process_staging_file_to_csv_time", job.DestinationID)
 	timer.Start()
 
 	lineBytesCounter := 0
 	var interfaceSliceSample []interface{}
-	for sc.Scan() {
-		lineBytes := sc.Bytes()
+	for scanner.Scan() {
+		lineBytes := scanner.Bytes()
 		lineBytesCounter += len(lineBytes)
-		var jsonLine map[string]interface{}
-		json.Unmarshal(lineBytes, &jsonLine)
-		metadata, ok := jsonLine["metadata"]
-		if !ok {
+		var batchRouterEvent BatchRouterEventT
+		err := json.Unmarshal(lineBytes, &batchRouterEvent)
+		if err != nil {
+			logger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
 			continue
 		}
-		columnData, ok := jsonLine["data"].(map[string]interface{})
-		if !ok {
-			continue
+
+		tableName := batchRouterEvent.Metadata.Table
+		columnData := batchRouterEvent.Data
+
+		// Create separate load file for each table
+		gzWriter, err := jobRun.getWriter(tableName)
+		if err != nil {
+			return nil, err
 		}
-		tableName, ok := metadata.(map[string]interface{})["table"].(string)
-		if !ok {
-			continue
-		}
-		columns, ok := metadata.(map[string]interface{})["columns"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		discardsTable := warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
-		eventsCountMap[discardsTable] = 0
-		if _, ok := outputFileMap[tableName]; !ok {
-			outputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + tableName + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
-			gzWriter, err := misc.CreateGZ(outputFilePath)
-			defer gzWriter.CloseGZ()
-			if err != nil {
-				return nil, err
+
+		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType)
+		for _, columnName := range sortedTableColumnMap[tableName] {
+			if eventLoader.IsLoadTimeColumn(columnName) {
+				timestampFormat := eventLoader.GetLoadTimeFomat(columnName)
+				eventLoader.AddColumn(job.getColumnName(columnName), jobRun.uuidTS.Format(timestampFormat))
+				continue
 			}
-			outputFileMap[tableName] = gzWriter
-			eventsCountMap[tableName] = 0
-		}
-		if job.DestinationType == "BQ" {
-			for _, columnName := range sortedTableColumnMap[tableName] {
-				if columnName == warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts") {
-					// add uuid_ts to track when event was processed into load_file
-					columnData[warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts")] = uuidTS.Format(warehouseutils.BQUuidTSFormat)
-					continue
-				}
-				if columnName == warehouseutils.ToProviderCase(job.DestinationType, "loaded_at") {
-					// add loaded_at for segment compatability
-					columnData[warehouseutils.ToProviderCase(job.DestinationType, "loaded_at")] = uuidTS.Format(warehouseutils.BQLoadedAtFormat)
-					continue
-				}
-				columnVal, ok := columnData[columnName]
-				if !ok {
-					columnData[columnName] = nil
-					continue
-				}
-				columnType, ok := columns[columnName].(string)
-				if !ok {
-					columnData[columnName] = nil
-					continue
-				}
-				// json.Unmarshal returns int as float
-				// convert int's back to int to avoid writing integers like 123456789 as 1.23456789e+08
-				// most warehouses only support scientific notation only for floats and not integers
-				if columnType == "int" || columnType == "bigint" {
-					floatVal, ok := columnVal.(float64)
-					if !ok {
-						columnData[columnName] = nil
-						continue
-					}
-					columnData[columnName] = int(floatVal)
-				}
-				// if the current data type doesnt match the one in warehouse, set value as NULL
-				var dataTypeInSchema string
-				dataTypeInSchema, ok = job.Schema[tableName][columnName]
-				if ok && columnType != dataTypeInSchema {
-					if dataTypeInSchema == "string" {
-						// cast to string since string type column can accomodate any kind of value
-						columnData[columnName] = fmt.Sprintf(`%v`, columnVal)
-					} else if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
-						// pass it along
-					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
-						floatVal, ok := columnVal.(float64)
-						if !ok {
-							columnData[columnName] = nil
-							continue
-						}
-						columnData[columnName] = int(floatVal)
-					} else {
-						columnData[columnName] = nil
-						rowID, hasID := columnData[warehouseutils.ToProviderCase(job.DestinationType, "id")]
-						receivedAt, hasReceivedAt := columnData[warehouseutils.ToProviderCase(job.DestinationType, "received_at")]
-						if hasID && hasReceivedAt {
-							if _, ok := outputFileMap[discardsTable]; !ok {
-								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
-								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
-								if err != nil {
-									return nil, err
-								}
-								outputFileMap[discardsTable] = gzWriter
-							}
-
-							discardsData := map[string]interface{}{
-								"column_name":  columnName,
-								"column_value": fmt.Sprintf(`%v`, columnVal),
-								"received_at":  receivedAt,
-								"row_id":       rowID,
-								"table_name":   tableName,
-								"uuid_ts":      uuidTS.Format(warehouseutils.BQUuidTSFormat),
-								"loaded_at":    uuidTS.Format(warehouseutils.BQLoadedAtFormat),
-							}
-							dLine, err := json.Marshal(discardsData)
-							if err != nil {
-								return loadFileIDs, err
-							}
-							outputFileMap[discardsTable].WriteGZ(string(dLine) + "\n")
-							eventsCountMap[discardsTable]++
-						}
-						continue
-					}
-				}
-				// cast array values to string as bigquery fails to cast array to string
-				if dataTypeInSchema == "string" && columnType == dataTypeInSchema {
-					if _, ok := columnVal.([]interface{}); ok {
-						valBytes, err := json.Marshal(columnVal)
-						if err != nil {
-							columnData[columnName] = nil
-							continue
-						}
-						columnData[columnName] = string(valBytes)
-					}
-				}
+			columnInfo, ok := batchRouterEvent.getColumnInfo(columnName)
+			if !ok {
+				eventLoader.AddEmptyColumn(columnName)
+				continue
 			}
-			line, err := json.Marshal(columnData)
-			if err != nil {
-				return loadFileIDs, err
+			columnType := columnInfo.ColumnType
+			columnVal := columnInfo.ColumnVal
+
+			// TODO: Move this into function that handles int type
+			if columnType == "int" || columnType == "bigint" {
+				floatVal, ok := columnVal.(float64)
+				if !ok {
+					eventLoader.AddEmptyColumn(columnName)
+					continue
+				}
+				columnVal = int(floatVal)
 			}
-			outputFileMap[tableName].WriteGZ(string(line) + "\n")
-			eventsCountMap[tableName]++
-		} else {
-			csvRow := []string{}
-			var buff bytes.Buffer
-			csvWriter := csv.NewWriter(&buff)
-			for _, columnName := range sortedTableColumnMap[tableName] {
-				if columnName == warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts") {
-					// add uuid_ts to track when event was processed into load_file
-					csvRow = append(csvRow, fmt.Sprintf("%v", uuidTS.Format(misc.RFC3339Milli)))
-					continue
-				}
-				columnVal, ok := columnData[columnName]
+
+			dataTypeInSchema, ok := job.Schema[tableName][columnName]
+			if ok && columnType != dataTypeInSchema {
+				newColumnVal, ok := handleSchemaChange(dataTypeInSchema, columnType, columnVal)
 				if !ok {
-					csvRow = append(csvRow, "")
-					continue
-				}
+					eventLoader.AddEmptyColumn(columnName)
 
-				columnType, ok := columns[columnName].(string)
-				if !ok {
-					csvRow = append(csvRow, "")
-					continue
-				}
-				// json.Unmarshal returns int as float
-				// convert int's back to int to avoid writing integers like 123456789 as 1.23456789e+08
-				// most warehouses only support scientific notation only for floats and not integers
-				if columnType == "int" || columnType == "bigint" {
-					floatVal, ok := columnVal.(float64)
-					if !ok {
-						csvRow = append(csvRow, "")
-						continue
-					}
-					columnVal = int(floatVal)
-				}
-				// if the current data type doesnt match the one in warehouse, set value as NULL
-				dataTypeInSchema, ok := job.Schema[tableName][columnName]
-				if ok && columnType != dataTypeInSchema {
-					if dataTypeInSchema == "string" || dataTypeInSchema == "text" {
-						// pass it along since string type column can accomodate any kind of value
-					} else if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
-						// pass it along
-					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
-						floatVal, ok := columnVal.(float64)
-						if !ok {
-							csvRow = append(csvRow, "")
-							continue
-						}
-						columnVal = int(floatVal)
-					} else {
-						csvRow = append(csvRow, "")
-						rowID, hasID := columnData[warehouseutils.ToProviderCase(job.DestinationType, "id")]
-						receivedAt, hasReceivedAt := columnData[warehouseutils.ToProviderCase(job.DestinationType, "received_at")]
-						if hasID && hasReceivedAt {
-							discardsTable := warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
-							if _, ok := outputFileMap[discardsTable]; !ok {
-								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
-								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
-								if err != nil {
-									return nil, err
-								}
-								outputFileMap[discardsTable] = gzWriter
-							}
-
-							discardRow := []string{}
-							var dBuff bytes.Buffer
-							dCsvWriter := csv.NewWriter(&dBuff)
-
-							// if val is an []interface{}, marshal it
-							// eg. [{"product_name": "pen", "product_price": 10}, {"product_name": "pencil", "product_price": 2}]
-							if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
-								marshalledVal, err := json.Marshal(columnVal)
-								if err != nil {
-									logger.Errorf("WH: Error in marshalling rudder_discard []interface{} columnVal: %v", err)
-									continue
-								}
-								columnVal = string(marshalledVal)
-							}
-
-							// sorted discard columns: column_name, column_value, received_at, row_id, table_name, uuid_ts
-							discardRow = append(discardRow, columnName, fmt.Sprintf("%v", columnVal), fmt.Sprintf("%v", receivedAt), fmt.Sprintf("%v", rowID), tableName, uuidTS.Format(misc.RFC3339Milli))
-							csvWriteErr := dCsvWriter.Write(discardRow)
-							if csvWriteErr != nil {
-								logger.Errorf(`[CSVWriter]: Error writing discardRow to buffer: %v`, csvWriteErr)
-							}
-							dCsvWriter.Flush()
-							outputFileMap[discardsTable].WriteGZ(dBuff.String())
-							eventsCountMap[discardsTable]++
-						}
-						continue
-					}
-				}
-				// if val is an []interface{}, marshal it
-				// eg. [{"product_name": "pen", "product_price": 10}, {"product_name": "pencil", "product_price": 2}]
-				if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
-					marshalledVal, err := json.Marshal(columnVal)
+					discardWriter, err := jobRun.getWriter(discardsTable)
 					if err != nil {
-						logger.Errorf("WH: Error in marshalling []interface{} columnVal: %v", err)
-						csvRow = append(csvRow, "")
-						continue
+						return nil, err
 					}
-					columnVal = string(marshalledVal)
+					err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, discardWriter)
+
+					if err != nil {
+						logger.Error("[WH]: Failed to write to discards: %w", err)
+					}
+					jobRun.tableEventCountMap[discardsTable]++
+					continue
 				}
-				csvRow = append(csvRow, fmt.Sprintf("%v", columnVal))
+				if newColumnVal == nil {
+					eventLoader.AddEmptyColumn(columnName)
+					continue
+				}
+				columnVal = newColumnVal
 			}
-			csvWriter.Write(csvRow)
-			csvWriter.Flush()
-			outputFileMap[tableName].WriteGZ(buff.String())
-			eventsCountMap[tableName]++
+
+			// Special handling for JSON arrays
+			// TODO: Will this work for both BQ and RS?
+			if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
+				marshalledVal, err := json.Marshal(columnVal)
+				if err != nil {
+					logger.Errorf("[WH]: Error in marshalling []interface{} columnVal: %w", err)
+					eventLoader.AddEmptyColumn(columnName)
+					continue
+				}
+				columnVal = string(marshalledVal)
+			}
+
+			eventLoader.AddColumn(columnName, columnVal)
 		}
+
+		// Completed parsing all columns, write single event to the file
+		eventData, err := eventLoader.WriteToString()
+		if err != nil {
+			logger.Errorf("[WH]: Failed to write event to string: %w", err)
+			return loadFileIDs, err
+		}
+		gzWriter.WriteGZ(eventData)
+		jobRun.tableEventCountMap[tableName]++
 	}
-	reader.Close()
+
 	timer.End()
 	misc.PrintMemUsage()
 
-	logger.Debugf("Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
+	logger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	warehouseutils.DestStat(stats.CountType, "bytes_processed_in_staging_file", job.DestinationID).Count(lineBytesCounter)
 
-	uploader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig),
-		Config:   misc.GetObjectStorageConfig(warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), job.DestinationConfig),
-	})
+	// Upload each generated load file to ObjectStorage
+	// On successful upload, store the saved fileID in wh_load_files table
+	uploader, err := job.getFileManager()
 	if err != nil {
 		panic(err)
 	}
 
 	timer = warehouseutils.DestStat(stats.TimerType, "upload_load_files_per_staging_file_time", job.DestinationID)
 	timer.Start()
-	for tableName, outputFile := range outputFileMap {
-		outputFile.CloseGZ()
-		file, err := os.Open(outputFile.File.Name())
-		defer os.Remove(outputFile.File.Name())
-		logger.Debugf("WH: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
-		uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.BatchID, tableName))
+	for tableName, outputFile := range jobRun.outputFileWritersMap {
+		uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, &outputFile, tableName)
 		if err != nil {
+			// TODO: If we break in between, we have only few load files. How do we handle this?
 			return loadFileIDs, err
 		}
-		sqlStatement := fmt.Sprintf(`INSERT INTO %s (staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at)
-									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, warehouseutils.WarehouseLoadFilesTable)
-		stmt, err := dbHandle.Prepare(sqlStatement)
-		if err != nil {
-			panic(err)
-		}
-		var fileID int64
-		err = stmt.QueryRow(job.StagingFileID, uploadLocation.Location, job.SourceID, job.DestinationID, job.DestinationType, tableName, eventsCountMap[tableName], timeutil.Now()).Scan(&fileID)
-		if err != nil {
-			panic(err)
-		}
-		stmt.Close()
+		fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
 		loadFileIDs = append(loadFileIDs, fileID)
 	}
 	timer.End()
-	return
+	return loadFileIDs, nil
 }
 
 // Gets the config from config backend and extracts enabled writekeys
@@ -1964,19 +1975,19 @@ func startWebHandler() {
 	if isMaster() {
 		backendconfig.WaitForConfig()
 		http.HandleFunc("/v1/process", processHandler)
-		logger.Infof("WH: Starting warehouse master service in %d", webPort)
+		logger.Infof("[WH]: Starting warehouse master service in %d", webPort)
 	} else {
-		logger.Infof("WH: Starting warehouse slave service in %d", webPort)
+		logger.Infof("[WH]: Starting warehouse slave service in %d", webPort)
 	}
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
 func claimAndProcess(workerIdx int, slaveID string) {
-	logger.Debugf("WH: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
+	logger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
 	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
 	claim, claimed := notifier.Claim(workerID)
 	if claimed {
-		logger.Infof("WH: Successfully claimed job:%v by slave worker-%v-%v", claim.ID, workerIdx, slaveID)
+		logger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claim.ID, workerIdx, slaveID)
 		var payload PayloadT
 		json.Unmarshal(claim.Payload, &payload)
 		payload.BatchID = claim.BatchID
@@ -1996,7 +2007,7 @@ func claimAndProcess(workerIdx int, slaveID string) {
 		claim.ClaimResponseChan <- response
 	}
 	slaveWorkerRoutineBusy[workerIdx-1] = false
-	logger.Debugf("WH: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
+	logger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
 }
 
 func setupSlave() {
@@ -2009,7 +2020,7 @@ func setupSlave() {
 		}
 		for {
 			ev := <-jobNotificationChannel
-			logger.Debugf("WH: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
+			logger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
 			for workerIdx := 1; workerIdx <= noOfSlaveWorkerRoutines; workerIdx++ {
 				if !slaveWorkerRoutineBusy[workerIdx-1] {
 					slaveWorkerRoutineBusy[workerIdx-1] = true
@@ -2044,7 +2055,7 @@ func Start() {
 		return
 	}
 
-	logger.Infof("WH: Starting Warehouse service...")
+	logger.Infof("[WH]: Starting Warehouse service...")
 	var err error
 	psqlInfo := getConnectionString()
 
@@ -2067,7 +2078,7 @@ func Start() {
 	}
 
 	if isSlave() {
-		logger.Infof("WH: Starting warehouse slave...")
+		logger.Infof("[WH]: Starting warehouse slave...")
 		setupSlave()
 	}
 
@@ -2075,7 +2086,7 @@ func Start() {
 		if warehouseMode != config.EmbeddedMode {
 			backendconfig.Setup(false, nil)
 		}
-		logger.Infof("WH: Starting warehouse master...")
+		logger.Infof("[WH]: Starting warehouse master...")
 		err = notifier.AddTopic("process_staging_file")
 		if err != nil {
 			panic(err)

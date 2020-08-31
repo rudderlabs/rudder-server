@@ -623,7 +623,7 @@ func (w GZipWriter) Write(b []byte) {
 	}
 }
 
-func (w GZipWriter) CloseGZ() {
+func (w GZipWriter) CloseGZ() error {
 	err := w.BufWriter.Flush()
 	if err != nil {
 		logger.Errorf(`[GZWriter]: Error flushing GZipWriter.BufWriter : %v`, err)
@@ -636,6 +636,7 @@ func (w GZipWriter) CloseGZ() {
 	if err != nil {
 		logger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
 	}
+	return err
 }
 
 func GetMacAddress() string {
