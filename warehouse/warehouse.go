@@ -34,7 +34,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 )
 
@@ -92,34 +91,6 @@ type HandleT struct {
 	configSubscriberLock sync.RWMutex
 	workerChannelMap     map[string]chan []ProcessStagingFilesJobT
 	workerChannelMapLock sync.RWMutex
-}
-
-type ProcessStagingFilesJobT struct {
-	Upload    warehouseutils.UploadT
-	List      []*StagingFileT
-	Warehouse warehouseutils.WarehouseT
-}
-
-type LoadFileJobT struct {
-	Upload                     warehouseutils.UploadT
-	StagingFile                *StagingFileT
-	Schema                     map[string]map[string]string
-	Warehouse                  warehouseutils.WarehouseT
-	Wg                         *misc.WaitGroup
-	LoadFileIDsChan            chan []int64
-	TableToBucketFolderMap     map[string]string
-	TableToBucketFolderMapLock *sync.RWMutex
-}
-
-type StagingFileT struct {
-	ID           int64
-	Location     string
-	SourceID     string
-	Schema       json.RawMessage
-	Status       string // enum
-	CreatedAt    time.Time
-	FirstEventAt time.Time
-	LastEventAt  time.Time
 }
 
 type ErrorResponseT struct {
@@ -785,19 +756,6 @@ func (wh *HandleT) enqueueUploadJobs(jobs []ProcessStagingFilesJobT, warehouse w
 	wh.workerChannelMapLock.Unlock()
 }
 
-type PayloadT struct {
-	BatchID             string
-	UploadID            int64
-	StagingFileID       int64
-	StagingFileLocation string
-	Schema              map[string]map[string]string
-	SourceID            string
-	DestinationID       string
-	DestinationType     string
-	DestinationConfig   interface{}
-	LoadFileIDs         []int64
-}
-
 func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT) (err error) {
 	// stat for time taken to process staging files in a single job
 	timer := warehouseutils.DestStat(stats.TimerType, "process_staging_files_batch_time", job.Warehouse.Destination.ID)
@@ -1144,59 +1102,6 @@ func startWebHandler() {
 		logger.Infof("[WH]: Starting warehouse slave service in %d", webPort)
 	}
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
-}
-
-func claimAndProcess(workerIdx int, slaveID string) {
-	logger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
-	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
-	claim, claimed := notifier.Claim(workerID)
-	if claimed {
-		logger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claim.ID, workerIdx, slaveID)
-		var payload PayloadT
-		json.Unmarshal(claim.Payload, &payload)
-		payload.BatchID = claim.BatchID
-		ids, err := processStagingFile(payload)
-		if err != nil {
-			response := pgnotifier.ClaimResponseT{
-				Err: err,
-			}
-			claim.ClaimResponseChan <- response
-		}
-		payload.LoadFileIDs = ids
-		output, err := json.Marshal(payload)
-		response := pgnotifier.ClaimResponseT{
-			Err:     err,
-			Payload: output,
-		}
-		claim.ClaimResponseChan <- response
-	}
-	slaveWorkerRoutineBusy[workerIdx-1] = false
-	logger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
-}
-
-func setupSlave() {
-	slaveWorkerRoutineBusy = make([]bool, noOfSlaveWorkerRoutines)
-	slaveID := uuid.NewV4().String()
-	rruntime.Go(func() {
-		jobNotificationChannel, err := notifier.Subscribe("process_staging_file")
-		if err != nil {
-			panic(err)
-		}
-		for {
-			ev := <-jobNotificationChannel
-			logger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
-			for workerIdx := 1; workerIdx <= noOfSlaveWorkerRoutines; workerIdx++ {
-				if !slaveWorkerRoutineBusy[workerIdx-1] {
-					slaveWorkerRoutineBusy[workerIdx-1] = true
-					idx := workerIdx
-					rruntime.Go(func() {
-						claimAndProcess(idx, slaveID)
-					})
-					break
-				}
-			}
-		}
-	})
 }
 
 func isStandAlone() bool {

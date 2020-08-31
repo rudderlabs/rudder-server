@@ -13,12 +13,15 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	uuid "github.com/satori/go.uuid"
 )
 
 // Temporary store for processing staging file to load file
@@ -396,4 +399,57 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	}
 	timer.End()
 	return loadFileIDs, nil
+}
+
+func claimAndProcess(workerIdx int, slaveID string) {
+	logger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
+	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
+	claim, claimed := notifier.Claim(workerID)
+	if claimed {
+		logger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claim.ID, workerIdx, slaveID)
+		var payload PayloadT
+		json.Unmarshal(claim.Payload, &payload)
+		payload.BatchID = claim.BatchID
+		ids, err := processStagingFile(payload)
+		if err != nil {
+			response := pgnotifier.ClaimResponseT{
+				Err: err,
+			}
+			claim.ClaimResponseChan <- response
+		}
+		payload.LoadFileIDs = ids
+		output, err := json.Marshal(payload)
+		response := pgnotifier.ClaimResponseT{
+			Err:     err,
+			Payload: output,
+		}
+		claim.ClaimResponseChan <- response
+	}
+	slaveWorkerRoutineBusy[workerIdx-1] = false
+	logger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
+}
+
+func setupSlave() {
+	slaveWorkerRoutineBusy = make([]bool, noOfSlaveWorkerRoutines)
+	slaveID := uuid.NewV4().String()
+	rruntime.Go(func() {
+		jobNotificationChannel, err := notifier.Subscribe("process_staging_file")
+		if err != nil {
+			panic(err)
+		}
+		for {
+			ev := <-jobNotificationChannel
+			logger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
+			for workerIdx := 1; workerIdx <= noOfSlaveWorkerRoutines; workerIdx++ {
+				if !slaveWorkerRoutineBusy[workerIdx-1] {
+					slaveWorkerRoutineBusy[workerIdx-1] = true
+					idx := workerIdx
+					rruntime.Go(func() {
+						claimAndProcess(idx, slaveID)
+					})
+					break
+				}
+			}
+		}
+	})
 }
