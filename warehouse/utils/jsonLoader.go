@@ -52,4 +52,3 @@ func (loader *jsonLoader) WriteToString() (string, error) {
 	}
 	return string(jsonData) + "\n", nil
 }
-func (loader *jsonLoader) EndOfFile() {}

@@ -8,7 +8,6 @@ type EventLoader interface {
 	AddColumn(columnName string, val interface{})
 	AddEmptyColumn(columnName string)
 	WriteToString() (string, error)
-	EndOfFile()
 }
 
 func GetNewEventLoader(destinationType string) EventLoader {

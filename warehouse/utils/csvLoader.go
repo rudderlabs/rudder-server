@@ -51,5 +51,3 @@ func (loader *csvLoader) WriteToString() (string, error) {
 	loader.csvWriter.Flush()
 	return loader.buff.String(), nil
 }
-
-func (loader *csvLoader) EndOfFile() {}
