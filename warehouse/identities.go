@@ -10,6 +10,42 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/warehousemanager"
 )
 
+func isDestPreLoaded(warehouse warehouseutils.WarehouseT) bool {
+	preLoadedIdentitiesMapLock.RLock()
+	if preLoadedIdentitiesMap[connectionString(warehouse)] {
+		preLoadedIdentitiesMapLock.RUnlock()
+		return true
+	}
+	preLoadedIdentitiesMapLock.RUnlock()
+	return false
+}
+
+func setDestPreLoaded(warehouse warehouseutils.WarehouseT) {
+	preLoadedIdentitiesMapLock.Lock()
+	preLoadedIdentitiesMap[connectionString(warehouse)] = true
+	preLoadedIdentitiesMapLock.Unlock()
+}
+
+func (wh *HandleT) getPendingPreLoad(warehouse warehouseutils.WarehouseT) (upload warehouseutils.UploadT, found bool) {
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.preLoadDestType())
+
+	var schema json.RawMessage
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
+	if err == sql.ErrNoRows {
+		return
+	}
+	if err != nil {
+		panic(err)
+	}
+	found = true
+	upload.Schema = warehouseutils.JSONSchemaToMap(schema)
+	return
+}
+
+func (wh *HandleT) preLoadDestType() string {
+	return wh.destType + "_IDENTITY_PRE_LOAD"
+}
+
 func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.WarehouseT) bool {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s`, warehouseutils.IdentityMergeRulesTableName(warehouse))
 	var count int
@@ -89,8 +125,8 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
 
 	sqlStatement = fmt.Sprintf(`
 		ALTER TABLE %s
-			ADD CONSTRAINT unique_merge_property_%s UNIQUE (merge_property_type, merge_property_value);
-		`, warehouseutils.IdentityMappingsTableName(warehouse), warehouse.Destination.ID,
+			ADD CONSTRAINT %s UNIQUE (merge_property_type, merge_property_value);
+		`, warehouseutils.IdentityMappingsTableName(warehouse), warehouseutils.IdentityMappingsUniqueMappingConstraintName(warehouse),
 	)
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
@@ -179,40 +215,4 @@ func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) (u
 	})
 
 	return
-}
-
-func isDestPreLoaded(warehouse warehouseutils.WarehouseT) bool {
-	preLoadedIdentitiesMapLock.RLock()
-	if preLoadedIdentitiesMap[connectionString(warehouse)] {
-		preLoadedIdentitiesMapLock.RUnlock()
-		return true
-	}
-	preLoadedIdentitiesMapLock.RUnlock()
-	return false
-}
-
-func setDestPreLoaded(warehouse warehouseutils.WarehouseT) {
-	preLoadedIdentitiesMapLock.Lock()
-	preLoadedIdentitiesMap[connectionString(warehouse)] = true
-	preLoadedIdentitiesMapLock.Unlock()
-}
-
-func (wh *HandleT) getPendingPreLoad(warehouse warehouseutils.WarehouseT) (upload warehouseutils.UploadT, found bool) {
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.preLoadDestType())
-
-	var schema json.RawMessage
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
-	if err == sql.ErrNoRows {
-		return
-	}
-	if err != nil {
-		panic(err)
-	}
-	found = true
-	upload.Schema = warehouseutils.JSONSchemaToMap(schema)
-	return
-}
-
-func (wh *HandleT) preLoadDestType() string {
-	return wh.destType + "_IDENTITY_PRE_LOAD"
 }

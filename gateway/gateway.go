@@ -669,6 +669,10 @@ func (gateway *HandleT) webAliasHandler(w http.ResponseWriter, r *http.Request) 
 	gateway.webHandler(w, r, "alias")
 }
 
+func (gateway *HandleT) webMergeHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "merge")
+}
+
 func (gateway *HandleT) webGroupHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webHandler(w, r, "group")
 }
@@ -840,6 +844,7 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/v1/page", gateway.stat(gateway.webPageHandler))
 	srvMux.HandleFunc("/v1/screen", gateway.stat(gateway.webScreenHandler))
 	srvMux.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler))
+	srvMux.HandleFunc("/v1/merge", gateway.stat(gateway.webMergeHandler))
 	srvMux.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
 	srvMux.HandleFunc("/health", gateway.healthHandler)
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
