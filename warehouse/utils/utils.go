@@ -172,7 +172,7 @@ type StagingFileT struct {
 
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
 	var rawSchema json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[2]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, WarehouseSchemasTable, warehouse.Destination.ID, warehouse.Namespace)
+	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.namespace='%[4]s') ORDER BY %[1]s.id DESC`, WarehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID, warehouse.Namespace)
 	logger.Infof("WH: Fetching current schema from wh postgresql: %s", sqlStatement)
 
 	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
