@@ -866,6 +866,17 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			sourceID := destEvent.Metadata.SourceID
 			destID := destEvent.Metadata.DestinationID
 			userID := destEvent.Metadata.UserID
+			//If the response from the transformer does not have userID in metadata,
+			//fetching it from transformer response output. If it is not found there too, setting userID to random-uuid.
+			//This is done to respect findWorker logic in router.
+			if userID == "" {
+				userIDFromTransformerResponse, canEventBeMappedToUser := integrations.GetUserIDFromTransformerResponse(destEventJSON)
+				if canEventBeMappedToUser {
+					userID = userIDFromTransformerResponse
+				} else {
+					userID = "random-" + id.String()
+				}
+			}
 
 			newJob := jobsdb.JobT{
 				UUID:         id,
