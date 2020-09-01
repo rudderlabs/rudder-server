@@ -3,17 +3,25 @@ package misc
 import (
 	"database/sql"
 	"fmt"
-	"github.com/lib/pq"
+	"log"
 	"strconv"
+
+	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
-	host, user, password string
-	port                 int
+	host, user, password, dbname string
+	port                         int
 )
+
+type WorkspaceDataT struct {
+	Token      string
+	Created_at string
+	Parameters string
+}
 
 func loadConfig() {
 	host = config.GetEnv("JOBS_DB_HOST", "localhost")
@@ -61,6 +69,89 @@ func ReplaceDB(dbName, targetName string) {
 	}
 }
 
-func QuoteLiteral(literal string) string{
+func QuoteLiteral(literal string) string {
 	return pq.QuoteLiteral(literal)
+}
+
+func LoadOriginalDBConfig(originalDBname string) {
+	host = config.GetEnv("JOBS_DB_HOST", "localhost")
+	user = config.GetEnv("JOBS_DB_USER", "ubuntu")
+	dbname = originalDBname
+	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
+	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+
+}
+
+func LoadDBConfig() {
+	host = config.GetEnv("JOBS_DB_HOST", "localhost")
+	user = config.GetEnv("JOBS_DB_USER", "ubuntu")
+	dbname = config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
+	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
+	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+
+}
+
+func CreateWorkspaceTable(dbHandle *sql.DB) {
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS workspace (
+		token TEXT PRIMARY KEY,
+		created_at TIMESTAMP NOT NULL,
+		parameters JSONB);`)
+
+	_, err := dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func GetConnectionString() string {
+	return fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+
+}
+
+func CreateDBConnection() *sql.DB {
+	psqlInfo := GetConnectionString()
+	var err error
+	dbHandle, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+
+	err = dbHandle.Ping()
+	if err != nil {
+		panic(err)
+	}
+	return dbHandle
+}
+
+func CloseDBConnection(handle *sql.DB) {
+	err := handle.Close()
+	if err != nil {
+		panic(err)
+	}
+}
+
+func GetWorkspaceData(originalDBname string) WorkspaceDataT {
+	WorkspaceData := WorkspaceDataT{}
+	LoadOriginalDBConfig(originalDBname)
+	ogDBhandle := CreateDBConnection()
+	sqlStatement := fmt.Sprintf(`SELECT * FROM workspace`)
+	rows, err := ogDBhandle.Query(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		err := rows.Scan(&WorkspaceData.Token, &WorkspaceData.Created_at, &WorkspaceData.Parameters)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	err = rows.Err()
+	if err != nil {
+		log.Fatal(err)
+	}
+	CloseDBConnection(ogDBhandle)
+	return WorkspaceData
 }
