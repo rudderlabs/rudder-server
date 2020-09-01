@@ -9,6 +9,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type Config struct {
@@ -96,13 +98,58 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		}
 		topic := pbs.Topic(topicIdString)
 		result := topic.Publish(ctx, &pubsub.Message{Data: []byte(value)})
-		result.Ready()
 
 		serverID, err := result.Get(ctx)
 		if err != nil {
-			respStatus = "Failure"
+			switch status.Code(err) {
+			case codes.Canceled:
+				statusCode = 499
+				break
+			case codes.Unknown:
+			case codes.InvalidArgument:
+			case codes.FailedPrecondition:
+			case codes.Aborted:
+			case codes.OutOfRange:
+			case codes.Unimplemented:
+			case codes.DataLoss:
+				statusCode = 400
+				break
+			case codes.DeadlineExceeded:
+				statusCode = 504
+				break
+			case codes.NotFound:
+				statusCode = 404
+				break
+			case codes.AlreadyExists:
+				statusCode = 409
+				break
+			case codes.PermissionDenied:
+				statusCode = 403
+				break
+			case codes.ResourceExhausted:
+				statusCode = 429
+				break
+			case codes.Internal:
+				statusCode = 500
+				break
+			case codes.Unavailable:
+				statusCode = 503
+				break
+			case codes.Unauthenticated:
+				statusCode = 401
+				break
+			default:
+				statusCode = 400
+				break
+			}
+			// if status.Code(err) == codes.NotFound {
+			// 	statusCode = 500
+			// 	responseMessage = "[GooglePubSub] error :: Failed to publish:" + err.Error()
+			// }
 			responseMessage = "[GooglePubSub] error :: Failed to publish:" + err.Error()
-			return 500, respStatus, responseMessage
+			respStatus = "Failure"
+
+			return statusCode, respStatus, responseMessage
 		} else {
 			responseMessage = "Message publish with id %v" + serverID
 		}
