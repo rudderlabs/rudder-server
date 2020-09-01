@@ -565,7 +565,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 		return
 	}
 
-	logger.Infof("RS: Creating staging table for users: %s\n", sqlStatement)
+	logger.Debugf("RS: Creating staging table for users: %s\n", sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("RS: Error creating users staging table from original table and identifies staging table: %v\n", err)

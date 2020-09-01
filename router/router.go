@@ -140,6 +140,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		batchTimeStat.Start()
 		logger.Debugf("[%v Router] :: performing checks to send payload to %s. Payload: ", rt.destName, job.EventPayload)
 
+		//TODO: following code is left as is for backwards compatibility.
+		//In the next release, we will remote the job.UserID code check.
+		//canEventBeMappedToUser bool will also be removed.
 		var userID string
 		var canEventBeMappedToUser bool
 		if job.UserID != "" {
@@ -402,6 +405,9 @@ func (rt *HandleT) initWorkers() {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
+	//TODO: following code is left as is for backwards compatibility.
+	//In the next release, we will remote the job.UserID code check.
+	//canEventBeMappedToUser bool will also be removed.
 	var userID string
 	var canEventBeMappedToUser bool
 	if job.UserID != "" {

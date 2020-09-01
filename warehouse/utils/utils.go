@@ -519,7 +519,7 @@ func GetLoadFileLocations(dbHandle *sql.DB, sourceId string, destinationId strin
 }
 
 func GetLoadFileLocation(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (location string, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s RIGHT JOIN (
 		SELECT  staging_file_id, MAX(id) AS id FROM %[1]s
 		WHERE ( source_id='%[2]s'
 			AND destination_id='%[3]s'
@@ -535,6 +535,26 @@ func GetLoadFileLocation(dbHandle *sql.DB, sourceId string, destinationId string
 		start,
 		end)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	return
+}
+
+func GetTableFirstEventAt(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (firstEventAt string) {
+	sqlStatement := fmt.Sprintf(`SELECT first_event_at FROM %[7]s where id = ( SELECT staging_file_id FROM %[1]s WHERE ( source_id='%[2]s'
+			AND destination_id='%[3]s'
+			AND table_name='%[4]s'
+			AND id >= %[5]v
+			AND id <= %[6]v) ORDER BY staging_file_id ASC LIMIT 1)`,
+		WarehouseLoadFilesTable,
+		sourceId,
+		destinationId,
+		tableName,
+		start,
+		end,
+		WarehouseStagingFilesTable)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&firstEventAt)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
