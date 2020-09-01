@@ -25,6 +25,7 @@ type ProtocolsI interface {
 	GetSchemaVersionMetadata(w http.ResponseWriter, r *http.Request)
 	GetSchemaVersionMissingKeys(w http.ResponseWriter, r *http.Request)
 	GetKeyCounts(w http.ResponseWriter, r *http.Request)
+	GetEventModelMetadata(w http.ResponseWriter, r *http.Request)
 }
 
 // ConfigEnvI is interface to inject env variables into config
