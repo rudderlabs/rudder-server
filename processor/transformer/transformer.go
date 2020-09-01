@@ -47,6 +47,7 @@ type TransformerEventT struct {
 	Metadata    MetadataT                  `json:"metadata"`
 	Destination backendconfig.DestinationT `json:"destination"`
 	SessionID   string                     `json:"session_id,omitempty"`
+	Libraries   []backendconfig.LibraryT   `json:"libraries"`
 }
 
 //transformMessageT is used to pass message to the transformer workers

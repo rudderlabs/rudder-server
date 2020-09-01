@@ -133,9 +133,10 @@ type SourceRegulationT struct {
 }
 
 type SourcesT struct {
-	EnableMetrics bool      `json:"enableMetrics"`
-	WorkspaceID   string    `json:"workspaceId"`
-	Sources       []SourceT `json:"sources"`
+	EnableMetrics bool       `json:"enableMetrics"`
+	WorkspaceID   string     `json:"workspaceId"`
+	Sources       []SourceT  `json:"sources"`
+	Libraries     []LibraryT `json:"libraries"`
 }
 
 type RegulationsT struct {
@@ -162,6 +163,13 @@ type SRegulationsT struct {
 }
 
 type TransformationT struct {
+	ID          string
+	Name        string
+	Description string
+	VersionID   string
+}
+
+type LibraryT struct {
 	ID          string
 	Name        string
 	Description string
