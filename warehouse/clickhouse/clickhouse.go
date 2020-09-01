@@ -355,7 +355,7 @@ func typeCastDataFromType(data string, datatype string) interface{} {
 	case "datetime":
 		t, err := time.Parse(time.RFC3339, data)
 		if err != nil {
-			return ""
+			return nil
 		}
 		return t
 	case "boolean":
