@@ -158,6 +158,9 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 }
 
 func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc.GZipWriter) (ids []int64, err error) {
+	// add rules from load files into temp table
+	// use original table to delete redundant ones from temp table
+	// insert from temp table into original table
 	mergeRulesStagingTable := fmt.Sprintf(`rudder_identity_merge_rules_staging_%s`, strings.Replace(uuid.NewV4().String(), "-", "", -1))
 	sqlStatement := fmt.Sprintf(`CREATE TEMP TABLE %s
 						ON COMMIT DROP
@@ -247,12 +250,14 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		return
 	}
 
+	// write merge rules to file to be uploaded to warehouse in later steps
 	err = idr.writeTableToFile(mergeRulesStagingTable, txn, gzWriter)
 	if err != nil {
 		logger.Errorf(`IDR: Error writing staging table %s to file: %v`, mergeRulesStagingTable, err)
 		return
 	}
 
+	// select and insert distinct combination of merge rules and sort them by order in which they were added
 	sqlStatement = fmt.Sprintf(`INSERT INTO %s
 						(merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value)
 						SELECT merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value FROM

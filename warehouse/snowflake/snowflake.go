@@ -146,6 +146,17 @@ func (sf *HandleT) tableExists(tableName string) (exists bool, err error) {
 	return
 }
 
+func (sf *HandleT) columnExists(columnName string, tableName string) (exists bool, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1
+   								 FROM   information_schema.columns
+   								 WHERE  table_schema = '%s'
+									AND table_name = '%s'
+									AND column_name = '%s'
+								   )`, sf.Namespace, tableName, columnName)
+	err = sf.Db.QueryRow(sqlStatement).Scan(&exists)
+	return
+}
+
 func (sf *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType])
 	logger.Infof("Adding column in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
@@ -644,7 +655,6 @@ func (sf *HandleT) loadIdentityTables() (err error) {
 	if haveToUploadIdentifies {
 		identifiesLoadResp, err = sf.loadTable(identifiesTable, sf.Upload.Schema[identifiesTable], nil, true, true)
 		if err != nil {
-			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, usersTable, errors.New("Failed to upload identifies table"), sf.DbHandle)
 			return
 		}
 		if identifiesLoadResp.dbHandle != nil {
@@ -656,7 +666,6 @@ func (sf *HandleT) loadIdentityTables() (err error) {
 	if haveToUploadAliases {
 		aliasLoadResp, err = sf.loadTable(aliasTable, sf.Upload.Schema[aliasTable], identifiesLoadResp.dbHandle, true, true)
 		if err != nil {
-			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, usersTable, errors.New("Failed to upload aliases table"), sf.DbHandle)
 			return
 		}
 		if aliasLoadResp.dbHandle != nil {
@@ -938,6 +947,7 @@ func (sf *HandleT) Export() (err error) {
 	return
 }
 
+// DownloadIdentityRules gets distinct combinations of anonymous_id, user_id from tables in warehouse
 func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) {
 
 	getFromTable := func(tableName string) (err error) {
@@ -954,11 +964,33 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 			return
 		}
 
+		// check if table in warehouse has anonymous_id and user_id and construct accordingly
+		hasAnonymousID, err := sf.columnExists("ANONYMOUS_ID", tableName)
+		if err != nil {
+			return
+		}
+		hasUserID, err := sf.columnExists("USER_ID", tableName)
+		if err != nil {
+			return
+		}
+
+		var toSelectFields string
+		if hasAnonymousID && hasUserID {
+			toSelectFields = "ANONYMOUS_ID, USER_ID"
+		} else if hasAnonymousID {
+			toSelectFields = "ANONYMOUS_ID, NULL AS USER_ID"
+		} else if hasUserID {
+			toSelectFields = "NULL AS ANONYMOUS_ID, USER_ID"
+		} else {
+			logger.Infof("SF: ANONYMOUS_ID, USER_ID columns not present in table: %s", tableName)
+			return nil
+		}
+
 		batchSize := int64(10000)
 		var offset int64
 		for {
-			// TODO: Handle case for missing anoonymous_id, user_id columns
-			sqlStatement = fmt.Sprintf(`SELECT DISTINCT anonymous_id, user_id FROM %s.%s LIMIT %d OFFSET %d`, sf.Namespace, tableName, batchSize, offset)
+			// TODO: Handle case for missing anonymous_id, user_id columns
+			sqlStatement = fmt.Sprintf(`SELECT DISTINCT %s FROM %s.%s LIMIT %d OFFSET %d`, toSelectFields, sf.Namespace, tableName, batchSize, offset)
 			logger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s", sqlStatement)
 			var rows *sql.Rows
 			rows, err = sf.Db.Query(sqlStatement)
