@@ -313,23 +313,6 @@ func getValidNonTerminalStates() (validNonTerminalStates []string) {
 	return
 }
 
-func getValidNonTerminalStatesExcept(excludeStates []string) (validNonTerminalStates []string) {
-	for _, js := range jobStates {
-		var excludedState bool
-		for _, excludeJs := range excludeStates {
-			if js.State == excludeJs {
-				excludedState = true
-				break
-			}
-		}
-
-		if !excludedState && js.isValid && !js.isTerminal {
-			validNonTerminalStates = append(validNonTerminalStates, js.State)
-		}
-	}
-	return
-}
-
 func (jd *HandleT) checkValidJobState(stateFilters []string) {
 	jobStateMap := make(map[string]jobStateT)
 	for _, js := range jobStates {
