@@ -874,15 +874,15 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 // HasLoadedUserTables checks if identifies, users tables have been successfuly uploaded
 // also returns true if upload does not have any identify, user data
 func HasLoadedUserTables(provider string, dbHandle *sql.DB, upload UploadT) bool {
-	_, hasIdentifyRecordsToUpload := upload.Schema[ToProviderCase(provider, "identifies")]
-	_, hasUserRecordsToUpload := upload.Schema[ToProviderCase(provider, "users")]
+	_, hasIdentifyRecordsToUpload := upload.Schema[ToProviderCase(provider, IdentifiesTable)]
+	_, hasUserRecordsToUpload := upload.Schema[ToProviderCase(provider, UsersTable)]
 
 	if !hasIdentifyRecordsToUpload && !hasUserRecordsToUpload {
 		return true
 	}
 
-	identifiesStatus, _ := GetTableUploadStatus(upload.ID, "identifies", dbHandle)
-	usersStatus, _ := GetTableUploadStatus(upload.ID, "users", dbHandle)
+	identifiesStatus, _ := GetTableUploadStatus(upload.ID, ToProviderCase(provider, IdentifiesTable), dbHandle)
+	usersStatus, _ := GetTableUploadStatus(upload.ID, ToProviderCase(provider, UsersTable), dbHandle)
 	if identifiesStatus == ExportedDataState && (!hasUserRecordsToUpload || (hasUserRecordsToUpload && usersStatus == ExportedDataState)) {
 		return true
 	}
