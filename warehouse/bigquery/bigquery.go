@@ -45,6 +45,8 @@ const (
 	GCPLocation    = "location"
 )
 
+const PROVIDER = "BQ"
+
 // maps datatype stored in rudder to datatype in bigquery
 var dataTypesMap = map[string]bigquery.FieldType{
 	"boolean":  bigquery.BooleanFieldType,
@@ -334,6 +336,11 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool) (partitionDate st
 }
 
 func (bq *HandleT) loadUserTables() (err error) {
+	if warehouseutils.HasLoadedUserTables(PROVIDER, bq.DbHandle, bq.Upload) {
+		logger.Infof("BQ: Skipping load for tables: identifies and users as they have been succesfully loaded earlier/ nothing to upload")
+		return
+	}
+
 	logger.Infof("BQ: Starting load for identifies and users tables\n")
 	partitionDate, err := bq.loadTable(warehouseutils.IdentifiesTable, true)
 	if err != nil {
@@ -342,9 +349,12 @@ func (bq *HandleT) loadUserTables() (err error) {
 		return
 	}
 
-	if _, ok := bq.Upload.Schema["users"]; !ok {
+	if _, hasUserRecordsToUpload := bq.Upload.Schema[warehouseutils.UsersTable]; !hasUserRecordsToUpload {
 		return
 	}
+
+	logger.Infof("BQ: Starting load for %s table", warehouseutils.UsersTable)
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, bq.Upload.ID, warehouseutils.UsersTable, bq.DbHandle)
 
 	firstValueSQL := func(column string) string {
 		return fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, column)
@@ -420,17 +430,15 @@ func (bq *HandleT) loadUserTables() (err error) {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, bq.Upload.ID, tableName, err, bq.DbHandle)
 		return
 	}
-
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, bq.Upload.ID, warehouseutils.UsersTable, bq.DbHandle)
 	return
 }
 
 func (bq *HandleT) load() (errList []error) {
 	logger.Infof("BQ: Starting load for all %v tables\n", len(bq.Upload.Schema))
-	if _, ok := bq.Upload.Schema["identifies"]; ok {
-		err := bq.loadUserTables()
-		if err != nil {
-			errList = append(errList, err)
-		}
+	err := bq.loadUserTables()
+	if err != nil {
+		errList = append(errList, err)
 	}
 	var wg sync.WaitGroup
 	wg.Add(len(bq.Upload.Schema))

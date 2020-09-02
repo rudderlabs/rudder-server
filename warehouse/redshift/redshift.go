@@ -59,6 +59,8 @@ const (
 	rudderStringLength  = 512
 )
 
+const PROVIDER = "RS"
+
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean encode runlength",
 	"int":      "bigint",
@@ -508,6 +510,11 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 }
 
 func (rs *HandleT) loadUserTables() (err error) {
+	if warehouseutils.HasLoadedUserTables(PROVIDER, rs.DbHandle, rs.Upload) {
+		logger.Infof("BQ: Skipping load for tables: identifies and users as they have been succesfully loaded earlier/ nothing to upload")
+		return
+	}
+
 	logger.Infof("RS: Starting load for identifies and users tables\n")
 	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, rs.Upload.Schema[warehouseutils.IdentifiesTable], true, true)
 	if err != nil {
@@ -517,9 +524,12 @@ func (rs *HandleT) loadUserTables() (err error) {
 	}
 	defer rs.dropStagingTables([]string{identifyStagingTable})
 
-	if _, ok := rs.Upload.Schema["users"]; !ok {
+	if _, hasUserRecordsToUpload := rs.Upload.Schema[warehouseutils.UsersTable]; !hasUserRecordsToUpload {
 		return
 	}
+
+	logger.Infof("RS: Starting load for %s table", warehouseutils.UsersTable)
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, rs.Upload.ID, warehouseutils.UsersTable, rs.DbHandle)
 
 	userColMap := rs.CurrentSchema["users"]
 	var userColNames, firstValProps []string
@@ -610,11 +620,9 @@ func (rs *HandleT) loadUserTables() (err error) {
 
 func (rs *HandleT) load() (errList []error) {
 	logger.Infof("RS: Starting load for all %v tables\n", len(rs.Upload.Schema))
-	if _, ok := rs.Upload.Schema["identifies"]; ok {
-		err := rs.loadUserTables()
-		if err != nil {
-			errList = append(errList, err)
-		}
+	err := rs.loadUserTables()
+	if err != nil {
+		errList = append(errList, err)
 	}
 	var wg sync.WaitGroup
 	wg.Add(len(rs.Upload.Schema))

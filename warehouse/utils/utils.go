@@ -849,6 +849,7 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 	}
 	return val
 }
+
 func GetConfigValueBoolString(key string, warehouse WarehouseT) string {
 	config := warehouse.Destination.Config
 	if config[key] != nil {
@@ -868,6 +869,24 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	}
 	sort.Strings(columnKeys)
 	return columnKeys
+}
+
+// HasLoadedUserTables checks if identifies, users tables have been successfuly uploaded
+// also returns true if upload does not have any identify, user data
+func HasLoadedUserTables(provider string, dbHandle *sql.DB, upload UploadT) bool {
+	_, hasIdentifyRecordsToUpload := upload.Schema[ToProviderCase(provider, "identifies")]
+	_, hasUserRecordsToUpload := upload.Schema[ToProviderCase(provider, "users")]
+
+	if !hasIdentifyRecordsToUpload && !hasUserRecordsToUpload {
+		return true
+	}
+
+	identifiesStatus, _ := GetTableUploadStatus(upload.ID, "identifies", dbHandle)
+	usersStatus, _ := GetTableUploadStatus(upload.ID, "users", dbHandle)
+	if identifiesStatus == ExportedDataState && (!hasUserRecordsToUpload || (hasUserRecordsToUpload && usersStatus == ExportedDataState)) {
+		return true
+	}
+	return false
 }
 
 func IdentityMergeRulesTableName(warehouse WarehouseT) string {

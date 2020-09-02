@@ -53,6 +53,8 @@ const (
 	SFPassword         = "password"
 )
 
+const PROVIDER = "SNOWFLAKE"
+
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
 	"int":      "number",
@@ -530,6 +532,12 @@ func (sf *HandleT) loadUserTables() (err error) {
 	if _, ok := sf.Upload.Schema[identifiesTable]; !ok {
 		return
 	}
+
+	if warehouseutils.HasLoadedUserTables(PROVIDER, sf.DbHandle, sf.Upload) {
+		logger.Infof("BQ: Skipping load for tables: identifies and users as they have been succesfully loaded earlier/ nothing to upload")
+		return
+	}
+
 	logger.Infof("SF: Starting load for identifies and users tables\n")
 	resp, err := sf.loadTable(identifiesTable, sf.Upload.Schema[identifiesTable], nil, true, true)
 	if err != nil {
@@ -538,6 +546,13 @@ func (sf *HandleT) loadUserTables() (err error) {
 		return
 	}
 	defer resp.dbHandle.Close()
+
+	if _, hasUserRecordsToUpload := sf.Upload.Schema[usersTable]; !hasUserRecordsToUpload {
+		return
+	}
+
+	logger.Infof("SF: Starting load for %s table", usersTable)
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, sf.Upload.ID, usersTable, sf.DbHandle)
 
 	userColMap := sf.CurrentSchema[usersTable]
 	var userColNames, firstValProps []string
@@ -606,6 +621,7 @@ func (sf *HandleT) loadUserTables() (err error) {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, sf.Upload.ID, usersTable, err, sf.DbHandle)
 		return
 	}
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, sf.Upload.ID, usersTable, sf.DbHandle)
 	return
 }
 

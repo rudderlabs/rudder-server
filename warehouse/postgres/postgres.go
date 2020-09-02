@@ -38,6 +38,8 @@ const (
 	sslMode  = "sslMode"
 )
 
+const PROVIDER = "POSTGRES"
+
 var rudderDataTypesMapToPostgres = map[string]string{
 	"int":      "bigint",
 	"float":    "numeric",
@@ -420,6 +422,11 @@ func (pg *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 }
 
 func (pg *HandleT) loadUserTables() (err error) {
+	if warehouseutils.HasLoadedUserTables(PROVIDER, pg.DbHandle, pg.Upload) {
+		logger.Infof("BQ: Skipping load for tables: identifies and users as they have been succesfully loaded earlier/ nothing to upload")
+		return
+	}
+
 	logger.Infof("PG: Starting load for identifies and users tables\n")
 	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Upload.Schema[warehouseutils.IdentifiesTable], true, true)
 	if err != nil {
@@ -427,6 +434,13 @@ func (pg *HandleT) loadUserTables() (err error) {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, pg.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), pg.DbHandle)
 		return
 	}
+
+	if _, hasUserRecordsToUpload := pg.Upload.Schema["users"]; !hasUserRecordsToUpload {
+		return
+	}
+
+	logger.Infof("PG: Starting load for %s table", warehouseutils.UsersTable)
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, pg.Upload.ID, warehouseutils.UsersTable, pg.DbHandle)
 
 	unionStagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), "users_identifies_union"), 127)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), warehouseutils.UsersTable), 127)
@@ -526,11 +540,9 @@ func (pg *HandleT) loadUserTables() (err error) {
 
 func (pg *HandleT) load() (errList []error) {
 	logger.Infof("PG: Starting load for all %v tables\n", len(pg.Upload.Schema))
-	if _, ok := pg.Upload.Schema[warehouseutils.UsersTable]; ok {
-		err := pg.loadUserTables()
-		if err != nil {
-			errList = append(errList, err)
-		}
+	err := pg.loadUserTables()
+	if err != nil {
+		errList = append(errList, err)
 	}
 	var wg sync.WaitGroup
 	loadChan := make(chan struct{}, maxParallelLoads)
