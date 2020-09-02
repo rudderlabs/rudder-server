@@ -724,31 +724,7 @@ func (rt *HandleT) generatorLoop() {
 }
 
 func (rt *HandleT) crashRecover() {
-
-	for {
-		execList := rt.jobsDB.GetToCrashRecover([]string{rt.destName}, jobQueryBatchSize, nil)
-
-		if len(execList) == 0 {
-			break
-		}
-		logger.Debugf("[%v Router] crash recovering: %v jobs", rt.destName, len(execList))
-
-		var statusList []*jobsdb.JobStatusT
-
-		for _, job := range execList {
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				JobState:      jobsdb.Failed.State,
-				ErrorCode:     "",
-				ErrorResponse: []byte(`{"Error": "Rudder server crashed while sending/waiting to retry job to destination"}`), // check
-			}
-			statusList = append(statusList, &status)
-		}
-		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
-	}
+	rt.jobsDB.DeleteExecuting([]string{rt.destName}, jobQueryBatchSize, nil)
 }
 
 func (rt *HandleT) printStatsLoop() {
