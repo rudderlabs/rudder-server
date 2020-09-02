@@ -298,8 +298,12 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 		if err != nil {
 			panic(err)
 		}
-		tableName := payload["metadata"].(map[string]interface{})["table"].(string)
 		var ok bool
+		tableName, ok := payload["metadata"].(map[string]interface{})["table"].(string)
+		if !ok {
+			logger.Errorf(`BRT: tableName not found in event metadata: %v`, payload["metadata"])
+			return nil
+		}
 		if _, ok = schemaMap[tableName]; !ok {
 			schemaMap[tableName] = make(map[string]interface{})
 		}

@@ -503,7 +503,7 @@ func (sf *HandleT) loadMappingsTable() (err error) {
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE ORDER BY UPDATED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
+											SELECT *, row_number() OVER (PARTITION BY MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE ORDER BY UPDATED_AT DESC) AS _rudder_staging_row_number FROM %[2]s
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
 									ON (original.MERGE_PROPERTY_TYPE = staging.MERGE_PROPERTY_TYPE AND original.MERGE_PROPERTY_VALUE = staging.MERGE_PROPERTY_VALUE)
@@ -631,7 +631,8 @@ func (sf *HandleT) loadIdentityTables() (err error) {
 	_, haveToUploadIdentifies := sf.Upload.Schema[identifiesTable]
 	_, haveToUploadAliases := sf.Upload.Schema[aliasTable]
 	_, haveToUploadMergeRules := sf.Upload.Schema[identityMergeRulesTable]
-	haveToUploadUsers := haveToUploadIdentifies || haveToUploadAliases
+	_, hasUserRecordsToUpload := sf.Upload.Schema[usersTable]
+	haveToUploadUsers := (haveToUploadIdentifies || haveToUploadAliases) && hasUserRecordsToUpload
 
 	// if haveToUploadUsers and users is exported, return
 	if haveToUploadUsers && sf.isTableExported(usersTable) {
@@ -956,6 +957,7 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 		batchSize := int64(10000)
 		var offset int64
 		for {
+			// TODO: Handle case for missing anoonymous_id, user_id columns
 			sqlStatement = fmt.Sprintf(`SELECT DISTINCT anonymous_id, user_id FROM %s.%s LIMIT %d OFFSET %d`, sf.Namespace, tableName, batchSize, offset)
 			logger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s", sqlStatement)
 			var rows *sql.Rows

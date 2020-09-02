@@ -171,13 +171,14 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		return
 	}
 
-	sortedColumnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value"}
+	sortedColumnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value", "id"}
 	stmt, err := txn.Prepare(pq.CopyIn(mergeRulesStagingTable, sortedColumnNames...))
 	if err != nil {
 		logger.Errorf(`IDR: Error starting bulk copy using CopyIn: %v`, err)
 		return
 	}
 
+	var rowID int
 	for _, loadFileName := range loadFileNames {
 		var gzipFile *os.File
 		gzipFile, err = os.Open(loadFileName)
@@ -207,12 +208,15 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 					return
 				}
 			}
-			var recordInterface [4]interface{}
+			var recordInterface [5]interface{}
 			for idx, value := range record {
 				if strings.TrimSpace(value) != "" {
 					recordInterface[idx] = value
 				}
 			}
+			// add rowID which allows us to insert in same order from staging to original merge _rules table
+			rowID++
+			recordInterface[4] = rowID
 			_, err = stmt.Exec(recordInterface[:]...)
 		}
 		gzipReader.Close()
@@ -251,10 +255,14 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO %s
 						(merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value)
-						SELECT DISTINCT ON (
-							merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value
-						) merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value
-		FROM %s RETURNING id`, idr.mergeRulesTable(), mergeRulesStagingTable)
+						SELECT merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value FROM
+						(
+							SELECT DISTINCT ON (
+								merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value
+							) id, merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value
+							FROM %s
+						) t
+		 				ORDER BY id ASC RETURNING id`, idr.mergeRulesTable(), mergeRulesStagingTable)
 	logger.Infof(`IDR: Inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, sqlStatement)
 	rows, err := txn.Query(sqlStatement)
 	if err != nil {
