@@ -14,8 +14,8 @@ import (
 )
 
 type Config struct {
-	Credentials string
-	ProjectId   string
+	Credentials string `json:"credentials"`
+	ProjectId   string `json:"projectId"`
 }
 
 // NewProducer creates a producer based on destination config
@@ -86,14 +86,14 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		topicIdString, ok := parsedJSON.Get("topicId").Value().(string)
 		if !ok {
 			respStatus = "Failure"
-			responseMessage = "[GooglePubSub] error :: Could not parse delivery stream to string"
+			responseMessage = "[GooglePubSub] error :: Could not parse topic id to string"
 			logger.Error(responseMessage)
 			statusCode := 400
 			return statusCode, respStatus, responseMessage
 		}
 		if topicIdString == "" {
 			respStatus = "Failure"
-			responseMessage = "[GooglePubSub] error :: empty delivery stream"
+			responseMessage = "[GooglePubSub] error :: empty topic id string"
 			return 400, respStatus, responseMessage
 		}
 		topic := pbs.Topic(topicIdString)
@@ -101,54 +101,9 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 		serverID, err := result.Get(ctx)
 		if err != nil {
-			switch status.Code(err) {
-			case codes.Canceled:
-				statusCode = 499
-				break
-			case codes.Unknown:
-			case codes.InvalidArgument:
-			case codes.FailedPrecondition:
-			case codes.Aborted:
-			case codes.OutOfRange:
-			case codes.Unimplemented:
-			case codes.DataLoss:
-				statusCode = 400
-				break
-			case codes.DeadlineExceeded:
-				statusCode = 504
-				break
-			case codes.NotFound:
-				statusCode = 404
-				break
-			case codes.AlreadyExists:
-				statusCode = 409
-				break
-			case codes.PermissionDenied:
-				statusCode = 403
-				break
-			case codes.ResourceExhausted:
-				statusCode = 429
-				break
-			case codes.Internal:
-				statusCode = 500
-				break
-			case codes.Unavailable:
-				statusCode = 503
-				break
-			case codes.Unauthenticated:
-				statusCode = 401
-				break
-			default:
-				statusCode = 400
-				break
-			}
-			// if status.Code(err) == codes.NotFound {
-			// 	statusCode = 500
-			// 	responseMessage = "[GooglePubSub] error :: Failed to publish:" + err.Error()
-			// }
+			statusCode = getError(err)
 			responseMessage = "[GooglePubSub] error :: Failed to publish:" + err.Error()
 			respStatus = "Failure"
-
 			return statusCode, respStatus, responseMessage
 		} else {
 			responseMessage = "Message publish with id %v" + serverID
@@ -161,4 +116,49 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		responseMessage = "[GooglePubSub] error  :: Topic Id not found"
 		return 400, respStatus, responseMessage
 	}
+}
+
+func getError(err error) (statusCode int) {
+	switch status.Code(err) {
+	case codes.Canceled:
+		statusCode = 499
+		break
+	case codes.Unknown:
+	case codes.InvalidArgument:
+	case codes.FailedPrecondition:
+	case codes.Aborted:
+	case codes.OutOfRange:
+	case codes.Unimplemented:
+	case codes.DataLoss:
+		statusCode = 400
+		break
+	case codes.DeadlineExceeded:
+		statusCode = 504
+		break
+	case codes.NotFound:
+		statusCode = 404
+		break
+	case codes.AlreadyExists:
+		statusCode = 409
+		break
+	case codes.PermissionDenied:
+		statusCode = 403
+		break
+	case codes.ResourceExhausted:
+		statusCode = 429
+		break
+	case codes.Internal:
+		statusCode = 500
+		break
+	case codes.Unavailable:
+		statusCode = 503
+		break
+	case codes.Unauthenticated:
+		statusCode = 401
+		break
+	default:
+		statusCode = 400
+		break
+	}
+	return statusCode
 }
