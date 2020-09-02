@@ -87,12 +87,12 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 }
 
 type HandleT struct {
-	DbHandle      *sql.DB
+	// DbHandle      *sql.DB
 	Db            *sql.DB
 	Namespace     string
 	CurrentSchema map[string]map[string]string
 	Warehouse     warehouseutils.WarehouseT
-	Upload        warehouseutils.UploadT
+	// Upload        warehouseutils.UploadT
 	ObjectStorage string
 }
 
@@ -259,12 +259,12 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 }
 
 // Export starts exporting data to clickhouse
-func (ch *HandleT) Export() (err error) {
+func (ch *HandleT) Export() (err error, state string) {
 	logger.Infof("CH: Starting export to clickhouse for source:%s and wh_upload:%v", ch.Warehouse.Source.ID, ch.Upload.ID)
-	err = warehouseutils.SetUploadStatus(ch.Upload, warehouseutils.ExportingDataState, ch.DbHandle)
-	if err != nil {
-		panic(err)
-	}
+	// err = warehouseutils.SetUploadStatus(ch.Upload, warehouseutils.ExportingDataState, ch.DbHandle)
+	// if err != nil {
+	// 	panic(err)
+	// }
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", ch.Warehouse.Destination.ID)
 	timer.Start()
 	errList := ch.load()
@@ -277,14 +277,10 @@ func (ch *HandleT) Export() (err error) {
 				errStr += ", "
 			}
 		}
-		warehouseutils.SetUploadError(ch.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, ch.DbHandle)
-		return errors.New(errStr)
+		return errors.New(errStr), warehouseutils.ExportingDataFailedState
 	}
-	err = warehouseutils.SetUploadStatus(ch.Upload, warehouseutils.ExportedDataState, ch.DbHandle)
-	if err != nil {
-		panic(err)
-	}
-	return
+
+	return nil, warehouseutils.ExportedDataState
 }
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
@@ -622,28 +618,28 @@ func (ch *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 }
 
 // MigrateSchema will handle
-func (ch *HandleT) MigrateSchema() (err error) {
+func (ch *HandleT) MigrateSchema() (err error, state string) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", ch.Warehouse.Destination.ID)
 	timer.Start()
-	warehouseutils.SetUploadStatus(ch.Upload, warehouseutils.UpdatingSchemaState, ch.DbHandle)
+	// warehouseutils.SetUploadStatus(ch.Upload, warehouseutils.UpdatingSchemaState, ch.DbHandle)
 	logger.Infof("CH: Updating schema for clickhouse schema name: %s", ch.Namespace)
 	updatedSchema, err := ch.updateSchema()
 	if err != nil {
 		warehouseutils.SetUploadError(ch.Upload, err, warehouseutils.UpdatingSchemaFailedState, ch.DbHandle)
-		return
+		return nil, warehouseutils.UpdatingSchemaFailedState
 	}
 	ch.CurrentSchema = updatedSchema
-	err = warehouseutils.SetUploadStatus(ch.Upload, warehouseutils.UpdatedSchemaState, ch.DbHandle)
-	if err != nil {
-		panic(err)
-	}
+	// err = warehouseutils.SetUploadStatus(ch.Upload, warehouseutils.UpdatedSchemaState, ch.DbHandle)
+	// if err != nil {
+	// 	panic(err)
+	// }
 	err = warehouseutils.UpdateCurrentSchema(ch.Namespace, ch.Warehouse, ch.Upload.ID, updatedSchema, ch.DbHandle)
 	timer.End()
 	if err != nil {
-		warehouseutils.SetUploadError(ch.Upload, err, warehouseutils.UpdatingSchemaFailedState, ch.DbHandle)
-		return
+		// warehouseutils.SetUploadError(ch.Upload, err, warehouseutils.UpdatingSchemaFailedState, ch.DbHandle)
+		return warehouseutils.UpdatingSchemaFailedState
 	}
-	return
+	return nil, warehouseutils.UpdatedSchemaState
 }
 
 // Process starts processing to export to clickhouse

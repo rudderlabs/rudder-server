@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/warehousemanager"
 )
 
 func handleSchemaChange(existingDataType string, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
@@ -55,6 +57,31 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, c
 		gzWriter.WriteGZ(eventData)
 	}
 	return nil
+}
+
+func (wh *HandleT) syncSchemaFromWarehouse(job ProcessStagingFilesJobT) (bool, error) {
+	whManager, err := warehousemanager.NewWhManager(wh.destType)
+	if err != nil {
+		panic(err)
+	}
+	// consolidate schema if not already done
+	schemaInDB, err := warehouseutils.GetCurrentSchema(wh.dbHandle, job.Warehouse)
+
+	syncedSchema, err := whManager.FetchSchema(job.Warehouse, job.Warehouse.Namespace)
+	if err != nil {
+		logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
+		return false, err
+	}
+
+	hasSchemaChanged := !warehouseutils.CompareSchema(schemaInDB, syncedSchema)
+	if hasSchemaChanged {
+		err = warehouseutils.UpdateCurrentSchema(job.Warehouse.Namespace, job.Warehouse, job.Upload.ID, syncedSchema, wh.dbHandle)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	return hasSchemaChanged, nil
 }
 
 func (wh *HandleT) mergeSchema(currentSchema map[string]map[string]string, schemaList []map[string]map[string]string, currentMergedSchema map[string]map[string]string) map[string]map[string]string {

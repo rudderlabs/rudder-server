@@ -26,9 +26,9 @@ type WarehouseManager interface {
 }
 
 type HandleT struct {
-	Warehouse        warehouseutils.WarehouseT
-	DbHandle         *sql.DB
-	Upload           warehouseutils.UploadT
+	Warehouse warehouseutils.WarehouseT
+	DbHandle  *sql.DB
+	// Upload           warehouseutils.UploadT
 	WarehouseManager WarehouseManager
 }
 

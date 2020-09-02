@@ -35,7 +35,6 @@ type HandleT struct {
 	CurrentSchema map[string]map[string]string
 	Warehouse     warehouseutils.WarehouseT
 	ProjectID     string
-	Upload        warehouseutils.UploadT
 }
 
 // String constants for bigquery destination config
@@ -77,14 +76,14 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
-func (bq *HandleT) setUploadError(err error, state string) {
-	warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataFailedState, bq.DbHandle)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseUploadsTable)
-	_, err = bq.DbHandle.Exec(sqlStatement, state, err.Error(), time.Now(), bq.Upload.ID)
-	if err != nil {
-		panic(err)
-	}
-}
+// func (bq *HandleT) setUploadError(err error, state string) {
+// 	warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataFailedState, bq.DbHandle)
+// 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseUploadsTable)
+// 	_, err = bq.DbHandle.Exec(sqlStatement, state, err.Error(), time.Now(), bq.Upload.ID)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// }
 
 func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 	var schema []*bigquery.FieldSchema
@@ -490,36 +489,36 @@ func init() {
 	loadConfig()
 }
 
-func (bq *HandleT) MigrateSchema() (err error) {
+func (bq *HandleT) MigrateSchema() (err error, state string) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", bq.Warehouse.Destination.ID)
 	timer.Start()
-	warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatingSchemaState, bq.DbHandle)
+	// warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatingSchemaState, bq.DbHandle)
 	logger.Infof("BQ: Updating schema for bigquery in project: %s", bq.ProjectID)
 	updatedSchema, err := bq.updateSchema()
 	if err != nil {
-		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
-		return
+		// warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
+		return err, warehouseutils.UpdatingSchemaFailedState
 	}
 	bq.CurrentSchema = updatedSchema
-	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatedSchemaState, bq.DbHandle)
-	if err != nil {
-		panic(err)
-	}
+	// err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.UpdatedSchemaState, bq.DbHandle)
+	// if err != nil {
+	// 	panic(err)
+	// }
 	err = warehouseutils.UpdateCurrentSchema(bq.Namespace, bq.Warehouse, bq.Upload.ID, updatedSchema, bq.DbHandle)
 	timer.End()
 	if err != nil {
-		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
-		return
+		// warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
+		return err, warehouseutils.UpdatingSchemaFailedState
 	}
-	return
+	return nil, warehouseutils.UpdatedSchemaState
 }
 
-func (bq *HandleT) Export() (err error) {
+func (bq *HandleT) Export() (err error, state string) {
 	logger.Infof("BQ: Starting export to Bigquery for source:%s and wh_upload:%v", bq.Warehouse.Source.ID, bq.Upload.ID)
-	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataState, bq.DbHandle)
-	if err != nil {
-		panic(err)
-	}
+	// err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportingDataState, bq.DbHandle)
+	// if err != nil {
+	// 	panic(err)
+	// }
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", bq.Warehouse.Destination.ID)
 	timer.Start()
 	errList := bq.load()
@@ -532,14 +531,11 @@ func (bq *HandleT) Export() (err error) {
 				errStr += ", "
 			}
 		}
-		warehouseutils.SetUploadError(bq.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, bq.DbHandle)
-		return errors.New(errStr)
+		// warehouseutils.SetUploadError(bq.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, bq.DbHandle)
+		return errors.New(errStr), warehouseutils.ExportingDataFailedState
 	}
-	err = warehouseutils.SetUploadStatus(bq.Upload, warehouseutils.ExportedDataState, bq.DbHandle)
-	if err != nil {
-		panic(err)
-	}
-	return
+
+	return nil, warehouseutils.ExportedDataState
 }
 
 func (bq *HandleT) removePartitionExpiry() (err error) {
@@ -574,7 +570,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 	return
 }
 
-func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
+func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error, state string) {
 	bq.DbHandle = config.DbHandle
 	bq.Warehouse = config.Warehouse
 	bq.Upload = config.Upload
@@ -585,10 +581,10 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 		// location:    warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse),
 	})
-	if err != nil {
-		warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
-		return err
-	}
+	// if err != nil {
+	// 	warehouseutils.SetUploadError(bq.Upload, err, warehouseutils.UpdatingSchemaFailedState, bq.DbHandle)
+	// 	return err,
+	// }
 	defer bq.Db.Close()
 	currSchema, err := warehouseutils.GetCurrentSchema(bq.DbHandle, bq.Warehouse)
 	if err != nil {
@@ -605,14 +601,14 @@ func (bq *HandleT) Process(config warehouseutils.ConfigT) (err error) {
 		return err
 	}
 
-	if config.Stage == "ExportData" {
+	// if config.Stage == "ExportData" {
+	// 	err = bq.Export()
+	// } else {
+	err = bq.MigrateSchema()
+	if err == nil {
 		err = bq.Export()
-	} else {
-		err = bq.MigrateSchema()
-		if err == nil {
-			err = bq.Export()
-		}
 	}
+	// }
 	return
 }
 

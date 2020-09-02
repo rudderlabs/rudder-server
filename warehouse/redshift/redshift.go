@@ -38,12 +38,12 @@ var (
 )
 
 type HandleT struct {
-	DbHandle      *sql.DB
 	Db            *sql.DB
+	DbHandle      *sql.DB
+	DestinationID string
 	Namespace     string
 	CurrentSchema map[string]map[string]string
 	Warehouse     warehouseutils.WarehouseT
-	Upload        warehouseutils.UploadT
 }
 
 // String constants for redshift destination config
@@ -168,8 +168,7 @@ func (rs *HandleT) createSchema() (err error) {
 	return
 }
 
-func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
-	diff := warehouseutils.GetSchemaDiff(rs.CurrentSchema, rs.Upload.Schema)
+func (rs *HandleT) updateSchema(whSchema warehouseutils.SchemaT, diff warehouseutils.SchemaDiffT) (updatedSchema map[string]map[string]string, err error) {
 	updatedSchema = diff.UpdatedSchema
 	if len(rs.CurrentSchema) == 0 {
 		err = rs.createSchema()
@@ -511,6 +510,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 	logger.Infof("RS: Starting load for identifies and users tables\n")
 	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, rs.Upload.Schema[warehouseutils.IdentifiesTable], true, true)
 	if err != nil {
+		// TODO: Move these out
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, warehouseutils.IdentifiesTable, err, rs.DbHandle)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, warehouseutils.UsersTable, errors.New("Failed to upload identifies table"), rs.DbHandle)
 		return
@@ -699,36 +699,37 @@ func init() {
 	loadConfig()
 }
 
-func (rs *HandleT) MigrateSchema() (err error) {
+func (rs *HandleT) MigrateSchema(whSchema warehouseutils.SchemaT, diff warehouseutils.SchemaDiffT) (err error, state string) {
+	rs.Db, err = rs.connectToWarehouse()
+	if err != nil {
+		return err, warehouseutils.ConnectFailedState
+	}
+	defer rs.Db.Close()
+
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", rs.Warehouse.Destination.ID)
 	timer.Start()
-	warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatingSchemaState, rs.DbHandle)
-	logger.Infof("RS: Updaing schema for redshfit schemaname: %s", rs.Namespace)
-	updatedSchema, err := rs.updateSchema()
+	logger.Infof("RS: Updating schema for redshfit schemaname: %s", rs.Namespace)
+	updatedSchema, err := rs.updateSchema(whSchema, diff)
 	if err != nil {
-		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
-		return
+		return err, warehouseutils.UpdatingSchemaFailedState
 	}
+
 	rs.CurrentSchema = updatedSchema
-	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatedSchemaState, rs.DbHandle)
-	if err != nil {
-		panic(err)
-	}
 	err = warehouseutils.UpdateCurrentSchema(rs.Namespace, rs.Warehouse, rs.Upload.ID, updatedSchema, rs.DbHandle)
 	timer.End()
 	if err != nil {
-		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
-		return
+		// warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
+		return err, warehouseutils.UpdatingSchemaFailedState
 	}
-	return
+	return nil, warehouseutils.UpdatedSchemaState
 }
 
-func (rs *HandleT) Export() (err error) {
+func (rs *HandleT) export() (err error, state string) {
 	logger.Infof("RS: Starting export to redshift for source:%s and wh_upload:%v", rs.Warehouse.Source.ID, rs.Upload.ID)
-	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportingDataState, rs.DbHandle)
-	if err != nil {
-		panic(err)
-	}
+	// err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportingDataState, rs.DbHandle)
+	// if err != nil {
+	// 	panic(err)
+	// }
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", rs.Warehouse.Destination.ID)
 	timer.Start()
 	errList := rs.load()
@@ -742,14 +743,15 @@ func (rs *HandleT) Export() (err error) {
 				errStr += ", "
 			}
 		}
-		warehouseutils.SetUploadError(rs.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, rs.DbHandle)
-		return errors.New(errStr)
+		// warehouseutils.SetUploadError(rs.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, rs.DbHandle)
+		return errors.New(errStr), warehouseutils.ExportingDataFailedState
 	}
-	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportedDataState, rs.DbHandle)
-	if err != nil {
-		panic(err)
-	}
-	return
+	return nil, warehouseutils.ExportedDataState
+	// err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportedDataState, rs.DbHandle)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// return
 }
 
 func (rs *HandleT) dropDanglingStagingTables() bool {
@@ -813,37 +815,34 @@ func (rs *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 	return
 }
 
-func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error) {
-	rs.DbHandle = config.DbHandle
-	rs.Warehouse = config.Warehouse
-	rs.Upload = config.Upload
-	rs.Db, err = connect(RedshiftCredentialsT{
+func (rs *HandleT) connectToWarehouse() (*sql.DB, error) {
+	return connect(RedshiftCredentialsT{
 		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
 		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
 		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
 		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
 		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
 	})
+}
+
+func (rs *HandleT) Process(config warehouseutils.ConfigT) (err error, state string) {
+	// rs.DbHandle = config.DbHandle
+	rs.Warehouse = config.Warehouse
+	// rs.Upload = config.Upload
+	rs.Db, err = rs.connectToWarehouse()
 	if err != nil {
-		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
-		return err
+		// warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
+		return err, warehouseutils.ConnectFailedState
 	}
 	defer rs.Db.Close()
-	currSchema, err := warehouseutils.GetCurrentSchema(rs.DbHandle, rs.Warehouse)
+
+	err = rs.export()
 	if err != nil {
-		panic(err)
+		return err, warehouseutils.ExportingDataFailedState
 	}
-	rs.CurrentSchema = currSchema
-	rs.Namespace = rs.Upload.Namespace
-	if config.Stage == "ExportData" {
-		err = rs.Export()
-	} else {
-		err = rs.MigrateSchema()
-		if err == nil {
-			err = rs.Export()
-		}
-	}
-	return
+
+	// }
+	return nil, warehouseutils.ExportedDataState
 }
 
 func (rs *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {

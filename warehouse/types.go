@@ -23,7 +23,7 @@ type PayloadT struct {
 }
 
 type ProcessStagingFilesJobT struct {
-	Upload    warehouseutils.UploadT
+	Upload    UploadT
 	List      []*StagingFileT
 	Warehouse warehouseutils.WarehouseT
 }

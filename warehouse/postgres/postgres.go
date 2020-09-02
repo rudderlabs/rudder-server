@@ -63,12 +63,10 @@ var postgresDataTypesMapToRudder = map[string]string{
 }
 
 type HandleT struct {
-	DbHandle      *sql.DB
 	Db            *sql.DB
 	Namespace     string
 	CurrentSchema map[string]map[string]string
 	Warehouse     warehouseutils.WarehouseT
-	Upload        warehouseutils.UploadT
 	ObjectStorage string
 }
 
@@ -184,12 +182,12 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 	return
 }
 
-func (pg *HandleT) Export() (err error) {
+func (pg *HandleT) Export() (err error, state string) {
 	logger.Infof("PG: Starting export to postgres for source:%s and wh_upload:%v", pg.Warehouse.Source.ID, pg.Upload.ID)
-	err = warehouseutils.SetUploadStatus(pg.Upload, warehouseutils.ExportingDataState, pg.DbHandle)
-	if err != nil {
-		panic(err)
-	}
+	// err = warehouseutils.SetUploadStatus(pg.Upload, warehouseutils.ExportingDataState, pg.DbHandle)
+	// if err != nil {
+	// 	panic(err)
+	// }
 	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", pg.Warehouse.Destination.ID)
 	timer.Start()
 	errList := pg.load()
@@ -202,14 +200,14 @@ func (pg *HandleT) Export() (err error) {
 				errStr += ", "
 			}
 		}
-		warehouseutils.SetUploadError(pg.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, pg.DbHandle)
-		return errors.New(errStr)
+		// warehouseutils.SetUploadError(pg.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, pg.DbHandle)
+		return errors.New(errStr), warehouseutils.ExportingDataFailedState
 	}
-	err = warehouseutils.SetUploadStatus(pg.Upload, warehouseutils.ExportedDataState, pg.DbHandle)
-	if err != nil {
-		panic(err)
-	}
-	return
+	// err = warehouseutils.SetUploadStatus(pg.Upload, warehouseutils.ExportedDataState, pg.DbHandle)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	return nil, warehouseutils.ExportedDataState
 }
 
 func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
@@ -655,28 +653,29 @@ func (pg *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	return
 }
 
-func (pg *HandleT) MigrateSchema() (err error) {
+func (pg *HandleT) MigrateSchema() (err error, state string) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", pg.Warehouse.Destination.ID)
 	timer.Start()
-	warehouseutils.SetUploadStatus(pg.Upload, warehouseutils.UpdatingSchemaState, pg.DbHandle)
+	// warehouseutils.SetUploadStatus(pg.Upload, warehouseutils.UpdatingSchemaState, pg.DbHandle)
 	logger.Infof("PG: Updating schema for postgres schema name: %s", pg.Namespace)
 	updatedSchema, err := pg.updateSchema()
 	if err != nil {
-		warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
-		return
+		// warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
+		return err, warehouseutils.UpdatingSchemaFailedState
 	}
 	pg.CurrentSchema = updatedSchema
-	err = warehouseutils.SetUploadStatus(pg.Upload, warehouseutils.UpdatedSchemaState, pg.DbHandle)
-	if err != nil {
-		panic(err)
-	}
+	// err = warehouseutils.SetUploadStatus(pg.Upload, warehouseutils.UpdatedSchemaState, pg.DbHandle)
+	// if err != nil {
+	// 	// panic(err)
+	// 	return err,
+	// }
 	err = warehouseutils.UpdateCurrentSchema(pg.Namespace, pg.Warehouse, pg.Upload.ID, updatedSchema, pg.DbHandle)
 	timer.End()
 	if err != nil {
-		warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
-		return
+		// warehouseutils.SetUploadError(pg.Upload, err, warehouseutils.UpdatingSchemaFailedState, pg.DbHandle)
+		return err, warehouseutils.UpdatingSchemaFailedState
 	}
-	return
+	return nil, warehouseutils.UpdatedSchemaState
 }
 
 func (pg *HandleT) Process(config warehouseutils.ConfigT) (err error) {

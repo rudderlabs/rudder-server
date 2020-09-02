@@ -43,6 +43,7 @@ const (
 	FetchingSchemaFailedState        = "fetching_schema_failed"
 	PreLoadingIdentities             = "pre_loading_identities"
 	PreLoadIdentitiesFailed          = "pre_load_identities_failed"
+	ConnectFailedState               = "connect_failed"
 )
 
 const (
@@ -80,16 +81,6 @@ const (
 )
 
 const (
-	UploadStatusField          = "status"
-	UploadStartLoadFileIDField = "start_load_file_id"
-	UploadEndLoadFileIDField   = "end_load_file_id"
-	UploadUpdatedAtField       = "updated_at"
-	UploadTimingsField         = "timings"
-	UploadSchemaField          = "schema"
-	UploadLastExecAtField      = "last_exec_at"
-)
-
-const (
 	UsersTable      = "users"
 	IdentifiesTable = "identifies"
 )
@@ -102,8 +93,6 @@ const (
 var (
 	serverIP                  string
 	IdentityEnabledWarehouses []string
-	minRetryAttempts          int
-	retryTimeWindow           time.Duration
 	enableIDResolution        bool
 )
 
@@ -124,8 +113,6 @@ func init() {
 
 func loadConfig() {
 	IdentityEnabledWarehouses = []string{"SNOWFLAKE"}
-	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
-	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 	enableIDResolution = config.GetBool("Warehouse.enableIDResolution", false)
 }
 
@@ -142,28 +129,15 @@ type DestinationT struct {
 
 type ConfigT struct {
 	DbHandle  *sql.DB
-	Upload    UploadT
 	Warehouse WarehouseT
 	Stage     string
 }
 
-type UploadT struct {
-	ID                 int64
-	Namespace          string
-	SourceID           string
-	DestinationID      string
-	DestinationType    string
-	StartStagingFileID int64
-	EndStagingFileID   int64
-	StartLoadFileID    int64
-	EndLoadFileID      int64
-	Status             string
-	Schema             map[string]map[string]string
-	Error              json.RawMessage
-	Timings            []map[string]string
-	FirstAttemptAt     time.Time
-	LastAttemptAt      time.Time
-	Attempts           int64
+type SchemaT map[string]map[string]string
+
+type UploadMetadataT struct {
+	StartLoadFileID int64
+	EndLoadFileID   int64
 }
 
 type CurrentSchemaT struct {
@@ -222,7 +196,7 @@ type SchemaDiffT struct {
 	StringColumnsToBeAlteredToText map[string][]string
 }
 
-func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (diff SchemaDiffT) {
+func GetSchemaDiff(currentSchema, uploadSchema SchemaT) (diff SchemaDiffT) {
 	diff = SchemaDiffT{
 		Tables:                         []string{},
 		ColumnMaps:                     make(map[string]map[string]string),
@@ -231,13 +205,13 @@ func GetSchemaDiff(currentSchema, uploadSchema map[string]map[string]string) (di
 	}
 
 	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
-	for tableName, columnMap := range currentSchema {
+	for tableName, columnMap := range map[string]map[string]string(currentSchema) {
 		diff.UpdatedSchema[tableName] = make(map[string]string)
 		for columnName, columnType := range columnMap {
 			diff.UpdatedSchema[tableName][columnName] = columnType
 		}
 	}
-	for tableName, uploadColumnMap := range uploadSchema {
+	for tableName, uploadColumnMap := range map[string]map[string]string(uploadSchema) {
 		currentColumnsMap, ok := currentSchema[tableName]
 		if !ok {
 			diff.Tables = append(diff.Tables, tableName)
@@ -264,134 +238,12 @@ func CompareSchema(sch1, sch2 map[string]map[string]string) bool {
 	return eq
 }
 
-type UploadColumnT struct {
-	Column string
-	Value  interface{}
-}
-
-// GetUploadTimings returns timings json column
-// eg. timings: [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
-func GetUploadTimings(upload UploadT, dbHandle *sql.DB) (timings []map[string]string) {
-	var rawJSON json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT timings FROM %s WHERE id=%d`, WarehouseUploadsTable, upload.ID)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&rawJSON)
-	if err != nil {
-		return
-	}
-	err = json.Unmarshal(rawJSON, &timings)
-	return
-}
-
-// GetNewTimings appends current status with current time to timings column
-// eg. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
-func GetNewTimings(upload UploadT, dbHandle *sql.DB, status string) []byte {
-	timings := GetUploadTimings(upload, dbHandle)
-	timing := map[string]string{status: timeutil.Now().Format(misc.RFC3339Milli)}
-	timings = append(timings, timing)
-	marshalledTimings, err := json.Marshal(timings)
-	if err != nil {
-		panic(err)
-	}
-	return marshalledTimings
-}
-
-func GetUploadFirstAttemptTime(upload UploadT, dbHandle *sql.DB) (timing time.Time) {
-	var firstTiming sql.NullString
-	sqlStatement := fmt.Sprintf(`SELECT timings->0 as firstTimingObj FROM %s WHERE id=%d`, WarehouseUploadsTable, upload.ID)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&firstTiming)
-	if err != nil {
-		return
-	}
-	_, timing = TimingFromJSONString(firstTiming)
-	return timing
-}
-
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
 	timingsMap := gjson.Parse(str.String).Map()
 	for s, t := range timingsMap {
 		return s, t.Time()
 	}
 	return // zero values
-}
-
-func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB, additionalFields ...UploadColumnT) (err error) {
-	logger.Infof("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
-	marshalledTimings := GetNewTimings(upload, dbHandle, status)
-	opts := []UploadColumnT{
-		{Column: UploadStatusField, Value: status},
-		{Column: UploadTimingsField, Value: marshalledTimings},
-		{Column: UploadUpdatedAtField, Value: timeutil.Now()},
-	}
-
-	additionalFields = append(additionalFields, opts...)
-
-	SetUploadColumns(
-		upload,
-		dbHandle,
-		additionalFields...,
-	)
-	return
-}
-
-// SetUploadColumns sets any column values passed as args in UploadColumnT format for WarehouseUploadsTable
-func SetUploadColumns(upload UploadT, dbHandle *sql.DB, fields ...UploadColumnT) (err error) {
-	var columns string
-	values := []interface{}{upload.ID}
-	// setting values using syntax $n since Exec can correctly format time.Time strings
-	for idx, f := range fields {
-		// start with $2 as $1 is upload.ID
-		columns += fmt.Sprintf(`%s=$%d`, f.Column, idx+2)
-		if idx < len(fields)-1 {
-			columns += ","
-		}
-		values = append(values, f.Value)
-	}
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, WarehouseUploadsTable, columns)
-	_, err = dbHandle.Exec(sqlStatement, values...)
-	if err != nil {
-		panic(err)
-	}
-	return
-}
-
-func SetUploadError(upload UploadT, statusError error, state string, dbHandle *sql.DB) (err error) {
-	logger.Errorf("WH: Failed during %s stage: %v\n", state, statusError.Error())
-	SetUploadStatus(upload, state, dbHandle)
-	var e map[string]map[string]interface{}
-	json.Unmarshal(upload.Error, &e)
-	if e == nil {
-		e = make(map[string]map[string]interface{})
-	}
-	if _, ok := e[state]; !ok {
-		e[state] = make(map[string]interface{})
-	}
-	errorByState := e[state]
-	// increment attempts for errored stage
-	if attempt, ok := errorByState["attempt"]; ok {
-		errorByState["attempt"] = int(attempt.(float64)) + 1
-	} else {
-		errorByState["attempt"] = 1
-	}
-	// append errors for errored stage
-	if errList, ok := errorByState["errors"]; ok {
-		errorByState["errors"] = append(errList.([]interface{}), statusError.Error())
-	} else {
-		errorByState["errors"] = []string{statusError.Error()}
-	}
-	// abort after configured retry attempts
-	if errorByState["attempt"].(int) > minRetryAttempts {
-		firstTiming := GetUploadFirstAttemptTime(upload, dbHandle)
-		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
-			state = AbortedState
-		}
-	}
-	serializedErr, _ := json.Marshal(&e)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, WarehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement, state, serializedErr, timeutil.Now(), upload.ID)
-	if err != nil {
-		panic(err)
-	}
-	return
 }
 
 func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err error) {
@@ -466,6 +318,10 @@ func UpdateCurrentSchema(namespace string, wh WarehouseT, uploadID int64, schema
 	}
 
 	marshalledSchema, err := json.Marshal(schema)
+	if err != nil {
+		panic(err)
+	}
+
 	if count == 0 {
 		sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_upload_id, source_id, namespace, destination_id, destination_type, schema, created_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $7)`, WarehouseSchemasTable)
