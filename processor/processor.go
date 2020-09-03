@@ -207,7 +207,6 @@ var (
 	configProcessSessions               bool
 	writeKeyDestinationMap              map[string][]backendconfig.DestinationT
 	workspaceLibrariesMap               map[string][]backendconfig.LibraryT
-	workspaceToken                      string
 	destinationIDtoTypeMap              map[string]string
 	destinationTransformationEnabledMap map[string]bool
 	rawDataDestinations                 []string
@@ -226,7 +225,6 @@ func loadConfig() {
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
-	workspaceToken = config.GetWorkspaceToken()
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -240,7 +238,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 		destinationTransformationEnabledMap = make(map[string]bool)
 		workspaceLibrariesMap = make(map[string][]backendconfig.LibraryT)
 		sources := config.Data.(backendconfig.SourcesT)
-		workspaceLibrariesMap[workspaceToken] = sources.Libraries
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				writeKeyDestinationMap[source.WriteKey] = source.Destinations
@@ -724,8 +721,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				//event
 				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
-
-				// logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
+				workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+				workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
 				if len(enabledDestTypes) == 0 {
 					logger.Debug("No enabled destinations")
 					continue
@@ -741,8 +738,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy := transformer.TransformerEventT{}
 						shallowEventCopy.Message = singularEvent
 						shallowEventCopy.Destination = reflect.ValueOf(destination).Interface().(backendconfig.DestinationT)
-						shallowEventCopy.Libraries = workspaceLibrariesMap[workspaceToken]
-
+						shallowEventCopy.Libraries = workspaceLibraries
+						//TODO: Test for multiple workspaces ex: hosted data plane
 						/* Stream destinations does not need config in transformer. As the Kafka destination config
 						holds the ca-certificate and it depends on user input, it may happen that they provide entire
 						certificate chain. So, that will make the payload huge while sending a batch of events to transformer,

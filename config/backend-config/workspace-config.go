@@ -12,8 +12,9 @@ import (
 
 type WorkspaceConfig struct {
 	CommonBackendConfig
-	workspaceID     string
-	workspaceIDLock sync.RWMutex
+	workspaceID               string
+	workspaceIDToLibrariesMap map[string]LibrariesT
+	workspaceIDLock           sync.RWMutex
 }
 
 func (workspaceConfig *WorkspaceConfig) SetUp() {
@@ -24,6 +25,14 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey strin
 	defer workspaceConfig.workspaceIDLock.RUnlock()
 
 	return workspaceConfig.workspaceID
+}
+
+//GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
+func (workspaceConfig *WorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+	workspaceConfig.workspaceIDLock.RLock()
+	defer workspaceConfig.workspaceIDLock.RUnlock()
+
+	return workspaceConfig.workspaceIDToLibrariesMap[workspaceID]
 }
 
 //Get returns sources from the workspace
@@ -81,6 +90,8 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 
 	workspaceConfig.workspaceIDLock.Lock()
 	workspaceConfig.workspaceID = sourcesJSON.WorkspaceID
+	workspaceConfig.workspaceIDToLibrariesMap = make(map[string]LibrariesT)
+	workspaceConfig.workspaceIDToLibrariesMap[sourcesJSON.WorkspaceID] = sourcesJSON.Libraries
 	workspaceConfig.workspaceIDLock.Unlock()
 
 	return sourcesJSON, true

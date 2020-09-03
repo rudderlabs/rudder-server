@@ -136,7 +136,7 @@ type SourcesT struct {
 	EnableMetrics bool       `json:"enableMetrics"`
 	WorkspaceID   string     `json:"workspaceId"`
 	Sources       []SourceT  `json:"sources"`
-	Libraries     []LibraryT `json:"libraries"`
+	Libraries     LibrariesT `json:"libraries"`
 }
 
 type RegulationsT struct {
@@ -163,24 +163,21 @@ type SRegulationsT struct {
 }
 
 type TransformationT struct {
-	ID          string
-	Name        string
-	Description string
-	VersionID   string
+	VersionID string
 }
 
 type LibraryT struct {
-	ID          string
-	Name        string
-	Description string
-	VersionID   string
+	VersionID string
 }
+
+type LibrariesT []LibraryT
 
 type BackendConfig interface {
 	SetUp()
 	Get() (SourcesT, bool)
 	GetRegulations() (RegulationsT, bool)
 	GetWorkspaceIDForWriteKey(string) string
+	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	WaitForConfig()
 	Subscribe(channel chan utils.DataEvent, topic Topic)
 }
@@ -267,6 +264,7 @@ func trackConfig(preConfig SourcesT, curConfig SourcesT) {
 
 func filterProcessorEnabledDestinations(config SourcesT) SourcesT {
 	var modifiedSources SourcesT
+	modifiedSources.Libraries = config.Libraries
 	modifiedSources.Sources = make([]SourceT, 0)
 	for _, source := range config.Sources {
 		destinations := make([]DestinationT, 0)
@@ -362,6 +360,10 @@ func GetConfig() SourcesT {
 
 func GetWorkspaceIDForWriteKey(writeKey string) string {
 	return backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+}
+
+func GetWorkspaceLibrariesForWorkspaceID(workspaceId string) LibrariesT {
+	return backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceId)
 }
 
 /*
