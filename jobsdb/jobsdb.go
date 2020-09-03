@@ -2026,7 +2026,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
 
-	var totalCount int64
+	var totalCount, rowEndPatternMatchCount int64
 	err = jd.dbHandle.QueryRow(countStmt).Scan(&totalCount)
 	if err != nil {
 		panic(err)
@@ -2047,7 +2047,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	gzWriter, err := misc.CreateGZ(path)
 	defer os.Remove(path)
 
-	var offset int64
+	var offset, batchCount int64
 	for {
 		stmt := jd.getBackUpQuery(backupDSRange, isJobStatusTable, offset)
 		var rawJSONRows json.RawMessage
@@ -2057,22 +2057,16 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 			panic(err)
 		}
 
-		var rows []interface{}
-		err = json.Unmarshal(rawJSONRows, &rows)
-		if err != nil {
-			panic(err)
-		}
-		contentSlice := make([][]byte, len(rows))
-		for idx, row := range rows {
-			rowBytes, err := json.Marshal(row)
-			if err != nil {
-				panic(err)
-			}
-			contentSlice[idx] = rowBytes
-		}
-		// append new line character at end, before next backupRowsBatch is appended to same file
-		content := append(bytes.Join(contentSlice[:], []byte("\n")), []byte("\n")...)
-		gzWriter.Write(content)
+		rowEndPatternMatchCount += int64(bytes.Count(rawJSONRows, []byte("}, \n {")))
+		rawJSONRows = bytes.Replace(rawJSONRows, []byte("}, \n {"), []byte("}\n{"), -1) //replacing ", \n " with "\n"
+		batchCount++
+
+		//Asserting that the first character is '[' and last character is ']'
+		jd.assert(rawJSONRows[0] == byte('[') && rawJSONRows[len(rawJSONRows)-1] == byte(']'), fmt.Sprintf("json agg output is not in the expected format. Excepted format: JSON Array [{}]"))
+		rawJSONRows = rawJSONRows[1 : len(rawJSONRows)-1] //stripping starting '[' and ending ']'
+		rawJSONRows = append(rawJSONRows, '\n')           //appending '\n'
+
+		gzWriter.Write(rawJSONRows)
 		offset += backupRowsBatchSize
 		if offset >= totalCount {
 			break
@@ -2081,6 +2075,8 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	gzWriter.CloseGZ()
 	tableFileDumpTimeStat.End()
+
+	jd.assert(rowEndPatternMatchCount == totalCount-batchCount, fmt.Sprintf("rowEndPatternMatchCount:%d != (totalCount:%d-batchCount:%d). Ill formed json bytes could be written to a file. Panicking.", rowEndPatternMatchCount, totalCount, batchCount))
 
 	fileUploadTimeStat := stats.NewJobsDBStat("fileUpload_TimeStat", stats.TimerType, jd.tablePrefix)
 	fileUploadTimeStat.Start()

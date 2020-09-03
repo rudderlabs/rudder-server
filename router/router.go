@@ -140,6 +140,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		batchTimeStat.Start()
 		logger.Debugf("[%v Router] :: performing checks to send payload to %s. Payload: ", rt.destName, job.EventPayload)
 
+		//TODO: following code is left as is for backwards compatibility.
+		//In the next release, we will remote the job.UserID code check.
+		//canEventBeMappedToUser bool will also be removed.
 		var userID string
 		var canEventBeMappedToUser bool
 		if job.UserID != "" {
@@ -402,6 +405,9 @@ func (rt *HandleT) initWorkers() {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
+	//TODO: following code is left as is for backwards compatibility.
+	//In the next release, we will remote the job.UserID code check.
+	//canEventBeMappedToUser bool will also be removed.
 	var userID string
 	var canEventBeMappedToUser bool
 	if job.UserID != "" {
@@ -727,21 +733,6 @@ func (rt *HandleT) crashRecover() {
 	rt.jobsDB.DeleteExecuting([]string{rt.destName}, jobQueryBatchSize, nil)
 }
 
-func (rt *HandleT) printStatsLoop() {
-	for {
-		time.Sleep(60 * time.Second)
-		logger.Debug("Network Success/Fail", rt.successCount, rt.failCount)
-		logger.Debug("++++++++++++++++++++++++++++++")
-		logger.Debug(rt.toClearFailJobIDMap)
-		logger.Debug("++++++++++++++++++++++++++++++")
-		for _, w := range rt.workers {
-			logger.Debug("--------------------------------", w.workerID)
-			logger.Debug(w.failedJobIDMap)
-			logger.Debug("--------------------------------", w.workerID)
-		}
-	}
-}
-
 func (rt *HandleT) setUserEventsOrderingRequirement() {
 	// user event ordering is required by default unless specified
 	required := true
@@ -780,9 +771,6 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.initWorkers()
 	rruntime.Go(func() {
 		rt.collectMetrics()
-	})
-	rruntime.Go(func() {
-		rt.printStatsLoop()
 	})
 	rruntime.Go(func() {
 		rt.statusInsertLoop()

@@ -1336,6 +1336,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 							if _, ok := outputFileMap[discardsTable]; !ok {
 								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
+								defer gzWriter.CloseGZ()
 								if err != nil {
 									return nil, err
 								}
@@ -1434,6 +1435,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 							if _, ok := outputFileMap[discardsTable]; !ok {
 								discardsOutputFilePath := strings.TrimSuffix(jsonPath, "json.gz") + discardsTable + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 								gzWriter, err := misc.CreateGZ(discardsOutputFilePath)
+								defer gzWriter.CloseGZ()
 								if err != nil {
 									return nil, err
 								}
@@ -1457,7 +1459,10 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 
 							// sorted discard columns: column_name, column_value, received_at, row_id, table_name, uuid_ts
 							discardRow = append(discardRow, columnName, fmt.Sprintf("%v", columnVal), fmt.Sprintf("%v", receivedAt), fmt.Sprintf("%v", rowID), tableName, uuidTS.Format(misc.RFC3339Milli))
-							dCsvWriter.Write(discardRow)
+							csvWriteErr := dCsvWriter.Write(discardRow)
+							if csvWriteErr != nil {
+								logger.Errorf(`[CSVWriter]: Error writing discardRow to buffer: %v`, csvWriteErr)
+							}
 							dCsvWriter.Flush()
 							outputFileMap[discardsTable].WriteGZ(dBuff.String())
 							eventsCountMap[discardsTable]++

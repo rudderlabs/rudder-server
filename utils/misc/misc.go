@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"unicode"
 
 	//"runtime/debug"
 	"time"
@@ -598,17 +599,32 @@ func CreateGZ(s string) (w GZipWriter, err error) {
 }
 
 func (w GZipWriter) WriteGZ(s string) {
-	w.BufWriter.WriteString(s)
+	count, err := w.BufWriter.WriteString(s)
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error writing string of length %d by GZipWriter.WriteGZ. Bytes written: %d. Error: %v`, len(s), count, err)
+	}
 }
 
 func (w GZipWriter) Write(b []byte) {
-	w.BufWriter.Write(b)
+	count, err := w.BufWriter.Write(b)
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error writing bytes of length %d by GZipWriter.Write. Bytes written: %d. Error: %v`, len(b), count, err)
+	}
 }
 
 func (w GZipWriter) CloseGZ() {
-	w.BufWriter.Flush()
+	err := w.BufWriter.Flush()
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error flushing GZipWriter.BufWriter : %v`, err)
+	}
 	w.GzWriter.Close()
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error closing GZipWriter : %v`, err)
+	}
 	w.File.Close()
+	if err != nil {
+		logger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
+	}
 }
 
 func GetMacAddress() string {
@@ -767,7 +783,7 @@ func GetMD5UUID(str string) (uuid.UUID, error) {
 }
 
 // GetParsedTimestamp returns the parsed timestamp
-func GetParsedTimestamp(input interface{}) (time.Time, bool){
+func GetParsedTimestamp(input interface{}) (time.Time, bool) {
 	var parsedTimestamp time.Time
 	var valid bool
 	if timestampStr, typecasted := input.(string); typecasted {
@@ -778,4 +794,48 @@ func GetParsedTimestamp(input interface{}) (time.Time, bool){
 		}
 	}
 	return parsedTimestamp, valid
+}
+
+func isValidTag(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		switch {
+		case strings.ContainsRune("!#$%&()*+-./:<=>?@[]^_{|}~ ", c):
+			// Backslash and quote chars are reserved, but
+			// otherwise any punctuation chars are allowed
+			// in a tag name.
+		case !unicode.IsLetter(c) && !unicode.IsDigit(c):
+			return false
+		}
+	}
+	return true
+}
+
+func parseTag(tag string) (string, string) {
+	if idx := strings.Index(tag, ","); idx != -1 {
+		return tag[:idx], tag[idx+1:]
+	}
+	return tag, ""
+}
+
+//GetMandatoryJSONFieldNames returns all the json field names defined against the json tag for each field.
+func GetMandatoryJSONFieldNames(st interface{}) []string {
+	v := reflect.TypeOf(st)
+	mandatoryJSONFieldNames := make([]string, 0, v.NumField())
+	for i := 0; i < v.NumField(); i++ {
+		jsonTag, ok := v.Field(i).Tag.Lookup("json")
+		if !ok {
+			continue
+		}
+		name, tags := parseTag(jsonTag)
+		if !strings.Contains(tags, "optional") {
+			if !isValidTag(name) {
+				name = v.Field(i).Name
+			}
+			mandatoryJSONFieldNames = append(mandatoryJSONFieldNames, name)
+		}
+	}
+	return mandatoryJSONFieldNames
 }
