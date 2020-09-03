@@ -108,6 +108,13 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
 		panic(err)
 	}
 
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS merge_properties_index_%[1]s ON %[1]s (merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value)`, warehouseutils.IdentityMergeRulesTableName(warehouse))
+
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+
 	sqlStatement = fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGSERIAL PRIMARY KEY,
@@ -128,6 +135,20 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
 			ADD CONSTRAINT %s UNIQUE (merge_property_type, merge_property_value);
 		`, warehouseutils.IdentityMappingsTableName(warehouse), warehouseutils.IdentityMappingsUniqueMappingConstraintName(warehouse),
 	)
+
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS rudder_id_index_%[1]s ON %[1]s (rudder_id)`, warehouseutils.IdentityMappingsTableName(warehouse))
+
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS merge_property_index_%[1]s ON %[1]s (merge_property_type, merge_property_value)`, warehouseutils.IdentityMappingsTableName(warehouse))
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
 	if err != nil {
