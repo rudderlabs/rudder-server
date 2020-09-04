@@ -2591,7 +2591,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 }
 
 /*
-DeleteJobStatus deletes the status of a batch of jobs
+DeleteJobStatus deletes the latest status of a batch of jobs
 This is only done during recovery, which happens during the server start.
 So, we don't have to worry about dsEmptyResultCache
 */
@@ -2611,8 +2611,8 @@ func (jd *HandleT) DeleteJobStatus(stateFilter []string, customValFilters []stri
 }
 
 /*
-if count passed is less than 0, then delete happens on all the tables.
-deleteJobStatusInTxn deletes the status of a batch of jobs
+if count passed is less than 0, then delete happens on the entire dsList;
+deleteJobStatusInTxn deletes the latest status of a batch of jobs
 */
 func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) error {
 	if count == 0 {
