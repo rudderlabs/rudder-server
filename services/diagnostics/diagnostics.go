@@ -50,7 +50,7 @@ var (
 	EnableBatchRouterMetric         bool
 	EnableDestinationFailuresMetric bool
 )
-var diagnostics DiagnosticsI = NewDiagnostics()
+var diagnostics DiagnosticsI
 
 type DiagnosticsI interface {
 	Track(event string, properties map[string]interface{})
@@ -81,15 +81,14 @@ func loadConfig() {
 	EnableRouterMetric = config.GetBool("Diagnostics.enableRouterMetric", true)
 	EnableBatchRouterMetric = config.GetBool("Diagnostics.enableBatchRouterMetric", true)
 	EnableDestinationFailuresMetric = config.GetBool("Diagnostics.enableDestinationFailuresMetric", true)
+	diagnostics = NewDiagnostics()
 }
 
 // NewDiagnostics return new instace of diagnostics
 func NewDiagnostics() *Diagnostics {
 	instanceId := config.GetEnv("INSTANCE_ID", "1")
-	analyticsConfig := analytics.Config{
-		Endpoint: endpoint,
-	}
-	client, _ := analytics.NewWithConfig(writekey, analyticsConfig)
+
+	client := analytics.New(writekey, endpoint)
 	return &Diagnostics{
 		InstanceId: instanceId,
 		Client:     client,
@@ -102,6 +101,7 @@ func (d *Diagnostics) Track(event string, properties map[string]interface{}) {
 	if EnableDiagnostics {
 		properties[StartTime] = d.StartTime
 		properties[InstanceId] = d.InstanceId
+
 		d.Client.Enqueue(
 			analytics.Track{
 				Event:       event,
