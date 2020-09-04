@@ -50,7 +50,7 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord cha
 
 # RudderStack Setup
 
-The easiest way to experience RudderStack is to signup for **14-day Free Trial** of our hosted service. Signup [here](https://app.rudderstack.com/signup?type=freetrial) to get started.
+The easiest way to experience RudderStack is to signup for **[14-day Free Trial](https://app.rudderstack.com/signup?type=freetrial)** of our hosted service. Signup [here](https://app.rudderstack.com/signup?type=freetrial) to get started.
 
 You can also set up and use RudderStack on your platform of choice.
 
