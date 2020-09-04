@@ -214,7 +214,7 @@ func (wh *HandleT) handleUploadJob(job ProcessStagingFilesJobT, uploadHandle *Up
 	// and are updated on creation of load files
 	logger.Infof("[WH]: Processing %d staging files in upload job:%v with staging files from %v to %v for %s:%s", len(job.List), job.Upload.ID, job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
 	uploadHandle.setUploadColumns(
-		warehouseutils.UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
+		UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
 	)
 	if job.Upload.StartLoadFileID == 0 || hasSchemaChanged {
 		uploadHandle.setUploadStatus(warehouseutils.GeneratingLoadFileState)
