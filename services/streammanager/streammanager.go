@@ -43,10 +43,13 @@ func NewProducer(destinationConfig interface{}, destination string) (interface{}
 func CloseProducer(producer interface{}, destination string) error {
 
 	switch destination {
-	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB":
+	case "KINESIS", "FIREHOSE", "EVENTBRIDGE":
 		return nil
 	case "KAFKA", "AZURE_EVENT_HUB":
 		err := kafka.CloseProducer(producer)
+		return err
+	case "GOOGLEPUBSUB":
+		err := googlepubsub.CloseProducer(producer)
 		return err
 	default:
 		return fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
