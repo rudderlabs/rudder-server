@@ -2591,7 +2591,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 }
 
 /*
-DeleteJobStatus deletes the latest status of a batch of jobs
+DeleteJobStatus deletes the status of a batch of jobs
 This is only done during recovery, which happens during the server start.
 So, we don't have to worry about dsEmptyResultCache
 */
