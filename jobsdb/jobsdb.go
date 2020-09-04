@@ -2611,6 +2611,7 @@ func (jd *HandleT) DeleteJobStatus(stateFilter []string, customValFilters []stri
 }
 
 /*
+if count passed is less than 0, then delete happens on all the tables.
 deleteJobStatusInTxn deletes the status of a batch of jobs
 */
 func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) error {
@@ -2628,13 +2629,20 @@ func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, stateFilte
 
 	dsList := jd.getDSList(false)
 
+	totalDeletedCount := 0
 	for _, ds := range dsList {
 		deletedCount, err := jd.deleteJobStatusDSInTxn(txHandler, ds, stateFilter, customValFilters, parameterFilters)
 		if err != nil {
 			return err
 		}
-		count -= deletedCount
-		if count <= 0 {
+		totalDeletedCount += deletedCount
+
+		//since count is less than 0, iterating on complete dsList
+		if count < 0 {
+			continue
+		}
+
+		if totalDeletedCount >= count {
 			break
 		}
 	}

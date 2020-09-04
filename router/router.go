@@ -730,7 +730,7 @@ func (rt *HandleT) generatorLoop() {
 }
 
 func (rt *HandleT) crashRecover() {
-	rt.jobsDB.DeleteExecuting([]string{rt.destName}, jobQueryBatchSize, nil)
+	rt.jobsDB.DeleteExecuting([]string{rt.destName}, -1, nil)
 }
 
 func (rt *HandleT) setUserEventsOrderingRequirement() {
