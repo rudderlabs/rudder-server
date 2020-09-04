@@ -847,7 +847,7 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 			}
 			//Some sanity checks (see comment above)
 			//Insert before is never required on level3 or above.
-			jd.assert(levels <= 2, fmt.Sprintf("levels:%d  > 2", levels))
+			// jd.assert(levels <= 2, fmt.Sprintf("levels:%d  > 2", levels))
 			if levelsPre == 1 {
 				/*
 					| levelsPre | levels | newDSIdx |
