@@ -34,6 +34,8 @@ const (
 	sslMode  = "sslMode"
 )
 
+const PROVIDER = "POSTGRES"
+
 var rudderDataTypesMapToPostgres = map[string]string{
 	"int":      "bigint",
 	"float":    "numeric",

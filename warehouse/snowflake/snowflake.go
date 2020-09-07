@@ -47,6 +47,8 @@ const (
 	SFPassword         = "password"
 )
 
+const PROVIDER = "SNOWFLAKE"
+
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
 	"int":      "number",
@@ -134,6 +136,17 @@ func (sf *HandleT) tableExists(tableName string) (exists bool, err error) {
    								 WHERE  table_schema = '%s'
    								 AND    table_name = '%s'
 								   )`, sf.Namespace, tableName)
+	err = sf.Db.QueryRow(sqlStatement).Scan(&exists)
+	return
+}
+
+func (sf *HandleT) columnExists(columnName string, tableName string) (exists bool, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1
+   								 FROM   information_schema.columns
+   								 WHERE  table_schema = '%s'
+									AND table_name = '%s'
+									AND column_name = '%s'
+								   )`, sf.Namespace, tableName, columnName)
 	err = sf.Db.QueryRow(sqlStatement).Scan(&exists)
 	return
 }
@@ -370,7 +383,7 @@ func (sf *HandleT) loadMappingsTable() (err error) {
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE ORDER BY UPDATED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
+											SELECT *, row_number() OVER (PARTITION BY MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE ORDER BY UPDATED_AT DESC) AS _rudder_staging_row_number FROM %[2]s
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
 									ON (original.MERGE_PROPERTY_TYPE = staging.MERGE_PROPERTY_TYPE AND original.MERGE_PROPERTY_VALUE = staging.MERGE_PROPERTY_VALUE)
@@ -489,7 +502,8 @@ func (sf *HandleT) LoadIdentityTables() (errorMap map[string]error) {
 	haveToUploadIdentifies := len(sf.Uploader.GetTableSchemaInUpload(identifiesTable)) > 0
 	haveToUploadAliases := len(sf.Uploader.GetTableSchemaInUpload(aliasTable)) > 0
 	haveToUploadMergeRules := len(sf.Uploader.GetTableSchemaInUpload(identityMergeRulesTable)) > 0
-	haveToUploadUsers := haveToUploadIdentifies || haveToUploadAliases
+	hasUserRecordsToUpload := len(sf.Uploader.GetTableSchemaInUpload(usersTable)) > 0
+	haveToUploadUsers := (haveToUploadIdentifies || haveToUploadAliases) && hasUserRecordsToUpload
 
 	// if haveToUploadUsers and users is exported, return
 	if haveToUploadUsers && sf.isTableExported(usersTable) {
@@ -566,6 +580,8 @@ func (sf *HandleT) LoadIdentityTables() (errorMap map[string]error) {
 	}
 
 	var rudderIDsListTable string
+	// get all rudder_id's in staging tables of identifies & aliases
+	// by joining staging table with rudder_identity_mapping table (which is upto data after loadMappingsTable())
 	if haveToUploadIdentifies && haveToUploadAliases {
 		rudderIDsListTable = fmt.Sprintf(`WITH RUDDER_IDS_LIST_TABLE AS (
 				SELECT * FROM (
@@ -598,7 +614,26 @@ func (sf *HandleT) LoadIdentityTables() (errorMap map[string]error) {
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY RUDDER_ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), usersTable), 127)
-	// TODO: Add example query
+	// Example query
+	// 1. Make IDENTIFIES_WITH_RUDDER_IDS table by filtering identifies tables with rudder_id's from RUDDER_IDS_LIST_TABLE
+	// 2. From IDENTIFIES_WITH_RUDDER_IDS get all first_value props for each user
+	// TODO: Can scanning entire identifies be avoided? Since users might be linked later, scanned entire identifies table with the rudder_ids in identifies staging
+	/*
+		CREATE TEMPORARY TABLE RUDDER_STAGING_c3fda15371d34ca98a7878afc920ee4c_USERS AS
+			WITH RUDDER_IDS_LIST_TABLE AS (
+				SELECT m.RUDDER_ID AS RUDDER_ID FROM RUDDER_STAGING_833aaa75be904d05a2a7b0bf64de5282_IDENTIFIES i_st JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND i_st.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE
+			),
+			IDENTIFIES_WITH_RUDDER_IDS AS (
+				SELECT USER_ID AS ID, i.CONTEXT_LIBRARY_NAME AS CONTEXT_LIBRARY_NAME,i.PROP_1 AS PROP_1,i.PROP_2 AS PROP_2,i.UUID_TS AS UUID_TS,i.CONTEXT_IP AS CONTEXT_IP,i.RECEIVED_AT AS RECEIVED_AT, m.RUDDER_ID AS RUDDER_ID FROM (SELECT * FROM IDENTIFIES WHERE ANONYMOUS_ID IN (SELECT DISTINCT(MERGE_PROPERTY_VALUE) FROM RUDDER_IDENTITY_MAPPINGS WHERE MERGE_PROPERTY_TYPE ='anonymous_id' AND RUDDER_ID IN (SELECT DISTINCT(RUDDER_ID) FROM RUDDER_IDS_LIST_TABLE))) i JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND i.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE
+			)
+			(SELECT DISTINCT * FROM
+				(
+					SELECT
+					ID, FIRST_VALUE(CONTEXT_LIBRARY_NAME IGNORE NULLS) OVER (PARTITION BY RUDDER_ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS CONTEXT_LIBRARY_NAME,FIRST_VALUE(PROP_1 IGNORE NULLS) OVER (PARTITION BY RUDDER_ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS PROP_1,FIRST_VALUE(PROP_2 IGNORE NULLS) OVER (PARTITION BY RUDDER_ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS PROP_2,FIRST_VALUE(UUID_TS IGNORE NULLS) OVER (PARTITION BY RUDDER_ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS UUID_TS,FIRST_VALUE(CONTEXT_IP IGNORE NULLS) OVER (PARTITION BY RUDDER_ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS CONTEXT_IP,FIRST_VALUE(RECEIVED_AT IGNORE NULLS) OVER (PARTITION BY RUDDER_ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS RECEIVED_AT
+					FROM IDENTIFIES_WITH_RUDDER_IDS
+				) WHERE ID IS NOT NULL
+			)
+	*/
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s AS
 									%[5]s, IDENTIFIES_WITH_RUDDER_IDS AS (
 										SELECT USER_ID AS ID, %[4]s, m.RUDDER_ID AS RUDDER_ID FROM (SELECT * FROM %[3]s WHERE ANONYMOUS_ID IN (SELECT DISTINCT(MERGE_PROPERTY_VALUE) FROM RUDDER_IDENTITY_MAPPINGS WHERE MERGE_PROPERTY_TYPE ='anonymous_id' AND RUDDER_ID IN (SELECT DISTINCT(RUDDER_ID) FROM RUDDER_IDS_LIST_TABLE))) i JOIN RUDDER_IDENTITY_MAPPINGS m ON m.MERGE_PROPERTY_TYPE = 'anonymous_id' AND i.ANONYMOUS_ID = m.MERGE_PROPERTY_VALUE
@@ -790,6 +825,7 @@ func (sf *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
 	return
 }
 
+// DownloadIdentityRules gets distinct combinations of anonymous_id, user_id from tables in warehouse
 func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) {
 
 	getFromTable := func(tableName string) (err error) {
@@ -806,10 +842,33 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 			return
 		}
 
+		// check if table in warehouse has anonymous_id and user_id and construct accordingly
+		hasAnonymousID, err := sf.columnExists("ANONYMOUS_ID", tableName)
+		if err != nil {
+			return
+		}
+		hasUserID, err := sf.columnExists("USER_ID", tableName)
+		if err != nil {
+			return
+		}
+
+		var toSelectFields string
+		if hasAnonymousID && hasUserID {
+			toSelectFields = "ANONYMOUS_ID, USER_ID"
+		} else if hasAnonymousID {
+			toSelectFields = "ANONYMOUS_ID, NULL AS USER_ID"
+		} else if hasUserID {
+			toSelectFields = "NULL AS ANONYMOUS_ID, USER_ID"
+		} else {
+			logger.Infof("SF: ANONYMOUS_ID, USER_ID columns not present in table: %s", tableName)
+			return nil
+		}
+
 		batchSize := int64(10000)
 		var offset int64
 		for {
-			sqlStatement = fmt.Sprintf(`SELECT DISTINCT anonymous_id, user_id FROM %s.%s LIMIT %d OFFSET %d`, sf.Namespace, tableName, batchSize, offset)
+			// TODO: Handle case for missing anonymous_id, user_id columns
+			sqlStatement = fmt.Sprintf(`SELECT DISTINCT %s FROM %s.%s LIMIT %d OFFSET %d`, toSelectFields, sf.Namespace, tableName, batchSize, offset)
 			logger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s", sqlStatement)
 			var rows *sql.Rows
 			rows, err = sf.Db.Query(sqlStatement)

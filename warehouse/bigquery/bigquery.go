@@ -37,6 +37,8 @@ const (
 	GCPLocation    = "location"
 )
 
+const PROVIDER = "BQ"
+
 // maps datatype stored in rudder to datatype in bigquery
 var dataTypesMap = map[string]bigquery.FieldType{
 	"boolean":  bigquery.BooleanFieldType,
@@ -211,6 +213,8 @@ func (bq *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 	errorMap[warehouseutils.UsersTable] = nil
+
+	logger.Infof("BQ: Starting load for %s table", warehouseutils.UsersTable)
 
 	firstValueSQL := func(column string) string {
 		return fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, column)

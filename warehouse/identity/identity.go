@@ -159,6 +159,9 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 }
 
 func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc.GZipWriter) (ids []int64, err error) {
+	// add rules from load files into temp table
+	// use original table to delete redundant ones from temp table
+	// insert from temp table into original table
 	mergeRulesStagingTable := fmt.Sprintf(`rudder_identity_merge_rules_staging_%s`, strings.Replace(uuid.NewV4().String(), "-", "", -1))
 	sqlStatement := fmt.Sprintf(`CREATE TEMP TABLE %s
 						ON COMMIT DROP
@@ -172,13 +175,14 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		return
 	}
 
-	sortedColumnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value"}
+	sortedColumnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value", "id"}
 	stmt, err := txn.Prepare(pq.CopyIn(mergeRulesStagingTable, sortedColumnNames...))
 	if err != nil {
 		logger.Errorf(`IDR: Error starting bulk copy using CopyIn: %v`, err)
 		return
 	}
 
+	var rowID int
 	for _, loadFileName := range loadFileNames {
 		var gzipFile *os.File
 		gzipFile, err = os.Open(loadFileName)
@@ -208,12 +212,15 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 					return
 				}
 			}
-			var recordInterface [4]interface{}
+			var recordInterface [5]interface{}
 			for idx, value := range record {
 				if strings.TrimSpace(value) != "" {
 					recordInterface[idx] = value
 				}
 			}
+			// add rowID which allows us to insert in same order from staging to original merge _rules table
+			rowID++
+			recordInterface[4] = rowID
 			_, err = stmt.Exec(recordInterface[:]...)
 		}
 		gzipReader.Close()
@@ -244,18 +251,24 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		return
 	}
 
+	// write merge rules to file to be uploaded to warehouse in later steps
 	err = idr.writeTableToFile(mergeRulesStagingTable, txn, gzWriter)
 	if err != nil {
 		logger.Errorf(`IDR: Error writing staging table %s to file: %v`, mergeRulesStagingTable, err)
 		return
 	}
 
+	// select and insert distinct combination of merge rules and sort them by order in which they were added
 	sqlStatement = fmt.Sprintf(`INSERT INTO %s
 						(merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value)
-						SELECT DISTINCT ON (
-							merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value
-						) merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value
-		FROM %s RETURNING id`, idr.mergeRulesTable(), mergeRulesStagingTable)
+						SELECT merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value FROM
+						(
+							SELECT DISTINCT ON (
+								merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value
+							) id, merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value
+							FROM %s
+						) t
+		 				ORDER BY id ASC RETURNING id`, idr.mergeRulesTable(), mergeRulesStagingTable)
 	logger.Infof(`IDR: Inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, sqlStatement)
 	rows, err := txn.Query(sqlStatement)
 	if err != nil {
