@@ -34,12 +34,11 @@ var (
 )
 
 type HandleT struct {
-	Db            *sql.DB
-	DbHandle      *sql.DB
-	DestinationID string
-	Namespace     string
-	Warehouse     warehouseutils.WarehouseT
-	Uploader      warehouseutils.UploaderI
+	Db        *sql.DB
+	DbHandle  *sql.DB
+	Namespace string
+	Warehouse warehouseutils.WarehouseT
+	Uploader  warehouseutils.UploaderI
 }
 
 // String constants for redshift destination config
@@ -252,7 +251,7 @@ func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
-func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaInWarehouse warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
 	timer.Start()
 	manifestLocation, err := rs.generateManifest(tableName, tableSchemaInUpload)
@@ -278,7 +277,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
-	err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), tableSchemaInWarehouse)
+	err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), tableSchemaAfterUpload)
 	if err != nil {
 		return
 	}
@@ -371,19 +370,20 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	return
 }
 
-func (rs *HandleT) loadUserTables(userTablesSchemasInUpload warehouseutils.SchemaT, userTablesSchemasInWarehouse warehouseutils.SchemaT) (err error) {
+func (rs *HandleT) loadUserTables() (err error) {
 	logger.Infof("RS: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, userTablesSchemasInUpload[warehouseutils.IdentifiesTable], userTablesSchemasInWarehouse[warehouseutils.UsersTable], true)
+
+	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), rs.Uploader.GetTableSchemaAfterUpload(warehouseutils.IdentifiesTable), true)
 	if err != nil {
 		return
 	}
 	defer rs.dropStagingTables([]string{identifyStagingTable})
 
-	if _, ok := userTablesSchemasInUpload["users"]; !ok {
+	if len(rs.Uploader.GetTableSchemaInUpload("users")) == 0 {
 		return
 	}
 
-	userColMap := userTablesSchemasInWarehouse["users"]
+	userColMap := rs.Uploader.GetTableSchemaAfterUpload(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	firstValPropsForIdentifies := []string{fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY anonymous_id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, "user_id")}
 	for colName := range userColMap {
@@ -669,21 +669,17 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	return
 }
 
-func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) {
+func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	rs.DestinationID = warehouse.Destination.ID
 	rs.Uploader = uploader
-}
 
-func (rs *HandleT) Connect() error {
-	var err error
 	rs.Db, err = rs.connectToWarehouse()
 	return err
 }
 
-func (rs *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
-	rs.Warehouse = config.Warehouse
+func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+	rs.Warehouse = warehouse
 	rs.Db, err = connect(RedshiftCredentialsT{
 		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
 		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
@@ -737,11 +733,11 @@ func (rs *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 	return
 }
 
-func (rs *HandleT) LoadUserTables(userTablesSchemasInUpload warehouseutils.SchemaT, userTablesSchemasInWarehouse warehouseutils.SchemaT) error {
-	return rs.loadUserTables(userTablesSchemasInUpload, userTablesSchemasInWarehouse)
+func (rs *HandleT) LoadUserTables() error {
+	return rs.loadUserTables()
 }
 
-func (rs *HandleT) LoadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaInWarehouse warehouseutils.TableSchemaT) error {
-	_, err := rs.loadTable(tableName, tableSchemaInUpload, tableSchemaInWarehouse, false)
+func (rs *HandleT) LoadTable(tableName string) error {
+	_, err := rs.loadTable(tableName, rs.Uploader.GetTableSchemaInUpload(tableName), rs.Uploader.GetTableSchemaAfterUpload(tableName), false)
 	return err
 }

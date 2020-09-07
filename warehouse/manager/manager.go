@@ -3,21 +3,21 @@ package manager
 import (
 	"errors"
 
+	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type ManagerI interface {
-	Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI)
+	Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) error
 	CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error)
-	Connect() error
 	MigrateSchema(diff warehouseutils.SchemaDiffT, currentSchemaInWarehouse warehouseutils.SchemaT) (err error)
-	LoadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaInWarehouse warehouseutils.TableSchemaT) error
-	LoadUserTables(userTablesSchemasInUpload warehouseutils.SchemaT, userTablesSchemasInWarehouse warehouseutils.SchemaT) error
+	LoadTable(tableName string) error
+	LoadUserTables() error
 	Cleanup()
 	IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error)
-	TestConnection(config warehouseutils.ConfigT) error
+	TestConnection(warehouse warehouseutils.WarehouseT) error
 }
 
 func New(destType string) (ManagerI, error) {
@@ -25,9 +25,9 @@ func New(destType string) (ManagerI, error) {
 	case "RS":
 		var rs redshift.HandleT
 		return &rs, nil
-		// case "BQ":
-		// 	var bq bigquery.HandleT
-		// 	return &bq, nil
+	case "BQ":
+		var bq bigquery.HandleT
+		return &bq, nil
 		// case "SNOWFLAKE":
 		// 	var sf snowflake.HandleT
 		// 	return &sf, nil

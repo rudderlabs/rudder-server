@@ -103,12 +103,6 @@ type DestinationT struct {
 	Destination backendconfig.DestinationT
 }
 
-type ConfigT struct {
-	DbHandle  *sql.DB
-	Warehouse WarehouseT
-	Stage     string
-}
-
 type SchemaT map[string]map[string]string
 type TableSchemaT map[string]string
 
@@ -122,6 +116,9 @@ type StagingFileT struct {
 }
 
 type UploaderI interface {
+	GetSchemaInWarehouse() SchemaT
+	GetTableSchemaAfterUpload(tableName string) TableSchemaT
+	GetTableSchemaInUpload(tableName string) TableSchemaT
 	GetLoadFileLocations(tableName string) ([]string, error)
 }
 
@@ -503,6 +500,7 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 	}
 	return val
 }
+
 func GetConfigValueBoolString(key string, warehouse WarehouseT) string {
 	config := warehouse.Destination.Config
 	if config[key] != nil {

@@ -68,6 +68,7 @@ type UploadJobT struct {
 	whManager    manager.ManagerI
 	stagingFiles []*StagingFileT
 	pgNotifier   *pgnotifier.PgNotifierT
+	schemaHandle *SchemaHandleT
 }
 
 type UploadColumnT struct {
@@ -115,6 +116,7 @@ func (job *UploadJobT) run() (err error) {
 		stagingFiles: job.stagingFiles,
 		dbHandle:     job.dbHandle,
 	}
+	job.schemaHandle = &schemaHandle
 	schemaHandle.localSchema = schemaHandle.getLocalSchema()
 	schemaHandle.schemaInWarehouse, err = schemaHandle.fetchSchemaFromWarehouse()
 	if err != nil {
@@ -205,8 +207,7 @@ func (job *UploadJobT) run() (err error) {
 
 	whManager := job.whManager
 
-	whManager.Setup(job.warehouse, job)
-	err = whManager.Connect()
+	err = whManager.Setup(job.warehouse, job)
 	if err != nil {
 		job.setUploadError(err, ConnectFailedState)
 		return
@@ -221,7 +222,10 @@ func (job *UploadJobT) run() (err error) {
 		job.setUploadError(err, UpdatingSchemaFailedState)
 		return
 	}
-	uploadSchema := job.upload.Schema
+	schemaHandle.updateLocalSchema(diff.UpdatedSchema)
+	schemaHandle.localSchema = schemaHandle.schemaAfterUpload
+	schemaHandle.schemaAfterUpload = diff.UpdatedSchema
+	schemaHandle.schemaInWarehouse = schemaHandle.schemaAfterUpload
 	job.setUploadStatus(UpdatedSchemaState)
 
 	// TODO: set updated schema on whManager
@@ -229,15 +233,13 @@ func (job *UploadJobT) run() (err error) {
 	job.setUploadStatus(ExportingDataState)
 	var loadErrors []error
 	// TODO: use provider case specific
+	uploadSchema := job.upload.Schema
 	if _, ok := uploadSchema["identifies"]; ok {
 		// TODO: check only on users table sufficient?
 		if !job.shouldBeLoaded("identifies") && !job.shouldBeLoaded("users") {
 			// do nothing
 		} else {
-			err := whManager.LoadUserTables(warehouseutils.SchemaT{
-				"identifies": uploadSchema["identifies"],
-				"users":      uploadSchema["users"],
-			}, schemaHandle.schemaAfterUpload)
+			err := whManager.LoadUserTables()
 			// TODO: set status and error for individual table after hasRecords check
 			if err != nil {
 				loadErrors = append(loadErrors, err)
@@ -258,7 +260,7 @@ func (job *UploadJobT) run() (err error) {
 	var wg sync.WaitGroup
 	wg.Add(len(uploadSchema))
 	loadChan := make(chan struct{}, parallelLoads)
-	for tableName, columnMap := range uploadSchema {
+	for tableName := range uploadSchema {
 		if tableName == "users" || tableName == "identifies" {
 			wg.Done()
 			continue
@@ -269,11 +271,10 @@ func (job *UploadJobT) run() (err error) {
 		}
 
 		tName := tableName
-		cMap := columnMap
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
 			job.setTableUploadStatus(tName, ExecutingState)
-			err := whManager.LoadTable(tName, cMap, schemaHandle.schemaAfterUpload[tName])
+			err := whManager.LoadTable(tName)
 			// TODO: set wh_table_uploads error
 			if err != nil {
 				loadErrors = append(loadErrors, err)
@@ -522,40 +523,6 @@ func (job *UploadJobT) initTableUploads() (err error) {
 	return
 }
 
-func (job *UploadJobT) GetLoadFileLocations(tableName string) (locations []string, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
-		SELECT  staging_file_id, MAX(id) AS id FROM wh_load_files
-		WHERE ( source_id='%[2]s'
-			AND destination_id='%[3]s'
-			AND table_name='%[4]s'
-			AND id >= %[5]v
-			AND id <= %[6]v)
-		GROUP BY staging_file_id ) uniqueStagingFiles
-		ON  wh_load_files.id = uniqueStagingFiles.id `,
-		warehouseutils.WarehouseLoadFilesTable,
-		job.warehouse.Source.ID,
-		job.warehouse.Destination.ID,
-		tableName,
-		job.upload.StartLoadFileID,
-		job.upload.EndLoadFileID,
-	)
-	rows, err := dbHandle.Query(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var location string
-		err := rows.Scan(&location)
-		if err != nil {
-			panic(err)
-		}
-		locations = append(locations, location)
-	}
-	return
-}
-
 func (job *UploadJobT) getTableUploadStatus(tableName string) (status string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s' ORDER BY id DESC`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, tableName)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&status)
@@ -718,4 +685,50 @@ func (job *UploadJobT) updateTableEventsCount(tableName string) (err error) {
 		job.upload.ID)
 	_, err = job.dbHandle.Exec(sqlStatement)
 	return
+}
+
+func (job *UploadJobT) GetLoadFileLocations(tableName string) (locations []string, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
+		SELECT  staging_file_id, MAX(id) AS id FROM wh_load_files
+		WHERE ( source_id='%[2]s'
+			AND destination_id='%[3]s'
+			AND table_name='%[4]s'
+			AND id >= %[5]v
+			AND id <= %[6]v)
+		GROUP BY staging_file_id ) uniqueStagingFiles
+		ON  wh_load_files.id = uniqueStagingFiles.id `,
+		warehouseutils.WarehouseLoadFilesTable,
+		job.warehouse.Source.ID,
+		job.warehouse.Destination.ID,
+		tableName,
+		job.upload.StartLoadFileID,
+		job.upload.EndLoadFileID,
+	)
+	rows, err := dbHandle.Query(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var location string
+		err := rows.Scan(&location)
+		if err != nil {
+			panic(err)
+		}
+		locations = append(locations, location)
+	}
+	return
+}
+
+func (job *UploadJobT) GetSchemaInWarehouse() warehouseutils.SchemaT {
+	return job.schemaHandle.schemaInWarehouse
+}
+
+func (job *UploadJobT) GetTableSchemaAfterUpload(tableName string) warehouseutils.TableSchemaT {
+	return job.schemaHandle.schemaAfterUpload[tableName]
+}
+
+func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
+	return job.schemaHandle.uploadSchema[tableName]
 }

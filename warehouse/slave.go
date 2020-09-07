@@ -199,7 +199,9 @@ func (jobRun *JobRunT) getWriter(tableName string) (misc.GZipWriter, error) {
 func (jobRun *JobRunT) cleanup() {
 	if jobRun.stagingFileReader != nil {
 		err := jobRun.stagingFileReader.Close()
-		logger.Errorf("[WH]: Failed to close staging file: %w", err)
+		if err != nil {
+			logger.Errorf("[WH]: Failed to close staging file: %w", err)
+		}
 	}
 
 	if jobRun.stagingFilePath != "" {

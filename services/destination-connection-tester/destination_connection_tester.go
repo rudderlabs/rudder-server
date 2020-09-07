@@ -210,10 +210,8 @@ func TestWarehouseDestinationConnection(destination backendconfig.DestinationT) 
 	if err != nil {
 		return err.Error()
 	}
-	err = whManager.TestConnection(warehouseutils.ConfigT{
-		Warehouse: warehouseutils.WarehouseT{
-			Destination: destination,
-		},
+	err = whManager.TestConnection(warehouseutils.WarehouseT{
+		Destination: destination,
 	})
 	if err != nil {
 		return err.Error()
