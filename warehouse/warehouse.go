@@ -9,16 +9,12 @@ import (
 	"log"
 	"net/http"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/warehousemanager"
-
 	"github.com/bugsnag/bugsnag-go"
-	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -33,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 )
@@ -82,6 +79,8 @@ const (
 	EmbeddedMode    = "embedded"
 )
 
+const StagingFileProcessPGChannel = "process_staging_file"
+
 type HandleT struct {
 	destType             string
 	warehouses           []warehouseutils.WarehouseT
@@ -91,7 +90,7 @@ type HandleT struct {
 	createLoadFilesQ     chan LoadFileJobT
 	isEnabled            bool
 	configSubscriberLock sync.RWMutex
-	workerChannelMap     map[string]chan []ProcessStagingFilesJobT
+	workerChannelMap     map[string]chan []*UploadJobT
 	workerChannelMapLock sync.RWMutex
 }
 
@@ -138,17 +137,7 @@ func workerIdentifier(warehouse warehouseutils.WarehouseT) string {
 	return fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
 }
 
-func (wh *HandleT) generateLoadFiles(job ProcessStagingFilesJobT) {
-	uploadHandle := &UploadHandleT{upload: job.Upload, dbHandle: wh.dbHandle}
-	err, state := wh.handleUploadJob(job, uploadHandle)
-	if err != nil {
-		warehouseutils.DestStat(stats.CountType, "failed_uploads", job.Warehouse.Destination.ID).Count(1)
-		uploadHandle.setUploadError(err, state)
-		wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
-	}
-}
-
-func (wh *HandleT) handleUploadJob(job ProcessStagingFilesJobT, uploadHandle *UploadHandleT) (error, string) {
+func (wh *HandleT) handleUploadJobs(jobs []*UploadJobT) {
 	// infinite loop to check for active workers count and retry if not
 	// break after handling
 	for {
@@ -169,93 +158,36 @@ func (wh *HandleT) handleUploadJob(job ProcessStagingFilesJobT, uploadHandle *Up
 		break
 	}
 
-	// START: processing of upload job
-
-	whOneFullPassTimer := warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", job.Warehouse.Destination.ID)
+	// TODO: Is this metric required?
+	whOneFullPassTimer := warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", jobs[0].warehouse.Destination.ID)
 	whOneFullPassTimer.Start()
-	if len(job.List) == 0 {
-		return errors.New("No staging files found"), warehouseutils.GeneratingLoadFileFailedState
-
-	}
-
-	uploadHandle.setUploadStatus(warehouseutils.FetchingSchemaState)
-
-	hasSchemaChanged, err := wh.syncSchemaFromWarehouse(job)
-	if err != nil {
-		return err, warehouseutils.FetchingSchemaFailedState
-	}
-
-	// TODO:Why would this be 0?
-	if len(job.Upload.Schema) == 0 || hasSchemaChanged {
-		// merge schemas over all staging files in this batch
-		logger.Infof("[WH]: Consolidating upload schema with schema in wh_schemas...")
-		consolidatedSchema := wh.consolidateSchema(job.Warehouse, job.List)
-		marshalledSchema, err := json.Marshal(consolidatedSchema)
+	for _, job := range jobs {
+		err := job.run()
+		wh.recordDeliveryStatus(job.warehouse.Destination.ID, job.upload.ID)
 		if err != nil {
-			panic(err)
+			warehouseutils.DestStat(stats.CountType, "failed_uploads", job.warehouse.Destination.ID).Count(1)
+			// do not process other jobs so that uploads are done in order
+			break
 		}
-		uploadHandle.setSchema(marshalledSchema)
-		job.Upload.Schema = consolidatedSchema
+		onSuccessfulUpload(job.warehouse)
+		// TODO: Is this metric required?
+		warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.warehouse.Destination.ID).Count(len(job.stagingFiles))
 	}
-
-	if !wh.areTableUploadsCreated(job.Upload) {
-		err := wh.initTableUploads(job.Upload, job.Upload.Schema)
-		if err != nil {
-			// TODO: Handle error / Retry
-			logger.Error("[WH]: Error creating records in wh_table_uploads", err)
-		}
-	}
-
-	createPlusUploadTimer := warehouseutils.DestStat(stats.TimerType, "stagingfileset_total_handling_time", job.Warehouse.Destination.ID)
-	createPlusUploadTimer.Start()
-
-	// generate load files only if not done before
-	// upload records have start_load_file_id and end_load_file_id set to 0 on creation
-	// and are updated on creation of load files
-	logger.Infof("[WH]: Processing %d staging files in upload job:%v with staging files from %v to %v for %s:%s", len(job.List), job.Upload.ID, job.List[0].ID, job.List[len(job.List)-1].ID, wh.destType, job.Warehouse.Destination.ID)
-	uploadHandle.setUploadColumns(
-		UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
-	)
-	if job.Upload.StartLoadFileID == 0 || hasSchemaChanged {
-		uploadHandle.setUploadStatus(warehouseutils.GeneratingLoadFileState)
-		err := wh.createLoadFiles(&job, uploadHandle)
-		if err != nil {
-			//Unreachable code. So not modifying the stat 'failed_uploads', which is reused later for copying.
-			return err, warehouseutils.GeneratingLoadFileFailedState
-		}
-	}
-
-	err = wh.SyncLoadFilesToWarehouse(&job, uploadHandle)
-	wh.recordDeliveryStatus(job.Warehouse.Destination.ID, job.Upload.ID)
-
-	createPlusUploadTimer.End()
-
-	if err != nil {
-		return err, ""
-	}
-	onSuccessfulUpload(job.Warehouse)
-	warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.Warehouse.Destination.ID).Count(len(job.List))
-
 	whOneFullPassTimer.End()
-
-	// END: processing of upload job
 
 	// decrement number of workers actively engaged
 	activeWorkerCountLock.Lock()
 	activeWorkerCount--
 	activeWorkerCountLock.Unlock()
-	return nil, ""
 }
 
-func (wh *HandleT) initWorker(identifier string) chan []ProcessStagingFilesJobT {
-	workerChan := make(chan []ProcessStagingFilesJobT, 100)
+func (wh *HandleT) initWorker(identifier string) chan []*UploadJobT {
+	workerChan := make(chan []*UploadJobT, 100)
 	rruntime.Go(func() {
 		for {
-			processStagingFilesJobs := <-workerChan
-			for _, job := range processStagingFilesJobs {
-				wh.generateLoadFiles(job)
-			}
-			setDestInProgress(processStagingFilesJobs[0].Warehouse, false)
+			uploads := <-workerChan
+			wh.handleUploadJobs(uploads)
+			setDestInProgress(uploads[0].warehouse, false)
 		}
 	})
 	return workerChan
@@ -275,7 +207,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == wh.destType {
 						namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
-						warehouse := warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace}
+						warehouse := warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace, Type: wh.destType}
 						wh.warehouses = append(wh.warehouses, warehouse)
 
 						workerName := workerIdentifier(warehouse)
@@ -362,7 +294,7 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
 
 func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) ([]*StagingFileT, error) {
 	var lastStagingFileID int64
-	sqlStatement := fmt.Sprintf(`SELECT end_staging_file_id FROM %[1]s WHERE %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND (%[1]s.status= '%[4]s' OR %[1]s.status = '%[5]s') ORDER BY %[1]s.id DESC`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
+	sqlStatement := fmt.Sprintf(`SELECT end_staging_file_id FROM %[1]s WHERE %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND (%[1]s.status= '%[4]s' OR %[1]s.status = '%[5]s') ORDER BY %[1]s.id DESC`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, ExportedDataState, AbortedState)
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileID)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
@@ -395,66 +327,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	return stagingFilesList, nil
 }
 
-func (wh *HandleT) areTableUploadsCreated(upload warehouseutils.UploadT) bool {
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE wh_upload_id=%d`, warehouseutils.WarehouseTableUploadsTable, upload.ID)
-	var count int
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
-	if err != nil {
-		panic(err)
-	}
-	return count > 0
-}
-
-func (wh *HandleT) initTableUploads(upload UploadT, schema map[string]map[string]string) (err error) {
-
-	//Using transactions for bulk copying
-	txn, err := wh.dbHandle.Begin()
-	if err != nil {
-		return
-	}
-
-	stmt, err := txn.Prepare(pq.CopyIn(warehouseutils.WarehouseTableUploadsTable, "wh_upload_id", "table_name", "status", "error", "created_at", "updated_at"))
-	if err != nil {
-		return
-	}
-
-	tables := make([]string, 0, len(schema))
-	for t := range schema {
-		tables = append(tables, t)
-		// also track upload to rudder_identity_mappings if the upload has records for rudder_identity_merge_rules
-		if misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) && t == warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMergeRulesTable) {
-			if _, ok := schema[warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMappingsTable)]; !ok {
-				tables = append(tables, warehouseutils.ToProviderCase(upload.DestinationType, warehouseutils.IdentityMappingsTable))
-			}
-		}
-	}
-
-	now := timeutil.Now()
-	for _, table := range tables {
-		_, err = stmt.Exec(upload.ID, table, "waiting", "{}", now, now)
-		if err != nil {
-			return
-		}
-	}
-
-	_, err = stmt.Exec()
-	if err != nil {
-		return
-	}
-
-	err = stmt.Close()
-	if err != nil {
-		return
-	}
-
-	err = txn.Commit()
-	if err != nil {
-		return
-	}
-	return
-}
-
-func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) warehouseutils.UploadT {
+func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) UploadT {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, first_event_at, last_event_at, created_at, updated_at)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`, warehouseutils.WarehouseUploadsTable)
 	logger.Infof("[WH]: %s: Creating record in %s table: %v", wh.destType, warehouseutils.WarehouseUploadsTable, sqlStatement)
@@ -477,7 +350,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	}
 
 	now := timeutil.Now()
-	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, warehouseutils.WaitingState, "{}", "{}", firstEventAt, lastEventAt, now, now)
+	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, WaitingState, "{}", "{}", firstEventAt, lastEventAt, now, now)
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
@@ -493,15 +366,15 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		DestinationType:    wh.destType,
 		StartStagingFileID: startJSONID,
 		EndStagingFileID:   endJSONID,
-		Status:             warehouseutils.WaitingState,
+		Status:             WaitingState,
 	}
 
 	return upload
 }
 
-func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]warehouseutils.UploadT, bool) {
+func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]UploadT, bool) {
 
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, timings->0 as firstTiming, timings->-1 as lastTiming FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id = '%[3]s' AND %[1]s.status != '%[4]s' AND %[1]s.status != '%[5]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, warehouseutils.ExportedDataState, warehouseutils.AbortedState)
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, timings->0 as firstTiming, timings->-1 as lastTiming FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id = '%[3]s' AND %[1]s.status != '%[4]s' AND %[1]s.status != '%[5]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, ExportedDataState, AbortedState)
 
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
@@ -604,56 +477,53 @@ func (wh *HandleT) mainLoop() {
 			setDestInProgress(warehouse, true)
 
 			// ---- start: check and preload local identity tables with existing data from warehouse -----
-			if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
-				if !warehouse.Destination.Enabled {
-					continue
-				}
+			// if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
+			// 	if !warehouse.Destination.Enabled {
+			// 		continue
+			// 	}
 
-				if isDestPreLoaded(warehouse) {
-					continue
-				}
+			// 	if isDestPreLoaded(warehouse) {
+			// 		continue
+			// 	}
 
-				wh.setupIdentityTables(warehouse)
+			// 	wh.setupIdentityTables(warehouse)
 
-				// check if identity tables have records locally and
-				// check if warehouse has data
-				if !wh.hasLocalIdentityData(warehouse) {
-					hasData, err := wh.hasWarehouseData(warehouse)
-					if err != nil {
-						logger.Errorf(`WH: Error checking for data in %s:%s:%s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name)
-						warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
-						continue
-					}
-					if hasData {
-						logger.Infof("[WH]: Did not find local identity tables..")
-						logger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
-						// TODO: make this async and not block other warehouses
-						var upload UploadT
-						upload, err = wh.preLoadIdentityTables(warehouse)
-						if err != nil {
-							warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
-						} else {
-							setDestPreLoaded(warehouse)
-						}
-						wh.recordDeliveryStatus(warehouse.Destination.ID, upload.ID)
-						setDestInProgress(warehouse, false)
-						continue
-					}
-				}
-			}
+			// 	// check if identity tables have records locally and
+			// 	// check if warehouse has data
+			// 	if !wh.hasLocalIdentityData(warehouse) {
+			// 		hasData, err := wh.hasWarehouseData(warehouse)
+			// 		if err != nil {
+			// 			logger.Errorf(`WH: Error checking for data in %s:%s:%s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name)
+			// 			warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
+			// 			continue
+			// 		}
+			// 		if hasData {
+			// 			logger.Infof("[WH]: Did not find local identity tables..")
+			// 			logger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
+			// 			// TODO: make this async and not block other warehouses
+			// 			var upload UploadT
+			// 			upload, err = wh.preLoadIdentityTables(warehouse)
+			// 			if err != nil {
+			// 				warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
+			// 			} else {
+			// 				setDestPreLoaded(warehouse)
+			// 			}
+			// 			wh.recordDeliveryStatus(warehouse.Destination.ID, upload.ID)
+			// 			setDestInProgress(warehouse, false)
+			// 			continue
+			// 		}
+			// 	}
+			// }
 			// ---- end: check and preload local identity tables with existing data from warehouse -----
 
 			_, ok := inRecoveryMap[warehouse.Destination.ID]
 			if ok {
-				whManager, err := warehousemanager.NewWhManager(wh.destType)
+				whManager, err := manager.New(wh.destType)
 				if err != nil {
 					panic(err)
 				}
 				logger.Infof("[WH]: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
-				err = whManager.CrashRecover(warehouseutils.ConfigT{
-					DbHandle:  wh.dbHandle,
-					Warehouse: warehouse,
-				})
+				err = whManager.CrashRecover(warehouse)
 				if err != nil {
 					setDestInProgress(warehouse, false)
 					continue
@@ -664,7 +534,7 @@ func (wh *HandleT) mainLoop() {
 			pendingUploads, ok := wh.getPendingUploads(warehouse)
 			if ok {
 				logger.Infof("[WH]: Found pending uploads: %v for %s:%s", len(pendingUploads), wh.destType, warehouse.Destination.ID)
-				jobs := []ProcessStagingFilesJobT{}
+				uploadJobs := []*UploadJobT{}
 				for _, pendingUpload := range pendingUploads {
 					if !wh.canStartPendingUpload(pendingUpload, warehouse) {
 						logger.Debugf("[WH]: Skipping pending upload for %s:%s since current time less than next retry time", wh.destType, warehouse.Destination.ID)
@@ -675,18 +545,28 @@ func (wh *HandleT) mainLoop() {
 					if err != nil {
 						panic(err)
 					}
-					job := ProcessStagingFilesJobT{
-						List:      stagingFilesList,
-						Warehouse: warehouse,
-						Upload:    pendingUpload,
+
+					whManager, err := manager.New(wh.destType)
+					if err != nil {
+						panic(err)
 					}
-					logger.Debugf("[WH]: Adding job %+v", job)
-					jobs = append(jobs, job)
+
+					uploadJob := UploadJobT{
+						upload:       &pendingUpload,
+						stagingFiles: stagingFilesList,
+						warehouse:    warehouse,
+						whManager:    whManager,
+						dbHandle:     wh.dbHandle,
+						pgNotifier:   &wh.notifier,
+					}
+
+					logger.Debugf("[WH]: Adding job %+v", uploadJob)
+					uploadJobs = append(uploadJobs, &uploadJob)
 				}
-				if len(jobs) == 0 {
+				if len(uploadJobs) == 0 {
 					continue
 				}
-				wh.enqueueUploadJobs(jobs, warehouse)
+				wh.enqueueUploadJobs(uploadJobs, warehouse)
 			} else {
 				if !wh.canStartUpload(warehouse) {
 					logger.Debugf("[WH]: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
@@ -707,7 +587,7 @@ func (wh *HandleT) mainLoop() {
 				logger.Infof("[WH]: Found %v pending staging files for %s:%s", len(stagingFilesList), wh.destType, warehouse.Destination.ID)
 
 				count := 0
-				var jobs []ProcessStagingFilesJobT
+				var uploadJobs []*UploadJobT
 				// process staging files in batches of stagingFilesBatchSize
 				for {
 					lastIndex := count + stagingFilesBatchSize
@@ -716,195 +596,38 @@ func (wh *HandleT) mainLoop() {
 					}
 					// TODO: CreateUpload
 					upload := wh.initUpload(warehouse, stagingFilesList[count:lastIndex])
-					job := ProcessStagingFilesJobT{
-						List:      stagingFilesList[count:lastIndex],
-						Warehouse: warehouse,
-						Upload:    upload,
+					whManager, err := manager.New(wh.destType)
+					if err != nil {
+						panic(err)
 					}
-					logger.Debugf("[WH]: Adding job %+v", job)
-					jobs = append(jobs, job)
+
+					job := UploadJobT{
+						upload:       &upload,
+						stagingFiles: stagingFilesList[count:lastIndex],
+						warehouse:    warehouse,
+						whManager:    whManager,
+						dbHandle:     wh.dbHandle,
+						pgNotifier:   &wh.notifier,
+					}
+
+					uploadJobs = append(uploadJobs, &job)
 					count += stagingFilesBatchSize
 					if count >= len(stagingFilesList) {
 						break
 					}
 				}
-				wh.enqueueUploadJobs(jobs, warehouse)
+				wh.enqueueUploadJobs(uploadJobs, warehouse)
 			}
 		}
 		time.Sleep(mainLoopSleep)
 	}
 }
 
-func (wh *HandleT) enqueueUploadJobs(jobs []ProcessStagingFilesJobT, warehouse warehouseutils.WarehouseT) {
+func (wh *HandleT) enqueueUploadJobs(uploads []*UploadJobT, warehouse warehouseutils.WarehouseT) {
 	workerName := workerIdentifier(warehouse)
 	wh.workerChannelMapLock.Lock()
-	wh.workerChannelMap[workerName] <- jobs
+	wh.workerChannelMap[workerName] <- uploads
 	wh.workerChannelMapLock.Unlock()
-}
-
-func (wh *HandleT) createLoadFiles(job *ProcessStagingFilesJobT, uploadHandle *UploadHandleT) (err error) {
-	// stat for time taken to process staging files in a single job
-	timer := warehouseutils.DestStat(stats.TimerType, "process_staging_files_batch_time", job.Warehouse.Destination.ID)
-	timer.Start()
-
-	var jsonIDs []int64
-	for _, job := range job.List {
-		jsonIDs = append(jsonIDs, job.ID)
-	}
-	warehouseutils.SetStagingFilesStatus(jsonIDs, warehouseutils.StagingFileExecutingState, wh.dbHandle)
-
-	logger.Debugf("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", len(job.List), noOfWorkers, wh.destType, job.Warehouse.Destination.ID)
-	var messages []pgnotifier.MessageT
-	for _, stagingFile := range job.List {
-		payload := PayloadT{
-			UploadID:            job.Upload.ID,
-			StagingFileID:       stagingFile.ID,
-			StagingFileLocation: stagingFile.Location,
-			Schema:              job.Upload.Schema,
-			SourceID:            job.Warehouse.Source.ID,
-			DestinationID:       job.Warehouse.Destination.ID,
-			DestinationType:     wh.destType,
-			DestinationConfig:   job.Warehouse.Destination.Config,
-		}
-
-		payloadJSON, err := json.Marshal(payload)
-		if err != nil {
-			panic(err)
-		}
-		message := pgnotifier.MessageT{
-			Payload: payloadJSON,
-		}
-		messages = append(messages, message)
-	}
-
-	logger.Infof("[WH]: Publishing %d staging files to PgNotifier", len(messages))
-	var loadFileIDs []int64
-	ch, err := wh.notifier.Publish("process_staging_file", messages)
-	if err != nil {
-		panic(err)
-	}
-
-	responses := <-ch
-	logger.Infof("[WH]: Received responses from PgNotifier")
-	for _, resp := range responses {
-		// TODO: make it aborted
-		if resp.Status == "aborted" {
-			logger.Errorf("Error in genrating load files: %v", resp.Error)
-			continue
-		}
-		var payload map[string]interface{}
-		err = json.Unmarshal(resp.Payload, &payload)
-		if err != nil {
-			panic(err)
-		}
-		respIDs, ok := payload["LoadFileIDs"].([]interface{})
-		if !ok {
-			logger.Errorf("No LoadFIleIDS returned by wh worker")
-			continue
-		}
-		ids := make([]int64, len(respIDs))
-		for i := range respIDs {
-			ids[i] = int64(respIDs[i].(float64))
-		}
-		loadFileIDs = append(loadFileIDs, ids...)
-	}
-
-	timer.End()
-	if len(loadFileIDs) == 0 {
-		err = errors.New(responses[0].Error)
-		warehouseutils.SetStagingFilesError(jsonIDs, warehouseutils.StagingFileFailedState, wh.dbHandle, err)
-		warehouseutils.DestStat(stats.CountType, "process_staging_files_failures", job.Warehouse.Destination.ID).Count(len(job.List))
-		return err
-	}
-	warehouseutils.SetStagingFilesStatus(jsonIDs, warehouseutils.StagingFileSucceededState, wh.dbHandle)
-	warehouseutils.DestStat(stats.CountType, "process_staging_files_success", job.Warehouse.Destination.ID).Count(len(job.List))
-	warehouseutils.DestStat(stats.CountType, "generate_load_files", job.Warehouse.Destination.ID).Count(len(loadFileIDs))
-
-	sort.Slice(loadFileIDs, func(i, j int) bool { return loadFileIDs[i] < loadFileIDs[j] })
-	startLoadFileID := loadFileIDs[0]
-	endLoadFileID := loadFileIDs[len(loadFileIDs)-1]
-
-	err = uploadHandle.setUploadStatus(
-		warehouseutils.GeneratedLoadFileState,
-		UploadColumnT{Column: UploadStartLoadFileIDField, Value: startLoadFileID},
-		UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	job.Upload.StartLoadFileID = startLoadFileID
-	job.Upload.EndLoadFileID = endLoadFileID
-	job.Upload.Status = warehouseutils.GeneratedLoadFileState
-	return
-}
-
-func (wh *HandleT) updateTableEventsCount(tableName string, upload warehouseutils.UploadT, warehouse warehouseutils.WarehouseT) (err error) {
-	subQuery := fmt.Sprintf(`SELECT sum(total_events) as total from %[1]s right join (
-		SELECT  staging_file_id, MAX(id) AS id FROM wh_load_files
-		WHERE ( source_id='%[2]s'
-			AND destination_id='%[3]s'
-			AND table_name='%[4]s'
-			AND id >= %[5]v
-			AND id <= %[6]v)
-		GROUP BY staging_file_id ) uniqueStagingFiles
-		ON  wh_load_files.id = uniqueStagingFiles.id `,
-		warehouseutils.WarehouseLoadFilesTable,
-		warehouse.Source.ID,
-		warehouse.Destination.ID,
-		tableName,
-		upload.StartLoadFileID,
-		upload.EndLoadFileID,
-		warehouseutils.WarehouseTableUploadsTable)
-
-	sqlStatement := fmt.Sprintf(`update %[1]s set total_events = subquery.total FROM (%[2]s) AS subquery WHERE table_name = '%[3]s' AND wh_upload_id = %[4]d`,
-		warehouseutils.WarehouseTableUploadsTable,
-		subQuery,
-		tableName,
-		upload.ID)
-	_, err = wh.dbHandle.Exec(sqlStatement)
-	return
-}
-
-func (wh *HandleT) SyncLoadFilesToWarehouse(job *ProcessStagingFilesJobT, uploadHandle *UploadHandleT) (err error) {
-	for tableName := range job.Upload.Schema {
-		err := wh.updateTableEventsCount(tableName, job.Upload, job.Warehouse)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	logger.Infof("[WH]: Starting load flow for %s:%s", wh.destType, job.Warehouse.Destination.ID)
-	whManager, err := warehousemanager.NewWhManager(wh.destType, job.Warehouse.Destination.ID, job.Upload.Namespace)
-	if err != nil {
-		return err
-	}
-
-	whSchema, err := warehouseutils.GetCurrentSchema(wh.dbHandle, job.Warehouse)
-	if err != nil {
-		return err
-	}
-	diff := warehouseutils.GetSchemaDiff(whSchema, job.Upload.Schema)
-
-	uploadHandle.setUploadStatus(warehouseutils.UpdatingSchemaState)
-	err, state := whManager.MigrateSchema(whSchema, diff)
-	if err != nil {
-		uploadHandle.setUploadError(err, state)
-		return err
-	}
-
-	uploadHandle.setUploadStatus(warehouseutils.ExportingDataState)
-	err, state = whManager.Process(warehouseutils.ConfigT{
-		DbHandle:  wh.dbHandle,
-		Warehouse: job.Warehouse,
-	})
-	if err != nil {
-		uploadHandle.setUploadError(err, warehouseutils.ExportingDataFailedState)
-		return err
-	}
-	uploadHandle.setUploadStatus(warehouseutils.ExportedDataState)
-
-	return
 }
 
 func getBucketFolder(batchID string, tableName string) string {
@@ -925,7 +648,7 @@ func (wh *HandleT) setInterruptedDestinations() (err error) {
 	if !misc.Contains(crashRecoverWarehouses, wh.destType) {
 		return
 	}
-	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s')`, warehouseutils.WarehouseUploadsTable, wh.destType, warehouseutils.ExportingDataState, warehouseutils.ExportingDataFailedState)
+	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s')`, warehouseutils.WarehouseUploadsTable, wh.destType, ExportingDataState, ExportingDataFailedState)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -952,7 +675,7 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
-	wh.workerChannelMap = make(map[string]chan []ProcessStagingFilesJobT)
+	wh.workerChannelMap = make(map[string]chan []*UploadJobT)
 	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
 	})
@@ -1161,7 +884,7 @@ func Start() {
 			backendconfig.Setup(false, nil)
 		}
 		logger.Infof("[WH]: Starting warehouse master...")
-		err = notifier.AddTopic("process_staging_file")
+		err = notifier.AddTopic(StagingFileProcessPGChannel)
 		if err != nil {
 			panic(err)
 		}

@@ -29,7 +29,7 @@ type ProcessStagingFilesJobT struct {
 }
 
 type LoadFileJobT struct {
-	Upload                     warehouseutils.UploadT
+	Upload                     UploadT
 	StagingFile                *StagingFileT
 	Schema                     map[string]map[string]string
 	Warehouse                  warehouseutils.WarehouseT

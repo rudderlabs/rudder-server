@@ -161,7 +161,7 @@ func durationBeforeNextAttempt(attempt int64) time.Duration {
 	return d
 }
 
-func (wh *HandleT) canStartPendingUpload(upload warehouseutils.UploadT, warehouse warehouseutils.WarehouseT) bool {
+func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {
 		return true

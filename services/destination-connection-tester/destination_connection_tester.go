@@ -10,8 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/warehousemanager"
-
+	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -194,7 +193,7 @@ func TestBatchDestinationConnection(destination backendconfig.DestinationT) stri
 
 func TestWarehouseDestinationConnection(destination backendconfig.DestinationT) string {
 	provider := destination.DestinationDefinition.Name
-	whManager, err := warehousemanager.NewWhManager(provider)
+	whManager, err := manager.New(provider)
 	if err != nil {
 		panic(err)
 	}
