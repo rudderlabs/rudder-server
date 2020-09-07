@@ -14,7 +14,7 @@ type ManagerI interface {
 	FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error)
 	MigrateSchema(diff warehouseutils.SchemaDiffT, currentSchemaInWarehouse warehouseutils.SchemaT) (err error)
 	LoadTable(tableName string) error
-	LoadUserTables() error
+	LoadUserTables() map[string]error
 	Cleanup()
 	IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error)
 	TestConnection(warehouse warehouseutils.WarehouseT) error

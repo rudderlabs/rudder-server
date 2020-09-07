@@ -197,16 +197,19 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool) (partitionDate st
 	return
 }
 
-func (bq *HandleT) loadUserTables() (err error) {
+func (bq *HandleT) loadUserTables() (errorMap map[string]error) {
+	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	logger.Infof("BQ: Starting load for identifies and users tables\n")
 	partitionDate, err := bq.loadTable(warehouseutils.IdentifiesTable, true)
 	if err != nil {
+		errorMap[warehouseutils.IdentifiesTable] = err
 		return
 	}
 
 	if len(bq.Uploader.GetTableSchemaInUpload("users")) == 0 {
 		return
 	}
+	errorMap[warehouseutils.UsersTable] = nil
 
 	firstValueSQL := func(column string) string {
 		return fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, column)
@@ -267,16 +270,19 @@ func (bq *HandleT) loadUserTables() (err error) {
 	job, err := query.Run(bq.BQContext)
 	if err != nil {
 		logger.Errorf("BQ: Error initiating load job: %v\n", err)
-		return err
+		errorMap[warehouseutils.UsersTable] = err
+		return
 	}
 	status, err := job.Wait(bq.BQContext)
 	if err != nil {
 		logger.Errorf("BQ: Error running load job: %v\n", err)
-		return err
+		errorMap[warehouseutils.UsersTable] = err
+		return
 	}
 
 	if status.Err() != nil {
-		return status.Err()
+		errorMap[warehouseutils.UsersTable] = status.Err()
+		return
 	}
 	return nil
 }
@@ -366,7 +372,7 @@ func (bq *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	return
 }
 
-func (bq *HandleT) LoadUserTables() error {
+func (bq *HandleT) LoadUserTables() map[string]error {
 	return bq.loadUserTables()
 }
 

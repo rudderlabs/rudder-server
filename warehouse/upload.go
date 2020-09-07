@@ -228,24 +228,24 @@ func (job *UploadJobT) run() (err error) {
 	schemaHandle.schemaInWarehouse = schemaHandle.schemaAfterUpload
 	job.setUploadStatus(UpdatedSchemaState)
 
-	// TODO: set updated schema on whManager
-
 	job.setUploadStatus(ExportingDataState)
 	var loadErrors []error
-	// TODO: use provider case specific
 	uploadSchema := job.upload.Schema
-	if _, ok := uploadSchema["identifies"]; ok {
-		// TODO: check only on users table sufficient?
-		if !job.shouldBeLoaded("identifies") && !job.shouldBeLoaded("users") {
+	idenftiesTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentifiesTable)
+	usersTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.UsersTable)
+	if _, ok := uploadSchema[idenftiesTable]; ok {
+		if !job.shouldBeLoaded(idenftiesTable) && !job.shouldBeLoaded(usersTable) {
 			// do nothing
 		} else {
-			err := whManager.LoadUserTables()
-			// TODO: set status and error for individual table after hasRecords check
-			if err != nil {
-				loadErrors = append(loadErrors, err)
+			errorMap := whManager.LoadUserTables()
+			for tName, err := range errorMap {
+				if err != nil {
+					loadErrors = append(loadErrors, err)
+					job.setTableUploadError(tName, ExportingDataFailedState, err)
+				} else {
+					job.setTableUploadStatus(tName, ExportedDataState)
+				}
 			}
-			job.setTableUploadStatus("identifies", ExportedDataState)
-			job.setTableUploadStatus("users", ExportedDataState)
 		}
 
 	}
@@ -261,7 +261,7 @@ func (job *UploadJobT) run() (err error) {
 	wg.Add(len(uploadSchema))
 	loadChan := make(chan struct{}, parallelLoads)
 	for tableName := range uploadSchema {
-		if tableName == "users" || tableName == "identifies" {
+		if tableName == usersTable || tableName == idenftiesTable {
 			wg.Done()
 			continue
 		}
@@ -288,7 +288,6 @@ func (job *UploadJobT) run() (err error) {
 	wg.Wait()
 
 	if len(loadErrors) > 0 {
-		// rs.dropDanglingStagingTables()
 		errStr := ""
 		for idx, err := range loadErrors {
 			errStr += err.Error()

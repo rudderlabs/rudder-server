@@ -370,11 +370,13 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	return
 }
 
-func (rs *HandleT) loadUserTables() (err error) {
+func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
+	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	logger.Infof("RS: Starting load for identifies and users tables\n")
 
 	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), rs.Uploader.GetTableSchemaAfterUpload(warehouseutils.IdentifiesTable), true)
 	if err != nil {
+		errorMap[warehouseutils.IdentifiesTable] = err
 		return
 	}
 	defer rs.dropStagingTables([]string{identifyStagingTable})
@@ -382,6 +384,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 	if len(rs.Uploader.GetTableSchemaInUpload("users")) == 0 {
 		return
 	}
+	errorMap[warehouseutils.UsersTable] = nil
 
 	userColMap := rs.Uploader.GetTableSchemaAfterUpload(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
@@ -423,6 +426,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 	// BEGIN TRANSACTION
 	tx, err := rs.Db.Begin()
 	if err != nil {
+		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
@@ -431,6 +435,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 	if err != nil {
 		logger.Errorf("RS: Error creating users staging table from original table and identifies staging table: %v\n", err)
 		tx.Rollback()
+		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 	defer rs.dropStagingTables([]string{stagingTableName})
@@ -442,6 +447,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 	if err != nil {
 		logger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
 		tx.Rollback()
+		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
@@ -452,6 +458,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 	if err != nil {
 		logger.Errorf("RS: Error inserting into users table from staging table: %v\n", err)
 		tx.Rollback()
+		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
@@ -459,6 +466,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 	if err != nil {
 		logger.Errorf("RS: Error in transaction commit for users table: %v\n", err)
 		tx.Rollback()
+		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 	return
@@ -733,7 +741,7 @@ func (rs *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 	return
 }
 
-func (rs *HandleT) LoadUserTables() error {
+func (rs *HandleT) LoadUserTables() map[string]error {
 	return rs.loadUserTables()
 }
 
