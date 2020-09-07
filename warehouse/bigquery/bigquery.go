@@ -206,7 +206,7 @@ func (bq *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	if len(bq.Uploader.GetTableSchemaInUpload("users")) == 0 {
+	if len(bq.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
 		return
 	}
 	errorMap[warehouseutils.UsersTable] = nil
@@ -381,8 +381,8 @@ func (bq *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
-func (bq *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT, currentSchemaInWarehouse warehouseutils.SchemaT) (err error) {
-	if len(currentSchemaInWarehouse) == 0 {
+func (bq *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
+	if len(bq.Uploader.GetSchemaInWarehouse()) == 0 {
 		err = bq.createSchema()
 		if !checkAndIgnoreAlreadyExistError(err) {
 			return err

@@ -217,7 +217,7 @@ func (job *UploadJobT) run() (err error) {
 	// TODO: move this func to schema_handle
 	job.setUploadStatus(UpdatingSchemaState)
 	diff := getSchemaDiff(schemaHandle.schemaInWarehouse, job.upload.Schema)
-	err = whManager.MigrateSchema(diff, schemaHandle.schemaInWarehouse)
+	err = whManager.MigrateSchema(diff)
 	if err != nil {
 		job.setUploadError(err, UpdatingSchemaFailedState)
 		return

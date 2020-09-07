@@ -35,7 +35,6 @@ var (
 
 type HandleT struct {
 	Db        *sql.DB
-	DbHandle  *sql.DB
 	Namespace string
 	Warehouse warehouseutils.WarehouseT
 	Uploader  warehouseutils.UploaderI
@@ -381,7 +380,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	defer rs.dropStagingTables([]string{identifyStagingTable})
 
-	if len(rs.Uploader.GetTableSchemaInUpload("users")) == 0 {
+	if len(rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
 		return
 	}
 	errorMap[warehouseutils.UsersTable] = nil
@@ -571,8 +570,8 @@ func (rs *HandleT) connectToWarehouse() (*sql.DB, error) {
 	})
 }
 
-func (rs *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT, currentSchemaInWarehouse warehouseutils.SchemaT) (err error) {
-	if len(currentSchemaInWarehouse) == 0 {
+func (rs *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
+	if len(rs.Uploader.GetSchemaInWarehouse()) == 0 {
 		err = rs.createSchema()
 		if err != nil {
 			return err
