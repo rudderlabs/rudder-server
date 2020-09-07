@@ -1,14 +1,11 @@
 package warehouse
 
-// import (
-// 	"database/sql"
-// 	"encoding/json"
-// 	"fmt"
+import (
+	"database/sql"
+	"fmt"
 
-// 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-// 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-// 	"github.com/rudderlabs/rudder-server/warehouse/warehousemanager"
-// )
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+)
 
 // func isDestPreLoaded(warehouse warehouseutils.WarehouseT) bool {
 // 	preLoadedIdentitiesMapLock.RLock()
@@ -80,60 +77,60 @@ package warehouse
 // 	// return count > 0
 // }
 
-// func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
-// 	var name sql.NullString
-// 	sqlStatement := fmt.Sprintf(`SELECT to_regclass('%s')`, warehouseutils.IdentityMappingsTableName(warehouse))
-// 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&name)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	if len(name.String) > 0 {
-// 		return
-// 	}
-// 	// create tables
+func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
+	var name sql.NullString
+	sqlStatement := fmt.Sprintf(`SELECT to_regclass('%s')`, warehouseutils.IdentityMappingsTableName(warehouse))
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&name)
+	if err != nil {
+		panic(err)
+	}
+	if len(name.String) > 0 {
+		return
+	}
+	// create tables
 
-// 	sqlStatement = fmt.Sprintf(`
-// 		CREATE TABLE IF NOT EXISTS %s (
-// 			id BIGSERIAL PRIMARY KEY,
-// 			merge_property_1_type VARCHAR(64) NOT NULL,
-// 			merge_property_1_value TEXT NOT NULL,
-// 			merge_property_2_type VARCHAR(64),
-// 			merge_property_2_value TEXT,
-// 			created_at TIMESTAMP NOT NULL DEFAULT NOW());
-// 		`, warehouseutils.IdentityMergeRulesTableName(warehouse),
-// 	)
+	sqlStatement = fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			id BIGSERIAL PRIMARY KEY,
+			merge_property_1_type VARCHAR(64) NOT NULL,
+			merge_property_1_value TEXT NOT NULL,
+			merge_property_2_type VARCHAR(64),
+			merge_property_2_value TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW());
+		`, warehouseutils.IdentityMergeRulesTableName(warehouse),
+	)
 
-// 	_, err = wh.dbHandle.Exec(sqlStatement)
-// 	if err != nil {
-// 		panic(err)
-// 	}
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
 
-// 	sqlStatement = fmt.Sprintf(`
-// 		CREATE TABLE IF NOT EXISTS %s (
-// 			id BIGSERIAL PRIMARY KEY,
-// 			merge_property_type VARCHAR(64) NOT NULL,
-// 			merge_property_value TEXT NOT NULL,
-// 			rudder_id VARCHAR(64) NOT NULL,
-// 			updated_at TIMESTAMP NOT NULL DEFAULT NOW());
-// 		`, warehouseutils.IdentityMappingsTableName(warehouse),
-// 	)
+	sqlStatement = fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			id BIGSERIAL PRIMARY KEY,
+			merge_property_type VARCHAR(64) NOT NULL,
+			merge_property_value TEXT NOT NULL,
+			rudder_id VARCHAR(64) NOT NULL,
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW());
+		`, warehouseutils.IdentityMappingsTableName(warehouse),
+	)
 
-// 	_, err = wh.dbHandle.Exec(sqlStatement)
-// 	if err != nil {
-// 		panic(err)
-// 	}
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
 
-// 	sqlStatement = fmt.Sprintf(`
-// 		ALTER TABLE %s
-// 			ADD CONSTRAINT %s UNIQUE (merge_property_type, merge_property_value);
-// 		`, warehouseutils.IdentityMappingsTableName(warehouse), warehouseutils.IdentityMappingsUniqueMappingConstraintName(warehouse),
-// 	)
+	sqlStatement = fmt.Sprintf(`
+		ALTER TABLE %s
+			ADD CONSTRAINT %s UNIQUE (merge_property_type, merge_property_value);
+		`, warehouseutils.IdentityMappingsTableName(warehouse), warehouseutils.IdentityMappingsUniqueMappingConstraintName(warehouse),
+	)
 
-// 	_, err = wh.dbHandle.Exec(sqlStatement)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// }
+	_, err = wh.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+}
 
 // func (wh *HandleT) initPreLoadUpload(warehouse warehouseutils.WarehouseT) warehouseutils.UploadT {
 // 	schema := make(map[string]map[string]string)

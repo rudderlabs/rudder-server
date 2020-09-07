@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -231,24 +232,38 @@ func (job *UploadJobT) run() (err error) {
 	job.setUploadStatus(ExportingDataState)
 	var loadErrors []error
 	uploadSchema := job.upload.Schema
-	idenftiesTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentifiesTable)
+
+	// load user/identity tables
+	identifiesTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentifiesTable)
 	usersTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.UsersTable)
-	if _, ok := uploadSchema[idenftiesTable]; ok {
-		if !job.shouldBeLoaded(idenftiesTable) && !job.shouldBeLoaded(usersTable) {
-			// do nothing
-		} else {
-			errorMap := whManager.LoadUserTables()
-			for tName, err := range errorMap {
-				// TODO: set last_exec_time
-				if err != nil {
-					loadErrors = append(loadErrors, err)
-					job.setTableUploadError(tName, ExportingDataFailedState, err)
-				} else {
-					job.setTableUploadStatus(tName, ExportedDataState)
-				}
+	aliasTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.AliasTable)
+	identityMergeRulesTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable)
+	identityMappingsTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable)
+
+	identityTables := []string{}
+	var errorMap map[string]error
+	if warehouseutils.IDResolutionEnabled() {
+		identityTables = []string{identifiesTable, usersTable, aliasTable, identityMergeRulesTable, identityMappingsTable}
+		errorMap = whManager.LoadIdentityTables()
+	} else {
+		identityTables = []string{identifiesTable, usersTable, identityMergeRulesTable, identityMappingsTable}
+		// err = sf.loadUserTables()
+		if _, ok := uploadSchema[identifiesTable]; ok {
+			if !job.shouldBeLoaded(identifiesTable) && !job.shouldBeLoaded(usersTable) {
+				// do nothing
+			} else {
+				errorMap = whManager.LoadUserTables()
 			}
 		}
-
+	}
+	for tName, err := range errorMap {
+		// TODO: set last_exec_time
+		if err != nil {
+			loadErrors = append(loadErrors, err)
+			job.setTableUploadError(tName, ExportingDataFailedState, err)
+		} else {
+			job.setTableUploadStatus(tName, ExportedDataState)
+		}
 	}
 
 	var parallelLoads int
@@ -261,7 +276,7 @@ func (job *UploadJobT) run() (err error) {
 	wg.Add(len(uploadSchema))
 	loadChan := make(chan struct{}, parallelLoads)
 	for tableName := range uploadSchema {
-		if tableName == usersTable || tableName == idenftiesTable {
+		if misc.ContainsString(identityTables, tableName) {
 			wg.Done()
 			continue
 		}
@@ -522,7 +537,7 @@ func (job *UploadJobT) initTableUploads() (err error) {
 	return
 }
 
-func (job *UploadJobT) getTableUploadStatus(tableName string) (status string, err error) {
+func (job *UploadJobT) GetTableUploadStatus(tableName string) (status string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s' ORDER BY id DESC`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, tableName)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&status)
 	return
@@ -544,7 +559,7 @@ func (job *UploadJobT) hasLoadFiles(tableName string) bool {
 }
 
 func (job *UploadJobT) shouldBeLoaded(tableName string) bool {
-	status, _ := job.getTableUploadStatus(tableName)
+	status, _ := job.GetTableUploadStatus(tableName)
 	if status == ExportedDataState {
 		return false
 	}
@@ -754,4 +769,48 @@ func (job *UploadJobT) GetTableSchemaAfterUpload(tableName string) warehouseutil
 
 func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
 	return job.schemaHandle.uploadSchema[tableName]
+}
+
+func (job *UploadJobT) AreIdentityTablesLoadFilesGenerated() (generated bool, err error) {
+	var mergeRulesLocation sql.NullString
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name=%s`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
+	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mergeRulesLocation)
+	if err != nil {
+		return
+	}
+	if !mergeRulesLocation.Valid {
+		generated = false
+		return
+	}
+
+	var mappingsLocation sql.NullString
+	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name=%s`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
+	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mappingsLocation)
+	if err != nil {
+		return
+	}
+	if !mappingsLocation.Valid {
+		generated = false
+		return
+	}
+	generated = true
+	return
+}
+
+func (job *UploadJobT) GetSingleLoadFileLocation(tableName string) (string, error) {
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, tableName)
+	logger.Infof("SF: Fetching load file location for %s: %s", tableName, sqlStatement)
+	var location string
+	err := job.dbHandle.QueryRow(sqlStatement).Scan(&location)
+	return location, err
+}
+
+func (job *UploadJobT) ResolveIdentities() (err error) {
+	idr := identity.HandleT{
+		Warehouse: job.warehouse,
+		DbHandle:  job.dbHandle,
+		UploadID:  job.upload.ID,
+		Uploader:  job,
+	}
+	return idr.Resolve(false)
 }

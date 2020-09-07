@@ -605,3 +605,7 @@ func (pg *HandleT) Cleanup() {
 		pg.Db.Close()
 	}
 }
+
+func (pg *HandleT) LoadIdentityTables() (errorMap map[string]error) {
+	return
+}

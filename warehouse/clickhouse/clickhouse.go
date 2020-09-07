@@ -600,3 +600,7 @@ func (ch *HandleT) Cleanup() {
 		ch.Db.Close()
 	}
 }
+
+func (ch *HandleT) LoadIdentityTables() (errorMap map[string]error) {
+	return
+}

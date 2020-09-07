@@ -480,3 +480,7 @@ func (bq *HandleT) Cleanup() {
 		bq.Db.Close()
 	}
 }
+
+func (bq *HandleT) LoadIdentityTables() (errorMap map[string]error) {
+	return
+}

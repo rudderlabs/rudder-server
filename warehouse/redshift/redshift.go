@@ -748,3 +748,7 @@ func (rs *HandleT) LoadTable(tableName string) error {
 	_, err := rs.loadTable(tableName, rs.Uploader.GetTableSchemaInUpload(tableName), rs.Uploader.GetTableSchemaAfterUpload(tableName), false)
 	return err
 }
+
+func (rs *HandleT) LoadIdentityTables() (errorMap map[string]error) {
+	return
+}

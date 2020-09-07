@@ -121,6 +121,10 @@ type UploaderI interface {
 	GetTableSchemaInUpload(tableName string) TableSchemaT
 	GetLoadFileLocations(tableName string) ([]string, error)
 	GetSampleLoadFileLocation(tableName string) (string, error)
+	GetTableUploadStatus(tableName string) (string, error)
+	AreIdentityTablesLoadFilesGenerated() (generated bool, err error)
+	GetSingleLoadFileLocation(tableName string) (string, error)
+	ResolveIdentities() error
 }
 
 func IDResolutionEnabled() bool {
