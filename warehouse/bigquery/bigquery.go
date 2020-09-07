@@ -9,6 +9,7 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
@@ -482,5 +483,13 @@ func (bq *HandleT) Cleanup() {
 }
 
 func (bq *HandleT) LoadIdentityTables() (errorMap map[string]error) {
+	return
+}
+
+func (bq *HandleT) PreLoadIdentityTables() (err error) {
+	return
+}
+
+func (bq *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }

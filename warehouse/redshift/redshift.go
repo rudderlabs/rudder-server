@@ -752,3 +752,11 @@ func (rs *HandleT) LoadTable(tableName string) error {
 func (rs *HandleT) LoadIdentityTables() (errorMap map[string]error) {
 	return
 }
+
+func (rs *HandleT) PreLoadIdentityTables() (err error) {
+	return
+}
+
+func (rs *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+	return
+}

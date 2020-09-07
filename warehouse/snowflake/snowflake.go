@@ -1,7 +1,9 @@
 package snowflake
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"reflect"
@@ -524,7 +526,7 @@ func (sf *HandleT) LoadIdentityTables() (errorMap map[string]error) {
 	if haveToUploadMergeRules {
 		var generated bool
 		if generated, err = sf.Uploader.AreIdentityTablesLoadFilesGenerated(); !generated {
-			err = sf.Uploader.ResolveIdentities()
+			err = sf.Uploader.ResolveIdentities(false)
 			if err != nil {
 				logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
 				return
@@ -788,100 +790,109 @@ func (sf *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
 	return
 }
 
-// func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) {
+func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) {
 
-// 	getFromTable := func(tableName string) (err error) {
-// 		var exists bool
-// 		exists, err = sf.tableExists(tableName)
-// 		if err != nil || !exists {
-// 			return
-// 		}
+	getFromTable := func(tableName string) (err error) {
+		var exists bool
+		exists, err = sf.tableExists(tableName)
+		if err != nil || !exists {
+			return
+		}
 
-// 		sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s.%s`, sf.Namespace, tableName)
-// 		var totalRows int64
-// 		err = sf.Db.QueryRow(sqlStatement).Scan(&totalRows)
-// 		if err != nil {
-// 			return
-// 		}
+		sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s.%s`, sf.Namespace, tableName)
+		var totalRows int64
+		err = sf.Db.QueryRow(sqlStatement).Scan(&totalRows)
+		if err != nil {
+			return
+		}
 
-// 		batchSize := int64(10000)
-// 		var offset int64
-// 		for {
-// 			sqlStatement = fmt.Sprintf(`SELECT DISTINCT anonymous_id, user_id FROM %s.%s LIMIT %d OFFSET %d`, sf.Namespace, tableName, batchSize, offset)
-// 			logger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s", sqlStatement)
-// 			var rows *sql.Rows
-// 			rows, err = sf.Db.Query(sqlStatement)
-// 			if err != nil {
-// 				return
-// 			}
+		batchSize := int64(10000)
+		var offset int64
+		for {
+			sqlStatement = fmt.Sprintf(`SELECT DISTINCT anonymous_id, user_id FROM %s.%s LIMIT %d OFFSET %d`, sf.Namespace, tableName, batchSize, offset)
+			logger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s", sqlStatement)
+			var rows *sql.Rows
+			rows, err = sf.Db.Query(sqlStatement)
+			if err != nil {
+				return
+			}
 
-// 			for rows.Next() {
-// 				var buff bytes.Buffer
-// 				csvWriter := csv.NewWriter(&buff)
-// 				var csvRow []string
+			for rows.Next() {
+				var buff bytes.Buffer
+				csvWriter := csv.NewWriter(&buff)
+				var csvRow []string
 
-// 				var anonymousID, userID sql.NullString
-// 				err = rows.Scan(&anonymousID, &userID)
-// 				if err != nil {
-// 					return
-// 				}
-// 				csvRow = append(csvRow, "anonymous_id", anonymousID.String, "user_id", userID.String)
-// 				csvWriter.Write(csvRow)
-// 				csvWriter.Flush()
-// 				gzWriter.WriteGZ(buff.String())
-// 			}
+				var anonymousID, userID sql.NullString
+				err = rows.Scan(&anonymousID, &userID)
+				if err != nil {
+					return
+				}
+				csvRow = append(csvRow, "anonymous_id", anonymousID.String, "user_id", userID.String)
+				csvWriter.Write(csvRow)
+				csvWriter.Flush()
+				gzWriter.WriteGZ(buff.String())
+			}
 
-// 			offset += batchSize
-// 			if offset >= totalRows {
-// 				break
-// 			}
-// 		}
-// 		return
-// 	}
+			offset += batchSize
+			if offset >= totalRows {
+				break
+			}
+		}
+		return
+	}
 
-// 	tables := []string{"TRACKS", "PAGES", "SCREENS", "IDENTIFIES", "ALIASES"}
-// 	for _, table := range tables {
-// 		err = getFromTable(table)
-// 		if err != nil {
-// 			return
-// 		}
-// 	}
-// 	return nil
-// }
+	tables := []string{"TRACKS", "PAGES", "SCREENS", "IDENTIFIES", "ALIASES"}
+	for _, table := range tables {
+		err = getFromTable(table)
+		if err != nil {
+			return
+		}
+	}
+	return nil
+}
 
-// func (sf *HandleT) PreLoadIdentityTables() (err error) {
-// 	idr := identity.HandleT{
-// 		Warehouse:        sf.Warehouse,
-// 		DbHandle:         sf.DbHandle,
-// 		Upload:           sf.Upload,
-// 		WarehouseManager: sf,
-// 	}
+func (sf *HandleT) PreLoadIdentityTables() (err error) {
+	// idr := identity.HandleT{
+	// 	Warehouse:        sf.Warehouse,
+	// 	DbHandle:         sf.DbHandle,
+	// 	Upload:           sf.Upload,
+	// 	WarehouseManager: sf,
+	// }
 
-// 	// check if identity table uploads have location field
-// 	var generated bool
-// 	if generated, err = sf.areIdentityTablesLoadFilesGenerated(); !generated {
-// 		err = idr.Resolve(true)
-// 		if err != nil {
-// 			logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
-// 			return
-// 		}
-// 	}
+	// check if identity table uploads have location field
+	// var generated bool
+	// if generated, err = sf.areIdentityTablesLoadFilesGenerated(); !generated {
+	// 	err = idr.Resolve(true)
+	// 	if err != nil {
+	// 		logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
+	// 		return
+	// 	}
+	// }
 
-// 	err = sf.loadMergeRulesTable()
-// 	if err != nil {
-// 		return
-// 	}
+	var generated bool
+	if generated, err = sf.Uploader.AreIdentityTablesLoadFilesGenerated(); !generated {
+		err = sf.Uploader.ResolveIdentities(true)
+		if err != nil {
+			logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
+			return
+		}
+	}
 
-// 	err = sf.loadMappingsTable()
-// 	if err != nil {
-// 		return
-// 	}
-// 	err = warehouseutils.SetUploadStatus(sf.Upload, warehouseutils.ExportedDataState, sf.DbHandle)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	return
-// }
+	if !sf.isTableExported(identityMergeRulesTable) {
+		err = sf.loadMergeRulesTable()
+		if err != nil {
+			return
+		}
+	}
+
+	if !sf.isTableExported(identityMappingsTable) {
+		err = sf.loadMappingsTable()
+		if err != nil {
+			return
+		}
+	}
+	return
+}
 
 func (sf *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	return

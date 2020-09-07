@@ -604,3 +604,11 @@ func (ch *HandleT) Cleanup() {
 func (ch *HandleT) LoadIdentityTables() (errorMap map[string]error) {
 	return
 }
+
+func (ch *HandleT) PreLoadIdentityTables() (err error) {
+	return
+}
+
+func (ch *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+	return
+}

@@ -2,80 +2,84 @@ package warehouse
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-// func isDestPreLoaded(warehouse warehouseutils.WarehouseT) bool {
-// 	preLoadedIdentitiesMapLock.RLock()
-// 	if preLoadedIdentitiesMap[connectionString(warehouse)] {
-// 		preLoadedIdentitiesMapLock.RUnlock()
-// 		return true
-// 	}
-// 	preLoadedIdentitiesMapLock.RUnlock()
-// 	return false
-// }
+func isDestPreLoaded(warehouse warehouseutils.WarehouseT) bool {
+	preLoadedIdentitiesMapLock.RLock()
+	if preLoadedIdentitiesMap[connectionString(warehouse)] {
+		preLoadedIdentitiesMapLock.RUnlock()
+		return true
+	}
+	preLoadedIdentitiesMapLock.RUnlock()
+	return false
+}
 
-// func setDestPreLoaded(warehouse warehouseutils.WarehouseT) {
-// 	preLoadedIdentitiesMapLock.Lock()
-// 	preLoadedIdentitiesMap[connectionString(warehouse)] = true
-// 	preLoadedIdentitiesMapLock.Unlock()
-// }
+func setDestPreLoaded(warehouse warehouseutils.WarehouseT) {
+	preLoadedIdentitiesMapLock.Lock()
+	preLoadedIdentitiesMap[connectionString(warehouse)] = true
+	preLoadedIdentitiesMapLock.Unlock()
+}
 
-// func (wh *HandleT) getPendingPreLoad(warehouse warehouseutils.WarehouseT) (upload warehouseutils.UploadT, found bool) {
-// 	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.preLoadDestType())
+func (wh *HandleT) getPendingPreLoad(warehouse warehouseutils.WarehouseT) (upload UploadT, found bool) {
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.preLoadDestType())
 
-// 	var schema json.RawMessage
-// 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
-// 	if err == sql.ErrNoRows {
-// 		return
-// 	}
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	found = true
-// 	upload.Schema = warehouseutils.JSONSchemaToMap(schema)
-// 	return
-// }
+	var schema json.RawMessage
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
+	if err == sql.ErrNoRows {
+		return
+	}
+	if err != nil {
+		panic(err)
+	}
+	found = true
+	upload.Schema = warehouseutils.JSONSchemaToMap(schema)
+	return
+}
 
-// func (wh *HandleT) preLoadDestType() string {
-// 	return wh.destType + "_IDENTITY_PRE_LOAD"
-// }
+func (wh *HandleT) preLoadDestType() string {
+	return wh.destType + "_IDENTITY_PRE_LOAD"
+}
 
-// func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.WarehouseT) bool {
-// 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s`, warehouseutils.IdentityMergeRulesTableName(warehouse))
-// 	var count int
-// 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
-// 	if err != nil {
-// 		// TOOD: Handle this
-// 		panic(err)
-// 	}
-// 	return count > 0
-// }
+func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.WarehouseT) bool {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s`, warehouseutils.IdentityMergeRulesTableName(warehouse))
+	var count int
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
+	if err != nil {
+		// TOOD: Handle this
+		panic(err)
+	}
+	return count > 0
+}
 
-// func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.WarehouseT) (bool, error) {
-// 	whManager, err := manager.New(wh.destType)
-// 	if err != nil {
-// 		panic(err)
-// 	}
+func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.WarehouseT) (bool, error) {
+	whManager, err := manager.New(wh.destType)
+	if err != nil {
+		panic(err)
+	}
 
-// 	empty, err := whManager.IsEmpty(warehouse)
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	return !empty, nil
+	empty, err := whManager.IsEmpty(warehouse)
+	if err != nil {
+		return false, err
+	}
+	return !empty, nil
 
-// 	// TODO: Change logic to check if warehouse has data in tables
-// 	// sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE destination_id='%s' AND status='%s'`, warehouseutils.WarehouseUploadsTable, warehouse.Destination.ID, warehouseutils.ExportedDataState)
-// 	// var count int
-// 	// err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
-// 	// if err != nil {
-// 	// 	// TOOD: Handle this
-// 	// 	panic(err)
-// 	// }
-// 	// return count > 0
-// }
+	// TODO: Change logic to check if warehouse has data in tables
+	// sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE destination_id='%s' AND status='%s'`, warehouseutils.WarehouseUploadsTable, warehouse.Destination.ID, warehouseutils.ExportedDataState)
+	// var count int
+	// err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
+	// if err != nil {
+	// 	// TOOD: Handle this
+	// 	panic(err)
+	// }
+	// return count > 0
+}
 
 func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
 	var name sql.NullString
@@ -132,84 +136,110 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
 	}
 }
 
-// func (wh *HandleT) initPreLoadUpload(warehouse warehouseutils.WarehouseT) warehouseutils.UploadT {
-// 	schema := make(map[string]map[string]string)
-// 	// TODO: DRY this code
-// 	identityRules := map[string]string{
-// 		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_type"):  "string",
-// 		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_value"): "string",
-// 		warehouseutils.ToProviderCase(wh.destType, "merge_property_2_type"):  "string",
-// 		warehouseutils.ToProviderCase(wh.destType, "merge_property_2_value"): "string",
-// 	}
-// 	schema[warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMergeRulesTable)] = identityRules
+func (wh *HandleT) initPreLoadUpload(warehouse warehouseutils.WarehouseT) UploadT {
+	schema := make(map[string]map[string]string)
+	// TODO: DRY this code
+	identityRules := map[string]string{
+		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_type"):  "string",
+		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_value"): "string",
+		warehouseutils.ToProviderCase(wh.destType, "merge_property_2_type"):  "string",
+		warehouseutils.ToProviderCase(wh.destType, "merge_property_2_value"): "string",
+	}
+	schema[warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMergeRulesTable)] = identityRules
 
-// 	// add rudder_identity_mappings table
-// 	identityMappings := map[string]string{
-// 		warehouseutils.ToProviderCase(wh.destType, "merge_property_type"):  "string",
-// 		warehouseutils.ToProviderCase(wh.destType, "merge_property_value"): "string",
-// 		warehouseutils.ToProviderCase(wh.destType, "rudder_id"):            "string",
-// 		warehouseutils.ToProviderCase(wh.destType, "updated_at"):           "datetime",
-// 	}
-// 	schema[warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMappingsTable)] = identityMappings
+	// add rudder_identity_mappings table
+	identityMappings := map[string]string{
+		warehouseutils.ToProviderCase(wh.destType, "merge_property_type"):  "string",
+		warehouseutils.ToProviderCase(wh.destType, "merge_property_value"): "string",
+		warehouseutils.ToProviderCase(wh.destType, "rudder_id"):            "string",
+		warehouseutils.ToProviderCase(wh.destType, "updated_at"):           "datetime",
+	}
+	schema[warehouseutils.ToProviderCase(wh.destType, warehouseutils.IdentityMappingsTable)] = identityMappings
 
-// 	marshalledSchema, err := json.Marshal(schema)
-// 	if err != nil {
-// 		panic(err)
-// 	}
+	marshalledSchema, err := json.Marshal(schema)
+	if err != nil {
+		panic(err)
+	}
 
-// 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, status, schema, error, created_at, updated_at, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id)	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13) RETURNING id`, warehouseutils.WarehouseUploadsTable)
-// 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	defer stmt.Close()
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, status, schema, error, created_at, updated_at, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id)	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13) RETURNING id`, warehouseutils.WarehouseUploadsTable)
+	stmt, err := wh.dbHandle.Prepare(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+	defer stmt.Close()
 
-// 	now := timeutil.Now()
-// 	row := stmt.QueryRow(warehouse.Source.ID, warehouse.Namespace, warehouse.Destination.ID, wh.preLoadDestType(), warehouseutils.WaitingState, marshalledSchema, "{}", now, now, 0, 0, 0, 0)
+	now := timeutil.Now()
+	row := stmt.QueryRow(warehouse.Source.ID, warehouse.Namespace, warehouse.Destination.ID, wh.preLoadDestType(), WaitingState, marshalledSchema, "{}", now, now, 0, 0, 0, 0)
 
-// 	var uploadID int64
-// 	err = row.Scan(&uploadID)
-// 	if err != nil {
-// 		panic(err)
-// 	}
+	var uploadID int64
+	err = row.Scan(&uploadID)
+	if err != nil {
+		panic(err)
+	}
 
-// 	upload := warehouseutils.UploadT{
-// 		ID:              uploadID,
-// 		Namespace:       warehouse.Namespace,
-// 		SourceID:        warehouse.Source.ID,
-// 		DestinationID:   warehouse.Destination.ID,
-// 		DestinationType: wh.preLoadDestType(),
-// 		Status:          warehouseutils.WaitingState,
-// 		Schema:          schema,
-// 	}
+	upload := UploadT{
+		ID:              uploadID,
+		Namespace:       warehouse.Namespace,
+		SourceID:        warehouse.Source.ID,
+		DestinationID:   warehouse.Destination.ID,
+		DestinationType: wh.preLoadDestType(),
+		Status:          WaitingState,
+		Schema:          schema,
+	}
 
-// 	err = wh.initTableUploads(upload, upload.Schema)
-// 	if err != nil {
-// 		panic(err)
-// 	}
+	return upload
+}
 
-// 	return upload
-// }
+func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) (upload UploadT, err error) {
 
-// func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) (upload warehouseutils.UploadT, err error) {
+	// check for pending preLoads
+	var found bool
+	if upload, found = wh.getPendingPreLoad(warehouse); !found {
+		upload = wh.initPreLoadUpload(warehouse)
+	}
 
-// 	// check for pending preLoads
-// 	var found bool
-// 	if upload, found = wh.getPendingPreLoad(warehouse); !found {
-// 		upload = wh.initPreLoadUpload(warehouse)
-// 	}
+	whManager, err := manager.New(wh.destType)
+	if err != nil {
+		panic(err)
+	}
 
-// 	whManager, err := manager.New(wh.destType)
-// 	if err != nil {
-// 		panic(err)
-// 	}
+	job := UploadJobT{
+		upload:     &upload,
+		warehouse:  warehouse,
+		whManager:  whManager,
+		dbHandle:   wh.dbHandle,
+		pgNotifier: &wh.notifier,
+	}
 
-// 	err = whManager.Process(warehouseutils.ConfigT{
-// 		DbHandle:  wh.dbHandle,
-// 		Upload:    upload,
-// 		Warehouse: warehouse,
-// 		Stage:     warehouseutils.PreLoadingIdentities,
-// 	})
+	if !job.areTableUploadsCreated() {
+		err := job.initTableUploads()
+		if err != nil {
+			// TODO: Handle error / Retry
+			logger.Error("[WH]: Error creating records in wh_table_uploads", err)
+		}
+	}
 
-// 	return
-// }
+	err = whManager.Setup(job.warehouse, &job)
+	if err != nil {
+		job.setUploadError(err, ConnectFailedState)
+		return
+	}
+	defer whManager.Cleanup()
+
+	job.setUploadStatus(UpdatingSchemaState)
+	diff := getSchemaDiff(job.upload.Schema, warehouseutils.SchemaT{})
+	err = whManager.MigrateSchema(diff)
+	if err != nil {
+		job.setUploadError(err, UpdatingSchemaFailedState)
+		return
+	}
+	job.setUploadStatus(UpdatedSchemaState)
+
+	err = whManager.PreLoadIdentityTables()
+	if err != nil {
+		job.setUploadError(err, ExportingDataFailedState)
+	}
+	job.setUploadStatus(ExportedDataState)
+
+	return upload, err
+}

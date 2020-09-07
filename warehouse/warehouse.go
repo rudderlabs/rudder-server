@@ -478,41 +478,41 @@ func (wh *HandleT) mainLoop() {
 
 			// ---- start: check and preload local identity tables with existing data from warehouse -----
 			if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
-				// if !warehouse.Destination.Enabled {
-				// 	continue
-				// }
+				if !warehouse.Destination.Enabled {
+					continue
+				}
 
-				// if isDestPreLoaded(warehouse) {
-				// 	continue
-				// }
+				if isDestPreLoaded(warehouse) {
+					continue
+				}
 
 				wh.setupIdentityTables(warehouse)
 
 				// check if identity tables have records locally and
 				// check if warehouse has data
-				// if !wh.hasLocalIdentityData(warehouse) {
-				// 	hasData, err := wh.hasWarehouseData(warehouse)
-				// 	if err != nil {
-				// 		logger.Errorf(`WH: Error checking for data in %s:%s:%s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name)
-				// 		warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
-				// 		continue
-				// 	}
-				// 	if hasData {
-				// 		logger.Infof("[WH]: Did not find local identity tables..")
-				// 		logger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
-				// 		// TODO: make this async and not block other warehouses
-				// 		var upload UploadT
-				// 		upload, err = wh.preLoadIdentityTables(warehouse)
-				// 		if err != nil {
-				// 			warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
-				// 		} else {
-				// 			setDestPreLoaded(warehouse)
-				// 		}
-				// 		wh.recordDeliveryStatus(warehouse.Destination.ID, upload.ID)
-				// 		setDestInProgress(warehouse, false)
-				// 		continue
-				// 	}
-				// }
+				if !wh.hasLocalIdentityData(warehouse) {
+					hasData, err := wh.hasWarehouseData(warehouse)
+					if err != nil {
+						logger.Errorf(`WH: Error checking for data in %s:%s:%s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name)
+						warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
+						continue
+					}
+					if hasData {
+						logger.Infof("[WH]: Did not find local identity tables..")
+						logger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
+						// TODO: make this async and not block other warehouses
+						var upload UploadT
+						upload, err = wh.preLoadIdentityTables(warehouse)
+						if err != nil {
+							warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
+						} else {
+							setDestPreLoaded(warehouse)
+						}
+						wh.recordDeliveryStatus(warehouse.Destination.ID, upload.ID)
+						setDestInProgress(warehouse, false)
+						continue
+					}
+				}
 			}
 			// ---- end: check and preload local identity tables with existing data from warehouse -----
 

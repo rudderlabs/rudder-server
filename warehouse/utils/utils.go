@@ -124,7 +124,7 @@ type UploaderI interface {
 	GetTableUploadStatus(tableName string) (string, error)
 	AreIdentityTablesLoadFilesGenerated() (generated bool, err error)
 	GetSingleLoadFileLocation(tableName string) (string, error)
-	ResolveIdentities() error
+	ResolveIdentities(isPreLoad bool) error
 }
 
 func IDResolutionEnabled() bool {

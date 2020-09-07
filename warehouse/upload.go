@@ -759,7 +759,10 @@ func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location str
 	return
 }
 
-func (job *UploadJobT) GetSchemaInWarehouse() warehouseutils.SchemaT {
+func (job *UploadJobT) GetSchemaInWarehouse() (schema warehouseutils.SchemaT) {
+	if job.schemaHandle == nil {
+		return
+	}
 	return job.schemaHandle.schemaInWarehouse
 }
 
@@ -805,12 +808,13 @@ func (job *UploadJobT) GetSingleLoadFileLocation(tableName string) (string, erro
 	return location, err
 }
 
-func (job *UploadJobT) ResolveIdentities() (err error) {
+func (job *UploadJobT) ResolveIdentities(isPreload bool) (err error) {
 	idr := identity.HandleT{
-		Warehouse: job.warehouse,
-		DbHandle:  job.dbHandle,
-		UploadID:  job.upload.ID,
-		Uploader:  job,
+		Warehouse:        job.warehouse,
+		DbHandle:         job.dbHandle,
+		UploadID:         job.upload.ID,
+		Uploader:         job,
+		WarehouseManager: job.whManager,
 	}
-	return idr.Resolve(false)
+	return idr.Resolve(isPreload)
 }

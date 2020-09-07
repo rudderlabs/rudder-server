@@ -609,3 +609,11 @@ func (pg *HandleT) Cleanup() {
 func (pg *HandleT) LoadIdentityTables() (errorMap map[string]error) {
 	return
 }
+
+func (pg *HandleT) PreLoadIdentityTables() (err error) {
+	return
+}
+
+func (pg *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+	return
+}

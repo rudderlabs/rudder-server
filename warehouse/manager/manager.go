@@ -3,6 +3,7 @@ package manager
 import (
 	"errors"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
@@ -22,6 +23,8 @@ type ManagerI interface {
 	Cleanup()
 	IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error)
 	TestConnection(warehouse warehouseutils.WarehouseT) error
+	PreLoadIdentityTables() error
+	DownloadIdentityRules(*misc.GZipWriter) error
 }
 
 func New(destType string) (ManagerI, error) {
