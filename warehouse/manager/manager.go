@@ -7,6 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -30,9 +31,9 @@ func New(destType string) (ManagerI, error) {
 	case "BQ":
 		var bq bigquery.HandleT
 		return &bq, nil
-	// case "SNOWFLAKE":
-	// 	var sf snowflake.HandleT
-	// 	return &sf, nil
+	case "SNOWFLAKE":
+		var sf snowflake.HandleT
+		return &sf, nil
 	case "POSTGRES":
 		var pg postgres.HandleT
 		return &pg, nil

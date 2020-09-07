@@ -120,6 +120,7 @@ type UploaderI interface {
 	GetTableSchemaAfterUpload(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
 	GetLoadFileLocations(tableName string) ([]string, error)
+	GetSampleLoadFileLocation(tableName string) (string, error)
 }
 
 func IDResolutionEnabled() bool {
@@ -180,29 +181,6 @@ func GetNamespace(source backendconfig.SourceT, destination backendconfig.Destin
 		panic(err)
 	}
 	return namespace, len(namespace) > 0
-}
-
-func GetLoadFileLocation(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (location string, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s RIGHT JOIN (
-		SELECT  staging_file_id, MAX(id) AS id FROM %[1]s
-		WHERE ( source_id='%[2]s'
-			AND destination_id='%[3]s'
-			AND table_name='%[4]s'
-			AND id >= %[5]v
-			AND id <= %[6]v)
-		GROUP BY staging_file_id ) uniqueStagingFiles
-		ON  wh_load_files.id = uniqueStagingFiles.id `,
-		WarehouseLoadFilesTable,
-		sourceId,
-		destinationId,
-		tableName,
-		start,
-		end)
-	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
-	if err != nil && err != sql.ErrNoRows {
-		panic(err)
-	}
-	return
 }
 
 func GetTableFirstEventAt(dbHandle *sql.DB, sourceId string, destinationId string, tableName string, start, end int64) (firstEventAt string) {

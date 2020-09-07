@@ -25,7 +25,6 @@ import (
 
 var (
 	stagingTablePrefix string
-	maxParallelLoads   int
 	queryDebugLogs     string
 	blockSize          string
 	poolSize           string
@@ -139,7 +138,6 @@ func init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
-	maxParallelLoads = config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3)
 	queryDebugLogs = config.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
 	blockSize = config.GetString("Warehouse.clickhouse.blockSize", "1000")
 	poolSize = config.GetString("Warehouse.clickhouse.poolSize", "10")

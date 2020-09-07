@@ -720,6 +720,30 @@ func (job *UploadJobT) GetLoadFileLocations(tableName string) (locations []strin
 	return
 }
 
+func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location string, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s RIGHT JOIN (
+		SELECT  staging_file_id, MAX(id) AS id FROM %[1]s
+		WHERE ( source_id='%[2]s'
+			AND destination_id='%[3]s'
+			AND table_name='%[4]s'
+			AND id >= %[5]v
+			AND id <= %[6]v)
+		GROUP BY staging_file_id ) uniqueStagingFiles
+		ON  wh_load_files.id = uniqueStagingFiles.id `,
+		warehouseutils.WarehouseLoadFilesTable,
+		job.warehouse.Source.ID,
+		job.warehouse.Destination.ID,
+		tableName,
+		job.upload.StartLoadFileID,
+		job.upload.EndLoadFileID,
+	)
+	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	return
+}
+
 func (job *UploadJobT) GetSchemaInWarehouse() warehouseutils.SchemaT {
 	return job.schemaHandle.schemaInWarehouse
 }
