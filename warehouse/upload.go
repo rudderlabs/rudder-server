@@ -239,6 +239,7 @@ func (job *UploadJobT) run() (err error) {
 		} else {
 			errorMap := whManager.LoadUserTables()
 			for tName, err := range errorMap {
+				// TODO: set last_exec_time
 				if err != nil {
 					loadErrors = append(loadErrors, err)
 					job.setTableUploadError(tName, ExportingDataFailedState, err)
@@ -250,7 +251,6 @@ func (job *UploadJobT) run() (err error) {
 
 	}
 
-	// TODO: move this to warehousemanager
 	var parallelLoads int
 	var ok bool
 	if parallelLoads, ok = maxParallelLoads[job.warehouse.Type]; !ok {

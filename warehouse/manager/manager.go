@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -35,9 +36,9 @@ func New(destType string) (ManagerI, error) {
 	case "POSTGRES":
 		var pg postgres.HandleT
 		return &pg, nil
-		// case "CLICKHOUSE":
-		// 	var ch clickhouse.HandleT
-		// 	return &ch, nil
+	case "CLICKHOUSE":
+		var ch clickhouse.HandleT
+		return &ch, nil
 	}
 
 	return nil, errors.New("no provider configured for WarehouseManager")
