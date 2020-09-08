@@ -107,7 +107,7 @@ func loadConfig() {
 	ser = config.GetInt("Router.ser", 3)
 	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(60)) * time.Second
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
-	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
+	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(2)) * time.Second
 	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 3)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
@@ -635,25 +635,35 @@ func (rt *HandleT) generatorLoop() {
 	for {
 		generatorStat.Start()
 
+		//Following sleep code is introduced to fix the JobOrder crash.
+		//We are making sure that
+		//  1.the generatorLoop buffer is fully processed and
+		//  2. statusInsertLoop Buffer is sync'ed to disk
+		//before inserting new jobs to the worker channels.
+		//NOTE: sleeping for maxStatusUpdateWait doesn't 100% ensure that 2 is achieved, but should be a good heuristic.
+		workersChannelsEmpty := true
+		for _, wrk := range rt.workers {
+			if len(wrk.channel) > 0 {
+				workersChannelsEmpty = false
+				break
+			}
+		}
+		if !workersChannelsEmpty {
+			time.Sleep(maxStatusUpdateWait)
+			continue
+		}
+
 		//#JobOrder (See comment marked #JobOrder
 		rt.toClearFailJobIDMutex.Lock()
-		toDeleteIdxs := []int{}
 		for idx := range rt.toClearFailJobIDMap {
 			wrk := rt.workers[idx]
-			if len(wrk.channel) > 0 {
-				continue
-			}
-
 			wrk.failedJobIDMutex.Lock()
 			for _, userID := range rt.toClearFailJobIDMap[idx] {
 				delete(wrk.failedJobIDMap, userID)
 			}
 			wrk.failedJobIDMutex.Unlock()
-			toDeleteIdxs = append(toDeleteIdxs, idx)
 		}
-		for _, toDeleteIdx := range toDeleteIdxs {
-			delete(rt.toClearFailJobIDMap, toDeleteIdx)
-		}
+		rt.toClearFailJobIDMap = make(map[int][]string)
 		rt.toClearFailJobIDMutex.Unlock()
 		//End of #JobOrder
 
@@ -718,10 +728,6 @@ func (rt *HandleT) generatorLoop() {
 		//Send the jobs to the jobQ
 		for _, wrkJob := range toProcess {
 			wrkJob.worker.channel <- wrkJob.job
-		}
-
-		if len(toProcess) == 0 {
-			time.Sleep(readSleep)
 		}
 
 		countStat.Count(len(combinedList))
