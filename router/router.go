@@ -74,12 +74,12 @@ type workerT struct {
 }
 
 var (
-	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
-	maxFailedCountForJob                                                           int
-	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
-	randomWorkerAssign                                                             bool
-	testSinkURL                                                                    string
-	retryTimeWindow, minRetryBackoff, maxRetryBackoff                              time.Duration
+	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, ser              int
+	maxFailedCountForJob                                                    int
+	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
+	randomWorkerAssign                                                      bool
+	testSinkURL                                                             string
+	retryTimeWindow, minRetryBackoff, maxRetryBackoff                       time.Duration
 )
 
 var userOrderingRequiredMap = map[string]bool{
@@ -103,7 +103,6 @@ func loadConfig() {
 	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
 	readSleep = config.GetDuration("Router.readSleepInMS", time.Duration(1000)) * time.Millisecond
 	noOfWorkers = config.GetInt("Router.noOfWorkers", 64)
-	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	ser = config.GetInt("Router.ser", 3)
 	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(60)) * time.Second
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
@@ -390,7 +389,7 @@ func (rt *HandleT) initWorkers() {
 		logger.Info("Worker Started", i)
 		var worker *workerT
 		worker = &workerT{
-			channel:        make(chan *jobsdb.JobT, noOfJobsPerChannel),
+			channel:        make(chan *jobsdb.JobT, 1),
 			failedJobIDMap: make(map[string]int64),
 			retryForJobMap: make(map[int64]time.Time),
 			workerID:       i,
@@ -640,18 +639,21 @@ func (rt *HandleT) generatorLoop() {
 		//  1.the generatorLoop buffer is fully processed and
 		//  2. statusInsertLoop Buffer is sync'ed to disk
 		//before inserting new jobs to the worker channels.
-		//NOTE: sleeping for maxStatusUpdateWait doesn't 100% ensure that 2 is achieved, but should be a good heuristic.
-		workersChannelsEmpty := true
+		var workersChannelsNotEmpty bool
 		for _, wrk := range rt.workers {
 			if len(wrk.channel) > 0 {
-				workersChannelsEmpty = false
+				workersChannelsNotEmpty = true
 				break
 			}
 		}
-		if !workersChannelsEmpty {
-			time.Sleep(maxStatusUpdateWait)
+		if workersChannelsNotEmpty {
+			time.Sleep(time.Millisecond * 100)
 			continue
 		}
+
+		//NOTE: sleeping for maxStatusUpdateWait doesn't 100% ensure that 2 is achieved, but should be a good heuristic.
+		//TODO: To be more precise, we can send a signal to statusInsertLoop and wait for it to flush the statuses to disk
+		time.Sleep(maxStatusUpdateWait)
 
 		//#JobOrder (See comment marked #JobOrder
 		rt.toClearFailJobIDMutex.Lock()

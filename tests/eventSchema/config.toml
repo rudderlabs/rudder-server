@@ -35,7 +35,6 @@ jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
 readSleepInMS = 1000
 noOfWorkers = 8
-noOfJobsPerChannel = 1000
 ser = 3
 maxSleepInS = 60
 minSleepInS = 0
