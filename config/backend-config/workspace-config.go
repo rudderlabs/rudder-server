@@ -31,7 +31,9 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey strin
 func (workspaceConfig *WorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	workspaceConfig.workspaceIDLock.RLock()
 	defer workspaceConfig.workspaceIDLock.RUnlock()
-
+	if workspaceConfig.workspaceIDToLibrariesMap[workspaceID] == nil {
+		return LibrariesT{}
+	}
 	return workspaceConfig.workspaceIDToLibrariesMap[workspaceID]
 }
 

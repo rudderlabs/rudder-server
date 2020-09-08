@@ -60,7 +60,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceLibrariesForWorksp
 	if workspaceLibraries, ok := multiWorkspaceConfig.workspaceIDToLibrariesMap[workspaceID]; ok {
 		return workspaceLibraries
 	}
-	return []LibraryT{}
+	return LibrariesT{}
 }
 
 //Get returns sources from all hosted workspaces
