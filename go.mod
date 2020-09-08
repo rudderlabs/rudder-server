@@ -30,6 +30,7 @@ require (
 	github.com/golang/mock v1.4.3
 	github.com/golang/protobuf v1.3.4 // indirect
 	github.com/google/uuid v1.1.1 // indirect
+	github.com/gorilla/mux v1.7.4
 	github.com/hashicorp/go-retryablehttp v0.6.6
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334
 	github.com/jeremywohl/flatten v1.0.1
