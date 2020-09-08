@@ -221,6 +221,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 						}
 						wh.workerChannelMapLock.Unlock()
 
+						// send last 10 warehouse upload's status to control plane
 						if destination.Config != nil && destination.Enabled && destination.Config["eventDelivery"] == true {
 							sourceID := source.ID
 							destinationID := destination.ID
@@ -228,12 +229,21 @@ func (wh *HandleT) backendConfigSubscriber() {
 								wh.syncLiveWarehouseStatus(sourceID, destinationID)
 							})
 						}
+						// test and send connection status to control plane
 						if val, ok := destination.Config["testConnection"].(bool); ok && val {
 							destination := destination
 							rruntime.Go(func() {
 								testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination)
 								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 							})
+						}
+
+						if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
+							wh.setupIdentityTables(warehouse)
+							if shouldPreLoadIdentities {
+								// non blocking preload identity tables
+								wh.preLoadIdentityTables(warehouse)
+							}
 						}
 					}
 				}
@@ -374,7 +384,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]UploadT, bool) {
 
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, timings->0 as firstTiming, timings->-1 as lastTiming FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id = '%[3]s' AND %[1]s.status != '%[4]s' AND %[1]s.status != '%[5]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, ExportedDataState, AbortedState)
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, timings->0 as firstTiming, timings->-1 as lastTiming FROM %[1]s WHERE (%[1]s.destination_type='%[2]s' AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id = '%[4]s' AND %[1]s.status != '%[5]s' AND %[1]s.status != '%[6]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, wh.destType, warehouse.Source.ID, warehouse.Destination.ID, ExportedDataState, AbortedState)
 
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
@@ -475,46 +485,6 @@ func (wh *HandleT) mainLoop() {
 				continue
 			}
 			setDestInProgress(warehouse, true)
-
-			// ---- start: check and preload local identity tables with existing data from warehouse -----
-			if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, wh.destType) {
-				if !warehouse.Destination.Enabled {
-					continue
-				}
-
-				if isDestPreLoaded(warehouse) {
-					continue
-				}
-
-				wh.setupIdentityTables(warehouse)
-
-				// check if identity tables have records locally and
-				// check if warehouse has data
-				if !wh.hasLocalIdentityData(warehouse) {
-					hasData, err := wh.hasWarehouseData(warehouse)
-					if err != nil {
-						logger.Errorf(`WH: Error checking for data in %s:%s:%s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name)
-						warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
-						continue
-					}
-					if hasData {
-						logger.Infof("[WH]: Did not find local identity tables..")
-						logger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
-						// TODO: make this async and not block other warehouses
-						var upload UploadT
-						upload, err = wh.preLoadIdentityTables(warehouse)
-						if err != nil {
-							warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
-						} else {
-							setDestPreLoaded(warehouse)
-						}
-						wh.recordDeliveryStatus(warehouse.Destination.ID, upload.ID)
-						setDestInProgress(warehouse, false)
-						continue
-					}
-				}
-			}
-			// ---- end: check and preload local identity tables with existing data from warehouse -----
 
 			_, ok := inRecoveryMap[warehouse.Destination.ID]
 			if ok {

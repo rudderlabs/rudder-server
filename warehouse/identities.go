@@ -5,11 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+var (
+	shouldPreLoadIdentities bool
+)
+
+func init() {
+	shouldPreLoadIdentities = config.GetBool("Warehouse.preLoadIdentities", true)
+}
 
 func isDestPreLoaded(warehouse warehouseutils.WarehouseT) bool {
 	preLoadedIdentitiesMapLock.RLock()
@@ -28,7 +39,7 @@ func setDestPreLoaded(warehouse warehouseutils.WarehouseT) {
 }
 
 func (wh *HandleT) getPendingPreLoad(warehouse warehouseutils.WarehouseT) (upload UploadT, found bool) {
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.preLoadDestType())
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s' AND %[1]s.status != '%[5]s' AND %[1]s.status != '%[6]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.preLoadDestType(), ExportedDataState, AbortedState)
 
 	var schema json.RawMessage
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
@@ -211,56 +222,95 @@ func (wh *HandleT) initPreLoadUpload(warehouse warehouseutils.WarehouseT) Upload
 	return upload
 }
 
-func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) (upload UploadT, err error) {
-
-	// check for pending preLoads
-	var found bool
-	if upload, found = wh.getPendingPreLoad(warehouse); !found {
-		upload = wh.initPreLoadUpload(warehouse)
-	}
-
-	whManager, err := manager.New(wh.destType)
+func (wh *HandleT) setFailedStat(warehouse warehouseutils.WarehouseT, err error) {
 	if err != nil {
-		panic(err)
+		warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Destination.ID).Count(1)
+	}
+}
+
+func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) {
+	if isDestPreLoaded(warehouse) {
+		return
 	}
 
-	job := UploadJobT{
-		upload:     &upload,
-		warehouse:  warehouse,
-		whManager:  whManager,
-		dbHandle:   wh.dbHandle,
-		pgNotifier: &wh.notifier,
-	}
+	setDestInProgress(warehouse, true)
+	rruntime.Go(func() {
+		var err error
+		defer setDestInProgress(warehouse, false)
+		defer setDestPreLoaded(warehouse)
+		defer wh.setFailedStat(warehouse, err)
 
-	if !job.areTableUploadsCreated() {
-		err := job.initTableUploads()
-		if err != nil {
-			// TODO: Handle error / Retry
-			logger.Error("[WH]: Error creating records in wh_table_uploads", err)
+		// check for pending preLoads
+		var hasPendingPreLoad bool
+		var upload UploadT
+		upload, hasPendingPreLoad = wh.getPendingPreLoad(warehouse)
+
+		if hasPendingPreLoad {
+			logger.Infof("WH: Found pending preLoad for %s:%s", wh.destType, warehouse.Destination.ID)
+		} else {
+			if wh.hasLocalIdentityData(warehouse) {
+				logger.Infof("WH: Skipping identity tables preLoad for %s:%s as data exists locally", wh.destType, warehouse.Destination.ID)
+				return
+			}
+			var hasData bool
+			hasData, err = wh.hasWarehouseData(warehouse)
+			if err != nil {
+				logger.Errorf(`WH: Error checking for data in %s:%s:%s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name)
+				return
+			}
+			if !hasData {
+				logger.Infof("WH: Skipping identity tables preLoad for %s:%s as warehouse does not have any data", wh.destType, warehouse.Destination.ID)
+				return
+			}
+			logger.Infof("[WH]: Did not find local identity tables..")
+			logger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
+			upload = wh.initPreLoadUpload(warehouse)
 		}
-	}
 
-	err = whManager.Setup(job.warehouse, &job)
-	if err != nil {
-		job.setUploadError(err, ConnectFailedState)
+		whManager, err := manager.New(wh.destType)
+		if err != nil {
+			panic(err)
+		}
+
+		job := UploadJobT{
+			upload:     &upload,
+			warehouse:  warehouse,
+			whManager:  whManager,
+			dbHandle:   wh.dbHandle,
+			pgNotifier: &wh.notifier,
+		}
+
+		if !job.areTableUploadsCreated() {
+			err := job.initTableUploads()
+			if err != nil {
+				// TODO: Handle error / Retry
+				logger.Error("[WH]: Error creating records in wh_table_uploads", err)
+			}
+		}
+
+		err = whManager.Setup(job.warehouse, &job)
+		if err != nil {
+			job.setUploadError(err, AbortedState)
+			return
+		}
+		defer whManager.Cleanup()
+
+		job.setUploadStatus(UpdatingSchemaState)
+		diff := getSchemaDiff(job.upload.Schema, warehouseutils.SchemaT{})
+		err = whManager.MigrateSchema(diff)
+		if err != nil {
+			job.setUploadError(err, AbortedState)
+			return
+		}
+		job.setUploadStatus(UpdatedSchemaState)
+
+		job.setUploadStatus(ExportingDataState)
+		err = whManager.PreLoadIdentityTables()
+		if err != nil {
+			job.setUploadError(err, AbortedState)
+		}
+		job.setUploadStatus(ExportedDataState)
 		return
-	}
-	defer whManager.Cleanup()
+	})
 
-	job.setUploadStatus(UpdatingSchemaState)
-	diff := getSchemaDiff(job.upload.Schema, warehouseutils.SchemaT{})
-	err = whManager.MigrateSchema(diff)
-	if err != nil {
-		job.setUploadError(err, UpdatingSchemaFailedState)
-		return
-	}
-	job.setUploadStatus(UpdatedSchemaState)
-
-	err = whManager.PreLoadIdentityTables()
-	if err != nil {
-		job.setUploadError(err, ExportingDataFailedState)
-	}
-	job.setUploadStatus(ExportedDataState)
-
-	return upload, err
 }
