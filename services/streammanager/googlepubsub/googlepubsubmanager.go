@@ -102,7 +102,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			t := s["topic"].(*pubsub.Topic)
 			splitString := strings.Split(t.String(), "/")
 			if splitString[3] == topicIdString {
-				topic = s["topic"].(*pubsub.Topic)
+				topic = t
 				break
 			}
 		}
@@ -134,9 +134,13 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 //CloseProducer closes a given producer
 func CloseProducer(producer interface{}) error {
-	pbs, ok := producer.(*pubsub.Client)
+	pbs, ok := producer.(*pubsubClient)
 	if ok {
-		err := pbs.Close()
+		for _, s := range pbs.EventToTopic {
+			t := s["topic"].(*pubsub.Topic)
+			t.Stop()
+		}
+		err := pbs.Pbs.Close()
 		if err != nil {
 			logger.Errorf("error in closing Google Pub/Sub producer: %s", err.Error())
 		}
