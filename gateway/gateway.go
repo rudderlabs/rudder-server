@@ -26,6 +26,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/dgraph-io/badger"
+	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -833,7 +834,7 @@ This function will block.
 func (gateway *HandleT) StartWebHandler() {
 
 	logger.Infof("Starting in %d", webPort)
-	srvMux := http.NewServeMux()
+	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/v1/batch", gateway.stat(gateway.webBatchHandler))
 	srvMux.HandleFunc("/v1/identify", gateway.stat(gateway.webIdentifyHandler))
 	srvMux.HandleFunc("/v1/track", gateway.stat(gateway.webTrackHandler))
@@ -851,10 +852,10 @@ func (gateway *HandleT) StartWebHandler() {
 	if enableProtocolsFeature && gateway.protocolHandler != nil {
 		srvMux.HandleFunc("/protocols/event-models", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModels))
 		srvMux.HandleFunc("/protocols/event-versions", gateway.protocolWebHandler(gateway.protocolHandler.GetEventVersions))
-		srvMux.HandleFunc("/protocols/event-metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMetadata))
-		srvMux.HandleFunc("/protocols/missing-keys", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMissingKeys))
-		srvMux.HandleFunc("/protocols/key-counts", gateway.protocolWebHandler(gateway.protocolHandler.GetKeyCounts))
-		srvMux.HandleFunc("/protocols/event-model-metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModelMetadata))
+		srvMux.HandleFunc("/protocols/event-model/{EventID}/key-counts", gateway.protocolWebHandler(gateway.protocolHandler.GetKeyCounts))
+		srvMux.HandleFunc("/protocols/event-model/{EventID}/metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModelMetadata))
+		srvMux.HandleFunc("/protocols/event-version/{VersionID}/metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMetadata))
+		srvMux.HandleFunc("/protocols/event-version/{VersionID}/missing-keys", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMissingKeys))
 	}
 
 	c := cors.New(cors.Options{
