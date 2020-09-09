@@ -1,11 +1,9 @@
 package customdestinationmanager
-
 import (
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
-
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/streammanager"
@@ -13,29 +11,24 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
-
 var (
 	objectStreamDestinations   []string
 	streamDestinationsMap      map[string]StreamDestination
 	producerDestinationLockMap map[string]*sync.RWMutex
 )
-
 // DestinationManager implements the method to send the events to custom destinations
 type DestinationManager interface {
 	SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string, string)
 }
-
 // CustomManagerT handles this module
 type CustomManagerT struct {
 	destination string
 }
-
 //StreamDestination keeps the config of a destination and corresponding producer for a stream destination
 type StreamDestination struct {
 	Config   interface{}
 	Producer interface{}
 }
-
 func init() {
 	loadConfig()
 }
@@ -44,7 +37,6 @@ func loadConfig() {
 	streamDestinationsMap = make(map[string]StreamDestination)
 	producerDestinationLockMap = make(map[string]*sync.RWMutex)
 }
-
 // newProducer delegates the call to the appropriate manager based on parameter destination for creating producer
 func newProducer(destinationConfig interface{}, destination string) (interface{}, error) {
 	switch {
@@ -54,7 +46,6 @@ func newProducer(destinationConfig interface{}, destination string) (interface{}
 		return nil, fmt.Errorf("No provider configured for StreamManager")
 	}
 }
-
 // closeProducer delegates the call to the appropriate manager based on parameter destination to close a given producer
 func closeProducer(producer interface{}, destination string) error {
 	switch {
@@ -73,7 +64,16 @@ func send(jsonData json.RawMessage, destination string, producer interface{}, co
 		return 404, "No provider configured for StreamManager", ""
 	}
 }
-
+func isProducerCreated(producer interface{}) bool {
+	if producer == nil {
+		return false
+	}
+	switch reflect.TypeOf(producer).Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Array, reflect.Chan, reflect.Slice:
+		return !reflect.ValueOf(producer).IsNil()
+	}
+	return true
+}
 // SendData gets the producer from streamDestinationsMap and sends data
 func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string, string) {
 	var respStatusCode int
@@ -92,7 +92,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 		producer := streamDestinationFromMap.Producer
 		config := streamDestinationFromMap.Config
 		producerLock.RUnlock()
-		if producer == nil || reflect.ValueOf(producer).IsNil() {
+		if !isProducerCreated(producer) {
 			/* As the producers are created when the server gets up or workspace config changes, it may happen that initially
 			the destinatin, such as Kafka server was not up, so, producer could not be created. But, after sometime it becomes reachable,
 			so, while sending the event if the producer is not creatd alrady, then it tries to create it. */
@@ -100,7 +100,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 			streamDestinationFromMap := streamDestinationsMap[key]
 			producer = streamDestinationFromMap.Producer
 			config = streamDestinationFromMap.Config
-			if producer != nil && !reflect.ValueOf(producer).IsNil() {
+			if !isProducerCreated(producer) {
 				streamDestination = streamDestinationFromMap
 			} else {
 				producer, err := newProducer(config, destination)
@@ -119,7 +119,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 	}
 	producerLock.RLock()
 	streamDestination = streamDestinationsMap[key]
-	if streamDestination != (StreamDestination{}) && (streamDestination.Producer != nil && !reflect.ValueOf(streamDestination.Producer).IsNil()) {
+	if streamDestination != (StreamDestination{}) && isProducerCreated(streamDestination.Producer) {
 		respStatusCode, respStatus, respBody = send(jsonData, destination, streamDestination.Producer, streamDestination.Config)
 	} else {
 		respStatusCode, respStatus, respBody = 400, "Producer not found in router", "Producer could not be created"
@@ -127,7 +127,6 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 	producerLock.RUnlock()
 	return respStatusCode, respStatus, respBody
 }
-
 // createOrUpdateProducer creates or updates producer based on destination config and updates streamDestinationsMap
 func createOrUpdateProducer(sourceID string, destID string, destType string, sourceName string, destination backendconfig.DestinationT) {
 	key := sourceID + "-" + destID
@@ -159,7 +158,6 @@ func createOrUpdateProducer(sourceID string, destID string, destType string, sou
 		}
 	}
 }
-
 // New returns CustomdestinationManager
 func New(destType string) DestinationManager {
 	if misc.ContainsString(objectStreamDestinations, destType) {

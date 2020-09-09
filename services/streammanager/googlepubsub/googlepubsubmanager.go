@@ -21,8 +21,8 @@ type Config struct {
 }
 
 type pubsubClient struct {
-	Pbs          *pubsub.Client
-	EventToTopic []map[string]interface{}
+	Pbs      *pubsub.Client
+	TopicMap map[int]*pubsub.Topic
 }
 
 // NewProducer creates a producer based on destination config
@@ -44,17 +44,18 @@ func NewProducer(destinationConfig interface{}) (*pubsubClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	var eventToTopic = make([]map[string]interface{}, len(config.EventToTopicMap))
+	var topicMap = make(map[int]*pubsub.Topic, len(config.EventToTopicMap))
 	for i, s := range config.EventToTopicMap {
 		topic := client.Topic(s["to"])
-		if eventToTopic[i] == nil {
-			eventToTopic[i] = make(map[string]interface{})
-		}
-		eventToTopic[i]["event"] = s["from"]
-		eventToTopic[i]["topic"] = topic
+		topic.PublishSettings.DelayThreshold = 0
+		// if eventToTopic[i] == nil {
+		// 	eventToTopic[i] = make(map[string]interface{})
+		// }
+		//eventToTopic[i]["event"] = s["from"]
+		topicMap[i] = topic
 	}
 	var pbsClient *pubsubClient
-	pbsClient = &pubsubClient{client, eventToTopic}
+	pbsClient = &pubsubClient{client, topicMap}
 	return pbsClient, nil
 }
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
@@ -98,11 +99,11 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			return 400, respStatus, responseMessage
 		}
 		var topic *pubsub.Topic
-		for _, s := range pbs.EventToTopic {
-			t := s["topic"].(*pubsub.Topic)
-			splitString := strings.Split(t.String(), "/")
+		for _, s := range pbs.TopicMap {
+			splitString := strings.Split(s.String(), "/")
 			if splitString[3] == topicIdString {
-				topic = t
+				logger.Info(s.String())
+				topic = s
 				break
 			}
 		}
@@ -112,7 +113,6 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			respStatus = "Failure"
 			return statusCode, respStatus, responseMessage
 		}
-		topic.PublishSettings.DelayThreshold = 0
 		result := topic.Publish(ctx, &pubsub.Message{Data: []byte(value)})
 		serverID, err := result.Get(ctx)
 		if err != nil {
@@ -138,9 +138,8 @@ func CloseProducer(producer interface{}) error {
 	if ok {
 		var err error
 		if pbs != nil {
-			for _, s := range pbs.EventToTopic {
-				t := s["topic"].(*pubsub.Topic)
-				t.Stop()
+			for _, s := range pbs.TopicMap {
+				s.Stop()
 			}
 			err := pbs.Pbs.Close()
 			if err != nil {
