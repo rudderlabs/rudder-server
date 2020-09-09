@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/warehousemanager"
@@ -128,7 +127,7 @@ func createTestFileForBatchDestination(destinationID string) string {
 	return gzipFilePath
 }
 
-func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, provider string, destination backendconfig.DestinationT) (err error) {
+func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, provider string, destination backendconfig.DestinationT) (objectName string, err error) {
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config:   misc.GetObjectStorageConfig(provider, destination.Config),
@@ -144,11 +143,11 @@ func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, pr
 	}
 	defer misc.RemoveFilePaths(filename)
 	defer uploadFile.Close()
-	_, err = uploader.Upload(uploadFile, keyPrefixes...)
+	uploadOutput, err := uploader.Upload(uploadFile, keyPrefixes...)
 	if err != nil {
 		logger.Errorf("DCT: Failed to upload test file %s for testing this destination id %s: err %v", filename, destination.ID, err)
 	}
-	return err
+	return uploadOutput.ObjectName, err
 }
 
 func downloadTestFileForBatchDestination(testObjectKey string, provider string, destination backendconfig.DestinationT) (err error) {
@@ -160,18 +159,7 @@ func downloadTestFileForBatchDestination(testObjectKey string, provider string, 
 		logger.Errorf("DCT: Failed to initiate filemanager config for testing this destination id %s: err %v", destination.ID, err)
 		panic(err)
 	}
-	config := misc.GetObjectStorageConfig(provider, destination.Config)
-	var objectPrefix string
-	if _, ok := config["prefix"].(string); ok {
-		objectPrefix = config["prefix"].(string)
-	}
-	if objectPrefix != "" {
-		if objectPrefix[len(objectPrefix)-1:] == "/" {
-			testObjectKey = objectPrefix + testObjectKey
-		} else {
-			testObjectKey = objectPrefix + "/" + testObjectKey
-		}
-	}
+
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		panic(err)
@@ -195,7 +183,7 @@ func downloadTestFileForBatchDestination(testObjectKey string, provider string, 
 func TestBatchDestinationConnection(destination backendconfig.DestinationT) string {
 	testFileName := createTestFileForBatchDestination(destination.ID)
 	keyPrefixes := []string{config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload"), destination.ID, time.Now().Format("01-02-2006")}
-	err := uploadTestFileForBatchDestination(testFileName, keyPrefixes, destination.DestinationDefinition.Name, destination)
+	_, err := uploadTestFileForBatchDestination(testFileName, keyPrefixes, destination.DestinationDefinition.Name, destination)
 	var error string
 	if err != nil {
 		error = err.Error()
@@ -212,13 +200,11 @@ func TestWarehouseDestinationConnection(destination backendconfig.DestinationT) 
 	testFileNameWithPath := createTestFileForBatchDestination(destination.ID)
 	storageProvider := warehouseutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config)
 	keyPrefixes := []string{rudderConnectionTestingFolder, destination.ID, time.Now().Format("01-02-2006")}
-	err = uploadTestFileForBatchDestination(testFileNameWithPath, keyPrefixes, storageProvider, destination)
+	objectKeyName, err := uploadTestFileForBatchDestination(testFileNameWithPath, keyPrefixes, storageProvider, destination)
 	if err != nil {
 		return err.Error()
 	}
-	fileSplit := strings.Split(testFileNameWithPath, "/")
-	keyName := strings.Join(append(keyPrefixes, fileSplit[len(fileSplit)-1]), "/")
-	err = downloadTestFileForBatchDestination(keyName, storageProvider, destination)
+	err = downloadTestFileForBatchDestination(objectKeyName, storageProvider, destination)
 	if err != nil {
 		return err.Error()
 	}
