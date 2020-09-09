@@ -4,6 +4,7 @@ go 1.13
 
 require (
 	cloud.google.com/go/bigquery v1.4.0
+	cloud.google.com/go/pubsub v1.2.0
 	cloud.google.com/go/storage v1.6.0
 	github.com/Azure/azure-pipeline-go v0.2.2 // indirect
 	github.com/Azure/azure-storage-blob-go v0.8.0
