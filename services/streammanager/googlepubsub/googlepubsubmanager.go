@@ -94,13 +94,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			return 400, respStatus, responseMessage
 		}
 		var topic *pubsub.Topic
-		for i, s := range pbs.TopicMap {
-			if i == topicIdString {
-				logger.Info(s.String())
-				topic = s
-				break
-			}
-		}
+		topic = pbs.TopicMap[topicIdString]
 		if topic == nil {
 			statusCode = 400
 			responseMessage = "[GooglePubSub] error :: Topic not found in project"
