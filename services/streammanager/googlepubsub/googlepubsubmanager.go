@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -22,7 +21,7 @@ type Config struct {
 
 type pubsubClient struct {
 	Pbs      *pubsub.Client
-	TopicMap map[int]*pubsub.Topic
+	TopicMap map[string]*pubsub.Topic
 }
 
 // NewProducer creates a producer based on destination config
@@ -44,15 +43,11 @@ func NewProducer(destinationConfig interface{}) (*pubsubClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	var topicMap = make(map[int]*pubsub.Topic, len(config.EventToTopicMap))
-	for i, s := range config.EventToTopicMap {
+	var topicMap = make(map[string]*pubsub.Topic, len(config.EventToTopicMap))
+	for _, s := range config.EventToTopicMap {
 		topic := client.Topic(s["to"])
 		topic.PublishSettings.DelayThreshold = 0
-		// if eventToTopic[i] == nil {
-		// 	eventToTopic[i] = make(map[string]interface{})
-		// }
-		//eventToTopic[i]["event"] = s["from"]
-		topicMap[i] = topic
+		topicMap[s["to"]] = topic
 	}
 	var pbsClient *pubsubClient
 	pbsClient = &pubsubClient{client, topicMap}
@@ -99,9 +94,8 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			return 400, respStatus, responseMessage
 		}
 		var topic *pubsub.Topic
-		for _, s := range pbs.TopicMap {
-			splitString := strings.Split(s.String(), "/")
-			if splitString[3] == topicIdString {
+		for i, s := range pbs.TopicMap {
+			if i == topicIdString {
 				logger.Info(s.String())
 				topic = s
 				break
