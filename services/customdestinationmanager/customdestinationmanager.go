@@ -74,14 +74,7 @@ func send(jsonData json.RawMessage, destination string, producer interface{}, co
 	}
 }
 func isProducerCreated(producer interface{}) bool {
-	if producer == nil {
-		return false
-	}
-	switch reflect.TypeOf(producer).Kind() {
-	case reflect.Ptr, reflect.Map, reflect.Array, reflect.Chan, reflect.Slice:
-		return !reflect.ValueOf(producer).IsNil()
-	}
-	return true
+	return producer != nil && !reflect.ValueOf(producer).IsZero()
 }
 
 // SendData gets the producer from streamDestinationsMap and sends data
