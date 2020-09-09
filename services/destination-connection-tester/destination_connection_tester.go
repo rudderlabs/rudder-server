@@ -160,7 +160,18 @@ func downloadTestFileForBatchDestination(testObjectKey string, provider string, 
 		logger.Errorf("DCT: Failed to initiate filemanager config for testing this destination id %s: err %v", destination.ID, err)
 		panic(err)
 	}
-
+	config := misc.GetObjectStorageConfig(provider, destination.Config)
+	var objectPrefix string
+	if _, ok := config["prefix"].(string); ok {
+		objectPrefix = config["prefix"].(string)
+	}
+	if objectPrefix != "" {
+		if objectPrefix[len(objectPrefix)-1:] == "/" {
+			testObjectKey = objectPrefix + testObjectKey
+		} else {
+			testObjectKey = objectPrefix + "/" + testObjectKey
+		}
+	}
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		panic(err)
