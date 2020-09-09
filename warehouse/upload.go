@@ -247,9 +247,8 @@ func (job *UploadJobT) run() (err error) {
 		errorMap = whManager.LoadIdentityTables()
 	} else {
 		identityTables = []string{identifiesTable, usersTable, identityMergeRulesTable, identityMappingsTable}
-		// err = sf.loadUserTables()
 		if _, ok := uploadSchema[identifiesTable]; ok {
-			if !job.shouldBeLoaded(identifiesTable) && !job.shouldBeLoaded(usersTable) {
+			if !job.shouldTableBeLoaded(identifiesTable) && !job.shouldTableBeLoaded(usersTable) {
 				// do nothing
 			} else {
 				errorMap = whManager.LoadUserTables()
@@ -280,7 +279,7 @@ func (job *UploadJobT) run() (err error) {
 			wg.Done()
 			continue
 		}
-		if !job.shouldBeLoaded(tableName) {
+		if !job.shouldTableBeLoaded(tableName) {
 			wg.Done()
 			continue
 		}
@@ -558,7 +557,7 @@ func (job *UploadJobT) hasLoadFiles(tableName string) bool {
 	return count > 0
 }
 
-func (job *UploadJobT) shouldBeLoaded(tableName string) bool {
+func (job *UploadJobT) shouldTableBeLoaded(tableName string) bool {
 	status, _ := job.GetTableUploadStatus(tableName)
 	if status == ExportedDataState {
 		return false

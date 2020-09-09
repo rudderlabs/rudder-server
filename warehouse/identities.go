@@ -80,16 +80,6 @@ func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.WarehouseT) (bool, 
 		return false, err
 	}
 	return !empty, nil
-
-	// TODO: Change logic to check if warehouse has data in tables
-	// sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE destination_id='%s' AND status='%s'`, warehouseutils.WarehouseUploadsTable, warehouse.Destination.ID, warehouseutils.ExportedDataState)
-	// var count int
-	// err := wh.dbHandle.QueryRow(sqlStatement).Scan(&count)
-	// if err != nil {
-	// 	// TOOD: Handle this
-	// 	panic(err)
-	// }
-	// return count > 0
 }
 
 func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
@@ -312,5 +302,4 @@ func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) {
 		job.setUploadStatus(ExportedDataState)
 		return
 	})
-
 }

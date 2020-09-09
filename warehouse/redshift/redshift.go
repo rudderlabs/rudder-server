@@ -410,14 +410,14 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 											)
 										)
 									)`,
-		rs.Namespace,
-		stagingTableName,
-		strings.Join(firstValProps, ","),
-		warehouseutils.UsersTable,
-		identifyStagingTable,
-		strings.Join(userColNames, ","),
-		strings.Join(firstValPropsForIdentifies, ","),
-		warehouseutils.IdentifiesTable,
+		rs.Namespace,                                  // 1
+		stagingTableName,                              // 2
+		strings.Join(firstValProps, ","),              // 3
+		warehouseutils.UsersTable,                     // 4
+		identifyStagingTable,                          // 5
+		strings.Join(userColNames, ","),               // 6
+		strings.Join(firstValPropsForIdentifies, ","), // 7
+		warehouseutils.IdentifiesTable,                // 8
 	)
 
 	// BEGIN TRANSACTION
