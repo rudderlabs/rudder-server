@@ -355,7 +355,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			for index, value := range record {
 				columnName := sortedColumnKeys[index]
 				columnDataType := tableSchemaInUpload[columnName]
-				data := typeCastDataFromType(value, columnDataType)
+				data := typecastDataFromType(value, columnDataType)
 				recordInterface = append(recordInterface, data)
 
 			}
