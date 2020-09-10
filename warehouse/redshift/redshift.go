@@ -747,11 +747,11 @@ func (rs *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
-func (rs *HandleT) LoadIdentityTables() (errorMap map[string]error) {
+func (rs *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (rs *HandleT) PreLoadIdentityTables() (err error) {
+func (rs *HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 

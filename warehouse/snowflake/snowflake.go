@@ -301,12 +301,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	return
 }
 
-func (sf *HandleT) loadMergeRulesTable() (err error) {
-	if sf.isTableExported(identityMergeRulesTable) {
-		logger.Infof("SF: Skipping load for table:%s as it has been succesfully loaded earlier", identityMergeRulesTable)
-		return
-	}
-
+func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	logger.Infof("SF: Starting load for table:%s\n", identityMergeRulesTable)
 
 	logger.Infof("SF: Fetching load file location for %s", identityMergeRulesTable)
@@ -338,12 +333,7 @@ func (sf *HandleT) loadMergeRulesTable() (err error) {
 	return
 }
 
-func (sf *HandleT) loadMappingsTable() (err error) {
-	if sf.isTableExported(identityMappingsTable) {
-		logger.Infof("SF: Skipping load for table:%s as it has been succesfully loaded earlier", identityMappingsTable)
-		return
-	}
-
+func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	logger.Infof("SF: Starting load for table:%s\n", identityMappingsTable)
 	logger.Infof("SF: Fetching load file location for %s", identityMappingsTable)
 	var location string
@@ -399,12 +389,6 @@ func (sf *HandleT) loadMappingsTable() (err error) {
 	}
 	logger.Infof("SF: Complete load for table:%s\n", identityMappingsTable)
 	return
-}
-
-func (sf *HandleT) isTableExported(tableName string) bool {
-	status, _ := sf.Uploader.GetTableUploadStatus(tableName)
-	// TODO: remove hard coded value
-	return status == "exported_data"
 }
 
 func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
@@ -675,32 +659,6 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 	return nil
 }
 
-func (sf *HandleT) PreLoadIdentityTables() (err error) {
-	var generated bool
-	if generated, err = sf.Uploader.AreIdentityTablesLoadFilesGenerated(); !generated {
-		err = sf.Uploader.ResolveIdentities(true)
-		if err != nil {
-			logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
-			return
-		}
-	}
-
-	if !sf.isTableExported(identityMergeRulesTable) {
-		err = sf.loadMergeRulesTable()
-		if err != nil {
-			return
-		}
-	}
-
-	if !sf.isTableExported(identityMappingsTable) {
-		err = sf.loadMappingsTable()
-		if err != nil {
-			return
-		}
-	}
-	return
-}
-
 func (sf *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	return
 }
@@ -837,53 +795,6 @@ func (sf *HandleT) Cleanup() {
 
 func (sf *HandleT) LoadUserTables() map[string]error {
 	return sf.loadUserTables()
-}
-
-func (sf *HandleT) LoadIdentityTables() (errorMap map[string]error) {
-	logger.Infof("SF: Starting load for identity tables\n")
-
-	errorMap = sf.loadUserTables()
-
-	haveToUploadAliases := len(sf.Uploader.GetTableSchemaInUpload(aliasTable)) > 0
-	if haveToUploadAliases {
-		errorMap[aliasTable] = nil
-		_, err := sf.loadTable(aliasTable, sf.Uploader.GetTableSchemaInUpload(aliasTable), nil, false)
-		if err != nil {
-			errorMap[aliasTable] = err
-			return
-		}
-	}
-
-	haveToUploadMergeRules := len(sf.Uploader.GetTableSchemaInUpload(identityMergeRulesTable)) > 0
-	if haveToUploadMergeRules {
-		// var generated bool
-		if generated, err := sf.Uploader.AreIdentityTablesLoadFilesGenerated(); !generated {
-			err = sf.Uploader.ResolveIdentities(false)
-			if err != nil {
-				logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
-				return
-			}
-		}
-
-		if !sf.isTableExported(identityMergeRulesTable) {
-			errorMap[identityMergeRulesTable] = nil
-			err := sf.loadMergeRulesTable()
-			if err != nil {
-				errorMap[identityMergeRulesTable] = err
-				return
-			}
-		}
-
-		if !sf.isTableExported(identityMappingsTable) {
-			errorMap[identityMappingsTable] = nil
-			err := sf.loadMappingsTable()
-			if err != nil {
-				errorMap[identityMappingsTable] = nil
-				return
-			}
-		}
-	}
-	return errorMap
 }
 
 func (sf *HandleT) LoadTable(tableName string) error {

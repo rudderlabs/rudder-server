@@ -19,7 +19,7 @@ var (
 )
 
 func init() {
-	shouldPreLoadIdentities = config.GetBool("Warehouse.preLoadIdentities", true)
+	shouldPreLoadIdentities = config.GetBool("Warehouse.preLoadIdentities", false)
 }
 
 func isDestPreLoaded(warehouse warehouseutils.WarehouseT) bool {
@@ -295,9 +295,10 @@ func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) {
 		job.setUploadStatus(UpdatedSchemaState)
 
 		job.setUploadStatus(ExportingDataState)
-		err = whManager.PreLoadIdentityTables()
-		if err != nil {
-			job.setUploadError(err, AbortedState)
+		errorMap := job.loadIdentityTables()
+		errors := job.setTableStatusFromErrorMap(errorMap)
+		if len(errors) > 0 {
+			job.setUploadError(warehouseutils.ConcatErrors(errors), AbortedState)
 		}
 		job.setUploadStatus(ExportedDataState)
 		return

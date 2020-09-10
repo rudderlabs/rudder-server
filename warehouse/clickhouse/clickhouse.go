@@ -204,10 +204,6 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string
 	return fmt.Sprintf(`Nullable(%s)`, columnType)
 }
 
-func (ch *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
-	return
-}
-
 // DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	objectLocations, _ := ch.Uploader.GetLoadFileLocations(tableName)
@@ -601,14 +597,18 @@ func (ch *HandleT) Cleanup() {
 	}
 }
 
-func (ch *HandleT) LoadIdentityTables() (errorMap map[string]error) {
+func (ch *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (ch *HandleT) PreLoadIdentityTables() (err error) {
+func (ch *HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
 func (ch *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+	return
+}
+
+func (ch *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }

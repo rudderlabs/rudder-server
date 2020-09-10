@@ -608,11 +608,11 @@ func (pg *HandleT) Cleanup() {
 	}
 }
 
-func (pg *HandleT) LoadIdentityTables() (errorMap map[string]error) {
+func (pg *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (pg *HandleT) PreLoadIdentityTables() (err error) {
+func (pg *HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 

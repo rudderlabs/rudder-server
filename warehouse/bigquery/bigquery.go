@@ -486,11 +486,11 @@ func (bq *HandleT) Cleanup() {
 	}
 }
 
-func (bq *HandleT) LoadIdentityTables() (errorMap map[string]error) {
+func (bq *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (bq *HandleT) PreLoadIdentityTables() (err error) {
+func (bq *HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 

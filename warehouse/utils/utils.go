@@ -121,10 +121,7 @@ type UploaderI interface {
 	GetTableSchemaInUpload(tableName string) TableSchemaT
 	GetLoadFileLocations(tableName string) ([]string, error)
 	GetSampleLoadFileLocation(tableName string) (string, error)
-	GetTableUploadStatus(tableName string) (string, error)
-	AreIdentityTablesLoadFilesGenerated() (generated bool, err error)
 	GetSingleLoadFileLocation(tableName string) (string, error)
-	ResolveIdentities(isPreLoad bool) error
 }
 
 func IDResolutionEnabled() bool {
@@ -502,6 +499,18 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	}
 	sort.Strings(columnKeys)
 	return columnKeys
+}
+
+func ConcatErrors(errors []error) (err error) {
+	errStr := ""
+	for idx, err := range errors {
+		errStr += err.Error()
+		if idx < len(errors)-1 {
+			errStr += ", "
+		}
+	}
+	err = fmt.Errorf(errStr)
+	return err
 }
 
 func IdentityMergeRulesTableName(warehouse WarehouseT) string {

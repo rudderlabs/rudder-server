@@ -103,6 +103,22 @@ func setMaxParallelLoads() {
 	}
 }
 
+func (job *UploadJobT) identifiesTableName() string {
+	return warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentifiesTable)
+}
+
+func (job *UploadJobT) usersTableName() string {
+	return warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.UsersTable)
+}
+
+func (job *UploadJobT) identityMergeRulesTableName() string {
+	return warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable)
+}
+
+func (job *UploadJobT) identityMappingsTableName() string {
+	return warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable)
+}
+
 func (job *UploadJobT) run() (err error) {
 	// START: processing of upload job
 	if len(job.stagingFiles) == 0 {
@@ -131,7 +147,9 @@ func (job *UploadJobT) run() (err error) {
 		schemaHandle.localSchema = schemaHandle.schemaInWarehouse
 	}
 
-	// TODO:Why would this be 0?
+	// consolidate schemas over all staging files and set consolidatedSchema for upload
+	// only set if upload does not have schema(to skip reconsolidating on upload retry)
+	// recompute if schema in warehouse has changed from one in wh_schemas
 	if len(job.upload.Schema) == 0 || hasSchemaChanged {
 		// merge schemas over all staging files in this batch
 		logger.Infof("[WH]: Consolidating all staging files schema's with schema in wh_schemas...")
@@ -145,6 +163,7 @@ func (job *UploadJobT) run() (err error) {
 		}
 	}
 
+	// create entries in wh_table_uploads for all tables in uploadSchema
 	if !job.areTableUploadsCreated() {
 		err := job.initTableUploads()
 		if err != nil {
@@ -166,6 +185,8 @@ func (job *UploadJobT) run() (err error) {
 	)
 
 	// generate load files
+	// skip if already generated (valid entries in StartLoadFileID and EndLoadFileID)
+	// regenerate if schema in warehouse has changed from one in wh_schemas to avoid incorrect setting of fields/discards
 	if job.upload.StartLoadFileID == 0 || hasSchemaChanged {
 		job.setUploadStatus(GeneratingLoadFileState)
 		var loadFileIDs []int64
@@ -203,7 +224,6 @@ func (job *UploadJobT) run() (err error) {
 				panic(err)
 			}
 		}
-
 	}
 
 	whManager := job.whManager
@@ -215,7 +235,7 @@ func (job *UploadJobT) run() (err error) {
 	}
 	defer whManager.Cleanup()
 
-	// TODO: move this func to schema_handle
+	// start: update schema in warehouse
 	job.setUploadStatus(UpdatingSchemaState)
 	diff := getSchemaDiff(schemaHandle.schemaInWarehouse, job.upload.Schema)
 	err = whManager.MigrateSchema(diff)
@@ -223,46 +243,39 @@ func (job *UploadJobT) run() (err error) {
 		job.setUploadError(err, UpdatingSchemaFailedState)
 		return
 	}
+
+	// update all schemas in handle to the updated version from warehouse after successful migration
 	schemaHandle.updateLocalSchema(diff.UpdatedSchema)
 	schemaHandle.localSchema = schemaHandle.schemaAfterUpload
 	schemaHandle.schemaAfterUpload = diff.UpdatedSchema
 	schemaHandle.schemaInWarehouse = schemaHandle.schemaAfterUpload
 	job.setUploadStatus(UpdatedSchemaState)
+	// end: update schema in warehouse
 
 	job.setUploadStatus(ExportingDataState)
 	var loadErrors []error
 	uploadSchema := job.upload.Schema
 
-	// load user/identity tables
-	identifiesTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentifiesTable)
-	usersTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.UsersTable)
-	aliasTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.AliasTable)
-	identityMergeRulesTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable)
-	identityMappingsTable := warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable)
-
-	identityTables := []string{}
-	var errorMap map[string]error
-	if warehouseutils.IDResolutionEnabled() {
-		identityTables = []string{identifiesTable, usersTable, aliasTable, identityMergeRulesTable, identityMappingsTable}
-		errorMap = whManager.LoadIdentityTables()
-	} else {
-		identityTables = []string{identifiesTable, usersTable, identityMergeRulesTable, identityMappingsTable}
-		if _, ok := uploadSchema[identifiesTable]; ok {
-			if !job.shouldTableBeLoaded(identifiesTable) && !job.shouldTableBeLoaded(usersTable) {
-				// do nothing
-			} else {
-				errorMap = whManager.LoadUserTables()
+	userTables := []string{job.identifiesTableName(), job.usersTableName()}
+	if _, ok := uploadSchema[job.identifiesTableName()]; ok {
+		if !job.shouldTableBeLoaded(job.identifiesTableName()) && !job.shouldTableBeLoaded(job.usersTableName()) {
+			// do nothing as both tables are loaded
+		} else {
+			for _, tName := range userTables {
+				job.setTableUploadStatus(tName, ExecutingState)
 			}
+			errorMap := whManager.LoadUserTables()
+			loadErrors = append(loadErrors, job.setTableStatusFromErrorMap(errorMap)...)
 		}
 	}
-	for tName, err := range errorMap {
-		// TODO: set last_exec_time
-		if err != nil {
-			loadErrors = append(loadErrors, err)
-			job.setTableUploadError(tName, ExportingDataFailedState, err)
-		} else {
-			job.setTableUploadStatus(tName, ExportedDataState)
+
+	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
+	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
+		for _, tName := range identityTables {
+			job.setTableUploadStatus(tName, ExecutingState)
 		}
+		errorMap := job.loadIdentityTables()
+		loadErrors = append(loadErrors, job.setTableStatusFromErrorMap(errorMap)...)
 	}
 
 	var parallelLoads int
@@ -274,8 +287,9 @@ func (job *UploadJobT) run() (err error) {
 	var wg sync.WaitGroup
 	wg.Add(len(uploadSchema))
 	loadChan := make(chan struct{}, parallelLoads)
+	skipPrevLoadedTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 	for tableName := range uploadSchema {
-		if misc.ContainsString(identityTables, tableName) {
+		if misc.ContainsString(skipPrevLoadedTableNames, tableName) {
 			wg.Done()
 			continue
 		}
@@ -293,8 +307,9 @@ func (job *UploadJobT) run() (err error) {
 			if err != nil {
 				loadErrors = append(loadErrors, err)
 				job.setTableUploadError(tName, ExportingDataFailedState, err)
+			} else {
+				job.setTableUploadStatus(tName, ExportedDataState)
 			}
-			job.setTableUploadStatus(tName, ExportedDataState)
 			wg.Done()
 			<-loadChan
 		})
@@ -302,20 +317,58 @@ func (job *UploadJobT) run() (err error) {
 	wg.Wait()
 
 	if len(loadErrors) > 0 {
-		errStr := ""
-		for idx, err := range loadErrors {
-			errStr += err.Error()
-			if idx < len(loadErrors)-1 {
-				errStr += ", "
-			}
-		}
-		err = fmt.Errorf(errStr)
-		job.setUploadError(err, ExportingDataFailedState)
+		job.setUploadError(warehouseutils.ConcatErrors(loadErrors), ExportingDataFailedState)
 		return
 	}
 	job.setUploadStatus(ExportedDataState)
 
 	return nil
+}
+
+func (job *UploadJobT) loadIdentityTables() (errorMap map[string]error) {
+	logger.Infof("WH: Starting load for identity tables\n")
+	errorMap = make(map[string]error)
+	// var generated bool
+	if generated, err := job.areIdentityTablesLoadFilesGenerated(); !generated {
+		err = job.resolveIdentities(false)
+		if err != nil {
+			logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
+			errorMap[job.identityMergeRulesTableName()] = err
+			return
+		}
+	}
+
+	if !job.hasBeenLoaded(job.identityMergeRulesTableName()) {
+		errorMap[job.identityMergeRulesTableName()] = nil
+		err := job.whManager.LoadIdentityMergeRulesTable()
+		if err != nil {
+			errorMap[job.identityMergeRulesTableName()] = err
+			return
+		}
+	}
+
+	if !job.hasBeenLoaded(job.identityMappingsTableName()) {
+		errorMap[job.identityMappingsTableName()] = nil
+		err := job.whManager.LoadIdentityMappingsTable()
+		if err != nil {
+			errorMap[job.identityMappingsTableName()] = nil
+			return
+		}
+	}
+	return errorMap
+}
+
+func (job *UploadJobT) setTableStatusFromErrorMap(errorMap map[string]error) (errors []error) {
+	for tName, err := range errorMap {
+		// TODO: set last_exec_time
+		if err != nil {
+			errors = append(errors, err)
+			job.setTableUploadError(tName, ExportingDataFailedState, err)
+		} else {
+			job.setTableUploadStatus(tName, ExportedDataState)
+		}
+	}
+	return errors
 }
 
 // getUploadTimings returns timings json column
@@ -536,7 +589,7 @@ func (job *UploadJobT) initTableUploads() (err error) {
 	return
 }
 
-func (job *UploadJobT) GetTableUploadStatus(tableName string) (status string, err error) {
+func (job *UploadJobT) getTableUploadStatus(tableName string) (status string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s' ORDER BY id DESC`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, tableName)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&status)
 	return
@@ -557,8 +610,16 @@ func (job *UploadJobT) hasLoadFiles(tableName string) bool {
 	return count > 0
 }
 
+func (job *UploadJobT) hasBeenLoaded(tableName string) bool {
+	status, _ := job.getTableUploadStatus(tableName)
+	if status == ExportedDataState {
+		return true
+	}
+	return false
+}
+
 func (job *UploadJobT) shouldTableBeLoaded(tableName string) bool {
-	status, _ := job.GetTableUploadStatus(tableName)
+	status, _ := job.getTableUploadStatus(tableName)
 	if status == ExportedDataState {
 		return false
 	}
@@ -700,6 +761,43 @@ func (job *UploadJobT) updateTableEventsCount(tableName string) (err error) {
 	return
 }
 
+func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, err error) {
+	var mergeRulesLocation sql.NullString
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name=%s`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
+	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mergeRulesLocation)
+	if err != nil {
+		return
+	}
+	if !mergeRulesLocation.Valid {
+		generated = false
+		return
+	}
+
+	var mappingsLocation sql.NullString
+	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name=%s`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
+	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mappingsLocation)
+	if err != nil {
+		return
+	}
+	if !mappingsLocation.Valid {
+		generated = false
+		return
+	}
+	generated = true
+	return
+}
+
+func (job *UploadJobT) resolveIdentities(isPreload bool) (err error) {
+	idr := identity.HandleT{
+		Warehouse:        job.warehouse,
+		DbHandle:         job.dbHandle,
+		UploadID:         job.upload.ID,
+		Uploader:         job,
+		WarehouseManager: job.whManager,
+	}
+	return idr.Resolve(isPreload)
+}
+
 func (job *UploadJobT) GetLoadFileLocations(tableName string) (locations []string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
 		SELECT  staging_file_id, MAX(id) AS id FROM wh_load_files
@@ -773,47 +871,10 @@ func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.T
 	return job.schemaHandle.uploadSchema[tableName]
 }
 
-func (job *UploadJobT) AreIdentityTablesLoadFilesGenerated() (generated bool, err error) {
-	var mergeRulesLocation sql.NullString
-	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name=%s`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
-	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mergeRulesLocation)
-	if err != nil {
-		return
-	}
-	if !mergeRulesLocation.Valid {
-		generated = false
-		return
-	}
-
-	var mappingsLocation sql.NullString
-	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name=%s`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
-	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mappingsLocation)
-	if err != nil {
-		return
-	}
-	if !mappingsLocation.Valid {
-		generated = false
-		return
-	}
-	generated = true
-	return
-}
-
 func (job *UploadJobT) GetSingleLoadFileLocation(tableName string) (string, error) {
 	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, tableName)
 	logger.Infof("SF: Fetching load file location for %s: %s", tableName, sqlStatement)
 	var location string
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&location)
 	return location, err
-}
-
-func (job *UploadJobT) ResolveIdentities(isPreload bool) (err error) {
-	idr := identity.HandleT{
-		Warehouse:        job.warehouse,
-		DbHandle:         job.dbHandle,
-		UploadID:         job.upload.ID,
-		Uploader:         job,
-		WarehouseManager: job.whManager,
-	}
-	return idr.Resolve(isPreload)
 }

@@ -19,11 +19,11 @@ type ManagerI interface {
 	MigrateSchema(diff warehouseutils.SchemaDiffT) (err error)
 	LoadTable(tableName string) error
 	LoadUserTables() map[string]error
-	LoadIdentityTables() map[string]error
+	LoadIdentityMergeRulesTable() error
+	LoadIdentityMappingsTable() error
 	Cleanup()
 	IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error)
 	TestConnection(warehouse warehouseutils.WarehouseT) error
-	PreLoadIdentityTables() error
 	DownloadIdentityRules(*misc.GZipWriter) error
 }
 
