@@ -221,7 +221,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, tableName)
 
-	logger.Infof("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
+	logger.Debugf("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("SF: Error creating temporary table for table:%s: %v\n", tableName, err)
@@ -447,7 +447,7 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		resp.stagingTable,                // 5
 		strings.Join(userColNames, ","),  // 6
 	)
-	logger.Infof("SF: Creating staging table for users: %s\n", sqlStatement)
+	logger.Debugf("SF: Creating staging table for users: %s\n", sqlStatement)
 	_, err = resp.dbHandle.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("SF: Error creating temporary table for table:%s: %v\n", usersTable, err)

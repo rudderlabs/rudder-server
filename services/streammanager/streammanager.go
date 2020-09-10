@@ -6,6 +6,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/streammanager/eventbridge"
 	"github.com/rudderlabs/rudder-server/services/streammanager/firehose"
+	"github.com/rudderlabs/rudder-server/services/streammanager/googlepubsub"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
 )
@@ -29,6 +30,9 @@ func NewProducer(destinationConfig interface{}, destination string) (interface{}
 	case "KINESIS":
 		producer, err := kinesis.NewProducer(destinationConfig)
 		return producer, err
+	case "GOOGLEPUBSUB":
+		producer, err := googlepubsub.NewProducer(destinationConfig)
+		return producer, err
 	default:
 		return nil, fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
 	}
@@ -43,6 +47,9 @@ func CloseProducer(producer interface{}, destination string) error {
 		return nil
 	case "KAFKA", "AZURE_EVENT_HUB":
 		err := kafka.CloseProducer(producer)
+		return err
+	case "GOOGLEPUBSUB":
+		err := googlepubsub.CloseProducer(producer)
 		return err
 	default:
 		return fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
@@ -66,6 +73,8 @@ func Produce(jsonData json.RawMessage, destination string, producer interface{},
 		return firehose.Produce(jsonData, producer, config)
 	case "EVENTBRIDGE":
 		return eventbridge.Produce(jsonData, producer, config)
+	case "GOOGLEPUBSUB":
+		return googlepubsub.Produce(jsonData, producer, config)
 	default:
 		return 404, "No provider configured for StreamManager", ""
 	}

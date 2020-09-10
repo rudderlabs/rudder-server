@@ -202,7 +202,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	// create temporary table
 	stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%[2]s" (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
-	logger.Infof("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
+	logger.Debugf("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("PG: Error creating temporary table for table:%s: %v\n", tableName, err)
@@ -377,7 +377,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		unionStagingTableName,
 	)
 
-	logger.Infof("PG: Creating staging table for users: %s\n", sqlStatement)
+	logger.Debugf("PG: Creating staging table for users: %s\n", sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err

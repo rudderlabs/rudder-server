@@ -9,7 +9,7 @@
 
 RudderStack's backend is written in Go, with a rich UI written in React.js.
 
-You can also use the [cloud-hosted](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) RudderStack instance to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro).
+You can also signup for a 14 day free trial of [RudderStack Cloud](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) to get started.
 
 Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord channel](https://discordapp.com/invite/xNEdEGw) or read about us on [ProductHunt](https://www.producthunt.com/posts/rudderstack).
 
@@ -50,7 +50,7 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord cha
 
 # RudderStack Setup
 
-The easiest way to try RudderStack is through our hosted service. Please signup [here](https://app.rudderstack.com/signup?type=freetrial) to get started.
+The easiest way to experience RudderStack is to [signup](https://app.rudderstack.com/signup?type=freetrial) for **14-day Free Trial** of our hosted service, RudderStack cloud. Click [here](https://app.rudderstack.com/signup?type=freetrial) to get started.
 
 You can also set up and use RudderStack on your platform of choice.
 

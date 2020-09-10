@@ -743,9 +743,13 @@ func HasAWSKeysInConfig(config interface{}) bool {
 func GetObjectStorageConfig(provider string, objectStorageConfig interface{}) map[string]interface{} {
 	objectStorageConfigMap := objectStorageConfig.(map[string]interface{})
 	if provider == "S3" && !HasAWSKeysInConfig(objectStorageConfig) {
-		objectStorageConfigMap["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-		objectStorageConfigMap["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
-
+		clonedObjectStorageConfig := make(map[string]interface{})
+		for k, v := range objectStorageConfigMap {
+			clonedObjectStorageConfig[k] = v
+		}
+		clonedObjectStorageConfig["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+		clonedObjectStorageConfig["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+		return clonedObjectStorageConfig
 	}
 	return objectStorageConfigMap
 
