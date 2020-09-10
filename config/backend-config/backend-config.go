@@ -316,6 +316,10 @@ func configUpdate(statConfigBackendError stats.RudderStats) {
 		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
 	})
 
+	fmt.Println("[CONFIG] curSourceJSON: %+v", curSourceJSON)
+	fmt.Println("[CONFIG] sourceJSON: %+v", sourceJSON)
+	fmt.Println("[CONFIG] reflect ", reflect.DeepEqual(curSourceJSON, sourceJSON))
+
 	if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
 		log.Info("Workspace Config changed")
 		curSourceJSONLock.Lock()
