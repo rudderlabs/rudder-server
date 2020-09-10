@@ -9,7 +9,7 @@
 
 RudderStack's backend is written in Go, with a rich UI written in React.js.
 
-You can also signup for a 14 day free trial of [RudderStack Cloud](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro).
+You can also signup for a 14 day free trial of [RudderStack Cloud](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) to get started.
 
 Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord channel](https://discordapp.com/invite/xNEdEGw) or read about us on [ProductHunt](https://www.producthunt.com/posts/rudderstack).
 
