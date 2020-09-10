@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -161,6 +162,8 @@ func (job *UploadJobT) run() (err error) {
 			job.setUploadError(err, UpdatingSchemaFailedState)
 			return
 		}
+	} else {
+		schemaHandle.uploadSchema = job.upload.Schema
 	}
 
 	// create entries in wh_table_uploads for all tables in uploadSchema
@@ -188,6 +191,7 @@ func (job *UploadJobT) run() (err error) {
 	// skip if already generated (valid entries in StartLoadFileID and EndLoadFileID)
 	// regenerate if schema in warehouse has changed from one in wh_schemas to avoid incorrect setting of fields/discards
 	if job.upload.StartLoadFileID == 0 || hasSchemaChanged {
+		logger.Infof("[WH]: Starting load file generation for warehouse destination %s:%s upload:%d", job.warehouse.Type, job.warehouse.Destination.Name, job.upload.ID)
 		job.setUploadStatus(GeneratingLoadFileState)
 		var loadFileIDs []int64
 		loadFileIDs, err = job.createLoadFiles()
@@ -235,26 +239,50 @@ func (job *UploadJobT) run() (err error) {
 	}
 	defer whManager.Cleanup()
 
-	// start: update schema in warehouse
-	job.setUploadStatus(UpdatingSchemaState)
-	diff := getSchemaDiff(schemaHandle.schemaInWarehouse, job.upload.Schema)
-	err = whManager.MigrateSchema(diff)
-	if err != nil {
-		job.setUploadError(err, UpdatingSchemaFailedState)
-		return
+	// get total events in each table and overall to be used to record metrics
+	totalEventsPerTableMap := job.getEventsPerTableUpload()
+	var totalEventsInUpload int
+	for _, count := range totalEventsPerTableMap {
+		totalEventsInUpload += count
 	}
 
-	// update all schemas in handle to the updated version from warehouse after successful migration
-	schemaHandle.updateLocalSchema(diff.UpdatedSchema)
-	schemaHandle.localSchema = schemaHandle.schemaAfterUpload
-	schemaHandle.schemaAfterUpload = diff.UpdatedSchema
-	schemaHandle.schemaInWarehouse = schemaHandle.schemaAfterUpload
-	job.setUploadStatus(UpdatedSchemaState)
+	// start: update schema in warehouse
+	diff := getSchemaDiff(schemaHandle.schemaInWarehouse, job.upload.Schema)
+	if diff.Exists {
+		job.setUploadStatus(UpdatingSchemaState)
+		timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", job.warehouse.Destination.ID)
+		timer.Start()
+		logger.Infof("[WH]: Starting migration in warehouse destination %s:%s upload:%d", job.warehouse.Type, job.warehouse.Destination.Name, job.upload.ID)
+		err = whManager.MigrateSchema(diff)
+		if err != nil {
+			state := job.setUploadError(err, UpdatingSchemaFailedState)
+			if state == AbortedState {
+				warehouseutils.DestStat(stats.CountType, "total_records_upload_failed", job.warehouse.Destination.ID).Count(totalEventsInUpload)
+			}
+			return
+		}
+		timer.End()
+
+		// update all schemas in handle to the updated version from warehouse after successful migration
+		schemaHandle.updateLocalSchema(diff.UpdatedSchema)
+		schemaHandle.localSchema = schemaHandle.schemaAfterUpload
+		schemaHandle.schemaAfterUpload = diff.UpdatedSchema
+		schemaHandle.schemaInWarehouse = schemaHandle.schemaAfterUpload
+		job.setUploadStatus(UpdatedSchemaState)
+	} else {
+		// no alter done to schema in this upload
+		schemaHandle.schemaAfterUpload = schemaHandle.schemaInWarehouse
+	}
 	// end: update schema in warehouse
 
+	logger.Infof("[WH]: Starting data copy to warehouse destination %s:%s upload:%d", job.warehouse.Type, job.warehouse.Destination.Name, job.upload.ID)
 	job.setUploadStatus(ExportingDataState)
 	var loadErrors []error
 	uploadSchema := job.upload.Schema
+
+	// metric for total copy time of all tables data to warehouse
+	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", job.warehouse.Destination.ID)
+	timer.Start()
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	if _, ok := uploadSchema[job.identifiesTableName()]; ok {
@@ -266,14 +294,15 @@ func (job *UploadJobT) run() (err error) {
 			}
 			errorMap := whManager.LoadUserTables()
 			loadErrors = append(loadErrors, job.setTableStatusFromErrorMap(errorMap)...)
+			if len(loadErrors) == 0 {
+				for tName := range errorMap {
+					job.recordMetric(tName, totalEventsPerTableMap)
+				}
+			}
 		}
 	}
 
-	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
-		for _, tName := range identityTables {
-			job.setTableUploadStatus(tName, ExecutingState)
-		}
 		errorMap := job.loadIdentityTables()
 		loadErrors = append(loadErrors, job.setTableStatusFromErrorMap(errorMap)...)
 	}
@@ -309,18 +338,26 @@ func (job *UploadJobT) run() (err error) {
 				job.setTableUploadError(tName, ExportingDataFailedState, err)
 			} else {
 				job.setTableUploadStatus(tName, ExportedDataState)
+				job.recordMetric(tName, totalEventsPerTableMap)
 			}
 			wg.Done()
 			<-loadChan
 		})
 	}
 	wg.Wait()
+	timer.End()
 
 	if len(loadErrors) > 0 {
-		job.setUploadError(warehouseutils.ConcatErrors(loadErrors), ExportingDataFailedState)
+		state := job.setUploadError(warehouseutils.ConcatErrors(loadErrors), ExportingDataFailedState)
+		if state == AbortedState {
+			uploadedEvents := job.getTotalEventsUploaded()
+			warehouseutils.DestStat(stats.CountType, "total_records_uploaded", job.warehouse.Destination.ID).Count(uploadedEvents)
+			warehouseutils.DestStat(stats.CountType, "total_records_upload_failed", job.warehouse.Destination.ID).Count(totalEventsInUpload - uploadedEvents)
+		}
 		return
 	}
 	job.setUploadStatus(ExportedDataState)
+	warehouseutils.DestStat(stats.CountType, "total_records_uploaded", job.warehouse.Destination.ID).Count(totalEventsInUpload)
 
 	return nil
 }
@@ -340,6 +377,7 @@ func (job *UploadJobT) loadIdentityTables() (errorMap map[string]error) {
 
 	if !job.hasBeenLoaded(job.identityMergeRulesTableName()) {
 		errorMap[job.identityMergeRulesTableName()] = nil
+		job.setTableUploadStatus(job.identityMergeRulesTableName(), ExecutingState)
 		err := job.whManager.LoadIdentityMergeRulesTable()
 		if err != nil {
 			errorMap[job.identityMergeRulesTableName()] = err
@@ -349,6 +387,7 @@ func (job *UploadJobT) loadIdentityTables() (errorMap map[string]error) {
 
 	if !job.hasBeenLoaded(job.identityMappingsTableName()) {
 		errorMap[job.identityMappingsTableName()] = nil
+		job.setTableUploadStatus(job.identityMappingsTableName(), ExecutingState)
 		err := job.whManager.LoadIdentityMappingsTable()
 		if err != nil {
 			errorMap[job.identityMappingsTableName()] = nil
@@ -369,6 +408,17 @@ func (job *UploadJobT) setTableStatusFromErrorMap(errorMap map[string]error) (er
 		}
 	}
 	return errors
+}
+
+func (job *UploadJobT) recordMetric(tableName string, totalEventsPerTableMap map[string]int) {
+	// add metric to record total loaded rows to standard tables
+	// adding metric for all event tables might result in too many metrics
+	tablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
+	if misc.Contains(tablesToRecordEventsMetric, strings.ToLower(tableName)) {
+		if eventsInTable, ok := totalEventsPerTableMap[tableName]; ok {
+			warehouseutils.DestStat(stats.CountType, fmt.Sprintf(`%s_table_records_uploaded`, strings.ToLower(tableName)), job.warehouse.Destination.ID).Count(eventsInTable)
+		}
+	}
 }
 
 // getUploadTimings returns timings json column
@@ -458,10 +508,9 @@ func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
 	return
 }
 
-func (job *UploadJobT) setUploadError(statusError error, state string) (err error) {
+func (job *UploadJobT) setUploadError(statusError error, state string) (setStatus string) {
 	logger.Errorf("WH: Failed during %s stage: %v\n", state, statusError.Error())
 	upload := job.upload
-	dbHandle := job.dbHandle
 
 	job.setUploadStatus(state)
 	var e map[string]map[string]interface{}
@@ -494,11 +543,11 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (err erro
 	}
 	serializedErr, _ := json.Marshal(&e)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseutils.WarehouseUploadsTable)
-	_, err = dbHandle.Exec(sqlStatement, state, serializedErr, timeutil.Now(), upload.ID)
+	_, err := job.dbHandle.Exec(sqlStatement, state, serializedErr, timeutil.Now(), upload.ID)
 	if err != nil {
 		panic(err)
 	}
-	return
+	return state
 }
 
 func (job *UploadJobT) setStagingFilesStatus(status string, statusError error) (err error) {
@@ -627,6 +676,37 @@ func (job *UploadJobT) shouldTableBeLoaded(tableName string) bool {
 		return false
 	}
 	return true
+}
+
+func (job *UploadJobT) getEventsPerTableUpload() map[string]int {
+	eventsPerTableMap := make(map[string]int)
+
+	sqlStatement := fmt.Sprintf(`select table_name, total_events from wh_table_uploads where wh_upload_id=%d and total_events > 0`, job.upload.ID)
+	rows, err := job.dbHandle.Query(sqlStatement)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var tName string
+		var totalEvents int
+		err := rows.Scan(&tName, &totalEvents)
+		if err != nil {
+			panic(err)
+		}
+		eventsPerTableMap[tName] = totalEvents
+	}
+	return eventsPerTableMap
+}
+
+func (job *UploadJobT) getTotalEventsUploaded() (total int) {
+	sqlStatement := fmt.Sprintf(`select sum(total_events) from wh_table_uploads where wh_upload_id=%d and status='%s'`, job.upload.ID, ExportedDataState)
+	err := job.dbHandle.QueryRow(sqlStatement).Scan(&total)
+	if err != nil {
+		logger.Errorf(`WH: Failed to query wh_table_uploads: %w`, err)
+	}
+	return
 }
 
 func (job *UploadJobT) setTableUploadStatus(tableName string, status string) (err error) {
@@ -763,7 +843,7 @@ func (job *UploadJobT) updateTableEventsCount(tableName string) (err error) {
 
 func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, err error) {
 	var mergeRulesLocation sql.NullString
-	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name=%s`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
+	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
 	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mergeRulesLocation)
 	if err != nil {
 		return
@@ -774,7 +854,7 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	}
 
 	var mappingsLocation sql.NullString
-	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name=%s`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
+	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
 	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mappingsLocation)
 	if err != nil {
 		return

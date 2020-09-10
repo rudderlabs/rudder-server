@@ -161,6 +161,7 @@ func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[st
 }
 
 type SchemaDiffT struct {
+	Exists                         bool
 	Tables                         []string
 	ColumnMaps                     map[string]map[string]string
 	UpdatedSchema                  map[string]map[string]string

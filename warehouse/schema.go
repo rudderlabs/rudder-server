@@ -293,14 +293,17 @@ func getSchemaDiff(currentSchema, uploadSchema warehouseutils.SchemaT) (diff war
 			diff.Tables = append(diff.Tables, tableName)
 			diff.ColumnMaps[tableName] = uploadColumnMap
 			diff.UpdatedSchema[tableName] = uploadColumnMap
+			diff.Exists = true
 		} else {
 			diff.ColumnMaps[tableName] = make(map[string]string)
 			for columnName, columnType := range uploadColumnMap {
 				if _, ok := currentColumnsMap[columnName]; !ok {
 					diff.ColumnMaps[tableName][columnName] = columnType
 					diff.UpdatedSchema[tableName][columnName] = columnType
+					diff.Exists = true
 				} else if columnType == "text" && currentColumnsMap[columnName] == "string" {
 					diff.StringColumnsToBeAlteredToText[tableName] = append(diff.StringColumnsToBeAlteredToText[tableName], columnName)
+					diff.Exists = true
 				}
 			}
 		}

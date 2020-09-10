@@ -322,8 +322,14 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, identityMergeRulesTable), sortedColumnNames, loadLocation, sf.authString())
 
-	// TODO: sanitise log statement
-	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMergeRulesTable, sqlStatement)
+	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
+		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
+		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
+	})
+	if regexErr == nil {
+		logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMergeRulesTable, sanitisedSQLStmt)
+	}
+
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)

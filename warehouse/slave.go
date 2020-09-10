@@ -398,6 +398,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		}
 		fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
 		loadFileIDs = append(loadFileIDs, fileID)
+		warehouseutils.DestStat(stats.CountType, "total_records_in_load_file", job.DestinationID).Count(jobRun.tableEventCountMap[tableName])
 	}
 	timer.End()
 	return loadFileIDs, nil
