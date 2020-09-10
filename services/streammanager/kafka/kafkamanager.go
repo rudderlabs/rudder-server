@@ -76,6 +76,10 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 	hosts := []string{hostName}
 
 	config := sarama.NewConfig()
+	config.Net.DialTimeout = time.Duration(kafkaDialTimeoutInSec) * time.Second
+	config.Net.WriteTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
+	config.Net.ReadTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
+
 	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true
@@ -107,6 +111,7 @@ func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProd
 	config := sarama.NewConfig()
 	config.Net.DialTimeout = time.Duration(kafkaDialTimeoutInSec) * time.Second
 	config.Net.WriteTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
+	config.Net.ReadTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
 
 	config.Net.SASL.Enable = true
 	config.Net.SASL.User = azureEventHubUser
