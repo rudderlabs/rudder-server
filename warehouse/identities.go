@@ -315,8 +315,16 @@ func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) {
 		}
 		defer whManager.Cleanup()
 
+		var schemaInWarehouse warehouseutils.SchemaT
+		schemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
+		if err != nil {
+			logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
+			job.setUploadError(err, AbortedState)
+			return
+		}
+
 		job.setUploadStatus(UpdatingSchemaState)
-		diff := getSchemaDiff(warehouseutils.SchemaT{}, job.upload.Schema)
+		diff := getSchemaDiff(schemaInWarehouse, job.upload.Schema)
 		err = whManager.MigrateSchema(diff)
 		if err != nil {
 			job.setUploadError(err, AbortedState)
