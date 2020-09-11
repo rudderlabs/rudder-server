@@ -462,7 +462,7 @@ func (idr *HandleT) Resolve(isPreLoad bool) (err error) {
 	mappingsFileGzWriter, mappingsFilePath := idr.createTempGzFile(`/rudder-identity-mappings-tmp/`)
 	defer os.Remove(mappingsFilePath)
 	var totalMappingRecords int
-	for _, ruleID := range ruleIDs {
+	for idx, ruleID := range ruleIDs {
 		var count int
 		count, err = idr.applyRule(txn, ruleID, &mappingsFileGzWriter)
 		if err != nil {
@@ -470,6 +470,9 @@ func (idr *HandleT) Resolve(isPreLoad bool) (err error) {
 			return
 		}
 		totalMappingRecords += count
+		if idx%10 == 0 {
+			logger.Infof(`IDR: Added %d rules out of %d. Total Mapping records added: %d. Namepsace: %s, Destination: %s:%s`, idx+1, len(ruleIDs), totalMappingRecords, idr.Warehouse.Namespace, idr.Warehouse.Type, idr.Warehouse.Destination.ID)
+		}
 	}
 	mappingsFileGzWriter.CloseGZ()
 	// END: Add new/changed identity mappings to local pg table and also to file
