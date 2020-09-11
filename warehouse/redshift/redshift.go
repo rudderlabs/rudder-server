@@ -509,6 +509,26 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 
 func (rs *HandleT) loadUserTables() (err error) {
 	logger.Infof("RS: Starting load for identifies and users tables\n")
+
+	_, hasUserRecordsToLoad := rs.Upload.Schema[warehouseutils.UsersTable]
+	var haveBeenLoaded bool
+	identifiesStatus, _ := warehouseutils.GetTableUploadStatus(rs.Upload.ID, warehouseutils.IdentifiesTable, rs.DbHandle)
+	if identifiesStatus == warehouseutils.ExportedDataState {
+		if hasUserRecordsToLoad {
+			usersStatus, _ := warehouseutils.GetTableUploadStatus(rs.Upload.ID, warehouseutils.UsersTable, rs.DbHandle)
+			if usersStatus == warehouseutils.ExportedDataState {
+				haveBeenLoaded = true
+			}
+		} else {
+			haveBeenLoaded = true
+		}
+	}
+
+	if haveBeenLoaded {
+		logger.Infof("RS: Skipping load for user tables as they have been succesfully loaded earlier")
+		return
+	}
+
 	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, rs.Upload.Schema[warehouseutils.IdentifiesTable], true, true)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, warehouseutils.IdentifiesTable, err, rs.DbHandle)
@@ -517,7 +537,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 	}
 	defer rs.dropStagingTables([]string{identifyStagingTable})
 
-	if _, ok := rs.Upload.Schema[warehouseutils.UsersTable]; !ok {
+	if !hasUserRecordsToLoad {
 		return
 	}
 
