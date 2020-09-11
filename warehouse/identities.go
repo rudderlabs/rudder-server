@@ -316,7 +316,7 @@ func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) {
 		defer whManager.Cleanup()
 
 		job.setUploadStatus(UpdatingSchemaState)
-		diff := getSchemaDiff(job.upload.Schema, warehouseutils.SchemaT{})
+		diff := getSchemaDiff(warehouseutils.SchemaT{}, job.upload.Schema)
 		err = whManager.MigrateSchema(diff)
 		if err != nil {
 			job.setUploadError(err, AbortedState)
