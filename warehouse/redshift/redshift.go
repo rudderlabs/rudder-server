@@ -517,11 +517,12 @@ func (rs *HandleT) loadUserTables() (err error) {
 	}
 	defer rs.dropStagingTables([]string{identifyStagingTable})
 
-	if _, ok := rs.Upload.Schema["users"]; !ok {
+	if _, ok := rs.Upload.Schema[warehouseutils.UsersTable]; !ok {
 		return
 	}
 
-	userColMap := rs.CurrentSchema["users"]
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, rs.Upload.ID, warehouseutils.UsersTable, rs.DbHandle)
+	userColMap := rs.CurrentSchema[warehouseutils.UsersTable]
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		// do not reference uuid in queries as it can be an autoincrementing field set by segment compatible tables
@@ -531,7 +532,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 		userColNames = append(userColNames, colName)
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), "users"), 127)
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), warehouseutils.UsersTable), 127)
 
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
 										(
