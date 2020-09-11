@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -15,16 +16,23 @@ import (
 )
 
 var (
-	shouldPreLoadIdentities bool
+	shouldPreLoadIdentities  bool
+	inProgressPreLoadMap     map[string]bool
+	inProgressPreLoadMapLock sync.RWMutex
 )
 
 func init() {
 	shouldPreLoadIdentities = config.GetBool("Warehouse.preLoadIdentities", false)
+	inProgressPreLoadMap = map[string]bool{}
+}
+
+func uniqueWarehouseNamespaceString(warehouse warehouseutils.WarehouseT) string {
+	return fmt.Sprintf(`namespace:%s:destination:%s`, warehouse.Namespace, warehouse.Destination.ID)
 }
 
 func isDestPreLoaded(warehouse warehouseutils.WarehouseT) bool {
 	preLoadedIdentitiesMapLock.RLock()
-	if preLoadedIdentitiesMap[connectionString(warehouse)] {
+	if preLoadedIdentitiesMap[uniqueWarehouseNamespaceString(warehouse)] {
 		preLoadedIdentitiesMapLock.RUnlock()
 		return true
 	}
@@ -34,8 +42,28 @@ func isDestPreLoaded(warehouse warehouseutils.WarehouseT) bool {
 
 func setDestPreLoaded(warehouse warehouseutils.WarehouseT) {
 	preLoadedIdentitiesMapLock.Lock()
-	preLoadedIdentitiesMap[connectionString(warehouse)] = true
+	preLoadedIdentitiesMap[uniqueWarehouseNamespaceString(warehouse)] = true
 	preLoadedIdentitiesMapLock.Unlock()
+}
+
+func setPreLoadInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
+	inProgressPreLoadMapLock.Lock()
+	if starting {
+		inProgressPreLoadMap[uniqueWarehouseNamespaceString(warehouse)] = true
+	} else {
+		delete(inProgressPreLoadMap, uniqueWarehouseNamespaceString(warehouse))
+	}
+	inProgressPreLoadMapLock.Unlock()
+}
+
+func isDestPreLoadInProgress(warehouse warehouseutils.WarehouseT) bool {
+	inProgressPreLoadMapLock.RLock()
+	if inProgressPreLoadMap[uniqueWarehouseNamespaceString(warehouse)] {
+		inProgressPreLoadMapLock.RUnlock()
+		return true
+	}
+	inProgressPreLoadMapLock.RUnlock()
+	return false
 }
 
 func (wh *HandleT) getPendingPreLoad(warehouse warehouseutils.WarehouseT) (upload UploadT, found bool) {
@@ -219,14 +247,16 @@ func (wh *HandleT) setFailedStat(warehouse warehouseutils.WarehouseT, err error)
 }
 
 func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) {
-	if isDestPreLoaded(warehouse) {
+	if isDestPreLoaded(warehouse) || isDestPreLoadInProgress(warehouse) {
 		return
 	}
 
 	setDestInProgress(warehouse, true)
+	setPreLoadInProgress(warehouse, true)
 	rruntime.Go(func() {
 		var err error
 		defer setDestInProgress(warehouse, false)
+		defer setPreLoadInProgress(warehouse, false)
 		defer setDestPreLoaded(warehouse)
 		defer wh.setFailedStat(warehouse, err)
 
