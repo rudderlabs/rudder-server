@@ -69,9 +69,10 @@ const (
 )
 
 const (
-	DiscardsTable = "rudder_discards"
-	SyncFrequency = "syncFrequency"
-	SyncStartAt   = "syncStartAt"
+	DiscardsTable  = "rudder_discards"
+	SyncFrequency  = "syncFrequency"
+	SyncStartAt    = "syncStartAt"
+	CronExpression = "cronExpression"
 )
 
 const (

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/robfig/cron/v3"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -121,6 +122,17 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	}
 	if warehouseSyncFreqIgnore {
 		return !uploadFrequencyExceeded(warehouse, "")
+	}
+	cronExpression := "00 * * * *" //warehouseutils.GetConfigValue(warehouseutils.CronExpression, warehouse)
+	specParser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	scheduler, err := specParser.Parse(cronExpression)
+	if err == nil {
+		lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
+		nextUploadTime := scheduler.Next(lastUploadExecTime)
+		if nextUploadTime.Before(time.Now().UTC()) {
+			return true
+		}
+
 	}
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
