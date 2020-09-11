@@ -255,13 +255,27 @@ func (sHandle *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema(
 
 	// add rudder_identity_mappings table
 	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, sHandle.warehouse.Type) {
-		identityMappings := map[string]string{
-			warehouseutils.ToProviderCase(destType, "merge_property_type"):  "string",
-			warehouseutils.ToProviderCase(destType, "merge_property_value"): "string",
-			warehouseutils.ToProviderCase(destType, "rudder_id"):            "string",
-			warehouseutils.ToProviderCase(destType, "updated_at"):           "datetime",
+		if mergeRulesSchema, ok := consolidatedSchema[warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMergeRulesTable)]; ok {
+			mergeRuleColumns := []string{
+				warehouseutils.ToProviderCase(destType, "merge_property_1_type"),
+				warehouseutils.ToProviderCase(destType, "merge_property_1_value"),
+				warehouseutils.ToProviderCase(destType, "merge_property_2_type"),
+				warehouseutils.ToProviderCase(destType, "merge_property_2_value"),
+			}
+			for _, colName := range mergeRuleColumns {
+				if _, ok := mergeRulesSchema[colName]; !ok {
+					mergeRulesSchema[colName] = "string"
+				}
+			}
+
+			identityMappings := map[string]string{
+				warehouseutils.ToProviderCase(destType, "merge_property_type"):  "string",
+				warehouseutils.ToProviderCase(destType, "merge_property_value"): "string",
+				warehouseutils.ToProviderCase(destType, "rudder_id"):            "string",
+				warehouseutils.ToProviderCase(destType, "updated_at"):           "datetime",
+			}
+			consolidatedSchema[warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable)] = identityMappings
 		}
-		consolidatedSchema[warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable)] = identityMappings
 	}
 
 	return consolidatedSchema

@@ -304,8 +304,10 @@ func (job *UploadJobT) run() (err error) {
 	}
 
 	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
-		errorMap := job.loadIdentityTables(false)
-		loadErrors = append(loadErrors, job.setTableStatusFromErrorMap(errorMap)...)
+		if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {
+			errorMap := job.loadIdentityTables(false)
+			loadErrors = append(loadErrors, job.setTableStatusFromErrorMap(errorMap)...)
+		}
 	}
 
 	var parallelLoads int
