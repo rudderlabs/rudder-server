@@ -540,10 +540,10 @@ func (rs *HandleT) loadUserTables() (err error) {
 											id, %[3]s
 											FROM (
 												(
-													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT user_id FROM "%[1]s"."%[5]s")
+													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT DISTINCT(user_id) FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL)
 												) UNION
 												(
-													SELECT user_id, %[6]s FROM "%[1]s"."%[5]s"
+													SELECT user_id, %[6]s FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL
 												)
 											)
 										)
