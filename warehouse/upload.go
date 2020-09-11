@@ -289,6 +289,7 @@ func (job *UploadJobT) run() (err error) {
 		if !job.shouldTableBeLoaded(job.identifiesTableName()) && !job.shouldTableBeLoaded(job.usersTableName()) {
 			// do nothing as both tables are loaded
 		} else {
+			logger.Infof(`[WH]: Starting load for user tables in namespace %s of destination %s:%s`, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 			for _, tName := range userTables {
 				job.setTableUploadStatus(tName, ExecutingState)
 			}
@@ -330,6 +331,7 @@ func (job *UploadJobT) run() (err error) {
 		tName := tableName
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
+			logger.Infof(`[WH]: Starting load for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 			job.setTableUploadStatus(tName, ExecutingState)
 			err := whManager.LoadTable(tName)
 			// TODO: set wh_table_uploads error
@@ -363,7 +365,7 @@ func (job *UploadJobT) run() (err error) {
 }
 
 func (job *UploadJobT) loadIdentityTables(preLoad bool) (errorMap map[string]error) {
-	logger.Infof("WH: Starting load for identity tables\n")
+	logger.Infof(`[WH]: Starting load for identity tables in namespace %s of destination %s:%s`, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 	errorMap = make(map[string]error)
 	// var generated bool
 	if generated, err := job.areIdentityTablesLoadFilesGenerated(); !generated {
