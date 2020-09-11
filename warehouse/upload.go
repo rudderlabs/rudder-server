@@ -303,7 +303,7 @@ func (job *UploadJobT) run() (err error) {
 	}
 
 	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
-		errorMap := job.loadIdentityTables()
+		errorMap := job.loadIdentityTables(false)
 		loadErrors = append(loadErrors, job.setTableStatusFromErrorMap(errorMap)...)
 	}
 
@@ -362,12 +362,12 @@ func (job *UploadJobT) run() (err error) {
 	return nil
 }
 
-func (job *UploadJobT) loadIdentityTables() (errorMap map[string]error) {
+func (job *UploadJobT) loadIdentityTables(preLoad bool) (errorMap map[string]error) {
 	logger.Infof("WH: Starting load for identity tables\n")
 	errorMap = make(map[string]error)
 	// var generated bool
 	if generated, err := job.areIdentityTablesLoadFilesGenerated(); !generated {
-		err = job.resolveIdentities(false)
+		err = job.resolveIdentities(preLoad)
 		if err != nil {
 			logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err

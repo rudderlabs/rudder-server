@@ -244,7 +244,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 					AND
 					(original.merge_property_2_value = staging.merge_property_2_value)`,
 		mergeRulesStagingTable, idr.mergeRulesTable())
-	logger.Info(`IDR: Deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), sqlStatement)
+	logger.Infof(`IDR: Deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		logger.Errorf(`IDR: Error deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), err)
@@ -455,6 +455,7 @@ func (idr *HandleT) Resolve(isPreLoad bool) (err error) {
 		return
 	}
 	mergeRulesFileGzWriter.CloseGZ()
+	logger.Infof(`IDR: Added rules to %s and file`, idr.mergeRulesTable())
 	// END: Add new merge rules to local pg table and also to file
 
 	// START: Add new/changed identity mappings to local pg table and also to file

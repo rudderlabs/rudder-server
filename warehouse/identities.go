@@ -295,7 +295,7 @@ func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) {
 		job.setUploadStatus(UpdatedSchemaState)
 
 		job.setUploadStatus(ExportingDataState)
-		errorMap := job.loadIdentityTables()
+		errorMap := job.loadIdentityTables(true)
 		errors := job.setTableStatusFromErrorMap(errorMap)
 		if len(errors) > 0 {
 			job.setUploadError(warehouseutils.ConcatErrors(errors), AbortedState)

@@ -240,7 +240,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 
 						if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
 							wh.setupIdentityTables(warehouse)
-							if shouldPreLoadIdentities {
+							if shouldPreLoadIdentities && warehouse.Destination.Enabled {
 								// non blocking preload identity tables
 								wh.preLoadIdentityTables(warehouse)
 							}
