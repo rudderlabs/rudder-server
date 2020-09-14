@@ -117,16 +117,14 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) t
 	return t.Time
 }
 
-// canStartUploadViaCorn calculates nextUploadTime via cron expression and check if it's before the current time
+// CanStartUploadViaCorn calculates nextUploadTime via cron expression and check if it's before the current time
 // if the cronExpression is not configured, then we can get nextUploadTime by syncFrequency
-func (wh *HandleT) canStartUploadViaCorn(warehouse warehouseutils.WarehouseT) (bool, error) {
-	cronExpression := warehouseutils.GetConfigValue(warehouseutils.CronExpression, warehouse)
+func CanStartUploadViaCorn(cronExpression string, lastUploadExecTime time.Time) (bool, error) {
 	if len(strings.TrimSpace(cronExpression)) == 0 {
 		return false, errors.New("cron expression empty")
 	}
 	scheduler, err := cronParser.Parse(cronExpression)
 	if err == nil {
-		lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
 		nextUploadTime := scheduler.Next(lastUploadExecTime.UTC())
 		if nextUploadTime.Before(time.Now().UTC()) {
 			return true, nil
@@ -134,7 +132,7 @@ func (wh *HandleT) canStartUploadViaCorn(warehouse warehouseutils.WarehouseT) (b
 		// can't start upload as nextUploadTime is after the current time
 		return false, nil
 	}
-	logger.Infof("Not able to parse cron expression %s error %s, fallback to sync frequency", cronExpression, err.Error())
+	fmt.Println(fmt.Sprintf("Not able to parse cron expression %s error %v, fallback to sync frequency", cronExpression, err))
 	return false, err
 }
 
@@ -147,14 +145,15 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	if warehouseSyncFreqIgnore {
 		return !uploadFrequencyExceeded(warehouse, "")
 	}
-	if canStart, err := wh.canStartUploadViaCorn(warehouse); err == nil {
+	lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
+	cronExpression := warehouseutils.GetConfigValue(warehouseutils.CronExpression, warehouse)
+	if canStart, err := CanStartUploadViaCorn(cronExpression, lastUploadExecTime); err == nil {
 		return canStart
 	}
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
 	if syncFrequency != "" && syncStartAt != "" {
 		prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
-		lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
 		// start upload only if no upload has started in current window
 		// eg. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
 		if lastUploadExecTime.Before(prevScheduledTime) {

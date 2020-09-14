@@ -5,7 +5,6 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
 	. "github.com/rudderlabs/rudder-server/warehouse"
 )
 
@@ -53,6 +52,29 @@ var _ = Describe("Warehouse", func() {
 				now := time.Date(2020, 04, 27, 23, 59, 59, 999999, time.UTC)
 				sTime := GetPrevScheduledTime("180", "00:00", now)
 				Expect(sTime).To(Equal(time.Date(2020, 04, 27, 21, 0, 0, 0, time.UTC)))
+			})
+
+		})
+		Describe("CanStartUploadViaCron", func() {
+			It("should return false with err if cron expression is empty", func() {
+				canStart, err := CanStartUploadViaCorn("", time.Now().UTC())
+				Expect(canStart).To(Equal(false))
+				Expect(err).NotTo(BeNil())
+			})
+			It("should return false with err if cron expression is not valid", func() {
+				canStart, err := CanStartUploadViaCorn("# # # # #", time.Now().UTC())
+				Expect(canStart).To(Equal(false))
+				Expect(err).NotTo(BeNil())
+			})
+			It("should return false with err nil if nextUploadTime is after current time", func() {
+				canStart, err := CanStartUploadViaCorn("*/5 * * * *", time.Now().UTC())
+				Expect(canStart).To(Equal(false))
+				Expect(err).To(BeNil())
+			})
+			It("should return true with err nil if nextUploadTime is before current time", func() {
+				canStart, err := CanStartUploadViaCorn("*/5 * * * *", time.Now().UTC().Add(-6*time.Minute))
+				Expect(canStart).To(Equal(true))
+				Expect(err).To(BeNil())
 			})
 		})
 	})
