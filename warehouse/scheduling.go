@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ var (
 	minUploadBackoff    time.Duration
 	maxUploadBackoff    time.Duration
 	startUploadAlways   bool
+	cronParser          cron.Parser
 )
 
 func init() {
@@ -31,6 +33,7 @@ func init() {
 	admin.RegisterAdminHandler("Warehouse", &WarehouseAdmin{})
 	minUploadBackoff = config.GetDuration("Warehouse.minUploadBackoffInS", time.Duration(60)) * time.Second
 	maxUploadBackoff = config.GetDuration("Warehouse.maxUploadBackoffInS", time.Duration(1800)) * time.Second
+	cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 }
 
 // ScheduledTimes returns all possible start times (minutes from start of day) as per schedule
@@ -114,6 +117,27 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) t
 	return t.Time
 }
 
+// canStartUploadViaCorn calculates nextUploadTime via cron expression and check if it's before the current time
+// if the cronExpression is not configured, then we can get nextUploadTime by syncFrequency
+func (wh *HandleT) canStartUploadViaCorn(warehouse warehouseutils.WarehouseT) (bool, error) {
+	cronExpression := warehouseutils.GetConfigValue(warehouseutils.CronExpression, warehouse)
+	if len(strings.TrimSpace(cronExpression)) == 0 {
+		return false, errors.New("cron expression empty")
+	}
+	scheduler, err := cronParser.Parse(cronExpression)
+	if err == nil {
+		lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
+		nextUploadTime := scheduler.Next(lastUploadExecTime.UTC())
+		if nextUploadTime.Before(time.Now().UTC()) {
+			return true, nil
+		}
+		// can't start upload as nextUploadTime is after the current time
+		return false, nil
+	}
+	logger.Infof("Not able to parse cron expression %s error %s, fallback to sync frequency", cronExpression, err.Error())
+	return false, err
+}
+
 // canStartUpload indicates if a upload can be started now for the warehouse based on its configured schedule
 func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
@@ -123,16 +147,8 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	if warehouseSyncFreqIgnore {
 		return !uploadFrequencyExceeded(warehouse, "")
 	}
-	cronExpression := "00 * * * *" //warehouseutils.GetConfigValue(warehouseutils.CronExpression, warehouse)
-	specParser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
-	scheduler, err := specParser.Parse(cronExpression)
-	if err == nil {
-		lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
-		nextUploadTime := scheduler.Next(lastUploadExecTime)
-		if nextUploadTime.Before(time.Now().UTC()) {
-			return true
-		}
-
+	if canStart, err := wh.canStartUploadViaCorn(warehouse); err == nil {
+		return canStart
 	}
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
