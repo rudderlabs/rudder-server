@@ -847,7 +847,7 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 			}
 			//Some sanity checks (see comment above)
 			//Insert before is never required on level3 or above.
-			jd.assert(levels <= 2, fmt.Sprintf("levels:%d  > 2", levels))
+			// jd.assert(levels <= 2, fmt.Sprintf("levels:%d  > 2", levels))
 			if levelsPre == 1 {
 				/*
 					| levelsPre | levels | newDSIdx |
@@ -2591,6 +2591,143 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 }
 
 /*
+DeleteJobStatus deletes the latest status of a batch of jobs
+This is only done during recovery, which happens during the server start.
+So, we don't have to worry about dsEmptyResultCache
+*/
+func (jd *HandleT) DeleteJobStatus(stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) {
+	if count == 0 {
+		return
+	}
+
+	txn, err := jd.dbHandle.Begin()
+	jd.assertError(err)
+
+	err = jd.deleteJobStatusInTxn(txn, stateFilter, customValFilters, count, parameterFilters)
+	jd.assertErrorAndRollbackTx(err, txn)
+
+	err = txn.Commit()
+	jd.assertError(err)
+}
+
+/*
+if count passed is less than 0, then delete happens on the entire dsList;
+deleteJobStatusInTxn deletes the latest status of a batch of jobs
+*/
+func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) error {
+	if count == 0 {
+		return nil
+	}
+
+	//The order of lock is very important. The migrateDSLoop
+	//takes lock in this order so reversing this will cause
+	//deadlocks
+	jd.dsMigrationLock.RLock()
+	jd.dsListLock.RLock()
+	defer jd.dsMigrationLock.RUnlock()
+	defer jd.dsListLock.RUnlock()
+
+	dsList := jd.getDSList(false)
+
+	totalDeletedCount := 0
+	for _, ds := range dsList {
+		deletedCount, err := jd.deleteJobStatusDSInTxn(txHandler, ds, stateFilter, customValFilters, parameterFilters)
+		if err != nil {
+			return err
+		}
+		totalDeletedCount += deletedCount
+
+		//since count is less than 0, iterating on complete dsList
+		if count < 0 {
+			continue
+		}
+
+		if totalDeletedCount >= count {
+			break
+		}
+	}
+
+	return nil
+}
+
+/*
+stateFilters and customValFilters do a OR query on values passed in array
+parameterFilters do a AND query on values included in the map
+*/
+func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataSetT, stateFilters []string,
+	customValFilters []string, parameterFilters []ParameterFilterT) (int, error) {
+	jd.checkValidJobState(stateFilters)
+
+	var queryStat stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	if len(stateFilters) > 0 {
+		statName = statName + stateFilters[0] + "_"
+	}
+	queryStat = stats.NewJobsDBStat(statName+"delete_job_status", stats.TimerType, jd.tablePrefix)
+	queryStat.Start()
+	defer queryStat.End()
+
+	var stateQuery, customValQuery, sourceQuery string
+
+	if len(stateFilters) > 0 {
+		stateQuery = " AND " + jd.constructQuery("job_state", stateFilters, "OR")
+	} else {
+		stateQuery = ""
+	}
+	if len(customValFilters) > 0 {
+		customValQuery = " WHERE " +
+			jd.constructQuery(fmt.Sprintf("%s.custom_val", ds.JobTable),
+				customValFilters, "OR")
+	} else {
+		customValQuery = ""
+	}
+
+	if customValQuery == "" {
+		sourceQuery += " WHERE "
+	} else {
+		sourceQuery += " AND "
+	}
+
+	if len(parameterFilters) > 0 {
+		sourceQuery += jd.constructParameterJSONQuery(ds.JobTable, parameterFilters)
+	} else {
+		sourceQuery = ""
+	}
+
+	var sqlStatement string
+	if customValQuery == "" && sourceQuery == "" {
+		sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN
+                                                   (SELECT MAX(id) from %[1]s GROUP BY job_id) %[2]s 
+                                             AND retry_time < $1`,
+			ds.JobStatusTable, stateQuery)
+	} else {
+		sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN
+                                                   (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s %[4]s %[5]s) GROUP BY job_id) %[3]s 
+                                             AND retry_time < $1`,
+			ds.JobStatusTable, ds.JobTable, stateQuery, customValQuery, sourceQuery)
+	}
+
+	stmt, err := txHandler.Prepare(sqlStatement)
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+	res, err := stmt.Exec(time.Now())
+	if err != nil {
+		return 0, err
+	}
+	deleteCount, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	return int(deleteCount), nil
+}
+
+/*
 GetProcessed returns events of a given state. This does not update any state itself and
 relises on the caller to update it. That means that successive calls to GetProcessed("failed")
 can return the same set of events. It is the responsibility of the caller to call it from
@@ -2670,6 +2807,14 @@ GetExecuting returns events which  in executing state
 */
 func (jd *HandleT) GetExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
 	return jd.GetProcessed([]string{Executing.State}, customValFilters, count, parameterFilters)
+}
+
+/*
+DeleteExecuting deletes events whose latest job state is executing.
+This is only done during recovery, which happens during the server start.
+*/
+func (jd *HandleT) DeleteExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) {
+	jd.DeleteJobStatus([]string{Executing.State}, customValFilters, count, parameterFilters)
 }
 
 /*
