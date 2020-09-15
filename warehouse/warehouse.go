@@ -1309,7 +1309,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						continue
 					}
 					outputJSONLine[columnName] = int(floatVal)
-					columnData[columnName] = int(floatVal)
+					columnVal = int(floatVal)
 				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				var dataTypeInSchema string
