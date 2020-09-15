@@ -1280,25 +1280,24 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 			eventsCountMap[tableName] = 0
 		}
 		if job.DestinationType == "BQ" {
+			outputJSONLine := make(map[string]interface{})
 			for _, columnName := range sortedTableColumnMap[tableName] {
 				if columnName == warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts") {
 					// add uuid_ts to track when event was processed into load_file
-					columnData[warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts")] = uuidTS.Format(warehouseutils.BQUuidTSFormat)
+					outputJSONLine[warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts")] = uuidTS.Format(warehouseutils.BQUuidTSFormat)
 					continue
 				}
 				if columnName == warehouseutils.ToProviderCase(job.DestinationType, "loaded_at") {
 					// add loaded_at for segment compatability
-					columnData[warehouseutils.ToProviderCase(job.DestinationType, "loaded_at")] = uuidTS.Format(warehouseutils.BQLoadedAtFormat)
+					outputJSONLine[warehouseutils.ToProviderCase(job.DestinationType, "loaded_at")] = uuidTS.Format(warehouseutils.BQLoadedAtFormat)
 					continue
 				}
 				columnVal, ok := columnData[columnName]
 				if !ok {
-					columnData[columnName] = nil
 					continue
 				}
 				columnType, ok := columns[columnName].(string)
 				if !ok {
-					columnData[columnName] = nil
 					continue
 				}
 				// json.Unmarshal returns int as float
@@ -1307,9 +1306,9 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				if columnType == "int" || columnType == "bigint" {
 					floatVal, ok := columnVal.(float64)
 					if !ok {
-						columnData[columnName] = nil
 						continue
 					}
+					outputJSONLine[columnName] = int(floatVal)
 					columnData[columnName] = int(floatVal)
 				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
@@ -1318,18 +1317,19 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				if ok && columnType != dataTypeInSchema {
 					if dataTypeInSchema == "string" {
 						// cast to string since string type column can accomodate any kind of value
-						columnData[columnName] = fmt.Sprintf(`%v`, columnVal)
+						outputJSONLine[columnName] = fmt.Sprintf(`%v`, columnVal)
 					} else if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
+						outputJSONLine[columnName] = columnVal
 					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
 						floatVal, ok := columnVal.(float64)
 						if !ok {
-							columnData[columnName] = nil
+							outputJSONLine[columnName] = nil
 							continue
 						}
-						columnData[columnName] = int(floatVal)
+						outputJSONLine[columnName] = int(floatVal)
 					} else {
-						columnData[columnName] = nil
+						outputJSONLine[columnName] = nil
 						rowID, hasID := columnData[warehouseutils.ToProviderCase(job.DestinationType, "id")]
 						receivedAt, hasReceivedAt := columnData[warehouseutils.ToProviderCase(job.DestinationType, "received_at")]
 						if hasID && hasReceivedAt {
@@ -1361,20 +1361,21 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						}
 						continue
 					}
+				} else {
+					outputJSONLine[columnName] = columnVal
 				}
 				// cast array values to string as bigquery fails to cast array to string
 				if dataTypeInSchema == "string" && columnType == dataTypeInSchema {
 					if _, ok := columnVal.([]interface{}); ok {
 						valBytes, err := json.Marshal(columnVal)
 						if err != nil {
-							columnData[columnName] = nil
 							continue
 						}
-						columnData[columnName] = string(valBytes)
+						outputJSONLine[columnName] = string(valBytes)
 					}
 				}
 			}
-			line, err := json.Marshal(columnData)
+			line, err := json.Marshal(outputJSONLine)
 			if err != nil {
 				return loadFileIDs, err
 			}
