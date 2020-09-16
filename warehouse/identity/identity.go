@@ -415,12 +415,8 @@ func (idr *HandleT) createTempGzFile(dirName string) (gzWriter misc.GZipWriter, 
 	return
 }
 
-// Resolve does the below things in a single pg txn
-// 1. Fetch all new merge rules added in the upload
-// 2. Append to local identity merge rules table
-// 3. Apply each merge rule and update local identity mapping table
-// 4. Upload the diff of each table to load files for both tables
-func (idr *HandleT) Resolve(isPreLoad bool) (err error) {
+func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
+
 	txn, err := idr.DbHandle.Begin()
 	if err != nil {
 		panic(err)
@@ -430,26 +426,7 @@ func (idr *HandleT) Resolve(isPreLoad bool) (err error) {
 	mergeRulesFileGzWriter, mergeRulesFilePath := idr.createTempGzFile(`/rudder-identity-merge-rules-tmp/`)
 	defer os.Remove(mergeRulesFilePath)
 
-	var loadFileNames []string
-	defer misc.RemoveFilePaths(loadFileNames...)
-	if isPreLoad {
-		csvGzWriter, csvPath := idr.createTempGzFile(`/rudder-identity-merge-rules-tmp/`)
-		err = idr.WarehouseManager.DownloadIdentityRules(&csvGzWriter)
-		csvGzWriter.CloseGZ()
-		if err != nil {
-			logger.Errorf(`IDR: Failed to download identity information from warehouse with error: %v`, err)
-			return
-		}
-		loadFileNames = append(loadFileNames, csvPath)
-	} else {
-		loadFileNames, err = idr.downloadLoadFiles(idr.whMergeRulesTable())
-		if err != nil {
-			logger.Errorf(`IDR: Failed to download load files for %s with error: %v`, idr.mergeRulesTable(), err)
-			return
-		}
-	}
-
-	ruleIDs, err := idr.addRules(txn, loadFileNames, &mergeRulesFileGzWriter)
+	ruleIDs, err := idr.addRules(txn, fileNames, &mergeRulesFileGzWriter)
 	if err != nil {
 		logger.Errorf(`IDR: Error adding rules to %s: %v`, idr.mergeRulesTable(), err)
 		return
@@ -497,4 +474,37 @@ func (idr *HandleT) Resolve(isPreLoad bool) (err error) {
 		return
 	}
 	return
+}
+
+// Resolve does the below things in a single pg txn
+// 1. Fetch all new merge rules added in the upload
+// 2. Append to local identity merge rules table
+// 3. Apply each merge rule and update local identity mapping table
+// 4. Upload the diff of each table to load files for both tables
+func (idr *HandleT) Resolve() (err error) {
+
+	var loadFileNames []string
+	defer misc.RemoveFilePaths(loadFileNames...)
+	loadFileNames, err = idr.downloadLoadFiles(idr.whMergeRulesTable())
+	if err != nil {
+		logger.Errorf(`IDR: Failed to download load files for %s with error: %v`, idr.mergeRulesTable(), err)
+		return
+	}
+
+	return idr.processMergeRules(loadFileNames)
+}
+
+func (idr *HandleT) ResolveHistoricIdentities() (err error) {
+	var loadFileNames []string
+	defer misc.RemoveFilePaths(loadFileNames...)
+	csvGzWriter, csvPath := idr.createTempGzFile(`/rudder-identity-merge-rules-tmp/`)
+	err = idr.WarehouseManager.DownloadIdentityRules(&csvGzWriter)
+	csvGzWriter.CloseGZ()
+	if err != nil {
+		logger.Errorf(`IDR: Failed to download identity information from warehouse with error: %v`, err)
+		return
+	}
+	loadFileNames = append(loadFileNames, csvPath)
+
+	return idr.processMergeRules(loadFileNames)
 }

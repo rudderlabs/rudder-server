@@ -17,7 +17,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -126,38 +125,6 @@ type UploaderI interface {
 
 func IDResolutionEnabled() bool {
 	return enableIDResolution
-}
-
-func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
-	var rawSchema json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.namespace='%[4]s') ORDER BY %[1]s.id DESC`, WarehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID, warehouse.Namespace)
-	logger.Infof("WH: Fetching current schema from wh postgresql: %s", sqlStatement)
-
-	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			logger.Infof("WH: No current schema found for %s with namespace: %s", warehouse.Destination.ID, warehouse.Namespace)
-			return nil, nil
-		}
-		if err != nil {
-			panic(err)
-		}
-	}
-	var schemaMapInterface map[string]interface{}
-	err = json.Unmarshal(rawSchema, &schemaMapInterface)
-	if err != nil {
-		panic(err)
-	}
-	schema := make(map[string]map[string]string)
-	for tname, columnMapInterface := range schemaMapInterface {
-		columnMap := make(map[string]string)
-		columns := columnMapInterface.(map[string]interface{})
-		for cName, cTypeInterface := range columns {
-			columnMap[cName] = cTypeInterface.(string)
-		}
-		schema[tname] = columnMap
-	}
-	return schema, nil
 }
 
 type SchemaDiffT struct {

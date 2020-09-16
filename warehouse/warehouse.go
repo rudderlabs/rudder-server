@@ -58,8 +58,6 @@ var (
 	warehouseMode                    string
 	warehouseSyncPreFetchCount       int
 	warehouseSyncFreqIgnore          bool
-	preLoadedIdentitiesMap           map[string]bool
-	preLoadedIdentitiesMapLock       sync.RWMutex
 	activeWorkerCount                int
 	activeWorkerCountLock            sync.RWMutex
 	minRetryAttempts                 int
@@ -129,7 +127,6 @@ func loadConfig() {
 	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
 	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
 	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
-	preLoadedIdentitiesMap = map[string]bool{}
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -240,9 +237,9 @@ func (wh *HandleT) backendConfigSubscriber() {
 
 						if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
 							wh.setupIdentityTables(warehouse)
-							if shouldPreLoadIdentities && warehouse.Destination.Enabled {
-								// non blocking preload identity tables
-								wh.preLoadIdentityTables(warehouse)
+							if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
+								// non blocking populate historic identities
+								wh.populateHistoricIdentities(warehouse)
 							}
 						}
 					}
@@ -304,7 +301,8 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
 
 func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) ([]*StagingFileT, error) {
 	var lastStagingFileID int64
-	sqlStatement := fmt.Sprintf(`SELECT end_staging_file_id FROM %[1]s WHERE %[1]s.destination_type='%[2]s' AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s' AND (%[1]s.status= '%[5]s' OR %[1]s.status = '%[6xw]s') ORDER BY %[1]s.id DESC`, warehouseutils.WarehouseUploadsTable, warehouse.Type, warehouse.Source.ID, warehouse.Destination.ID, ExportedDataState, AbortedState)
+	sqlStatement := fmt.Sprintf(`SELECT end_staging_file_id FROM %[1]s WHERE %[1]s.destination_type='%[2]s' AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s' AND (%[1]s.status= '%[5]s' OR %[1]s.status = '%[6]s') ORDER BY %[1]s.id DESC`, warehouseutils.WarehouseUploadsTable, warehouse.Type, warehouse.Source.ID, warehouse.Destination.ID, ExportedDataState, AbortedState)
+
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileID)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)

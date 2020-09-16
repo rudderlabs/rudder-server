@@ -21,7 +21,7 @@ var (
 	nextRetryTimeCache  map[string]time.Time
 	minUploadBackoff    time.Duration
 	maxUploadBackoff    time.Duration
-	startUploadAlways   bool
+	startUploadAlways   bool = true
 )
 
 func init() {
@@ -191,7 +191,7 @@ func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutil
 	canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
 	// set in cache if not staring, to access on next hit
 	if !canStart {
-		logger.Infof("WH: Setting in nextRetryTimeCache for %s:%s, will retry again around %v", warehouse.Destination.Name, warehouse.Destination.ID, nextRetryTime)
+		logger.Infof("[WH]: Setting in nextRetryTimeCache for %s:%s, will retry again around %v", warehouse.Destination.Name, warehouse.Destination.ID, nextRetryTime)
 		nextRetryTimeCache[connectionString(warehouse)] = nextRetryTime
 	}
 

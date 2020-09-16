@@ -243,10 +243,10 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 
 func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
 	for _, stagingTableName := range stagingTableNames {
-		logger.Infof("WH: dropping table %+v\n", stagingTableName)
+		logger.Infof("[WH]: dropping table %+v\n", stagingTableName)
 		_, err := rs.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
-			logger.Errorf("WH: RS:  Error dropping staging tables in redshift: %v", err)
+			logger.Errorf("[WH]: RS:  Error dropping staging tables in redshift: %v", err)
 		}
 	}
 }
@@ -532,7 +532,7 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
 	rows, err := rs.Db.Query(sqlStatement)
 	if err != nil {
-		logger.Errorf("WH: RS:  Error dropping dangling staging tables in redshift: %v\n", err)
+		logger.Errorf("[WH]: RS:  Error dropping dangling staging tables in redshift: %v\n", err)
 		return false
 	}
 	defer rows.Close()
@@ -546,12 +546,12 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
-	logger.Infof("WH: RS: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
+	logger.Infof("[WH]: RS: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
 		_, err := rs.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
-			logger.Errorf("WH: RS:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
+			logger.Errorf("[WH]: RS:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
 			delSuccess = false
 		}
 	}

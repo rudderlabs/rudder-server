@@ -23,25 +23,25 @@ import (
 )
 
 const (
-	WaitingState                     = "waiting"
-	ExecutingState                   = "executing"
-	GeneratingLoadFileState          = "generating_load_file"
-	GeneratingLoadFileFailedState    = "generating_load_file_failed"
-	GeneratedLoadFileState           = "generated_load_file"
-	UpdatingSchemaState              = "updating_schema"
-	UpdatingSchemaFailedState        = "updating_schema_failed"
-	UpdatedSchemaState               = "updated_schema"
-	ExportingDataState               = "exporting_data"
-	ExportingDataFailedState         = "exporting_data_failed"
-	ExportedDataState                = "exported_data"
-	AbortedState                     = "aborted"
-	GeneratingStagingFileFailedState = "generating_staging_file_failed"
-	GeneratedStagingFileState        = "generated_staging_file"
-	FetchingSchemaState              = "fetching_schema"
-	FetchingSchemaFailedState        = "fetching_schema_failed"
-	PreLoadingIdentities             = "pre_loading_identities"
-	PreLoadIdentitiesFailed          = "pre_load_identities_failed"
-	ConnectFailedState               = "connect_failed"
+	WaitingState                            = "waiting"
+	ExecutingState                          = "executing"
+	GeneratingLoadFileState                 = "generating_load_file"
+	GeneratingLoadFileFailedState           = "generating_load_file_failed"
+	GeneratedLoadFileState                  = "generated_load_file"
+	UpdatingSchemaState                     = "updating_schema"
+	UpdatingSchemaFailedState               = "updating_schema_failed"
+	UpdatedSchemaState                      = "updated_schema"
+	ExportingDataState                      = "exporting_data"
+	ExportingDataFailedState                = "exporting_data_failed"
+	ExportedDataState                       = "exported_data"
+	AbortedState                            = "aborted"
+	GeneratingStagingFileFailedState        = "generating_staging_file_failed"
+	GeneratedStagingFileState               = "generated_staging_file"
+	FetchingSchemaState                     = "fetching_schema"
+	FetchingSchemaFailedState               = "fetching_schema_failed"
+	PopulatingHistoricIdentitiesState       = "populating_historic_identities"
+	PopulatingHistoricIdentitiesStateFailed = "populating_historic_identities_failed"
+	ConnectFailedState                      = "connect_failed"
 )
 
 type UploadT struct {
@@ -366,12 +366,26 @@ func (job *UploadJobT) run() (err error) {
 	return nil
 }
 
-func (job *UploadJobT) loadIdentityTables(preLoad bool) (errorMap map[string]error) {
+func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err error) {
+	idr := identity.HandleT{
+		Warehouse:        job.warehouse,
+		DbHandle:         job.dbHandle,
+		UploadID:         job.upload.ID,
+		Uploader:         job,
+		WarehouseManager: job.whManager,
+	}
+	if populateHistoricIdentities {
+		return idr.ResolveHistoricIdentities()
+	}
+	return idr.Resolve()
+}
+
+func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (errorMap map[string]error) {
 	logger.Infof(`[WH]: Starting load for identity tables in namespace %s of destination %s:%s`, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 	errorMap = make(map[string]error)
 	// var generated bool
 	if generated, err := job.areIdentityTablesLoadFilesGenerated(); !generated {
-		err = job.resolveIdentities(preLoad)
+		err = job.resolveIdentities(populateHistoricIdentities)
 		if err != nil {
 			logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
@@ -463,7 +477,7 @@ func (job *UploadJobT) getUploadFirstAttemptTime() (timing time.Time) {
 }
 
 func (job *UploadJobT) setUploadStatus(status string, additionalFields ...UploadColumnT) (err error) {
-	logger.Infof("WH: Setting status of %s for wh_upload:%v", status, job.upload.ID)
+	logger.Infof("[WH]: Setting status of %s for wh_upload:%v", status, job.upload.ID)
 	marshalledTimings := job.getNewTimings(status)
 	opts := []UploadColumnT{
 		{Column: UploadStatusField, Value: status},
@@ -513,7 +527,7 @@ func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
 }
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (setStatus string) {
-	logger.Errorf("WH: Failed during %s stage: %v\n", state, statusError.Error())
+	logger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
 	upload := job.upload
 
 	job.setUploadStatus(state)
@@ -572,7 +586,7 @@ func (job *UploadJobT) setStagingFilesStatus(status string, statusError error) (
 }
 
 func (job *UploadJobT) setStagingFilesError(ids []int64, status string, statusError error) (err error) {
-	logger.Errorf("WH: Failed processing staging files: %v", statusError.Error())
+	logger.Errorf("[WH]: Failed processing staging files: %v", statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseutils.WarehouseStagingFilesTable)
 	_, err = job.dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), pq.Array(ids))
 	if err != nil {
@@ -708,7 +722,7 @@ func (job *UploadJobT) getTotalEventsUploaded() (total int) {
 	sqlStatement := fmt.Sprintf(`select sum(total_events) from wh_table_uploads where wh_upload_id=%d and status='%s'`, job.upload.ID, ExportedDataState)
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
-		logger.Errorf(`WH: Failed to query wh_table_uploads: %w`, err)
+		logger.Errorf(`[WH]: Failed to query wh_table_uploads: %w`, err)
 	}
 	return
 }
@@ -723,7 +737,7 @@ func (job *UploadJobT) setTableUploadStatus(tableName string, status string) (er
 		execValues = append(execValues, timeutil.Now())
 	}
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 %s WHERE wh_upload_id=$3 AND table_name=$4`, warehouseutils.WarehouseTableUploadsTable, lastExec)
-	logger.Debugf("WH: Setting table upload status: %v", sqlStatement)
+	logger.Debugf("[WH]: Setting table upload status: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, execValues...)
 	if err != nil {
 		panic(err)
@@ -732,9 +746,9 @@ func (job *UploadJobT) setTableUploadStatus(tableName string, status string) (er
 }
 
 func (job *UploadJobT) setTableUploadError(tableName string, status string, statusError error) (err error) {
-	logger.Errorf("WH: Failed uploading table-%s for upload-%v: %v", tableName, job.upload.ID, statusError.Error())
+	logger.Errorf("[WH]: Failed uploading table-%s for upload-%v: %v", tableName, job.upload.ID, statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, error=$3 WHERE wh_upload_id=$4 AND table_name=$5`, warehouseutils.WarehouseTableUploadsTable)
-	logger.Debugf("WH: Setting table upload error: %v", sqlStatement)
+	logger.Debugf("[WH]: Setting table upload error: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), misc.QuoteLiteral(statusError.Error()), job.upload.ID, tableName)
 	if err != nil {
 		panic(err)
@@ -869,17 +883,6 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	}
 	generated = true
 	return
-}
-
-func (job *UploadJobT) resolveIdentities(isPreload bool) (err error) {
-	idr := identity.HandleT{
-		Warehouse:        job.warehouse,
-		DbHandle:         job.dbHandle,
-		UploadID:         job.upload.ID,
-		Uploader:         job,
-		WarehouseManager: job.whManager,
-	}
-	return idr.Resolve(isPreload)
 }
 
 func (job *UploadJobT) GetLoadFileLocations(tableName string) (locations []string, err error) {

@@ -16,58 +16,61 @@ import (
 )
 
 var (
-	shouldPreLoadIdentities  bool
-	inProgressPreLoadMap     map[string]bool
-	inProgressPreLoadMapLock sync.RWMutex
+	shouldPopulateHistoricIdentities            bool
+	populatingHistoricIdentitiesProgressMap     map[string]bool
+	populatingHistoricIdentitiesProgressMapLock sync.RWMutex
+	populatedHistoricIdentitiesMap              map[string]bool
+	populatedHistoricIdentitiesMapLock          sync.RWMutex
 )
 
 func init() {
-	shouldPreLoadIdentities = config.GetBool("Warehouse.preLoadIdentities", false)
-	inProgressPreLoadMap = map[string]bool{}
+	shouldPopulateHistoricIdentities = config.GetBool("Warehouse.populateHistoricIdentities", false)
+	populatingHistoricIdentitiesProgressMap = map[string]bool{}
+	populatedHistoricIdentitiesMap = map[string]bool{}
 }
 
 func uniqueWarehouseNamespaceString(warehouse warehouseutils.WarehouseT) string {
 	return fmt.Sprintf(`namespace:%s:destination:%s`, warehouse.Namespace, warehouse.Destination.ID)
 }
 
-func isDestPreLoaded(warehouse warehouseutils.WarehouseT) bool {
-	preLoadedIdentitiesMapLock.RLock()
-	if preLoadedIdentitiesMap[uniqueWarehouseNamespaceString(warehouse)] {
-		preLoadedIdentitiesMapLock.RUnlock()
+func isDestHistoricIdentitiesPopulated(warehouse warehouseutils.WarehouseT) bool {
+	populatedHistoricIdentitiesMapLock.RLock()
+	if populatedHistoricIdentitiesMap[uniqueWarehouseNamespaceString(warehouse)] {
+		populatedHistoricIdentitiesMapLock.RUnlock()
 		return true
 	}
-	preLoadedIdentitiesMapLock.RUnlock()
+	populatedHistoricIdentitiesMapLock.RUnlock()
 	return false
 }
 
-func setDestPreLoaded(warehouse warehouseutils.WarehouseT) {
-	preLoadedIdentitiesMapLock.Lock()
-	preLoadedIdentitiesMap[uniqueWarehouseNamespaceString(warehouse)] = true
-	preLoadedIdentitiesMapLock.Unlock()
+func setDestHistoricIndetitiesPopulated(warehouse warehouseutils.WarehouseT) {
+	populatedHistoricIdentitiesMapLock.Lock()
+	populatedHistoricIdentitiesMap[uniqueWarehouseNamespaceString(warehouse)] = true
+	populatedHistoricIdentitiesMapLock.Unlock()
 }
 
-func setPreLoadInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
-	inProgressPreLoadMapLock.Lock()
+func setDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
+	populatingHistoricIdentitiesProgressMapLock.Lock()
 	if starting {
-		inProgressPreLoadMap[uniqueWarehouseNamespaceString(warehouse)] = true
+		populatingHistoricIdentitiesProgressMap[uniqueWarehouseNamespaceString(warehouse)] = true
 	} else {
-		delete(inProgressPreLoadMap, uniqueWarehouseNamespaceString(warehouse))
+		delete(populatingHistoricIdentitiesProgressMap, uniqueWarehouseNamespaceString(warehouse))
 	}
-	inProgressPreLoadMapLock.Unlock()
+	populatingHistoricIdentitiesProgressMapLock.Unlock()
 }
 
-func isDestPreLoadInProgress(warehouse warehouseutils.WarehouseT) bool {
-	inProgressPreLoadMapLock.RLock()
-	if inProgressPreLoadMap[uniqueWarehouseNamespaceString(warehouse)] {
-		inProgressPreLoadMapLock.RUnlock()
+func isDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.WarehouseT) bool {
+	populatingHistoricIdentitiesProgressMapLock.RLock()
+	if populatingHistoricIdentitiesProgressMap[uniqueWarehouseNamespaceString(warehouse)] {
+		populatingHistoricIdentitiesProgressMapLock.RUnlock()
 		return true
 	}
-	inProgressPreLoadMapLock.RUnlock()
+	populatingHistoricIdentitiesProgressMapLock.RUnlock()
 	return false
 }
 
-func (wh *HandleT) getPendingPreLoad(warehouse warehouseutils.WarehouseT) (upload UploadT, found bool) {
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s' AND %[1]s.status != '%[5]s' AND %[1]s.status != '%[6]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.preLoadDestType(), ExportedDataState, AbortedState)
+func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.WarehouseT) (upload UploadT, found bool) {
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s' AND %[1]s.status != '%[5]s' AND %[1]s.status != '%[6]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.poulateHistoricIdentitiesDestType(), ExportedDataState, AbortedState)
 
 	var schema json.RawMessage
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
@@ -82,7 +85,7 @@ func (wh *HandleT) getPendingPreLoad(warehouse warehouseutils.WarehouseT) (uploa
 	return
 }
 
-func (wh *HandleT) preLoadDestType() string {
+func (wh *HandleT) poulateHistoricIdentitiesDestType() string {
 	return wh.destType + "_IDENTITY_PRE_LOAD"
 }
 
@@ -186,7 +189,7 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
 	}
 }
 
-func (wh *HandleT) initPreLoadUpload(warehouse warehouseutils.WarehouseT) UploadT {
+func (wh *HandleT) initPrePopulateDestIndetitiesUpload(warehouse warehouseutils.WarehouseT) UploadT {
 	schema := make(map[string]map[string]string)
 	// TODO: DRY this code
 	identityRules := map[string]string{
@@ -219,7 +222,7 @@ func (wh *HandleT) initPreLoadUpload(warehouse warehouseutils.WarehouseT) Upload
 	defer stmt.Close()
 
 	now := timeutil.Now()
-	row := stmt.QueryRow(warehouse.Source.ID, warehouse.Namespace, warehouse.Destination.ID, wh.preLoadDestType(), WaitingState, marshalledSchema, "{}", now, now, 0, 0, 0, 0)
+	row := stmt.QueryRow(warehouse.Source.ID, warehouse.Namespace, warehouse.Destination.ID, wh.poulateHistoricIdentitiesDestType(), WaitingState, marshalledSchema, "{}", now, now, 0, 0, 0, 0)
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
@@ -232,7 +235,7 @@ func (wh *HandleT) initPreLoadUpload(warehouse warehouseutils.WarehouseT) Upload
 		Namespace:       warehouse.Namespace,
 		SourceID:        warehouse.Source.ID,
 		DestinationID:   warehouse.Destination.ID,
-		DestinationType: wh.preLoadDestType(),
+		DestinationType: wh.poulateHistoricIdentitiesDestType(),
 		Status:          WaitingState,
 		Schema:          schema,
 	}
@@ -246,45 +249,45 @@ func (wh *HandleT) setFailedStat(warehouse warehouseutils.WarehouseT, err error)
 	}
 }
 
-func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) {
-	if isDestPreLoaded(warehouse) || isDestPreLoadInProgress(warehouse) {
+func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.WarehouseT) {
+	if isDestHistoricIdentitiesPopulated(warehouse) || isDestHistoricIdentitiesPopulateInProgress(warehouse) {
 		return
 	}
 
 	setDestInProgress(warehouse, true)
-	setPreLoadInProgress(warehouse, true)
+	setDestHistoricIdentitiesPopulateInProgress(warehouse, true)
 	rruntime.Go(func() {
 		var err error
 		defer setDestInProgress(warehouse, false)
-		defer setPreLoadInProgress(warehouse, false)
-		defer setDestPreLoaded(warehouse)
+		defer setDestHistoricIdentitiesPopulateInProgress(warehouse, false)
+		defer setDestHistoricIndetitiesPopulated(warehouse)
 		defer wh.setFailedStat(warehouse, err)
 
-		// check for pending preLoads
-		var hasPendingPreLoad bool
+		// check for pending loads (populateHistoricIdentites)
+		var hasPendingLoad bool
 		var upload UploadT
-		upload, hasPendingPreLoad = wh.getPendingPreLoad(warehouse)
+		upload, hasPendingLoad = wh.getPendingPopulateIdentitiesLoad(warehouse)
 
-		if hasPendingPreLoad {
-			logger.Infof("WH: Found pending preLoad for %s:%s", wh.destType, warehouse.Destination.ID)
+		if hasPendingLoad {
+			logger.Infof("[WH]: Found pending load (populateHistoricIdentites) for %s:%s", wh.destType, warehouse.Destination.ID)
 		} else {
 			if wh.hasLocalIdentityData(warehouse) {
-				logger.Infof("WH: Skipping identity tables preLoad for %s:%s as data exists locally", wh.destType, warehouse.Destination.ID)
+				logger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentites) for %s:%s as data exists locally", wh.destType, warehouse.Destination.ID)
 				return
 			}
 			var hasData bool
 			hasData, err = wh.hasWarehouseData(warehouse)
 			if err != nil {
-				logger.Errorf(`WH: Error checking for data in %s:%s:%s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name)
+				logger.Errorf(`[WH]: Error checking for data in %s:%s:%s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name)
 				return
 			}
 			if !hasData {
-				logger.Infof("WH: Skipping identity tables preLoad for %s:%s as warehouse does not have any data", wh.destType, warehouse.Destination.ID)
+				logger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentites) for %s:%s as warehouse does not have any data", wh.destType, warehouse.Destination.ID)
 				return
 			}
 			logger.Infof("[WH]: Did not find local identity tables..")
 			logger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
-			upload = wh.initPreLoadUpload(warehouse)
+			upload = wh.initPrePopulateDestIndetitiesUpload(warehouse)
 		}
 
 		whManager, err := manager.New(wh.destType)
@@ -318,7 +321,7 @@ func (wh *HandleT) preLoadIdentityTables(warehouse warehouseutils.WarehouseT) {
 		var schemaInWarehouse warehouseutils.SchemaT
 		schemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
 		if err != nil {
-			logger.Errorf(`WH: Failed fetching schema from warehouse: %v`, err)
+			logger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, AbortedState)
 			return
 		}
