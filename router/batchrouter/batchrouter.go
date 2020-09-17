@@ -51,6 +51,7 @@ var (
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTimeinHr   time.Duration
+	filteredSources                    []string
 )
 
 type HandleT struct {
@@ -83,17 +84,22 @@ func (brt *HandleT) backendConfigSubscriber() {
 		allSources := config.Data.(backendconfig.SourcesT)
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
-				for _, destination := range source.Destinations {
-					if destination.DestinationDefinition.Name == brt.destType {
-						brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
-						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
-							destination := destination
-							rruntime.Go(func() {
-								testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
-								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
-							})
+				if misc.ContainsString(filteredSources, source.ID) {
+					logger.Infof("BRT: Passed source: %s-%s\n", source.Name, source.ID)
+					for _, destination := range source.Destinations {
+						if destination.DestinationDefinition.Name == brt.destType {
+							brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
+							if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
+								destination := destination
+								rruntime.Go(func() {
+									testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
+									destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
+								})
+							}
 						}
 					}
+				} else {
+					logger.Infof("BRT: Filtered out source: %s-%s\n", source.Name, source.ID)
 				}
 			}
 		}
@@ -793,6 +799,7 @@ func loadConfig() {
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
+	filteredSources = strings.Split(config.GetString("batchRouter.filteredSources", ""), ",")
 }
 
 func init() {
