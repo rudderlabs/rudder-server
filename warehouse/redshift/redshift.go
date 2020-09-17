@@ -146,6 +146,12 @@ func (rs *HandleT) tableExists(tableName string) (exists bool, err error) {
 	return
 }
 
+func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, rs.Namespace)
+	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
+	return
+}
+
 func (rs *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, getRSDataType(columnType))
 	logger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
@@ -172,7 +178,10 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	diff := warehouseutils.GetSchemaDiff(rs.CurrentSchema, rs.Upload.Schema)
 	updatedSchema = diff.UpdatedSchema
 	if len(rs.CurrentSchema) == 0 {
-		err = rs.createSchema()
+		var schemaExists bool
+		if schemaExists, err = rs.schemaExists(rs.Namespace); !schemaExists {
+			err = rs.createSchema()
+		}
 		if err != nil {
 			return nil, err
 		}
