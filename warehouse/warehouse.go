@@ -48,31 +48,32 @@ import (
 )
 
 var (
-	webPort                          int
-	dbHandle                         *sql.DB
-	notifier                         pgnotifier.PgNotifierT
-	WarehouseDestinations            []string
-	jobQueryBatchSize                int
-	noOfWorkers                      int
-	noOfSlaveWorkerRoutines          int
-	slaveWorkerRoutineBusy           []bool //Busy-true
-	uploadFreqInS                    int64
-	stagingFilesSchemaPaginationSize int
-	mainLoopSleep                    time.Duration
-	workerRetrySleep                 time.Duration
-	stagingFilesBatchSize            int
-	configSubscriberLock             sync.RWMutex
-	crashRecoverWarehouses           []string
-	inProgressMap                    map[string]bool
-	inRecoveryMap                    map[string]bool
-	inProgressMapLock                sync.RWMutex
-	lastExecMap                      map[string]int64
-	lastExecMapLock                  sync.RWMutex
-	warehouseMode                    string
-	warehouseSyncPreFetchCount       int
-	warehouseSyncFreqIgnore          bool
-	activeWorkerCount                int
-	activeWorkerCountLock            sync.RWMutex
+	webPort                             int
+	dbHandle                            *sql.DB
+	notifier                            pgnotifier.PgNotifierT
+	WarehouseDestinations               []string
+	jobQueryBatchSize                   int
+	noOfWorkers                         int
+	noOfSlaveWorkerRoutines             int
+	slaveWorkerRoutineBusy              []bool //Busy-true
+	uploadFreqInS                       int64
+	stagingFilesSchemaPaginationSize    int
+	mainLoopSleep                       time.Duration
+	workerRetrySleep                    time.Duration
+	stagingFilesBatchSize               int
+	configSubscriberLock                sync.RWMutex
+	crashRecoverWarehouses              []string
+	inProgressMap                       map[string]bool
+	inRecoveryMap                       map[string]bool
+	inProgressMapLock                   sync.RWMutex
+	lastExecMap                         map[string]int64
+	lastExecMapLock                     sync.RWMutex
+	warehouseMode                       string
+	warehouseSyncPreFetchCount          int
+	warehouseSyncFreqIgnore             bool
+	activeWorkerCount                   int
+	activeWorkerCountLock               sync.RWMutex
+	maxStagingFileReadBufferCapacityInK int
 )
 var (
 	host, user, password, dbname, sslmode string
@@ -161,6 +162,7 @@ func loadConfig() {
 	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
 	stagingFilesSchemaPaginationSize = config.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100)
 	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
+	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 1024)
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -1239,6 +1241,11 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	eventsCountMap := make(map[string]int)
 	uuidTS := timeutil.Now()
 	sc := bufio.NewScanner(reader)
+	// default scanner buffer maxCapacity is 64K
+	// set it to higher value to avoid read stop on read size error
+	maxCapacity := maxStagingFileReadBufferCapacityInK * 1024
+	buf := make([]byte, maxCapacity)
+	sc.Buffer(buf, maxCapacity)
 	misc.PrintMemUsage()
 
 	timer = warehouseutils.DestStat(stats.TimerType, "process_staging_file_to_csv_time", job.DestinationID)
@@ -1246,7 +1253,15 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 
 	lineBytesCounter := 0
 	var interfaceSliceSample []interface{}
-	for sc.Scan() {
+	for {
+		ok := sc.Scan()
+		if !ok {
+			scanErr := sc.Err()
+			if scanErr != nil {
+				logger.Errorf("WH: Error in scanner reading line from staging file: %v", scanErr)
+			}
+			break
+		}
 		lineBytes := sc.Bytes()
 		lineBytesCounter += len(lineBytes)
 		var jsonLine map[string]interface{}
