@@ -52,6 +52,7 @@ var (
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTimeinHr   time.Duration
 	filteredSources                    []string
+	filteredDestinations               []string
 )
 
 type HandleT struct {
@@ -87,7 +88,8 @@ func (brt *HandleT) backendConfigSubscriber() {
 				if misc.ContainsString(filteredSources, source.ID) {
 					logger.Infof("BRT: Passed source: %s-%s\n", source.Name, source.ID)
 					for _, destination := range source.Destinations {
-						if destination.DestinationDefinition.Name == brt.destType {
+						if destination.DestinationDefinition.Name == brt.destType && misc.ContainsString(filteredDestinations, destination.ID) {
+							logger.Infof("BRT: Passed source: %s-%s and destination %s-%s", source.Name, source.ID, destination.Name, destination.ID)
 							brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
 							if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
 								destination := destination
@@ -800,6 +802,7 @@ func loadConfig() {
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
 	filteredSources = strings.Split(config.GetString("batchRouter.filteredSources", ""), ",")
+	filteredDestinations = strings.Split(config.GetString("batchRouter.filteredDestinations", ""), ",")
 }
 
 func init() {
