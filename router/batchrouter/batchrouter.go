@@ -85,10 +85,10 @@ func (brt *HandleT) backendConfigSubscriber() {
 		allSources := config.Data.(backendconfig.SourcesT)
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
-				if misc.ContainsString(filteredSources, source.ID) {
+				if len(filteredSources) == 0 || misc.ContainsString(filteredSources, source.ID) {
 					logger.Infof("BRT: Passed source: %s-%s\n", source.Name, source.ID)
 					for _, destination := range source.Destinations {
-						if destination.DestinationDefinition.Name == brt.destType && misc.ContainsString(filteredDestinations, destination.ID) {
+						if destination.DestinationDefinition.Name == brt.destType && (len(filteredDestinations) == 0 || misc.ContainsString(filteredDestinations, destination.ID)) {
 							logger.Infof("BRT: Passed source: %s-%s and destination %s-%s", source.Name, source.ID, destination.Name, destination.ID)
 							brt.batchDestinations = append(brt.batchDestinations, DestinationT{Source: source, Destination: destination})
 							if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
@@ -801,8 +801,15 @@ func loadConfig() {
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
-	filteredSources = strings.Split(config.GetString("batchRouter.filteredSources", ""), ",")
-	filteredDestinations = strings.Split(config.GetString("batchRouter.filteredDestinations", ""), ",")
+
+	sources := config.GetString("batchRouter.filteredSources", "")
+	if len(sources) != 0 {
+		filteredSources = strings.Split(sources, ",")
+	}
+	destinations := config.GetString("batchRouter.filteredDestinations", "")
+	if len(destinations) != 0 {
+		filteredDestinations = strings.Split(destinations, ",")
+	}
 }
 
 func init() {
