@@ -131,11 +131,12 @@ func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProd
 	return producer, err
 }
 
-func prepareMessage(topic string, key string, message []byte) *sarama.ProducerMessage {
+func prepareMessage(topic string, key string, message []byte, timestamp time.Time) *sarama.ProducerMessage {
 	msg := &sarama.ProducerMessage{
-		Topic: topic,
-		Key:   sarama.StringEncoder(key),
-		Value: sarama.StringEncoder(message),
+		Topic:     topic,
+		Key:       sarama.StringEncoder(key),
+		Value:     sarama.StringEncoder(message),
+		Timestamp: timestamp,
 	}
 
 	return msg
@@ -190,9 +191,10 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	parsedJSON := gjson.ParseBytes(jsonData)
 	data := parsedJSON.Get("message").Value().(interface{})
+	timestamp := time.Now()
 	value, err := json.Marshal(data)
 	userID := parsedJSON.Get("userId").Value().(string)
-	message := prepareMessage(topic, userID, value)
+	message := prepareMessage(topic, userID, value, timestamp)
 
 	var returnMessage string
 	var statusCode int
