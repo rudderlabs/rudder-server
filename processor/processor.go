@@ -231,6 +231,12 @@ func loadConfig() {
 	dbReadBatchSize = minDBReadBatchSize
 }
 
+//ResetDBReadBatchSize - resets dbReadBatchSize to minDBReadBatchSize
+//This is written as a helper function for processor tests.
+func (proc *HandleT) ResetDBReadBatchSize() {
+	dbReadBatchSize = minDBReadBatchSize
+}
+
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	proc.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
