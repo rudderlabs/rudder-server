@@ -14,8 +14,9 @@ import (
 	mock_sysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 )
 
-var SampleWorkspaceSources = map[string][]SourceT{
-	"testWordSpaceId": SampleBackendConfig.Sources,
+var workspaceId = "testWordSpaceId"
+var SampleWorkspaceSources = map[string]SourcesT{
+	workspaceId: SampleBackendConfig,
 }
 var _ = Describe("workspace-config", func() {
 	BeforeEach(func() {

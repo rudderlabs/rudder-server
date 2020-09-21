@@ -141,6 +141,7 @@ func (c *context) Finish() {
 
 const (
 	WriteKeyEnabled       = "enabled-write-key"
+	WorkspaceID           = "some-workspace-id"
 	SourceIDEnabled       = "enabled-source"
 	SourceIDDisabled      = "disabled-source"
 	DestinationIDEnabledA = "enabled-destination-a" // test destination router
@@ -191,10 +192,7 @@ var sampleBackendConfig = backendconfig.SourcesT{
 					},
 					Transformations: []backendconfig.TransformationT{
 						{
-							ID:          "transformation-id",
-							Name:        "transformation-name",
-							Description: "transformation-description",
-							VersionID:   "transformation-version-id",
+							VersionID: "transformation-version-id",
 						},
 					},
 				},
@@ -563,7 +561,8 @@ var _ = Describe("Processor", func() {
 			c.mockStatBatchRouterDBWrite.EXPECT().Count(2).Times(1).After(callUpdateJobs)
 
 			c.mockStatLoopTime.EXPECT().End().Times(1).After(callUpdateJobs)
-
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
@@ -824,7 +823,8 @@ var _ = Describe("Processor", func() {
 			c.mockStatRouterDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
 			c.mockStatBatchRouterDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
 			c.mockStatProcErrDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
-
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 			var processor *HandleT = &HandleT{
 				transformer:            mockTransformer,
 				processSessions:        true,
@@ -1085,6 +1085,8 @@ var _ = Describe("Processor", func() {
 			c.mockStatRouterDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
 			c.mockStatProcErrDBWrite.EXPECT().Count(0).AnyTimes()
 			c.mockStatBatchRouterDBWrite.EXPECT().Count(0).AnyTimes().After(callUpdateJobsSuccess)
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			var processor *HandleT = &HandleT{
 				transformer:            mockTransformer,
@@ -1225,6 +1227,8 @@ var _ = Describe("Processor", func() {
 			c.mockStatBatchRouterDBWrite.EXPECT().Count(0).Times(1)
 			c.mockStatLoopTime.EXPECT().End().Times(1)
 			c.mockStatProcErrDBWrite.EXPECT().Count(2).Times(1).After(callUpdateJobs)
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
@@ -1357,7 +1361,8 @@ var _ = Describe("Processor", func() {
 			c.mockStatBatchRouterDBWrite.EXPECT().Count(0).Times(1)
 			c.mockStatLoopTime.EXPECT().End().Times(1)
 			c.mockStatProcErrDBWrite.EXPECT().Count(1).Times(1).After(callUpdateJobs)
-
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
