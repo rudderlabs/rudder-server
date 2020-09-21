@@ -2054,7 +2054,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 		row := jd.dbHandle.QueryRow(stmt)
 		err = row.Scan(&rawJSONRows)
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("Scanning row failed with error : %w", err))
 		}
 
 		rowEndPatternMatchCount += int64(bytes.Count(rawJSONRows, []byte("}, \n {")))

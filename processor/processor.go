@@ -199,6 +199,8 @@ func (proc *HandleT) Start() {
 var (
 	loopSleep                           time.Duration
 	maxLoopSleep                        time.Duration
+	maxDBReadBatchSize                  int
+	minDBReadBatchSize                  int
 	dbReadBatchSize                     int
 	transformBatchSize                  int
 	userTransformBatchSize              int
@@ -216,7 +218,8 @@ var (
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
 	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
-	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 10000)
+	maxDBReadBatchSize = config.GetInt("Processor.maxDBReadBatchSize", 10000)
+	minDBReadBatchSize = config.GetInt("Processor.minDBReadBatchSize", 100)
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
@@ -224,6 +227,8 @@ func loadConfig() {
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
+
+	dbReadBatchSize = minDBReadBatchSize
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -927,6 +932,20 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
+
+	//deciding the dbReadBatchSize for the next query based on the totalEvents processed in this loop.
+	if totalEvents > maxDBReadBatchSize {
+		dbReadBatchSize = dbReadBatchSize / 2
+		if dbReadBatchSize < minDBReadBatchSize {
+			dbReadBatchSize = minDBReadBatchSize
+		}
+	} else {
+		dbReadBatchSize = 2 * dbReadBatchSize
+		if dbReadBatchSize > maxDBReadBatchSize {
+			dbReadBatchSize = maxDBReadBatchSize
+		}
+	}
+
 	proc.pStatsDBW.End(len(statusList))
 	proc.pStatsJobs.End(totalEvents)
 
@@ -1026,7 +1045,7 @@ func (proc *HandleT) mainLoop() {
 
 func (proc *HandleT) crashRecover() {
 	for {
-		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize, nil)
+		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, maxDBReadBatchSize, nil)
 
 		if len(execList) == 0 {
 			break
