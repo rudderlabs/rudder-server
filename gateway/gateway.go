@@ -809,34 +809,18 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 }
 
 func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, reqType string) {
-	//if r.Method == http.MethodGet {
 	queryParams := r.URL.Query()
 	if writeKey, present := queryParams["writeKey"]; present && writeKey[0] != "" {
-		// make a new request
-		//req, _ := http.NewRequest(http.MethodPost, "", nil)
 
 		// set basic auth header
 		r.SetBasicAuth(writeKey[0], "")
 		delete(queryParams, "writeKey")
-
-		// set X-Forwarded-For header
-		//req.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
-
-		// convert the pixel request(r) to a web request(req)
-		/* err := gateway.setWebPayload(req, queryParams, reqType)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		} */
 
 		// send req to webHandler
 		gateway.webHandler(w, r, reqType)
 	} else {
 		http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
 	}
-	/* } else {
-		http.Error(w, response.InvalidRequestMethod, http.StatusBadRequest)
-	} */
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
