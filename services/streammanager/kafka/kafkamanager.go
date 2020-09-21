@@ -63,6 +63,18 @@ func loadCertificate() {
 	}
 }
 
+func getDefaultConfiguration() *sarama.Config {
+	config := sarama.NewConfig()
+	config.Net.DialTimeout = time.Duration(kafkaDialTimeoutInSec) * time.Second
+	config.Net.WriteTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
+	config.Net.ReadTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
+	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
+	config.Producer.RequiredAcks = sarama.WaitForAll
+	config.Producer.Return.Successes = true
+	config.Version = sarama.V1_0_0_0
+	return config
+}
+
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 
@@ -75,14 +87,7 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 
 	hosts := []string{hostName}
 
-	config := sarama.NewConfig()
-	config.Net.DialTimeout = time.Duration(kafkaDialTimeoutInSec) * time.Second
-	config.Net.WriteTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
-	config.Net.ReadTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
-
-	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
-	config.Producer.RequiredAcks = sarama.WaitForAll
-	config.Producer.Return.Successes = true
+	config := getDefaultConfiguration()
 
 	if isSslEnabled {
 		caCertificate := destConfig.CACertificate
@@ -108,10 +113,7 @@ func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProd
 	hostName := destConfig.BootstrapServer
 	hosts := []string{hostName}
 
-	config := sarama.NewConfig()
-	config.Net.DialTimeout = time.Duration(kafkaDialTimeoutInSec) * time.Second
-	config.Net.WriteTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
-	config.Net.ReadTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
+	config := getDefaultConfiguration()
 
 	config.Net.SASL.Enable = true
 	config.Net.SASL.User = azureEventHubUser
@@ -123,8 +125,6 @@ func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProd
 		InsecureSkipVerify: true,
 		ClientAuth:         0,
 	}
-	config.Version = sarama.V1_0_0_0
-	config.Producer.Return.Successes = true
 
 	producer, err := sarama.NewSyncProducer(hosts, config)
 
