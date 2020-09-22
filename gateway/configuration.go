@@ -34,7 +34,7 @@ func loadConfig() {
 	// Enable suppress user feature. false by default
 	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
 	// Protocols feature. false by default
-	enableProtocolsFeature = config.GetBool("Protocols.enableProtocolsFeature", false)
+	enableProtocolsFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", true)
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
 }
