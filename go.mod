@@ -68,6 +68,7 @@ require (
 	golang.org/x/tools v0.0.0-20200226224502-204d844ad48d // indirect
 	google.golang.org/api v0.19.0
 	google.golang.org/genproto v0.0.0-20200226201735-46b91f19d98c // indirect
+	google.golang.org/grpc v1.27.1
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
 	gopkg.in/ini.v1 v1.52.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
