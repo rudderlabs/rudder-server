@@ -234,13 +234,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			atomic.AddUint64(&rt.failCount, 1)
 			status.ErrorResponse = []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody)))
 
-			//#JobOrder (see other #JobOrder comment)
-			if rt.keepOrderOnFailure && !isPrevFailedUser && userID != "" {
-				logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destName, userID)
-				worker.failedJobIDMutex.Lock()
-				worker.failedJobIDMap[userID] = job.JobID
-				worker.failedJobIDMutex.Unlock()
-			}
+			//addToFailedMap is used to decide whethere the jobID has to be added to the failedJobIDMap.
+			//If the job is aborted then there is no point in adding it to the failedJobIDMap.
+			addToFailedMap := true
 
 			status.JobState = jobsdb.Failed.State
 
@@ -250,6 +246,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				timeElapsed := time.Now().Sub(job.CreatedAt)
 				if timeElapsed > retryTimeWindow && status.AttemptNum >= maxFailedCountForJob {
 					status.JobState = jobsdb.Aborted.State
+					addToFailedMap = false
 					delete(worker.retryForJobMap, job.JobID)
 				} else {
 					worker.retryForJobMap[job.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
@@ -257,7 +254,18 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			} else {
 				if status.AttemptNum >= maxFailedCountForJob {
 					status.JobState = jobsdb.Aborted.State
+					addToFailedMap = false
 					eventsAbortedStat.Increment()
+				}
+			}
+
+			if addToFailedMap {
+				//#JobOrder (see other #JobOrder comment)
+				if rt.keepOrderOnFailure && !isPrevFailedUser && userID != "" {
+					logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destName, userID)
+					worker.failedJobIDMutex.Lock()
+					worker.failedJobIDMap[userID] = job.JobID
+					worker.failedJobIDMutex.Unlock()
 				}
 			}
 			reqMetric.RequestRetries = reqMetric.RequestRetries + 1
@@ -718,31 +726,7 @@ func (rt *HandleT) generatorLoop() {
 }
 
 func (rt *HandleT) crashRecover() {
-
-	for {
-		execList := rt.jobsDB.GetExecuting([]string{rt.destName}, jobQueryBatchSize, nil)
-
-		if len(execList) == 0 {
-			break
-		}
-		logger.Debugf("[%v Router] crash recovering: %v jobs", rt.destName, len(execList))
-
-		var statusList []*jobsdb.JobStatusT
-
-		for _, job := range execList {
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				JobState:      jobsdb.Failed.State,
-				ErrorCode:     "",
-				ErrorResponse: []byte(`{"Error": "Rudder server crashed while sending job to destination"}`), // check
-			}
-			statusList = append(statusList, &status)
-		}
-		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
-	}
+	rt.jobsDB.DeleteExecuting([]string{rt.destName}, -1, nil)
 }
 
 func (rt *HandleT) setUserEventsOrderingRequirement() {

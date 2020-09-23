@@ -337,9 +337,9 @@ func generateArgumentString(arg string, length int) string {
 	return strings.Join(args, ",")
 }
 
-// typeCastDataFromType typeCasts string data to the mentioned data type
-func typeCastDataFromType(data string, datatype string) interface{} {
-	switch datatype {
+// typecastDataFromType typeCasts string data to the mentioned data type
+func typecastDataFromType(data string, dataType string) interface{} {
+	switch dataType {
 	case "int":
 		i, err := strconv.Atoi(data)
 		if err != nil {
@@ -454,7 +454,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 			for index, value := range record {
 				columnName := sortedColumnKeys[index]
 				columnDataType := columnMap[columnName]
-				data := typeCastDataFromType(value, columnDataType)
+				data := typecastDataFromType(value, columnDataType)
 				recordInterface = append(recordInterface, data)
 
 			}
