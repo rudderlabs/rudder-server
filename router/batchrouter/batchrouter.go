@@ -397,7 +397,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		{
 			Name:     "destination_id",
 			Value:    batchJobs.BatchDestination.Destination.ID,
-			Optional: true,
+			Optional: false,
 		},
 	}
 	//Mark the status of the jobs
@@ -466,11 +466,12 @@ func (brt *HandleT) initWorkers() {
 							{
 								Name:     "destination_id",
 								Value:    batchDest.Destination.ID,
-								Optional: true,
+								Optional: false,
 							},
 						}
 						brtQueryStat := stats.NewStat("batch_router.jobsdb_query_time", stats.TimerType)
 						brtQueryStat.Start()
+						logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
 						retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, parameterFilters)
 						toQuery -= len(retryList)
@@ -485,7 +486,7 @@ func (brt *HandleT) initWorkers() {
 							setDestInProgress(batchDest.Destination.ID, false)
 							continue
 						}
-						logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, waitList: %v unprocessedList: %v, total: %v", parameterFilters, brt.destType, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
+						logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, waitList: %v unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
 
 						var statusList []*jobsdb.JobStatusT
 
@@ -511,6 +512,7 @@ func (brt *HandleT) initWorkers() {
 
 						//Mark the jobs as executing
 						brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
+						logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
 
 						var wg sync.WaitGroup
 						wg.Add(len(jobsBySource))
