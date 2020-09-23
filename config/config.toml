@@ -79,8 +79,8 @@ enableSuppressUserFeature = true
 dedupWindowInS = 86400
 allowPartialWriteWithErrors = true
 
-[Protocols]
-enableProtocolsFeature = false
+[EventSchemas]
+enableEventSchemasFeature = true
 syncIntervalInS = 5
 
 [Gateway.webhook]
@@ -183,7 +183,7 @@ minUploadBackoffInS = 60
 maxUploadBackoffInS = 1800
 warehouseSyncPreFetchCount = 10
 warehouseSyncFreqIgnore = false
-stagingFilesBatchSize = 240
+stagingFilesBatchSize = 960
     [Warehouse.redshift]
     maxParallelLoads = 3
     setVarCharMax = false

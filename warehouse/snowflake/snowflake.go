@@ -425,10 +425,10 @@ func (sf *HandleT) loadUserTables() (err error) {
 											ID, %[3]s
 											FROM (
 												(
-													SELECT ID, %[6]s FROM "%[1]s"."%[4]s" WHERE ID in (SELECT USER_ID FROM %[5]s)
+													SELECT ID, %[6]s FROM "%[1]s"."%[4]s" WHERE ID in (SELECT USER_ID FROM %[5]s WHERE USER_ID IS NOT NULL)
 												) UNION
 												(
-													SELECT USER_ID, %[6]s FROM %[5]s
+													SELECT USER_ID, %[6]s FROM %[5]s WHERE USER_ID IS NOT NULL
 												)
 											)
 										)

@@ -48,31 +48,32 @@ import (
 )
 
 var (
-	webPort                          int
-	dbHandle                         *sql.DB
-	notifier                         pgnotifier.PgNotifierT
-	WarehouseDestinations            []string
-	jobQueryBatchSize                int
-	noOfWorkers                      int
-	noOfSlaveWorkerRoutines          int
-	slaveWorkerRoutineBusy           []bool //Busy-true
-	uploadFreqInS                    int64
-	stagingFilesSchemaPaginationSize int
-	mainLoopSleep                    time.Duration
-	workerRetrySleep                 time.Duration
-	stagingFilesBatchSize            int
-	configSubscriberLock             sync.RWMutex
-	crashRecoverWarehouses           []string
-	inProgressMap                    map[string]bool
-	inRecoveryMap                    map[string]bool
-	inProgressMapLock                sync.RWMutex
-	lastExecMap                      map[string]int64
-	lastExecMapLock                  sync.RWMutex
-	warehouseMode                    string
-	warehouseSyncPreFetchCount       int
-	warehouseSyncFreqIgnore          bool
-	activeWorkerCount                int
-	activeWorkerCountLock            sync.RWMutex
+	webPort                             int
+	dbHandle                            *sql.DB
+	notifier                            pgnotifier.PgNotifierT
+	WarehouseDestinations               []string
+	jobQueryBatchSize                   int
+	noOfWorkers                         int
+	noOfSlaveWorkerRoutines             int
+	slaveWorkerRoutineBusy              []bool //Busy-true
+	uploadFreqInS                       int64
+	stagingFilesSchemaPaginationSize    int
+	mainLoopSleep                       time.Duration
+	workerRetrySleep                    time.Duration
+	stagingFilesBatchSize               int
+	configSubscriberLock                sync.RWMutex
+	crashRecoverWarehouses              []string
+	inProgressMap                       map[string]bool
+	inRecoveryMap                       map[string]bool
+	inProgressMapLock                   sync.RWMutex
+	lastExecMap                         map[string]int64
+	lastExecMapLock                     sync.RWMutex
+	warehouseMode                       string
+	warehouseSyncPreFetchCount          int
+	warehouseSyncFreqIgnore             bool
+	activeWorkerCount                   int
+	activeWorkerCountLock               sync.RWMutex
+	maxStagingFileReadBufferCapacityInK int
 )
 var (
 	host, user, password, dbname, sslmode string
@@ -161,6 +162,7 @@ func loadConfig() {
 	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
 	stagingFilesSchemaPaginationSize = config.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100)
 	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
+	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 1024)
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -1239,6 +1241,11 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	eventsCountMap := make(map[string]int)
 	uuidTS := timeutil.Now()
 	sc := bufio.NewScanner(reader)
+	// default scanner buffer maxCapacity is 64K
+	// set it to higher value to avoid read stop on read size error
+	maxCapacity := maxStagingFileReadBufferCapacityInK * 1024
+	buf := make([]byte, maxCapacity)
+	sc.Buffer(buf, maxCapacity)
 	misc.PrintMemUsage()
 
 	timer = warehouseutils.DestStat(stats.TimerType, "process_staging_file_to_csv_time", job.DestinationID)
@@ -1246,7 +1253,15 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 
 	lineBytesCounter := 0
 	var interfaceSliceSample []interface{}
-	for sc.Scan() {
+	for {
+		ok := sc.Scan()
+		if !ok {
+			scanErr := sc.Err()
+			if scanErr != nil {
+				logger.Errorf("WH: Error in scanner reading line from staging file: %v", scanErr)
+			}
+			break
+		}
 		lineBytes := sc.Bytes()
 		lineBytesCounter += len(lineBytes)
 		var jsonLine map[string]interface{}
@@ -1280,25 +1295,24 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 			eventsCountMap[tableName] = 0
 		}
 		if job.DestinationType == "BQ" {
+			outputJSONLine := make(map[string]interface{})
 			for _, columnName := range sortedTableColumnMap[tableName] {
 				if columnName == warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts") {
 					// add uuid_ts to track when event was processed into load_file
-					columnData[warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts")] = uuidTS.Format(warehouseutils.BQUuidTSFormat)
+					outputJSONLine[warehouseutils.ToProviderCase(job.DestinationType, "uuid_ts")] = uuidTS.Format(warehouseutils.BQUuidTSFormat)
 					continue
 				}
 				if columnName == warehouseutils.ToProviderCase(job.DestinationType, "loaded_at") {
 					// add loaded_at for segment compatability
-					columnData[warehouseutils.ToProviderCase(job.DestinationType, "loaded_at")] = uuidTS.Format(warehouseutils.BQLoadedAtFormat)
+					outputJSONLine[warehouseutils.ToProviderCase(job.DestinationType, "loaded_at")] = uuidTS.Format(warehouseutils.BQLoadedAtFormat)
 					continue
 				}
 				columnVal, ok := columnData[columnName]
 				if !ok {
-					columnData[columnName] = nil
 					continue
 				}
 				columnType, ok := columns[columnName].(string)
 				if !ok {
-					columnData[columnName] = nil
 					continue
 				}
 				// json.Unmarshal returns int as float
@@ -1307,10 +1321,10 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				if columnType == "int" || columnType == "bigint" {
 					floatVal, ok := columnVal.(float64)
 					if !ok {
-						columnData[columnName] = nil
 						continue
 					}
-					columnData[columnName] = int(floatVal)
+					outputJSONLine[columnName] = int(floatVal)
+					columnVal = int(floatVal)
 				}
 				// if the current data type doesnt match the one in warehouse, set value as NULL
 				var dataTypeInSchema string
@@ -1318,18 +1332,19 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 				if ok && columnType != dataTypeInSchema {
 					if dataTypeInSchema == "string" {
 						// cast to string since string type column can accomodate any kind of value
-						columnData[columnName] = fmt.Sprintf(`%v`, columnVal)
+						outputJSONLine[columnName] = fmt.Sprintf(`%v`, columnVal)
 					} else if (columnType == "int" || columnType == "bigint") && dataTypeInSchema == "float" {
 						// pass it along
+						outputJSONLine[columnName] = columnVal
 					} else if columnType == "float" && (dataTypeInSchema == "int" || dataTypeInSchema == "bigint") {
 						floatVal, ok := columnVal.(float64)
 						if !ok {
-							columnData[columnName] = nil
+							outputJSONLine[columnName] = nil
 							continue
 						}
-						columnData[columnName] = int(floatVal)
+						outputJSONLine[columnName] = int(floatVal)
 					} else {
-						columnData[columnName] = nil
+						outputJSONLine[columnName] = nil
 						rowID, hasID := columnData[warehouseutils.ToProviderCase(job.DestinationType, "id")]
 						receivedAt, hasReceivedAt := columnData[warehouseutils.ToProviderCase(job.DestinationType, "received_at")]
 						if hasID && hasReceivedAt {
@@ -1361,20 +1376,21 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 						}
 						continue
 					}
+				} else {
+					outputJSONLine[columnName] = columnVal
 				}
 				// cast array values to string as bigquery fails to cast array to string
 				if dataTypeInSchema == "string" && columnType == dataTypeInSchema {
 					if _, ok := columnVal.([]interface{}); ok {
 						valBytes, err := json.Marshal(columnVal)
 						if err != nil {
-							columnData[columnName] = nil
 							continue
 						}
-						columnData[columnName] = string(valBytes)
+						outputJSONLine[columnName] = string(valBytes)
 					}
 				}
 			}
-			line, err := json.Marshal(columnData)
+			line, err := json.Marshal(outputJSONLine)
 			if err != nil {
 				return loadFileIDs, err
 			}
@@ -1774,9 +1790,6 @@ func Start() {
 	}
 
 	if isMaster() {
-		if warehouseMode != config.EmbeddedMode {
-			backendconfig.Setup(false, nil)
-		}
 		logger.Infof("WH: Starting warehouse master...")
 		err = notifier.AddTopic("process_staging_file")
 		if err != nil {
