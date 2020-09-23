@@ -241,11 +241,10 @@ NewRouterStat is used to create new destination specific stat.
 Destination name and response status are added as tags in this case.
 If Destination name and response status have been used on this function before, a RudderStats with the same underlying client will be returned.
 */
-
 func (s *HandleT) NewRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats {
 	routerClientsMapLock.Lock()
 	defer routerClientsMapLock.Unlock()
-	key := fmt.Sprintf("%s|%s", destName, respStatusCode)
+	key := fmt.Sprintf("%s|%v", destName, respStatusCode)
 	if _, found := routerClientsMap[key]; !found {
 		var err error
 		routerClientsMap[key], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destName", destName, "respStatusCode", strconv.Itoa(respStatusCode)))
