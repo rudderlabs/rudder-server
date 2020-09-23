@@ -942,16 +942,20 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//deciding the dbReadBatchSize for the next query based on the totalEvents processed in this loop.
 	if len(jobList) != 0 && totalEvents != 0 {
 		if totalEvents > maxDBReadBatchSize {
-			divFactor := totalEvents / len(jobList)
-			dbReadBatchSize = dbReadBatchSize / divFactor
+			divFactor := float64(totalEvents) / float64(len(jobList))
+			//divFactor can never be less than 1. Because len(jobList) < maxDbReadBatchSize < totalEvents
+			newDBReadBatchSize := float64(dbReadBatchSize) / divFactor
+			dbReadBatchSize = int(newDBReadBatchSize)
 			if dbReadBatchSize < minDBReadBatchSize {
 				dbReadBatchSize = minDBReadBatchSize
 			}
+			logger.Debugf("[Processor] Total events processed(%d) hit the max. Resetting dbReadBatchSize to : %d", totalEvents, dbReadBatchSize)
 		} else if totalEvents < maxDBReadBatchSize {
 			dbReadBatchSize = 2 * dbReadBatchSize
 			if dbReadBatchSize > maxDBReadBatchSize {
 				dbReadBatchSize = maxDBReadBatchSize
 			}
+			logger.Debugf("[Processor] Total events processed(%d) is less than allowed max. Resetting dbReadBatchSize to : %d", totalEvents, dbReadBatchSize)
 		}
 	}
 
