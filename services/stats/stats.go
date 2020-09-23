@@ -5,6 +5,7 @@ package stats
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -24,6 +25,7 @@ var client *statsd.Client
 var writeKeyClientsMap = make(map[string]*statsd.Client)
 var batchDestClientsMap = make(map[string]*statsd.Client)
 var destClientsMap = make(map[string]*statsd.Client)
+var routerClientsMap = make(map[string]*statsd.Client)
 var jobsdbClientsMap = make(map[string]*statsd.Client)
 var migratorsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
@@ -33,6 +35,7 @@ var conn statsd.Option
 var writeKeyClientsMapLock sync.Mutex
 var batchDestClientsMapLock sync.Mutex
 var destClientsMapLock sync.Mutex
+var routerClientsMapLock sync.Mutex
 var jobsdbClientsMapLock sync.Mutex
 var migratorsMapLock sync.Mutex
 var enabled bool
@@ -64,6 +67,7 @@ type Stats interface {
 	NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats RudderStats)
 	NewBatchDestStat(Name string, StatType string, destID string) RudderStats
 	NewDestStat(Name string, StatType string, destID string) RudderStats
+	NewRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats
 	NewJobsDBStat(Name string, StatType string, customVal string) RudderStats
 	NewMigratorStat(Name string, StatType string, customVal string) RudderStats
 }
@@ -230,6 +234,37 @@ func (s *HandleT) NewDestStat(Name string, StatType string, destID string) Rudde
 // Deprecated: Use DefaultStats for managing stats instead
 func NewDestStat(Name string, StatType string, destID string) RudderStats {
 	return DefaultStats.NewDestStat(Name, StatType, destID)
+}
+
+/*
+NewRouterStat is used to create new destination specific stat.
+Destination name and response status are added as tags in this case.
+If Destination name and response status have been used on this function before, a RudderStats with the same underlying client will be returned.
+*/
+
+func (s *HandleT) NewRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats {
+	routerClientsMapLock.Lock()
+	defer routerClientsMapLock.Unlock()
+	key := fmt.Sprintf("%s|%s", destName, respStatusCode)
+	if _, found := routerClientsMap[key]; !found {
+		var err error
+		routerClientsMap[key], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destName", destName, "respStatusCode", strconv.Itoa(respStatusCode)))
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+	return &RudderStatsT{
+		Name:        Name,
+		StatType:    StatType,
+		Client:      routerClientsMap[key],
+		dontProcess: false,
+	}
+}
+
+// NewRouterStat is used to create new destination specific stat.
+// Deprecated: Use DefaultStats for managing stats instead
+func NewRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats {
+	return DefaultStats.NewRouterStat(Name, StatType, destName, respStatusCode)
 }
 
 /*

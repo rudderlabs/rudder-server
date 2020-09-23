@@ -218,6 +218,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			ErrorResponse: []byte(`{}`),
 		}
 
+		routerResponseStat := stats.NewRouterStat("router_response_counts", stats.CountType, rt.destName, respStatusCode)
+		routerResponseStat.Increment()
+
 		if isSuccessStatus(respStatusCode) {
 			atomic.AddUint64(&rt.successCount, 1)
 			eventsDeliveredStat.Increment()
