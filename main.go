@@ -14,8 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"net/http/pprof"
-
 	"github.com/bugsnag/bugsnag-go"
 
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -351,19 +349,5 @@ func main() {
 
 	rruntime.Go(admin.StartServer)
 
-	//misc.KeepProcessAlive()
-
-	r := http.NewServeMux()
-	r.HandleFunc("/", hiHandler)
-	// Register pprof handlers
-	r.HandleFunc("/debug/pprof/", pprof.Index)
-	r.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	r.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	r.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	r.HandleFunc("/debug/pprof/trace", pprof.Trace)
-
-	http.ListenAndServe(":8083", r)
-}
-func hiHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("hi"))
+	misc.KeepProcessAlive()
 }
