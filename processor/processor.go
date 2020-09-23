@@ -979,7 +979,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.statDBR.Start()
 
 	toQuery := dbReadBatchSize
-	logger.Debugf("Processor DB Read size: %v", toQuery)
+	logger.Infof("Processor DB Read size: %v", toQuery)
 	//Should not have any failure while processing (in v0) so
 	//retryList should be empty. Remove the assert
 	retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
