@@ -16,12 +16,11 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 
-	blendoRegistry "github.com/rudderlabs/rudder-server/blendo/registry"
-	"github.com/rudderlabs/rudder-server/replay"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
+	sourcesSync "github.com/rudderlabs/rudder-server/blendo/sourcesSync"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -52,8 +51,6 @@ var (
 	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
 	enableProcessor, enableRouter    bool
-	isReplayServer                   bool
-	blendoEnabled                    bool
 	enabledDestinations              []backendconfig.DestinationT
 	configSubscriberLock             sync.RWMutex
 	objectStorageDestinations        []string
@@ -62,6 +59,7 @@ var (
 	routerLoaded                     bool
 	processorLoaded                  bool
 	enableSuppressUserFeature        bool
+	sourcesEnabled                   bool
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -73,13 +71,12 @@ func loadConfig() {
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
-	isReplayServer = config.GetEnvAsBool("IS_REPLAY_SERVER", false)
-	blendoEnabled = config.GetEnvAsBool("BLENDO_ENABLED", true)
-	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO"}
+	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	// Enable suppress user feature. false by default
 	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
+	sourcesEnabled = config.GetEnvAsBool("SOURCES_ENABLED", true)
 }
 
 // Test Function
@@ -193,11 +190,10 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 	procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
 
 	// Setup blendo registry to update config
-	if blendoEnabled {
-		blendoRegistry := &blendoRegistry.BlendoRegistry{}
-		blendoRegistry.Setup()
+	if sourcesEnabled {
+		sourceSync := sourcesSync.NewSourcesSync()
+		sourceSync.Setup()
 	}
-
 	enableGateway := true
 
 	if application.Features().Migrator != nil {
