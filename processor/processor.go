@@ -940,15 +940,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//XX: End of transaction
 
 	//deciding the dbReadBatchSize for the next query based on the totalEvents processed in this loop.
-	if totalEvents > maxDBReadBatchSize {
-		dbReadBatchSize = dbReadBatchSize / 2
-		if dbReadBatchSize < minDBReadBatchSize {
-			dbReadBatchSize = minDBReadBatchSize
-		}
-	} else {
-		dbReadBatchSize = 2 * dbReadBatchSize
-		if dbReadBatchSize > maxDBReadBatchSize {
-			dbReadBatchSize = maxDBReadBatchSize
+	if len(jobList) != 0 && totalEvents != 0 {
+		if totalEvents > maxDBReadBatchSize {
+			divFactor := totalEvents / len(jobList)
+			dbReadBatchSize = dbReadBatchSize / divFactor
+			if dbReadBatchSize < minDBReadBatchSize {
+				dbReadBatchSize = minDBReadBatchSize
+			}
+		} else if totalEvents < maxDBReadBatchSize {
+			dbReadBatchSize = 2 * dbReadBatchSize
+			if dbReadBatchSize > maxDBReadBatchSize {
+				dbReadBatchSize = maxDBReadBatchSize
+			}
 		}
 	}
 
@@ -972,6 +975,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.statDBR.Start()
 
 	toQuery := dbReadBatchSize
+	logger.Debugf("Processor DB Read size: %v", toQuery)
 	//Should not have any failure while processing (in v0) so
 	//retryList should be empty. Remove the assert
 	retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
