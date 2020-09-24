@@ -38,24 +38,32 @@ To contribute to this project, you need to install RudderStack on your machine. 
 ```
 cd rudder-transformer
 ```
-6. Install dependencies using the command `npm start` and start the destination transformer using the following command:
-```
-node destTransformer.js
+
+6. Install dependencies using the command `npm install` and start the destination transformer using the following command:
 
 ```
+npm start
+
+```
+
 7. Navigate back to the main directory using the following command:
+
 ```
 cd rudder-server
 
 ```
+
 8. Copy the `sample.env` to the main directory using the following command:
+
 ```
 cp config/sample.env .env
 
 ```
+
 9. Update the `WORKSPACE_TOKEN` environment variable with the `workspace token fetched` from the RudderStack dashboard.
 
 10. Run the backend server using the following command:
+
 ```
 go run -mod=vendor main.go
 
