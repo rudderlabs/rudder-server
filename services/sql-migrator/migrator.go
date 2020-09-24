@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"text/template"
@@ -12,8 +13,10 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source"
 	bindata "github.com/golang-migrate/migrate/v4/source/go_bindata"
 	"github.com/golang-migrate/migrate/v4/source/httpfs"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // Migrator is responsible for migrating postgres tables
@@ -40,6 +43,29 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 	migration, err := migrate.NewWithInstance("httpfs", sourceDriver, "postgres", destinationDriver)
 	if err != nil {
 		return fmt.Errorf("Could not execute migrations from migration directory '%v': %w", migrationsDir, err)
+	}
+
+	// get current version in database migrations table
+	versionInDB, _, err := destinationDriver.Version()
+	if err != nil {
+		return fmt.Errorf("Could not get current migration version in DB: %w", err)
+	}
+
+	// check latest version on file
+	latestVersionOnFile, err := latestSourceVersion(sourceDriver)
+	if err != nil {
+		return fmt.Errorf("Could not check latest migration version on file: %w", err)
+	}
+
+	// force set version in DB to latestSourceVersion
+	// to handle cases where we are reverting back to old version
+	// this assumes applied changes on database are also compatible with older versions
+	if versionInDB > latestVersionOnFile {
+		logger.Infof("Force setting migration version to %d in %s", latestVersionOnFile, m.MigrationsTable)
+		err = migration.Force(latestVersionOnFile)
+		if err != nil {
+			return fmt.Errorf("Could not force set migration to latest version on file: %w", err)
+		}
 	}
 
 	err = migration.Up()
@@ -136,4 +162,27 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}
 
 func (m *Migrator) getDestinationDriver() (database.Driver, error) {
 	return postgres.WithInstance(m.Handle, &postgres.Config{MigrationsTable: m.MigrationsTable})
+}
+
+func latestSourceVersion(sourceDriver source.Driver) (int, error) {
+	var v uint
+	var err error
+	v, err = sourceDriver.First()
+	if err != nil {
+		return 0, err
+	}
+
+	for {
+		var nextVersion uint
+		nextVersion, err = sourceDriver.Next(v)
+		if err == os.ErrNotExist {
+			break
+		} else if pathErr, ok := err.(*os.PathError); ok && pathErr.Err == os.ErrNotExist {
+			break
+		} else if err != nil {
+			return 0, err
+		}
+		v = nextVersion
+	}
+	return int(v), nil
 }
