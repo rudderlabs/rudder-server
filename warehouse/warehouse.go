@@ -1598,8 +1598,9 @@ func monitorDestRouters() {
 
 func setupTables(dbHandle *sql.DB) {
 	m := &migrator.Migrator{
-		Handle:          dbHandle,
-		MigrationsTable: "wh_schema_migrations",
+		Handle:                     dbHandle,
+		MigrationsTable:            "wh_schema_migrations",
+		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", false),
 	}
 
 	err := m.Migrate("warehouse")
