@@ -31,14 +31,14 @@ To contribute to this project, you need to install RudderStack on your machine. 
 
  ```
 
-4. Go to the [RudderStack dashboard] (https://app.rudderlabs.com/signup) and set up your account. Copy your workspace token from the top of the home page.
+4. Go to the [RudderStack dashboard] (https://app.rudderstack.com/signup) and set up your account. Copy your workspace token from the top of the home page.
 
 5. Clone the RudderStack server repository. Run `git submodule init` and `git submodule update` to fetch the **rudder-transformer** repository. Then, navigate to the transformer directory using the following command:
 
 ```
 cd rudder-transformer
 ```
-6. Install dependencies using the command `npm i` and start the destination transformer using the following command:
+6. Install dependencies using the command `npm start` and start the destination transformer using the following command:
 ```
 node destTransformer.js
 
