@@ -17,9 +17,9 @@ we can add you to list of approved contributors and review the changes proposed 
 To contribute to this project, you need to install RudderStack on your machine. By following a few simple instructions, you can get your machine up and running to use RudderStack in no time.
 
 
-1. Download and install [Golang 1.13] (https://golang.org/dl/) or above.
+1. Download and install [Golang 1.13](https://golang.org/dl/) or above.
 
-2. Download and install [Node.js 10.6] (https://nodej.org/en/download/) or above.
+2. Download and install [Node.js 10.6](https://nodej.org/en/download/) or above.
 
 3. Download and install [PostgreSQL 10](https://www.postgresql.org/download/) or above, and set up the database using the following commands:
 
@@ -31,7 +31,7 @@ To contribute to this project, you need to install RudderStack on your machine. 
 
  ```
 
-4. Go to the [RudderStack dashboard] (https://app.rudderstack.com/signup) and set up your account. Copy your workspace token from the top of the home page.
+4. Go to the [RudderStack dashboard](https://app.rudderstack.com/signup) and set up your account. Copy your workspace token from the top of the home page.
 
 5. Clone the RudderStack server repository. Run `git submodule init` and `git submodule update` to fetch the **rudder-transformer** repository. Then, navigate to the transformer directory using the following command:
 
