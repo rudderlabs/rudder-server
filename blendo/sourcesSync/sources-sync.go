@@ -202,6 +202,20 @@ func (br *SourcesSync) mapDestinationconfig(config map[string]interface{}) map[s
 // getConfig returns the configuration of the pipeline
 func (br *SourcesSync) getConfig(source backendconfig.SourceT) SourceConfigT {
 	sourceResourcesList := source.Config["resources"]
+	sourceSchedule := source.Config["schedule"]
+
+	schedule := &SourcesScheduleT{}
+	if sourceSchedule != nil {
+		every := sourceSchedule.(map[string]interface{})["every"].(float64)
+		unit := sourceSchedule.(map[string]interface{})["unit"].(string)
+
+		schedule.Every = int(every)
+		schedule.Unit = unit
+		if sourceSchedule.(map[string]interface{})["start_at"] != nil {
+			startAt := sourceSchedule.(map[string]interface{})["start_at"].(string)
+			schedule.StartAt = startAt
+		}
+	}
 	var resources map[string]ResourceT
 	if sourceResourcesList != nil {
 		resources = br.getResources(sourceResourcesList.([]interface{}))
@@ -213,10 +227,7 @@ func (br *SourcesSync) getConfig(source backendconfig.SourceT) SourceConfigT {
 			WriteKey:  source.WriteKey,
 			Resources: resources,
 		},
-		Schedule: SourcesScheduleT{
-			Every: 1,
-			Unit:  "minutes",
-		},
+		Schedule: *schedule,
 	}
 }
 
