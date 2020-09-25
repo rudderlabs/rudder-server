@@ -266,6 +266,11 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		return loadFileIDs, nil
 	}
 	scanner := bufio.NewScanner(reader)
+	// default scanner buffer maxCapacity is 64K
+	// set it to higher value to avoid read stop on read size error
+	maxCapacity := maxStagingFileReadBufferCapacityInK * 1024
+	buf := make([]byte, maxCapacity)
+	scanner.Buffer(buf, maxCapacity)
 
 	// read from staging file and write a separate load file for each table in warehouse
 	jobRun.outputFileWritersMap = make(map[string]misc.GZipWriter)
@@ -282,7 +287,16 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 
 	lineBytesCounter := 0
 	var interfaceSliceSample []interface{}
-	for scanner.Scan() {
+	for {
+		ok := scanner.Scan()
+		if !ok {
+			scanErr := scanner.Err()
+			if scanErr != nil {
+				logger.Errorf("WH: Error in scanner reading line from staging file: %v", scanErr)
+			}
+			break
+		}
+
 		lineBytes := scanner.Bytes()
 		lineBytesCounter += len(lineBytes)
 		var batchRouterEvent BatchRouterEventT

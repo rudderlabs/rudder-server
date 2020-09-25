@@ -35,33 +35,34 @@ import (
 )
 
 var (
-	webPort                          int
-	dbHandle                         *sql.DB
-	notifier                         pgnotifier.PgNotifierT
-	WarehouseDestinations            []string
-	jobQueryBatchSize                int
-	noOfWorkers                      int
-	noOfSlaveWorkerRoutines          int
-	slaveWorkerRoutineBusy           []bool //Busy-true
-	uploadFreqInS                    int64
-	stagingFilesSchemaPaginationSize int
-	mainLoopSleep                    time.Duration
-	workerRetrySleep                 time.Duration
-	stagingFilesBatchSize            int
-	configSubscriberLock             sync.RWMutex
-	crashRecoverWarehouses           []string
-	inProgressMap                    map[string]bool
-	inRecoveryMap                    map[string]bool
-	inProgressMapLock                sync.RWMutex
-	lastExecMap                      map[string]int64
-	lastExecMapLock                  sync.RWMutex
-	warehouseMode                    string
-	warehouseSyncPreFetchCount       int
-	warehouseSyncFreqIgnore          bool
-	activeWorkerCount                int
-	activeWorkerCountLock            sync.RWMutex
-	minRetryAttempts                 int
-	retryTimeWindow                  time.Duration
+	webPort                             int
+	dbHandle                            *sql.DB
+	notifier                            pgnotifier.PgNotifierT
+	WarehouseDestinations               []string
+	jobQueryBatchSize                   int
+	noOfWorkers                         int
+	noOfSlaveWorkerRoutines             int
+	slaveWorkerRoutineBusy              []bool //Busy-true
+	uploadFreqInS                       int64
+	stagingFilesSchemaPaginationSize    int
+	mainLoopSleep                       time.Duration
+	workerRetrySleep                    time.Duration
+	stagingFilesBatchSize               int
+	configSubscriberLock                sync.RWMutex
+	crashRecoverWarehouses              []string
+	inProgressMap                       map[string]bool
+	inRecoveryMap                       map[string]bool
+	inProgressMapLock                   sync.RWMutex
+	lastExecMap                         map[string]int64
+	lastExecMapLock                     sync.RWMutex
+	warehouseMode                       string
+	warehouseSyncPreFetchCount          int
+	warehouseSyncFreqIgnore             bool
+	activeWorkerCount                   int
+	activeWorkerCountLock               sync.RWMutex
+	minRetryAttempts                    int
+	retryTimeWindow                     time.Duration
+	maxStagingFileReadBufferCapacityInK int
 )
 
 var (
@@ -127,6 +128,7 @@ func loadConfig() {
 	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
 	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
 	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
+	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 1024)
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap

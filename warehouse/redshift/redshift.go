@@ -156,6 +156,12 @@ func (rs *HandleT) alterStringToText(tableName string, columnName string) (err e
 	return
 }
 
+func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, rs.Namespace)
+	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
+	return
+}
+
 func (rs *HandleT) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, rs.Namespace)
 	logger.Infof("Creating schemaname in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
@@ -327,7 +333,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	var additionalJoinClause string
 	if tableName == warehouseutils.DiscardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]s.%[2]s.%[3]s`, rs.Namespace, tableName, "table_name")
+		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]s.%[2]s.%[3]s AND _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Namespace, tableName, "table_name", "column_name")
 	}
 
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s)`, rs.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
@@ -385,7 +391,6 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	userColMap := rs.Uploader.GetTableSchemaAfterUpload(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
-	firstValPropsForIdentifies := []string{fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY anonymous_id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, "user_id")}
 	for colName := range userColMap {
 		// do not reference uuid in queries as it can be an autoincrementing field set by segment compatible tables
 		if colName == "id" || colName == "user_id" || colName == "uuid" {
@@ -393,7 +398,6 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		}
 		userColNames = append(userColNames, colName)
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
-		firstValPropsForIdentifies = append(firstValPropsForIdentifies, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY anonymous_id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), "users"), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
@@ -402,22 +406,20 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 											id, %[3]s
 											FROM (
 												(
-													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT user_id FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL)
+													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT DISTINCT(user_id) FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL)
 												) UNION
 												(
-													SELECT user_id, %[6]s FROM (SELECT %[7]s FROM "%[1]s"."%[8]s") WHERE user_id IS NOT NULL
+													SELECT user_id, %[6]s FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL
 												)
 											)
 										)
 									)`,
-		rs.Namespace,                                  // 1
-		stagingTableName,                              // 2
-		strings.Join(firstValProps, ","),              // 3
-		warehouseutils.UsersTable,                     // 4
-		identifyStagingTable,                          // 5
-		strings.Join(userColNames, ","),               // 6
-		strings.Join(firstValPropsForIdentifies, ","), // 7
-		warehouseutils.IdentifiesTable,                // 8
+		rs.Namespace,                     // 1
+		stagingTableName,                 // 2
+		strings.Join(firstValProps, ","), // 3
+		warehouseutils.UsersTable,        // 4
+		identifyStagingTable,             // 5
+		strings.Join(userColNames, ","),  // 6
 	)
 
 	// BEGIN TRANSACTION
@@ -570,7 +572,10 @@ func (rs *HandleT) connectToWarehouse() (*sql.DB, error) {
 
 func (rs *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
 	if len(rs.Uploader.GetSchemaInWarehouse()) == 0 {
-		err = rs.createSchema()
+		var schemaExists bool
+		if schemaExists, err = rs.schemaExists(rs.Namespace); !schemaExists {
+			err = rs.createSchema()
+		}
 		if err != nil {
 			return err
 		}
