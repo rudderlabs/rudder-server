@@ -74,12 +74,12 @@ type workerT struct {
 }
 
 var (
-	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, ser              int
-	maxFailedCountForJob                                                    int
-	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
-	randomWorkerAssign                                                      bool
-	testSinkURL                                                             string
-	retryTimeWindow, minRetryBackoff, maxRetryBackoff                       time.Duration
+	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
+	maxFailedCountForJob                                                           int
+	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
+	randomWorkerAssign                                                             bool
+	testSinkURL                                                                    string
+	retryTimeWindow, minRetryBackoff, maxRetryBackoff                              time.Duration
 )
 
 var userOrderingRequiredMap = map[string]bool{
@@ -103,10 +103,11 @@ func loadConfig() {
 	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
 	readSleep = config.GetDuration("Router.readSleepInMS", time.Duration(1000)) * time.Millisecond
 	noOfWorkers = config.GetInt("Router.noOfWorkers", 64)
+	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	ser = config.GetInt("Router.ser", 3)
 	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(60)) * time.Second
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
-	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(2)) * time.Second
+	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
 	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 3)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
@@ -233,13 +234,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			atomic.AddUint64(&rt.failCount, 1)
 			status.ErrorResponse = []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody)))
 
-			//#JobOrder (see other #JobOrder comment)
-			if rt.keepOrderOnFailure && !isPrevFailedUser && userID != "" {
-				logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destName, userID)
-				worker.failedJobIDMutex.Lock()
-				worker.failedJobIDMap[userID] = job.JobID
-				worker.failedJobIDMutex.Unlock()
-			}
+			//addToFailedMap is used to decide whethere the jobID has to be added to the failedJobIDMap.
+			//If the job is aborted then there is no point in adding it to the failedJobIDMap.
+			addToFailedMap := true
 
 			status.JobState = jobsdb.Failed.State
 
@@ -249,6 +246,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				timeElapsed := time.Now().Sub(job.CreatedAt)
 				if timeElapsed > retryTimeWindow && status.AttemptNum >= maxFailedCountForJob {
 					status.JobState = jobsdb.Aborted.State
+					addToFailedMap = false
 					delete(worker.retryForJobMap, job.JobID)
 				} else {
 					worker.retryForJobMap[job.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
@@ -256,7 +254,18 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			} else {
 				if status.AttemptNum >= maxFailedCountForJob {
 					status.JobState = jobsdb.Aborted.State
+					addToFailedMap = false
 					eventsAbortedStat.Increment()
+				}
+			}
+
+			if addToFailedMap {
+				//#JobOrder (see other #JobOrder comment)
+				if rt.keepOrderOnFailure && !isPrevFailedUser && userID != "" {
+					logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destName, userID)
+					worker.failedJobIDMutex.Lock()
+					worker.failedJobIDMap[userID] = job.JobID
+					worker.failedJobIDMutex.Unlock()
 				}
 			}
 			reqMetric.RequestRetries = reqMetric.RequestRetries + 1
@@ -389,7 +398,7 @@ func (rt *HandleT) initWorkers() {
 		logger.Debug("Worker Started", i)
 		var worker *workerT
 		worker = &workerT{
-			channel:        make(chan *jobsdb.JobT, 1),
+			channel:        make(chan *jobsdb.JobT, noOfJobsPerChannel),
 			failedJobIDMap: make(map[string]int64),
 			retryForJobMap: make(map[int64]time.Time),
 			workerID:       i,
@@ -633,27 +642,6 @@ func (rt *HandleT) generatorLoop() {
 
 	for {
 		generatorStat.Start()
-
-		//Following sleep code is introduced to fix the JobOrder crash.
-		//We are making sure that
-		//  1.the generatorLoop buffer is fully processed and
-		//  2. statusInsertLoop Buffer is sync'ed to disk
-		//before inserting new jobs to the worker channels.
-		var workersChannelsNotEmpty bool
-		for _, wrk := range rt.workers {
-			if len(wrk.channel) > 0 {
-				workersChannelsNotEmpty = true
-				break
-			}
-		}
-		if workersChannelsNotEmpty {
-			time.Sleep(time.Millisecond * 100)
-			continue
-		}
-
-		//NOTE: sleeping for maxStatusUpdateWait doesn't 100% ensure that 2 is achieved, but should be a good heuristic.
-		//TODO: To be more precise, we can send a signal to statusInsertLoop and wait for it to flush the statuses to disk
-		time.Sleep(maxStatusUpdateWait)
 
 		//#JobOrder (See comment marked #JobOrder
 		rt.toClearFailJobIDMutex.Lock()

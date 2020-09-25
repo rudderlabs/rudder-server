@@ -63,6 +63,18 @@ func loadCertificate() {
 	}
 }
 
+func getDefaultConfiguration() *sarama.Config {
+	config := sarama.NewConfig()
+	config.Net.DialTimeout = time.Duration(kafkaDialTimeoutInSec) * time.Second
+	config.Net.WriteTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
+	config.Net.ReadTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
+	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
+	config.Producer.RequiredAcks = sarama.WaitForAll
+	config.Producer.Return.Successes = true
+	config.Version = sarama.V1_0_0_0
+	return config
+}
+
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 
@@ -75,10 +87,7 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 
 	hosts := []string{hostName}
 
-	config := sarama.NewConfig()
-	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
-	config.Producer.RequiredAcks = sarama.WaitForAll
-	config.Producer.Return.Successes = true
+	config := getDefaultConfiguration()
 
 	if isSslEnabled {
 		caCertificate := destConfig.CACertificate
@@ -104,9 +113,7 @@ func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProd
 	hostName := destConfig.BootstrapServer
 	hosts := []string{hostName}
 
-	config := sarama.NewConfig()
-	config.Net.DialTimeout = time.Duration(kafkaDialTimeoutInSec) * time.Second
-	config.Net.WriteTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
+	config := getDefaultConfiguration()
 
 	config.Net.SASL.Enable = true
 	config.Net.SASL.User = azureEventHubUser
@@ -118,19 +125,18 @@ func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProd
 		InsecureSkipVerify: true,
 		ClientAuth:         0,
 	}
-	config.Version = sarama.V1_0_0_0
-	config.Producer.Return.Successes = true
 
 	producer, err := sarama.NewSyncProducer(hosts, config)
 
 	return producer, err
 }
 
-func prepareMessage(topic string, key string, message []byte) *sarama.ProducerMessage {
+func prepareMessage(topic string, key string, message []byte, timestamp time.Time) *sarama.ProducerMessage {
 	msg := &sarama.ProducerMessage{
-		Topic: topic,
-		Key:   sarama.StringEncoder(key),
-		Value: sarama.StringEncoder(message),
+		Topic:     topic,
+		Key:       sarama.StringEncoder(key),
+		Value:     sarama.StringEncoder(message),
+		Timestamp: timestamp,
 	}
 
 	return msg
@@ -185,9 +191,10 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	parsedJSON := gjson.ParseBytes(jsonData)
 	data := parsedJSON.Get("message").Value().(interface{})
+	timestamp := time.Now()
 	value, err := json.Marshal(data)
 	userID := parsedJSON.Get("userId").Value().(string)
-	message := prepareMessage(topic, userID, value)
+	message := prepareMessage(topic, userID, value, timestamp)
 
 	var returnMessage string
 	var statusCode int

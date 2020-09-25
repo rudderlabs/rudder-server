@@ -35,6 +35,7 @@ jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
 readSleepInMS = 1000
 noOfWorkers = 8
+noOfJobsPerChannel = 1000
 ser = 3
 maxSleepInS = 60
 minSleepInS = 0
@@ -47,7 +48,8 @@ keepOrderOnFailure = true
 [Processor]
 loopSleepInMS = 10
 maxLoopSleepInMS = 5000
-dbReadBatchSize = 10000
+maxDBReadBatchSize = 10000
+minDBReadBatchSize = 100
 transformBatchSize = 10
 sessionThresholdEvents = 20
 sessionInactivityThresholdInS = 120
@@ -67,8 +69,6 @@ releaseStage = "development"
 # If the server crashes 'crashThreshold' times in 'durationInS' seconds,
 #       then we mark it degraded
 # If the server crashes 'degradedCrashThreshold' times in 'degradedDurationInS' seconds in degraded mode,
-#       then we mark it maintenance
-# If the server crashes 'maintenanceCrashThreshold' times in 'maintenanceDurationInS' seconds in maintenance mode,
 #       then we stop the server
 # Stores related metadata in storagePath
 [recovery]
@@ -78,8 +78,5 @@ storagePath = "/tmp/recovery_data.json"
     crashThreshold = 5
     durationInS = 300
     [recovery.degraded]
-    crashThreshold = 5
-    durationInS = 300
-    [recovery.maintenance]
     crashThreshold = 5
     durationInS = 300

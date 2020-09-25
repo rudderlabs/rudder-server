@@ -711,8 +711,9 @@ func monitorDestRouters() {
 
 func setupTables(dbHandle *sql.DB) {
 	m := &migrator.Migrator{
-		Handle:          dbHandle,
-		MigrationsTable: "wh_schema_migrations",
+		Handle:                     dbHandle,
+		MigrationsTable:            "wh_schema_migrations",
+		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", false),
 	}
 
 	err := m.Migrate("warehouse")
@@ -850,9 +851,6 @@ func Start() {
 	}
 
 	if isMaster() {
-		if warehouseMode != config.EmbeddedMode {
-			backendconfig.Setup(false, nil)
-		}
 		logger.Infof("[WH]: Starting warehouse master...")
 		err = notifier.AddTopic(StagingFileProcessPGChannel)
 		if err != nil {

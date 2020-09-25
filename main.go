@@ -151,7 +151,7 @@ func startWarehouseService() {
 	warehouse.Start()
 }
 
-func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool, maintenanceMode bool) {
+func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 	logger.Info("Main starting")
 
 	if !validators.ValidateEnv() {
@@ -333,10 +333,10 @@ func main() {
 
 	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
-		db.HandleRecovery(options.NormalMode, options.DegradedMode, options.MaintenanceMode, options.MigrationMode, misc.AppStartTime)
+		db.HandleRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime)
 
 		rruntime.Go(func() {
-			startRudderCore(&options.ClearDB, options.NormalMode, options.DegradedMode, options.MaintenanceMode)
+			startRudderCore(&options.ClearDB, options.NormalMode, options.DegradedMode)
 		})
 	}
 

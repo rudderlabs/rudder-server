@@ -855,12 +855,12 @@ func (gateway *HandleT) StartWebHandler() {
 
 	// Protocols
 	if enableProtocolsFeature && gateway.protocolHandler != nil {
-		srvMux.HandleFunc("/protocols/event-models", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModels))
-		srvMux.HandleFunc("/protocols/event-versions", gateway.protocolWebHandler(gateway.protocolHandler.GetEventVersions))
-		srvMux.HandleFunc("/protocols/event-model/{EventID}/key-counts", gateway.protocolWebHandler(gateway.protocolHandler.GetKeyCounts))
-		srvMux.HandleFunc("/protocols/event-model/{EventID}/metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModelMetadata))
-		srvMux.HandleFunc("/protocols/event-version/{VersionID}/metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMetadata))
-		srvMux.HandleFunc("/protocols/event-version/{VersionID}/missing-keys", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMissingKeys))
+		srvMux.HandleFunc("/schemas/event-models", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModels))
+		srvMux.HandleFunc("/schemas/event-versions", gateway.protocolWebHandler(gateway.protocolHandler.GetEventVersions))
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", gateway.protocolWebHandler(gateway.protocolHandler.GetKeyCounts))
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModelMetadata))
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMetadata))
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMissingKeys))
 	}
 
 	c := cors.New(cors.Options{
