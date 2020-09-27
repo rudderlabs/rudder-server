@@ -24,7 +24,7 @@ func loadConfig() {
 	// CustomVal is used as a key in the jobsDB customval column
 	CustomVal = config.GetString("Gateway.CustomVal", "GW")
 	// Maximum request size to gateway
-	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 100000) * 1024
+	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 4000) * 1024
 	// Enable dedup of incoming events by default
 	enableDedup = config.GetBool("Gateway.enableDedup", false)
 	// Dedup time window in hours

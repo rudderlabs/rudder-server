@@ -14,7 +14,7 @@ maxDBWriterProcess = 4
 CustomVal = "GW"
 maxBatchSize = 32
 batchTimeoutInMS = 20
-maxReqSizeInKB = 100000
+maxReqSizeInKB = 4000
 
 
 [JobsDB]
