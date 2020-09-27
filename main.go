@@ -110,7 +110,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 					if !ok {
 						logger.Info("Starting a new Batch Destination Router: ", destination.DestinationDefinition.Name)
 						var brt batchrouter.HandleT
-						brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
+						//brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
 						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 					}
 				} else {
