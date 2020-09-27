@@ -121,9 +121,11 @@ func loadConfig() {
 }
 
 type WarehouseT struct {
-	Source      backendconfig.SourceT
-	Destination backendconfig.DestinationT
-	Namespace   string
+	Source         backendconfig.SourceT
+	Destination    backendconfig.DestinationT
+	Namespace      string
+	UploadViaCron  bool
+	CronExpression string
 }
 
 type DestinationT struct {

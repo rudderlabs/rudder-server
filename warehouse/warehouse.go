@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/warehousecron"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -327,8 +328,13 @@ func (wh *HandleT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == wh.destType {
 						namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
 						warehouse := warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace}
+						cronExpression := "*/5 * * * *"
+						if warehousecron.IsCronExpressionPresent(cronExpression, connectionString(warehouse)) {
+							if err := warehousecron.CreateCron(cronExpression, connectionString(warehouse), warehouse); err == nil {
+								warehouse.UploadViaCron = true
+							}
+						}
 						wh.warehouses = append(wh.warehouses, warehouse)
-
 						workerName := workerIdentifier(warehouse)
 						wh.workerChannelMapLock.Lock()
 						// spawn one worker for each unique destID_namespace
@@ -749,6 +755,51 @@ func setLastExec(warehouse warehouseutils.WarehouseT) {
 	lastExecMap[connectionString(warehouse)] = timeutil.Now().Unix()
 }
 
+func (wh *HandleT) processNewUploadsViaCron() {
+	for warehouse := range warehousecron.WarehouseUploadTrigerChan {
+		if !wh.canStartUpload(warehouse) {
+			logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
+			setDestInProgress(warehouse, false)
+			continue
+		}
+		setLastExec(warehouse)
+		// fetch staging files that are not processed yet
+		stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
+		if err != nil {
+			panic(err)
+		}
+		if len(stagingFilesList) == 0 {
+			logger.Debugf("WH: Found no pending staging files for %s:%s", wh.destType, warehouse.Destination.ID)
+			setDestInProgress(warehouse, false)
+			continue
+		}
+		logger.Infof("WH: Found %v pending staging files for %s:%s", len(stagingFilesList), wh.destType, warehouse.Destination.ID)
+
+		count := 0
+		var jobs []ProcessStagingFilesJobT
+		// process staging files in batches of stagingFilesBatchSize
+		for {
+			lastIndex := count + stagingFilesBatchSize
+			if lastIndex >= len(stagingFilesList) {
+				lastIndex = len(stagingFilesList)
+			}
+			upload := wh.initUpload(warehouse, stagingFilesList[count:lastIndex])
+			job := ProcessStagingFilesJobT{
+				List:      stagingFilesList[count:lastIndex],
+				Warehouse: warehouse,
+				Upload:    upload,
+			}
+			logger.Debugf("WH: Adding job %+v", job)
+			jobs = append(jobs, job)
+			count += stagingFilesBatchSize
+			if count >= len(stagingFilesList) {
+				break
+			}
+		}
+		wh.enqueueUploadJobs(jobs, warehouse)
+	}
+}
+
 func (wh *HandleT) mainLoop() {
 	for {
 		wh.configSubscriberLock.RLock()
@@ -813,7 +864,7 @@ func (wh *HandleT) mainLoop() {
 					continue
 				}
 				wh.enqueueUploadJobs(jobs, warehouse)
-			} else {
+			} else if !warehouse.UploadViaCron {
 				if !wh.canStartUpload(warehouse) {
 					logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
 					setDestInProgress(warehouse, false)
@@ -1157,6 +1208,9 @@ func (wh *HandleT) Setup(whType string) {
 	})
 	rruntime.Go(func() {
 		wh.mainLoop()
+	})
+	rruntime.Go(func() {
+		wh.processNewUploadsViaCron()
 	})
 }
 
