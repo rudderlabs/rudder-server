@@ -21,6 +21,7 @@ var (
 func init() {
 	cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 	warehouseUploadCronJobMap = make(map[string]warehouseUploadCronJob)
+	WarehouseUploadTrigerChan = make(chan warehouseutils.WarehouseT)
 }
 
 func IsCronExpressionPresent(cronExpression string, warehouseIdentifier string) bool {
@@ -42,6 +43,7 @@ func CreateCron(cronExpression string, warehouseIdentifier string, warehouse war
 	entryId, err := c.AddFunc(cronExpression, func() {
 		WarehouseUploadTrigerChan <- warehouse
 	})
+	c.Start()
 	if err != nil {
 		return err
 	}

@@ -328,7 +328,11 @@ func (wh *HandleT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == wh.destType {
 						namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
 						warehouse := warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace}
-						cronExpression := "*/5 * * * *"
+						var cronExpression string
+						if val, ok := destination.Config["cronExpression"].(string); ok {
+							cronExpression = val
+						}
+						fmt.Println(cronExpression)
 						if warehousecron.IsCronExpressionPresent(cronExpression, connectionString(warehouse)) {
 							if err := warehousecron.CreateCron(cronExpression, connectionString(warehouse), warehouse); err == nil {
 								warehouse.UploadViaCron = true
@@ -755,10 +759,36 @@ func setLastExec(warehouse warehouseutils.WarehouseT) {
 	lastExecMap[connectionString(warehouse)] = timeutil.Now().Unix()
 }
 
-func (wh *HandleT) processNewUploadsViaCron() {
-	for warehouse := range warehousecron.WarehouseUploadTrigerChan {
-		if !wh.canStartUpload(warehouse) {
-			logger.Debugf("WH: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
+func (wh *HandleT) handleCrashRecovery(warehouse warehouseutils.WarehouseT) error {
+	_, ok := inRecoveryMap[warehouse.Destination.ID]
+	if ok {
+		whManager, err := warehousemanager.NewWhManager(wh.destType)
+		if err != nil {
+			panic(err)
+		}
+		logger.Infof("WH: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
+		err = whManager.CrashRecover(warehouseutils.ConfigT{
+			DbHandle:  wh.dbHandle,
+			Warehouse: warehouse,
+		})
+		if err != nil {
+			logger.Errorf("WH: Crash recovery failed for %s:%s with error %s", wh.destType, warehouse.Destination.ID, err.Error())
+			return err
+		}
+		delete(inRecoveryMap, warehouse.Destination.ID)
+	}
+	return nil
+}
+
+func (wh *HandleT) processPendingStagingFilesViaCron() {
+	for {
+		warehouse := <-warehousecron.WarehouseUploadTrigerChan
+		if isDestInProgress(warehouse) {
+			logger.Debugf("WH: Skipping upload loop since %s:%s upload in progress", wh.destType, warehouse.Destination.ID)
+			continue
+		}
+		setDestInProgress(warehouse, true)
+		if err := wh.handleCrashRecovery(warehouse); err != nil {
 			setDestInProgress(warehouse, false)
 			continue
 		}
@@ -774,7 +804,6 @@ func (wh *HandleT) processNewUploadsViaCron() {
 			continue
 		}
 		logger.Infof("WH: Found %v pending staging files for %s:%s", len(stagingFilesList), wh.destType, warehouse.Destination.ID)
-
 		count := 0
 		var jobs []ProcessStagingFilesJobT
 		// process staging files in batches of stagingFilesBatchSize
@@ -819,23 +848,9 @@ func (wh *HandleT) mainLoop() {
 				continue
 			}
 			setDestInProgress(warehouse, true)
-
-			_, ok := inRecoveryMap[warehouse.Destination.ID]
-			if ok {
-				whManager, err := warehousemanager.NewWhManager(wh.destType)
-				if err != nil {
-					panic(err)
-				}
-				logger.Infof("WH: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
-				err = whManager.CrashRecover(warehouseutils.ConfigT{
-					DbHandle:  wh.dbHandle,
-					Warehouse: warehouse,
-				})
-				if err != nil {
-					setDestInProgress(warehouse, false)
-					continue
-				}
-				delete(inRecoveryMap, warehouse.Destination.ID)
+			if err := wh.handleCrashRecovery(warehouse); err != nil {
+				setDestInProgress(warehouse, false)
+				continue
 			}
 			// fetch any pending wh_uploads records (query for not successful/aborted uploads)
 			pendingUploads, ok := wh.getPendingUploads(warehouse)
@@ -905,6 +920,9 @@ func (wh *HandleT) mainLoop() {
 					}
 				}
 				wh.enqueueUploadJobs(jobs, warehouse)
+			} else {
+				// setting destination in progress to false because this new upload is scheduled via cron
+				setDestInProgress(warehouse, false)
 			}
 		}
 		time.Sleep(mainLoopSleep)
@@ -1210,7 +1228,7 @@ func (wh *HandleT) Setup(whType string) {
 		wh.mainLoop()
 	})
 	rruntime.Go(func() {
-		wh.processNewUploadsViaCron()
+		wh.processPendingStagingFilesViaCron()
 	})
 }
 
