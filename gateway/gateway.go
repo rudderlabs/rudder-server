@@ -77,6 +77,7 @@ var (
 	enableSuppressUserFeature                                   bool
 	enableProtocolsFeature                                      bool
 	dedupWindow, diagnosisTickerTime                            time.Duration
+	allowReqsWithoutUserIDAndAnonymousID                        bool
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -384,7 +385,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				anonIDFromReq := strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).String())
 				userIDFromReq := strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.userId`, index)).String())
 				if anonIDFromReq == "" {
-					if userIDFromReq == "" {
+					if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
 						notIdentifiable = true
 						return false
 					}

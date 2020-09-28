@@ -78,6 +78,7 @@ enableRateLimit = false
 enableSuppressUserFeature = true
 dedupWindowInS = 86400
 allowPartialWriteWithErrors = true
+allowReqsWithoutUserIDAndAnonymousID = false
 
 [EventSchemas]
 enableEventSchemasFeature = false
