@@ -425,21 +425,20 @@ func connectionString(warehouse warehouseutils.WarehouseT) string {
 
 func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
 	inProgressMapLock.Lock()
+	defer inProgressMapLock.Unlock()
 	if starting {
 		inProgressMap[connectionString(warehouse)] = true
 	} else {
 		delete(inProgressMap, connectionString(warehouse))
 	}
-	inProgressMapLock.Unlock()
 }
 
 func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 	inProgressMapLock.RLock()
+	defer inProgressMapLock.RUnlock()
 	if inProgressMap[connectionString(warehouse)] {
-		inProgressMapLock.RUnlock()
 		return true
 	}
-	inProgressMapLock.RUnlock()
 	return false
 }
 
@@ -579,7 +578,7 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 		}
 	} else {
 		// Step 3: Handle pending staging files. Create new uploads for them
-		// fetch staging files that are not processed yet
+		// We will perform only one of Step 2 or Step 3, in every execution
 		stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
 		if err != nil {
 			logger.Errorf("[WH]: Failed to get pending staging files: %s with error %w", warehouse.Identifier, err)
@@ -773,7 +772,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		log.Printf("Error reading body: %v", err)
+		logger.Errorf("[WH]: Error reading body: %v", err)
 		http.Error(w, "can't read body", http.StatusBadRequest)
 		return
 	}
@@ -790,7 +789,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		lastEventAt = nil
 	}
 
-	logger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
+	logger.Debugf("[WH]: Creating staging file entry in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
 	schemaPayload, err := json.Marshal(stagingFile.Schema)
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, total_events, first_event_at, last_event_at, created_at, updated_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`, warehouseutils.WarehouseStagingFilesTable)
