@@ -199,11 +199,14 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			retryAttemptsStat.Increment()
 		}
 
-		if rt.customDestinationManager != nil {
+		/*if rt.customDestinationManager != nil {
 			respStatusCode, _, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
 		} else {
 			respStatusCode, _, respBody = rt.netHandle.sendPost(job.EventPayload)
-		}
+		}*/
+		respStatusCode = 200
+		respBody = "OK"
+		time.Sleep(40 * time.Millisecond)
 
 		deliveryTimeStat.End()
 

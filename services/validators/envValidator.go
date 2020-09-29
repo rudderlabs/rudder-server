@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -178,7 +177,7 @@ func InitializeEnv() {
 		panic(fmt.Errorf("Could not run node migrations: %w", err))
 	}
 
-	//create workspace table and insert token
+	/*//create workspace table and insert token
 	createWorkspaceTable(dbHandle)
 	insertTokenIfNotExists(dbHandle)
 	setWHSchemaVersionIfNotExists(dbHandle)
@@ -203,5 +202,5 @@ func InitializeEnv() {
 	insertTokenIfNotExists(dbHandle)
 	setWHSchemaVersionIfNotExists(dbHandle)
 
-	closeDBConnection(dbHandle)
+	closeDBConnection(dbHandle)*/
 }

@@ -191,7 +191,7 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 						}
 						producerLock.Lock()
 						// Producers of stream destinations are created or closed while server starts up or workspace config gets changed
-						createOrUpdateProducer(source.ID, destination.ID, customManager.destination, source.Name, destination)
+						//createOrUpdateProducer(source.ID, destination.ID, customManager.destination, source.Name, destination)
 						producerLock.Unlock()
 					}
 				}

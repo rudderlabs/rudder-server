@@ -38,7 +38,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse"
 
 	// This is necessary for compatibility with enterprise features
 	_ "github.com/rudderlabs/rudder-server/imports"
@@ -148,7 +147,7 @@ func printVersion() {
 }
 
 func startWarehouseService() {
-	warehouse.Start()
+	//warehouse.Start()
 }
 
 func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
