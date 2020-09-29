@@ -244,7 +244,7 @@ If Destination name and response status have been used on this function before, 
 func (s *HandleT) NewRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats {
 	routerClientsMapLock.Lock()
 	defer routerClientsMapLock.Unlock()
-	key := fmt.Sprintf("%s|%v", destName, respStatusCode)
+	key := fmt.Sprintf("%s|%d", destName, respStatusCode)
 	if _, found := routerClientsMap[key]; !found {
 		var err error
 		routerClientsMap[key], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destName", destName, "respStatusCode", strconv.Itoa(respStatusCode)))

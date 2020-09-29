@@ -124,12 +124,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		fmt.Sprintf("router.%s_delivery_time", rt.destName), stats.TimerType)
 	batchTimeStat := stats.NewStat(
 		fmt.Sprintf("router.%s_batch_time", rt.destName), stats.TimerType)
-	failedAttemptsStat := stats.NewStat(
-		fmt.Sprintf("router.%s_failed_attempts", rt.destName), stats.CountType)
 	retryAttemptsStat := stats.NewStat(
 		fmt.Sprintf("router.%s_retry_attempts", rt.destName), stats.CountType)
-	eventsDeliveredStat := stats.NewStat(
-		fmt.Sprintf("router.%s_events_delivered", rt.destName), stats.CountType)
 	eventsAbortedStat := stats.NewStat(
 		fmt.Sprintf("router.%s_events_aborted", rt.destName), stats.CountType)
 
@@ -223,14 +219,12 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 
 		if isSuccessStatus(respStatusCode) {
 			atomic.AddUint64(&rt.successCount, 1)
-			eventsDeliveredStat.Increment()
 			status.JobState = jobsdb.Succeeded.State
 			reqMetric.RequestSuccess = reqMetric.RequestSuccess + 1
 			reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
 			logger.Debugf("[%v Router] :: sending success status to response", rt.destName)
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		} else {
-			failedAttemptsStat.Increment()
 			// the job failed
 			logger.Debugf("[%v Router] :: Job failed to send, analyzing...", rt.destName)
 			worker.failedJobs++
