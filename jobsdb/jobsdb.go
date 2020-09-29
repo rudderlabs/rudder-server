@@ -1256,6 +1256,8 @@ func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []
 		return
 	}
 
+	errorMessagesMap = make(map[uuid.UUID]string)
+
 	for _, job := range jobList {
 		err := jd.storeJobDS(ds, job)
 		if err != nil {
