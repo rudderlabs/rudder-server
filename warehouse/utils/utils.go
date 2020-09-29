@@ -121,11 +121,10 @@ func loadConfig() {
 }
 
 type WarehouseT struct {
-	Source         backendconfig.SourceT
-	Destination    backendconfig.DestinationT
-	Namespace      string
-	UploadViaCron  bool
-	CronExpression string
+	Source           backendconfig.SourceT
+	Destination      backendconfig.DestinationT
+	Namespace        string
+	HasCronScheduler bool
 }
 
 type DestinationT struct {
@@ -844,4 +843,8 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	}
 	sort.Strings(columnKeys)
 	return columnKeys
+}
+
+func WarehouseIdentifier(warehouse WarehouseT) string {
+	return fmt.Sprintf(`source:%s:destination:%s`, warehouse.Source.ID, warehouse.Destination.ID)
 }
