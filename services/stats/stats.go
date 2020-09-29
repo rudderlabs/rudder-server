@@ -67,7 +67,7 @@ type Stats interface {
 	NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats RudderStats)
 	NewBatchDestStat(Name string, StatType string, destID string) RudderStats
 	NewDestStat(Name string, StatType string, destID string) RudderStats
-	NewRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats
+	GetRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats
 	NewJobsDBStat(Name string, StatType string, customVal string) RudderStats
 	NewMigratorStat(Name string, StatType string, customVal string) RudderStats
 }
@@ -237,11 +237,11 @@ func NewDestStat(Name string, StatType string, destID string) RudderStats {
 }
 
 /*
-NewRouterStat is used to create new destination specific stat.
+GetRouterStat is used to create new destination specific stat.
 Destination name and response status are added as tags in this case.
 If Destination name and response status have been used on this function before, a RudderStats with the same underlying client will be returned.
 */
-func (s *HandleT) NewRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats {
+func (s *HandleT) GetRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats {
 	routerClientsMapLock.Lock()
 	defer routerClientsMapLock.Unlock()
 	key := fmt.Sprintf("%s|%d", destName, respStatusCode)
@@ -260,10 +260,10 @@ func (s *HandleT) NewRouterStat(Name string, StatType string, destName string, r
 	}
 }
 
-// NewRouterStat is used to create new destination specific stat.
+// GetRouterStat is used to create new destination specific stat.
 // Deprecated: Use DefaultStats for managing stats instead
-func NewRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats {
-	return DefaultStats.NewRouterStat(Name, StatType, destName, respStatusCode)
+func GetRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats {
+	return DefaultStats.GetRouterStat(Name, StatType, destName, respStatusCode)
 }
 
 /*

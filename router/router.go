@@ -214,7 +214,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			ErrorResponse: []byte(`{}`),
 		}
 
-		routerResponseStat := stats.NewRouterStat("router_response_counts", stats.CountType, rt.destName, respStatusCode)
+		routerResponseStat := stats.GetRouterStat("router_response_counts", stats.CountType, rt.destName, respStatusCode)
 		routerResponseStat.Increment()
 
 		if isSuccessStatus(respStatusCode) {
