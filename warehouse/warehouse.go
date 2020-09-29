@@ -343,12 +343,11 @@ func (wh *HandleT) backendConfigSubscriber() {
 						warehouseIdentifier := warehouseutils.WarehouseIdentifier(warehouse)
 						warehousecron.StopExistingCronFromRunningInFuture(warehouseIdentifier)
 						if warehousecron.IsCronExpressionPresent(cronExpression) {
-							var err error
-							if err = warehousecron.CreateCron(cronExpression, warehouseIdentifier, getUploadCronFunc(warehouse, warehouseUploadCronTriggerChan)); err == nil {
+							err := warehousecron.CreateCron(cronExpression, warehouseIdentifier, getUploadCronFunc(warehouse, warehouseUploadCronTriggerChan))
+							if err == nil {
 								warehouse.HasCronScheduler = true
-							}
-							if err != nil {
-								logger.Error()
+							} else {
+								logger.Errorf("WH: Failed to parse cron expression %s , err:%s", cronExpression, err.Error())
 							}
 						}
 						wh.warehouses = append(wh.warehouses, warehouse)
@@ -781,7 +780,6 @@ func (wh *HandleT) handleCrashRecovery(warehouse warehouseutils.WarehouseT) erro
 			Warehouse: warehouse,
 		})
 		if err != nil {
-			logger.Errorf("WH: Crash recovery failed for %s:%s with error %s", wh.destType, warehouse.Destination.ID, err.Error())
 			return err
 		}
 		delete(inRecoveryMap, warehouse.Destination.ID)
@@ -867,6 +865,7 @@ func (wh *HandleT) processUploads(warehouse warehouseutils.WarehouseT) {
 	}
 	setDestInProgress(warehouse, true)
 	if err := wh.handleCrashRecovery(warehouse); err != nil {
+		logger.Errorf("WH: Crash recovery failed for %s:%s with error %s", wh.destType, warehouse.Destination.ID, err.Error())
 		setDestInProgress(warehouse, false)
 		return
 	}
