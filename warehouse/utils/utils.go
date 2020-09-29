@@ -95,6 +95,7 @@ type WarehouseT struct {
 	Destination backendconfig.DestinationT
 	Namespace   string
 	Type        string
+	Identifier  string
 }
 
 type DestinationT struct {

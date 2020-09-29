@@ -206,7 +206,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == wh.destType {
 						namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
-						warehouse := warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace, Type: wh.destType}
+						warehouse := warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace, Type: wh.destType, Identifier: fmt.Sprintf("%s:%s:%s", wh.destType, source.ID, destination.ID)}
 						wh.warehouses = append(wh.warehouses, warehouse)
 
 						workerName := workerIdentifier(warehouse)
@@ -382,16 +382,17 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	return upload
 }
 
-func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]UploadT, bool) {
+func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]UploadT, error) {
 
 	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, timings->0 as firstTiming, timings->-1 as lastTiming FROM %[1]s WHERE (%[1]s.destination_type='%[2]s' AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id = '%[4]s' AND %[1]s.status != '%[5]s' AND %[1]s.status != '%[6]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, wh.destType, warehouse.Source.ID, warehouse.Destination.ID, ExportedDataState, AbortedState)
 
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		return []UploadT{}, err
 	}
+
 	if err == sql.ErrNoRows {
-		return []UploadT{}, false
+		return []UploadT{}, nil
 	}
 	defer rows.Close()
 
@@ -415,11 +416,7 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]Upl
 		uploads = append(uploads, upload)
 	}
 
-	var anyPending bool
-	if len(uploads) > 0 {
-		anyPending = true
-	}
-	return uploads, anyPending
+	return uploads, nil
 }
 
 func connectionString(warehouse warehouseutils.WarehouseT) string {
@@ -466,6 +463,149 @@ func setLastExec(warehouse warehouseutils.WarehouseT) {
 	lastExecMap[connectionString(warehouse)] = timeutil.Now().Unix()
 }
 
+func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, pendingUploads []UploadT) ([]*UploadJobT, error) {
+	uploadJobs := []*UploadJobT{}
+	for _, pendingUpload := range pendingUploads {
+		if !wh.canStartPendingUpload(pendingUpload, warehouse) {
+			logger.Debugf("[WH]: Skipping pending upload for %s since current time less than next retry time", warehouse.Identifier)
+			break
+		}
+		stagingFilesList, err := wh.getStagingFiles(warehouse, pendingUpload.StartStagingFileID, pendingUpload.EndStagingFileID)
+		if err != nil {
+			return uploadJobs, err
+		}
+
+		uploadJob := UploadJobT{
+			upload:       &pendingUpload,
+			stagingFiles: stagingFilesList,
+			warehouse:    warehouse,
+			whManager:    whManager,
+			dbHandle:     wh.dbHandle,
+			pgNotifier:   &wh.notifier,
+		}
+
+		logger.Debugf("[WH]: Adding job %+v", uploadJob)
+		uploadJobs = append(uploadJobs, &uploadJob)
+	}
+
+	return uploadJobs, nil
+}
+
+func (wh *HandleT) getUploadJobsForNewStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT) ([]*UploadJobT, error) {
+	count := 0
+	var uploadJobs []*UploadJobT
+	// Process staging files in batches of stagingFilesBatchSize
+	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
+	// Then we create 10 new entries in wh_uploads table each with 100 staging files
+	for {
+		lastIndex := count + stagingFilesBatchSize
+		if lastIndex >= len(stagingFilesList) {
+			lastIndex = len(stagingFilesList)
+		}
+
+		upload := wh.initUpload(warehouse, stagingFilesList[count:lastIndex])
+
+		job := UploadJobT{
+			upload:       &upload,
+			stagingFiles: stagingFilesList[count:lastIndex],
+			warehouse:    warehouse,
+			whManager:    whManager,
+			dbHandle:     wh.dbHandle,
+			pgNotifier:   &wh.notifier,
+		}
+
+		uploadJobs = append(uploadJobs, &job)
+		count += stagingFilesBatchSize
+		if count >= len(stagingFilesList) {
+			break
+		}
+	}
+
+	return uploadJobs, nil
+}
+
+func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) error {
+	if isDestInProgress(warehouse) {
+		logger.Debugf("[WH]: Skipping upload loop since %s upload in progress", warehouse.Identifier)
+		return nil
+	}
+
+	if !wh.canStartUpload(warehouse) {
+		logger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded", warehouse.Identifier)
+		return nil
+	}
+
+	enqueuedJobs := false
+	setDestInProgress(warehouse, true)
+	defer func() {
+		if !enqueuedJobs {
+			setDestInProgress(warehouse, false)
+		}
+	}()
+
+	whManager, err := manager.New(wh.destType)
+	if err != nil {
+		return err
+	}
+
+	// Step 1: Crash recovery after restart
+	_, ok := inRecoveryMap[warehouse.Destination.ID]
+	if ok {
+		logger.Infof("[WH]: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
+		err = whManager.CrashRecover(warehouse)
+		if err != nil {
+			return err
+		}
+		delete(inRecoveryMap, warehouse.Destination.ID)
+	}
+
+	var uploadJobs []*UploadJobT
+
+	// Step 2: Handle any Pending uploads
+	// An upload job is pending if it is neither exported nor aborted
+
+	pendingUploads, err := wh.getPendingUploads(warehouse)
+	if err != nil {
+		logger.Errorf("[WH]: Failed to get pending uploads: %s with error %w", warehouse.Identifier, err)
+		return err
+	}
+
+	if len(pendingUploads) > 0 {
+		logger.Infof("[WH]: Found pending uploads: %v for %s", len(pendingUploads), warehouse.Identifier)
+		uploadJobs, err = wh.getUploadJobsForPendingUploads(warehouse, whManager, pendingUploads)
+		if err != nil {
+			logger.Errorf("[WH]: Failed to create upload jobs for %s from pending uploads with error: %w", warehouse.Identifier, err)
+			return err
+		}
+	} else {
+		// Step 3: Handle pending staging files. Create new uploads for them
+		// fetch staging files that are not processed yet
+		stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
+		if err != nil {
+			logger.Errorf("[WH]: Failed to get pending staging files: %s with error %w", warehouse.Identifier, err)
+			return err
+		}
+		if len(stagingFilesList) == 0 {
+			logger.Debugf("[WH]: Found no pending staging files for %s", warehouse.Identifier)
+			return nil
+		}
+		logger.Infof("[WH]: Found %v pending staging files for %s", len(stagingFilesList), warehouse.Identifier)
+
+		uploadJobs, err = wh.getUploadJobsForNewStagingFiles(warehouse, whManager, stagingFilesList)
+		if err != nil {
+			logger.Errorf("[WH]: Failed to create upload jobs for %s for new staging files with error: %w", warehouse.Identifier, err)
+			return err
+		}
+	}
+
+	if len(uploadJobs) > 0 {
+		setLastExec(warehouse)
+		wh.enqueueUploadJobs(uploadJobs, warehouse)
+		enqueuedJobs = true
+	}
+	return nil
+}
+
 func (wh *HandleT) mainLoop() {
 	for {
 		wh.configSubscriberLock.RLock()
@@ -480,113 +620,9 @@ func (wh *HandleT) mainLoop() {
 		warehouses := wh.warehouses
 		configSubscriberLock.RUnlock()
 		for _, warehouse := range warehouses {
-			if isDestInProgress(warehouse) {
-				logger.Debugf("[WH]: Skipping upload loop since %s:%s upload in progress", wh.destType, warehouse.Destination.ID)
-				continue
-			}
-			setDestInProgress(warehouse, true)
-
-			_, ok := inRecoveryMap[warehouse.Destination.ID]
-			if ok {
-				whManager, err := manager.New(wh.destType)
-				if err != nil {
-					panic(err)
-				}
-				logger.Infof("[WH]: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
-				err = whManager.CrashRecover(warehouse)
-				if err != nil {
-					setDestInProgress(warehouse, false)
-					continue
-				}
-				delete(inRecoveryMap, warehouse.Destination.ID)
-			}
-			// fetch any pending wh_uploads records (query for not successful/aborted uploads)
-			pendingUploads, ok := wh.getPendingUploads(warehouse)
-			if ok {
-				logger.Infof("[WH]: Found pending uploads: %v for %s:%s", len(pendingUploads), wh.destType, warehouse.Destination.ID)
-				uploadJobs := []*UploadJobT{}
-				for _, pendingUpload := range pendingUploads {
-					if !wh.canStartPendingUpload(pendingUpload, warehouse) {
-						logger.Debugf("[WH]: Skipping pending upload for %s:%s since current time less than next retry time", wh.destType, warehouse.Destination.ID)
-						setDestInProgress(warehouse, false)
-						break
-					}
-					stagingFilesList, err := wh.getStagingFiles(warehouse, pendingUpload.StartStagingFileID, pendingUpload.EndStagingFileID)
-					if err != nil {
-						panic(err)
-					}
-
-					whManager, err := manager.New(wh.destType)
-					if err != nil {
-						panic(err)
-					}
-
-					uploadJob := UploadJobT{
-						upload:       &pendingUpload,
-						stagingFiles: stagingFilesList,
-						warehouse:    warehouse,
-						whManager:    whManager,
-						dbHandle:     wh.dbHandle,
-						pgNotifier:   &wh.notifier,
-					}
-
-					logger.Debugf("[WH]: Adding job %+v", uploadJob)
-					uploadJobs = append(uploadJobs, &uploadJob)
-				}
-				if len(uploadJobs) == 0 {
-					continue
-				}
-				wh.enqueueUploadJobs(uploadJobs, warehouse)
-			} else {
-				if !wh.canStartUpload(warehouse) {
-					logger.Debugf("[WH]: Skipping upload loop since %s:%s upload freq not exceeded", wh.destType, warehouse.Destination.ID)
-					setDestInProgress(warehouse, false)
-					continue
-				}
-				setLastExec(warehouse)
-				// fetch staging files that are not processed yet
-				stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
-				if err != nil {
-					panic(err)
-				}
-				if len(stagingFilesList) == 0 {
-					logger.Debugf("[WH]: Found no pending staging files for %s:%s", wh.destType, warehouse.Destination.ID)
-					setDestInProgress(warehouse, false)
-					continue
-				}
-				logger.Infof("[WH]: Found %v pending staging files for %s:%s", len(stagingFilesList), wh.destType, warehouse.Destination.ID)
-
-				count := 0
-				var uploadJobs []*UploadJobT
-				// process staging files in batches of stagingFilesBatchSize
-				for {
-					lastIndex := count + stagingFilesBatchSize
-					if lastIndex >= len(stagingFilesList) {
-						lastIndex = len(stagingFilesList)
-					}
-					// TODO: CreateUpload
-					upload := wh.initUpload(warehouse, stagingFilesList[count:lastIndex])
-					whManager, err := manager.New(wh.destType)
-					if err != nil {
-						panic(err)
-					}
-
-					job := UploadJobT{
-						upload:       &upload,
-						stagingFiles: stagingFilesList[count:lastIndex],
-						warehouse:    warehouse,
-						whManager:    whManager,
-						dbHandle:     wh.dbHandle,
-						pgNotifier:   &wh.notifier,
-					}
-
-					uploadJobs = append(uploadJobs, &job)
-					count += stagingFilesBatchSize
-					if count >= len(stagingFilesList) {
-						break
-					}
-				}
-				wh.enqueueUploadJobs(uploadJobs, warehouse)
+			err := wh.processWarehouseJobs(warehouse)
+			if err != nil {
+				logger.Errorf("[WH] Failed to process warehouse Jobs: %w", err)
 			}
 		}
 		time.Sleep(mainLoopSleep)
