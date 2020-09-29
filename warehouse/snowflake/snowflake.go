@@ -371,7 +371,7 @@ func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 
 	var additionalJoinClause string
 	if tableName == discardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND original.%[1]s = staging.%[1]s`, "TABLE_NAME")
+		additionalJoinClause = fmt.Sprintf(`AND original.%[1]s = staging.%[1]s AND original.%[2]s = staging.%[2]s`, "TABLE_NAME", "COLUMN_NAME")
 	}
 
 	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
