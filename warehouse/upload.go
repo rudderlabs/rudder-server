@@ -123,12 +123,16 @@ func (job *UploadJobT) identityMappingsTableName() string {
 func (job *UploadJobT) run() (err error) {
 	// START: processing of upload job
 	if len(job.stagingFiles) == 0 {
-		err = fmt.Errorf("No staging files found")
+		err := fmt.Errorf("No staging files found")
 		job.setUploadError(err, GeneratingLoadFileFailedState)
-		return
+		return err
 	}
 
-	job.setUploadStatus(FetchingSchemaState)
+	err = job.setUploadStatus(FetchingSchemaState)
+	if err != nil {
+		return err
+	}
+
 	schemaHandle := SchemaHandleT{
 		warehouse:    job.warehouse,
 		stagingFiles: job.stagingFiles,
@@ -139,7 +143,7 @@ func (job *UploadJobT) run() (err error) {
 	schemaHandle.schemaInWarehouse, err = schemaHandle.fetchSchemaFromWarehouse()
 	if err != nil {
 		job.setUploadError(err, FetchingSchemaFailedState)
-		return
+		return err
 	}
 
 	hasSchemaChanged := !compareSchema(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
@@ -160,7 +164,7 @@ func (job *UploadJobT) run() (err error) {
 		err = job.setSchema(schemaHandle.uploadSchema)
 		if err != nil {
 			job.setUploadError(err, UpdatingSchemaFailedState)
-			return
+			return err
 		}
 	} else {
 		schemaHandle.uploadSchema = job.upload.Schema
@@ -183,16 +187,22 @@ func (job *UploadJobT) run() (err error) {
 	// upload records have start_load_file_id and end_load_file_id set to 0 on creation
 	// and are updated on creation of load files
 	logger.Infof("[WH]: Processing %d staging files in upload job:%v with staging files from %v to %v for %s:%s", len(job.stagingFiles), job.upload.ID, job.stagingFiles[0].ID, job.stagingFiles[len(job.stagingFiles)-1].ID, job.warehouse.Type, job.upload.DestinationID)
-	job.setUploadColumns(
+	err = job.setUploadColumns(
 		UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
 	)
+	if err != nil {
+		return err
+	}
 
 	// generate load files
 	// skip if already generated (valid entries in StartLoadFileID and EndLoadFileID)
 	// regenerate if schema in warehouse has changed from one in wh_schemas to avoid incorrect setting of fields/discards
 	if job.upload.StartLoadFileID == 0 || hasSchemaChanged {
 		logger.Infof("[WH]: Starting load file generation for warehouse destination %s:%s upload:%d", job.warehouse.Type, job.warehouse.Destination.Name, job.upload.ID)
-		job.setUploadStatus(GeneratingLoadFileState)
+		err = job.setUploadStatus(GeneratingLoadFileState)
+		if err != nil {
+			return err
+		}
 		var loadFileIDs []int64
 		loadFileIDs, err = job.createLoadFiles()
 		if err != nil {
@@ -200,7 +210,7 @@ func (job *UploadJobT) run() (err error) {
 			job.setUploadError(err, GeneratingLoadFileFailedState)
 			job.setStagingFilesStatus(warehouseutils.StagingFileFailedState, err)
 			warehouseutils.DestStat(stats.CountType, "process_staging_files_failures", job.warehouse.Destination.ID).Count(len(job.stagingFiles))
-			return
+			return err
 		}
 		job.setStagingFilesStatus(warehouseutils.StagingFileSucceededState, nil)
 		warehouseutils.DestStat(stats.CountType, "process_staging_files_success", job.warehouse.Destination.ID).Count(len(job.stagingFiles))
@@ -215,7 +225,7 @@ func (job *UploadJobT) run() (err error) {
 			UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
 		)
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 		job.upload.StartLoadFileID = startLoadFileID
@@ -225,7 +235,7 @@ func (job *UploadJobT) run() (err error) {
 		for tableName := range job.upload.Schema {
 			err := job.updateTableEventsCount(tableName)
 			if err != nil {
-				panic(err)
+				return err
 			}
 		}
 	}
@@ -235,7 +245,7 @@ func (job *UploadJobT) run() (err error) {
 	err = whManager.Setup(job.warehouse, job)
 	if err != nil {
 		job.setUploadError(err, ConnectFailedState)
-		return
+		return err
 	}
 	defer whManager.Cleanup()
 
@@ -249,17 +259,20 @@ func (job *UploadJobT) run() (err error) {
 	// start: update schema in warehouse
 	diff := getSchemaDiff(schemaHandle.schemaInWarehouse, job.upload.Schema)
 	if diff.Exists {
-		job.setUploadStatus(UpdatingSchemaState)
+		err = job.setUploadStatus(UpdatingSchemaState)
+		if err != nil {
+			return err
+		}
 		timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", job.warehouse.Destination.ID)
 		timer.Start()
 		logger.Infof("[WH]: Starting migration in warehouse destination %s:%s upload:%d", job.warehouse.Type, job.warehouse.Destination.Name, job.upload.ID)
 		err = whManager.MigrateSchema(diff)
 		if err != nil {
-			state := job.setUploadError(err, UpdatingSchemaFailedState)
+			state, _ := job.setUploadError(err, UpdatingSchemaFailedState)
 			if state == AbortedState {
 				warehouseutils.DestStat(stats.CountType, "total_records_upload_failed", job.warehouse.Destination.ID).Count(totalEventsInUpload)
 			}
-			return
+			return err
 		}
 		timer.End()
 
@@ -352,7 +365,7 @@ func (job *UploadJobT) run() (err error) {
 	timer.End()
 
 	if len(loadErrors) > 0 {
-		state := job.setUploadError(warehouseutils.ConcatErrors(loadErrors), ExportingDataFailedState)
+		state, _ := job.setUploadError(warehouseutils.ConcatErrors(loadErrors), ExportingDataFailedState)
 		if state == AbortedState {
 			uploadedEvents := job.getTotalEventsUploaded()
 			warehouseutils.DestStat(stats.CountType, "total_records_uploaded", job.warehouse.Destination.ID).Count(uploadedEvents)
@@ -389,7 +402,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (erro
 		if err != nil {
 			logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
-			return
+			return errorMap
 		}
 	}
 
@@ -399,7 +412,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (erro
 		err := job.whManager.LoadIdentityMergeRulesTable()
 		if err != nil {
 			errorMap[job.identityMergeRulesTableName()] = err
-			return
+			return errorMap
 		}
 	}
 
@@ -409,7 +422,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (erro
 		err := job.whManager.LoadIdentityMappingsTable()
 		if err != nil {
 			errorMap[job.identityMappingsTableName()] = nil
-			return
+			return errorMap
 		}
 	}
 	return errorMap
@@ -487,10 +500,9 @@ func (job *UploadJobT) setUploadStatus(status string, additionalFields ...Upload
 
 	additionalFields = append(additionalFields, opts...)
 
-	job.setUploadColumns(
+	return job.setUploadColumns(
 		additionalFields...,
 	)
-	return
 }
 
 // SetSchema
@@ -520,13 +532,11 @@ func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
 	}
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, warehouseutils.WarehouseUploadsTable, columns)
 	_, err = dbHandle.Exec(sqlStatement, values...)
-	if err != nil {
-		panic(err)
-	}
-	return
+
+	return err
 }
 
-func (job *UploadJobT) setUploadError(statusError error, state string) (setStatus string) {
+func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
 	logger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
 	upload := job.upload
 
@@ -561,11 +571,9 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (setStatu
 	}
 	serializedErr, _ := json.Marshal(&e)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseutils.WarehouseUploadsTable)
-	_, err := job.dbHandle.Exec(sqlStatement, state, serializedErr, timeutil.Now(), upload.ID)
-	if err != nil {
-		panic(err)
-	}
-	return state
+	_, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, timeutil.Now(), upload.ID)
+
+	return state, err
 }
 
 func (job *UploadJobT) setStagingFilesStatus(status string, statusError error) (err error) {

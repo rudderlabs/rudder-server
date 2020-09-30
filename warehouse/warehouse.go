@@ -136,7 +136,7 @@ func workerIdentifier(warehouse warehouseutils.WarehouseT) string {
 	return fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
 }
 
-func (wh *HandleT) handleUploadJobs(jobs []*UploadJobT) {
+func (wh *HandleT) waitAndLockAvailableWorker() {
 	// infinite loop to check for active workers count and retry if not
 	// break after handling
 	for {
@@ -156,24 +156,9 @@ func (wh *HandleT) handleUploadJobs(jobs []*UploadJobT) {
 		activeWorkerCountLock.Unlock()
 		break
 	}
+}
 
-	// TODO: Is this metric required?
-	whOneFullPassTimer := warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", jobs[0].warehouse.Destination.ID)
-	whOneFullPassTimer.Start()
-	for _, job := range jobs {
-		err := job.run()
-		wh.recordDeliveryStatus(job.warehouse.Destination.ID, job.upload.ID)
-		if err != nil {
-			warehouseutils.DestStat(stats.CountType, "failed_uploads", job.warehouse.Destination.ID).Count(1)
-			// do not process other jobs so that uploads are done in order
-			break
-		}
-		onSuccessfulUpload(job.warehouse)
-		// TODO: Is this metric required?
-		warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", job.warehouse.Destination.ID).Count(len(job.stagingFiles))
-	}
-	whOneFullPassTimer.End()
-
+func (wh *HandleT) releaseWorker() {
 	// decrement number of workers actively engaged
 	activeWorkerCountLock.Lock()
 	activeWorkerCount--
@@ -185,11 +170,43 @@ func (wh *HandleT) initWorker(identifier string) chan []*UploadJobT {
 	rruntime.Go(func() {
 		for {
 			uploads := <-workerChan
-			wh.handleUploadJobs(uploads)
+			err := wh.handleUploadJobs(uploads)
+			if err != nil {
+				logger.Errorf("[WH] Failed in handle Upload jobs for worker")
+			}
 			setDestInProgress(uploads[0].warehouse, false)
 		}
 	})
 	return workerChan
+}
+
+func (wh *HandleT) handleUploadJobs(jobs []*UploadJobT) error {
+
+	// Waits till a worker is available to process
+	wh.waitAndLockAvailableWorker()
+
+	// TODO: Is this metric required?
+	whOneFullPassTimer := warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", jobs[0].warehouse.Destination.ID)
+	whOneFullPassTimer.Start()
+	var err error
+	for _, uploadJob := range jobs {
+		// Process the upload job
+		err = uploadJob.run()
+		wh.recordDeliveryStatus(uploadJob.warehouse.Destination.ID, uploadJob.upload.ID)
+		if err != nil {
+			warehouseutils.DestStat(stats.CountType, "failed_uploads", uploadJob.warehouse.Destination.ID).Count(1)
+			// do not process other jobs so that uploads are done in order
+			break
+		}
+		onSuccessfulUpload(uploadJob.warehouse)
+		// TODO: Is this metric required?
+		warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", uploadJob.warehouse.Destination.ID).Count(len(uploadJob.stagingFiles))
+	}
+	whOneFullPassTimer.End()
+
+	wh.releaseWorker()
+
+	return err
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
@@ -721,11 +738,11 @@ func monitorDestRouters() {
 					wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 					if !ok {
 						logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-						var wh HandleT
+						wh = &HandleT{}
 						wh.configSubscriberLock.Lock()
 						wh.Setup(destination.DestinationDefinition.Name)
 						wh.configSubscriberLock.Unlock()
-						dstToWhRouter[destination.DestinationDefinition.Name] = &wh
+						dstToWhRouter[destination.DestinationDefinition.Name] = wh
 					} else {
 						logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
 						wh.configSubscriberLock.Lock()
