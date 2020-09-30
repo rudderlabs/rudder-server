@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"text/template"
@@ -12,8 +13,10 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source"
 	bindata "github.com/golang-migrate/migrate/v4/source/go_bindata"
 	"github.com/golang-migrate/migrate/v4/source/httpfs"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // Migrator is responsible for migrating postgres tables
@@ -24,6 +27,10 @@ type Migrator struct {
 
 	// Handle is the sql.DB handle used to execute migration statements
 	Handle *sql.DB
+
+	// Indicates if migration version should be force reset to latest on file in case of revert to lower version
+	// Eg. DB has v3 set in MigrationsTable but latest version in MigrationsDir is v2
+	ShouldForceSetLowerVersion bool
 }
 
 // Migrate migrates database schema using migration SQL scripts.
@@ -42,8 +49,36 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 		return fmt.Errorf("Could not execute migrations from migration directory '%v': %w", migrationsDir, err)
 	}
 
+	if m.ShouldForceSetLowerVersion {
+		// get current version in database migrations table
+		versionInDB, _, err := destinationDriver.Version()
+		if err != nil {
+			return fmt.Errorf("Could not get current migration version in DB: %w", err)
+		}
+
+		// check latest version on file
+		latestVersionOnFile, err := latestSourceVersion(sourceDriver)
+		if err != nil {
+			return fmt.Errorf("Could not check latest migration version on file: %w", err)
+		}
+
+		// force set version in DB to latestSourceVersion
+		// to handle cases where we are reverting back to old version
+		// this assumes applied changes on database are also compatible with older versions
+		if versionInDB > latestVersionOnFile {
+			logger.Infof("Force setting migration version to %d in %s", latestVersionOnFile, m.MigrationsTable)
+			err = migration.Force(latestVersionOnFile)
+			if err != nil {
+				return fmt.Errorf("Could not force set migration to latest version on file: %w", err)
+			}
+		}
+	}
+
 	err = migration.Up()
 	if err != nil && err != migrate.ErrNoChange { // migrate library reports that no change was required, using ErrNoChange
+		if err == os.ErrNotExist {
+			logger.Infof("\n*****************\nMigrate could not find migration file for the version in db.\nPlease set env RSERVER_SQLMIGRATOR_FORCE_SET_LOWER_VERSION to true and restart to force set version in DB to latest version of migration sql files\nAlso please keep in mind that this does not undo the additional migrations done in version specified in DB. It just sets the value in MigrationsTable and markes it as dirty false.\n*****************\n")
+		}
 		return fmt.Errorf("Could not run migration from directory '%v', %w", migrationsDir, err)
 	}
 
@@ -136,4 +171,27 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}
 
 func (m *Migrator) getDestinationDriver() (database.Driver, error) {
 	return postgres.WithInstance(m.Handle, &postgres.Config{MigrationsTable: m.MigrationsTable})
+}
+
+func latestSourceVersion(sourceDriver source.Driver) (int, error) {
+	var v uint
+	var err error
+	v, err = sourceDriver.First()
+	if err != nil {
+		return 0, err
+	}
+
+	for {
+		var nextVersion uint
+		nextVersion, err = sourceDriver.Next(v)
+		if err == os.ErrNotExist {
+			break
+		} else if pathErr, ok := err.(*os.PathError); ok && pathErr.Err == os.ErrNotExist {
+			break
+		} else if err != nil {
+			return 0, err
+		}
+		v = nextVersion
+	}
+	return int(v), nil
 }
