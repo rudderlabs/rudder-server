@@ -161,6 +161,7 @@ func durationBeforeNextAttempt(attempt int64) time.Duration {
 	return d
 }
 
+// Pending uploads should be retried with backoff
 func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {

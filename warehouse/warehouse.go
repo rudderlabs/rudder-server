@@ -529,11 +529,6 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 		return nil
 	}
 
-	if !wh.canStartUpload(warehouse) {
-		logger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded", warehouse.Identifier)
-		return nil
-	}
-
 	enqueuedJobs := false
 	setDestInProgress(warehouse, true)
 	defer func() {
@@ -548,6 +543,7 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 	}
 
 	// Step 1: Crash recovery after restart
+	// Remove pending temp tables in Redshift etc.
 	_, ok := inRecoveryMap[warehouse.Destination.ID]
 	if ok {
 		logger.Infof("[WH]: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
@@ -576,41 +572,48 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 			logger.Errorf("[WH]: Failed to create upload jobs for %s from pending uploads with error: %w", warehouse.Identifier, err)
 			return err
 		}
-	} else {
-		// Step 3: Handle pending staging files. Create new uploads for them
-		// We will perform only one of Step 2 or Step 3, in every execution
-		stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
-		if err != nil {
-			logger.Errorf("[WH]: Failed to get pending staging files: %s with error %w", warehouse.Identifier, err)
-			return err
-		}
-		if len(stagingFilesList) == 0 {
-			logger.Debugf("[WH]: Found no pending staging files for %s", warehouse.Identifier)
-			return nil
-		}
-		logger.Infof("[WH]: Found %v pending staging files for %s", len(stagingFilesList), warehouse.Identifier)
-
-		uploadJobs, err = wh.getUploadJobsForNewStagingFiles(warehouse, whManager, stagingFilesList)
-		if err != nil {
-			logger.Errorf("[WH]: Failed to create upload jobs for %s for new staging files with error: %w", warehouse.Identifier, err)
-			return err
-		}
-	}
-
-	if len(uploadJobs) > 0 {
-		setLastExec(warehouse)
 		wh.enqueueUploadJobs(uploadJobs, warehouse)
 		enqueuedJobs = true
+		return nil
 	}
+
+	// Step 3: Handle pending staging files. Create new uploads for them
+	// We will perform only one of Step 2 or Step 3, in every execution
+
+	if !wh.canStartUpload(warehouse) {
+		logger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded", warehouse.Identifier)
+		return nil
+	}
+
+	stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
+	if err != nil {
+		logger.Errorf("[WH]: Failed to get pending staging files: %s with error %w", warehouse.Identifier, err)
+		return err
+	}
+	if len(stagingFilesList) == 0 {
+		logger.Debugf("[WH]: Found no pending staging files for %s", warehouse.Identifier)
+		return nil
+	}
+
+	uploadJobs, err = wh.getUploadJobsForNewStagingFiles(warehouse, whManager, stagingFilesList)
+	if err != nil {
+		logger.Errorf("[WH]: Failed to create upload jobs for %s for new staging files with error: %w", warehouse.Identifier, err)
+		return err
+	}
+
+	setLastExec(warehouse)
+	wh.enqueueUploadJobs(uploadJobs, warehouse)
+	enqueuedJobs = true
 	return nil
 }
 
 func (wh *HandleT) mainLoop() {
 	for {
+		time.Sleep(mainLoopSleep)
+
 		wh.configSubscriberLock.RLock()
 		if !wh.isEnabled {
 			wh.configSubscriberLock.RUnlock()
-			time.Sleep(mainLoopSleep)
 			continue
 		}
 		wh.configSubscriberLock.RUnlock()
@@ -624,11 +627,14 @@ func (wh *HandleT) mainLoop() {
 				logger.Errorf("[WH] Failed to process warehouse Jobs: %w", err)
 			}
 		}
-		time.Sleep(mainLoopSleep)
 	}
 }
 
 func (wh *HandleT) enqueueUploadJobs(uploads []*UploadJobT, warehouse warehouseutils.WarehouseT) {
+	if len(uploads) == 0 {
+		logger.Errorf("[WH]: Zero upload jobs, not enqueuing")
+		return
+	}
 	workerName := workerIdentifier(warehouse)
 	wh.workerChannelMapLock.Lock()
 	wh.workerChannelMap[workerName] <- uploads
@@ -733,11 +739,11 @@ func monitorDestRouters() {
 		keys := misc.StringKeys(dstToWhRouter)
 		for _, key := range keys {
 			if _, ok := enabledDestinations[key]; !ok {
-				if whHandle, ok := dstToWhRouter[key]; ok {
+				if wh, ok := dstToWhRouter[key]; ok {
 					logger.Info("Disabling a existing warehouse destination: ", key)
-					whHandle.configSubscriberLock.Lock()
-					whHandle.Disable()
-					whHandle.configSubscriberLock.Unlock()
+					wh.configSubscriberLock.Lock()
+					wh.Disable()
+					wh.configSubscriberLock.Unlock()
 				}
 			}
 		}
