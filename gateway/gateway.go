@@ -683,6 +683,10 @@ func (gateway *HandleT) pixelTrackHandler(w http.ResponseWriter, r *http.Request
 	gateway.pixelHandler(w, r, "track")
 }
 
+func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.beaconHandler(w, r, "batch")
+}
+
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
@@ -805,6 +809,21 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 	}
 }
 
+func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, reqType string) {
+	queryParams := r.URL.Query()
+	if writeKey, present := queryParams["writeKey"]; present && writeKey[0] != "" {
+
+		// set basic auth header
+		r.SetBasicAuth(writeKey[0], "")
+		delete(queryParams, "writeKey")
+
+		// send req to webHandler
+		gateway.webHandler(w, r, reqType)
+	} else {
+		http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
+	}
+}
+
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 	var dbService string = "UP"
 	var enabledRouter string = "TRUE"
@@ -848,6 +867,7 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
 	srvMux.HandleFunc("/version", gateway.versionHandler)
 	srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
+	srvMux.HandleFunc("/beacon/v1/batch", gateway.stat(gateway.beaconBatchHandler))
 
 	// Protocols
 	if enableProtocolsFeature && gateway.protocolHandler != nil {
