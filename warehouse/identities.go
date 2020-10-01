@@ -303,7 +303,11 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			pgNotifier: &wh.notifier,
 		}
 
-		if !job.areTableUploadsCreated() {
+		tableUploadsCreated, err := areTableUploadsCreated(job.upload.ID)
+		if err != nil {
+			panic(err)
+		}
+		if !tableUploadsCreated {
 			err := job.initTableUploads()
 			if err != nil {
 				// TODO: Handle error / Retry
@@ -337,7 +341,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 
 		job.setUploadStatus(ExportingDataState)
 		errorMap := job.loadIdentityTables(true)
-		errors := job.setTableStatusFromErrorMap(errorMap)
+		errors := job.setTableUploadStatusFromErrorMap(errorMap)
 		if len(errors) > 0 {
 			job.setUploadError(warehouseutils.ConcatErrors(errors), AbortedState)
 		}
