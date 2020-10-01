@@ -63,6 +63,7 @@ var (
 	minRetryAttempts                    int
 	retryTimeWindow                     time.Duration
 	maxStagingFileReadBufferCapacityInK int
+	longRunningUploadStatThresholdInMin time.Duration
 )
 
 var (
@@ -129,6 +130,7 @@ func loadConfig() {
 	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
 	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 1024)
+	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap

@@ -120,7 +120,26 @@ func (job *UploadJobT) identityMappingsTableName() string {
 	return warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable)
 }
 
+func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
+	ch := make(chan struct{}, 1)
+	rruntime.Go(func() {
+		select {
+		case _ = <-ch:
+			// do nothing
+		case <-time.After(longRunningUploadStatThresholdInMin):
+			logger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s:%s:%s", job.upload.ID, job.warehouse.Type, job.warehouse.Namespace, job.upload.DestinationID)
+			warehouseutils.DestStat(stats.CountType, "long_running_upload", job.warehouse.Destination.ID).Count(1)
+		}
+	})
+	return ch
+}
+
 func (job *UploadJobT) run() (err error) {
+	ch := job.trackLongRunningUpload()
+	defer func() {
+		ch <- struct{}{}
+	}()
+
 	// START: processing of upload job
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
