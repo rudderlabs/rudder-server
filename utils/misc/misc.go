@@ -617,11 +617,11 @@ func (w GZipWriter) CloseGZ() {
 	if err != nil {
 		logger.Errorf(`[GZWriter]: Error flushing GZipWriter.BufWriter : %v`, err)
 	}
-	w.GzWriter.Close()
+	err = w.GzWriter.Close()
 	if err != nil {
 		logger.Errorf(`[GZWriter]: Error closing GZipWriter : %v`, err)
 	}
-	w.File.Close()
+	err = w.File.Close()
 	if err != nil {
 		logger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
 	}
