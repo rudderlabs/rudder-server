@@ -48,7 +48,6 @@ var (
 	mainLoopSleep                       time.Duration
 	workerRetrySleep                    time.Duration
 	stagingFilesBatchSize               int
-	configSubscriberLock                sync.RWMutex
 	crashRecoverWarehouses              []string
 	inProgressMap                       map[string]bool
 	inRecoveryMap                       map[string]bool
@@ -110,7 +109,7 @@ func loadConfig() {
 	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
 	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
 	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
-	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 60) * time.Second
+	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 1) * time.Second
 	workerRetrySleep = config.GetDuration("Warehouse.workerRetrySleepInS", 5) * time.Second
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
@@ -214,7 +213,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
-		configSubscriberLock.Lock()
+		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
 		allSources := config.Data.(backendconfig.SourcesT)
 
@@ -265,7 +264,8 @@ func (wh *HandleT) backendConfigSubscriber() {
 				}
 			}
 		}
-		configSubscriberLock.Unlock()
+		logger.Debug("[WH] Unlocking config sub lock: %s", wh.destType)
+		wh.configSubscriberLock.Unlock()
 	}
 }
 
@@ -540,10 +540,10 @@ func (wh *HandleT) getUploadJobsForNewStagingFiles(warehouse warehouseutils.Ware
 	return uploadJobs, nil
 }
 
-func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) error {
+func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (numJobs int, err error) {
 	if isDestInProgress(warehouse) {
 		logger.Debugf("[WH]: Skipping upload loop since %s upload in progress", warehouse.Identifier)
-		return nil
+		return 0, nil
 	}
 
 	enqueuedJobs := false
@@ -556,7 +556,7 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 
 	whManager, err := manager.New(wh.destType)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Step 1: Crash recovery after restart
@@ -566,7 +566,7 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 		logger.Infof("[WH]: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
 		err = whManager.CrashRecover(warehouse)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		delete(inRecoveryMap, warehouse.Destination.ID)
 	}
@@ -579,7 +579,7 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 	pendingUploads, err := wh.getPendingUploads(warehouse)
 	if err != nil {
 		logger.Errorf("[WH]: Failed to get pending uploads: %s with error %w", warehouse.Identifier, err)
-		return err
+		return 0, err
 	}
 
 	if len(pendingUploads) > 0 {
@@ -587,11 +587,11 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 		uploadJobs, err = wh.getUploadJobsForPendingUploads(warehouse, whManager, pendingUploads)
 		if err != nil {
 			logger.Errorf("[WH]: Failed to create upload jobs for %s from pending uploads with error: %w", warehouse.Identifier, err)
-			return err
+			return 0, err
 		}
 		wh.enqueueUploadJobs(uploadJobs, warehouse)
 		enqueuedJobs = true
-		return nil
+		return len(uploadJobs), nil
 	}
 
 	// Step 3: Handle pending staging files. Create new uploads for them
@@ -599,51 +599,52 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 
 	if !wh.canStartUpload(warehouse) {
 		logger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded", warehouse.Identifier)
-		return nil
+		return 0, nil
 	}
 
 	stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
 	if err != nil {
 		logger.Errorf("[WH]: Failed to get pending staging files: %s with error %w", warehouse.Identifier, err)
-		return err
+		return 0, err
 	}
 	if len(stagingFilesList) == 0 {
 		logger.Debugf("[WH]: Found no pending staging files for %s", warehouse.Identifier)
-		return nil
+		return 0, nil
 	}
 
 	uploadJobs, err = wh.getUploadJobsForNewStagingFiles(warehouse, whManager, stagingFilesList)
 	if err != nil {
 		logger.Errorf("[WH]: Failed to create upload jobs for %s for new staging files with error: %w", warehouse.Identifier, err)
-		return err
+		return 0, err
 	}
 
 	setLastExec(warehouse)
 	wh.enqueueUploadJobs(uploadJobs, warehouse)
 	enqueuedJobs = true
-	return nil
+	return len(uploadJobs), nil
 }
 
 func (wh *HandleT) mainLoop() {
 	for {
-		time.Sleep(mainLoopSleep)
 
 		wh.configSubscriberLock.RLock()
 		if !wh.isEnabled {
+			time.Sleep(mainLoopSleep)
 			wh.configSubscriberLock.RUnlock()
 			continue
 		}
+
+		warehouses := wh.warehouses
 		wh.configSubscriberLock.RUnlock()
 
-		configSubscriberLock.RLock()
-		warehouses := wh.warehouses
-		configSubscriberLock.RUnlock()
 		for _, warehouse := range warehouses {
-			err := wh.processWarehouseJobs(warehouse)
+			logger.Debugf("[WH] Processing Jobs for warehouse: %s", warehouse.Identifier)
+			_, err := wh.processJobs(warehouse)
 			if err != nil {
 				logger.Errorf("[WH] Failed to process warehouse Jobs: %w", err)
 			}
 		}
+		time.Sleep(mainLoopSleep)
 	}
 }
 
@@ -890,7 +891,12 @@ func Start() {
 		panic(err)
 	}
 
-	if !validators.IsPostgresCompatible(dbHandle) {
+	isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)
+	if err != nil {
+		panic(err)
+	}
+
+	if !isDBCompatible {
 		err := errors.New("Rudder Warehouse Service needs postgres version >= 10. Exiting")
 		logger.Error(err)
 		panic(err)

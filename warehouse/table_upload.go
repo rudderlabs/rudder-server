@@ -158,3 +158,9 @@ func (tableUpload *TableUploadT) updateTableEventsCount(job *UploadJobT) (err er
 	_, err = job.dbHandle.Exec(sqlStatement)
 	return
 }
+
+func (tableUpload *TableUploadT) getNumEvents() (total int64, err error) {
+	sqlStatement := fmt.Sprintf(`select total_events from wh_table_uploads where wh_upload_id=%d and table_name='%s'`, tableUpload.uploadID, tableUpload.tableName)
+	err = dbHandle.QueryRow(sqlStatement).Scan(&total)
+	return total, err
+}
