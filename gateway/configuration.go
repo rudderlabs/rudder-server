@@ -25,6 +25,10 @@ func loadConfig() {
 	CustomVal = config.GetString("Gateway.CustomVal", "GW")
 	// Maximum request size to gateway
 	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 4000) * 1024
+	// Maximum number of events per gateway job
+	maxEventsInAJob = config.GetInt("Gateway.maxEventsInAJob", 10)
+	// Split Batches with more than maxEventsInAJob
+	splitBigBatches = config.GetBool("Gateway.splitBigBatches", true)
 	// Enable dedup of incoming events by default
 	enableDedup = config.GetBool("Gateway.enableDedup", false)
 	// Dedup time window in hours

@@ -71,7 +71,8 @@ var (
 	enabledWriteKeysSourceMap                                   map[string]string
 	enabledWriteKeyWebhookMap                                   map[string]string
 	configSubscriberLock                                        sync.RWMutex
-	maxReqSize                                                  int
+	maxReqSize, maxEventsInAJob                                 int
+	splitBigBatches                                             bool
 	enableDedup                                                 bool
 	enableRateLimit                                             bool
 	enableSuppressUserFeature                                   bool
@@ -301,6 +302,8 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		var writeKeyFailEventStats = make(map[string]int)
 		var workspaceDropRequestStats = make(map[string]int)
 		var preDbStoreCount int
+		var splitBatchCount int
+		var totalJobsDueToSplit int
 		//Saving the event data read from req.request.Body to the splice.
 		//Using this to send event schema to the config backend.
 		var eventBatchesToRecord []string
@@ -438,20 +441,57 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
 			eventBatchesToRecord = append(eventBatchesToRecord, fmt.Sprintf("%s", body))
 
-			id := uuid.NewV4()
-			//Should be function of body
-			newJob := jobsdb.JobT{
-				UUID:         id,
-				UserID:       gjson.GetBytes(body, "batch.0.anonymousId").Str,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, sourceID, counter)),
-				CustomVal:    CustomVal,
-				EventPayload: []byte(body),
-			}
-			jobList = append(jobList, &newJob)
+			if splitBigBatches && totalEventsInReq > maxEventsInAJob {
+				splitBatchCount++
+				IsUUIDKeyForWebRequest := true
+				for i := 0; i < totalEventsInReq; i += maxEventsInAJob {
+					splitBody, err := sjson.SetBytes(body, "batch", "")
+					if err != nil {
+						panic(err)
+					}
+					for j := 0; j < maxEventsInAJob && i+j < totalEventsInReq; j++ {
+						splitBody, _ = sjson.SetRawBytes(splitBody, fmt.Sprintf(`batch.%v`, j), []byte(gjson.GetBytes(body, fmt.Sprintf(`batch.%v`, i+j)).Raw))
+						if err != nil {
+							panic(err)
+						}
+					}
+					id := uuid.NewV4()
+					//Should be function of body
+					newJob := jobsdb.JobT{
+						UUID:                   id,
+						UserID:                 gjson.GetBytes(body, "batch.0.anonymousId").Str,
+						Parameters:             []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, sourceID, counter)),
+						CustomVal:              CustomVal,
+						EventPayload:           []byte(splitBody),
+						IsUUIDKeyForWebRequest: IsUUIDKeyForWebRequest,
+					}
+					jobList = append(jobList, &newJob)
+					totalJobsDueToSplit++
 
-			jobIDReqMap[newJob.UUID] = req
-			jobWriteKeyMap[newJob.UUID] = writeKey
-			jobEventCountMap[newJob.UUID] = totalEventsInReq
+					if IsUUIDKeyForWebRequest {
+						jobIDReqMap[newJob.UUID] = req
+						jobWriteKeyMap[newJob.UUID] = writeKey
+						jobEventCountMap[newJob.UUID] = totalEventsInReq
+					}
+					IsUUIDKeyForWebRequest = false
+				}
+			} else {
+				id := uuid.NewV4()
+				//Should be function of body
+				newJob := jobsdb.JobT{
+					UUID:                   id,
+					UserID:                 gjson.GetBytes(body, "batch.0.anonymousId").Str,
+					Parameters:             []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, sourceID, counter)),
+					CustomVal:              CustomVal,
+					EventPayload:           []byte(body),
+					IsUUIDKeyForWebRequest: true,
+				}
+				jobList = append(jobList, &newJob)
+
+				jobIDReqMap[newJob.UUID] = req
+				jobWriteKeyMap[newJob.UUID] = writeKey
+				jobEventCountMap[newJob.UUID] = totalEventsInReq
+			}
 		}
 
 		errorMessagesMap := make(map[uuid.UUID]string)
@@ -464,20 +504,22 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			errorMessagesMap = <-userWebRequestWorker.reponseQ
 		}
 
-		if preDbStoreCount+len(jobList) != len(breq.batchRequest) {
-			panic(fmt.Errorf("preDbStoreCount:%d+len(jobList):%d != len(breq.batchRequest):%d",
-				preDbStoreCount, len(jobList), len(breq.batchRequest)))
+		if preDbStoreCount+len(jobList) != len(breq.batchRequest)+totalJobsDueToSplit-splitBatchCount {
+			panic(fmt.Errorf("preDbStoreCount:%d+len(jobList):%d != len(breq.batchRequest):%d+totalJobsDueToSplit:%d-splitBatchCount:%d",
+				preDbStoreCount, len(jobList), len(breq.batchRequest), totalJobsDueToSplit, splitBatchCount))
 		}
 		for _, job := range jobList {
-			err, found := errorMessagesMap[job.UUID]
-			if found {
-				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[job.UUID], 1)
-				misc.IncrementMapByKey(writeKeyFailEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
-			} else {
-				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[job.UUID], 1)
-				misc.IncrementMapByKey(writeKeySuccessEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
+			if job.IsUUIDKeyForWebRequest {
+				err, found := errorMessagesMap[job.UUID]
+				if found {
+					misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[job.UUID], 1)
+					misc.IncrementMapByKey(writeKeyFailEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
+				} else {
+					misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[job.UUID], 1)
+					misc.IncrementMapByKey(writeKeySuccessEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
+				}
+				jobIDReqMap[job.UUID].done <- err
 			}
-			jobIDReqMap[job.UUID].done <- err
 		}
 		//Sending events to config backend
 		for _, eventBatch := range eventBatchesToRecord {

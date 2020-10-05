@@ -96,15 +96,16 @@ by the system and LastJobStatus is populated when reading a processed
 job  while rest should be set by the user.
 */
 type JobT struct {
-	UUID          uuid.UUID       `json:"UUID"`
-	JobID         int64           `json:"JobID"`
-	UserID        string          `json:"UserID"`
-	CreatedAt     time.Time       `json:"CreatedAt"`
-	ExpireAt      time.Time       `json:"ExpireAt"`
-	CustomVal     string          `json:"CustomVal"`
-	EventPayload  json.RawMessage `json:"EventPayload"`
-	LastJobStatus JobStatusT      `json:"LastJobStatus"`
-	Parameters    json.RawMessage `json:"Parameters"`
+	UUID                   uuid.UUID       `json:"UUID"`
+	JobID                  int64           `json:"JobID"`
+	UserID                 string          `json:"UserID"`
+	CreatedAt              time.Time       `json:"CreatedAt"`
+	ExpireAt               time.Time       `json:"ExpireAt"`
+	CustomVal              string          `json:"CustomVal"`
+	EventPayload           json.RawMessage `json:"EventPayload"`
+	LastJobStatus          JobStatusT      `json:"LastJobStatus"`
+	Parameters             json.RawMessage `json:"Parameters"`
+	IsUUIDKeyForWebRequest bool
 }
 
 //The struct fields need to be exposed to JSON package
