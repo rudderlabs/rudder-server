@@ -45,7 +45,7 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 	}
 	_, err = minioClient.FPutObject(manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
 	if err != nil {
-		return UploadOutput{}, nil
+		return UploadOutput{}, err
 	}
 
 	return UploadOutput{Location: manager.ObjectUrl(fileName), ObjectName: fileName}, nil
