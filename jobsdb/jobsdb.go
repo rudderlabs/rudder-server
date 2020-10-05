@@ -2503,7 +2503,10 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 		if err != nil {
 			return
 		}
-		updatedStatesByDS[dsList[len(dsList)-1]] = updatedStates
+		// do not set for ds without any new state written as it would clear emptyCache
+		if len(updatedStates) > 0 {
+			updatedStatesByDS[dsList[len(dsList)-1]] = updatedStates
+		}
 	}
 	return
 }
