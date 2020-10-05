@@ -139,7 +139,7 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 }
 
 func burstRetryCache(warehouse warehouseutils.WarehouseT) {
-	delete(nextRetryTimeCache, connectionString(warehouse))
+	delete(nextRetryTimeCache, warehouse.Identifier)
 }
 
 func onSuccessfulUpload(warehouse warehouseutils.WarehouseT) {
@@ -175,11 +175,11 @@ func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutil
 	}
 
 	// check in cache
-	if nextRetryTime, ok := nextRetryTimeCache[connectionString(warehouse)]; ok {
+	if nextRetryTime, ok := nextRetryTimeCache[warehouse.Identifier]; ok {
 		canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
 		// delete in cache if is going to be started
 		if canStart {
-			delete(nextRetryTimeCache, connectionString(warehouse))
+			delete(nextRetryTimeCache, warehouse.Identifier)
 		}
 		return canStart
 	}
@@ -193,7 +193,7 @@ func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutil
 	// set in cache if not staring, to access on next hit
 	if !canStart {
 		logger.Infof("[WH]: Setting in nextRetryTimeCache for %s:%s, will retry again around %v", warehouse.Destination.Name, warehouse.Destination.ID, nextRetryTime)
-		nextRetryTimeCache[connectionString(warehouse)] = nextRetryTime
+		nextRetryTimeCache[warehouse.Identifier] = nextRetryTime
 	}
 
 	return canStart

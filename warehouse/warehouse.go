@@ -436,24 +436,20 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]Upl
 	return uploads, nil
 }
 
-func connectionString(warehouse warehouseutils.WarehouseT) string {
-	return fmt.Sprintf(`source:%s:destination:%s`, warehouse.Source.ID, warehouse.Destination.ID)
-}
-
 func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
 	inProgressMapLock.Lock()
 	defer inProgressMapLock.Unlock()
 	if starting {
-		inProgressMap[connectionString(warehouse)] = true
+		inProgressMap[warehouse.Identifier] = true
 	} else {
-		delete(inProgressMap, connectionString(warehouse))
+		delete(inProgressMap, warehouse.Identifier)
 	}
 }
 
 func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 	inProgressMapLock.RLock()
 	defer inProgressMapLock.RUnlock()
-	if inProgressMap[connectionString(warehouse)] {
+	if inProgressMap[warehouse.Identifier] {
 		return true
 	}
 	return false
@@ -467,7 +463,7 @@ func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency 
 	}
 	lastExecMapLock.Lock()
 	defer lastExecMapLock.Unlock()
-	if lastExecTime, ok := lastExecMap[connectionString(warehouse)]; ok && timeutil.Now().Unix()-lastExecTime < freqInS {
+	if lastExecTime, ok := lastExecMap[warehouse.Identifier]; ok && timeutil.Now().Unix()-lastExecTime < freqInS {
 		return true
 	}
 	return false
@@ -476,7 +472,7 @@ func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency 
 func setLastExec(warehouse warehouseutils.WarehouseT) {
 	lastExecMapLock.Lock()
 	defer lastExecMapLock.Unlock()
-	lastExecMap[connectionString(warehouse)] = timeutil.Now().Unix()
+	lastExecMap[warehouse.Identifier] = timeutil.Now().Unix()
 }
 
 func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, pendingUploads []UploadT) ([]*UploadJobT, error) {
