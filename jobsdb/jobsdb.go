@@ -2466,7 +2466,10 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 				if err != nil {
 					return
 				}
-				updatedStatesByDS[ds.ds] = updatedStates
+				// do not set for ds without any new state written as it would clear emptyCache
+				if len(updatedStates) > 0 {
+					updatedStatesByDS[ds.ds] = updatedStates
+				}
 				lastPos = i
 				break
 			}
@@ -2479,7 +2482,10 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 			if err != nil {
 				return
 			}
-			updatedStatesByDS[ds.ds] = updatedStates
+			// do not set for ds without any new state written as it would clear emptyCache
+			if len(updatedStates) > 0 {
+				updatedStatesByDS[ds.ds] = updatedStates
+			}
 			lastPos = i
 			break
 		}
@@ -2702,12 +2708,12 @@ func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 	var sqlStatement string
 	if customValQuery == "" && sourceQuery == "" {
 		sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN
-                                                   (SELECT MAX(id) from %[1]s GROUP BY job_id) %[2]s 
+                                                   (SELECT MAX(id) from %[1]s GROUP BY job_id) %[2]s
                                              AND retry_time < $1`,
 			ds.JobStatusTable, stateQuery)
 	} else {
 		sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN
-                                                   (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s %[4]s %[5]s) GROUP BY job_id) %[3]s 
+                                                   (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s %[4]s %[5]s) GROUP BY job_id) %[3]s
                                              AND retry_time < $1`,
 			ds.JobStatusTable, ds.JobTable, stateQuery, customValQuery, sourceQuery)
 	}
