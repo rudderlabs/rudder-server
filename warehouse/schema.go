@@ -106,7 +106,7 @@ func (sHandle *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Sch
 	return currentSchema
 }
 
-func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT) {
+func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT) error {
 	namespace := sHandle.warehouse.Namespace
 	sourceID := sHandle.warehouse.Source.ID
 	destID := sHandle.warehouse.Destination.ID
@@ -116,12 +116,12 @@ func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Sch
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE source_id='%s' AND destination_id='%s' AND namespace='%s'`, warehouseutils.WarehouseSchemasTable, sourceID, destID, namespace)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&count)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	marshalledSchema, err := json.Marshal(updatedSchema)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	if count == 0 {
@@ -129,7 +129,7 @@ func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Sch
 									   VALUES ($1, $2, $3, $4, $5, $6)`, warehouseutils.WarehouseSchemasTable)
 		stmt, err := dbHandle.Prepare(sqlStatement)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		defer stmt.Close()
 
@@ -139,8 +139,10 @@ func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Sch
 		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, sourceID, destID, namespace)
 	}
 	if err != nil {
-		panic(err)
+		return err
 	}
+
+	return err
 }
 
 func (sHandle *SchemaHandleT) fetchSchemaFromWarehouse() (schemaInWarehouse warehouseutils.SchemaT, err error) {
