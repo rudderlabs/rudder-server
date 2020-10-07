@@ -883,6 +883,7 @@ func (gateway *HandleT) StartWebHandler() {
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
 		AllowedHeaders:   []string{"*"},
+		MaxAge:           900, // 15 mins
 	})
 	if diagnostics.EnableServerStartedMetric {
 		diagnostics.Track(diagnostics.ServerStarted, map[string]interface{}{
