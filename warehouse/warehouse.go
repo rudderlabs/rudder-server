@@ -88,6 +88,10 @@ const (
 	EmbeddedMode    = "embedded"
 )
 
+const (
+	DegradedMode = "degraded"
+)
+
 type HandleT struct {
 	destType             string
 	warehouses           []warehouseutils.WarehouseT
@@ -1780,6 +1784,13 @@ func Start() {
 
 	setupTables(dbHandle)
 
+	defer startWebHandler()
+
+	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
+	if runningMode == DegradedMode {
+		return
+	}
+
 	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {
 		panic(err)
@@ -1800,6 +1811,4 @@ func Start() {
 			monitorDestRouters()
 		})
 	}
-
-	startWebHandler()
 }
