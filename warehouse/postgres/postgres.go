@@ -619,3 +619,48 @@ func (pg *HandleT) LoadIdentityMappingsTable() (err error) {
 func (pg *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
+
+func (pg *HandleT) Query(querySQL string, warehouse warehouseutils.WarehouseT) (result warehouseutils.QueryResult, err error) {
+	pg.Warehouse = warehouse
+	pg.Namespace = warehouse.Namespace
+	dbHandle, err := connect(pg.getConnectionCredentials())
+	if err != nil {
+		return
+	}
+	defer dbHandle.Close()
+
+	rows, err := dbHandle.Query(querySQL)
+	if err != nil && err != sql.ErrNoRows {
+		return
+	}
+	if err == sql.ErrNoRows {
+		return result, nil
+	}
+	defer rows.Close()
+
+	result.Columns, err = rows.Columns()
+	if err != nil {
+		return
+	}
+
+	colCount := len(result.Columns)
+	values := make([]interface{}, colCount)
+	valuePtrs := make([]interface{}, colCount)
+
+	for rows.Next() {
+		for i := 0; i < colCount; i++ {
+			valuePtrs[i] = &values[i]
+		}
+
+		err = rows.Scan(valuePtrs...)
+		if err != nil {
+			return
+		}
+		var stringRow []string
+		for i := 0; i < colCount; i++ {
+			stringRow = append(stringRow, fmt.Sprintf("%v", values[i]))
+		}
+		result.Values = append(result.Values, stringRow)
+	}
+	return result, nil
+}

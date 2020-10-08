@@ -764,3 +764,54 @@ func (rs *HandleT) LoadIdentityMappingsTable() (err error) {
 func (rs *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
+
+func (rs *HandleT) Query(querySQL string, warehouse warehouseutils.WarehouseT) (result warehouseutils.QueryResult, err error) {
+	rs.Warehouse = warehouse
+	rs.Namespace = warehouse.Namespace
+	dbHandle, err := connect(RedshiftCredentialsT{
+		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
+		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
+		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
+		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
+		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
+	})
+	if err != nil {
+		return
+	}
+	defer dbHandle.Close()
+
+	rows, err := dbHandle.Query(querySQL)
+	if err != nil && err != sql.ErrNoRows {
+		return
+	}
+	if err == sql.ErrNoRows {
+		return result, nil
+	}
+	defer rows.Close()
+
+	result.Columns, err = rows.Columns()
+	if err != nil {
+		return
+	}
+
+	colCount := len(result.Columns)
+	values := make([]interface{}, colCount)
+	valuePtrs := make([]interface{}, colCount)
+
+	for rows.Next() {
+		for i := 0; i < colCount; i++ {
+			valuePtrs[i] = &values[i]
+		}
+
+		err = rows.Scan(valuePtrs...)
+		if err != nil {
+			return
+		}
+		var stringRow []string
+		for i := 0; i < colCount; i++ {
+			stringRow = append(stringRow, fmt.Sprintf("%v", values[i]))
+		}
+		result.Values = append(result.Values, stringRow)
+	}
+	return result, nil
+}

@@ -497,3 +497,45 @@ func (bq *HandleT) LoadIdentityMappingsTable() (err error) {
 func (bq *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
+
+func (bq *HandleT) Query(querySQL string, warehouse warehouseutils.WarehouseT) (result warehouseutils.QueryResult, err error) {
+	bq.Warehouse = warehouse
+	bq.Namespace = warehouse.Namespace
+	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
+	dbClient, err := bq.connect(BQCredentialsT{
+		projectID:   bq.ProjectID,
+		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+	})
+	if err != nil {
+		return
+	}
+	defer dbClient.Close()
+
+	query := dbClient.Query(querySQL)
+
+	it, err := query.Read(bq.BQContext)
+	if err != nil {
+		return
+	}
+
+	for index := 0; index < len(it.Schema); index++ {
+		result.Columns = append(result.Columns, (*it.Schema[index]).Name)
+	}
+
+	for {
+		var row []bigquery.Value
+		err = it.Next(&row)
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return
+		}
+		var stringRow []string
+		for index := 0; index < len(row); index++ {
+			stringRow = append(stringRow, fmt.Sprintf("%+v", row[index]))
+		}
+		result.Values = append(result.Values, stringRow)
+	}
+	return result, nil
+}

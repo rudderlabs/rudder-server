@@ -25,6 +25,7 @@ type ManagerI interface {
 	IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error)
 	TestConnection(warehouse warehouseutils.WarehouseT) error
 	DownloadIdentityRules(*misc.GZipWriter) error
+	Query(sqlString string, warehouse warehouseutils.WarehouseT) (warehouseutils.QueryResult, error)
 }
 
 func New(destType string) (ManagerI, error) {
