@@ -44,7 +44,7 @@ const (
 	ExportingUserTablesFailedState          = "exporting_user_tables_failed"
 	ExportedUserTablesState                 = "exported_user_tables"
 	LoadIdentitiesFailedState               = "load_identities_failed"
-	LoadedIdentitiesState                   = "load_identities"
+	LoadedIdentitiesState                   = "loaded_identities"
 	AbortedState                            = "aborted"
 	GeneratingStagingFileFailedState        = "generating_staging_file_failed"
 	GeneratedStagingFileState               = "generated_staging_file"
@@ -440,6 +440,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 				loadErrorLock.Unlock()
 				tableUpload.setError(ExportingDataFailedState, err)
 			} else {
+				// TODO: Add Metric
 				tableUpload.setStatus(ExportedDataState)
 			}
 			wg.Done()
