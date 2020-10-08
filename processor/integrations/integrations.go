@@ -80,8 +80,8 @@ func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err er
 	return postInfo, err
 }
 
-// GetRudderIDFromTransformerResponse parses the payload to get userId
-func GetRudderIDFromTransformerResponse(transformRaw json.RawMessage) (userID string, found bool) {
+// GetUserIDFromTransformerResponse parses the payload to get userId
+func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) (userID string, found bool) {
 	parsedJSON := gjson.ParseBytes(transformRaw)
 	userIDVal := parsedJSON.Get("userId").Value()
 

@@ -145,7 +145,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			userID = job.UserID
 			canEventBeMappedToUser = true
 		} else {
-			userID, canEventBeMappedToUser = integrations.GetRudderIDFromTransformerResponse(job.EventPayload)
+			userID, canEventBeMappedToUser = integrations.GetUserIDFromTransformerResponse(job.EventPayload)
 		}
 
 		var paramaters JobParametersT
@@ -419,7 +419,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 		userID = job.UserID
 		canEventBeMappedToUser = true
 	} else {
-		userID, canEventBeMappedToUser = integrations.GetRudderIDFromTransformerResponse(job.EventPayload)
+		userID, canEventBeMappedToUser = integrations.GetUserIDFromTransformerResponse(job.EventPayload)
 		// set random userID to assign worker when event can't be mapped to an userID
 		if !canEventBeMappedToUser {
 			userID = uuid.NewV4().String()
