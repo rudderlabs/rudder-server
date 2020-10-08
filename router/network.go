@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -144,6 +145,5 @@ func (network *NetHandleT) Setup(destID string) {
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
 	defaultTransportCopy.MaxIdleConns = 100
 	defaultTransportCopy.MaxIdleConnsPerHost = 100
-	network.httpClient = &http.Client{Transport: &defaultTransportCopy}
-	//network.httpClient = &http.Client{}
+	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: 15 * time.Second}
 }
