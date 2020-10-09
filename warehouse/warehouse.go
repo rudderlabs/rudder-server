@@ -919,6 +919,9 @@ func Start() {
 		rruntime.Go(func() {
 			monitorDestRouters()
 		})
+		rruntime.Go(func() {
+			archiveFileLocationRecords(dbHandle)
+		})
 	}
 
 	startWebHandler()
