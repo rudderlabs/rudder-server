@@ -31,7 +31,7 @@ func init() {
 	archiveStagingFiles = config.GetBool("Warehouse.archiveStagingFiles", true)
 	archivalTimeInDays = config.GetInt("Warehouse.archivalTimeInDays", 45)
 	backupRowsBatchSize = config.GetInt64("Warehouse.backupRowsBatchSize", 1000)
-	archiverTickerTime = config.GetDuration("Warehouse.archiverTickerTimeInMin", 120) * time.Minute
+	archiverTickerTime = config.GetDuration("Warehouse.archiverTickerTimeInMin", 1440) * time.Minute // default 1 day
 }
 
 func isArchiverObjectStorageConfigured() bool {
@@ -50,7 +50,7 @@ func archiveOldRecords(tableName string, dbHandle *sql.DB) {
 		return
 	}
 	if filesCount == 0 {
-		logger.Debugf(`[WH Archiver]: No %s records found to archive`, tableName)
+		logger.Infof(`[WH Archiver]: No %s records found to archive`, tableName)
 		return
 	}
 
