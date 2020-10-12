@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -305,6 +303,8 @@ func (job *UploadJobT) run() (err error) {
 			uploadSchema := job.upload.Schema
 			if _, ok := uploadSchema[job.identifiesTableName()]; ok {
 
+				loadTimeStat := job.timerStat("user_tables_load_time")
+				loadTimeStat.Start()
 				var loadErrors []error
 				loadErrors, err = job.loadUserTables()
 				if err != nil {
@@ -315,6 +315,7 @@ func (job *UploadJobT) run() (err error) {
 					err = warehouseutils.ConcatErrors(loadErrors)
 					break
 				}
+				loadTimeStat.End()
 			}
 			nextState = ExportedUserTablesState
 
@@ -324,6 +325,9 @@ func (job *UploadJobT) run() (err error) {
 			uploadSchema := job.upload.Schema
 			if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
 				if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {
+					loadTimeStat := job.timerStat("identity_tables_load_time")
+					loadTimeStat.Start()
+
 					var loadErrors []error
 					loadErrors, err = job.loadIdentityTables(false)
 					if err != nil {
@@ -334,6 +338,7 @@ func (job *UploadJobT) run() (err error) {
 						err = warehouseutils.ConcatErrors(loadErrors)
 						break
 					}
+					loadTimeStat.End()
 				}
 			}
 			nextState = LoadedIdentitiesState
@@ -342,16 +347,22 @@ func (job *UploadJobT) run() (err error) {
 			nextState = ExportingDataFailedState
 			skipPrevLoadedTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 			// Export all other tables
+			loadTimeStat := job.timerStat("other_tables_load_time")
+			loadTimeStat.Start()
+
 			loadErrors := job.loadAllTablesExcept(skipPrevLoadedTableNames)
 
 			if len(loadErrors) > 0 {
 				err = warehouseutils.ConcatErrors(loadErrors)
 				break
 			}
+			loadTimeStat.End()
 			nextState = ExportedDataState
 
-		case ExportedDataState, AbortedState:
-			// Perform any finalizer actions for the upload job
+		case ExportedDataState:
+			job.generateUploadSuccessMetrics()
+		case AbortedState:
+			job.generateUploadAbortedMetrics()
 		default:
 			// If unknown state, start again
 			nextState = WaitingState
@@ -476,6 +487,9 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 		return []error{}, nil
 	}
 
+	loadTimeStat := job.timerStat("user_tables_load_time")
+	loadTimeStat.Start()
+
 	// Load all user tables
 	for _, tName := range userTables {
 		tableUpload := NewTableUpload(job.upload.ID, tName)
@@ -546,7 +560,7 @@ func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (erro
 				// Since load is successful, we assume all events in load files are uploaded
 				numEvents, tableUploadErr := tableUpload.getNumEvents()
 				if tableUploadErr != nil {
-					job.recordMetric(tName, numEvents)
+					job.recordTableLoad(tName, numEvents)
 				}
 			}
 		}
@@ -557,15 +571,6 @@ func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (erro
 
 	}
 	return errors, tableUploadErr
-}
-
-func (job *UploadJobT) recordMetric(tableName string, numEvents int64) {
-	// add metric to record total loaded rows to standard tables
-	// adding metric for all event tables might result in too many metrics
-	tablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
-	if misc.Contains(tablesToRecordEventsMetric, strings.ToLower(tableName)) {
-		warehouseutils.DestStat(stats.CountType, fmt.Sprintf(`%s_table_records_uploaded`, strings.ToLower(tableName)), job.warehouse.Destination.ID).Count(int(numEvents))
-	}
 }
 
 // getUploadTimings returns timings json column
@@ -667,6 +672,9 @@ func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
 	logger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
+	job.counterStat("upload_failed").Count(1)
+	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
+
 	upload := job.upload
 
 	job.setUploadStatus(state)
@@ -755,7 +763,7 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 	stagingFiles := job.stagingFiles
 
 	// stat for time taken to process staging files in a single job
-	timer := warehouseutils.DestStat(stats.TimerType, "process_staging_files_batch_time", destID)
+	timer := job.timerStat("load_files_creation")
 	timer.Start()
 
 	job.setStagingFilesStatus(warehouseutils.StagingFileExecutingState, nil)
@@ -817,6 +825,7 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 	}
 
 	timer.End()
+
 	if len(loadFileIDs) == 0 {
 		err = fmt.Errorf(responses[0].Error)
 		return loadFileIDs, err

@@ -23,7 +23,6 @@ import (
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -184,24 +183,20 @@ func (wh *HandleT) handleUploadJobs(jobs []*UploadJobT) error {
 	// Waits till a worker is available to process
 	wh.waitAndLockAvailableWorker()
 
-	// TODO: Is this metric required?
-	whOneFullPassTimer := warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", jobs[0].warehouse.Destination.ID)
-	whOneFullPassTimer.Start()
 	var err error
 	for _, uploadJob := range jobs {
 		// Process the upload job
+		timerStat := uploadJob.timerStat("upload_time")
+		timerStat.Start()
 		err = uploadJob.run()
 		wh.recordDeliveryStatus(uploadJob.warehouse.Destination.ID, uploadJob.upload.ID)
 		if err != nil {
-			warehouseutils.DestStat(stats.CountType, "failed_uploads", uploadJob.warehouse.Destination.ID).Count(1)
 			// do not process other jobs so that uploads are done in order
 			break
 		}
+		timerStat.End()
 		onSuccessfulUpload(uploadJob.warehouse)
-		// TODO: Is this metric required?
-		warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", uploadJob.warehouse.Destination.ID).Count(len(uploadJob.stagingFiles))
 	}
-	whOneFullPassTimer.End()
 
 	wh.releaseWorker()
 
@@ -222,7 +217,13 @@ func (wh *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == wh.destType {
 						namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
-						warehouse := warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace, Type: wh.destType, Identifier: fmt.Sprintf("%s:%s:%s", wh.destType, source.ID, destination.ID)}
+						warehouse := warehouseutils.WarehouseT{
+							Source:      source,
+							Destination: destination,
+							Namespace:   namespace,
+							Type:        wh.destType,
+							Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
+						}
 						wh.warehouses = append(wh.warehouses, warehouse)
 
 						workerName := workerIdentifier(warehouse)
