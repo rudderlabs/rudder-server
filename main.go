@@ -295,6 +295,7 @@ func main() {
 		printVersion()
 		return
 	}
+
 	application = app.New(options)
 
 	http.HandleFunc("/version", versionHandler)
