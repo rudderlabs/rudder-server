@@ -302,7 +302,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			if status.JobState == jobsdb.Succeeded.State {
 				receivedTime, err := time.Parse(misc.RFC3339Milli, paramaters.ReceivedAt)
 				if err == nil {
-					eventsDeliveryTimeStat.Count(int(time.Now().Sub(receivedTime)))
+					eventsDeliveryTimeStat.Count(int(time.Now().Sub(receivedTime) / time.Second))
 				}
 			}
 		}
