@@ -148,9 +148,6 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 	eventsAbortedStat := stats.NewStat(
 		fmt.Sprintf("router.%s_events_aborted", rt.destName), stats.CountType)
 
-	eventsDeliveryTimeStat := stats.NewStat(
-		fmt.Sprintf("router.%s_event_delivery_time", rt.destName), stats.CountType)
-
 	for {
 		job := <-worker.channel
 		var respStatusCode, attempts int
@@ -302,6 +299,13 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			if status.JobState == jobsdb.Succeeded.State {
 				receivedTime, err := time.Parse(misc.RFC3339Milli, paramaters.ReceivedAt)
 				if err == nil {
+					eventsDeliveryTimeStat := stats.NewTaggedStat(
+						"event_delivery_time", stats.CountType, map[string]string{
+							"module":   "router",
+							"destType": rt.destName,
+							"id":       paramaters.DestinationID,
+						})
+
 					eventsDeliveryTimeStat.Count(int(time.Now().Sub(receivedTime) / time.Second))
 				}
 			}
