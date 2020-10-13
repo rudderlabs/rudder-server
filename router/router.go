@@ -79,7 +79,7 @@ var (
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
 	randomWorkerAssign                                                             bool
 	testSinkURL                                                                    string
-	retryTimeWindow, minRetryBackoff, maxRetryBackoff                              time.Duration
+	retryTimeWindow, minRetryBackoff, maxRetryBackoff, netClientTimeout            time.Duration
 )
 
 var userOrderingRequiredMap = map[string]bool{
@@ -116,6 +116,26 @@ func loadConfig() {
 	retryTimeWindow = config.GetDuration("Router.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
 	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
+	netClientTimeout = config.GetDuration("Router.httpTimeoutInS", 15) * time.Second
+}
+
+func (rt *HandleT) trackStuckDelivery() chan struct{} {
+	ch := make(chan struct{}, 1)
+	rruntime.Go(func() {
+		select {
+		case _ = <-ch:
+			// do nothing
+		case <-time.After(netClientTimeout * 2):
+			logger.Infof("[%s Router] Delivery to destination exceeded the 2 * configured timeout ", rt.destName)
+			stats.NewStat(
+				fmt.Sprintf("router.%s_events_aborted", rt.destName), stats.CountType)
+			stat := stats.NewTaggedStat("router_delivery_exceeded_timeout", stats.CountType, map[string]string{
+				"destName": rt.destName,
+			})
+			stat.Increment()
+		}
+	})
+	return ch
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -198,7 +218,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		if rt.customDestinationManager != nil {
 			respStatusCode, _, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
 		} else {
+			ch := rt.trackStuckDelivery()
 			respStatusCode, _, respBody = rt.netHandle.sendPost(job.EventPayload)
+			ch <- struct{}{}
 		}
 
 		deliveryTimeStat.End()
