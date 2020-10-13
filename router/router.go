@@ -48,6 +48,7 @@ type HandleT struct {
 	throttler                *throttler.HandleT
 	throttlerMutex           sync.RWMutex
 	keepOrderOnFailure       bool
+	netClientTimeout         time.Duration
 }
 
 type jobResponseT struct {
@@ -80,7 +81,7 @@ var (
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
 	randomWorkerAssign                                                             bool
 	testSinkURL                                                                    string
-	retryTimeWindow, minRetryBackoff, maxRetryBackoff, netClientTimeout            time.Duration
+	retryTimeWindow, minRetryBackoff, maxRetryBackoff                              time.Duration
 )
 
 var userOrderingRequiredMap = map[string]bool{
@@ -117,7 +118,6 @@ func loadConfig() {
 	retryTimeWindow = config.GetDuration("Router.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
 	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
-	netClientTimeout = config.GetDuration("Router.httpTimeoutInS", 15) * time.Second
 }
 
 func (rt *HandleT) trackStuckDelivery() chan struct{} {
@@ -126,7 +126,7 @@ func (rt *HandleT) trackStuckDelivery() chan struct{} {
 		select {
 		case _ = <-ch:
 			// do nothing
-		case <-time.After(netClientTimeout * 2):
+		case <-time.After(rt.netClientTimeout * 2):
 			logger.Infof("[%s Router] Delivery to destination exceeded the 2 * configured timeout ", rt.destName)
 			stat := stats.NewTaggedStat("router_delivery_exceeded_timeout", stats.CountType, map[string]string{
 				"destType": rt.destName,
@@ -781,13 +781,14 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	rt.jobsDB = jobsDB
 	rt.destName = destName
+	rt.netClientTimeout = getRouterConfigDuration("httpTimeoutInS", destName, 30) * time.Second
 	rt.crashRecover()
 	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	rt.toClearFailJobIDMap = make(map[int][]string)
 	rt.isEnabled = true
 	rt.netHandle = &NetHandleT{}
-	rt.netHandle.Setup(destName)
+	rt.netHandle.Setup(destName, rt.netClientTimeout)
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customdestinationmanager.New(destName)
