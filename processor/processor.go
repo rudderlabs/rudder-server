@@ -62,6 +62,9 @@ type HandleT struct {
 	marshalSingularEvents  stats.RudderStats
 	destProcessing         stats.RudderStats
 	statNumDests           stats.RudderStats
+	statNumRequests        stats.RudderStats
+	statNumEvents          stats.RudderStats
+	statNumOutputEvents    stats.RudderStats
 	destStats              map[string]*DestStatT
 	userToSessionIDMap     map[string]string
 	userJobPQ              pqT
@@ -167,6 +170,10 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statListSort = proc.stats.NewStat("processor.job_list_sort", stats.TimerType)
 	proc.marshalSingularEvents = proc.stats.NewStat("processor.marshal_singular_events", stats.TimerType)
 	proc.destProcessing = proc.stats.NewStat("processor.dest_processing", stats.TimerType)
+	proc.statNumRequests = proc.stats.NewStat("processor.num_requests", stats.CountType)
+	proc.statNumEvents = proc.stats.NewStat("processor.num_events", stats.CountType)
+	// Add a separate tag for batch router
+	proc.statNumOutputEvents = proc.stats.NewStat("processor.num_output_events", stats.CountType)
 	proc.destStats = make(map[string]*DestStatT)
 
 	rruntime.Go(func() {
@@ -564,7 +571,7 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
-func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT) {
+func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT, receivedAt time.Time) {
 	metadata := transformer.MetadataT{}
 	metadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	metadata.DestinationID = destination.ID
@@ -575,6 +582,7 @@ func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsd
 	if event.SessionID != "" {
 		metadata.SessionID = event.SessionID
 	}
+	metadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
 	event.Metadata = metadata
 }
 
@@ -680,6 +688,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.pStatsJobs.Start()
 
+	proc.statNumRequests.Count(len(jobList))
+
 	var destJobs []*jobsdb.JobT
 	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
@@ -759,7 +769,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy.Message["request_ip"] = requestIP
 
 						enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-						enhanceWithMetadata(&shallowEventCopy, batchEvent, destination)
+						enhanceWithMetadata(&shallowEventCopy, batchEvent, destination, receivedAt)
 
 						metadata := shallowEventCopy.Metadata
 						srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
@@ -787,6 +797,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		statusList = append(statusList, &newStatus)
 	}
+
+	proc.statNumEvents.Count(totalEvents)
 
 	proc.marshalSingularEvents.End()
 
@@ -876,6 +888,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			sourceID := destEvent.Metadata.SourceID
 			destID := destEvent.Metadata.DestinationID
 			rudderID := destEvent.Metadata.RudderID
+			receivedAt := destEvent.Metadata.ReceivedAt
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
 			if rudderID == "" {
@@ -885,7 +898,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       rudderID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v"}`, sourceID, destID, receivedAt)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
@@ -910,10 +923,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	if len(destJobs) > 0 {
 		logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 		proc.routerDB.Store(destJobs)
+		proc.statNumOutputEvents.Count(len(destJobs))
 	}
 	if len(batchDestJobs) > 0 {
 		logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 		proc.batchRouterDB.Store(batchDestJobs)
+		proc.statNumOutputEvents.Count(len(batchDestJobs))
 	}
 
 	var procErrorJobs []*jobsdb.JobT
