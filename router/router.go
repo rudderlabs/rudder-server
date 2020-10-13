@@ -116,7 +116,7 @@ func loadConfig() {
 	retryTimeWindow = config.GetDuration("Router.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
 	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
-	netClientTimeout = config.GetDuration("Router.httpTimeoutInS", 15) * time.Second
+	netClientTimeout = config.GetDuration("Router.httpTimeoutInS", 1) * time.Second
 }
 
 func (rt *HandleT) trackStuckDelivery() chan struct{} {
@@ -218,6 +218,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		} else {
 			ch := rt.trackStuckDelivery()
 			respStatusCode, _, respBody = rt.netHandle.sendPost(job.EventPayload)
+			time.Sleep(3 * time.Second)
 			ch <- struct{}{}
 		}
 
