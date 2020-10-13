@@ -30,45 +30,46 @@ import (
 
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
-	backendConfig          backendconfig.BackendConfig
-	processSessions        bool
-	sessionThresholdEvents int
-	stats                  stats.Stats
-	gatewayDB              jobsdb.JobsDB
-	routerDB               jobsdb.JobsDB
-	batchRouterDB          jobsdb.JobsDB
-	errorDB                jobsdb.JobsDB
-	transformer            transformer.Transformer
-	pStatsJobs             *misc.PerfStats
-	pStatsDBR              *misc.PerfStats
-	statGatewayDBR         stats.RudderStats
-	pStatsDBW              *misc.PerfStats
-	statGatewayDBW         stats.RudderStats
-	statRouterDBW          stats.RudderStats
-	statBatchRouterDBW     stats.RudderStats
-	statProcErrDBW         stats.RudderStats
-	statActiveUsers        stats.RudderStats
-	userJobListMap         map[string][]*jobsdb.JobT
-	userEventsMap          map[string][]types.SingularEventT
-	userPQItemMap          map[string]*pqItemT
-	statJobs               stats.RudderStats
-	statDBR                stats.RudderStats
-	statDBW                stats.RudderStats
-	statLoopTime           stats.RudderStats
-	statSessionTransform   stats.RudderStats
-	statUserTransform      stats.RudderStats
-	statDestTransform      stats.RudderStats
-	statListSort           stats.RudderStats
-	marshalSingularEvents  stats.RudderStats
-	destProcessing         stats.RudderStats
-	statNumDests           stats.RudderStats
-	statNumRequests        stats.RudderStats
-	statNumEvents          stats.RudderStats
-	statNumOutputEvents    stats.RudderStats
-	destStats              map[string]*DestStatT
-	userToSessionIDMap     map[string]string
-	userJobPQ              pqT
-	userPQLock             sync.Mutex
+	backendConfig                backendconfig.BackendConfig
+	processSessions              bool
+	sessionThresholdEvents       int
+	stats                        stats.Stats
+	gatewayDB                    jobsdb.JobsDB
+	routerDB                     jobsdb.JobsDB
+	batchRouterDB                jobsdb.JobsDB
+	errorDB                      jobsdb.JobsDB
+	transformer                  transformer.Transformer
+	pStatsJobs                   *misc.PerfStats
+	pStatsDBR                    *misc.PerfStats
+	statGatewayDBR               stats.RudderStats
+	pStatsDBW                    *misc.PerfStats
+	statGatewayDBW               stats.RudderStats
+	statRouterDBW                stats.RudderStats
+	statBatchRouterDBW           stats.RudderStats
+	statProcErrDBW               stats.RudderStats
+	statActiveUsers              stats.RudderStats
+	userJobListMap               map[string][]*jobsdb.JobT
+	userEventsMap                map[string][]types.SingularEventT
+	userPQItemMap                map[string]*pqItemT
+	statJobs                     stats.RudderStats
+	statDBR                      stats.RudderStats
+	statDBW                      stats.RudderStats
+	statLoopTime                 stats.RudderStats
+	statSessionTransform         stats.RudderStats
+	statUserTransform            stats.RudderStats
+	statDestTransform            stats.RudderStats
+	statListSort                 stats.RudderStats
+	marshalSingularEvents        stats.RudderStats
+	destProcessing               stats.RudderStats
+	statNumDests                 stats.RudderStats
+	statNumRequests              stats.RudderStats
+	statNumEvents                stats.RudderStats
+	statDestNumOutputEvents      stats.RudderStats
+	statBatchDestNumOutputEvents stats.RudderStats
+	destStats                    map[string]*DestStatT
+	userToSessionIDMap           map[string]string
+	userJobPQ                    pqT
+	userPQLock                   sync.Mutex
 }
 
 type DestStatT struct {
@@ -173,7 +174,12 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statNumRequests = proc.stats.NewStat("processor.num_requests", stats.CountType)
 	proc.statNumEvents = proc.stats.NewStat("processor.num_events", stats.CountType)
 	// Add a separate tag for batch router
-	proc.statNumOutputEvents = proc.stats.NewStat("processor.num_output_events", stats.CountType)
+	proc.statDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, map[string]string{
+		"module": "router",
+	})
+	proc.statBatchDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, map[string]string{
+		"module": "batch_router",
+	})
 	proc.destStats = make(map[string]*DestStatT)
 
 	rruntime.Go(func() {
@@ -923,12 +929,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	if len(destJobs) > 0 {
 		logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 		proc.routerDB.Store(destJobs)
-		proc.statNumOutputEvents.Count(len(destJobs))
+		proc.statDestNumOutputEvents.Count(len(destJobs))
 	}
 	if len(batchDestJobs) > 0 {
 		logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 		proc.batchRouterDB.Store(batchDestJobs)
-		proc.statNumOutputEvents.Count(len(batchDestJobs))
+		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
 
 	var procErrorJobs []*jobsdb.JobT
