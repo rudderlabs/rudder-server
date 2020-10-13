@@ -130,7 +130,7 @@ func (rt *HandleT) trackStuckDelivery() chan struct{} {
 			stats.NewStat(
 				fmt.Sprintf("router.%s_events_aborted", rt.destName), stats.CountType)
 			stat := stats.NewTaggedStat("router_delivery_exceeded_timeout", stats.CountType, map[string]string{
-				"destName": rt.destName,
+				"destType": rt.destName,
 			})
 			stat.Increment()
 		}
