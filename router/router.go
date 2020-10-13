@@ -127,8 +127,6 @@ func (rt *HandleT) trackStuckDelivery() chan struct{} {
 			// do nothing
 		case <-time.After(netClientTimeout * 2):
 			logger.Infof("[%s Router] Delivery to destination exceeded the 2 * configured timeout ", rt.destName)
-			stats.NewStat(
-				fmt.Sprintf("router.%s_events_aborted", rt.destName), stats.CountType)
 			stat := stats.NewTaggedStat("router_delivery_exceeded_timeout", stats.CountType, map[string]string{
 				"destType": rt.destName,
 			})
