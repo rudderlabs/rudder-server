@@ -60,6 +60,7 @@ type jobResponseT struct {
 type JobParametersT struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
+	ReceivedAt    string `json:"received_at"`
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -128,6 +129,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		fmt.Sprintf("router.%s_retry_attempts", rt.destName), stats.CountType)
 	eventsAbortedStat := stats.NewStat(
 		fmt.Sprintf("router.%s_events_aborted", rt.destName), stats.CountType)
+
+	eventsDeliveryTimeStat := stats.NewStat(
+		fmt.Sprintf("router.%s_event_delivery_time", rt.destName), stats.CountType)
 
 	for {
 		job := <-worker.channel
@@ -274,6 +278,14 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		}
 
+		if paramaters.ReceivedAt != "" {
+			if status.JobState == jobsdb.Succeeded.State {
+				receivedTime, err := time.Parse(misc.RFC3339Milli, paramaters.ReceivedAt)
+				if err == nil {
+					eventsDeliveryTimeStat.Count(int(time.Now().Sub(receivedTime)))
+				}
+			}
+		}
 		//Sending destination response to config backend
 		if destinationdebugger.HasUploadEnabled(paramaters.DestinationID) {
 			deliveryStatus := destinationdebugger.DeliveryStatusT{
