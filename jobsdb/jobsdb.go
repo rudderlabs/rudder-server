@@ -862,17 +862,26 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], 1)
 			} else if levelsPre == 2 {
 				if levelPreVals[0] == 0 {
-					// This is from cluster migration
-					/*
-						| levelsPre | levels | newDSIdx |
-						| --------- | ------ | -------- |
-						| 0_2       | 1      | 0_2_1    |
-						| 0_2       | 0_4    | 0_2_1    |
-						| 0_2       | 0_5_1  | 0_2_1    |
-						| 0_2       | 3_2    | 0_2_1    |
-					*/
-					newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], 1)
-
+					if newDSType != insertForImport {
+						// This is from cluster migration
+						/*
+							| levelsPre | levels | newDSIdx |
+							| --------- | ------ | -------- |
+							| 0_2       | 1      | 0_2_1    |
+							| 0_2       | 0_4    | 0_2_1    |
+							| 0_2       | 0_5_1  | 0_2_1    |
+							| 0_2       | 3_2    | 0_2_1    |
+						*/
+						newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], 1)
+					} else {
+						/*
+							| levelsPre | levels | newDSIdx |
+							| --------- | ------ | -------- |
+							| 0_2       | 1      | 0_3      |
+						*/
+						jd.assert(levelPreVals[0] == 0 && levelVals[0] == 1, fmt.Sprintf("Expecting this scenario between 0_x and 1. Attempting to do between %v and %v", levelPreVals, levelVals))
+						newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
+					}
 				} else {
 					/*
 						| levelsPre | levels | newDSIdx |
