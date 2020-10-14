@@ -474,7 +474,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		cName, _ = values[1].(string)
 		cType, _ = values[2].(string)
 		if datatype, ok := dataTypesMapToRudder[bigquery.FieldType(cType)]; ok {
-			schema[tName][cName] = datatype
+			schema[tName][strings.ToLower(cName)] = datatype
 		}
 	}
 	return

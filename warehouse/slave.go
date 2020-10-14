@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -32,6 +31,7 @@ type JobRunT struct {
 	outputFileWritersMap map[string]misc.GZipWriter
 	tableEventCountMap   map[string]int
 	stagingFileReader    *gzip.Reader
+	whIdentifier         string
 }
 
 func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
@@ -102,7 +102,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 		return err
 	}
 
-	timer := warehouseutils.DestStat(stats.TimerType, "download_staging_file_time", job.DestinationID)
+	timer := jobRun.timerStat("download_staging_file_time")
 	timer.Start()
 
 	err = downloader.Download(file, job.StagingFileLocation)
@@ -119,7 +119,6 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 	}
 	fileSize := fi.Size()
 	logger.Debugf("[WH]: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
-	warehouseutils.DestStat(stats.CountType, "downloaded_staging_file_size", job.DestinationID).Count(int(fileSize))
 
 	return nil
 }
@@ -245,10 +244,14 @@ func (event *BatchRouterEventT) getColumnInfo(columnName string) (columnInfo Col
 //
 
 func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
-	logger.Debugf("[WH]: Starting processing staging file: %v at %v for %s:%s", job.StagingFileID, job.StagingFileLocation, job.DestinationType, job.DestinationID)
 
-	jobRun := JobRunT{job: job}
+	jobRun := JobRunT{
+		job:          job,
+		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
+	}
 	defer jobRun.cleanup()
+
+	logger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
 
 	jobRun.setStagingFileDownloadPath()
 
@@ -282,7 +285,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	discardsTable := job.getDiscardsTable()
 	jobRun.tableEventCountMap[discardsTable] = 0
 
-	timer := warehouseutils.DestStat(stats.TimerType, "process_staging_file_to_csv_time", job.DestinationID)
+	timer := jobRun.timerStat("process_staging_file_time")
 	timer.Start()
 
 	lineBytesCounter := 0
@@ -393,7 +396,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	misc.PrintMemUsage()
 
 	logger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
-	warehouseutils.DestStat(stats.CountType, "bytes_processed_in_staging_file", job.DestinationID).Count(lineBytesCounter)
+	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
 
 	// Upload each generated load file to ObjectStorage
 	// On successful upload, store the saved fileID in wh_load_files table
@@ -402,8 +405,6 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		panic(err)
 	}
 
-	timer = warehouseutils.DestStat(stats.TimerType, "upload_load_files_per_staging_file_time", job.DestinationID)
-	timer.Start()
 	for tableName, outputFile := range jobRun.outputFileWritersMap {
 		uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, &outputFile, tableName)
 		if err != nil {
@@ -412,9 +413,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		}
 		fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
 		loadFileIDs = append(loadFileIDs, fileID)
-		warehouseutils.DestStat(stats.CountType, "total_records_in_load_file", job.DestinationID).Count(jobRun.tableEventCountMap[tableName])
 	}
-	timer.End()
 	return loadFileIDs, nil
 }
 
