@@ -56,6 +56,7 @@ var dataTypesMap = map[string]string{
 	"float":    "double precision",
 	"string":   "varchar",
 	"datetime": "timestamp",
+	"json":     "variant",
 }
 
 var dataTypesMapToRudder = map[string]string{
@@ -87,6 +88,7 @@ var dataTypesMapToRudder = map[string]string{
 	"TIMESTAMP":        "datetime",
 	"TIMESTAMP_LTZ":    "datetime",
 	"TIMESTAMP_TZ":     "datetime",
+	"VARIANT":          "json",
 }
 
 var primaryKeyMap = map[string]string{
