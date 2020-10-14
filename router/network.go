@@ -146,6 +146,6 @@ func (network *NetHandleT) Setup(destID string) {
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
 	defaultTransportCopy.MaxIdleConns = config.GetInt("Router.httpMaxIdleConns", 100)
 	defaultTransportCopy.MaxIdleConnsPerHost = config.GetInt("Router.httpMaxIdleConnsPerHost", 100)
-	timeOut := config.GetDuration("Router.httpTimeoutInS", 15) * time.Second
+	timeOut := config.GetDuration("Router.httpTimeoutInS", 30) * time.Second
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: timeOut}
 }
