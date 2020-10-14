@@ -44,6 +44,7 @@ var rudderDataTypesMapToPostgres = map[string]string{
 	"string":   "text",
 	"datetime": "timestamptz",
 	"boolean":  "boolean",
+	"json":     "jsonb",
 }
 
 var postgresDataTypesMapToRudder = map[string]string{
@@ -60,6 +61,7 @@ var postgresDataTypesMapToRudder = map[string]string{
 	"timestamp with time zone": "datetime",
 	"timestamp":                "datetime",
 	"boolean":                  "boolean",
+	"jsonb":                    "json",
 }
 
 type HandleT struct {

@@ -809,7 +809,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		transformationEnabled := destinationTransformationEnabledMap[destID]
 		configSubscriberLock.RUnlock()
 
-		url := integrations.GetDestinationURL(destType)
+		url := integrations.GetDestinationURL(destType, destination.Config)
 		var response transformer.ResponseT
 		var eventsToTransform []transformer.TransformerEventT
 		// Send to custom transformer only if the destination has a transformer enabled
