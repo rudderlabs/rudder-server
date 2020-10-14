@@ -346,7 +346,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					logger.Infof("CH: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFileName)
 					break
 				} else {
-					logger.Errorf("CH: Error while reading csv file for loading in table:%s: %v", tableName, err)
+					logger.Errorf("CH: Error while reading csv file %s for loading in table:%s: %v", objectFileName, tableName, err)
 					txn.Rollback()
 					return
 				}

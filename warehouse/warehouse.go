@@ -76,7 +76,10 @@ const (
 	EmbeddedMode    = "embedded"
 )
 
-const StagingFileProcessPGChannel = "process_staging_file"
+const (
+	DegradedMode                = "degraded"
+	StagingFileProcessPGChannel = "process_staging_file"
+)
 
 type HandleT struct {
 	destType             string
@@ -900,6 +903,13 @@ func Start() {
 
 	setupTables(dbHandle)
 
+	defer startWebHandler()
+
+	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
+	if runningMode == DegradedMode {
+		return
+	}
+
 	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {
 		panic(err)
@@ -920,6 +930,4 @@ func Start() {
 			monitorDestRouters()
 		})
 	}
-
-	startWebHandler()
 }

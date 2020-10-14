@@ -78,6 +78,7 @@ enableRateLimit = false
 enableSuppressUserFeature = true
 dedupWindowInS = 86400
 allowPartialWriteWithErrors = true
+allowReqsWithoutUserIDAndAnonymousID = false
 
 [EventSchemas]
 enableEventSchemasFeature = false
@@ -153,6 +154,10 @@ kafkaDialTimeoutInSec = 10
 retryTimeWindowInMins = 180
 minRetryBackoffInS = 10
 maxRetryBackoffInS = 300
+    [Router.BRAZE]
+    forceHTTP1=true
+    httpTimeoutInS=120
+    httpMaxIdleConnsPerHost=32
     # settings similar to below one can be used to throttle router
     # sending events to downstream destinations
     # [Router.throttler.AM]

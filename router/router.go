@@ -48,6 +48,7 @@ type HandleT struct {
 	throttler                *throttler.HandleT
 	throttlerMutex           sync.RWMutex
 	keepOrderOnFailure       bool
+	netClientTimeout         time.Duration
 }
 
 type jobResponseT struct {
@@ -60,6 +61,7 @@ type jobResponseT struct {
 type JobParametersT struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
+	ReceivedAt    string `json:"received_at"`
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -118,18 +120,31 @@ func loadConfig() {
 	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
 }
 
+func (rt *HandleT) trackStuckDelivery() chan struct{} {
+	ch := make(chan struct{}, 1)
+	rruntime.Go(func() {
+		select {
+		case _ = <-ch:
+			// do nothing
+		case <-time.After(rt.netClientTimeout * 2):
+			logger.Infof("[%s Router] Delivery to destination exceeded the 2 * configured timeout ", rt.destName)
+			stat := stats.NewTaggedStat("router_delivery_exceeded_timeout", stats.CountType, map[string]string{
+				"destType": rt.destName,
+			})
+			stat.Increment()
+		}
+	})
+	return ch
+}
+
 func (rt *HandleT) workerProcess(worker *workerT) {
 
 	deliveryTimeStat := stats.NewStat(
 		fmt.Sprintf("router.%s_delivery_time", rt.destName), stats.TimerType)
 	batchTimeStat := stats.NewStat(
 		fmt.Sprintf("router.%s_batch_time", rt.destName), stats.TimerType)
-	failedAttemptsStat := stats.NewStat(
-		fmt.Sprintf("router.%s_failed_attempts", rt.destName), stats.CountType)
 	retryAttemptsStat := stats.NewStat(
 		fmt.Sprintf("router.%s_retry_attempts", rt.destName), stats.CountType)
-	eventsDeliveredStat := stats.NewStat(
-		fmt.Sprintf("router.%s_events_delivered", rt.destName), stats.CountType)
 	eventsAbortedStat := stats.NewStat(
 		fmt.Sprintf("router.%s_events_aborted", rt.destName), stats.CountType)
 
@@ -202,7 +217,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		if rt.customDestinationManager != nil {
 			respStatusCode, _, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
 		} else {
+			ch := rt.trackStuckDelivery()
 			respStatusCode, _, respBody = rt.netHandle.sendPost(job.EventPayload)
+			ch <- struct{}{}
 		}
 
 		deliveryTimeStat.End()
@@ -218,16 +235,17 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			ErrorResponse: []byte(`{}`),
 		}
 
+		routerResponseStat := stats.GetRouterStat("router_response_counts", stats.CountType, rt.destName, respStatusCode)
+		routerResponseStat.Increment()
+
 		if isSuccessStatus(respStatusCode) {
 			atomic.AddUint64(&rt.successCount, 1)
-			eventsDeliveredStat.Increment()
 			status.JobState = jobsdb.Succeeded.State
 			reqMetric.RequestSuccess = reqMetric.RequestSuccess + 1
 			reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
 			logger.Debugf("[%v Router] :: sending success status to response", rt.destName)
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		} else {
-			failedAttemptsStat.Increment()
 			// the job failed
 			logger.Debugf("[%v Router] :: Job failed to send, analyzing...", rt.destName)
 			worker.failedJobs++
@@ -277,6 +295,21 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		}
 
+		if paramaters.ReceivedAt != "" {
+			if status.JobState == jobsdb.Succeeded.State {
+				receivedTime, err := time.Parse(misc.RFC3339Milli, paramaters.ReceivedAt)
+				if err == nil {
+					eventsDeliveryTimeStat := stats.NewTaggedStat(
+						"event_delivery_time", stats.CountType, map[string]string{
+							"module":   "router",
+							"destType": rt.destName,
+							"id":       paramaters.DestinationID,
+						})
+
+					eventsDeliveryTimeStat.Count(int(time.Now().Sub(receivedTime) / time.Second))
+				}
+			}
+		}
 		//Sending destination response to config backend
 		if destinationdebugger.HasUploadEnabled(paramaters.DestinationID) {
 			deliveryStatus := destinationdebugger.DeliveryStatusT{
@@ -748,13 +781,14 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	rt.jobsDB = jobsDB
 	rt.destName = destName
+	rt.netClientTimeout = getRouterConfigDuration("httpTimeoutInS", destName, 30) * time.Second
 	rt.crashRecover()
 	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	rt.toClearFailJobIDMap = make(map[int][]string)
 	rt.isEnabled = true
 	rt.netHandle = &NetHandleT{}
-	rt.netHandle.Setup(destName)
+	rt.netHandle.Setup(destName, rt.netClientTimeout)
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customdestinationmanager.New(destName)
