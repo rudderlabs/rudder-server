@@ -116,23 +116,18 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 }
 
 //GetDestinationURL returns node URL
-func GetDestinationURL(destType string, destConfig map[string]interface{}) string {
+func GetDestinationURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
-	// TODO: move warehouse url query params setting to separate func
 	if misc.Contains(warehouse.WarehouseDestinations, destType) {
 		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s", config.GetWHSchemaVersion())
-		destinationEndPoint += fmt.Sprintf(`?%s`, whSchemaVersionQueryParam)
-		if shouldStoreEventI, ok := destConfig["storeFullEvent"]; ok {
-			if val, ok := shouldStoreEventI.(bool); ok && val {
-				destinationEndPoint += fmt.Sprintf(`&whStoreEvent=%t`, shouldStoreEventI)
-			}
-		}
 		if destType == "RS" {
 			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
-			destinationEndPoint += fmt.Sprintf(`&%s`, rsAlterStringToTextQueryParam)
+			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + rsAlterStringToTextQueryParam
 		}
+		return destinationEndPoint + "?" + whSchemaVersionQueryParam
 	}
 	return destinationEndPoint
+
 }
 
 //GetUserTransformURL returns the port of running user transform
