@@ -8,23 +8,40 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+const moduleName = "warehouse"
+
 func (job *UploadJobT) timerStat(name string) stats.RudderStats {
-	return warehouseutils.DestStat(stats.TimerType, name, job.warehouse.Identifier)
+	return stats.NewTaggedStat(name, stats.TimerType, map[string]string{
+		"module":   moduleName,
+		"destType": job.warehouse.Type,
+		"id":       job.warehouse.Identifier,
+	})
 }
 
 func (job *UploadJobT) counterStat(name string) stats.RudderStats {
-	return warehouseutils.DestStat(stats.CountType, name, job.warehouse.Identifier)
+	return stats.NewTaggedStat(name, stats.CountType, map[string]string{
+		"module":   moduleName,
+		"destType": job.warehouse.Type,
+		"id":       job.warehouse.Identifier,
+	})
 }
 
 func (jobRun *JobRunT) timerStat(name string) stats.RudderStats {
-	return warehouseutils.DestStat(stats.TimerType, name, jobRun.whIdentifier)
+	return stats.NewTaggedStat(name, stats.TimerType, map[string]string{
+		"module":   moduleName,
+		"destType": jobRun.job.DestinationType,
+		"id":       jobRun.whIdentifier,
+	})
 }
 
 func (jobRun *JobRunT) counterStat(name string) stats.RudderStats {
-	return warehouseutils.DestStat(stats.CountType, name, jobRun.whIdentifier)
+	return stats.NewTaggedStat(name, stats.CountType, map[string]string{
+		"module":   moduleName,
+		"destType": jobRun.job.DestinationType,
+		"id":       jobRun.whIdentifier,
+	})
 }
 
 func (job *UploadJobT) generateUploadSuccessMetrics() {
@@ -34,7 +51,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 		logger.Errorf("[WH]: Failed to generate load metrics: %s", job.warehouse.Identifier)
 		return
 	}
-	job.counterStat("num_loaded_events").Count(int(numUploadedEvents))
+	job.counterStat("event_delivery").Count(int(numUploadedEvents))
 
 	// Total staged events in the upload
 	numStagedEvents, err := getTotalEventsStaged(job.upload.StartStagingFileID, job.upload.EndStagingFileID)
@@ -50,8 +67,9 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 		logger.Errorf("[WH]: Failed to generate delay metrics: %s", job.warehouse.Identifier)
 		return
 	}
-	loadDelayInS := time.Now().Unix() - firstEventAt.Local().Unix()
-	job.counterStat("load_delay_in_sec").Count(int(loadDelayInS))
+
+	loadDelayInS := int(time.Now().Sub(firstEventAt) / time.Second)
+	job.counterStat("event_delivery_time").Count(loadDelayInS)
 
 	job.counterStat("upload_success").Count(1)
 }
