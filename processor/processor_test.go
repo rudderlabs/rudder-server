@@ -738,10 +738,10 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
 
-			callNumRequests := c.mockStatNumRequests.EXPECT().Count(2).Times(1).After(callUpdateJobs)
+			callNumRequests := c.mockStatNumRequests.EXPECT().Count(gomock.Any()).AnyTimes().After(callUpdateJobs)
 			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callNumRequests)
 			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
-			c.mockStatNumEvents.EXPECT().Count(5).Times(1).After(callMarshallSingularEvents)
+			c.mockStatNumEvents.EXPECT().Count(gomock.Any()).AnyTimes().After(callMarshallSingularEvents)
 			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
 			callDestANumEvents := c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(4).Times(1).After(callDestProcessing)
 			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
@@ -799,8 +799,8 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
-			c.mockStatDestNumOuputEvents.EXPECT().Count(2).Times(1)
-			c.mockStatBatchDestNumOutputEvents.EXPECT().Count(2).Times(1)
+			c.mockStatDestNumOuputEvents.EXPECT().Count(gomock.Any()).AnyTimes()
+			c.mockStatBatchDestNumOutputEvents.EXPECT().Count(gomock.Any()).AnyTimes()
 
 			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
 			callDBWrite := c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
@@ -1002,10 +1002,10 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
 
-			callNumRequests := c.mockStatNumRequests.EXPECT().Count(2).Times(1).After(callUpdateJobs)
+			callNumRequests := c.mockStatNumRequests.EXPECT().Count(gomock.Any()).AnyTimes().After(callUpdateJobs)
 			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callNumRequests)
 			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
-			c.mockStatNumEvents.EXPECT().Count(5).Times(1).After(callMarshallSingularEvents)
+			c.mockStatNumEvents.EXPECT().Count(gomock.Any()).AnyTimes().After(callMarshallSingularEvents)
 			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
 			callDestANumEvents := c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(4).Times(1).After(callDestProcessing)
 			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
@@ -1063,8 +1063,8 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
-			c.mockStatDestNumOuputEvents.EXPECT().Count(2).Times(1)
-			c.mockStatBatchDestNumOutputEvents.EXPECT().Count(2).Times(1)
+			c.mockStatDestNumOuputEvents.EXPECT().Count(gomock.Any()).AnyTimes()
+			c.mockStatBatchDestNumOutputEvents.EXPECT().Count(gomock.Any()).AnyTimes()
 
 			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
 			callDBWrite := c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
