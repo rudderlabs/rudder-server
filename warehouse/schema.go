@@ -192,24 +192,66 @@ func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseuti
 	return currentMergedSchema
 }
 
-func (sHandle *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() warehouseutils.SchemaT {
-	schemaInLocalDB := sHandle.localSchema
+func (sHandle *SchemaHandleT) safeName(columnName string) string {
+	return warehouseutils.ToProviderCase(sHandle.warehouse.Type, columnName)
+}
+
+func (sh *SchemaHandleT) getDiscardsSchema() map[string]string {
+	discards := map[string]string{
+		sh.safeName("table_name"):   "string",
+		sh.safeName("row_id"):       "string",
+		sh.safeName("column_name"):  "string",
+		sh.safeName("column_value"): "string",
+		sh.safeName("received_at"):  "datetime",
+		sh.safeName("uuid_ts"):      "datetime",
+	}
+	// add loaded_at for bq to be segment compatible
+	if sh.warehouse.Type == "BQ" {
+		discards[sh.safeName("loaded_at")] = "datetime"
+	}
+	return discards
+}
+
+func (sh *SchemaHandleT) getMergeRulesSchema() map[string]string {
+	return map[string]string{
+		sh.safeName("merge_property_1_type"):  "string",
+		sh.safeName("merge_property_1_value"): "string",
+		sh.safeName("merge_property_2_type"):  "string",
+		sh.safeName("merge_property_2_value"): "string",
+	}
+}
+
+func (sh *SchemaHandleT) getIdentitiesMappingsSchema() map[string]string {
+	return map[string]string{
+		sh.safeName("merge_property_type"):  "string",
+		sh.safeName("merge_property_value"): "string",
+		sh.safeName("rudder_id"):            "string",
+		sh.safeName("updated_at"):           "datetime",
+	}
+}
+
+func (sh *SchemaHandleT) isIDResolutionEnabled() bool {
+	return warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
+}
+
+func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() warehouseutils.SchemaT {
+	schemaInLocalDB := sh.localSchema
 
 	consolidatedSchema := warehouseutils.SchemaT{}
 	count := 0
 	for {
 		lastIndex := count + stagingFilesSchemaPaginationSize
-		if lastIndex >= len(sHandle.stagingFiles) {
-			lastIndex = len(sHandle.stagingFiles)
+		if lastIndex >= len(sh.stagingFiles) {
+			lastIndex = len(sh.stagingFiles)
 		}
 
 		var ids []int64
-		for _, stagingFile := range sHandle.stagingFiles[count:lastIndex] {
+		for _, stagingFile := range sh.stagingFiles[count:lastIndex] {
 			ids = append(ids, stagingFile.ID)
 		}
 
 		sqlStatement := fmt.Sprintf(`SELECT schema FROM %s WHERE id IN (%s)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(ids, ","))
-		rows, err := sHandle.dbHandle.Query(sqlStatement)
+		rows, err := sh.dbHandle.Query(sqlStatement)
 		if err != nil && err != sql.ErrNoRows {
 			panic(err)
 		}
@@ -234,49 +276,19 @@ func (sHandle *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema(
 		consolidatedSchema = mergeSchema(schemaInLocalDB, schemas, consolidatedSchema)
 
 		count += stagingFilesSchemaPaginationSize
-		if count >= len(sHandle.stagingFiles) {
+		if count >= len(sh.stagingFiles) {
 			break
 		}
 	}
 
-	// add rudder_discards table
-	destType := sHandle.warehouse.Type
-	discards := map[string]string{
-		warehouseutils.ToProviderCase(destType, "table_name"):   "string",
-		warehouseutils.ToProviderCase(destType, "row_id"):       "string",
-		warehouseutils.ToProviderCase(destType, "column_name"):  "string",
-		warehouseutils.ToProviderCase(destType, "column_value"): "string",
-		warehouseutils.ToProviderCase(destType, "received_at"):  "datetime",
-		warehouseutils.ToProviderCase(destType, "uuid_ts"):      "datetime",
-	}
-	// add loaded_at for bq to be segment compatible
-	if destType == "BQ" {
-		discards[warehouseutils.ToProviderCase(destType, "loaded_at")] = "datetime"
-	}
-	consolidatedSchema[warehouseutils.ToProviderCase(destType, warehouseutils.DiscardsTable)] = discards
+	// add rudder_discards Schema
+	consolidatedSchema[sh.safeName(warehouseutils.DiscardsTable)] = sh.getDiscardsSchema()
 
-	// add rudder_identity_mappings table
-	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, sHandle.warehouse.Type) {
-		if mergeRulesSchema, ok := consolidatedSchema[warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMergeRulesTable)]; ok {
-			mergeRuleColumns := []string{
-				warehouseutils.ToProviderCase(destType, "merge_property_1_type"),
-				warehouseutils.ToProviderCase(destType, "merge_property_1_value"),
-				warehouseutils.ToProviderCase(destType, "merge_property_2_type"),
-				warehouseutils.ToProviderCase(destType, "merge_property_2_value"),
-			}
-			for _, colName := range mergeRuleColumns {
-				if _, ok := mergeRulesSchema[colName]; !ok {
-					mergeRulesSchema[colName] = "string"
-				}
-			}
-
-			identityMappings := map[string]string{
-				warehouseutils.ToProviderCase(destType, "merge_property_type"):  "string",
-				warehouseutils.ToProviderCase(destType, "merge_property_value"): "string",
-				warehouseutils.ToProviderCase(destType, "rudder_id"):            "string",
-				warehouseutils.ToProviderCase(destType, "updated_at"):           "datetime",
-			}
-			consolidatedSchema[warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable)] = identityMappings
+	// add rudder_identity_mappings Schema
+	if sh.isIDResolutionEnabled() {
+		if _, ok := consolidatedSchema[sh.safeName(warehouseutils.IdentityMergeRulesTable)]; ok {
+			consolidatedSchema[sh.safeName(warehouseutils.IdentityMergeRulesTable)] = sh.getMergeRulesSchema()
+			consolidatedSchema[sh.safeName(warehouseutils.IdentityMappingsTable)] = sh.getIdentitiesMappingsSchema()
 		}
 	}
 

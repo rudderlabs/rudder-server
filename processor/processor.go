@@ -30,42 +30,46 @@ import (
 
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
-	backendConfig          backendconfig.BackendConfig
-	processSessions        bool
-	sessionThresholdEvents int
-	stats                  stats.Stats
-	gatewayDB              jobsdb.JobsDB
-	routerDB               jobsdb.JobsDB
-	batchRouterDB          jobsdb.JobsDB
-	errorDB                jobsdb.JobsDB
-	transformer            transformer.Transformer
-	pStatsJobs             *misc.PerfStats
-	pStatsDBR              *misc.PerfStats
-	statGatewayDBR         stats.RudderStats
-	pStatsDBW              *misc.PerfStats
-	statGatewayDBW         stats.RudderStats
-	statRouterDBW          stats.RudderStats
-	statBatchRouterDBW     stats.RudderStats
-	statProcErrDBW         stats.RudderStats
-	statActiveUsers        stats.RudderStats
-	userJobListMap         map[string][]*jobsdb.JobT
-	userEventsMap          map[string][]types.SingularEventT
-	userPQItemMap          map[string]*pqItemT
-	statJobs               stats.RudderStats
-	statDBR                stats.RudderStats
-	statDBW                stats.RudderStats
-	statLoopTime           stats.RudderStats
-	statSessionTransform   stats.RudderStats
-	statUserTransform      stats.RudderStats
-	statDestTransform      stats.RudderStats
-	statListSort           stats.RudderStats
-	marshalSingularEvents  stats.RudderStats
-	destProcessing         stats.RudderStats
-	statNumDests           stats.RudderStats
-	destStats              map[string]*DestStatT
-	userToSessionIDMap     map[string]string
-	userJobPQ              pqT
-	userPQLock             sync.Mutex
+	backendConfig                backendconfig.BackendConfig
+	processSessions              bool
+	sessionThresholdEvents       int
+	stats                        stats.Stats
+	gatewayDB                    jobsdb.JobsDB
+	routerDB                     jobsdb.JobsDB
+	batchRouterDB                jobsdb.JobsDB
+	errorDB                      jobsdb.JobsDB
+	transformer                  transformer.Transformer
+	pStatsJobs                   *misc.PerfStats
+	pStatsDBR                    *misc.PerfStats
+	statGatewayDBR               stats.RudderStats
+	pStatsDBW                    *misc.PerfStats
+	statGatewayDBW               stats.RudderStats
+	statRouterDBW                stats.RudderStats
+	statBatchRouterDBW           stats.RudderStats
+	statProcErrDBW               stats.RudderStats
+	statActiveUsers              stats.RudderStats
+	userJobListMap               map[string][]*jobsdb.JobT
+	userEventsMap                map[string][]types.SingularEventT
+	userPQItemMap                map[string]*pqItemT
+	statJobs                     stats.RudderStats
+	statDBR                      stats.RudderStats
+	statDBW                      stats.RudderStats
+	statLoopTime                 stats.RudderStats
+	statSessionTransform         stats.RudderStats
+	statUserTransform            stats.RudderStats
+	statDestTransform            stats.RudderStats
+	statListSort                 stats.RudderStats
+	marshalSingularEvents        stats.RudderStats
+	destProcessing               stats.RudderStats
+	statNumDests                 stats.RudderStats
+	statNumRequests              stats.RudderStats
+	statNumEvents                stats.RudderStats
+	statDestNumOutputEvents      stats.RudderStats
+	statBatchDestNumOutputEvents stats.RudderStats
+	destStats                    map[string]*DestStatT
+	userToSessionIDMap           map[string]string
+	userJobPQ                    pqT
+	userPQLock                   sync.Mutex
 }
 
 type DestStatT struct {
@@ -167,6 +171,15 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statListSort = proc.stats.NewStat("processor.job_list_sort", stats.TimerType)
 	proc.marshalSingularEvents = proc.stats.NewStat("processor.marshal_singular_events", stats.TimerType)
 	proc.destProcessing = proc.stats.NewStat("processor.dest_processing", stats.TimerType)
+	proc.statNumRequests = proc.stats.NewStat("processor.num_requests", stats.CountType)
+	proc.statNumEvents = proc.stats.NewStat("processor.num_events", stats.CountType)
+	// Add a separate tag for batch router
+	proc.statDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, map[string]string{
+		"module": "router",
+	})
+	proc.statBatchDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, map[string]string{
+		"module": "batch_router",
+	})
 	proc.destStats = make(map[string]*DestStatT)
 
 	rruntime.Go(func() {
@@ -280,7 +293,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			logger.Debug("[Processor: addJobsToSessions] bad event")
 			continue
 		}
-		userID, ok := misc.GetAnonymousID(eventList[0])
+		userID, ok := misc.GetRudderID(eventList[0])
 		if !ok {
 			logger.Error("[Processor: addJobsToSessions] Failed to get userID for job")
 			continue
@@ -564,21 +577,18 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
-func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT) {
+func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT, receivedAt time.Time) {
 	metadata := transformer.MetadataT{}
 	metadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	metadata.DestinationID = destination.ID
-	metadata.UserID = batchEvent.UserID
+	metadata.RudderID = batchEvent.UserID
 	metadata.JobID = batchEvent.JobID
 	metadata.DestinationType = destination.DestinationDefinition.Name
 	metadata.MessageID = event.Message["messageId"].(string)
-
 	if event.SessionID != "" {
 		metadata.SessionID = event.SessionID
 	}
-	if anonymousID, ok := misc.GetAnonymousID(event.Message); ok {
-		metadata.AnonymousID = anonymousID
-	}
+	metadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
 	event.Metadata = metadata
 }
 
@@ -670,7 +680,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, metadata
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			CustomVal:    metadata.DestinationType,
-			UserID:       failedEvent.Metadata.UserID, // will be nil if it went throgh user transformation
+			UserID:       failedEvent.Metadata.RudderID,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 	}
@@ -680,6 +690,8 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, metadata
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 
 	proc.pStatsJobs.Start()
+
+	proc.statNumRequests.Count(len(jobList))
 
 	var destJobs []*jobsdb.JobT
 	var batchDestJobs []*jobsdb.JobT
@@ -760,7 +772,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy.Message["request_ip"] = requestIP
 
 						enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-						enhanceWithMetadata(&shallowEventCopy, batchEvent, destination)
+						enhanceWithMetadata(&shallowEventCopy, batchEvent, destination, receivedAt)
 
 						metadata := shallowEventCopy.Metadata
 						srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
@@ -788,6 +800,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		statusList = append(statusList, &newStatus)
 	}
+
+	proc.statNumEvents.Count(totalEvents)
 
 	proc.marshalSingularEvents.End()
 
@@ -876,23 +890,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			// source_id will be same for all events belong to same user in a session
 			sourceID := destEvent.Metadata.SourceID
 			destID := destEvent.Metadata.DestinationID
-			userID := destEvent.Metadata.UserID
-			//If the response from the transformer does not have userID in metadata,
-			//fetching it from transformer response output. If it is not found there too, setting userID to random-uuid.
+			rudderID := destEvent.Metadata.RudderID
+			receivedAt := destEvent.Metadata.ReceivedAt
+			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
-			if userID == "" {
-				userIDFromTransformerResponse, canEventBeMappedToUser := integrations.GetUserIDFromTransformerResponse(destEventJSON)
-				if canEventBeMappedToUser {
-					userID = userIDFromTransformerResponse
-				} else {
-					userID = "random-" + id.String()
-				}
+			if rudderID == "" {
+				rudderID = "random-" + id.String()
 			}
 
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				UserID:       userID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
+				UserID:       rudderID,
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v"}`, sourceID, destID, receivedAt)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
@@ -917,10 +926,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	if len(destJobs) > 0 {
 		logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 		proc.routerDB.Store(destJobs)
+		proc.statDestNumOutputEvents.Count(len(destJobs))
 	}
 	if len(batchDestJobs) > 0 {
 		logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 		proc.batchRouterDB.Store(batchDestJobs)
+		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
 
 	var procErrorJobs []*jobsdb.JobT

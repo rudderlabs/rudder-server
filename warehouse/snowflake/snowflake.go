@@ -104,12 +104,12 @@ var partitionKeyMap = map[string]string{
 }
 
 var (
-	usersTable              = strings.ToUpper(warehouseutils.UsersTable)
-	identifiesTable         = strings.ToUpper(warehouseutils.IdentifiesTable)
-	discardsTable           = strings.ToUpper(warehouseutils.DiscardsTable)
-	identityMergeRulesTable = strings.ToUpper(warehouseutils.IdentityMergeRulesTable)
-	identityMappingsTable   = strings.ToUpper(warehouseutils.IdentityMappingsTable)
-	aliasTable              = strings.ToUpper(warehouseutils.AliasTable)
+	usersTable              = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.UsersTable)
+	identifiesTable         = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentifiesTable)
+	discardsTable           = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.DiscardsTable)
+	identityMergeRulesTable = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMergeRulesTable)
+	identityMappingsTable   = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMappingsTable)
+	aliasTable              = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.AliasTable)
 )
 
 type tableLoadRespT struct {

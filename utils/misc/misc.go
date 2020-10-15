@@ -180,11 +180,16 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT
 	return gatewayBatchEvent.Batch, true
 }
 
-//GetAnonymousID return the UserID from the object
-func GetAnonymousID(event types.SingularEventT) (string, bool) {
-	userID, ok := GetRudderEventVal("anonymousId", event)
+//GetRudderID return the UserID from the object
+func GetRudderID(event types.SingularEventT) (string, bool) {
+	userID, ok := GetRudderEventVal("rudderId", event)
 	if !ok {
-		return "", false
+		//TODO: Remove this in next build.
+		//This is for backwards compatibilty, esp for those with sessions.
+		userID, ok = GetRudderEventVal("anonymousId", event)
+		if !ok {
+			return "", false
+		}
 	}
 	userIDStr, ok := userID.(string)
 	return userIDStr, true
