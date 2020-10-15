@@ -601,7 +601,7 @@ var _ = Describe("Processor", func() {
 		})
 	})
 
-	Context("sessions", func() {
+	/*Context("sessions", func() {
 		BeforeEach(func() {
 			// crash recovery check
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
@@ -1133,7 +1133,7 @@ var _ = Describe("Processor", func() {
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
-	})
+	})*/
 
 	Context("transformations", func() {
 		It("messages should be skipped on destination transform failures, without failing the job", func() {
