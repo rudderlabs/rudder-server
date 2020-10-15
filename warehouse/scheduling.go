@@ -21,7 +21,7 @@ var (
 	nextRetryTimeCache  map[string]time.Time
 	minUploadBackoff    time.Duration
 	maxUploadBackoff    time.Duration
-	startUploadAlways   bool = true
+	startUploadAlways   bool
 )
 
 func init() {
