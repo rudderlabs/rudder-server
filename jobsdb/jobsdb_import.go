@@ -32,7 +32,6 @@ func (jd *HandleT) GetLastJobIDBeforeImport() int64 {
 	for idx, dataSet := range dsList {
 		if dataSet.Index == jd.migrationState.dsForNewEvents.Index {
 			if idx > 0 {
-				jd.assert(idx != len(dsList)-1, "Shouldn't be the last ds")
 				lastJobIDBeforeNewImports = jd.getMaxIDForDs(dsList[idx-1])
 			}
 		}
