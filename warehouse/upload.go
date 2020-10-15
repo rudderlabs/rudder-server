@@ -785,7 +785,7 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 
 	logger.Infof("[WH]: Publishing %d staging files to PgNotifier", len(messages))
 	// var loadFileIDs []int64
-	ch, err := job.pgNotifier.Publish(StagingFileProcessPGChannel, messages)
+	ch, err := job.pgNotifier.Publish(StagingFilesPGNotifierChannel, messages)
 	if err != nil {
 		panic(err)
 	}

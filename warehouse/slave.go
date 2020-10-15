@@ -450,7 +450,7 @@ func setupSlave() {
 	slaveWorkerRoutineBusy = make([]bool, noOfSlaveWorkerRoutines)
 	slaveID := uuid.NewV4().String()
 	rruntime.Go(func() {
-		jobNotificationChannel, err := notifier.Subscribe(StagingFileProcessPGChannel)
+		jobNotificationChannel, err := notifier.Subscribe(StagingFilesPGNotifierChannel)
 		if err != nil {
 			panic(err)
 		}

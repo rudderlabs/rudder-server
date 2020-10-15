@@ -77,7 +77,11 @@ const (
 	EmbeddedMode    = "embedded"
 )
 
-const StagingFileProcessPGChannel = "process_staging_file"
+const StagingFilesPGNotifierChannel = "process_staging_file"
+
+const (
+	DegradedMode = "degraded"
+)
 
 type HandleT struct {
 	destType             string
@@ -127,7 +131,7 @@ func loadConfig() {
 	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
 	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
 	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
-	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 1024)
+	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 10240)
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -900,6 +904,13 @@ func Start() {
 
 	setupTables(dbHandle)
 
+	defer startWebHandler()
+
+	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
+	if runningMode == DegradedMode {
+		return
+	}
+
 	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {
 		panic(err)
@@ -912,7 +923,7 @@ func Start() {
 
 	if isMaster() {
 		logger.Infof("[WH]: Starting warehouse master...")
-		err = notifier.AddTopic(StagingFileProcessPGChannel)
+		err = notifier.AddTopic(StagingFilesPGNotifierChannel)
 		if err != nil {
 			panic(err)
 		}
@@ -920,6 +931,4 @@ func Start() {
 			monitorDestRouters()
 		})
 	}
-
-	startWebHandler()
 }

@@ -46,7 +46,8 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord cha
 
 # Our Customers
 
-[![1mg](https://user-images.githubusercontent.com/59817155/90764974-d325cc00-e306-11ea-9cc4-ed7c159f9738.PNG)](https://www.1mg.com/) [![Grofers](https://user-images.githubusercontent.com/59817155/90764982-d751e980-e306-11ea-9c45-fd261be00988.PNG)](https://grofers.com/) [![IFTTT](https://user-images.githubusercontent.com/59817155/90764989-d9b44380-e306-11ea-877f-409e9ba4e88c.PNG)](https://ifttt.com/) [![Mattermost](https://user-images.githubusercontent.com/59817155/90765001-dcaf3400-e306-11ea-887e-2d1f096bee01.PNG)](https://mattermost.com/)
+[![1mg](https://user-images.githubusercontent.com/59817155/95971154-74745e80-0e2e-11eb-8468-9f9cf1bfcf46.png)](https://www.1mg.com/) [![Grofers](https://user-images.githubusercontent.com/59817155/95970797-fe6ff780-0e2d-11eb-9c08-d4550b2c68b5.png)](https://grofers.com/) [![IFTTT](https://user-images.githubusercontent.com/59817155/95970944-2cedd280-0e2e-11eb-83d3-500c46c3a290.png)](https://ifttt.com/) [![Mattermost](https://user-images.githubusercontent.com/59817155/95971043-4c84fb00-0e2e-11eb-8ef8-2e47970221c6.png)](https://mattermost.com/) [![Wynn Casino](https://user-images.githubusercontent.com/59817155/95969926-f9f70f00-0e2c-11eb-8985-27b62d34fc65.png)](https://www.wynnlasvegas.com/) [![Acorns](https://user-images.githubusercontent.com/59817155/95970244-58bc8880-0e2d-11eb-9c7b-2ca08e2b11d7.png)](https://www.acorns.com/) [![Hinge](https://user-images.githubusercontent.com/59817155/95970463-9de0ba80-0e2d-11eb-91b1-bbfe55b91228.png)](https://hinge.co/) [![Proposify](https://user-images.githubusercontent.com/59817155/95971522-f82e4b00-0e2e-11eb-8c58-95fcb8a0e76c.png)](https://www.proposify.com/) [![Barstool Sports](https://user-images.githubusercontent.com/59817155/95971526-f95f7800-0e2e-11eb-85d3-fa81dbf9aa6e.png)](https://www.barstoolsports.com/)
+
 
 # RudderStack Setup
 

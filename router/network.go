@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -142,8 +144,8 @@ func (network *NetHandleT) Setup(destID string) {
 	//https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU
 	//Solved in go1.8 https://github.com/golang/go/issues/26013
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
-	defaultTransportCopy.MaxIdleConns = 100
-	defaultTransportCopy.MaxIdleConnsPerHost = 100
-	network.httpClient = &http.Client{Transport: &defaultTransportCopy}
-	//network.httpClient = &http.Client{}
+	defaultTransportCopy.MaxIdleConns = config.GetInt("Router.httpMaxIdleConns", 100)
+	defaultTransportCopy.MaxIdleConnsPerHost = config.GetInt("Router.httpMaxIdleConnsPerHost", 100)
+	timeOut := config.GetDuration("Router.httpTimeoutInS", 30) * time.Second
+	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: timeOut}
 }
