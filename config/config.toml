@@ -159,7 +159,7 @@ workerRequestBatchTimeoutInS = 5
     forceHTTP1=true
     httpTimeoutInS=120
     httpMaxIdleConnsPerHost=32
-    workerVersion=1
+    workerVersion=solo
     # settings similar to below one can be used to throttle router
     # sending events to downstream destinations
     # [Router.throttler.AM]
