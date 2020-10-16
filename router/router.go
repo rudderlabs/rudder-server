@@ -66,13 +66,14 @@ type JobParametersT struct {
 
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	channel          chan *jobsdb.JobT   // the worker job channel
+	channel          chan []*jobsdb.JobT // the worker job channel
 	workerID         int                 // identifies the worker
 	failedJobs       int                 // counts the failed jobs of a worker till it gets reset by external channel
 	sleepTime        time.Duration       //the sleep duration for every job of the worker
 	failedJobIDMap   map[string]int64    //user to failed jobId
 	failedJobIDMutex sync.RWMutex        //lock to protect structure above
 	retryForJobMap   map[int64]time.Time //jobID to next retry time map
+	jobRequestQ      chan *jobsdb.JobT
 }
 
 var (
@@ -82,6 +83,7 @@ var (
 	randomWorkerAssign                                                             bool
 	testSinkURL                                                                    string
 	retryTimeWindow, minRetryBackoff, maxRetryBackoff                              time.Duration
+	workerRequestBatchTimeout                                                      time.Duration
 )
 
 var userOrderingRequiredMap = map[string]bool{
@@ -118,6 +120,7 @@ func loadConfig() {
 	retryTimeWindow = config.GetDuration("Router.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
 	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
+	workerRequestBatchTimeout = config.GetDuration("Router.workerRequestBatchTimeoutInS", 5) * time.Second
 }
 
 func (rt *HandleT) trackStuckDelivery() chan struct{} {
@@ -137,6 +140,31 @@ func (rt *HandleT) trackStuckDelivery() chan struct{} {
 	return ch
 }
 
+func (rt *HandleT) workerJobBatcher(worker *workerT) {
+	var workerJobBatchBuffer = make([]*jobsdb.JobT, 0)
+	timeout := time.After(workerRequestBatchTimeout)
+	for {
+		select {
+		case workerJobRequest := <-worker.jobRequestQ:
+			logger.Info("received an event to batch")
+			//Append to request buffer
+			workerJobBatchBuffer = append(workerJobBatchBuffer, workerJobRequest)
+			if len(workerJobBatchBuffer) == 100 { //TODO make it configurable
+				worker.channel <- workerJobBatchBuffer
+				workerJobBatchBuffer = nil
+				workerJobBatchBuffer = make([]*jobsdb.JobT, 0)
+			}
+		case <-timeout:
+			timeout = time.After(workerRequestBatchTimeout)
+			if len(workerJobBatchBuffer) > 0 {
+				worker.channel <- workerJobBatchBuffer
+				workerJobBatchBuffer = nil
+				workerJobBatchBuffer = make([]*jobsdb.JobT, 0)
+			}
+		}
+	}
+}
+
 func (rt *HandleT) workerProcess(worker *workerT) {
 
 	deliveryTimeStat := stats.NewStat(
@@ -149,7 +177,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		fmt.Sprintf("router.%s_events_aborted", rt.destName), stats.CountType)
 
 	for {
-		job := <-worker.channel
+		jobs := <-worker.channel
+		job := jobs[0] //TODO loop
 		var respStatusCode, attempts int
 		var respBody string
 		batchTimeStat.Start()
@@ -431,15 +460,21 @@ func (rt *HandleT) initWorkers() {
 		logger.Info("Worker Started", i)
 		var worker *workerT
 		worker = &workerT{
-			channel:        make(chan *jobsdb.JobT, noOfJobsPerChannel),
+			channel:        make(chan []*jobsdb.JobT, noOfJobsPerChannel),
 			failedJobIDMap: make(map[string]int64),
 			retryForJobMap: make(map[int64]time.Time),
 			workerID:       i,
 			failedJobs:     0,
-			sleepTime:      minSleep}
+			sleepTime:      minSleep,
+			jobRequestQ:    make(chan *jobsdb.JobT, noOfJobsPerChannel)}
 		rt.workers[i] = worker
 		rruntime.Go(func() {
 			rt.workerProcess(worker)
+		})
+
+		//workerJobBatchers are used when workerVersion >= 1
+		rruntime.Go(func() {
+			rt.workerJobBatcher(worker)
 		})
 	}
 }
@@ -750,7 +785,12 @@ func (rt *HandleT) generatorLoop() {
 
 		//Send the jobs to the jobQ
 		for _, wrkJob := range toProcess {
-			wrkJob.worker.channel <- wrkJob.job
+			workerVersion := getRouterConfigInt("workerVersion", rt.destName, 0)
+			if workerVersion == 1 {
+				wrkJob.worker.jobRequestQ <- wrkJob.job
+			} else {
+				wrkJob.worker.channel <- []*jobsdb.JobT{wrkJob.job}
+			}
 		}
 
 		countStat.Count(len(combinedList))
