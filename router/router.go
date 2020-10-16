@@ -14,11 +14,9 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/customdestinationmanager"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
@@ -146,7 +144,6 @@ func (rt *HandleT) workerJobBatcher(worker *workerT) {
 	for {
 		select {
 		case workerJobRequest := <-worker.jobRequestQ:
-			logger.Info("received an event to batch")
 			//Append to request buffer
 			workerJobBatchBuffer = append(workerJobBatchBuffer, workerJobRequest)
 			if len(workerJobBatchBuffer) == 100 { //TODO make it configurable
@@ -166,194 +163,224 @@ func (rt *HandleT) workerJobBatcher(worker *workerT) {
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
-
-	deliveryTimeStat := stats.NewStat(
-		fmt.Sprintf("router.%s_delivery_time", rt.destName), stats.TimerType)
 	batchTimeStat := stats.NewStat(
 		fmt.Sprintf("router.%s_batch_time", rt.destName), stats.TimerType)
-	retryAttemptsStat := stats.NewStat(
-		fmt.Sprintf("router.%s_retry_attempts", rt.destName), stats.CountType)
-	eventsAbortedStat := stats.NewStat(
-		fmt.Sprintf("router.%s_events_aborted", rt.destName), stats.CountType)
 
 	for {
 		jobs := <-worker.channel
-		job := jobs[0] //TODO loop
-		var respStatusCode, attempts int
-		var respBody string
+
+		jobListToSend := make([]*jobsdb.JobT, 0)
 		batchTimeStat.Start()
-		logger.Debugf("[%v Router] :: performing checks to send payload to %s. Payload: ", rt.destName, job.EventPayload)
 
-		//TODO: following code is left as is for backwards compatibility.
-		//In the next release, we will remote the job.UserID code check.
-		//canEventBeMappedToUser bool will also be removed.
-		var userID string
-		var canEventBeMappedToUser bool
-		if job.UserID != "" {
-			userID = job.UserID
-			canEventBeMappedToUser = true
-		} else {
-			userID, canEventBeMappedToUser = integrations.GetUserIDFromTransformerResponse(job.EventPayload)
-		}
+		for _, job := range jobs {
+			logger.Debugf("[%v Router] :: performing checks to send payload to %s. Payload: ", rt.destName, job.EventPayload)
 
-		var paramaters JobParametersT
-		err := json.Unmarshal(job.Parameters, &paramaters)
-		if err != nil {
-			logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
-		}
+			userID := job.UserID
 
-		var isPrevFailedUser bool
-		var previousFailedJobID int64
-		if canEventBeMappedToUser && rt.keepOrderOnFailure {
-			//If there is a failed jobID from this user, we cannot pass future jobs
-			worker.failedJobIDMutex.RLock()
-			previousFailedJobID, isPrevFailedUser = worker.failedJobIDMap[userID]
-			worker.failedJobIDMutex.RUnlock()
+			var paramaters JobParametersT
+			err := json.Unmarshal(job.Parameters, &paramaters)
+			if err != nil {
+				logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+			}
 
-			// mark job as waiting if prev job from same user has not succeeded yet
-			if isPrevFailedUser {
-				markedAsWaiting := rt.handleJobForPrevFailedUser(job, paramaters, userID, worker, previousFailedJobID)
-				if markedAsWaiting {
-					continue
+			var isPrevFailedUser bool
+			var previousFailedJobID int64
+			if rt.keepOrderOnFailure {
+				//If there is a failed jobID from this user, we cannot pass future jobs
+				worker.failedJobIDMutex.RLock()
+				previousFailedJobID, isPrevFailedUser = worker.failedJobIDMap[userID]
+				worker.failedJobIDMutex.RUnlock()
+
+				// mark job as waiting if prev job from same user has not succeeded yet
+				if isPrevFailedUser {
+					markedAsWaiting := rt.handleJobForPrevFailedUser(job, paramaters, userID, worker, previousFailedJobID)
+					if markedAsWaiting {
+						continue
+					}
 				}
 			}
+
+			// mark job as failed (without incrementing attempts) if same job has failed before and backoff duration not elapsed
+			shouldBackoff := rt.handleBackoff(job, userID, worker)
+			if shouldBackoff {
+				continue
+			}
+
+			// mark job as throttled if either dest level event limit reached or dest user level limit reached
+			hasBeenThrottled := rt.handleThrottle(job, paramaters, userID, worker, isPrevFailedUser)
+			if hasBeenThrottled {
+				continue
+			}
+
+			jobListToSend = append(jobListToSend, job)
 		}
 
-		// mark job as failed (without incrementing attempts) if same job has failed before and backoff duration not elapsed
-		shouldBackoff := rt.handleBackoff(job, userID, worker)
-		if shouldBackoff {
+		if len(jobListToSend) == 0 {
 			continue
 		}
 
-		// mark job as throttled if either dest level event limit reached or dest user level limit reached
-		hasBeenThrottled := rt.handleThrottle(job, paramaters, userID, worker, isPrevFailedUser)
-		if hasBeenThrottled {
-			continue
-		}
-
-		// START: request to destination endpoint
-
-		logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", rt.destName, attempts, ser)
-
-		var reqMetric requestMetric
-		diagnosisStartTime := time.Now()
-		deliveryTimeStat.Start()
-
-		if job.LastJobStatus.AttemptNum > 0 {
-			retryAttemptsStat.Increment()
-		}
-
-		if rt.customDestinationManager != nil {
-			respStatusCode, _, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
+		workerVersion := getRouterConfigInt("workerVersion", rt.destName, 0)
+		if workerVersion == 1 {
 		} else {
-			ch := rt.trackStuckDelivery()
-			respStatusCode, _, respBody = rt.netHandle.sendPost(job.EventPayload)
-			ch <- struct{}{}
-		}
-
-		deliveryTimeStat.End()
-
-		// END: request to destination endpoint
-
-		status := jobsdb.JobStatusT{
-			JobID:         job.JobID,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
-			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-			ErrorCode:     strconv.Itoa(respStatusCode),
-			ErrorResponse: []byte(`{}`),
-		}
-
-		routerResponseStat := stats.GetRouterStat("router_response_counts", stats.CountType, rt.destName, respStatusCode)
-		routerResponseStat.Increment()
-
-		if isSuccessStatus(respStatusCode) {
-			atomic.AddUint64(&rt.successCount, 1)
-			status.JobState = jobsdb.Succeeded.State
-			reqMetric.RequestSuccess = reqMetric.RequestSuccess + 1
-			reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
-			logger.Debugf("[%v Router] :: sending success status to response", rt.destName)
-			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
-		} else {
-			// the job failed
-			logger.Debugf("[%v Router] :: Job failed to send, analyzing...", rt.destName)
-			worker.failedJobs++
-			atomic.AddUint64(&rt.failCount, 1)
-			status.ErrorResponse = []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody)))
-
-			//addToFailedMap is used to decide whethere the jobID has to be added to the failedJobIDMap.
-			//If the job is aborted then there is no point in adding it to the failedJobIDMap.
-			addToFailedMap := true
-
-			status.JobState = jobsdb.Failed.State
-
-			// TODO: 429 should mark this throttled?
-			if respStatusCode >= 500 || respStatusCode == 429 {
-				// TODO: timeElapsed should be ideally from first attempt
-				timeElapsed := time.Now().Sub(job.CreatedAt)
-				if timeElapsed > retryTimeWindow && status.AttemptNum >= maxFailedCountForJob {
-					status.JobState = jobsdb.Aborted.State
-					addToFailedMap = false
-					delete(worker.retryForJobMap, job.JobID)
-				} else {
-					worker.retryForJobMap[job.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
-				}
-			} else {
-				if status.AttemptNum >= maxFailedCountForJob {
-					status.JobState = jobsdb.Aborted.State
-					addToFailedMap = false
-					eventsAbortedStat.Increment()
-				}
+			for _, job := range jobs {
+				rt.handleSequential(job, worker)
 			}
-
-			if addToFailedMap {
-				//#JobOrder (see other #JobOrder comment)
-				if rt.keepOrderOnFailure && !isPrevFailedUser && userID != "" {
-					logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destName, userID)
-					worker.failedJobIDMutex.Lock()
-					worker.failedJobIDMap[userID] = job.JobID
-					worker.failedJobIDMutex.Unlock()
-				}
-			}
-			reqMetric.RequestRetries = reqMetric.RequestRetries + 1
-			reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
-			if status.JobState == jobsdb.Aborted.State {
-				reqMetric.RequestAborted = reqMetric.RequestAborted + 1
-			}
-			logger.Debugf("[%v Router] :: sending failed/aborted state as response", rt.destName)
-			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
-		}
-
-		if paramaters.ReceivedAt != "" {
-			if status.JobState == jobsdb.Succeeded.State {
-				receivedTime, err := time.Parse(misc.RFC3339Milli, paramaters.ReceivedAt)
-				if err == nil {
-					eventsDeliveryTimeStat := stats.NewTaggedStat(
-						"event_delivery_time", stats.TimerType, map[string]string{
-							"module":   "router",
-							"destType": rt.destName,
-							"id":       paramaters.DestinationID,
-						})
-
-					eventsDeliveryTimeStat.SendTiming(time.Now().Sub(receivedTime))
-				}
-			}
-		}
-		//Sending destination response to config backend
-		if destinationdebugger.HasUploadEnabled(paramaters.DestinationID) {
-			deliveryStatus := destinationdebugger.DeliveryStatusT{
-				DestinationID: paramaters.DestinationID,
-				SourceID:      paramaters.SourceID,
-				Payload:       job.EventPayload,
-				AttemptNum:    status.AttemptNum,
-				JobState:      status.JobState,
-				ErrorCode:     status.ErrorCode,
-				ErrorResponse: status.ErrorResponse,
-			}
-			destinationdebugger.RecordEventDeliveryStatus(paramaters.DestinationID, &deliveryStatus)
 		}
 
 		batchTimeStat.End()
+	}
+}
+
+func (rt *HandleT) handleSequential(job *jobsdb.JobT, worker *workerT) {
+	deliveryTimeStat := stats.NewStat(
+		fmt.Sprintf("router.%s_delivery_time", rt.destName), stats.TimerType)
+	retryAttemptsStat := stats.NewStat(
+		fmt.Sprintf("router.%s_retry_attempts", rt.destName), stats.CountType)
+
+	var respStatusCode, attempts int
+	var respBody string
+	// START: request to destination endpoint
+
+	logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", rt.destName, attempts, ser)
+
+	diagnosisStartTime := time.Now()
+	deliveryTimeStat.Start()
+
+	if job.LastJobStatus.AttemptNum > 0 {
+		retryAttemptsStat.Increment()
+	}
+
+	var paramaters JobParametersT
+	err := json.Unmarshal(job.Parameters, &paramaters)
+	if err != nil {
+		logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+	}
+
+	if rt.customDestinationManager != nil {
+		respStatusCode, _, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
+	} else {
+		ch := rt.trackStuckDelivery()
+		respStatusCode, _, respBody = rt.netHandle.sendPost(job.EventPayload)
+		ch <- struct{}{}
+	}
+
+	deliveryTimeStat.End()
+
+	// END: request to destination endpoint
+	rt.handleDestinationResponse(worker, job, diagnosisStartTime, respStatusCode, respBody)
+}
+
+func (rt *HandleT) handleDestinationResponse(worker *workerT, job *jobsdb.JobT, diagnosisStartTime time.Time, respStatusCode int, respBody string) {
+	eventsAbortedStat := stats.NewStat(
+		fmt.Sprintf("router.%s_events_aborted", rt.destName), stats.CountType)
+
+	userID := job.UserID
+
+	_, isPrevFailedUser := worker.failedJobIDMap[userID]
+
+	var paramaters JobParametersT
+	err := json.Unmarshal(job.Parameters, &paramaters)
+	if err != nil {
+		logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+	}
+
+	var reqMetric requestMetric
+	status := jobsdb.JobStatusT{
+		JobID:         job.JobID,
+		ExecTime:      time.Now(),
+		RetryTime:     time.Now(),
+		AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+		ErrorCode:     strconv.Itoa(respStatusCode),
+		ErrorResponse: []byte(`{}`),
+	}
+
+	routerResponseStat := stats.GetRouterStat("router_response_counts", stats.CountType, rt.destName, respStatusCode)
+	routerResponseStat.Increment()
+
+	if isSuccessStatus(respStatusCode) {
+		atomic.AddUint64(&rt.successCount, 1)
+		status.JobState = jobsdb.Succeeded.State
+		reqMetric.RequestSuccess = reqMetric.RequestSuccess + 1
+		reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
+		logger.Debugf("[%v Router] :: sending success status to response", rt.destName)
+		rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
+	} else {
+		// the job failed
+		logger.Debugf("[%v Router] :: Job failed to send, analyzing...", rt.destName)
+		worker.failedJobs++
+		atomic.AddUint64(&rt.failCount, 1)
+		status.ErrorResponse = []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody)))
+
+		//addToFailedMap is used to decide whethere the jobID has to be added to the failedJobIDMap.
+		//If the job is aborted then there is no point in adding it to the failedJobIDMap.
+		addToFailedMap := true
+
+		status.JobState = jobsdb.Failed.State
+
+		// TODO: 429 should mark this throttled?
+		if respStatusCode >= 500 || respStatusCode == 429 {
+			// TODO: timeElapsed should be ideally from first attempt
+			timeElapsed := time.Now().Sub(job.CreatedAt)
+			if timeElapsed > retryTimeWindow && status.AttemptNum >= maxFailedCountForJob {
+				status.JobState = jobsdb.Aborted.State
+				addToFailedMap = false
+				delete(worker.retryForJobMap, job.JobID)
+			} else {
+				worker.retryForJobMap[job.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
+			}
+		} else {
+			if status.AttemptNum >= maxFailedCountForJob {
+				status.JobState = jobsdb.Aborted.State
+				addToFailedMap = false
+				eventsAbortedStat.Increment()
+			}
+		}
+
+		if addToFailedMap {
+			//#JobOrder (see other #JobOrder comment)
+			if rt.keepOrderOnFailure && !isPrevFailedUser && userID != "" {
+				logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", rt.destName, userID)
+				worker.failedJobIDMutex.Lock()
+				worker.failedJobIDMap[userID] = job.JobID
+				worker.failedJobIDMutex.Unlock()
+			}
+		}
+		reqMetric.RequestRetries = reqMetric.RequestRetries + 1
+		reqMetric.RequestCompletedTime = time.Now().Sub(diagnosisStartTime)
+		if status.JobState == jobsdb.Aborted.State {
+			reqMetric.RequestAborted = reqMetric.RequestAborted + 1
+		}
+		logger.Debugf("[%v Router] :: sending failed/aborted state as response", rt.destName)
+		rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
+	}
+
+	if paramaters.ReceivedAt != "" {
+		if status.JobState == jobsdb.Succeeded.State {
+			receivedTime, err := time.Parse(misc.RFC3339Milli, paramaters.ReceivedAt)
+			if err == nil {
+				eventsDeliveryTimeStat := stats.NewTaggedStat(
+					"event_delivery_time", stats.TimerType, map[string]string{
+						"module":   "router",
+						"destType": rt.destName,
+						"id":       paramaters.DestinationID,
+					})
+
+				eventsDeliveryTimeStat.SendTiming(time.Now().Sub(receivedTime))
+			}
+		}
+	}
+	//Sending destination response to config backend
+	if destinationdebugger.HasUploadEnabled(paramaters.DestinationID) {
+		deliveryStatus := destinationdebugger.DeliveryStatusT{
+			DestinationID: paramaters.DestinationID,
+			SourceID:      paramaters.SourceID,
+			Payload:       job.EventPayload,
+			AttemptNum:    status.AttemptNum,
+			JobState:      status.JobState,
+			ErrorCode:     status.ErrorCode,
+			ErrorResponse: status.ErrorResponse,
+		}
+		destinationdebugger.RecordEventDeliveryStatus(paramaters.DestinationID, &deliveryStatus)
 	}
 }
 
@@ -481,21 +508,7 @@ func (rt *HandleT) initWorkers() {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	//TODO: following code is left as is for backwards compatibility.
-	//In the next release, we will remote the job.UserID code check.
-	//canEventBeMappedToUser bool will also be removed.
-	var userID string
-	var canEventBeMappedToUser bool
-	if job.UserID != "" {
-		userID = job.UserID
-		canEventBeMappedToUser = true
-	} else {
-		userID, canEventBeMappedToUser = integrations.GetUserIDFromTransformerResponse(job.EventPayload)
-		// set random userID to assign worker when event can't be mapped to an userID
-		if !canEventBeMappedToUser {
-			userID = uuid.NewV4().String()
-		}
-	}
+	userID := job.UserID
 
 	var index int
 	if randomWorkerAssign {
@@ -505,10 +518,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	}
 
 	worker := rt.workers[index]
-
-	if !canEventBeMappedToUser {
-		return worker
-	}
 
 	//#JobOrder (see other #JobOrder comment)
 	worker.failedJobIDMutex.RLock()
