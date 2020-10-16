@@ -64,6 +64,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	var found bool
 	var opID int64
 	jd.migrationState.importLock.Lock()
+	defer jd.migrationState.importLock.Unlock()
 
 	// This if block should be idempotent. It is currently good. But if it changes we need to add separate locks outside
 	if jd.migrationState.dsForImport.Index == "" {
@@ -73,13 +74,11 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	}
 
 	if !found {
-		defer jd.migrationState.importLock.Unlock()
 		jd.migrationState.dsForImport = jd.createSetupCheckpointAndGetDs(ImportOp)
 		opPayload, err := json.Marshal(&jd.migrationState.dsForImport)
 		jd.assertError(err)
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
 	} else if jd.checkIfFullDS(jd.migrationState.dsForImport) {
-		defer jd.migrationState.importLock.Unlock()
 		jd.dsListLock.Lock()
 		jd.migrationState.dsForImport = jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
 		setupCheckpoint, found := jd.GetSetupCheckpoint(ImportOp)
@@ -90,8 +89,6 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 		opPayload, err := json.Marshal(&jd.migrationState.dsForImport)
 		jd.assertError(err)
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
-	} else {
-		jd.migrationState.importLock.Unlock()
 	}
 
 	jd.assert(jd.migrationState.dsForImport.Index != "", "dsForImportEvents was not setup. Go debug")
