@@ -14,6 +14,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -34,6 +35,8 @@ type HandleT struct {
 	jobsDB                   *jobsdb.HandleT
 	netHandle                *NetHandleT
 	destName                 string
+	destCategory             string
+	kvHandle                 *kvHandleT
 	workers                  []*workerT
 	perfStats                *misc.PerfStats
 	successCount             uint64
@@ -49,6 +52,13 @@ type HandleT struct {
 	throttlerMutex           sync.RWMutex
 	keepOrderOnFailure       bool
 }
+
+// constants for destCategory
+const (
+	HTTP    = "http"
+	STREAM  = "stream"
+	KVSTORE = "kvStore"
+)
 
 type jobResponseT struct {
 	status *jobsdb.JobStatusT
@@ -195,8 +205,10 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			retryAttemptsStat.Increment()
 		}
 
-		if rt.customDestinationManager != nil {
+		if rt.destCategory == STREAM {
 			respStatusCode, _, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
+		} else if rt.destCategory == KVSTORE {
+			respStatusCode, respBody = rt.kvHandle.send(job.EventPayload, paramaters.DestinationID)
 		} else {
 			respStatusCode, _, respBody = rt.netHandle.sendPost(job.EventPayload)
 		}
@@ -754,7 +766,18 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.netHandle.Setup(destName)
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
-	rt.customDestinationManager = customdestinationmanager.New(destName)
+
+	rt.destCategory = HTTP
+	switch {
+	case misc.ContainsString(customdestinationmanager.ObjectStreamDestinations, destName):
+		rt.destCategory = STREAM
+		rt.customDestinationManager = customdestinationmanager.New(destName)
+	case misc.ContainsString(kvstoremanager.KVStoreDestinations, destName):
+		rt.destCategory = KVSTORE
+		rt.kvHandle = &kvHandleT{}
+		rt.kvHandle.Setup(destName)
+	}
+
 	rt.setUserEventsOrderingRequirement()
 
 	var throttler throttler.HandleT

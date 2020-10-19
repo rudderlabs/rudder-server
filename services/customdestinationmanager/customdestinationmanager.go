@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	objectStreamDestinations   []string
+	ObjectStreamDestinations   []string
 	streamDestinationsMap      map[string]StreamDestination
 	producerDestinationLockMap map[string]*sync.RWMutex
 )
@@ -40,7 +40,7 @@ func init() {
 	loadConfig()
 }
 func loadConfig() {
-	objectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB"}
+	ObjectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB"}
 	streamDestinationsMap = make(map[string]StreamDestination)
 	producerDestinationLockMap = make(map[string]*sync.RWMutex)
 }
@@ -48,7 +48,7 @@ func loadConfig() {
 // newProducer delegates the call to the appropriate manager based on parameter destination for creating producer
 func newProducer(destinationConfig interface{}, destination string) (interface{}, error) {
 	switch {
-	case misc.ContainsString(objectStreamDestinations, destination):
+	case misc.ContainsString(ObjectStreamDestinations, destination):
 		return streammanager.NewProducer(destinationConfig, destination)
 	default:
 		return nil, fmt.Errorf("No provider configured for StreamManager")
@@ -58,7 +58,7 @@ func newProducer(destinationConfig interface{}, destination string) (interface{}
 // closeProducer delegates the call to the appropriate manager based on parameter destination to close a given producer
 func closeProducer(producer interface{}, destination string) error {
 	switch {
-	case misc.ContainsString(objectStreamDestinations, destination):
+	case misc.ContainsString(ObjectStreamDestinations, destination):
 		streammanager.CloseProducer(producer, destination)
 		return nil
 	default:
@@ -67,7 +67,7 @@ func closeProducer(producer interface{}, destination string) error {
 }
 func send(jsonData json.RawMessage, destination string, producer interface{}, config interface{}) (int, string, string) {
 	switch {
-	case misc.ContainsString(objectStreamDestinations, destination):
+	case misc.ContainsString(ObjectStreamDestinations, destination):
 		return streammanager.Produce(jsonData, destination, producer, config)
 	default:
 		return 404, "No provider configured for StreamManager", ""
@@ -165,7 +165,7 @@ func createOrUpdateProducer(sourceID string, destID string, destType string, sou
 
 // New returns CustomdestinationManager
 func New(destType string) DestinationManager {
-	if misc.ContainsString(objectStreamDestinations, destType) {
+	if misc.ContainsString(ObjectStreamDestinations, destType) {
 		customManager := &CustomManagerT{destination: destType}
 		rruntime.Go(func() {
 			customManager.backendConfigSubscriber()
@@ -183,7 +183,7 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					if destination.DestinationDefinition.Name == customManager.destination && misc.ContainsString(objectStreamDestinations, customManager.destination) {
+					if destination.DestinationDefinition.Name == customManager.destination && misc.ContainsString(ObjectStreamDestinations, customManager.destination) {
 						producerLock, ok := producerDestinationLockMap[destination.ID]
 						if !ok {
 							producerLock = &sync.RWMutex{}
