@@ -1450,7 +1450,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 	return true
 }
 
-func (jd *HandleT) trackQueryExecutionTime(queryType string) chan struct{} {
+func (jd *HandleT) trackQueryExecution(queryType string) chan struct{} {
 	ch := make(chan struct{}, 1)
 	rruntime.Go(func() {
 		select {
@@ -1525,7 +1525,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 
 	var rows *sql.Rows
 
-	ch := jd.trackQueryExecutionTime("processed")
+	ch := jd.trackQueryExecution("processed")
 	if getAll {
 		sqlStatement := fmt.Sprintf(`SELECT
                                   %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters,  %[1]s.custom_val, %[1]s.event_payload,
@@ -1617,7 +1617,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	var err error
 
 	var sqlStatement string
-	ch := jd.trackQueryExecutionTime("unprocessed")
+	ch := jd.trackQueryExecution("unprocessed")
 	if useJoinForUnprocessed {
 		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
