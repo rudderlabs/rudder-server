@@ -119,6 +119,7 @@ migrateDSLoopSleepDurationInS = 30
 addNewDSLoopSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
 backupRowsBatchSize = 10000
+queryExecutionTimeoutDurationInS = 20
 
 [JobsDB.backup]
 enabled = true

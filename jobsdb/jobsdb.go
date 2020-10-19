@@ -339,6 +339,7 @@ var (
 	backupCheckSleepDuration                     time.Duration
 	useJoinForUnprocessed                        bool
 	backupRowsBatchSize                          int64
+	queryExecutionTimeoutDuration                time.Duration
 )
 
 //Different scenarios for addNewDS
@@ -379,7 +380,7 @@ func loadConfig() {
 	addNewDSLoopSleepDuration = (config.GetDuration("JobsDB.addNewDSLoopSleepDurationInS", time.Duration(5)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
-
+	queryExecutionTimeoutDuration = (config.GetDuration("JobsDB.queryExecutionTimeoutDurationInS", time.Duration(20)*time.Second))
 }
 
 func init() {
@@ -1456,7 +1457,7 @@ func (jd *HandleT) trackQueryExecution(queryType string) chan struct{} {
 		select {
 		case _ = <-ch:
 			// do nothing
-		case <-time.After(time.Second * 2):
+		case <-time.After(queryExecutionTimeoutDuration):
 			logger.Infof("Query Execution for :%v jobs exceeded timeout ", queryType)
 			stat := stats.NewTaggedStat("query_execution_exceeded_timeout", stats.CountType, map[string]string{
 				"queryType": queryType,
