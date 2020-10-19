@@ -1451,7 +1451,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 	return true
 }
 
-func (jd *HandleT) trackQueryExecution(queryType, tablePrefix string) chan struct{} {
+func (jd *HandleT) trackQueryExecution(queryType, tablePrefix, jobTable string) chan struct{} {
 	ch := make(chan struct{}, 1)
 	rruntime.Go(func() {
 		select {
@@ -1462,6 +1462,7 @@ func (jd *HandleT) trackQueryExecution(queryType, tablePrefix string) chan struc
 			stat := stats.NewTaggedStat("query_execution_exceeded_timeout", stats.CountType, map[string]string{
 				"queryType":   queryType,
 				"tablePrefix": tablePrefix,
+				"tableName":   jobTable,
 			})
 			stat.Increment()
 		}
@@ -1527,7 +1528,8 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 
 	var rows *sql.Rows
 
-	ch := jd.trackQueryExecution("processed", jd.GetTablePrefix())
+	ch := jd.trackQueryExecution("processed", jd.GetTablePrefix(), ds.JobTable)
+
 	if getAll {
 		sqlStatement := fmt.Sprintf(`SELECT
                                   %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters,  %[1]s.custom_val, %[1]s.event_payload,
@@ -1649,7 +1651,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 	}
 
-	ch := jd.trackQueryExecution("unprocessed", jd.GetTablePrefix())
+	ch := jd.trackQueryExecution("unprocessed", jd.GetTablePrefix(), ds.JobTable)
 	rows, err = jd.dbHandle.Query(sqlStatement)
 	jd.assertError(err)
 	defer rows.Close()
