@@ -1619,7 +1619,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	var err error
 
 	var sqlStatement string
-	ch := jd.trackQueryExecution("unprocessed", jd.GetTablePrefix())
 	if useJoinForUnprocessed {
 		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
@@ -1633,7 +1632,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
                                              FROM %[1]s WHERE %[1]s.job_id NOT IN (SELECT DISTINCT(%[2]s.job_id)
                                              FROM %[2]s)`, ds.JobTable, ds.JobStatusTable)
 	}
-	ch <- struct{}{}
 
 	if len(customValFilters) > 0 {
 		sqlStatement += " AND " + jd.constructQuery(fmt.Sprintf("%s.custom_val", ds.JobTable),
@@ -1651,9 +1649,11 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 	}
 
+	ch := jd.trackQueryExecution("unprocessed", jd.GetTablePrefix())
 	rows, err = jd.dbHandle.Query(sqlStatement)
 	jd.assertError(err)
 	defer rows.Close()
+	ch <- struct{}{}
 
 	var jobList []*JobT
 	for rows.Next() {
