@@ -14,11 +14,9 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/customdestinationmanager"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
@@ -154,6 +152,10 @@ type DestinationJobParametersT struct {
 	ReceivedAt    string
 }
 
+func (rt *HandleT) batch(destinationJobs []*DestinationJobT) []*DestinationJobT {
+	return destinationJobs
+}
+
 func (rt *HandleT) workerProcess(worker *workerT) {
 
 	deliveryTimeStat := stats.NewStat(
@@ -172,17 +174,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		batchTimeStat.Start()
 		logger.Debugf("[%v Router] :: performing checks to send payload to %s. Payload: ", rt.destName, job.EventPayload)
 
-		//TODO: following code is left as is for backwards compatibility.
-		//In the next release, we will remote the job.UserID code check.
-		//canEventBeMappedToUser bool will also be removed.
-		var userID string
-		var canEventBeMappedToUser bool
-		if job.UserID != "" {
-			userID = job.UserID
-			canEventBeMappedToUser = true
-		} else {
-			userID, canEventBeMappedToUser = integrations.GetUserIDFromTransformerResponse(job.EventPayload)
-		}
+		userID := job.UserID
 
 		var parameters JobParametersT
 		err := json.Unmarshal(job.Parameters, &parameters)
@@ -192,7 +184,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 
 		var isPrevFailedUser bool
 		var previousFailedJobID int64
-		if canEventBeMappedToUser && rt.keepOrderOnFailure {
+		if rt.keepOrderOnFailure {
 			//If there is a failed jobID from this user, we cannot pass future jobs
 			worker.failedJobIDMutex.RLock()
 			previousFailedJobID, isPrevFailedUser = worker.failedJobIDMap[userID]
@@ -226,8 +218,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				worker.destinationJobs = append(worker.destinationJobs, destinationJob)
 				continue
 			} else {
-				//TODO start batching process
-				continue
+				worker.destinationJobs = rt.batch(worker.destinationJobs)
 			}
 		} else {
 			destinationJobParametersArray := []DestinationJobParametersT{{JobID: job.JobID, SourceID: parameters.SourceID, DestinationID: parameters.DestinationID, AttemptNum: job.LastJobStatus.AttemptNum, ReceivedAt: parameters.ReceivedAt}}
@@ -489,21 +480,7 @@ func (rt *HandleT) initWorkers() {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	//TODO: following code is left as is for backwards compatibility.
-	//In the next release, we will remote the job.UserID code check.
-	//canEventBeMappedToUser bool will also be removed.
-	var userID string
-	var canEventBeMappedToUser bool
-	if job.UserID != "" {
-		userID = job.UserID
-		canEventBeMappedToUser = true
-	} else {
-		userID, canEventBeMappedToUser = integrations.GetUserIDFromTransformerResponse(job.EventPayload)
-		// set random userID to assign worker when event can't be mapped to an userID
-		if !canEventBeMappedToUser {
-			userID = uuid.NewV4().String()
-		}
-	}
+	userID := job.UserID
 
 	var index int
 	if randomWorkerAssign {
@@ -513,10 +490,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	}
 
 	worker := rt.workers[index]
-
-	if !canEventBeMappedToUser {
-		return worker
-	}
 
 	//#JobOrder (see other #JobOrder comment)
 	worker.failedJobIDMutex.RLock()
