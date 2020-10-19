@@ -380,7 +380,7 @@ func loadConfig() {
 	addNewDSLoopSleepDuration = (config.GetDuration("JobsDB.addNewDSLoopSleepDurationInS", time.Duration(5)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
-	queryExecutionTimeoutDuration = (config.GetDuration("JobsDB.queryExecutionTimeoutDurationInS", time.Duration(20)*time.Second))
+	queryExecutionTimeoutDuration = (config.GetDuration("JobsDB.queryExecutionTimeoutDurationInS", time.Duration(20)) * time.Second)
 }
 
 func init() {
