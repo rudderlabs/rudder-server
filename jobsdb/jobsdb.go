@@ -1450,6 +1450,23 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 	return true
 }
 
+func (jd *HandleT) trackQueryExecutionTime(queryType string) chan struct{} {
+	ch := make(chan struct{}, 1)
+	rruntime.Go(func() {
+		select {
+		case _ = <-ch:
+			// do nothing
+		case <-time.After(time.Second * 2):
+			logger.Infof("Query Execution for :%v jobs exceeded timeout ", queryType)
+			stat := stats.NewTaggedStat("query_execution_exceeded_timeout", stats.CountType, map[string]string{
+				"queryType": queryType,
+			})
+			stat.Increment()
+		}
+	})
+	return ch
+}
+
 /*
 limitCount == 0 means return all
 stateFilters and customValFilters do a OR query on values passed in array
@@ -1507,6 +1524,8 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	}
 
 	var rows *sql.Rows
+
+	ch := jd.trackQueryExecutionTime("processed")
 	if getAll {
 		sqlStatement := fmt.Sprintf(`SELECT
                                   %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters,  %[1]s.custom_val, %[1]s.event_payload,
@@ -1551,6 +1570,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 		jd.assertError(err)
 		defer rows.Close()
 	}
+	ch <- struct{}{}
 
 	var jobList []*JobT
 	for rows.Next() {
@@ -1597,7 +1617,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	var err error
 
 	var sqlStatement string
-
+	ch := jd.trackQueryExecutionTime("unprocessed")
 	if useJoinForUnprocessed {
 		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
@@ -1611,6 +1631,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
                                              FROM %[1]s WHERE %[1]s.job_id NOT IN (SELECT DISTINCT(%[2]s.job_id)
                                              FROM %[2]s)`, ds.JobTable, ds.JobStatusTable)
 	}
+	ch <- struct{}{}
 
 	if len(customValFilters) > 0 {
 		sqlStatement += " AND " + jd.constructQuery(fmt.Sprintf("%s.custom_val", ds.JobTable),
