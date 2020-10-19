@@ -43,15 +43,16 @@ func (h *kvHandleT) Setup(destType string) {
 
 func (h *kvHandleT) send(payload json.RawMessage, destID string) (statusCode int, respBody string) {
 	key := gjson.GetBytes(payload, "message.key").String()
-	values := gjson.GetBytes(payload, "message.values").Map()
-	fieldValues := make(map[string]interface{})
-	for k, v := range values {
-		fieldValues[k] = v.Str
+	result := gjson.GetBytes(payload, "message.fields").Map()
+	fields := make(map[string]interface{})
+	for k, v := range result {
+		fields[k] = v.Str
 	}
 	kvManagerLockMap[destID].RLock()
 	defer kvManagerLockMap[destID].RUnlock()
-	_, err := kvManagerMap[destID].manager.HMSet(key, fieldValues)
+	_, err := kvManagerMap[destID].manager.HMSet(key, fields)
 	statusCode = 200
+	// TODO: How to map response to status code?
 	if err != nil {
 		statusCode = 400
 		respBody = err.Error()
