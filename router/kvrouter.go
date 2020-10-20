@@ -49,15 +49,15 @@ func (h *kvHandleT) send(payload json.RawMessage, destID string) (statusCode int
 		fields[k] = v.Str
 	}
 	kvManagerLockMap[destID].RLock()
-	defer kvManagerLockMap[destID].RUnlock()
-	_, err := kvManagerMap[destID].manager.HMSet(key, fields)
-	statusCode = 200
-	// TODO: How to map response to status code?
+	kvManager := kvManagerMap[destID].manager
+	kvManagerLockMap[destID].RUnlock()
+
+	err := kvManager.HMSet(key, fields)
+	statusCode = kvManager.StatusCode(err)
 	if err != nil {
-		statusCode = 400
 		respBody = err.Error()
 	}
-	return
+	return statusCode, respBody
 }
 
 func (h *kvHandleT) backendConfigSubscriber() {

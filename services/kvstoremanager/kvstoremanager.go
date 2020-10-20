@@ -17,7 +17,8 @@ func loadConfig() {
 type KVStoreManager interface {
 	Connect()
 	Close() error
-	HMSet(key string, fields map[string]interface{}) (string, error)
+	HMSet(key string, fields map[string]interface{}) error
+	StatusCode(err error) int
 }
 
 type SettingsT struct {
