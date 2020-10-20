@@ -7,13 +7,17 @@ import (
 	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/router/throttler"
+	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/utils"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -48,6 +52,9 @@ type HandleT struct {
 	keepOrderOnFailure       bool
 	netClientTimeout         time.Duration
 	enableBatching           bool
+	transformer              transformer.Transformer
+	configSubscriberLock     sync.RWMutex
+	destinationsMap          map[string]*backendconfig.DestinationT // destinationID -> destination
 }
 
 type jobResponseT struct {
@@ -65,14 +72,15 @@ type JobParametersT struct {
 
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	channel          chan *jobsdb.JobT   // the worker job channel
-	workerID         int                 // identifies the worker
-	failedJobs       int                 // counts the failed jobs of a worker till it gets reset by external channel
-	sleepTime        time.Duration       //the sleep duration for every job of the worker
-	failedJobIDMap   map[string]int64    //user to failed jobId
-	failedJobIDMutex sync.RWMutex        //lock to protect structure above
-	retryForJobMap   map[int64]time.Time //jobID to next retry time map
-	destinationJobs  []*DestinationJobT  //slice to hold destination jobs
+	channel                    chan *jobsdb.JobT                        // the worker job channel
+	workerID                   int                                      // identifies the worker
+	failedJobs                 int                                      // counts the failed jobs of a worker till it gets reset by external channel
+	sleepTime                  time.Duration                            //the sleep duration for every job of the worker
+	failedJobIDMap             map[string]int64                         //user to failed jobId
+	failedJobIDMutex           sync.RWMutex                             //lock to protect structure above
+	retryForJobMap             map[int64]time.Time                      //jobID to next retry time map
+	destinationTransformerJobs []transformer.DestinationTransformerJobT //slice to hold jobs to send to destination transformer
+	destinationJobs            []transformer.DestinationJobT            //slice to hold destination jobs
 }
 
 var (
@@ -140,23 +148,8 @@ func (rt *HandleT) trackStuckDelivery() chan struct{} {
 	return ch
 }
 
-type DestinationJobT struct {
-	Payload            json.RawMessage
-	JobParametersArray []DestinationJobParametersT
-}
-
-type DestinationJobParametersT struct {
-	UserID        string
-	JobID         int64
-	SourceID      string
-	DestinationID string
-	AttemptNum    int
-	ReceivedAt    string
-	CreatedAt     time.Time
-}
-
-func (rt *HandleT) batch(destinationJobs []*DestinationJobT) []*DestinationJobT {
-	return destinationJobs
+func (rt *HandleT) batch(destinationTranformerJobs []transformer.DestinationTransformerJobT) []transformer.DestinationJobT {
+	return rt.transformer.Transform(&transformer.TransformMessageT{Data: destinationTranformerJobs, DestType: strings.ToLower(rt.destName)})
 }
 
 func (rt *HandleT) workerProcess(worker *workerT) {
@@ -204,30 +197,40 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				continue
 			}
 
-			destinationJobParametersArray := []DestinationJobParametersT{{UserID: userID, JobID: job.JobID, SourceID: parameters.SourceID, DestinationID: parameters.DestinationID, AttemptNum: job.LastJobStatus.AttemptNum, ReceivedAt: parameters.ReceivedAt, CreatedAt: job.CreatedAt}}
-			destinationJob := &DestinationJobT{Payload: job.EventPayload, JobParametersArray: destinationJobParametersArray}
-			worker.destinationJobs = append(worker.destinationJobs, destinationJob)
+			destinationJobMetadata := transformer.DestinationJobMetadataT{UserID: userID, JobID: job.JobID, SourceID: parameters.SourceID, DestinationID: parameters.DestinationID, AttemptNum: job.LastJobStatus.AttemptNum, ReceivedAt: parameters.ReceivedAt, CreatedAt: job.CreatedAt.Format(misc.RFC3339Milli)}
+			rt.configSubscriberLock.RLock()
+			destinationID := *rt.destinationsMap[parameters.DestinationID]
+			rt.configSubscriberLock.RUnlock()
 
 			if rt.enableBatching {
-				if len(worker.destinationJobs) == noOfJobsToBatchInAWorker {
-					worker.destinationJobs = rt.batch(worker.destinationJobs)
+				destinationTransformerJob := transformer.DestinationTransformerJobT{Message: job.EventPayload, JobMetadata: destinationJobMetadata, Destination: destinationID}
+				worker.destinationTransformerJobs = append(worker.destinationTransformerJobs, destinationTransformerJob)
+
+				if len(worker.destinationTransformerJobs) == noOfJobsToBatchInAWorker {
+					worker.destinationJobs = rt.batch(worker.destinationTransformerJobs)
 					rt.handleWorkerDestinationJobs(worker)
 					worker.destinationJobs = nil
-					worker.destinationJobs = make([]*DestinationJobT, 0)
+					worker.destinationTransformerJobs = nil
+					worker.destinationTransformerJobs = make([]transformer.DestinationTransformerJobT, 0)
 				}
 			} else {
+				destinationJob := transformer.DestinationJobT{Message: job.EventPayload, JobMetadataArray: []transformer.DestinationJobMetadataT{destinationJobMetadata}, Destination: destinationID}
+				worker.destinationJobs = append(worker.destinationJobs, destinationJob)
+
 				rt.handleWorkerDestinationJobs(worker)
 				worker.destinationJobs = nil
-				worker.destinationJobs = make([]*DestinationJobT, 0)
+				worker.destinationTransformerJobs = nil
+				worker.destinationJobs = make([]transformer.DestinationJobT, 0)
 			}
 
 		case <-timeout:
 			timeout = time.After(jobsBatchTimeout)
-			if len(worker.destinationJobs) > 0 {
-				worker.destinationJobs = rt.batch(worker.destinationJobs)
+			if len(worker.destinationTransformerJobs) > 0 {
+				worker.destinationJobs = rt.batch(worker.destinationTransformerJobs)
 				rt.handleWorkerDestinationJobs(worker)
 				worker.destinationJobs = nil
-				worker.destinationJobs = make([]*DestinationJobT, 0)
+				worker.destinationTransformerJobs = nil
+				worker.destinationTransformerJobs = make([]transformer.DestinationTransformerJobT, 0)
 			}
 		}
 	}
@@ -259,9 +262,9 @@ func (rt *HandleT) handleWorkerDestinationJobs(worker *workerT) {
 			deliveryTimeStat.Start()
 
 			if rt.customDestinationManager != nil {
-				sourceID := destinationJob.JobParametersArray[0].SourceID
-				destinationID := destinationJob.JobParametersArray[0].DestinationID
-				for _, destinationJobParameters := range destinationJob.JobParametersArray {
+				sourceID := destinationJob.JobMetadataArray[0].SourceID
+				destinationID := destinationJob.JobMetadataArray[0].DestinationID
+				for _, destinationJobParameters := range destinationJob.JobMetadataArray {
 					if sourceID != destinationJobParameters.SourceID {
 						panic(fmt.Errorf("Different sources are grouped together"))
 					}
@@ -269,10 +272,10 @@ func (rt *HandleT) handleWorkerDestinationJobs(worker *workerT) {
 						panic(fmt.Errorf("Different destinations are grouped together"))
 					}
 				}
-				respStatusCode, _, respBody = rt.customDestinationManager.SendData(destinationJob.Payload, sourceID, destinationID)
+				respStatusCode, _, respBody = rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 			} else {
 				ch := rt.trackStuckDelivery()
-				respStatusCode, _, respBody = rt.netHandle.sendPost(destinationJob.Payload)
+				respStatusCode, _, respBody = rt.netHandle.sendPost(destinationJob.Message)
 				ch <- struct{}{}
 			}
 
@@ -286,7 +289,7 @@ func (rt *HandleT) handleWorkerDestinationJobs(worker *workerT) {
 			respBody = "skipping sending to destination because previous job in batch is failed."
 		}
 
-		for _, destinationJobParameters := range destinationJob.JobParametersArray {
+		for _, destinationJobParameters := range destinationJob.JobMetadataArray {
 
 			if destinationJobParameters.AttemptNum > 0 {
 				retryAttemptsStat.Increment()
@@ -330,8 +333,13 @@ func (rt *HandleT) handleWorkerDestinationJobs(worker *workerT) {
 
 				// TODO: 429 should mark this throttled?
 				if respStatusCode >= 500 || respStatusCode == 429 {
+					createdAt, err := time.Parse(misc.RFC3339Milli, destinationJobParameters.CreatedAt)
+					if err != nil {
+						panic(fmt.Errorf("job's createdAt parse failed")) //TODO review
+					}
+
 					// TODO: timeElapsed should be ideally from first attempt
-					timeElapsed := time.Now().Sub(destinationJobParameters.CreatedAt)
+					timeElapsed := time.Now().Sub(createdAt)
 					if timeElapsed > retryTimeWindow && status.AttemptNum >= maxFailedCountForJob {
 						status.JobState = jobsdb.Aborted.State
 						addToFailedMap = false
@@ -388,7 +396,7 @@ func (rt *HandleT) handleWorkerDestinationJobs(worker *workerT) {
 				deliveryStatus := destinationdebugger.DeliveryStatusT{
 					DestinationID: destinationJobParameters.DestinationID,
 					SourceID:      destinationJobParameters.SourceID,
-					Payload:       destinationJob.Payload,
+					Payload:       destinationJob.Message,
 					AttemptNum:    status.AttemptNum,
 					JobState:      status.JobState,
 					ErrorCode:     status.ErrorCode,
@@ -505,13 +513,14 @@ func (rt *HandleT) initWorkers() {
 		logger.Info("Worker Started", i)
 		var worker *workerT
 		worker = &workerT{
-			channel:         make(chan *jobsdb.JobT, noOfJobsPerChannel),
-			failedJobIDMap:  make(map[string]int64),
-			retryForJobMap:  make(map[int64]time.Time),
-			workerID:        i,
-			failedJobs:      0,
-			sleepTime:       minSleep,
-			destinationJobs: make([]*DestinationJobT, 0)} //TODO does giving init size increase performance?
+			channel:                    make(chan *jobsdb.JobT, noOfJobsPerChannel),
+			failedJobIDMap:             make(map[string]int64),
+			retryForJobMap:             make(map[int64]time.Time),
+			workerID:                   i,
+			failedJobs:                 0,
+			sleepTime:                  minSleep,
+			destinationTransformerJobs: make([]transformer.DestinationTransformerJobT, 0),
+			destinationJobs:            make([]transformer.DestinationJobT, 0)}
 		rt.workers[i] = worker
 		rruntime.Go(func() {
 			rt.workerProcess(worker)
@@ -852,6 +861,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.setUserEventsOrderingRequirement()
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 
+	rt.transformer = transformer.NewTransformer()
+	rt.transformer.Setup()
+
 	var throttler throttler.HandleT
 	throttler.SetUp(rt.destName)
 	rt.throttler = &throttler
@@ -866,5 +878,29 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rruntime.Go(func() {
 		rt.generatorLoop()
 	})
+	rruntime.Go(func() {
+		rt.backendConfigSubscriber()
+	})
 	adminInstance.registerRouter(destName, rt)
+}
+
+func (rt *HandleT) backendConfigSubscriber() {
+	ch := make(chan utils.DataEvent)
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	for {
+		config := <-ch
+		rt.configSubscriberLock.Lock()
+		rt.destinationsMap = map[string]*backendconfig.DestinationT{}
+		allSources := config.Data.(backendconfig.SourcesT)
+		for _, source := range allSources.Sources {
+			if len(source.Destinations) > 0 {
+				for _, destination := range source.Destinations {
+					if destination.DestinationDefinition.Name == rt.destName {
+						rt.destinationsMap[destination.ID] = &destination
+					}
+				}
+			}
+		}
+		rt.configSubscriberLock.Unlock()
+	}
 }
