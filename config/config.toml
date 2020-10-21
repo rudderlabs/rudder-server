@@ -158,7 +158,6 @@ minRetryBackoffInS = 10
 maxRetryBackoffInS = 300
     [Router.BRAZE]
     forceHTTP1=true
-    enableBatching=true
     httpTimeoutInS=120
     httpMaxIdleConnsPerHost=32
     # settings similar to below one can be used to throttle router
