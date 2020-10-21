@@ -7,41 +7,14 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
-
-type DestinationTransformerJobT struct {
-	Message     json.RawMessage            `json:"message"`
-	JobMetadata DestinationJobMetadataT    `json:"metadata"`
-	Destination backendconfig.DestinationT `json:"destination"`
-}
-
-type DestinationJobT struct {
-	Message          json.RawMessage            `json:"batchedRequest"`
-	JobMetadataArray []DestinationJobMetadataT  `json:"metadata"`
-	Destination      backendconfig.DestinationT `json:"destination"`
-}
-
-type DestinationJobMetadataT struct {
-	UserID        string `json:"userId"`
-	JobID         int64  `json:"jobId"`
-	SourceID      string `json:"sourceId"`
-	DestinationID string `json:"destinationId"`
-	AttemptNum    int    `json:"attemptNum"`
-	ReceivedAt    string `json:"receivedAt"`
-	CreatedAt     string `json:"createdAt"`
-}
-
-//TransformMessageT is used to pass message to the transformer workers
-type TransformMessageT struct {
-	Data     []DestinationTransformerJobT `json:"input"`
-	DestType string                       `json:"destType"`
-}
 
 //HandleT is the handle for this class
 type HandleT struct {
@@ -53,7 +26,7 @@ type HandleT struct {
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
-	Transform(transformMessage *TransformMessageT) []DestinationJobT
+	Transform(transformMessage *types.TransformMessageT) []types.DestinationJobT
 }
 
 //NewTransformer creates a new transformer
@@ -77,7 +50,8 @@ func init() {
 	loadConfig()
 }
 
-func (trans *HandleT) Transform(transformMessage *TransformMessageT) []DestinationJobT {
+//Transform transforms router jobs to destination jobs
+func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []types.DestinationJobT {
 	//Call remote transformation
 	rawJSON, err := json.Marshal(transformMessage)
 	if err != nil {
@@ -94,7 +68,7 @@ func (trans *HandleT) Transform(transformMessage *TransformMessageT) []Destinati
 	reqFailed := false
 
 	for {
-		url := GetBatchURL("AM")
+		url := getBatchURL("AM")
 		trans.transformRequestTimerStat.Start()
 		resp, err = trans.client.Post(url, "application/json; charset=utf-8",
 			bytes.NewBuffer(rawJSON))
@@ -126,7 +100,7 @@ func (trans *HandleT) Transform(transformMessage *TransformMessageT) []Destinati
 		logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
 	}
 
-	var destinationJobs []DestinationJobT
+	var destinationJobs []types.DestinationJobT
 	if resp.StatusCode == http.StatusOK {
 		respData, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
@@ -156,9 +130,6 @@ func (trans *HandleT) Setup() {
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 }
 
-//TODO complete this
-//GetBatchURL returns node URL
-func GetBatchURL(destType string) string {
-	return "http://localhost:9090/batch"
-	//config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+func getBatchURL(destType string) string {
+	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/batch"
 }
