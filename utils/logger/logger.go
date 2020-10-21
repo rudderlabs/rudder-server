@@ -3,7 +3,10 @@ Logger Interface Use instance of logger instead of exported functions
 
 usage example
 
-import "github.com/rudderlabs/rudder-server/utils/logger"
+import (
+	"errors"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+)
 
 var	log logger.LoggerI  = &logger.LoggerT{}
 			or
@@ -18,9 +21,12 @@ package logger
 
 import (
 	"bytes"
+	"errors"
 	"io/ioutil"
 	"net/http"
 	"runtime"
+	"strings"
+	"sync"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"go.uber.org/zap"
@@ -48,9 +54,13 @@ type LoggerI interface {
 	Errorf(format string, args ...interface{})
 	Fatalf(format string, args ...interface{})
 	LogRequest(req *http.Request)
+	Child(s string) LoggerI
 }
 
-type LoggerT struct{}
+type LoggerT struct {
+	name   string
+	parent *LoggerT
+}
 
 const (
 	levelEvent = iota // Logs Event
@@ -75,7 +85,7 @@ var (
 	enableFile          bool
 	consoleJsonFormat   bool
 	fileJsonFormat      bool
-	level               int
+	rootLevel           int
 	enableTimestamp     bool
 	enableFileNameInLog bool
 	enableStackTrace    bool
@@ -84,12 +94,15 @@ var (
 )
 
 var (
-	Log *zap.SugaredLogger
-	log = NewLogger()
+	Log               *zap.SugaredLogger
+	log               = NewLogger()
+	levelConfig       map[string]int
+	loggerLevelsCache map[string]int
+	levelConfigLock   sync.RWMutex
 )
 
 func loadConfig() {
-	level = levelMap[config.GetEnv("LOG_LEVEL", "INFO")]
+	rootLevel = levelMap[config.GetEnv("LOG_LEVEL", "INFO")]
 	enableConsole = config.GetBool("Logger.enableConsole", true)
 	enableFile = config.GetBool("Logger.enableFile", false)
 	consoleJsonFormat = config.GetBool("Logger.consoleJsonFormat", false)
@@ -99,6 +112,32 @@ func loadConfig() {
 	enableTimestamp = config.GetBool("Logger.enableTimestamp", true)
 	enableFileNameInLog = config.GetBool("Logger.enableFileNameInLog", false)
 	enableStackTrace = config.GetBool("Logger.enableStackTrace", false)
+
+	// colon separated key value pairs
+	// Example: "router.GA=DEBUG:warehouse.REDSHIFT=DEBUG"
+	levelConfigStr := config.GetString("Logger.moduleLevels", "")
+	levelConfig = make(map[string]int)
+	levelConfigStr = strings.TrimSpace(levelConfigStr)
+	if levelConfigStr != "" {
+		moduleLevelKVs := strings.Split(levelConfigStr, ":")
+		for _, moduleLevelKV := range moduleLevelKVs {
+			pair := strings.SplitN(moduleLevelKV, "=", 2)
+			if len(pair) < 2 {
+				continue
+			}
+			module := strings.TrimSpace(pair[0])
+			if module == "" {
+				continue
+			}
+
+			levelStr := strings.TrimSpace(pair[1])
+			level, ok := levelMap[levelStr]
+			if !ok {
+				continue
+			}
+			levelConfig[module] = level
+		}
+	}
 }
 
 var options []zap.Option
@@ -108,14 +147,77 @@ func NewLogger() *LoggerT {
 }
 
 // Setup sets up the logger initially
-func Setup() {
+func init() {
 	loadConfig()
 	Log = configureLogger()
+	loggerLevelsCache = make(map[string]int)
+}
+
+func (l *LoggerT) Child(s string) LoggerI {
+	if s == "" {
+		return l
+	}
+	copy := *l
+	copy.parent = l
+	if l.name == "" {
+		copy.name = s
+	} else {
+		copy.name = strings.Join([]string{l.name, s}, ".")
+	}
+	return &copy
+}
+
+func (l *LoggerT) getLoggingLevel() int {
+	var found bool
+	var level int
+	levelConfigLock.RLock()
+	if l.name == "" {
+		level = rootLevel
+		found = true
+	}
+	if !found {
+		level, found = loggerLevelsCache[l.name]
+	}
+	if !found {
+		level, found = levelConfig[l.name]
+	}
+	levelConfigLock.RUnlock()
+	if found {
+		return level
+	}
+
+	level = l.parent.getLoggingLevel()
+
+	levelConfigLock.Lock()
+	loggerLevelsCache[l.name] = level
+	levelConfigLock.Unlock()
+
+	return level
+}
+
+// SetModuleLevel sets log level for a module and it's children
+// Pass empty string for module parameter for resetting root logging level
+func SetModuleLevel(module string, levelStr string) error {
+	level, ok := levelMap[levelStr]
+	if !ok {
+		return errors.New("invalid level value : " + levelStr)
+	}
+	levelConfigLock.Lock()
+	if module == "" {
+		rootLevel = level
+	} else {
+		levelConfig[module] = level
+		loggerLevelsCache = make(map[string]int)
+		Log.Info(levelConfig)
+	}
+	levelConfigLock.Unlock()
+
+	return nil
 }
 
 //IsDebugLevel Returns true is debug lvl is enabled
 func (l *LoggerT) IsDebugLevel() bool {
-	return levelDebug >= level
+	return levelDebug >= l.getLoggingLevel()
 }
 
 // Deprecated! Use instance of LoggerT instead
@@ -126,7 +228,9 @@ func IsDebugLevel() bool {
 // Debug level logging.
 // Most verbose logging level.
 func (l *LoggerT) Debug(args ...interface{}) {
-	Log.Debug(args...)
+	if levelDebug >= l.getLoggingLevel() {
+		Log.Debug(args...)
+	}
 }
 
 // Deprecated! Use instance of LoggerT instead
@@ -137,7 +241,9 @@ func Debug(args ...interface{}) {
 // Info level logging.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
 func (l *LoggerT) Info(args ...interface{}) {
-	Log.Info(args...)
+	if levelInfo >= l.getLoggingLevel() {
+		Log.Info(args...)
+	}
 }
 
 // Deprecated! Use instance of LoggerT instead
@@ -148,7 +254,9 @@ func Info(args ...interface{}) {
 // Warn level logging.
 // Use this to log warnings
 func (l *LoggerT) Warn(args ...interface{}) {
-	Log.Warn(args...)
+	if levelWarn >= l.getLoggingLevel() {
+		Log.Warn(args...)
+	}
 }
 
 // Deprecated! Use instance of LoggerT instead
@@ -159,7 +267,9 @@ func Warn(args ...interface{}) {
 // Error level logging.
 // Use this to log errors which dont immediately halt the application.
 func (l *LoggerT) Error(args ...interface{}) {
-	Log.Error(args...)
+	if levelError >= l.getLoggingLevel() {
+		Log.Error(args...)
+	}
 }
 
 // Deprecated! Use instance of LoggerT instead
@@ -170,7 +280,7 @@ func Error(args ...interface{}) {
 // Fatal level logging.
 // Use this to log errors which crash the application.
 func (l *LoggerT) Fatal(args ...interface{}) {
-	if levelFatal >= level {
+	if levelFatal >= l.getLoggingLevel() {
 		Log.Error(args...)
 
 		//If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
@@ -193,7 +303,9 @@ func Fatal(args ...interface{}) {
 // Debugf does debug level logging similar to fmt.Printf.
 // Most verbose logging level
 func (l *LoggerT) Debugf(format string, args ...interface{}) {
-	Log.Debugf(format, args...)
+	if levelDebug >= l.getLoggingLevel() {
+		Log.Debugf(format, args...)
+	}
 }
 
 // Deprecated! Use instance of LoggerT instead
@@ -204,7 +316,9 @@ func Debugf(format string, args ...interface{}) {
 // Infof does info level logging similar to fmt.Printf.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
 func (l *LoggerT) Infof(format string, args ...interface{}) {
-	Log.Infof(format, args...)
+	if levelInfo >= l.getLoggingLevel() {
+		Log.Infof(format, args...)
+	}
 }
 
 // Deprecated! Use instance of LoggerT instead
@@ -215,7 +329,9 @@ func Infof(format string, args ...interface{}) {
 // Warnf does warn level logging similar to fmt.Printf.
 // Use this to log warnings
 func (l *LoggerT) Warnf(format string, args ...interface{}) {
-	Log.Warnf(format, args...)
+	if levelWarn >= l.getLoggingLevel() {
+		Log.Warnf(format, args...)
+	}
 }
 
 // Deprecated! Use instance of LoggerT instead
@@ -226,7 +342,9 @@ func Warnf(format string, args ...interface{}) {
 // Errorf does error level logging similar to fmt.Printf.
 // Use this to log errors which dont immediately halt the application.
 func (l *LoggerT) Errorf(format string, args ...interface{}) {
-	Log.Errorf(format, args...)
+	if levelError >= l.getLoggingLevel() {
+		Log.Errorf(format, args...)
+	}
 }
 
 // Deprecated! Use instance of LoggerT instead
@@ -237,7 +355,7 @@ func Errorf(format string, args ...interface{}) {
 // Fatalf does fatal level logging similar to fmt.Printf.
 // Use this to log errors which crash the application.
 func (l *LoggerT) Fatalf(format string, args ...interface{}) {
-	if levelFatal >= level {
+	if levelFatal >= l.getLoggingLevel() {
 		Log.Errorf(format, args...)
 
 		//If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
@@ -259,7 +377,7 @@ func Fatalf(format string, args ...interface{}) {
 
 // LogRequest reads and logs the request body and resets the body to original state.
 func (l *LoggerT) LogRequest(req *http.Request) {
-	if levelEvent >= level {
+	if levelEvent >= l.getLoggingLevel() {
 		defer req.Body.Close()
 		bodyBytes, _ := ioutil.ReadAll(req.Body)
 		bodyString := string(bodyBytes)

@@ -6,6 +6,7 @@ package mock_logger
 
 import (
 	gomock "github.com/golang/mock/gomock"
+	logger "github.com/rudderlabs/rudder-server/utils/logger"
 	http "net/http"
 	reflect "reflect"
 )
@@ -31,6 +32,20 @@ func NewMockLoggerI(ctrl *gomock.Controller) *MockLoggerI {
 // EXPECT returns an object that allows the caller to indicate expected use
 func (m *MockLoggerI) EXPECT() *MockLoggerIMockRecorder {
 	return m.recorder
+}
+
+// Child mocks base method
+func (m *MockLoggerI) Child(arg0 string) logger.LoggerI {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Child", arg0)
+	ret0, _ := ret[0].(logger.LoggerI)
+	return ret0
+}
+
+// Child indicates an expected call of Child
+func (mr *MockLoggerIMockRecorder) Child(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Child", reflect.TypeOf((*MockLoggerI)(nil).Child), arg0)
 }
 
 // Debug mocks base method
