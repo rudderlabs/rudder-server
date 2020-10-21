@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
@@ -230,7 +229,6 @@ var _ = Describe("Processor", func() {
 		c.Setup()
 
 		// setup static requirements of dependencies
-		logger.Setup()
 		stats.Setup()
 	})
 
