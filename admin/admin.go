@@ -31,6 +31,7 @@ package admin
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -121,6 +122,19 @@ func (a Admin) ServerConfig(noArgs struct{}, reply *string) error {
 	}
 	formattedOutput, err := json.MarshalIndent(config, "", "  ")
 	*reply = string(formattedOutput)
+	return err
+}
+
+type LogLevel struct {
+	Module string
+	Level  string
+}
+
+func (a Admin) SetLogLevel(l LogLevel, reply *string) error {
+	err := logger.SetModuleLevel(l.Module, l.Level)
+	if err == nil {
+		*reply = fmt.Sprintf("Module %s log level set to %s", l.Module, l.Level)
+	}
 	return err
 }
 

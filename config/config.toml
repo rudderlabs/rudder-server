@@ -261,7 +261,7 @@ logFileSize = 100 # in MB
 enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
-
+# moduleLevels="router.GA=DEBUG:router.BRAZE=DEBUG"
 
 [Diagnostics]
 enableDiagnostics = true

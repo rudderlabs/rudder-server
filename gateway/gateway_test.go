@@ -30,7 +30,6 @@ import (
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
@@ -225,7 +224,6 @@ var _ = Describe("Gateway Enterprise", func() {
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled, WriteKeyEnabled).Return(true).AnyTimes()
 
 		// setup static requirements of dependencies
-		logger.Setup()
 		stats.Setup()
 
 		// setup common environment, override in BeforeEach when required
@@ -285,7 +283,6 @@ var _ = Describe("Gateway", func() {
 		c.initializeAppFeatures()
 
 		// setup static requirements of dependencies
-		logger.Setup()
 		stats.Setup()
 
 		// setup common environment, override in BeforeEach when required
