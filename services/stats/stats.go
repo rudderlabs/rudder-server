@@ -89,6 +89,7 @@ type RudderStats interface {
 	Start()
 	End()
 	DeferredTimer()
+	SendTiming(duration time.Duration)
 }
 
 // RudderStatsT is the default implementation of a StatsD stat
@@ -417,6 +418,17 @@ func (rStats *RudderStatsT) DeferredTimer() {
 		return
 	}
 	rStats.Client.NewTiming().Send(rStats.Name)
+}
+
+// Timing sends a timing for this stat. Only applies to TimerType stats
+func (rStats *RudderStatsT) SendTiming(duration time.Duration) {
+	if !statsEnabled || rStats.dontProcess {
+		return
+	}
+	if rStats.StatType != TimerType {
+		panic(fmt.Errorf("rStats.StatType:%s is not timer", rStats.StatType))
+	}
+	rStats.Client.Timing(rStats.Name, int(duration/time.Millisecond))
 }
 
 func collectRuntimeStats(client *statsd.Client) {

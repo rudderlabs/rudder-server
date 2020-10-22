@@ -300,13 +300,13 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				receivedTime, err := time.Parse(misc.RFC3339Milli, paramaters.ReceivedAt)
 				if err == nil {
 					eventsDeliveryTimeStat := stats.NewTaggedStat(
-						"event_delivery_time", stats.CountType, map[string]string{
+						"event_delivery_time", stats.TimerType, map[string]string{
 							"module":   "router",
 							"destType": rt.destName,
 							"id":       paramaters.DestinationID,
 						})
 
-					eventsDeliveryTimeStat.Count(int(time.Now().Sub(receivedTime) / time.Second))
+					eventsDeliveryTimeStat.SendTiming(time.Now().Sub(receivedTime))
 				}
 			}
 		}
