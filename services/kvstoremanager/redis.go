@@ -2,6 +2,7 @@ package kvstoremanager
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-redis/redis"
@@ -22,7 +23,10 @@ func init() {
 func (m *redisManagerT) Connect() {
 	addr, _ := m.config["address"].(string)
 	password, _ := m.config["password"].(string)
-	db, _ := m.config["database"].(int)
+	var db int
+	if dbStr, ok := m.config["database"].(string); ok {
+		db, _ = strconv.Atoi(dbStr)
+	}
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     addr,
