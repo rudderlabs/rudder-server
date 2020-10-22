@@ -375,12 +375,12 @@ func (job *UploadJobT) run() (err error) {
 		}
 
 		if err != nil {
-			logger.Errorf("WH] Upload: %d, CurrState: %s, NextState: %s, Error: %w", job.upload.ID, currState, nextState, err.Error())
+			logger.Errorf("[WH] Upload: %d, CurrState: %s, NextState: %s, Error: %w", job.upload.ID, currState, nextState, err.Error())
 			state, _ := job.setUploadError(err, currState)
 			if state == AbortedState {
 				nextState = AbortedState
 			}
-			time.Sleep(1 * time.Second)
+			break
 		}
 
 		currState = nextState
@@ -709,10 +709,8 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseutils.WarehouseUploadsTable)
 	_, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, timeutil.Now(), upload.ID)
 
-	if err != nil {
-		job.upload.Status = state
-		job.upload.Error = serializedErr
-	}
+	job.upload.Status = state
+	job.upload.Error = serializedErr
 
 	return state, err
 }
