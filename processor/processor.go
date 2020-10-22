@@ -280,7 +280,7 @@ func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
 			logger.Debug("[Processor: addJobsToSessions] bad event")
 			continue
 		}
-		userID, ok := misc.GetAnonymousID(eventList[0])
+		userID, ok := misc.GetRudderID(eventList[0])
 		if !ok {
 			logger.Error("[Processor: addJobsToSessions] Failed to get userID for job")
 			continue
@@ -568,16 +568,12 @@ func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsd
 	metadata := transformer.MetadataT{}
 	metadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	metadata.DestinationID = destination.ID
-	metadata.UserID = batchEvent.UserID
+	metadata.RudderID = batchEvent.UserID
 	metadata.JobID = batchEvent.JobID
 	metadata.DestinationType = destination.DestinationDefinition.Name
 	metadata.MessageID = event.Message["messageId"].(string)
-
 	if event.SessionID != "" {
 		metadata.SessionID = event.SessionID
-	}
-	if anonymousID, ok := misc.GetAnonymousID(event.Message); ok {
-		metadata.AnonymousID = anonymousID
 	}
 	event.Metadata = metadata
 }
@@ -670,7 +666,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, metadata
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			CustomVal:    metadata.DestinationType,
-			UserID:       failedEvent.Metadata.UserID, // will be nil if it went throgh user transformation
+			UserID:       failedEvent.Metadata.RudderID,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
@@ -879,22 +875,16 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			// source_id will be same for all events belong to same user in a session
 			sourceID := destEvent.Metadata.SourceID
 			destID := destEvent.Metadata.DestinationID
-			userID := destEvent.Metadata.UserID
-			//If the response from the transformer does not have userID in metadata,
-			//fetching it from transformer response output. If it is not found there too, setting userID to random-uuid.
+			rudderID := destEvent.Metadata.RudderID
+			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
-			if userID == "" {
-				userIDFromTransformerResponse, canEventBeMappedToUser := integrations.GetUserIDFromTransformerResponse(destEventJSON)
-				if canEventBeMappedToUser {
-					userID = userIDFromTransformerResponse
-				} else {
-					userID = "random-" + id.String()
-				}
+			if rudderID == "" {
+				rudderID = "random-" + id.String()
 			}
 
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				UserID:       userID,
+				UserID:       rudderID,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v"}`, sourceID, destID)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),

@@ -33,6 +33,20 @@ func (m *MockStats) EXPECT() *MockStatsMockRecorder {
 	return m.recorder
 }
 
+// GetRouterStat mocks base method
+func (m *MockStats) GetRouterStat(arg0, arg1, arg2 string, arg3 int) stats.RudderStats {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRouterStat", arg0, arg1, arg2, arg3)
+	ret0, _ := ret[0].(stats.RudderStats)
+	return ret0
+}
+
+// GetRouterStat indicates an expected call of GetRouterStat
+func (mr *MockStatsMockRecorder) GetRouterStat(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouterStat", reflect.TypeOf((*MockStats)(nil).GetRouterStat), arg0, arg1, arg2, arg3)
+}
+
 // NewBatchDestStat mocks base method
 func (m *MockStats) NewBatchDestStat(arg0, arg1, arg2 string) stats.RudderStats {
 	m.ctrl.T.Helper()

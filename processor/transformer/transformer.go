@@ -32,13 +32,12 @@ const supportedTransformerAPIVersion = 1
 type MetadataT struct {
 	SourceID        string `json:"sourceId"`
 	DestinationID   string `json:"destinationId"`
-	UserID          string `json:"userId"`
 	JobID           int64  `json:"jobId"`
 	DestinationType string `json:"destinationType"`
 	MessageID       string `json:"messageId"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
 	MessageIDs  []string `json:"messageIds"`
-	AnonymousID string   `json:"anonymousId"`
+	RudderID string   `json:"rudderId"`
 	SessionID   string   `json:"sessionId,omitempty"`
 }
 
@@ -253,13 +252,13 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 					if !breakIntoBatchWhenUserChanges || inputIdx >= len(clientEvents) {
 						break
 					}
-					prevUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx-1].Message)
+					prevUserID, ok := misc.GetRudderID(clientEvents[inputIdx-1].Message)
 					if !ok {
-						panic(fmt.Errorf("GetAnonymousID failed"))
+						panic(fmt.Errorf("GetRudderID failed"))
 					}
-					currentUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx].Message)
+					currentUserID, ok := misc.GetRudderID(clientEvents[inputIdx].Message)
 					if !ok {
-						panic(fmt.Errorf("GetAnonymousID failed"))
+						panic(fmt.Errorf("GetRudderID failed"))
 					}
 					if currentUserID != prevUserID {
 						logger.Debug("Breaking batch at", inputIdx, prevUserID, currentUserID)

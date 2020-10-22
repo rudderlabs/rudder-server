@@ -1400,7 +1400,7 @@ type transformExpectation struct {
 
 func createMessagePayload(e mockEventData) string {
 	integrations, _ := json.Marshal(e.integrations)
-	return fmt.Sprintf(`{"anonymousId": "some-anonymous-id", "messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s"}`, e.id, integrations, e.id, e.originalTimestamp, e.sentAt)
+	return fmt.Sprintf(`{"rudderId": "some-rudder-id", "messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s"}`, e.id, integrations, e.id, e.originalTimestamp, e.sentAt)
 }
 
 func createBatchPayload(writeKey string, receivedAt string, events []mockEventData) []byte {
