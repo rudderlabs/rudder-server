@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -111,6 +111,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, status str
 
 		if resp != nil && resp.Body != nil {
 			respBody, _ = ioutil.ReadAll(resp.Body)
+			logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 			defer resp.Body.Close()
 		}
 
@@ -131,7 +132,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, status str
 }
 
 //Setup initializes the module
-func (network *NetHandleT) Setup(destID string) {
+func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) {
 	logger.Info("Network Handler Startup")
 	//Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
 	defaultRoundTripper := http.DefaultTransport
@@ -144,8 +145,21 @@ func (network *NetHandleT) Setup(destID string) {
 	//https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU
 	//Solved in go1.8 https://github.com/golang/go/issues/26013
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
-	defaultTransportCopy.MaxIdleConns = config.GetInt("Router.httpMaxIdleConns", 100)
-	defaultTransportCopy.MaxIdleConnsPerHost = config.GetInt("Router.httpMaxIdleConnsPerHost", 100)
-	timeOut := config.GetDuration("Router.httpTimeoutInS", 30) * time.Second
-	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: timeOut}
+	logger.Info("forceHTTP1: ", getRouterConfigBool("forceHTTP1", destID, false))
+	if getRouterConfigBool("forceHTTP1", destID, false) {
+		logger.Info("Forcing HTTP1 connection for ", destID)
+		var tlsClientConfigCopy tls.Config
+		misc.Copy(&tlsClientConfigCopy, defaultTransportCopy.TLSClientConfig)
+		defaultTransportCopy.ForceAttemptHTTP2 = false
+		tlsClientConfigCopy.NextProtos = []string{"http/1.1"}
+
+		defaultTransportCopy.TLSClientConfig = &tlsClientConfigCopy
+	}
+	logger.Info(destID, defaultTransportCopy.TLSClientConfig.NextProtos)
+	defaultTransportCopy.MaxIdleConns = getRouterConfigInt("httpMaxIdleConns", destID, 100)
+	defaultTransportCopy.MaxIdleConnsPerHost = getRouterConfigInt("httpMaxIdleConnsPerHost", destID, 100)
+	logger.Info(destID, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
+	logger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
+	logger.Info("netClientTimeout: ", netClientTimeout)
+	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
 }

@@ -27,6 +27,7 @@ var batchDestClientsMap = make(map[string]*statsd.Client)
 var destClientsMap = make(map[string]*statsd.Client)
 var routerClientsMap = make(map[string]*statsd.Client)
 var procErrorClientsMap = make(map[string]*statsd.Client)
+var taggedClientsMap = make(map[string]*statsd.Client)
 var jobsdbClientsMap = make(map[string]*statsd.Client)
 var migratorsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
@@ -38,6 +39,7 @@ var batchDestClientsMapLock sync.Mutex
 var destClientsMapLock sync.Mutex
 var routerClientsMapLock sync.Mutex
 var procErrorClientsMapLock sync.Mutex
+var taggedClientsMapLock sync.Mutex
 var jobsdbClientsMapLock sync.Mutex
 var migratorsMapLock sync.Mutex
 var enabled bool
@@ -71,6 +73,7 @@ type Stats interface {
 	NewDestStat(Name string, StatType string, destID string) RudderStats
 	GetRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats
 	GetProcErrorStat(Name string, StatType string, destName string, statusCode int, stage string) RudderStats
+	NewTaggedStat(Name string, StatType string, tags map[string]string) RudderStats
 	NewJobsDBStat(Name string, StatType string, customVal string) RudderStats
 	NewMigratorStat(Name string, StatType string, customVal string) RudderStats
 }
@@ -89,6 +92,7 @@ type RudderStats interface {
 	Start()
 	End()
 	DeferredTimer()
+	SendTiming(duration time.Duration)
 }
 
 // RudderStatsT is the default implementation of a StatsD stat
@@ -146,6 +150,37 @@ func (s *HandleT) NewBatchStat(Name string, StatType string, index int) (rStats 
 // Deprecated: Use DefaultStats for managing stats instead
 func NewStat(Name string, StatType string) (rStats RudderStats) {
 	return DefaultStats.NewStat(Name, StatType)
+}
+
+func (s *HandleT) NewTaggedStat(Name string, StatType string, tags map[string]string) (rStats RudderStats) {
+	taggedClientsMapLock.Lock()
+	defer taggedClientsMapLock.Unlock()
+
+	tags["instanceName"] = instanceID
+	tagStr := StatType
+	tagVals := make([]string, 0, len(tags)*2)
+	for tagName, tagVal := range tags {
+		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
+		tagVals = append(tagVals, tagName, tagVal)
+	}
+	if _, found := taggedClientsMap[tagStr]; !found {
+		var err error
+		taggedClientsMap[tagStr], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...))
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+
+	return &RudderStatsT{
+		Name:        Name,
+		StatType:    StatType,
+		Client:      taggedClientsMap[tagStr],
+		dontProcess: false,
+	}
+}
+
+func NewTaggedStat(Name string, StatType string, tags map[string]string) (rStats RudderStats) {
+	return DefaultStats.NewTaggedStat(Name, StatType, tags)
 }
 
 /*
@@ -416,6 +451,17 @@ func (rStats *RudderStatsT) DeferredTimer() {
 		return
 	}
 	rStats.Client.NewTiming().Send(rStats.Name)
+}
+
+// Timing sends a timing for this stat. Only applies to TimerType stats
+func (rStats *RudderStatsT) SendTiming(duration time.Duration) {
+	if !statsEnabled || rStats.dontProcess {
+		return
+	}
+	if rStats.StatType != TimerType {
+		panic(fmt.Errorf("rStats.StatType:%s is not timer", rStats.StatType))
+	}
+	rStats.Client.Timing(rStats.Name, int(duration/time.Millisecond))
 }
 
 func collectRuntimeStats(client *statsd.Client) {

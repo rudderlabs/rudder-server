@@ -7,6 +7,7 @@ package mocks_stats
 import (
 	gomock "github.com/golang/mock/gomock"
 	reflect "reflect"
+	time "time"
 )
 
 // MockRudderStats is a mock of RudderStats interface
@@ -90,6 +91,18 @@ func (m *MockRudderStats) Increment() {
 func (mr *MockRudderStatsMockRecorder) Increment() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Increment", reflect.TypeOf((*MockRudderStats)(nil).Increment))
+}
+
+// SendTiming mocks base method
+func (m *MockRudderStats) SendTiming(arg0 time.Duration) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SendTiming", arg0)
+}
+
+// SendTiming indicates an expected call of SendTiming
+func (mr *MockRudderStatsMockRecorder) SendTiming(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendTiming", reflect.TypeOf((*MockRudderStats)(nil).SendTiming), arg0)
 }
 
 // Start mocks base method

@@ -36,9 +36,10 @@ type MetadataT struct {
 	DestinationType string `json:"destinationType"`
 	MessageID       string `json:"messageId"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
-	MessageIDs  []string `json:"messageIds"`
-	RudderID string   `json:"rudderId"`
-	SessionID   string   `json:"sessionId,omitempty"`
+	MessageIDs []string `json:"messageIds"`
+	RudderID   string   `json:"rudderId"`
+	SessionID  string   `json:"sessionId,omitempty"`
+	ReceivedAt string   `json:"receivedAt"`
 }
 
 type TransformerEventT struct {
