@@ -26,6 +26,7 @@ var writeKeyClientsMap = make(map[string]*statsd.Client)
 var batchDestClientsMap = make(map[string]*statsd.Client)
 var destClientsMap = make(map[string]*statsd.Client)
 var routerClientsMap = make(map[string]*statsd.Client)
+var procErrorClientsMap = make(map[string]*statsd.Client)
 var jobsdbClientsMap = make(map[string]*statsd.Client)
 var migratorsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
@@ -36,6 +37,7 @@ var writeKeyClientsMapLock sync.Mutex
 var batchDestClientsMapLock sync.Mutex
 var destClientsMapLock sync.Mutex
 var routerClientsMapLock sync.Mutex
+var procErrorClientsMapLock sync.Mutex
 var jobsdbClientsMapLock sync.Mutex
 var migratorsMapLock sync.Mutex
 var enabled bool
@@ -68,6 +70,7 @@ type Stats interface {
 	NewBatchDestStat(Name string, StatType string, destID string) RudderStats
 	NewDestStat(Name string, StatType string, destID string) RudderStats
 	GetRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats
+	GetProcErrorStat(Name string, StatType string, destName string, statusCode int, stage string) RudderStats
 	NewJobsDBStat(Name string, StatType string, customVal string) RudderStats
 	NewMigratorStat(Name string, StatType string, customVal string) RudderStats
 }
@@ -264,6 +267,36 @@ func (s *HandleT) GetRouterStat(Name string, StatType string, destName string, r
 // Deprecated: Use DefaultStats for managing stats instead
 func GetRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats {
 	return DefaultStats.GetRouterStat(Name, StatType, destName, respStatusCode)
+}
+
+/*
+GetProcErrorStat is used to create new destination specific stat.
+Destination name and response status are added as tags in this case.
+If Destination name and response status have been used on this function before, a RudderStats with the same underlying client will be returned.
+*/
+func (s *HandleT) GetProcErrorStat(Name string, StatType string, destName string, statusCode int, stage string) RudderStats {
+	procErrorClientsMapLock.Lock()
+	defer procErrorClientsMapLock.Unlock()
+	key := fmt.Sprintf("%s|%d|%s", destName, statusCode, stage)
+	if _, found := procErrorClientsMap[key]; !found {
+		var err error
+		procErrorClientsMap[key], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destName", destName, "statusCode", strconv.Itoa(statusCode), "stage", stage))
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+	return &RudderStatsT{
+		Name:        Name,
+		StatType:    StatType,
+		Client:      procErrorClientsMap[key],
+		dontProcess: false,
+	}
+}
+
+// GetProcErrorStat is used to create new destination specific stat.
+// Deprecated: Use DefaultStats for managing stats instead
+func GetProcErrorStat(Name string, StatType string, destName string, statusCode int, stage string) RudderStats {
+	return DefaultStats.GetProcErrorStat(Name, StatType, destName, statusCode, stage)
 }
 
 /*

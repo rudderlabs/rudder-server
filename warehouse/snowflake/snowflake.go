@@ -56,6 +56,7 @@ var dataTypesMap = map[string]string{
 	"float":    "double precision",
 	"string":   "varchar",
 	"datetime": "timestamp",
+	"json":     "variant",
 }
 
 var dataTypesMapToRudder = map[string]string{
@@ -87,6 +88,7 @@ var dataTypesMapToRudder = map[string]string{
 	"TIMESTAMP":        "datetime",
 	"TIMESTAMP_LTZ":    "datetime",
 	"TIMESTAMP_TZ":     "datetime",
+	"VARIANT":          "json",
 }
 
 var primaryKeyMap = map[string]string{
@@ -151,11 +153,22 @@ func (sf *HandleT) createSchema() (err error) {
 	return
 }
 
+func (sf *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+	var count int
+	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s'`, sf.Namespace)
+	err = sf.Db.QueryRow(sqlStatement).Scan(&count)
+	exists = count > 0
+	return
+}
+
 func (sf *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
 	diff := warehouseutils.GetSchemaDiff(sf.CurrentSchema, sf.Upload.Schema)
 	updatedSchema = diff.UpdatedSchema
 	if len(sf.CurrentSchema) == 0 {
-		err = sf.createSchema()
+		var schemaExists bool
+		if schemaExists, err = sf.schemaExists(sf.Namespace); !schemaExists {
+			err = sf.createSchema()
+		}
 		if err != nil {
 			return nil, err
 		}
