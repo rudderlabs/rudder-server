@@ -52,6 +52,7 @@ var (
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTimeinHr   time.Duration
+	diagnostic                         diagnostics.DiagnosticsI
 )
 
 type HandleT struct {
@@ -386,7 +387,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	//tracking batch router errors
 	if diagnostics.EnableDestinationFailuresMetric {
 		if batchJobState == jobsdb.Failed.State {
-			diagnostics.Track(diagnostics.BatchRouterFailed, map[string]interface{}{
+			diagnostic.Track(diagnostics.BatchRouterFailed, map[string]interface{}{
 				diagnostics.BatchRouterDestination: brt.destType,
 				diagnostics.ErrorResponse:          string(errorResp),
 			})
@@ -792,7 +793,7 @@ func (brt *HandleT) collectMetrics() {
 						},
 					}
 
-					diagnostics.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
+					diagnostic.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
 				}
 
 				brt.batchRequestsMetric = nil
@@ -817,6 +818,7 @@ func loadConfig() {
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
+	diagnostic = diagnostics.Diagnostic
 }
 
 func init() {

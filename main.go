@@ -58,6 +58,7 @@ var (
 	routerLoaded                     bool
 	processorLoaded                  bool
 	enableSuppressUserFeature        bool
+	diagnostic                       diagnostics.DiagnosticsI
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -74,6 +75,7 @@ func loadConfig() {
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	// Enable suppress user feature. false by default
 	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
+	diagnostic = diagnostics.Diagnostic
 }
 
 // Test Function
@@ -161,7 +163,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 
 	// Check if there is a probable inconsistent state of Data
 	if diagnostics.EnableServerStartMetric {
-		diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
+		diagnostic.Track(diagnostics.ServerStart, map[string]interface{}{
 			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
 		})
 	}

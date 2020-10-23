@@ -82,6 +82,7 @@ var (
 	randomWorkerAssign                                                             bool
 	testSinkURL                                                                    string
 	retryTimeWindow, minRetryBackoff, maxRetryBackoff                              time.Duration
+	diagnostic                                                                     diagnostics.DiagnosticsI
 )
 
 var userOrderingRequiredMap = map[string]bool{
@@ -118,6 +119,7 @@ func loadConfig() {
 	retryTimeWindow = config.GetDuration("Router.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
 	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
+	diagnostic = diagnostics.Diagnostic
 }
 
 func (rt *HandleT) trackStuckDelivery() chan struct{} {
@@ -549,7 +551,7 @@ func (rt *HandleT) statusInsertLoop() {
 						} else {
 							event = diagnostics.RouterAborted
 						}
-						diagnostics.Track(event, map[string]interface{}{
+						diagnostic.Track(event, map[string]interface{}{
 							diagnostics.RouterDestination: rt.destName,
 							diagnostics.UserID:            resp.userID,
 							diagnostics.RouterAttemptNum:  resp.status.AttemptNum,
@@ -628,7 +630,7 @@ func (rt *HandleT) collectMetrics() {
 						},
 					}
 
-					diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
+					diagnostic.Track(diagnostics.RouterEvents, diagnosisProperties)
 				}
 
 				rt.requestsMetric = nil

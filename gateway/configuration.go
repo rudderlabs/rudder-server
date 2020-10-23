@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -39,6 +40,9 @@ func loadConfig() {
 	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
 	allowReqsWithoutUserIDAndAnonymousID = config.GetBool("Gateway.allowReqsWithoutUserIDAndAnonymousID", false)
+	// gets diagnostic interface
+	diagnostic = diagnostics.Diagnostic
+
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers

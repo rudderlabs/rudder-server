@@ -49,10 +49,10 @@ var (
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
-	Http                 sysUtils.HttpI           = sysUtils.NewHttp()
-	log                  logger.LoggerI           = logger.NewLogger()
-	IoUtil               sysUtils.IoUtilI         = sysUtils.NewIoUtil()
-	Diagnostics          diagnostics.DiagnosticsI = diagnostics.NewDiagnostics()
+	Http                 sysUtils.HttpI   = sysUtils.NewHttp()
+	log                  logger.LoggerI   = logger.NewLogger()
+	IoUtil               sysUtils.IoUtilI = sysUtils.NewIoUtil()
+	Diagnostic                            = diagnostics.Diagnostic
 )
 
 var Eb utils.PublishSubscriber = new(utils.EventBus)
@@ -236,10 +236,10 @@ func init() {
 }
 
 func trackConfig(preConfig SourcesT, curConfig SourcesT) {
-	Diagnostics.DisableMetrics(curConfig.EnableMetrics)
+	Diagnostic.DisableMetrics(curConfig.EnableMetrics)
 	if diagnostics.EnableConfigIdentifyMetric {
 		if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
-			Diagnostics.Identify(map[string]interface{}{
+			Diagnostic.Identify(map[string]interface{}{
 				diagnostics.ConfigIdentify: curConfig.Sources[0].WorkspaceID,
 			})
 		}
@@ -250,7 +250,7 @@ func trackConfig(preConfig SourcesT, curConfig SourcesT) {
 		for _, source := range curConfig.Sources {
 			noOfDestinations = noOfDestinations + len(source.Destinations)
 		}
-		Diagnostics.Track(diagnostics.ConfigProcessed, map[string]interface{}{
+		Diagnostic.Track(diagnostics.ConfigProcessed, map[string]interface{}{
 			diagnostics.SourcesCount:      noOfSources,
 			diagnostics.DesitanationCount: noOfDestinations,
 		})

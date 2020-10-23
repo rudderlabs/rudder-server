@@ -50,7 +50,7 @@ var (
 	EnableBatchRouterMetric         bool
 	EnableDestinationFailuresMetric bool
 )
-var diagnostics DiagnosticsI
+var Diagnostic DiagnosticsI
 
 type DiagnosticsI interface {
 	Track(event string, properties map[string]interface{})
@@ -81,7 +81,7 @@ func loadConfig() {
 	EnableRouterMetric = config.GetBool("Diagnostics.enableRouterMetric", true)
 	EnableBatchRouterMetric = config.GetBool("Diagnostics.enableBatchRouterMetric", true)
 	EnableDestinationFailuresMetric = config.GetBool("Diagnostics.enableDestinationFailuresMetric", true)
-	diagnostics = NewDiagnostics()
+	Diagnostic = NewDiagnostics()
 }
 
 // NewDiagnostics return new instace of diagnostics
@@ -115,7 +115,7 @@ func (d *Diagnostics) Track(event string, properties map[string]interface{}) {
 
 // Deprecated! Use instance of diagnostics instead;
 func Track(event string, properties map[string]interface{}) {
-	diagnostics.Track(event, properties)
+	Diagnostic.Track(event, properties)
 }
 
 func (d *Diagnostics) DisableMetrics(enableMetrics bool) {
@@ -131,7 +131,7 @@ func (d *Diagnostics) DisableMetrics(enableMetrics bool) {
 
 // Deprecated! Use instance of diagnostics instead;
 func DisableMetrics(enableMetrics bool) {
-	diagnostics.DisableMetrics(enableMetrics)
+	Diagnostic.DisableMetrics(enableMetrics)
 }
 
 func (d *Diagnostics) Identify(properties map[string]interface{}) {
@@ -151,5 +151,5 @@ func (d *Diagnostics) Identify(properties map[string]interface{}) {
 
 // Deprecated! Use instance of diagnostics instead;
 func Identify(properties map[string]interface{}) {
-	diagnostics.Identify(properties)
+	Diagnostic.Identify(properties)
 }
