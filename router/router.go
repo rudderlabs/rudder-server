@@ -296,7 +296,7 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			logger.Debugf("[%v Router] :: sending failed/aborted state as response", rt.destName)
 			rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
 		}
-
+		rt.trackRequestMetrics(reqMetric)
 		if paramaters.ReceivedAt != "" {
 			if status.JobState == jobsdb.Succeeded.State {
 				receivedTime, err := time.Parse(misc.RFC3339Milli, paramaters.ReceivedAt)
