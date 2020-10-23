@@ -177,7 +177,7 @@ func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJ
 		for idx, routerJob := range routerJobs {
 			jobIDs[idx] = fmt.Sprintf("%v", routerJob.JobMetadata.JobID)
 		}
-		worker.rt.logger.Errorf("[%v Router] :: Job ids : %s", strings.Join(jobIDs, ", "))
+		worker.rt.logger.Errorf("[%v Router] :: Job ids : %s", worker.rt.destName, strings.Join(jobIDs, ", "))
 	}
 
 	return destinationJobs
@@ -366,7 +366,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				}
 
 				worker.postStatusOnResponseQ(500, "transformer failed to handle this job", &routerJob.JobMetadata, &status)
-
 			}
 		}
 	}
@@ -379,11 +378,10 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 
 	if isSuccessStatus(respStatusCode) {
 		reqMetric.RequestSuccess = reqMetric.RequestSuccess + 1
-		reqMetric.RequestCompletedTime = time.Now().Sub(*diagnosisStartTime)
 	} else {
 		reqMetric.RequestRetries = reqMetric.RequestRetries + 1
-		reqMetric.RequestCompletedTime = time.Now().Sub(*diagnosisStartTime)
 	}
+	reqMetric.RequestCompletedTime = time.Now().Sub(*diagnosisStartTime)
 }
 
 func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {

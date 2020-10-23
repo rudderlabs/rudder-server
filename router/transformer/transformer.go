@@ -58,10 +58,6 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 		panic(err)
 	}
 
-	//TODO remove
-	fmt.Println("input rawjson print")
-	fmt.Println(string(rawJSON))
-
 	retryCount := 0
 	var resp *http.Response
 	//We should rarely have error communicating with our JS
@@ -112,10 +108,6 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 		if err != nil {
 			panic(err)
 		}
-
-		//TODO remove
-		fmt.Println("output jobs")
-		fmt.Println(string(respData))
 	} else {
 		io.Copy(ioutil.Discard, resp.Body)
 	}
