@@ -376,11 +376,14 @@ func (job *UploadJobT) run() (err error) {
 
 		if err != nil {
 			logger.Errorf("[WH] Upload: %d, CurrState: %s, NextState: %s, Error: %w", job.upload.ID, currState, nextState, err.Error())
-			state, _ := job.setUploadError(err, currState)
-			if state == AbortedState {
+			state, err := job.setUploadError(err, nextState)
+			if err == nil && state == AbortedState {
+				// Setting nextState to aborted to perform any finalizer actions
 				nextState = AbortedState
+			} else {
+				// Encountered error, stop the upload and let the scheduler schedule it again
+				break
 			}
-			break
 		}
 
 		currState = nextState
