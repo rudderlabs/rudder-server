@@ -10,6 +10,7 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
@@ -497,4 +498,19 @@ func (bq *HandleT) LoadIdentityMappingsTable() (err error) {
 
 func (bq *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
+}
+
+func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+	bq.Warehouse = warehouse
+	bq.Namespace = warehouse.Namespace
+	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
+	dbClient, err := bq.connect(BQCredentialsT{
+		projectID:   bq.ProjectID,
+		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+	})
+	if err != nil {
+		return client.Client{}, err
+	}
+
+	return client.Client{Type: client.BQClient, BQ: dbClient}, err
 }

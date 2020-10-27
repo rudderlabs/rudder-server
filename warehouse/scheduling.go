@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -27,7 +26,6 @@ var (
 func init() {
 	scheduledTimesCache = map[string][]int{}
 	nextRetryTimeCache = map[string]time.Time{}
-	admin.RegisterAdminHandler("Warehouse", &WarehouseAdmin{})
 	minUploadBackoff = config.GetDuration("Warehouse.minUploadBackoffInS", time.Duration(60)) * time.Second
 	maxUploadBackoff = config.GetDuration("Warehouse.maxUploadBackoffInS", time.Duration(1800)) * time.Second
 }
