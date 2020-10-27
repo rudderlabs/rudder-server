@@ -1,5 +1,11 @@
 package kvstoremanager
 
+import (
+	"encoding/json"
+
+	"github.com/tidwall/gjson"
+)
+
 type KVStoreManager interface {
 	Connect()
 	Close() error
@@ -12,7 +18,14 @@ type SettingsT struct {
 	Config   map[string]interface{}
 }
 
-func New(settings SettingsT) (m KVStoreManager) {
+func New(provider string, config map[string]interface{}) (m KVStoreManager) {
+	return newManager(SettingsT{
+		Provider: provider,
+		Config:   config,
+	})
+}
+
+func newManager(settings SettingsT) (m KVStoreManager) {
 	switch settings.Provider {
 	case "REDIS":
 		m = &redisManagerT{
@@ -21,4 +34,15 @@ func New(settings SettingsT) (m KVStoreManager) {
 		m.Connect()
 	}
 	return m
+}
+
+func EventToKeyValue(jsonData json.RawMessage) (string, map[string]interface{}) {
+	key := gjson.GetBytes(jsonData, "message.key").String()
+	result := gjson.GetBytes(jsonData, "message.fields").Map()
+	fields := make(map[string]interface{})
+	for k, v := range result {
+		fields[k] = v.Str
+	}
+
+	return key, fields
 }

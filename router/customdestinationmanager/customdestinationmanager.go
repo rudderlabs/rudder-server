@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/tidwall/gjson"
 )
 
 const (
@@ -66,33 +65,31 @@ func (customManager *CustomManagerT) newClient(destID string) (*CustomDestinatio
 	defer destLock.Unlock()
 
 	destConfig := customManager.latestConfig[destID].Config
+	var customDestination *CustomDestination
+	var err error
+
 	switch customManager.managerType {
 	case STREAM:
 		producer, err := streammanager.NewProducer(destConfig, customManager.destType)
-		var customDestination *CustomDestination
 		if err == nil {
 			customDestination = &CustomDestination{
 				Config: destConfig,
 				Client: producer,
 			}
-			customManager.destinationsMap[destID] = customDestination
 		}
-		return customDestination, err
-
 	case KV:
-		kvManager := kvstoremanager.New(kvstoremanager.SettingsT{
-			Provider: customManager.destType,
-			Config:   destConfig,
-		})
-		customDestination := &CustomDestination{
+		kvManager := kvstoremanager.New(customManager.destType, destConfig)
+		customDestination = &CustomDestination{
 			Config: destConfig,
 			Client: kvManager,
 		}
-		customManager.destinationsMap[destID] = customDestination
-		return customDestination, nil
 	default:
 		return nil, fmt.Errorf("No provider configured for Custom Destination Manager")
 	}
+
+	customManager.destinationsMap[destID] = customDestination
+	return customDestination, err
+
 }
 
 func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client interface{}, config interface{}) (int, string, string) {
@@ -100,14 +97,9 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType str
 	case STREAM:
 		return streammanager.Produce(jsonData, destType, client, config)
 	case KV:
-		key := gjson.GetBytes(jsonData, "message.key").String()
-		result := gjson.GetBytes(jsonData, "message.fields").Map()
-		fields := make(map[string]interface{})
-		for k, v := range result {
-			fields[k] = v.Str
-		}
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
 
+		key, fields := kvstoremanager.EventToKeyValue(jsonData)
 		err := kvManager.HMSet(key, fields)
 		statusCode := kvManager.StatusCode(err)
 		var respBody string
