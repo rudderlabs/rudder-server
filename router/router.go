@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
+	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	uuid "github.com/satori/go.uuid"
@@ -19,7 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -50,13 +51,6 @@ type HandleT struct {
 	throttlerMutex           sync.RWMutex
 	keepOrderOnFailure       bool
 }
-
-// constants for destCategory
-const (
-	HTTP    = "http"
-	STREAM  = "stream"
-	KVSTORE = "kvStore"
-)
 
 type jobResponseT struct {
 	status *jobsdb.JobStatusT
@@ -763,7 +757,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 
-	rt.customDestinationManager = customdestinationmanager.New(destName)
+	rt.customDestinationManager = customDestinationManager.New(destName)
 
 	rt.setUserEventsOrderingRequirement()
 

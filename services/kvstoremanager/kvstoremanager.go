@@ -1,19 +1,5 @@
 package kvstoremanager
 
-import "github.com/rudderlabs/rudder-server/utils/types"
-
-var (
-	KVStoreDestinations []string
-)
-
-func init() {
-	loadConfig()
-}
-
-func loadConfig() {
-	KVStoreDestinations = []string{"REDIS"}
-}
-
 type KVStoreManager interface {
 	Connect()
 	Close() error
@@ -23,7 +9,7 @@ type KVStoreManager interface {
 
 type SettingsT struct {
 	Provider string
-	Config   types.ConfigT
+	Config   map[string]interface{}
 }
 
 func New(settings SettingsT) (m KVStoreManager) {

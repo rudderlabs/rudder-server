@@ -8,10 +8,12 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -23,6 +25,7 @@ var (
 	ObjectStreamDestinations []string
 	KVStoreDestinations      []string
 	Destinations             []string
+	customManagerMap         map[string]*CustomManagerT
 )
 
 // DestinationManager implements the method to send the events to custom destinations
@@ -34,7 +37,7 @@ type DestinationManager interface {
 type CustomManagerT struct {
 	destType           string
 	managerType        string
-	destinationsMap    map[string]CustomDestination
+	destinationsMap    map[string]*CustomDestination
 	destinationLockMap map[string]*sync.RWMutex
 	latestConfig       map[string]backendconfig.DestinationT
 }
@@ -53,52 +56,65 @@ func loadConfig() {
 	ObjectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB"}
 	KVStoreDestinations = []string{"REDIS"}
 	Destinations = append(ObjectStreamDestinations, KVStoreDestinations...)
+	customManagerMap = make(map[string]*CustomManagerT)
 }
 
-// newClient delegates the call to the appropriate manager based on parameter destination for creating producer
-func (customManager *CustomManagerT) newClient(destID string) (interface{}, error) {
+// newClient delegates the call to the appropriate manager
+func (customManager *CustomManagerT) newClient(destID string) (*CustomDestination, error) {
 	destLock := customManager.destinationLockMap[destID]
 	destLock.Lock()
 	defer destLock.Unlock()
 
-	destConfig := customManager.latestConfig[destID]
+	destConfig := customManager.latestConfig[destID].Config
 	switch customManager.managerType {
 	case STREAM:
 		producer, err := streammanager.NewProducer(destConfig, customManager.destType)
+		var customDestination *CustomDestination
 		if err == nil {
-			streamDestination := CustomDestination{
+			customDestination = &CustomDestination{
 				Config: destConfig,
 				Client: producer,
 			}
-			customManager.destinationsMap[destID] = streamDestination
+			customManager.destinationsMap[destID] = customDestination
 		}
-		return producer, err
+		return customDestination, err
+
 	case KV:
-		return nil, fmt.Errorf("Not implemented yet")
+		kvManager := kvstoremanager.New(kvstoremanager.SettingsT{
+			Provider: customManager.destType,
+			Config:   destConfig,
+		})
+		customDestination := &CustomDestination{
+			Config: destConfig,
+			Client: kvManager,
+		}
+		customManager.destinationsMap[destID] = customDestination
+		return customDestination, nil
 	default:
 		return nil, fmt.Errorf("No provider configured for Custom Destination Manager")
 	}
 }
 
-// closeClient delegates the call to the appropriate manager based on parameter destination to close a given producer
-func (customManager *CustomManagerT) closeClient(client interface{}, destination string) error {
+func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client interface{}, config interface{}) (int, string, string) {
 	switch customManager.managerType {
 	case STREAM:
-		streammanager.CloseProducer(client, destination)
-		return nil
+		return streammanager.Produce(jsonData, destType, client, config)
 	case KV:
-		return nil
-	default:
-		return fmt.Errorf("No provider configured for StreamManager with destination %s", destination)
-	}
-}
+		key := gjson.GetBytes(jsonData, "message.key").String()
+		result := gjson.GetBytes(jsonData, "message.fields").Map()
+		fields := make(map[string]interface{})
+		for k, v := range result {
+			fields[k] = v.Str
+		}
+		kvManager, _ := client.(kvstoremanager.KVStoreManager)
 
-func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, producer interface{}, config interface{}) (int, string, string) {
-	switch customManager.managerType {
-	case STREAM:
-		return streammanager.Produce(jsonData, destType, producer, config)
-	case KV:
-		return 404, "No provider configured for KV Store", ""
+		err := kvManager.HMSet(key, fields)
+		statusCode := kvManager.StatusCode(err)
+		var respBody string
+		if err != nil {
+			respBody = err.Error()
+		}
+		return statusCode, respBody, ""
 	default:
 		return 404, "No provider configured for StreamManager", ""
 	}
@@ -131,12 +147,13 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 
 func (customManager *CustomManagerT) close(destination backendconfig.DestinationT) {
 	destID := destination.ID
-	customDestination := customManager.destinationsMap[destID]
+	customDestination, _ := customManager.destinationsMap[destID]
 	switch customManager.managerType {
 	case STREAM:
 		streammanager.CloseProducer(customDestination.Client, customManager.destType)
 	case KV:
-		//
+		kvManager, _ := customDestination.Client.(kvstoremanager.KVStoreManager)
+		kvManager.Close()
 	}
 	delete(customManager.destinationsMap, destID)
 }
@@ -152,15 +169,15 @@ func (customManager *CustomManagerT) onConfigChange(destination backendconfig.De
 			return nil
 		}
 
-		logger.Infof("[%s] Config changed. Closing Existing producer for destination: %s", customManager.destType, destination.Name)
+		logger.Infof("[%s] Config changed. Closing Existing client for destination: %s", customManager.destType, destination.Name)
 		customManager.close(destination)
 	}
 
-	producer, err := customManager.newClient(destination.ID)
+	customDestination, err := customManager.newClient(destination.ID)
 	if err != nil {
 		return err
 	}
-	logger.Infof("[%s Destination manager] Created new producer: %v for destination: %s", customManager.destType, producer, destination.Name)
+	logger.Infof("[%s Destination manager] Created new client: %v for destination: %s", customManager.destType, destination.Name)
 	return nil
 }
 
@@ -173,10 +190,15 @@ func New(destType string) DestinationManager {
 			managerType = KV
 		}
 
-		customManager := &CustomManagerT{
+		customManager, ok := customManagerMap[destType]
+		if ok {
+			return customManager
+		}
+
+		customManager = &CustomManagerT{
 			destType:           destType,
 			managerType:        managerType,
-			destinationsMap:    make(map[string]CustomDestination),
+			destinationsMap:    make(map[string]*CustomDestination),
 			destinationLockMap: make(map[string]*sync.RWMutex),
 		}
 		rruntime.Go(func() {
