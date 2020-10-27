@@ -24,7 +24,7 @@ type Client struct {
 func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	rows, err := cl.SQL.Query(statement)
 	if err != nil && err != sql.ErrNoRows {
-		return
+		return result, err
 	}
 	if err == sql.ErrNoRows {
 		return result, nil
@@ -33,7 +33,7 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 
 	result.Columns, err = rows.Columns()
 	if err != nil {
-		return
+		return result, err
 	}
 
 	colCount := len(result.Columns)
@@ -47,7 +47,7 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 
 		err = rows.Scan(valuePtrs...)
 		if err != nil {
-			return
+			return result, err
 		}
 		var stringRow []string
 		for i := 0; i < colCount; i++ {
@@ -55,7 +55,7 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 		}
 		result.Values = append(result.Values, stringRow)
 	}
-	return result, nil
+	return result, err
 }
 
 func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, err error) {
