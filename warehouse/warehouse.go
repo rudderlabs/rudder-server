@@ -933,7 +933,7 @@ func Start() {
 			monitorDestRouters()
 		})
 		rruntime.Go(func() {
-			archiveFileLocationRecords(dbHandle)
+			runArchiver(dbHandle)
 		})
 	}
 }

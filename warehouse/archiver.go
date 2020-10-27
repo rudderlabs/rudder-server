@@ -1,17 +1,15 @@
 package warehouse
 
 import (
-	"bytes"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/tablearchiver"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -22,7 +20,7 @@ var (
 	archiveLoadFiles    bool
 	archiveStagingFiles bool
 	archivalTimeInDays  int
-	backupRowsBatchSize int64
+	backupRowsBatchSize int
 	archiverTickerTime  time.Duration
 )
 
@@ -30,7 +28,7 @@ func init() {
 	archiveLoadFiles = config.GetBool("Warehouse.archiveLoadFiles", true)
 	archiveStagingFiles = config.GetBool("Warehouse.archiveStagingFiles", true)
 	archivalTimeInDays = config.GetInt("Warehouse.archivalTimeInDays", 45)
-	backupRowsBatchSize = config.GetInt64("Warehouse.backupRowsBatchSize", 1000)
+	backupRowsBatchSize = config.GetInt("Warehouse.backupRowsBatchSize", 100)
 	archiverTickerTime = config.GetDuration("Warehouse.archiverTickerTimeInMin", 1440) * time.Minute // default 1 day
 }
 
@@ -79,60 +77,25 @@ func archiveOldRecords(tableName string, dbHandle *sql.DB) {
 		maxID,
 		timeutil.Now().Unix(),
 	)
-
-	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
-	if err != nil {
-		logger.Errorf(`[WH Archiver]: Error in creating local directory: %v`, err)
-		return
-	}
-
-	gzWriter, err := misc.CreateGZ(path)
-	if err != nil {
-		logger.Errorf(`[WH Archiver]: Error in creating gzWriter: %v`, err)
-		return
-	}
 	defer os.Remove(path)
-
-	var offset int64
-	for {
-		stmt := fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s where id >= %[2]d and id <= %[3]d order by id asc limit %[4]d offset %[5]d) AS dump_table`, tableName, minID, maxID, backupRowsBatchSize, offset)
-		var rawJSONRows json.RawMessage
-		row := dbHandle.QueryRow(stmt)
-		err = row.Scan(&rawJSONRows)
-		if err != nil {
-			logger.Errorf(`[WH Archiver]: Scanning row failed with error : %v`, err)
-			return
-		}
-
-		rawJSONRows = bytes.Replace(rawJSONRows, []byte("}, \n {"), []byte("}\n{"), -1) //replacing ", \n " with "\n"
-		rawJSONRows = rawJSONRows[1 : len(rawJSONRows)-1]                               //stripping starting '[' and ending ']'
-		rawJSONRows = append(rawJSONRows, '\n')                                         //appending '\n'
-
-		gzWriter.Write(rawJSONRows)
-		offset += backupRowsBatchSize
-		if offset >= filesCount {
-			break
-		}
-	}
-
-	gzWriter.CloseGZ()
-
-	file, err := os.Open(path)
-	if err != nil {
-		logger.Errorf(`[WH Archiver]: Error opening local file dump: %v`, err)
-		return
-	}
-	defer file.Close()
 
 	fManager, err := filemanager.New(&filemanager.SettingsT{
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanager.GetProviderConfigFromEnv(),
 	})
 
-	output, err := fManager.Upload(file)
+	tableJSONArchiver := tablearchiver.TableJSONArchiver{
+		DbHandle:      dbHandle,
+		Pagination:    backupRowsBatchSize,
+		QueryTemplate: fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s where id >= %[2]d and id <= %[3]d order by id asc limit %[4]s offset %[5]s) AS dump_table`, tableName, minID, maxID, tablearchiver.PaginationAction, tablearchiver.OffsetAction),
+		OutputPath:    path,
+		FileManager:   fManager,
+	}
+
+	storedLocation, err := tableJSONArchiver.Do()
 
 	if err != nil {
-		logger.Errorf(`[WH Archiver]: Error uploading local file dump to object storage: %v`, err)
+		logger.Errorf(`[WH Archiver]: Error archiving table %s: %v`, tableName, err)
 		return
 	}
 
@@ -143,10 +106,10 @@ func archiveOldRecords(tableName string, dbHandle *sql.DB) {
 		return
 	}
 
-	logger.Infof(`[WH Archiver]: Archived %s records %d to %d at %s`, tableName, minID, maxID, output.Location)
+	logger.Infof(`[WH Archiver]: Archived %s records %d to %d at %s`, tableName, minID, maxID, storedLocation)
 }
 
-func archiveFileLocationRecords(dbHandle *sql.DB) {
+func runArchiver(dbHandle *sql.DB) {
 	for {
 		if archiveLoadFiles {
 			archiveOldRecords(warehouseutils.WarehouseLoadFilesTable, dbHandle)
