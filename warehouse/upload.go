@@ -20,37 +20,44 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+// Upload Status
 const (
-	WaitingState                            = "waiting"
-	RemoteSchemaChanged                     = "remote_schema_changed"
-	ExecutingState                          = "executing"
-	GeneratedUploadSchema                   = "generated_upload_schema"
-	GeneratingUploadSchemaFailed            = "generating_upload_schema_failed"
-	TableUploadsCreated                     = "table_uploads_created"
-	TableUploadsCreationFailed              = "table_uploads_creation_failed"
-	TableUploadsCountsUpdated               = "table_uploads_event_counts_updated"
-	TableUploadsCountsUpdateFailed          = "table_uploads_event_count"
-	GeneratingLoadFileState                 = "generating_load_file"
-	GeneratingLoadFileFailedState           = "generating_load_file_failed"
-	GeneratedLoadFileState                  = "generated_load_file"
-	UpdatingSchemaState                     = "updating_schema"
-	UpdatingSchemaFailedState               = "updating_schema_failed"
-	UpdatedSchemaState                      = "updated_schema"
-	ExportingDataState                      = "exporting_data"
-	ExportingDataFailedState                = "exporting_data_failed"
-	ExportedDataState                       = "exported_data"
-	ExportingUserTablesFailedState          = "exporting_user_tables_failed"
-	ExportedUserTablesState                 = "exported_user_tables"
-	LoadIdentitiesFailedState               = "load_identities_failed"
-	LoadedIdentitiesState                   = "loaded_identities"
-	AbortedState                            = "aborted"
+	Waiting                   = "waiting"
+	GeneratedUploadSchema     = "generated_upload_schema"
+	CreatedTableUploads       = "created_table_uploads"
+	GeneratedLoadFiles        = "generated_load_files"
+	UpdatedTableUploadsCounts = "updated_table_uploads_counts"
+	UpdatedRemoteSchema       = "updated_remote_schema"
+	ExportedUserTables        = "exported_user_tables"
+	ExportedData              = "exported_data"
+	ExportedIdentities        = "exported_identities"
+	Aborted                   = "aborted"
+)
+
+const (
 	GeneratingStagingFileFailedState        = "generating_staging_file_failed"
 	GeneratedStagingFileState               = "generated_staging_file"
-	SyncingRemoteSchemaFailedState          = "syncing_remote_schema_failed"
 	PopulatingHistoricIdentitiesState       = "populating_historic_identities"
 	PopulatingHistoricIdentitiesStateFailed = "populating_historic_identities_failed"
-	ConnectFailedState                      = "connect_failed"
 )
+
+// Table Upload status
+const (
+	TableUploadExecuting       = "executing"
+	TableUploadExporting       = "exporting_data"
+	TableUploadExportingFailed = "exporting_data"
+	TableUploadExported        = "exported_data"
+)
+
+var stateTransitions map[string]*uploadStateT
+
+type uploadStateT struct {
+	inProgress string
+	failed     string
+	completed  string
+	task       string
+	nextState  *uploadStateT
+}
 
 type UploadT struct {
 	ID                 int64
@@ -100,6 +107,7 @@ var maxParallelLoads map[string]int
 
 func init() {
 	setMaxParallelLoads()
+	initializeStateMachine()
 }
 
 func setMaxParallelLoads() {
@@ -195,13 +203,13 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 func (job *UploadJobT) run() (err error) {
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
-		job.setUploadError(err, GeneratingLoadFileFailedState)
+		job.setUploadError(err, job.upload.Status)
 		return err
 	}
 
 	hasSchemaChanged, err := job.syncRemoteSchema()
 	if err != nil {
-		job.setUploadError(err, SyncingRemoteSchemaFailedState)
+		job.setUploadError(err, job.upload.Status)
 		return err
 	}
 
@@ -210,44 +218,51 @@ func (job *UploadJobT) run() (err error) {
 		schemaHandle.uploadSchema = job.upload.Schema
 	} else {
 		logger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
-		job.setUploadStatus(RemoteSchemaChanged)
 	}
 
 	whManager := job.whManager
 	err = whManager.Setup(job.warehouse, job)
 	if err != nil {
-		job.setUploadError(err, ConnectFailedState)
+		job.setUploadError(err, job.upload.Status)
 		return err
 	}
 	defer whManager.Cleanup()
 
-	currState := job.upload.Status
-	var nextState string
+	var newStatus string
+
+	nextUploadState := getNextUploadState(job.upload.Status)
+	if nextUploadState == nil {
+		nextUploadState = stateTransitions[GeneratedUploadSchema]
+	}
 
 	for {
 		err = nil
 
-		logger.Debugf("[WH] Upload: %d, Current state: %s", job.upload.ID, currState)
-		switch currState {
+		job.setUploadStatus(nextUploadState.inProgress)
+		logger.Debugf("[WH] Upload: %d, Current state: %s", job.upload.ID, nextUploadState.inProgress)
 
-		case GeneratingUploadSchemaFailed, WaitingState, RemoteSchemaChanged:
-			nextState = GeneratingUploadSchemaFailed
+		targetStatus := nextUploadState.completed
+
+		switch targetStatus {
+
+		case GeneratedUploadSchema:
+			newStatus = nextUploadState.failed
 			err := job.generateUploadSchema(schemaHandle)
 			if err != nil {
 				break
 			}
-			nextState = GeneratedUploadSchema
+			newStatus = nextUploadState.completed
 
-		case GeneratedUploadSchema, TableUploadsCreationFailed:
-			nextState = TableUploadsCreationFailed
+		case CreatedTableUploads:
+			newStatus = nextUploadState.failed
 			err := job.initTableUploads()
 			if err != nil {
 				break
 			}
-			nextState = TableUploadsCreated
+			newStatus = nextUploadState.completed
 
-		case TableUploadsCreated, GeneratingLoadFileFailedState:
-			nextState = GeneratingLoadFileFailedState
+		case GeneratedLoadFiles:
+			newStatus = nextUploadState.failed
 			var loadFileIDs []int64
 			loadFileIDs, err = job.createLoadFiles()
 			if err != nil {
@@ -261,10 +276,10 @@ func (job *UploadJobT) run() (err error) {
 			}
 			job.setStagingFilesStatus(warehouseutils.StagingFileSucceededState, err)
 
-			nextState = GeneratedLoadFileState
+			newStatus = nextUploadState.completed
 
-		case GeneratedLoadFileState, TableUploadsCountsUpdateFailed:
-			nextState = TableUploadsCountsUpdateFailed
+		case UpdatedTableUploadsCounts:
+			newStatus = nextUploadState.failed
 			for tableName := range job.upload.Schema {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)
 				err = tableUpload.updateTableEventsCount(job)
@@ -275,10 +290,10 @@ func (job *UploadJobT) run() (err error) {
 			if err != nil {
 				break
 			}
-			nextState = TableUploadsCountsUpdated
+			newStatus = nextUploadState.completed
 
-		case TableUploadsCountsUpdated, UpdatingSchemaFailedState:
-			nextState = UpdatingSchemaFailedState
+		case UpdatedRemoteSchema:
+			newStatus = nextUploadState.failed
 			diff := getSchemaDiff(schemaHandle.schemaInWarehouse, job.upload.Schema)
 			if diff.Exists {
 				err = whManager.MigrateSchema(diff)
@@ -296,10 +311,10 @@ func (job *UploadJobT) run() (err error) {
 				// no alter done to schema in this upload
 				schemaHandle.schemaAfterUpload = schemaHandle.schemaInWarehouse
 			}
-			nextState = UpdatedSchemaState
+			newStatus = nextUploadState.completed
 
-		case UpdatedSchemaState, ExportingUserTablesFailedState:
-			nextState = ExportingUserTablesFailedState
+		case ExportedUserTables:
+			newStatus = nextUploadState.failed
 			uploadSchema := job.upload.Schema
 			if _, ok := uploadSchema[job.identifiesTableName()]; ok {
 
@@ -317,10 +332,10 @@ func (job *UploadJobT) run() (err error) {
 				}
 				loadTimeStat.End()
 			}
-			nextState = ExportedUserTablesState
+			newStatus = nextUploadState.completed
 
-		case ExportedUserTablesState, LoadIdentitiesFailedState:
-			nextState = LoadIdentitiesFailedState
+		case ExportedIdentities:
+			newStatus = nextUploadState.failed
 			// Load Identitties if enabled
 			uploadSchema := job.upload.Schema
 			if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
@@ -341,10 +356,10 @@ func (job *UploadJobT) run() (err error) {
 					loadTimeStat.End()
 				}
 			}
-			nextState = LoadedIdentitiesState
+			newStatus = nextUploadState.completed
 
-		case LoadedIdentitiesState, ExportingDataFailedState:
-			nextState = ExportingDataFailedState
+		case ExportedData:
+			newStatus = nextUploadState.failed
 			skipPrevLoadedTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 			// Export all other tables
 			loadTimeStat := job.timerStat("other_tables_load_time")
@@ -357,41 +372,35 @@ func (job *UploadJobT) run() (err error) {
 				break
 			}
 			loadTimeStat.End()
-			nextState = ExportedDataState
-
-		case ExportedDataState:
 			job.generateUploadSuccessMetrics()
-		case AbortedState:
-			job.generateUploadAbortedMetrics()
+			newStatus = nextUploadState.completed
+
 		default:
 			// If unknown state, start again
-			nextState = WaitingState
+			newStatus = Waiting
 		}
 
-		logger.Debugf("[WH] Upload: %d, Next state: %s", job.upload.ID, nextState)
+		logger.Debugf("[WH] Upload: %d, Next state: %s", job.upload.ID, newStatus)
+		job.setUploadStatus(newStatus)
 
-		if currState == ExportedDataState || currState == AbortedState {
+		if newStatus == ExportedData {
 			break
 		}
 
 		if err != nil {
-			logger.Errorf("[WH] Upload: %d, CurrState: %s, NextState: %s, Error: %w", job.upload.ID, currState, nextState, err.Error())
-			state, err := job.setUploadError(err, nextState)
-			if err == nil && state == AbortedState {
-				// Setting nextState to aborted to perform any finalizer actions
-				nextState = AbortedState
-			} else {
-				// Encountered error, stop the upload and let the scheduler schedule it again
-				break
+			logger.Errorf("[WH] Upload: %d, TargetState: %s, NewState: %s, Error: %w", job.upload.ID, targetStatus, newStatus, err.Error())
+			state, err := job.setUploadError(err, newStatus)
+			if err == nil && state == Aborted {
+				job.generateUploadAbortedMetrics()
 			}
+			break
 		}
 
-		currState = nextState
-		job.setUploadStatus(currState)
+		nextUploadState = getNextUploadState(newStatus)
 	}
 
-	if currState != ExportedDataState {
-		return fmt.Errorf("[WH]: Upload Job failed")
+	if newStatus != ExportedData {
+		return fmt.Errorf("Upload Job failed: %w", err)
 	}
 
 	return nil
@@ -446,15 +455,15 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 		rruntime.Go(func() {
 			logger.Infof(`[WH]: Starting load for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 			tableUpload := NewTableUpload(job.upload.ID, tName)
-			tableUpload.setStatus(ExecutingState)
+			tableUpload.setStatus(TableUploadExecuting)
 			err := job.whManager.LoadTable(tName)
 			if err != nil {
 				loadErrorLock.Lock()
 				loadErrors = append(loadErrors, err)
 				loadErrorLock.Unlock()
-				tableUpload.setError(ExportingDataFailedState, err)
+				tableUpload.setError(TableUploadExportingFailed, err)
 			} else {
-				tableUpload.setStatus(ExportedDataState)
+				tableUpload.setStatus(TableUploadExported)
 			}
 			wg.Done()
 			<-loadChan
@@ -495,7 +504,7 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 	// Load all user tables
 	for _, tName := range userTables {
 		tableUpload := NewTableUpload(job.upload.ID, tName)
-		tableUpload.setStatus(ExecutingState)
+		tableUpload.setStatus(TableUploadExecuting)
 	}
 
 	errorMap := job.whManager.LoadUserTables()
@@ -527,7 +536,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 		if loadTable {
 			errorMap[tableName] = nil
 			tableUpload := NewTableUpload(job.upload.ID, tableName)
-			err := tableUpload.setStatus(ExecutingState)
+			err := tableUpload.setStatus(TableUploadExecuting)
 			if err != nil {
 				errorMap[tableName] = err
 				break
@@ -555,13 +564,13 @@ func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (erro
 		tableUpload := NewTableUpload(job.upload.ID, tName)
 		if loadErr != nil {
 			errors = append(errors, loadErr)
-			tableUploadErr = tableUpload.setError(ExportingDataFailedState, loadErr)
+			tableUploadErr = tableUpload.setError(TableUploadExportingFailed, loadErr)
 		} else {
-			tableUploadErr = tableUpload.setStatus(ExportedDataState)
-			if tableUploadErr != nil {
+			tableUploadErr = tableUpload.setStatus(TableUploadExported)
+			if tableUploadErr == nil {
 				// Since load is successful, we assume all events in load files are uploaded
 				numEvents, tableUploadErr := tableUpload.getNumEvents()
-				if tableUploadErr != nil {
+				if tableUploadErr == nil {
 					job.recordTableLoad(tName, numEvents)
 				}
 			}
@@ -705,7 +714,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	if errorByState["attempt"].(int) > minRetryAttempts {
 		firstTiming := job.getUploadFirstAttemptTime()
 		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
-			state = AbortedState
+			state = Aborted
 		}
 	}
 	serializedErr, _ := json.Marshal(&e)
@@ -939,4 +948,118 @@ func (job *UploadJobT) GetSingleLoadFileLocation(tableName string) (string, erro
 	var location string
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&location)
 	return location, err
+}
+
+/*
+ * State Machine for upload job lifecycle
+ */
+
+func getNextUploadState(dbStatus string) *uploadStateT {
+	for _, uploadState := range stateTransitions {
+		if dbStatus == uploadState.inProgress || dbStatus == uploadState.failed {
+			return uploadState
+		}
+		if dbStatus == uploadState.completed {
+			return uploadState.nextState
+		}
+	}
+	return nil
+}
+
+func getInProgressState(state string) string {
+	uploadState, ok := stateTransitions[state]
+	if !ok {
+		panic("Invalid Upload state")
+	}
+	return uploadState.inProgress
+}
+
+func getFailedState(state string) string {
+	uploadState, ok := stateTransitions[state]
+	if !ok {
+		panic("Invalid Upload state")
+	}
+	return uploadState.failed
+}
+
+func initializeStateMachine() {
+
+	stateTransitions = make(map[string]*uploadStateT)
+
+	waitingState := &uploadStateT{
+		completed: Waiting,
+	}
+	stateTransitions[Waiting] = waitingState
+
+	generateUploadSchemaState := &uploadStateT{
+		inProgress: "generating_upload_schema",
+		failed:     "generating_upload_schema_failed",
+		completed:  GeneratedUploadSchema,
+	}
+	stateTransitions[GeneratedUploadSchema] = generateUploadSchemaState
+
+	createTableUploadsState := &uploadStateT{
+		inProgress: "creating_table_uploads",
+		failed:     "creating_table_uploads_failed",
+		completed:  CreatedTableUploads,
+	}
+	stateTransitions[CreatedTableUploads] = createTableUploadsState
+
+	generateLoadFilesState := &uploadStateT{
+		inProgress: "generating_load_files",
+		failed:     "generating_load_files_failed",
+		completed:  GeneratedLoadFiles,
+	}
+	stateTransitions[GeneratedLoadFiles] = generateLoadFilesState
+
+	updateTableUploadCountsState := &uploadStateT{
+		inProgress: "updating_table_uploads_counts",
+		failed:     "updating_table_uploads_counts_failed",
+		completed:  UpdatedTableUploadsCounts,
+	}
+	stateTransitions[UpdatedTableUploadsCounts] = updateTableUploadCountsState
+
+	updateRemoteSchemaState := &uploadStateT{
+		inProgress: "updating_remote_schema",
+		failed:     "updating_remote_schema_failed",
+		completed:  UpdatedRemoteSchema,
+	}
+	stateTransitions[UpdatedRemoteSchema] = updateRemoteSchemaState
+
+	exportUserTablesState := &uploadStateT{
+		inProgress: "exporting_user_tables",
+		failed:     "exporting_user_tables_failed",
+		completed:  ExportedUserTables,
+	}
+	stateTransitions[ExportedUserTables] = exportUserTablesState
+
+	loadIdentitiesState := &uploadStateT{
+		inProgress: "exporting_identities",
+		failed:     "exporting_identities_failed",
+		completed:  ExportedIdentities,
+	}
+	stateTransitions[ExportedIdentities] = loadIdentitiesState
+
+	exportDataState := &uploadStateT{
+		inProgress: "exporting_data",
+		failed:     "exporting_data_failed",
+		completed:  ExportedData,
+	}
+	stateTransitions[ExportedData] = exportDataState
+
+	abortState := &uploadStateT{
+		completed: Aborted,
+	}
+	stateTransitions[Aborted] = abortState
+
+	waitingState.nextState = generateUploadSchemaState
+	generateUploadSchemaState.nextState = createTableUploadsState
+	createTableUploadsState.nextState = generateLoadFilesState
+	generateLoadFilesState.nextState = updateTableUploadCountsState
+	updateTableUploadCountsState.nextState = updateRemoteSchemaState
+	updateRemoteSchemaState.nextState = exportUserTablesState
+	exportUserTablesState.nextState = loadIdentitiesState
+	loadIdentitiesState.nextState = exportDataState
+	exportDataState.nextState = nil
+	abortState.nextState = nil
 }

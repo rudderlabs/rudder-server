@@ -40,7 +40,7 @@ func (wh *HandleT) recordDeliveryStatus(destID string, uploadID int64) {
 	defer rows.Close()
 	for rows.Next() {
 		rows.Scan(&tableName, &tableStatus)
-		if tableStatus == ExportedDataState {
+		if tableStatus == TableUploadExported {
 			successfulTableUploads = append(successfulTableUploads, tableName)
 		} else {
 			failedTableUploads = append(failedTableUploads, tableName)

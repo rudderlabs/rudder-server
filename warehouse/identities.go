@@ -70,7 +70,7 @@ func isDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.Warehou
 }
 
 func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.WarehouseT) (upload UploadT, found bool) {
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s' AND %[1]s.status != '%[5]s' AND %[1]s.status != '%[6]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.poulateHistoricIdentitiesDestType(), ExportedDataState, AbortedState)
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s' AND %[1]s.status != '%[5]s' AND %[1]s.status != '%[6]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.poulateHistoricIdentitiesDestType(), ExportedData, Aborted)
 
 	var schema json.RawMessage
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
@@ -222,7 +222,7 @@ func (wh *HandleT) initPrePopulateDestIndetitiesUpload(warehouse warehouseutils.
 	defer stmt.Close()
 
 	now := timeutil.Now()
-	row := stmt.QueryRow(warehouse.Source.ID, warehouse.Namespace, warehouse.Destination.ID, wh.poulateHistoricIdentitiesDestType(), WaitingState, marshalledSchema, "{}", now, now, 0, 0, 0, 0)
+	row := stmt.QueryRow(warehouse.Source.ID, warehouse.Namespace, warehouse.Destination.ID, wh.poulateHistoricIdentitiesDestType(), Waiting, marshalledSchema, "{}", now, now, 0, 0, 0, 0)
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
@@ -236,7 +236,7 @@ func (wh *HandleT) initPrePopulateDestIndetitiesUpload(warehouse warehouseutils.
 		SourceID:        warehouse.Source.ID,
 		DestinationID:   warehouse.Destination.ID,
 		DestinationType: wh.poulateHistoricIdentitiesDestType(),
-		Status:          WaitingState,
+		Status:          Waiting,
 		Schema:          schema,
 	}
 
@@ -317,7 +317,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 
 		err = whManager.Setup(job.warehouse, &job)
 		if err != nil {
-			job.setUploadError(err, AbortedState)
+			job.setUploadError(err, Aborted)
 			return
 		}
 		defer whManager.Cleanup()
@@ -326,25 +326,25 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		schemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
 		if err != nil {
 			logger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
-			job.setUploadError(err, AbortedState)
+			job.setUploadError(err, Aborted)
 			return
 		}
 
-		job.setUploadStatus(UpdatingSchemaState)
+		job.setUploadStatus(UpdatedRemoteSchema)
 		diff := getSchemaDiff(schemaInWarehouse, job.upload.Schema)
 		err = whManager.MigrateSchema(diff)
 		if err != nil {
-			job.setUploadError(err, AbortedState)
+			job.setUploadError(err, Aborted)
 			return
 		}
-		job.setUploadStatus(UpdatedSchemaState)
+		job.setUploadStatus(UpdatedRemoteSchema)
 
-		job.setUploadStatus(ExportingDataState)
+		job.setUploadStatus(getInProgressState(ExportedData))
 		loadErrors, err := job.loadIdentityTables(true)
 		if len(loadErrors) > 0 {
-			job.setUploadError(warehouseutils.ConcatErrors(loadErrors), AbortedState)
+			job.setUploadError(warehouseutils.ConcatErrors(loadErrors), Aborted)
 		}
-		job.setUploadStatus(ExportedDataState)
+		job.setUploadStatus(ExportedData)
 		return
 	})
 }

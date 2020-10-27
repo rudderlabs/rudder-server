@@ -48,7 +48,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	// Total loaded events in the upload
 	numUploadedEvents, err := getTotalEventsUploaded(job.upload.ID)
 	if err != nil {
-		logger.Errorf("[WH]: Failed to generate load metrics: %s", job.warehouse.Identifier)
+		logger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %w", job.warehouse.Identifier, err)
 		return
 	}
 	job.counterStat("event_delivery").Count(int(numUploadedEvents))
@@ -56,7 +56,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	// Total staged events in the upload
 	numStagedEvents, err := getTotalEventsStaged(job.upload.StartStagingFileID, job.upload.EndStagingFileID)
 	if err != nil {
-		logger.Errorf("[WH]: Failed to generate stage metrics: %s", job.warehouse.Identifier)
+		logger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %w", job.warehouse.Identifier, err)
 		return
 	}
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
@@ -64,7 +64,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	// Delay for the oldest event in the batch
 	firstEventAt, err := getFirstStagedEventAt(job.upload.StartStagingFileID)
 	if err != nil {
-		logger.Errorf("[WH]: Failed to generate delay metrics: %s", job.warehouse.Identifier)
+		logger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %w", job.warehouse.Identifier, err)
 		return
 	}
 
@@ -78,7 +78,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 	// Total staged events in the upload
 	numStagedEvents, err := getTotalEventsStaged(job.upload.StartStagingFileID, job.upload.EndStagingFileID)
 	if err != nil {
-		logger.Errorf("[WH]: Failed to generate stage metrics: %s", job.warehouse.Identifier)
+		logger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %w", job.warehouse.Identifier, err)
 		return
 	}
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))

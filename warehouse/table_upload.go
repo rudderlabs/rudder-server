@@ -20,7 +20,7 @@ func NewTableUpload(uploadID int64, tableName string) *TableUploadT {
 }
 
 func getTotalEventsUploaded(uploadID int64) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`select sum(total_events) from wh_table_uploads where wh_upload_id=%d and status='%s'`, uploadID, ExportedDataState)
+	sqlStatement := fmt.Sprintf(`select sum(total_events) from wh_table_uploads where wh_upload_id=%d and status='%s'`, uploadID, ExportedData)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&total)
 	return total, err
 }
@@ -102,7 +102,7 @@ func (tableUpload *TableUploadT) setStatus(status string) (err error) {
 	// set last_exec_time only if status is executing
 	execValues := []interface{}{status, timeutil.Now(), tableUpload.uploadID, tableUpload.tableName}
 	var lastExec string
-	if status == ExecutingState {
+	if status == TableUploadExecuting {
 		// setting values using syntax $n since Exec can correctlt format time.Time strings
 		lastExec = fmt.Sprintf(`, last_exec_time=$%d`, len(execValues)+1)
 		execValues = append(execValues, timeutil.Now())
@@ -129,7 +129,7 @@ func (tableUpload *TableUploadT) hasBeenLoaded() (bool, error) {
 		return false, err
 	}
 
-	return (status == ExportedDataState), nil
+	return (status == ExportedData), nil
 }
 
 func (tableUpload *TableUploadT) updateTableEventsCount(job *UploadJobT) (err error) {
