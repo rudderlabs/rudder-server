@@ -48,7 +48,13 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 	if err != nil {
 		return err
 	}
+	client, err := whManager.Connect(warehouse)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
 	logger.Infof(`[WH Admin]: Querying warehouse: %s:%s`, warehouse.Type, warehouse.Destination.ID)
-	*reply, err = whManager.Query(s.SQLStatement, warehouse)
+	*reply, err = client.Query(s.SQLStatement)
 	return err
 }

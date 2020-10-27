@@ -6,6 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
@@ -25,7 +26,7 @@ type ManagerI interface {
 	IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error)
 	TestConnection(warehouse warehouseutils.WarehouseT) error
 	DownloadIdentityRules(*misc.GZipWriter) error
-	Query(sqlString string, warehouse warehouseutils.WarehouseT) (warehouseutils.QueryResult, error)
+	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
 }
 
 func New(destType string) (ManagerI, error) {

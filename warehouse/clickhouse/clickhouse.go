@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -613,47 +614,13 @@ func (ch *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 	return
 }
 
-func (ch *HandleT) Query(querySQL string, warehouse warehouseutils.WarehouseT) (result warehouseutils.QueryResult, err error) {
+func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	dbHandle, err := connect(ch.getConnectionCredentials())
 	if err != nil {
-		return
-	}
-	defer dbHandle.Close()
-
-	rows, err := dbHandle.Query(querySQL)
-	if err != nil && err != sql.ErrNoRows {
-		return
-	}
-	if err == sql.ErrNoRows {
-		return result, nil
-	}
-	defer rows.Close()
-
-	result.Columns, err = rows.Columns()
-	if err != nil {
-		return
+		return client.Client{}, err
 	}
 
-	colCount := len(result.Columns)
-	values := make([]interface{}, colCount)
-	valuePtrs := make([]interface{}, colCount)
-
-	for rows.Next() {
-		for i := 0; i < colCount; i++ {
-			valuePtrs[i] = &values[i]
-		}
-
-		err = rows.Scan(valuePtrs...)
-		if err != nil {
-			return
-		}
-		var stringRow []string
-		for i := 0; i < colCount; i++ {
-			stringRow = append(stringRow, fmt.Sprintf("%v", values[i]))
-		}
-		result.Values = append(result.Values, stringRow)
-	}
-	return result, nil
+	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }

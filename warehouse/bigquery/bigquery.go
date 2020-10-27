@@ -10,6 +10,7 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
@@ -498,7 +499,7 @@ func (bq *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (bq *HandleT) Query(querySQL string, warehouse warehouseutils.WarehouseT) (result warehouseutils.QueryResult, err error) {
+func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
@@ -507,35 +508,8 @@ func (bq *HandleT) Query(querySQL string, warehouse warehouseutils.WarehouseT) (
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
 	if err != nil {
-		return
-	}
-	defer dbClient.Close()
-
-	query := dbClient.Query(querySQL)
-
-	it, err := query.Read(bq.BQContext)
-	if err != nil {
-		return
+		return client.Client{}, err
 	}
 
-	for index := 0; index < len(it.Schema); index++ {
-		result.Columns = append(result.Columns, (*it.Schema[index]).Name)
-	}
-
-	for {
-		var row []bigquery.Value
-		err = it.Next(&row)
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return
-		}
-		var stringRow []string
-		for index := 0; index < len(row); index++ {
-			stringRow = append(stringRow, fmt.Sprintf("%+v", row[index]))
-		}
-		result.Values = append(result.Values, stringRow)
-	}
-	return result, nil
+	return client.Client{Type: client.BQClient, BQ: dbClient}, err
 }
