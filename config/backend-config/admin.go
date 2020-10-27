@@ -30,7 +30,6 @@ func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string
 			}
 
 			//Mask secret config fields by replacing latter 2/3rd of the field with 'x's
-			var destinationSecretKeys interface{}
 			destinationSecretKeys, ok := destination.DestinationDefinition.Config["secretKeys"]
 			if !ok {
 				destinationSecretKeys = []interface{}{}
