@@ -14,14 +14,13 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/customdestinationmanager"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -36,7 +35,6 @@ type HandleT struct {
 	netHandle                *NetHandleT
 	destName                 string
 	destCategory             string
-	kvHandle                 *kvHandleT
 	workers                  []*workerT
 	perfStats                *misc.PerfStats
 	successCount             uint64
@@ -205,10 +203,8 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			retryAttemptsStat.Increment()
 		}
 
-		if rt.destCategory == STREAM {
+		if rt.customDestinationManager != nil {
 			respStatusCode, _, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
-		} else if rt.destCategory == KVSTORE {
-			respStatusCode, respBody = rt.kvHandle.send(job.EventPayload, paramaters.DestinationID)
 		} else {
 			respStatusCode, _, respBody = rt.netHandle.sendPost(job.EventPayload)
 		}
@@ -767,16 +763,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 
-	rt.destCategory = HTTP
-	switch {
-	case misc.ContainsString(customdestinationmanager.ObjectStreamDestinations, destName):
-		rt.destCategory = STREAM
-		rt.customDestinationManager = customdestinationmanager.New(destName)
-	case misc.ContainsString(kvstoremanager.KVStoreDestinations, destName):
-		rt.destCategory = KVSTORE
-		rt.kvHandle = &kvHandleT{}
-		rt.kvHandle.Setup(destName)
-	}
+	rt.customDestinationManager = customdestinationmanager.New(destName)
 
 	rt.setUserEventsOrderingRequirement()
 

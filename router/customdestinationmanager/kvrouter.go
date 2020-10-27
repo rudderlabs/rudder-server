@@ -1,4 +1,4 @@
-package router
+package customdestinationmanager
 
 import (
 	"encoding/json"
