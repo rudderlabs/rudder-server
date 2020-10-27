@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -346,7 +347,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					logger.Infof("CH: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFileName)
 					break
 				} else {
-					logger.Errorf("CH: Error while reading csv file for loading in table:%s: %v", tableName, err)
+					logger.Errorf("CH: Error while reading csv file %s for loading in table:%s: %v", objectFileName, tableName, err)
 					txn.Rollback()
 					return
 				}
@@ -611,4 +612,15 @@ func (ch *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 
 func (ch *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
 	return
+}
+
+func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+	ch.Warehouse = warehouse
+	ch.Namespace = warehouse.Namespace
+	dbHandle, err := connect(ch.getConnectionCredentials())
+	if err != nil {
+		return client.Client{}, err
+	}
+
+	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }

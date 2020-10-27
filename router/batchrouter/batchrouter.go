@@ -489,6 +489,23 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
 }
 
+func (brt *HandleT) recordUploadStats(output StorageUploadOutput) {
+	eventDeliveryStat := stats.NewTaggedStat("event_delivery", stats.CountType, map[string]string{
+		"module": "batch_router",
+	})
+	eventDeliveryStat.Count(output.TotalEvents)
+
+	receivedTime, err := time.Parse(misc.RFC3339Milli, output.FirstEventAt)
+	if err != nil {
+		eventDeliveryTimeStat := stats.NewTaggedStat("event_delivery_time", stats.CountType, map[string]string{
+			"module":   "batch_router",
+			"destType": brt.destType,
+		})
+		loadDelayInS := int(time.Now().Sub(receivedTime) / time.Second)
+		eventDeliveryTimeStat.Count(loadDelayInS)
+	}
+}
+
 func (brt *HandleT) initWorkers() {
 	for i := 0; i < noOfWorkers; i++ {
 		rruntime.Go(func() {
@@ -581,6 +598,10 @@ func (brt *HandleT) initWorkers() {
 									if output.JournalOpID > 0 {
 										brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
 									}
+									if output.Error == nil {
+										brt.recordUploadStats(output)
+									}
+
 									destUploadStat.End()
 								case misc.ContainsString(warehouseDestinations, brt.destType):
 									objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config)

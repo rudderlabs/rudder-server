@@ -350,20 +350,17 @@ var _ = Describe("Gateway", func() {
 
 		assertJobBatchItem := func(payload gjson.Result) {
 			messageID := payload.Get("messageId")
-			anonymousID := payload.Get("anonymousId")
 			messageType := payload.Get("type")
 
 			// Assertions regarding batch message
 			Expect(messageID.Exists()).To(BeTrue())
 			Expect(messageID.String()).To(testutils.BeValidUUID())
-			Expect(anonymousID.Exists()).To(BeTrue())
-			Expect(anonymousID.String()).To(testutils.BeValidUUID())
 			Expect(messageType.Exists()).To(BeTrue())
 		}
 
 		stripJobPayload := func(payload gjson.Result) string {
 			strippedPayload, _ := sjson.Delete(payload.String(), "messageId")
-			strippedPayload, _ = sjson.Delete(strippedPayload, "anonymousId")
+			strippedPayload, _ = sjson.Delete(strippedPayload, "rudderId")
 			strippedPayload, _ = sjson.Delete(strippedPayload, "type")
 
 			return strippedPayload
@@ -399,7 +396,6 @@ var _ = Describe("Gateway", func() {
 
 							messageType := payload.Get("type")
 							Expect(messageType.String()).To(Equal(handlerType))
-
 							Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
 						}
 						c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()

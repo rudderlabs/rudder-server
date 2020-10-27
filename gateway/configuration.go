@@ -24,7 +24,7 @@ func loadConfig() {
 	// CustomVal is used as a key in the jobsDB customval column
 	CustomVal = config.GetString("Gateway.CustomVal", "GW")
 	// Maximum request size to gateway
-	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 100000) * 1024
+	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 4000) * 1024
 	// Enable dedup of incoming events by default
 	enableDedup = config.GetBool("Gateway.enableDedup", false)
 	// Dedup time window in hours
@@ -37,6 +37,8 @@ func loadConfig() {
 	enableProtocolsFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", true)
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
+	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
+	allowReqsWithoutUserIDAndAnonymousID = config.GetBool("Gateway.allowReqsWithoutUserIDAndAnonymousID", false)
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers
