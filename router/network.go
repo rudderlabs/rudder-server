@@ -23,12 +23,12 @@ type NetHandleT struct {
 
 //sendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
-func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, status string, respBody string) {
+func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody string) {
 	client := network.httpClient
 	//Parse the response to get parameters
 	postInfo, err := integrations.GetPostInfo(jsonData)
 	if err != nil {
-		return 400, "", fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
+		return 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 	}
 	isRest := postInfo.Type == "REST"
 
@@ -57,7 +57,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, status str
 		req, err := http.NewRequest(requestMethod, postInfo.URL, nil)
 		if err != nil {
 			logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
-			return 400, "", fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
+			return 400, fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
 		}
 
 		// add queryparams to the url
@@ -116,17 +116,17 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, status str
 
 		if err != nil {
 			logger.Error("Errored when sending request to the server", err)
-			return http.StatusGatewayTimeout, "", string(respBody)
+			return http.StatusGatewayTimeout, string(respBody)
 		}
 
-		return resp.StatusCode, resp.Status, string(respBody)
+		return resp.StatusCode, string(respBody)
 
 	}
 
 	// returning 200 with a message in case of unsupported processing
 	// so that we don't process again. can change this code to anything
 	// to be not picked up by router again
-	return 200, "method not implemented", ""
+	return 200, ""
 
 }
 

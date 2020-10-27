@@ -198,9 +198,9 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 		}
 
 		if rt.customDestinationManager != nil {
-			respStatusCode, _, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
+			respStatusCode, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
 		} else {
-			respStatusCode, _, respBody = rt.netHandle.sendPost(job.EventPayload)
+			respStatusCode, respBody = rt.netHandle.sendPost(job.EventPayload)
 		}
 
 		deliveryTimeStat.End()

@@ -29,7 +29,7 @@ var (
 
 // DestinationManager implements the method to send the events to custom destinations
 type DestinationManager interface {
-	SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string, string)
+	SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string)
 }
 
 // CustomManagerT handles this module
@@ -92,32 +92,34 @@ func (customManager *CustomManagerT) newClient(destID string) (*CustomDestinatio
 
 }
 
-func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client interface{}, config interface{}) (int, string, string) {
+func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client interface{}, config interface{}) (int, string) {
+	var statusCode int
+	var respBody string
 	switch customManager.managerType {
 	case STREAM:
-		return streammanager.Produce(jsonData, destType, client, config)
+		statusCode, _, respBody = streammanager.Produce(jsonData, destType, client, config)
 	case KV:
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
 
 		key, fields := kvstoremanager.EventToKeyValue(jsonData)
 		err := kvManager.HMSet(key, fields)
-		statusCode := kvManager.StatusCode(err)
-		var respBody string
+		statusCode = kvManager.StatusCode(err)
 		if err != nil {
 			respBody = err.Error()
 		}
-		return statusCode, respBody, ""
 	default:
-		return 404, "No provider configured for StreamManager", ""
+		return 404, "No provider configured for StreamManager"
 	}
+
+	return statusCode, respBody
 }
 
 // SendData gets the producer from streamDestinationsMap and sends data
-func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string, string) {
+func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string) {
 
 	destLock, ok := customManager.destinationLockMap[destID]
 	if !ok {
-		return 400, "Invalid dest ID", "Producer lock could not be found"
+		return 400, "Producer lock could not be found"
 	}
 
 	destLock.RLock()
@@ -126,15 +128,15 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 		destLock.RUnlock()
 		_, err := customManager.newClient(destID)
 		if err != nil {
-			return 400, "Producer not found in router", "Producer could not be created"
+			return 400, "Producer could not be created"
 		}
 		destLock.RLock()
 		customDestination = customManager.destinationsMap[destID]
 	}
 	destLock.RUnlock()
 
-	respStatusCode, respStatus, respBody := customManager.send(jsonData, customManager.destType, customDestination.Client, customDestination.Config)
-	return respStatusCode, respStatus, respBody
+	respStatusCode, respBody := customManager.send(jsonData, customManager.destType, customDestination.Client, customDestination.Config)
+	return respStatusCode, respBody
 }
 
 func (customManager *CustomManagerT) close(destination backendconfig.DestinationT) {
