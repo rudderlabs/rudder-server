@@ -3,6 +3,7 @@ package backendconfig
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 )
 
@@ -34,6 +35,15 @@ func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string
 			if !ok {
 				destinationSecretKeys = []interface{}{}
 			}
+
+			rt := reflect.TypeOf(destinationSecretKeys)
+			switch rt.Kind() {
+			case reflect.Array:
+			case reflect.Slice:
+			default:
+				return fmt.Errorf("secretKeys field of destination definition config is not an array. Destination definition name: %s", destination.DestinationDefinition.DisplayName)
+			}
+
 			for _, k := range destinationSecretKeys.([]interface{}) {
 				secretKey := k.(string)
 				secret, ok := destinationConfigCopy[secretKey]
