@@ -43,6 +43,7 @@ var rudderDataTypesMapToPostgres = map[string]string{
 	"string":   "text",
 	"datetime": "timestamptz",
 	"boolean":  "boolean",
+	"json":     "jsonb",
 }
 
 var postgresDataTypesMapToRudder = map[string]string{
@@ -59,6 +60,7 @@ var postgresDataTypesMapToRudder = map[string]string{
 	"timestamp with time zone": "datetime",
 	"timestamp":                "datetime",
 	"boolean":                  "boolean",
+	"jsonb":                    "json",
 }
 
 type HandleT struct {
@@ -243,7 +245,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					logger.Infof("PG: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
 					break
 				} else {
-					logger.Errorf("PG: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
+					logger.Errorf("PG: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
 					txn.Rollback()
 					return
 				}

@@ -23,7 +23,6 @@ import (
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -79,7 +78,10 @@ const (
 	EmbeddedMode    = "embedded"
 )
 
-const StagingFileProcessPGChannel = "process_staging_file"
+const (
+	DegradedMode                  = "degraded"
+	StagingFilesPGNotifierChannel = "process_staging_file"
+)
 
 type HandleT struct {
 	destType             string
@@ -129,8 +131,8 @@ func loadConfig() {
 	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
 	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
 	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
-	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 1024)
 	destinationsMap = map[string]warehouseutils.WarehouseT{}
+	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 10240)
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -187,24 +189,20 @@ func (wh *HandleT) handleUploadJobs(jobs []*UploadJobT) error {
 	// Waits till a worker is available to process
 	wh.waitAndLockAvailableWorker()
 
-	// TODO: Is this metric required?
-	whOneFullPassTimer := warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", jobs[0].warehouse.Destination.ID)
-	whOneFullPassTimer.Start()
 	var err error
 	for _, uploadJob := range jobs {
 		// Process the upload job
+		timerStat := uploadJob.timerStat("upload_time")
+		timerStat.Start()
 		err = uploadJob.run()
 		wh.recordDeliveryStatus(uploadJob.warehouse.Destination.ID, uploadJob.upload.ID)
 		if err != nil {
-			warehouseutils.DestStat(stats.CountType, "failed_uploads", uploadJob.warehouse.Destination.ID).Count(1)
 			// do not process other jobs so that uploads are done in order
 			break
 		}
+		timerStat.End()
 		onSuccessfulUpload(uploadJob.warehouse)
-		// TODO: Is this metric required?
-		warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", uploadJob.warehouse.Destination.ID).Count(len(uploadJob.stagingFiles))
 	}
-	whOneFullPassTimer.End()
 
 	wh.releaseWorker()
 
@@ -734,7 +732,6 @@ func monitorDestRouters() {
 
 	for {
 		config := <-ch
-		logger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
@@ -909,6 +906,13 @@ func Start() {
 
 	setupTables(dbHandle)
 
+	defer startWebHandler()
+
+	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
+	if runningMode == DegradedMode {
+		return
+	}
+
 	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {
 		panic(err)
@@ -921,7 +925,7 @@ func Start() {
 
 	if isMaster() {
 		logger.Infof("[WH]: Starting warehouse master...")
-		err = notifier.AddTopic(StagingFileProcessPGChannel)
+		err = notifier.AddTopic(StagingFilesPGNotifierChannel)
 		if err != nil {
 			panic(err)
 		}
@@ -929,6 +933,4 @@ func Start() {
 			monitorDestRouters()
 		})
 	}
-
-	startWebHandler()
 }

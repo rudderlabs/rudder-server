@@ -498,3 +498,7 @@ func IdentityMappingsTableName(warehouse WarehouseT) string {
 func IdentityMappingsUniqueMappingConstraintName(warehouse WarehouseT) string {
 	return fmt.Sprintf(`unique_merge_property_%s_%s`, warehouse.Namespace, warehouse.Destination.ID)
 }
+
+func GetWarehouseIdentifier(destType string, sourceID string, destinationID string) string {
+	return fmt.Sprintf("%s:%s:%s", destType, sourceID, destinationID)
+}

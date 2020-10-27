@@ -180,11 +180,16 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT
 	return gatewayBatchEvent.Batch, true
 }
 
-//GetAnonymousID return the UserID from the object
-func GetAnonymousID(event types.SingularEventT) (string, bool) {
-	userID, ok := GetRudderEventVal("anonymousId", event)
+//GetRudderID return the UserID from the object
+func GetRudderID(event types.SingularEventT) (string, bool) {
+	userID, ok := GetRudderEventVal("rudderId", event)
 	if !ok {
-		return "", false
+		//TODO: Remove this in next build.
+		//This is for backwards compatibilty, esp for those with sessions.
+		userID, ok = GetRudderEventVal("anonymousId", event)
+		if !ok {
+			return "", false
+		}
 	}
 	userIDStr, ok := userID.(string)
 	return userIDStr, true
@@ -628,11 +633,11 @@ func (w GZipWriter) CloseGZ() error {
 	if err != nil {
 		logger.Errorf(`[GZWriter]: Error flushing GZipWriter.BufWriter : %v`, err)
 	}
-	w.GzWriter.Close()
+	err = w.GzWriter.Close()
 	if err != nil {
 		logger.Errorf(`[GZWriter]: Error closing GZipWriter : %v`, err)
 	}
-	w.File.Close()
+	err = w.File.Close()
 	if err != nil {
 		logger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
 	}

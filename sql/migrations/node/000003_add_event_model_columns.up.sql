@@ -3,7 +3,7 @@
 ---
 
 ALTER TABLE event_models
-		ADD COLUMN IF NOT EXISTS schema JSONB NOT NULL;
+		ADD COLUMN IF NOT EXISTS schema JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE event_models
 		ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE event_models

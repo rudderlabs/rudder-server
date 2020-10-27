@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"bytes"
+	"encoding/json"
 	"io/ioutil"
 	"net/http"
 	"sync/atomic"
@@ -178,6 +179,11 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 
 			if err != nil {
 				req.done <- webhookErrorRespT{err: response.GetStatus(response.RequestBodyReadFailed)}
+				continue
+			}
+
+			if !json.Valid(body) {
+				req.done <- webhookErrorRespT{err: response.GetStatus(response.InvalidJSON)}
 				continue
 			}
 
