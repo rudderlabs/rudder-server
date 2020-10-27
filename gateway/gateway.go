@@ -826,6 +826,11 @@ func reflectOrigin(origin string) bool {
 	return true
 }
 
+func testHandler(w http.ResponseWriter, r *http.Request) {
+	time.Sleep(1 * time.Second)
+	w.Write([]byte("test"))
+}
+
 /*
 StartWebHandler starts all gateway web handlers, listening on gateway port.
 Supports CORS from all origins.
@@ -843,6 +848,7 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler))
 	srvMux.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
 	srvMux.HandleFunc("/health", gateway.healthHandler)
+	srvMux.HandleFunc("/test", testHandler)
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
 	srvMux.HandleFunc("/version", gateway.versionHandler)
