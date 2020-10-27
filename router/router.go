@@ -394,7 +394,6 @@ func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
 func (rt *HandleT) initWorkers() {
 	rt.workers = make([]*workerT, noOfWorkers)
 	for i := 0; i < noOfWorkers; i++ {
-		logger.Info("Worker Started", i)
 		var worker *workerT
 		worker = &workerT{
 			channel:        make(chan *jobsdb.JobT, noOfJobsPerChannel),

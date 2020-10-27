@@ -60,9 +60,6 @@ func loadConfig() {
 
 // newClient delegates the call to the appropriate manager
 func (customManager *CustomManagerT) newClient(destID string) (*CustomDestination, error) {
-	destLock := customManager.destinationLockMap[destID]
-	destLock.Lock()
-	defer destLock.Unlock()
 
 	destConfig := customManager.latestConfig[destID].Config
 	var customDestination *CustomDestination
@@ -70,12 +67,14 @@ func (customManager *CustomManagerT) newClient(destID string) (*CustomDestinatio
 
 	switch customManager.managerType {
 	case STREAM:
-		producer, err := streammanager.NewProducer(destConfig, customManager.destType)
+		var producer interface{}
+		producer, err = streammanager.NewProducer(destConfig, customManager.destType)
 		if err == nil {
 			customDestination = &CustomDestination{
 				Config: destConfig,
 				Client: producer,
 			}
+			customManager.destinationsMap[destID] = customDestination
 		}
 	case KV:
 		kvManager := kvstoremanager.New(customManager.destType, destConfig)
@@ -83,11 +82,11 @@ func (customManager *CustomManagerT) newClient(destID string) (*CustomDestinatio
 			Config: destConfig,
 			Client: kvManager,
 		}
+		customManager.destinationsMap[destID] = customDestination
 	default:
 		return nil, fmt.Errorf("No provider configured for Custom Destination Manager")
 	}
 
-	customManager.destinationsMap[destID] = customDestination
 	return customDestination, err
 
 }
@@ -124,9 +123,12 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 
 	destLock.RLock()
 	customDestination, ok := customManager.destinationsMap[destID]
+
 	if !ok {
 		destLock.RUnlock()
+		destLock.Lock()
 		_, err := customManager.newClient(destID)
+		destLock.Unlock()
 		if err != nil {
 			return 400, "Producer could not be created"
 		}
@@ -194,6 +196,7 @@ func New(destType string) DestinationManager {
 			managerType:        managerType,
 			destinationsMap:    make(map[string]*CustomDestination),
 			destinationLockMap: make(map[string]*sync.RWMutex),
+			latestConfig:       make(map[string]backendconfig.DestinationT),
 		}
 		rruntime.Go(func() {
 			customManager.backendConfigSubscriber()
