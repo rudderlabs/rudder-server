@@ -12,16 +12,16 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
+	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/customdestinationmanager"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -36,7 +36,6 @@ type HandleT struct {
 	netHandle                *NetHandleT
 	destName                 string
 	destCategory             string
-	kvHandle                 *kvHandleT
 	workers                  []*workerT
 	perfStats                *misc.PerfStats
 	successCount             uint64
@@ -52,13 +51,6 @@ type HandleT struct {
 	throttlerMutex           sync.RWMutex
 	keepOrderOnFailure       bool
 }
-
-// constants for destCategory
-const (
-	HTTP    = "http"
-	STREAM  = "stream"
-	KVSTORE = "kvStore"
-)
 
 type jobResponseT struct {
 	status *jobsdb.JobStatusT
@@ -205,12 +197,10 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			retryAttemptsStat.Increment()
 		}
 
-		if rt.destCategory == STREAM {
-			respStatusCode, _, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
-		} else if rt.destCategory == KVSTORE {
-			respStatusCode, respBody = rt.kvHandle.send(job.EventPayload, paramaters.DestinationID)
+		if rt.customDestinationManager != nil {
+			respStatusCode, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
 		} else {
-			respStatusCode, _, respBody = rt.netHandle.sendPost(job.EventPayload)
+			respStatusCode, respBody = rt.netHandle.sendPost(job.EventPayload)
 		}
 
 		deliveryTimeStat.End()
@@ -404,7 +394,6 @@ func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
 func (rt *HandleT) initWorkers() {
 	rt.workers = make([]*workerT, noOfWorkers)
 	for i := 0; i < noOfWorkers; i++ {
-		logger.Info("Worker Started", i)
 		var worker *workerT
 		worker = &workerT{
 			channel:        make(chan *jobsdb.JobT, noOfJobsPerChannel),
@@ -767,16 +756,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 
-	rt.destCategory = HTTP
-	switch {
-	case misc.ContainsString(customdestinationmanager.ObjectStreamDestinations, destName):
-		rt.destCategory = STREAM
-		rt.customDestinationManager = customdestinationmanager.New(destName)
-	case misc.ContainsString(kvstoremanager.KVStoreDestinations, destName):
-		rt.destCategory = KVSTORE
-		rt.kvHandle = &kvHandleT{}
-		rt.kvHandle.Setup(destName)
-	}
+	rt.customDestinationManager = customDestinationManager.New(destName)
 
 	rt.setUserEventsOrderingRequirement()
 
