@@ -107,7 +107,7 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType str
 			respBody = err.Error()
 		}
 	default:
-		return 404, "No provider configured for StreamManager"
+		return 404, "No provider configured for Custom Destination Manager"
 	}
 
 	return statusCode, respBody
@@ -118,7 +118,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 
 	destLock, ok := customManager.destinationLockMap[destID]
 	if !ok {
-		return 400, "Producer lock could not be found"
+		panic("[CDM] Unexpected state: Lock missing for %s and %s", customManager.destType, destID)
 	}
 
 	destLock.RLock()
@@ -130,7 +130,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 		_, err := customManager.newClient(destID)
 		destLock.Unlock()
 		if err != nil {
-			return 400, "Producer could not be created"
+			return 400, "[CDM] Unable to create client for %s and %s", customManager.destType, destID)
 		}
 		destLock.RLock()
 		customDestination = customManager.destinationsMap[destID]
