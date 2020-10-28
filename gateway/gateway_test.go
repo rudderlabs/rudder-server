@@ -30,7 +30,6 @@ import (
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
@@ -225,7 +224,6 @@ var _ = Describe("Gateway Enterprise", func() {
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled, WriteKeyEnabled).Return(true).AnyTimes()
 
 		// setup static requirements of dependencies
-		logger.Setup()
 		stats.Setup()
 
 		// setup common environment, override in BeforeEach when required
@@ -285,7 +283,6 @@ var _ = Describe("Gateway", func() {
 		c.initializeAppFeatures()
 
 		// setup static requirements of dependencies
-		logger.Setup()
 		stats.Setup()
 
 		// setup common environment, override in BeforeEach when required
@@ -350,20 +347,17 @@ var _ = Describe("Gateway", func() {
 
 		assertJobBatchItem := func(payload gjson.Result) {
 			messageID := payload.Get("messageId")
-			anonymousID := payload.Get("anonymousId")
 			messageType := payload.Get("type")
 
 			// Assertions regarding batch message
 			Expect(messageID.Exists()).To(BeTrue())
 			Expect(messageID.String()).To(testutils.BeValidUUID())
-			Expect(anonymousID.Exists()).To(BeTrue())
-			Expect(anonymousID.String()).To(testutils.BeValidUUID())
 			Expect(messageType.Exists()).To(BeTrue())
 		}
 
 		stripJobPayload := func(payload gjson.Result) string {
 			strippedPayload, _ := sjson.Delete(payload.String(), "messageId")
-			strippedPayload, _ = sjson.Delete(strippedPayload, "anonymousId")
+			strippedPayload, _ = sjson.Delete(strippedPayload, "rudderId")
 			strippedPayload, _ = sjson.Delete(strippedPayload, "type")
 
 			return strippedPayload
@@ -399,7 +393,6 @@ var _ = Describe("Gateway", func() {
 
 							messageType := payload.Get("type")
 							Expect(messageType.String()).To(Equal(handlerType))
-
 							Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
 						}
 						c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()

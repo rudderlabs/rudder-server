@@ -25,8 +25,8 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 		return UploadOutput{}, err
 	}
 	if err = minioClient.MakeBucket(manager.Config.Bucket, "us-east-1"); err != nil {
-		exists, err := minioClient.BucketExists(manager.Config.Bucket)
-		if !exists {
+		exists, errBucketExists := minioClient.BucketExists(manager.Config.Bucket)
+		if !(errBucketExists == nil && exists) {
 			return UploadOutput{}, err
 		}
 	}
@@ -45,7 +45,7 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 	}
 	_, err = minioClient.FPutObject(manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
 	if err != nil {
-		return UploadOutput{}, nil
+		return UploadOutput{}, err
 	}
 
 	return UploadOutput{Location: manager.ObjectUrl(fileName), ObjectName: fileName}, nil

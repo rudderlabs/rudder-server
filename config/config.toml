@@ -141,6 +141,8 @@ updateStatusBatchSize = 1000
 readSleepInMS = 1000
 noOfWorkers = 64
 noOfJobsPerChannel = 1000
+noOfJobsToBatchInAWorker = 20
+jobsBatchTimeoutInSec = 5
 ser = 3
 maxSleepInS = 60
 minSleepInS = 0
@@ -154,6 +156,10 @@ kafkaDialTimeoutInSec = 10
 retryTimeWindowInMins = 180
 minRetryBackoffInS = 10
 maxRetryBackoffInS = 300
+    [Router.BRAZE]
+    forceHTTP1=true
+    httpTimeoutInS=120
+    httpMaxIdleConnsPerHost=32
     # settings similar to below one can be used to throttle router
     # sending events to downstream destinations
     # [Router.throttler.AM]
@@ -254,7 +260,7 @@ logFileSize = 100 # in MB
 enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
-
+# moduleLevels="router.GA=DEBUG:router.BRAZE=DEBUG"
 
 [Diagnostics]
 enableDiagnostics = true
