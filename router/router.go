@@ -55,7 +55,7 @@ type HandleT struct {
 	enableBatching           bool
 	transformer              transformer.Transformer
 	configSubscriberLock     sync.RWMutex
-	destinationsMap          map[string]*backendconfig.DestinationT // destinationID -> destination
+	destinationsMap          map[string]backendconfig.DestinationT // destinationID -> destination
 	logger                   logger.LoggerI
 	batchInputCountStat      stats.RudderStats
 	batchOutputCountStat     stats.RudderStats
@@ -172,6 +172,7 @@ func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJ
 	}
 
 	if inputJobsLength != totalJobMetadataCount {
+		//TODO add a stat
 		worker.rt.logger.Errorf("[%v Router] :: Total input jobs count:%d did not match total job metadata count:%d returned from batch transformer", worker.rt.destName, inputJobsLength, totalJobMetadataCount)
 		jobIDs := make([]string, len(routerJobs))
 		for idx, routerJob := range routerJobs {
@@ -237,7 +238,10 @@ func (worker *workerT) workerProcess() {
 				ReceivedAt:    parameters.ReceivedAt,
 				CreatedAt:     job.CreatedAt.Format(misc.RFC3339Milli)}
 			worker.rt.configSubscriberLock.RLock()
-			destination := *worker.rt.destinationsMap[parameters.DestinationID]
+			fmt.Println("destinationsMap: %v", worker.rt.destinationsMap)
+			destination := worker.rt.destinationsMap[parameters.DestinationID]
+			fmt.Println("destination id : %s", parameters.DestinationID)
+			fmt.Println("%v", destination)
 			worker.rt.configSubscriberLock.RUnlock()
 
 			if worker.rt.enableBatching {
@@ -981,13 +985,13 @@ func (rt *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		rt.configSubscriberLock.Lock()
-		rt.destinationsMap = map[string]*backendconfig.DestinationT{}
+		rt.destinationsMap = map[string]backendconfig.DestinationT{}
 		allSources := config.Data.(backendconfig.SourcesT)
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == rt.destName {
-						rt.destinationsMap[destination.ID] = &destination
+						rt.destinationsMap[destination.ID] = destination
 					}
 				}
 			}
