@@ -33,38 +33,39 @@ import (
 
 //HandleT is the handle to this module.
 type HandleT struct {
-	requestQ                 chan *jobsdb.JobT
-	responseQ                chan jobResponseT
-	jobsDB                   *jobsdb.HandleT
-	netHandle                *NetHandleT
-	destName                 string
-	destCategory             string
-	workers                  []*workerT
-	perfStats                *misc.PerfStats
-	successCount             uint64
-	failCount                uint64
-	isEnabled                bool
-	toClearFailJobIDMutex    sync.Mutex
-	toClearFailJobIDMap      map[int][]string
-	requestsMetricLock       sync.RWMutex
-	diagnosisTicker          *time.Ticker
-	requestsMetric           []requestMetric
-	customDestinationManager customdestinationmanager.DestinationManager
-	throttler                *throttler.HandleT
-	throttlerMutex           sync.RWMutex
-	keepOrderOnFailure       bool
-	netClientTimeout         time.Duration
-	enableBatching           bool
-	transformer              transformer.Transformer
-	configSubscriberLock     sync.RWMutex
-	destinationsMap          map[string]backendconfig.DestinationT // destinationID -> destination
-	logger                   logger.LoggerI
-	batchInputCountStat      stats.RudderStats
-	batchOutputCountStat     stats.RudderStats
-	deliveryTimeStat         stats.RudderStats
-	batchTimeStat            stats.RudderStats
-	retryAttemptsStat        stats.RudderStats
-	eventsAbortedStat        stats.RudderStats
+	requestQ                      chan *jobsdb.JobT
+	responseQ                     chan jobResponseT
+	jobsDB                        *jobsdb.HandleT
+	netHandle                     *NetHandleT
+	destName                      string
+	destCategory                  string
+	workers                       []*workerT
+	perfStats                     *misc.PerfStats
+	successCount                  uint64
+	failCount                     uint64
+	isEnabled                     bool
+	toClearFailJobIDMutex         sync.Mutex
+	toClearFailJobIDMap           map[int][]string
+	requestsMetricLock            sync.RWMutex
+	diagnosisTicker               *time.Ticker
+	requestsMetric                []requestMetric
+	customDestinationManager      customdestinationmanager.DestinationManager
+	throttler                     *throttler.HandleT
+	throttlerMutex                sync.RWMutex
+	keepOrderOnFailure            bool
+	netClientTimeout              time.Duration
+	enableBatching                bool
+	transformer                   transformer.Transformer
+	configSubscriberLock          sync.RWMutex
+	destinationsMap               map[string]backendconfig.DestinationT // destinationID -> destination
+	logger                        logger.LoggerI
+	batchInputCountStat           stats.RudderStats
+	batchOutputCountStat          stats.RudderStats
+	batchInputOutputDiffCountStat stats.RudderStats
+	deliveryTimeStat              stats.RudderStats
+	batchTimeStat                 stats.RudderStats
+	retryAttemptsStat             stats.RudderStats
+	eventsAbortedStat             stats.RudderStats
 }
 
 type jobResponseT struct {
@@ -174,7 +175,8 @@ func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJ
 	}
 
 	if inputJobsLength != totalJobMetadataCount {
-		//TODO add a stat
+		worker.rt.batchInputOutputDiffCountStat.Count(inputJobsLength - totalJobMetadataCount)
+
 		worker.rt.logger.Errorf("[%v Router] :: Total input jobs count:%d did not match total job metadata count:%d returned from batch transformer", worker.rt.destName, inputJobsLength, totalJobMetadataCount)
 		jobIDs := make([]string, len(routerJobs))
 		for idx, routerJob := range routerJobs {
@@ -944,6 +946,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 		"destType": rt.destName,
 	})
 	rt.batchOutputCountStat = stats.NewTaggedStat("router_batch_num_output_jobs", stats.CountType, map[string]string{
+		"destType": rt.destName,
+	})
+	rt.batchInputOutputDiffCountStat = stats.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, map[string]string{
 		"destType": rt.destName,
 	})
 
