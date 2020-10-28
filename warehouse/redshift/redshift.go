@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 )
@@ -763,4 +764,22 @@ func (rs *HandleT) LoadIdentityMappingsTable() (err error) {
 
 func (rs *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
+}
+
+func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+	rs.Warehouse = warehouse
+	rs.Namespace = warehouse.Namespace
+	dbHandle, err := connect(RedshiftCredentialsT{
+		host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
+		port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
+		dbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
+		username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
+		password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
+	})
+
+	if err != nil {
+		return client.Client{}, err
+	}
+
+	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }

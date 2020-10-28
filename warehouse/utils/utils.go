@@ -136,6 +136,11 @@ type SchemaDiffT struct {
 	StringColumnsToBeAlteredToText map[string][]string
 }
 
+type QueryResult struct {
+	Columns []string
+	Values  [][]string
+}
+
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
 	timingsMap := gjson.Parse(str.String).Map()
 	for s, t := range timingsMap {

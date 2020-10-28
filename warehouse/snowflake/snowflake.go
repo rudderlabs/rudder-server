@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 	snowflake "github.com/snowflakedb/gosnowflake" //blank comment
@@ -819,4 +820,15 @@ func (sf *HandleT) LoadUserTables() map[string]error {
 func (sf *HandleT) LoadTable(tableName string) error {
 	_, err := sf.loadTable(tableName, sf.Uploader.GetTableSchemaInUpload(tableName), nil, false)
 	return err
+}
+
+func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+	sf.Warehouse = warehouse
+	sf.Namespace = warehouse.Namespace
+	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
+	if err != nil {
+		return client.Client{}, err
+	}
+
+	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }

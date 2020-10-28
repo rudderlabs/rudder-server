@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -611,4 +612,15 @@ func (ch *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 
 func (ch *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
 	return
+}
+
+func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+	ch.Warehouse = warehouse
+	ch.Namespace = warehouse.Namespace
+	dbHandle, err := connect(ch.getConnectionCredentials())
+	if err != nil {
+		return client.Client{}, err
+	}
+
+	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }

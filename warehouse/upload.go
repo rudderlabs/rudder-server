@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -128,6 +129,20 @@ func (job *UploadJobT) identityMappingsTableName() string {
 	return warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable)
 }
 
+func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
+	ch := make(chan struct{}, 1)
+	rruntime.Go(func() {
+		select {
+		case _ = <-ch:
+			// do nothing
+		case <-time.After(longRunningUploadStatThresholdInMin):
+			logger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
+			warehouseutils.DestStat(stats.CountType, "long_running_upload", job.warehouse.Destination.ID).Count(1)
+		}
+	})
+	return ch
+}
+
 func (job *UploadJobT) generateUploadSchema(schemaHandle *SchemaHandleT) error {
 	schemaHandle.uploadSchema = schemaHandle.consolidateStagingFilesSchemaUsingWarehouseSchema()
 	err := job.setSchema(schemaHandle.uploadSchema)
@@ -193,6 +208,11 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 }
 
 func (job *UploadJobT) run() (err error) {
+	ch := job.trackLongRunningUpload()
+	defer func() {
+		ch <- struct{}{}
+	}()
+
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
 		job.setUploadError(err, GeneratingLoadFileFailedState)
