@@ -238,10 +238,7 @@ func (worker *workerT) workerProcess() {
 				ReceivedAt:    parameters.ReceivedAt,
 				CreatedAt:     job.CreatedAt.Format(misc.RFC3339Milli)}
 			worker.rt.configSubscriberLock.RLock()
-			fmt.Println("destinationsMap: %v", worker.rt.destinationsMap)
 			destination := worker.rt.destinationsMap[parameters.DestinationID]
-			fmt.Println("destination id : %s", parameters.DestinationID)
-			fmt.Println("%v", destination)
 			worker.rt.configSubscriberLock.RUnlock()
 
 			if worker.rt.enableBatching {
