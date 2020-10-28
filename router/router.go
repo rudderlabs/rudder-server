@@ -216,12 +216,12 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			retryAttemptsStat.Increment()
 		}
 
-    ch := rt.trackStuckDelivery()
+		ch := rt.trackStuckDelivery()
 
 		if rt.customDestinationManager != nil {
 			respStatusCode, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
 		} else {
-			respStatusCode, _, respBody = rt.netHandle.sendPost(job.EventPayload)
+			respStatusCode, respBody = rt.netHandle.sendPost(job.EventPayload)
 		}
 		ch <- struct{}{}
 

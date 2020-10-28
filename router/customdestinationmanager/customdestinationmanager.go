@@ -118,7 +118,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 
 	destLock, ok := customManager.destinationLockMap[destID]
 	if !ok {
-		panic("[CDM] Unexpected state: Lock missing for %s and %s", customManager.destType, destID)
+		panic(fmt.Sprintf("[CDM %s] Unexpected state: Lock missing for %s", customManager.destType, destID))
 	}
 
 	destLock.RLock()
@@ -130,7 +130,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 		_, err := customManager.newClient(destID)
 		destLock.Unlock()
 		if err != nil {
-			return 400, "[CDM] Unable to create client for %s and %s", customManager.destType, destID)
+			return 400, fmt.Sprintf("[CDM %s] Unable to create client for %s", customManager.destType, destID)
 		}
 		destLock.RLock()
 		customDestination = customManager.destinationsMap[destID]
@@ -165,15 +165,16 @@ func (customManager *CustomManagerT) onConfigChange(destination backendconfig.De
 			return nil
 		}
 
-		logger.Infof("[%s] Config changed. Closing Existing client for destination: %s", customManager.destType, destination.Name)
+		logger.Infof("[CDM %s] Config changed. Closing Existing client for destination: %s", customManager.destType, destination.Name)
 		customManager.close(destination)
 	}
 
 	customDestination, err := customManager.newClient(destination.ID)
 	if err != nil {
+		logger.Errorf("[CDM %s] DestID: %s, Error while creating new customer client: %w", customManager.destType, destination.ID, err)
 		return err
 	}
-	logger.Infof("[%s Destination manager] Created new client: %v for destination: %s", customManager.destType, destination.Name)
+	logger.Infof("[CDM %s] DestID: %s, Created new client", customManager.destType, destination.ID)
 	return nil
 }
 
