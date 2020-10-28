@@ -57,6 +57,7 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 	if err != nil {
 		panic(err)
 	}
+	logger.Debugf("[Router Transfomrer] :: input payload : %s", string(rawJSON))
 
 	retryCount := 0
 	var resp *http.Response
@@ -89,11 +90,8 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 	}
 
 	// Remove Assertion?
-	if !(resp.StatusCode == http.StatusOK ||
-		resp.StatusCode == http.StatusBadRequest ||
-		resp.StatusCode == http.StatusNotFound ||
-		resp.StatusCode == http.StatusRequestEntityTooLarge) {
-		logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
 	}
 
 	var destinationJobs []types.DestinationJobT
@@ -102,6 +100,7 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 		if err != nil {
 			panic(err)
 		}
+		logger.Debugf("[Router Transfomrer] :: output payload : %s", string(rawJSON))
 		err = json.Unmarshal(respData, &destinationJobs)
 		//This is returned by our JS engine so should  be parsable
 		//but still handling it
