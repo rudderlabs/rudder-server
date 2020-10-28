@@ -33,6 +33,20 @@ func (m *MockStats) EXPECT() *MockStatsMockRecorder {
 	return m.recorder
 }
 
+// GetProcErrorStat mocks base method
+func (m *MockStats) GetProcErrorStat(arg0, arg1, arg2 string, arg3 int, arg4 string) stats.RudderStats {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProcErrorStat", arg0, arg1, arg2, arg3, arg4)
+	ret0, _ := ret[0].(stats.RudderStats)
+	return ret0
+}
+
+// GetProcErrorStat indicates an expected call of GetProcErrorStat
+func (mr *MockStatsMockRecorder) GetProcErrorStat(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProcErrorStat", reflect.TypeOf((*MockStats)(nil).GetProcErrorStat), arg0, arg1, arg2, arg3, arg4)
+}
+
 // GetRouterStat mocks base method
 func (m *MockStats) GetRouterStat(arg0, arg1, arg2 string, arg3 int) stats.RudderStats {
 	m.ctrl.T.Helper()
