@@ -683,6 +683,9 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, metadata
 			UserID:       failedEvent.Metadata.RudderID,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
+
+		procErrorStat := stats.GetProcErrorStat("proc_error_counts", stats.CountType, metadata.DestinationType, failedEvent.StatusCode, stage)
+		procErrorStat.Increment()
 	}
 	return failedEventsToStore
 }

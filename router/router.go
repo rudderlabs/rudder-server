@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
+	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	uuid "github.com/satori/go.uuid"
@@ -20,7 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/customdestinationmanager"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -34,6 +35,7 @@ type HandleT struct {
 	jobsDB                   *jobsdb.HandleT
 	netHandle                *NetHandleT
 	destName                 string
+	destCategory             string
 	workers                  []*workerT
 	perfStats                *misc.PerfStats
 	successCount             uint64
@@ -214,13 +216,14 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 			retryAttemptsStat.Increment()
 		}
 
+		ch := rt.trackStuckDelivery()
+
 		if rt.customDestinationManager != nil {
-			respStatusCode, _, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
+			respStatusCode, respBody = rt.customDestinationManager.SendData(job.EventPayload, paramaters.SourceID, paramaters.DestinationID)
 		} else {
-			ch := rt.trackStuckDelivery()
-			respStatusCode, _, respBody = rt.netHandle.sendPost(job.EventPayload)
-			ch <- struct{}{}
+			respStatusCode, respBody = rt.netHandle.sendPost(job.EventPayload)
 		}
+		ch <- struct{}{}
 
 		deliveryTimeStat.End()
 
@@ -300,13 +303,13 @@ func (rt *HandleT) workerProcess(worker *workerT) {
 				receivedTime, err := time.Parse(misc.RFC3339Milli, paramaters.ReceivedAt)
 				if err == nil {
 					eventsDeliveryTimeStat := stats.NewTaggedStat(
-						"event_delivery_time", stats.CountType, map[string]string{
+						"event_delivery_time", stats.TimerType, map[string]string{
 							"module":   "router",
 							"destType": rt.destName,
 							"id":       paramaters.DestinationID,
 						})
 
-					eventsDeliveryTimeStat.Count(int(time.Now().Sub(receivedTime) / time.Second))
+					eventsDeliveryTimeStat.SendTiming(time.Now().Sub(receivedTime))
 				}
 			}
 		}
@@ -428,7 +431,6 @@ func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
 func (rt *HandleT) initWorkers() {
 	rt.workers = make([]*workerT, noOfWorkers)
 	for i := 0; i < noOfWorkers; i++ {
-		logger.Debug("Worker Started", i)
 		var worker *workerT
 		worker = &workerT{
 			channel:        make(chan *jobsdb.JobT, noOfJobsPerChannel),
@@ -791,7 +793,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.netHandle.Setup(destName, rt.netClientTimeout)
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
-	rt.customDestinationManager = customdestinationmanager.New(destName)
+
+	rt.customDestinationManager = customDestinationManager.New(destName)
+
 	rt.setUserEventsOrderingRequirement()
 
 	var throttler throttler.HandleT
