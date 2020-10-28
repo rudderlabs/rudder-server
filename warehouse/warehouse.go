@@ -63,6 +63,7 @@ var (
 	maxStagingFileReadBufferCapacityInK int
 	destinationsMap                     map[string]warehouseutils.WarehouseT // destID -> warehouse map
 	destinationsMapLock                 sync.RWMutex
+	longRunningUploadStatThresholdInMin time.Duration
 )
 
 var (
@@ -133,6 +134,7 @@ func loadConfig() {
 	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 	destinationsMap = map[string]warehouseutils.WarehouseT{}
 	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 10240)
+	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
