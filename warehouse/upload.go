@@ -136,7 +136,7 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 		case _ = <-ch:
 			// do nothing
 		case <-time.After(longRunningUploadStatThresholdInMin):
-			logger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s:%s:%s", job.upload.ID, job.warehouse.Type, job.warehouse.Namespace, job.upload.DestinationID)
+			logger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
 			warehouseutils.DestStat(stats.CountType, "long_running_upload", job.warehouse.Destination.ID).Count(1)
 		}
 	})
