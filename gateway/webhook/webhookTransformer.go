@@ -133,7 +133,8 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 
 			_, ok = output["batch"].(interface{})
 			if !ok {
-				panic("Batch not found in transformer response")
+				batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerInvalidOutputFormatInResponse)
+				continue
 			}
 
 			marshalledOutput, err := json.Marshal(output)

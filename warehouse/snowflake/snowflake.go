@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 	snowflake "github.com/snowflakedb/gosnowflake" //blank comment
@@ -56,6 +57,7 @@ var dataTypesMap = map[string]string{
 	"float":    "double precision",
 	"string":   "varchar",
 	"datetime": "timestamp",
+	"json":     "variant",
 }
 
 var dataTypesMapToRudder = map[string]string{
@@ -87,6 +89,7 @@ var dataTypesMapToRudder = map[string]string{
 	"TIMESTAMP":        "datetime",
 	"TIMESTAMP_LTZ":    "datetime",
 	"TIMESTAMP_TZ":     "datetime",
+	"VARIANT":          "json",
 }
 
 var primaryKeyMap = map[string]string{
@@ -102,12 +105,12 @@ var partitionKeyMap = map[string]string{
 }
 
 var (
-	usersTable              = strings.ToUpper(warehouseutils.UsersTable)
-	identifiesTable         = strings.ToUpper(warehouseutils.IdentifiesTable)
-	discardsTable           = strings.ToUpper(warehouseutils.DiscardsTable)
-	identityMergeRulesTable = strings.ToUpper(warehouseutils.IdentityMergeRulesTable)
-	identityMappingsTable   = strings.ToUpper(warehouseutils.IdentityMappingsTable)
-	aliasTable              = strings.ToUpper(warehouseutils.AliasTable)
+	usersTable              = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.UsersTable)
+	identifiesTable         = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentifiesTable)
+	discardsTable           = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.DiscardsTable)
+	identityMergeRulesTable = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMergeRulesTable)
+	identityMappingsTable   = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMappingsTable)
+	aliasTable              = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.AliasTable)
 )
 
 type tableLoadRespT struct {
@@ -148,6 +151,14 @@ func (sf *HandleT) columnExists(columnName string, tableName string) (exists boo
 									AND column_name = '%s'
 								   )`, sf.Namespace, tableName, columnName)
 	err = sf.Db.QueryRow(sqlStatement).Scan(&exists)
+	return
+}
+
+func (sf *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+	var count int
+	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s'`, sf.Namespace)
+	err = sf.Db.QueryRow(sqlStatement).Scan(&count)
+	exists = count > 0
 	return
 }
 
@@ -531,9 +542,12 @@ func init() {
 
 func (sf *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
 	if len(sf.Uploader.GetSchemaInWarehouse()) == 0 {
-		err = sf.createSchema()
+		var schemaExists bool
+		if schemaExists, err = sf.schemaExists(sf.Namespace); !schemaExists {
+			err = sf.createSchema()
+		}
 		if err != nil {
-			return
+			return err
 		}
 	}
 
@@ -806,4 +820,15 @@ func (sf *HandleT) LoadUserTables() map[string]error {
 func (sf *HandleT) LoadTable(tableName string) error {
 	_, err := sf.loadTable(tableName, sf.Uploader.GetTableSchemaInUpload(tableName), nil, false)
 	return err
+}
+
+func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+	sf.Warehouse = warehouse
+	sf.Namespace = warehouse.Namespace
+	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
+	if err != nil {
+		return client.Client{}, err
+	}
+
+	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }

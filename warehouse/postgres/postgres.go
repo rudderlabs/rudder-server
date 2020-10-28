@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 )
@@ -42,6 +43,7 @@ var rudderDataTypesMapToPostgres = map[string]string{
 	"string":   "text",
 	"datetime": "timestamptz",
 	"boolean":  "boolean",
+	"json":     "jsonb",
 }
 
 var postgresDataTypesMapToRudder = map[string]string{
@@ -58,6 +60,7 @@ var postgresDataTypesMapToRudder = map[string]string{
 	"timestamp with time zone": "datetime",
 	"timestamp":                "datetime",
 	"boolean":                  "boolean",
+	"jsonb":                    "json",
 }
 
 type HandleT struct {
@@ -242,7 +245,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					logger.Infof("PG: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
 					break
 				} else {
-					logger.Errorf("PG: Error while reading csv file for loading in staging table:%s: %v", stagingTableName, err)
+					logger.Errorf("PG: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
 					txn.Rollback()
 					return
 				}
@@ -618,4 +621,15 @@ func (pg *HandleT) LoadIdentityMappingsTable() (err error) {
 
 func (pg *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
+}
+
+func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+	pg.Warehouse = warehouse
+	pg.Namespace = warehouse.Namespace
+	dbHandle, err := connect(pg.getConnectionCredentials())
+	if err != nil {
+		return client.Client{}, err
+	}
+
+	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }

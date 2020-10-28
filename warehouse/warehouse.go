@@ -23,7 +23,6 @@ import (
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -48,7 +47,6 @@ var (
 	mainLoopSleep                       time.Duration
 	workerRetrySleep                    time.Duration
 	stagingFilesBatchSize               int
-	configSubscriberLock                sync.RWMutex
 	crashRecoverWarehouses              []string
 	inProgressMap                       map[string]bool
 	inRecoveryMap                       map[string]bool
@@ -63,6 +61,8 @@ var (
 	minRetryAttempts                    int
 	retryTimeWindow                     time.Duration
 	maxStagingFileReadBufferCapacityInK int
+	destinationsMap                     map[string]warehouseutils.WarehouseT // destID -> warehouse map
+	destinationsMapLock                 sync.RWMutex
 	longRunningUploadStatThresholdInMin time.Duration
 )
 
@@ -79,7 +79,10 @@ const (
 	EmbeddedMode    = "embedded"
 )
 
-const StagingFileProcessPGChannel = "process_staging_file"
+const (
+	DegradedMode                  = "degraded"
+	StagingFilesPGNotifierChannel = "process_staging_file"
+)
 
 type HandleT struct {
 	destType             string
@@ -111,7 +114,7 @@ func loadConfig() {
 	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
 	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
 	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
-	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 60) * time.Second
+	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 1) * time.Second
 	workerRetrySleep = config.GetDuration("Warehouse.workerRetrySleepInS", 5) * time.Second
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
@@ -129,7 +132,8 @@ func loadConfig() {
 	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
 	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
 	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
-	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 1024)
+	destinationsMap = map[string]warehouseutils.WarehouseT{}
+	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 10240)
 	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
 }
 
@@ -187,24 +191,20 @@ func (wh *HandleT) handleUploadJobs(jobs []*UploadJobT) error {
 	// Waits till a worker is available to process
 	wh.waitAndLockAvailableWorker()
 
-	// TODO: Is this metric required?
-	whOneFullPassTimer := warehouseutils.DestStat(stats.TimerType, "total_end_to_end_step_time", jobs[0].warehouse.Destination.ID)
-	whOneFullPassTimer.Start()
 	var err error
 	for _, uploadJob := range jobs {
 		// Process the upload job
+		timerStat := uploadJob.timerStat("upload_time")
+		timerStat.Start()
 		err = uploadJob.run()
 		wh.recordDeliveryStatus(uploadJob.warehouse.Destination.ID, uploadJob.upload.ID)
 		if err != nil {
-			warehouseutils.DestStat(stats.CountType, "failed_uploads", uploadJob.warehouse.Destination.ID).Count(1)
 			// do not process other jobs so that uploads are done in order
 			break
 		}
+		timerStat.End()
 		onSuccessfulUpload(uploadJob.warehouse)
-		// TODO: Is this metric required?
-		warehouseutils.DestStat(stats.CountType, "load_staging_files_into_warehouse", uploadJob.warehouse.Destination.ID).Count(len(uploadJob.stagingFiles))
 	}
-	whOneFullPassTimer.End()
 
 	wh.releaseWorker()
 
@@ -216,58 +216,65 @@ func (wh *HandleT) backendConfigSubscriber() {
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
-		configSubscriberLock.Lock()
+		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
 		allSources := config.Data.(backendconfig.SourcesT)
 
 		for _, source := range allSources.Sources {
-			if len(source.Destinations) > 0 {
-				for _, destination := range source.Destinations {
-					if destination.DestinationDefinition.Name == wh.destType {
-						namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
-						warehouse := warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace, Type: wh.destType, Identifier: fmt.Sprintf("%s:%s:%s", wh.destType, source.ID, destination.ID)}
-						wh.warehouses = append(wh.warehouses, warehouse)
+			if len(source.Destinations) == 0 {
+				continue
+			}
+			for _, destination := range source.Destinations {
+				if destination.DestinationDefinition.Name != wh.destType {
+					continue
+				}
+				namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
+				warehouse := warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace, Type: wh.destType, Identifier: fmt.Sprintf("%s:%s:%s", wh.destType, source.ID, destination.ID)}
+				wh.warehouses = append(wh.warehouses, warehouse)
 
-						workerName := workerIdentifier(warehouse)
-						wh.workerChannelMapLock.Lock()
-						// spawn one worker for each unique destID_namespace
-						// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/4a0a10e5faa2c337c457f14c3ad1c32e2abfb006
-						// to avoid creating goroutine for disabled sources/destiantions
-						if _, ok := wh.workerChannelMap[workerName]; !ok {
-							workerChan := wh.initWorker(workerName)
-							wh.workerChannelMap[workerName] = workerChan
-						}
-						wh.workerChannelMapLock.Unlock()
+				workerName := workerIdentifier(warehouse)
+				wh.workerChannelMapLock.Lock()
+				// spawn one worker for each unique destID_namespace
+				// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/4a0a10e5faa2c337c457f14c3ad1c32e2abfb006
+				// to avoid creating goroutine for disabled sources/destiantions
+				if _, ok := wh.workerChannelMap[workerName]; !ok {
+					workerChan := wh.initWorker(workerName)
+					wh.workerChannelMap[workerName] = workerChan
+				}
+				wh.workerChannelMapLock.Unlock()
 
-						// send last 10 warehouse upload's status to control plane
-						if destination.Config != nil && destination.Enabled && destination.Config["eventDelivery"] == true {
-							sourceID := source.ID
-							destinationID := destination.ID
-							rruntime.Go(func() {
-								wh.syncLiveWarehouseStatus(sourceID, destinationID)
-							})
-						}
-						// test and send connection status to control plane
-						if val, ok := destination.Config["testConnection"].(bool); ok && val {
-							destination := destination
-							rruntime.Go(func() {
-								testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination)
-								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
-							})
-						}
+				destinationsMapLock.Lock()
+				destinationsMap[destination.ID] = warehouseutils.WarehouseT{Destination: destination, Namespace: namespace, Type: wh.destType}
+				destinationsMapLock.Unlock()
 
-						if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
-							wh.setupIdentityTables(warehouse)
-							if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
-								// non blocking populate historic identities
-								wh.populateHistoricIdentities(warehouse)
-							}
-						}
+				// send last 10 warehouse upload's status to control plane
+				if destination.Config != nil && destination.Enabled && destination.Config["eventDelivery"] == true {
+					sourceID := source.ID
+					destinationID := destination.ID
+					rruntime.Go(func() {
+						wh.syncLiveWarehouseStatus(sourceID, destinationID)
+					})
+				}
+				// test and send connection status to control plane
+				if val, ok := destination.Config["testConnection"].(bool); ok && val {
+					destination := destination
+					rruntime.Go(func() {
+						testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination)
+						destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
+					})
+				}
+
+				if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
+					wh.setupIdentityTables(warehouse)
+					if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
+						// non blocking populate historic identities
+						wh.populateHistoricIdentities(warehouse)
 					}
 				}
 			}
 		}
-		configSubscriberLock.Unlock()
+		logger.Debug("[WH] Unlocking config sub lock: %s", wh.destType)
+		wh.configSubscriberLock.Unlock()
 	}
 }
 
@@ -438,24 +445,20 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]Upl
 	return uploads, nil
 }
 
-func connectionString(warehouse warehouseutils.WarehouseT) string {
-	return fmt.Sprintf(`source:%s:destination:%s`, warehouse.Source.ID, warehouse.Destination.ID)
-}
-
 func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
 	inProgressMapLock.Lock()
 	defer inProgressMapLock.Unlock()
 	if starting {
-		inProgressMap[connectionString(warehouse)] = true
+		inProgressMap[warehouse.Identifier] = true
 	} else {
-		delete(inProgressMap, connectionString(warehouse))
+		delete(inProgressMap, warehouse.Identifier)
 	}
 }
 
 func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 	inProgressMapLock.RLock()
 	defer inProgressMapLock.RUnlock()
-	if inProgressMap[connectionString(warehouse)] {
+	if inProgressMap[warehouse.Identifier] {
 		return true
 	}
 	return false
@@ -469,7 +472,7 @@ func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency 
 	}
 	lastExecMapLock.Lock()
 	defer lastExecMapLock.Unlock()
-	if lastExecTime, ok := lastExecMap[connectionString(warehouse)]; ok && timeutil.Now().Unix()-lastExecTime < freqInS {
+	if lastExecTime, ok := lastExecMap[warehouse.Identifier]; ok && timeutil.Now().Unix()-lastExecTime < freqInS {
 		return true
 	}
 	return false
@@ -478,7 +481,7 @@ func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency 
 func setLastExec(warehouse warehouseutils.WarehouseT) {
 	lastExecMapLock.Lock()
 	defer lastExecMapLock.Unlock()
-	lastExecMap[connectionString(warehouse)] = timeutil.Now().Unix()
+	lastExecMap[warehouse.Identifier] = timeutil.Now().Unix()
 }
 
 func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, pendingUploads []UploadT) ([]*UploadJobT, error) {
@@ -542,10 +545,10 @@ func (wh *HandleT) getUploadJobsForNewStagingFiles(warehouse warehouseutils.Ware
 	return uploadJobs, nil
 }
 
-func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) error {
+func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (numJobs int, err error) {
 	if isDestInProgress(warehouse) {
 		logger.Debugf("[WH]: Skipping upload loop since %s upload in progress", warehouse.Identifier)
-		return nil
+		return 0, nil
 	}
 
 	enqueuedJobs := false
@@ -558,7 +561,7 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 
 	whManager, err := manager.New(wh.destType)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Step 1: Crash recovery after restart
@@ -568,7 +571,7 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 		logger.Infof("[WH]: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
 		err = whManager.CrashRecover(warehouse)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		delete(inRecoveryMap, warehouse.Destination.ID)
 	}
@@ -581,7 +584,7 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 	pendingUploads, err := wh.getPendingUploads(warehouse)
 	if err != nil {
 		logger.Errorf("[WH]: Failed to get pending uploads: %s with error %w", warehouse.Identifier, err)
-		return err
+		return 0, err
 	}
 
 	if len(pendingUploads) > 0 {
@@ -589,11 +592,11 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 		uploadJobs, err = wh.getUploadJobsForPendingUploads(warehouse, whManager, pendingUploads)
 		if err != nil {
 			logger.Errorf("[WH]: Failed to create upload jobs for %s from pending uploads with error: %w", warehouse.Identifier, err)
-			return err
+			return 0, err
 		}
 		wh.enqueueUploadJobs(uploadJobs, warehouse)
 		enqueuedJobs = true
-		return nil
+		return len(uploadJobs), nil
 	}
 
 	// Step 3: Handle pending staging files. Create new uploads for them
@@ -601,51 +604,52 @@ func (wh *HandleT) processWarehouseJobs(warehouse warehouseutils.WarehouseT) err
 
 	if !wh.canStartUpload(warehouse) {
 		logger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded", warehouse.Identifier)
-		return nil
+		return 0, nil
 	}
 
 	stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
 	if err != nil {
 		logger.Errorf("[WH]: Failed to get pending staging files: %s with error %w", warehouse.Identifier, err)
-		return err
+		return 0, err
 	}
 	if len(stagingFilesList) == 0 {
 		logger.Debugf("[WH]: Found no pending staging files for %s", warehouse.Identifier)
-		return nil
+		return 0, nil
 	}
 
 	uploadJobs, err = wh.getUploadJobsForNewStagingFiles(warehouse, whManager, stagingFilesList)
 	if err != nil {
 		logger.Errorf("[WH]: Failed to create upload jobs for %s for new staging files with error: %w", warehouse.Identifier, err)
-		return err
+		return 0, err
 	}
 
 	setLastExec(warehouse)
 	wh.enqueueUploadJobs(uploadJobs, warehouse)
 	enqueuedJobs = true
-	return nil
+	return len(uploadJobs), nil
 }
 
 func (wh *HandleT) mainLoop() {
 	for {
-		time.Sleep(mainLoopSleep)
 
 		wh.configSubscriberLock.RLock()
 		if !wh.isEnabled {
+			time.Sleep(mainLoopSleep)
 			wh.configSubscriberLock.RUnlock()
 			continue
 		}
+
+		warehouses := wh.warehouses
 		wh.configSubscriberLock.RUnlock()
 
-		configSubscriberLock.RLock()
-		warehouses := wh.warehouses
-		configSubscriberLock.RUnlock()
 		for _, warehouse := range warehouses {
-			err := wh.processWarehouseJobs(warehouse)
+			logger.Debugf("[WH] Processing Jobs for warehouse: %s", warehouse.Identifier)
+			_, err := wh.processJobs(warehouse)
 			if err != nil {
 				logger.Errorf("[WH] Failed to process warehouse Jobs: %w", err)
 			}
 		}
+		time.Sleep(mainLoopSleep)
 	}
 }
 
@@ -730,7 +734,6 @@ func monitorDestRouters() {
 
 	for {
 		config := <-ch
-		logger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.SourcesT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
@@ -892,13 +895,25 @@ func Start() {
 		panic(err)
 	}
 
-	if !validators.IsPostgresCompatible(dbHandle) {
+	isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)
+	if err != nil {
+		panic(err)
+	}
+
+	if !isDBCompatible {
 		err := errors.New("Rudder Warehouse Service needs postgres version >= 10. Exiting")
 		logger.Error(err)
 		panic(err)
 	}
 
 	setupTables(dbHandle)
+
+	defer startWebHandler()
+
+	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
+	if runningMode == DegradedMode {
+		return
+	}
 
 	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {
@@ -912,7 +927,7 @@ func Start() {
 
 	if isMaster() {
 		logger.Infof("[WH]: Starting warehouse master...")
-		err = notifier.AddTopic(StagingFileProcessPGChannel)
+		err = notifier.AddTopic(StagingFilesPGNotifierChannel)
 		if err != nil {
 			panic(err)
 		}
@@ -920,6 +935,4 @@ func Start() {
 			monitorDestRouters()
 		})
 	}
-
-	startWebHandler()
 }

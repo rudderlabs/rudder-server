@@ -136,6 +136,11 @@ type SchemaDiffT struct {
 	StringColumnsToBeAlteredToText map[string][]string
 }
 
+type QueryResult struct {
+	Columns []string
+	Values  [][]string
+}
+
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
 	timingsMap := gjson.Parse(str.String).Map()
 	for s, t := range timingsMap {
@@ -492,4 +497,8 @@ func IdentityMappingsTableName(warehouse WarehouseT) string {
 
 func IdentityMappingsUniqueMappingConstraintName(warehouse WarehouseT) string {
 	return fmt.Sprintf(`unique_merge_property_%s_%s`, warehouse.Namespace, warehouse.Destination.ID)
+}
+
+func GetWarehouseIdentifier(destType string, sourceID string, destinationID string) string {
+	return fmt.Sprintf("%s:%s:%s", destType, sourceID, destinationID)
 }

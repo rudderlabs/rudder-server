@@ -15,12 +15,12 @@ func init() {
 		// 	userLevelThrottling: false,
 		// },
 		// https://help.amplitude.com/hc/en-us/articles/360032842391-HTTP-API-V2#upload-limit
-		"AM": {
-			limit:                  1000,
-			timeWindowInS:          1,
-			userLevelThrottling:    true,
-			userLevelLimit:         10,
-			userLevelTimeWindowInS: 1,
-		},
+		// "AM": {
+		// 	limit:                  1000,
+		// 	timeWindowInS:          1,
+		// 	userLevelThrottling:    true,
+		// 	userLevelLimit:         10,
+		// 	userLevelTimeWindowInS: 1,
+		// },
 	}
 }
