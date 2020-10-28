@@ -671,7 +671,7 @@ func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
 	logger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
-	job.counterStat("upload_failed").Count(1)
+	job.counterStat("failed_uploads").Count(1)
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 
 	upload := job.upload
