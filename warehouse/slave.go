@@ -214,7 +214,7 @@ func (jobRun *JobRunT) cleanup() {
 		for _, writer := range jobRun.outputFileWritersMap {
 			err := writer.CloseGZ()
 			if err != nil {
-				logger.Errorf("[WH]: Failed to closed output load file: %w", err)
+				logger.Errorf("[WH]: Failed to close output load file: %w", err)
 			}
 		}
 	}
