@@ -12,9 +12,9 @@ import (
 )
 
 // NewProducer delegates the call to the appropriate based on parameter destination for creating producer
-func NewProducer(destinationConfig interface{}, destination string) (interface{}, error) {
+func NewProducer(destinationConfig interface{}, destType string) (interface{}, error) {
 
-	switch destination {
+	switch destType {
 	case "AZURE_EVENT_HUB":
 		producer, err := kafka.NewProducerForAzureEventHub(destinationConfig)
 		return producer, err
@@ -40,9 +40,9 @@ func NewProducer(destinationConfig interface{}, destination string) (interface{}
 }
 
 // CloseProducer delegates the call to the appropriate manager based on parameter destination to close a given producer
-func CloseProducer(producer interface{}, destination string) error {
+func CloseProducer(producer interface{}, destType string) error {
 
-	switch destination {
+	switch destType {
 	case "KINESIS", "FIREHOSE", "EVENTBRIDGE":
 		return nil
 	case "KAFKA", "AZURE_EVENT_HUB":
@@ -62,9 +62,8 @@ type StreamProducer interface {
 }
 
 // Produce delegates call to appropriate manager based on parameter destination
-func Produce(jsonData json.RawMessage, destination string, producer interface{}, config interface{}) (int, string, string) {
-
-	switch destination {
+func Produce(jsonData json.RawMessage, destType string, producer interface{}, config interface{}) (int, string, string) {
+	switch destType {
 	case "KINESIS":
 		return kinesis.Produce(jsonData, producer, config)
 	case "KAFKA", "AZURE_EVENT_HUB":
