@@ -19,7 +19,7 @@ phases:
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
-      - (cd && go get github.com/onsi/ginkgo/ginkgo)
+      # - (cd && go get github.com/onsi/ginkgo/ginkgo)
       - (cd && go get github.com/golang/mock/mockgen)
   build:
     commands:
@@ -27,7 +27,7 @@ phases:
       - DATE=$(date "+%F,%T")
       - VERSION=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
       # Build Open source version
-      - make test
+      # - make test
       - find . -name "profile.out" | while read file;do cat $file >> coverage.txt; echo "" >> coverage.txt;done
       - bash build/codecov.sh
       - GOOS=linux GOARCH=amd64 CGO_ENABLED=1 RACE_ENABLED=TRUE LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
@@ -35,7 +35,7 @@ phases:
       - docker build -t rudderlabs/develop-rudder-server:$VERSION -f build/Dockerfile-aws-dev .
       # Build Enterprise version
       - make enterprise-init
-      - ginkgo -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests ./...
+      # - ginkgo -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests ./...
       - GOOS=linux GOARCH=amd64 CGO_ENABLED=1 RACE_ENABLED=TRUE LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
       - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
       - docker build -t rudderstack/develop-rudder-server-enterprise:$VERSION -f build/Dockerfile-aws-dev .
@@ -43,10 +43,10 @@ phases:
     commands:
       - docker push rudderlabs/develop-rudder-server:$VERSION
       - docker push rudderstack/develop-rudder-server-enterprise:$VERSION
-reports:
-  GinkgoUnitTestReports:
-    files:
-      - "**/junit_*.xml"
+# reports:
+#   GinkgoUnitTestReports:
+#     files:
+#       - "**/junit_*.xml"
 artifacts:
   files:
     - "**/*"
