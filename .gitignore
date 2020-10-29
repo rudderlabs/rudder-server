@@ -12,3 +12,4 @@ enterprise
 *.coverprofile
 junit*.xml
 **/profile.out
+.idea/*
