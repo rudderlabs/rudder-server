@@ -78,6 +78,7 @@ var (
 	enableProtocolsFeature                                      bool
 	dedupWindow, diagnosisTickerTime                            time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                        bool
+	pkgLogger                                                   logger.LoggerI
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -92,6 +93,7 @@ var BatchEvent = []byte(`
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("gateway")
 }
 
 type userWorkerBatchRequestT struct {
@@ -139,6 +141,7 @@ type HandleT struct {
 	suppressUserHandler                           types.SuppressUserI
 	protocolHandler                               types.ProtocolsI
 	versionHandler                                func(w http.ResponseWriter, r *http.Request)
+	logger                                        logger.LoggerI
 }
 
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -1018,6 +1021,7 @@ Setup initializes this module:
 This function will block until backend config is initialy received.
 */
 func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, s stats.Stats, clearDB *bool, versionHandler func(w http.ResponseWriter, r *http.Request)) {
+	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = s
 

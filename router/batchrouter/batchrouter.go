@@ -52,6 +52,7 @@ var (
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTimeinHr   time.Duration
+	pkgLogger                          logger.LoggerI
 )
 
 type HandleT struct {
@@ -64,6 +65,7 @@ type HandleT struct {
 	batchRequestsMetricLock sync.RWMutex
 	diagnosisTicker         *time.Ticker
 	batchRequestsMetric     []batchRequestMetric
+	logger                  logger.LoggerI
 }
 
 type BatchDestinationT struct {
@@ -822,11 +824,14 @@ func loadConfig() {
 func init() {
 	loadConfig()
 	uploadedRawDataJobsCache = make(map[string]map[string]bool)
+	pkgLogger = logger.NewLogger().Child("batchRouter")
 }
 
 //Setup initializes this module
 func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
-	logger.Infof("BRT: Batch Router started: %s", destType)
+	brt.logger = pkgLogger.Child(destType)
+	brt.logger.Infof("BRT: Batch Router started: %s", destType)
+
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.destType = destType
 	brt.jobsDB = jobsDB

@@ -70,6 +70,7 @@ type HandleT struct {
 	userToSessionIDMap           map[string]string
 	userJobPQ                    pqT
 	userPQLock                   sync.Mutex
+	logger                       logger.LoggerI
 }
 
 type DestStatT struct {
@@ -124,6 +125,7 @@ func (proc *HandleT) Print() {
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("processor")
 }
 
 // NewProcessor creates a new Processor intanstace
@@ -137,6 +139,7 @@ func NewProcessor() *HandleT {
 
 //Setup initializes the module
 func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, s stats.Stats) {
+	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = s
 
@@ -226,6 +229,7 @@ var (
 	rawDataDestinations                 []string
 	configSubscriberLock                sync.RWMutex
 	customDestinations                  []string
+	pkgLogger                           logger.LoggerI
 )
 
 func loadConfig() {

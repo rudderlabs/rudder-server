@@ -71,6 +71,7 @@ type HandleT struct {
 	receivedStat       stats.RudderStats
 	failedStat         stats.RudderStats
 	transformTimerStat stats.RudderStats
+	logger             logger.LoggerI
 }
 
 //Transformer provides methods to transform events
@@ -87,6 +88,7 @@ func NewTransformer() *HandleT {
 var (
 	maxChanSize, numTransformWorker, maxRetry int
 	retrySleep                                time.Duration
+	pkgLogger                                 logger.LoggerI
 )
 
 func loadConfig() {
@@ -98,6 +100,7 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("transformer")
 }
 
 type TransformerResponseT struct {
@@ -191,6 +194,7 @@ func (trans *HandleT) transformWorker() {
 
 //Setup initializes this class
 func (trans *HandleT) Setup() {
+	trans.logger = pkgLogger
 	trans.requestQ = make(chan *transformMessageT, maxChanSize)
 	trans.responseQ = make(chan *transformedMessageT, maxChanSize)
 	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
