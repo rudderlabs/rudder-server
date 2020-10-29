@@ -35,7 +35,6 @@ import (
 
 var (
 	jobQueryBatchSize                  int
-	noOfWorkers                        int
 	maxFailedCountForJob               int
 	mainLoopSleep, diagnosisTickerTime time.Duration
 	uploadFreqInS                      int64
@@ -64,6 +63,7 @@ type HandleT struct {
 	batchRequestsMetricLock sync.RWMutex
 	diagnosisTicker         *time.Ticker
 	batchRequestsMetric     []batchRequestMetric
+	noOfWorkers				int
 }
 
 type BatchDestinationT struct {
@@ -455,7 +455,7 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 }
 
 func (brt *HandleT) initWorkers() {
-	for i := 0; i < noOfWorkers; i++ {
+	for i := 0; i < brt.noOfWorkers; i++ {
 		rruntime.Go(func() {
 			func() {
 				for {
@@ -804,7 +804,6 @@ func (brt *HandleT) collectMetrics() {
 
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
-	noOfWorkers = config.GetInt("BatchRouter.noOfWorkers", 8)
 	maxFailedCountForJob = config.GetInt("BatchRouter.maxFailedCountForJob", 128)
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
@@ -831,6 +830,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.destType = destType
 	brt.jobsDB = jobsDB
 	brt.isEnabled = true
+	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}

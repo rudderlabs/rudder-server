@@ -64,6 +64,7 @@ type HandleT struct {
 	batchInputOutputDiffCountStat stats.RudderStats
 	retryAttemptsStat             stats.RudderStats
 	eventsAbortedStat             stats.RudderStats
+	noOfWorkers				 	  int
 }
 
 type jobResponseT struct {
@@ -96,7 +97,7 @@ type workerT struct {
 }
 
 var (
-	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
+	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel, ser 			   int
 	maxFailedCountForJob                                                           int
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
 	testSinkURL                                                                    string
@@ -120,7 +121,6 @@ func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
 	readSleep = config.GetDuration("Router.readSleepInMS", time.Duration(1000)) * time.Millisecond
-	noOfWorkers = config.GetInt("Router.noOfWorkers", 64)
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	noOfJobsToBatchInAWorker = config.GetInt("Router.noOfJobsToBatchInAWorker", 20)
 	jobsBatchTimeout = config.GetDuration("Router.jobsBatchTimeoutInSec", time.Duration(5)) * time.Second
@@ -578,8 +578,8 @@ func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
 }
 
 func (rt *HandleT) initWorkers() {
-	rt.workers = make([]*workerT, noOfWorkers)
-	for i := 0; i < noOfWorkers; i++ {
+	rt.workers = make([]*workerT, rt.noOfWorkers)
+	for i := 0; i < rt.noOfWorkers; i++ {
 		var worker *workerT
 		worker = &workerT{
 			channel:          make(chan *jobsdb.JobT, noOfJobsPerChannel),
@@ -604,12 +604,12 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
 	if !rt.guaranteeUserEventOrder {
 		//if guaranteeUserEventOrder is failse, assigning worker randomly and returning here.
-		return rt.workers[rand.Intn(noOfWorkers)]
+		return rt.workers[rand.Intn(rt.noOfWorkers)]
 	}
 
 	userID := job.UserID
 
-	index := int(math.Abs(float64(misc.GetHash(userID) % noOfWorkers)))
+	index := int(math.Abs(float64(misc.GetHash(userID) % rt.noOfWorkers)))
 
 	worker := rt.workers[index]
 
@@ -926,10 +926,10 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.netHandle.Setup(destName, rt.netClientTimeout)
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
-
 	rt.customDestinationManager = customDestinationManager.New(destName)
 
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
+	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 
 	rt.batchInputCountStat = stats.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, map[string]string{
