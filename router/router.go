@@ -62,8 +62,6 @@ type HandleT struct {
 	batchInputCountStat           stats.RudderStats
 	batchOutputCountStat          stats.RudderStats
 	batchInputOutputDiffCountStat stats.RudderStats
-	deliveryTimeStat              stats.RudderStats
-	batchTimeStat                 stats.RudderStats
 	retryAttemptsStat             stats.RudderStats
 	eventsAbortedStat             stats.RudderStats
 }
@@ -93,6 +91,8 @@ type workerT struct {
 	routerJobs       []types.RouterJobT      // slice to hold router jobs to send to destination transformer
 	destinationJobs  []types.DestinationJobT // slice to hold destination jobs
 	rt               *HandleT                // handle to router
+	deliveryTimeStat stats.RudderStats
+	batchTimeStat    stats.RudderStats
 }
 
 var (
@@ -282,7 +282,7 @@ func (worker *workerT) workerProcess() {
 func (worker *workerT) handleWorkerDestinationJobs() {
 
 	// START: request to destination endpoint
-	worker.rt.batchTimeStat.Start()
+	worker.batchTimeStat.Start()
 
 	var respStatusCode, prevRespStatusCode, attempts int
 	var respBody string
@@ -294,7 +294,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			diagnosisStartTime := time.Now()
 			worker.rt.logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", worker.rt.destName, attempts, ser)
 
-			worker.rt.deliveryTimeStat.Start()
+			worker.deliveryTimeStat.Start()
 
 			ch := worker.trackStuckDelivery()
 			if worker.rt.customDestinationManager != nil {
@@ -317,7 +317,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			prevRespStatusCode = respStatusCode
 			attemptedToSendTheJob = true
 
-			worker.rt.deliveryTimeStat.End()
+			worker.deliveryTimeStat.End()
 
 			// END: request to destination endpoint
 
@@ -375,7 +375,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 		}
 	}
 
-	worker.rt.batchTimeStat.End()
+	worker.batchTimeStat.End()
 }
 
 func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *time.Time) {
@@ -589,15 +589,17 @@ func (rt *HandleT) initWorkers() {
 	for i := 0; i < noOfWorkers; i++ {
 		var worker *workerT
 		worker = &workerT{
-			channel:         make(chan *jobsdb.JobT, noOfJobsPerChannel),
-			failedJobIDMap:  make(map[string]int64),
-			retryForJobMap:  make(map[int64]time.Time),
-			workerID:        i,
-			failedJobs:      0,
-			sleepTime:       minSleep,
-			routerJobs:      make([]types.RouterJobT, 0),
-			destinationJobs: make([]types.DestinationJobT, 0),
-			rt:              rt}
+			channel:          make(chan *jobsdb.JobT, noOfJobsPerChannel),
+			failedJobIDMap:   make(map[string]int64),
+			retryForJobMap:   make(map[int64]time.Time),
+			workerID:         i,
+			failedJobs:       0,
+			sleepTime:        minSleep,
+			routerJobs:       make([]types.RouterJobT, 0),
+			destinationJobs:  make([]types.DestinationJobT, 0),
+			rt:               rt,
+			deliveryTimeStat: stats.NewStat(fmt.Sprintf("router.%s_delivery_time", rt.destName), stats.TimerType),
+			batchTimeStat:    stats.NewStat(fmt.Sprintf("router.%s_batch_time", rt.destName), stats.TimerType)}
 		rt.workers[i] = worker
 		rruntime.Go(func() {
 			worker.workerProcess()
@@ -960,10 +962,6 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 		"destType": rt.destName,
 	})
 
-	rt.deliveryTimeStat = stats.NewStat(
-		fmt.Sprintf("router.%s_delivery_time", rt.destName), stats.TimerType)
-	rt.batchTimeStat = stats.NewStat(
-		fmt.Sprintf("router.%s_batch_time", rt.destName), stats.TimerType)
 	rt.retryAttemptsStat = stats.NewStat(
 		fmt.Sprintf("router.%s_retry_attempts", rt.destName), stats.CountType)
 	rt.eventsAbortedStat = stats.NewStat(
