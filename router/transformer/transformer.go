@@ -21,6 +21,7 @@ type HandleT struct {
 	tr                        *http.Transport
 	client                    *http.Client
 	transformRequestTimerStat stats.RudderStats
+	logger                    logger.LoggerI
 }
 
 //Transformer provides methods to transform events
@@ -37,6 +38,7 @@ func NewTransformer() *HandleT {
 var (
 	maxChanSize, numTransformWorker, maxRetry int
 	retrySleep                                time.Duration
+	pkgLogger                                 logger.LoggerI
 )
 
 func loadConfig() {
@@ -48,6 +50,8 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("routerTransformer")
+
 }
 
 //Transform transforms router jobs to destination jobs
@@ -116,6 +120,7 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 }
 
 func (trans *HandleT) Setup() {
+	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
 	trans.client = &http.Client{Transport: trans.tr}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)

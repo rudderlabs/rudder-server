@@ -100,7 +100,7 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("transformer")
+	pkgLogger = logger.NewLogger().Child("processorTransformer")
 }
 
 type TransformerResponseT struct {

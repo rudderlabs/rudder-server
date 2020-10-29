@@ -260,7 +260,7 @@ logFileSize = 100 # in MB
 enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
-# moduleLevels="router.GA=DEBUG:router.BRAZE=DEBUG"
+#moduleLevels="router=ERROR:router.GA=DEBUG:router.BRAZE=DEBUG:batchRouter=ERROR:processor=ERROR:gateway=ERROR:routerTransformer=INFO:processorTransformer=INFO"
 
 [Diagnostics]
 enableDiagnostics = true
