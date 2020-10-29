@@ -349,6 +349,10 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
 			}
+			if req.reqType != "batch" {
+				body, _ = sjson.SetBytes(body, "type", req.reqType)
+				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
+			}
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(writeKeyEventStats, writeKey, totalEventsInReq)
 			if len(body) > maxReqSize {
@@ -368,11 +372,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
 				continue
-			}
-
-			if req.reqType != "batch" {
-				body, _ = sjson.SetBytes(body, "type", req.reqType)
-				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
 			}
 
 			// set anonymousId if not set in payload
