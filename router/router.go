@@ -436,12 +436,12 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			}
 		}
 
-		if addToFailedMap {
+		if worker.rt.keepOrderOnFailure && addToFailedMap {
 			//#JobOrder (see other #JobOrder comment)
 			worker.failedJobIDMutex.RLock()
 			_, isPrevFailedUser := worker.failedJobIDMap[destinationJobMetadata.UserID]
 			worker.failedJobIDMutex.RUnlock()
-			if worker.rt.keepOrderOnFailure && !isPrevFailedUser && destinationJobMetadata.UserID != "" {
+			if !isPrevFailedUser && destinationJobMetadata.UserID != "" {
 				worker.rt.logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", worker.rt.destName, destinationJobMetadata.UserID)
 				worker.failedJobIDMutex.Lock()
 				worker.failedJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
@@ -609,32 +609,36 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
 	userID := job.UserID
 
-	var index int
 	if randomWorkerAssign {
-		index = rand.Intn(noOfWorkers)
-	} else {
-		index = int(math.Abs(float64(misc.GetHash(userID) % noOfWorkers)))
+		//if assigning worker randomly, returning here.
+		return rt.workers[rand.Intn(noOfWorkers)]
 	}
+
+	index := int(math.Abs(float64(misc.GetHash(userID) % noOfWorkers)))
 
 	worker := rt.workers[index]
 
-	//#JobOrder (see other #JobOrder comment)
-	worker.failedJobIDMutex.RLock()
-	defer worker.failedJobIDMutex.RUnlock()
-	blockJobID, found := worker.failedJobIDMap[userID]
-	if !found {
-		return worker
+	if worker.rt.keepOrderOnFailure {
+		//#JobOrder (see other #JobOrder comment)
+		worker.failedJobIDMutex.RLock()
+		defer worker.failedJobIDMutex.RUnlock()
+		blockJobID, found := worker.failedJobIDMap[userID]
+		if !found {
+			return worker
+		}
+		//This job can only be higher than blocking
+		//We only let the blocking job pass
+		if job.JobID < blockJobID {
+			panic(fmt.Errorf("job.JobID:%d < blockJobID:%d", job.JobID, blockJobID))
+		}
+		if job.JobID == blockJobID {
+			return worker
+		}
+		return nil
+		//#EndJobOrder
 	}
-	//This job can only be higher than blocking
-	//We only let the blocking job pass
-	if job.JobID < blockJobID {
-		panic(fmt.Errorf("job.JobID:%d < blockJobID:%d", job.JobID, blockJobID))
-	}
-	if job.JobID == blockJobID {
-		return worker
-	}
-	return nil
-	//#EndJobOrder
+
+	return worker
 }
 
 // ResetSleep  this makes the workers reset their sleep
@@ -713,28 +717,30 @@ func (rt *HandleT) statusInsertLoop() {
 				rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
 			}
 
-			//#JobOrder (see other #JobOrder comment)
-			for _, resp := range responseList {
-				status := resp.status.JobState
-				userID := resp.userID
-				worker := resp.worker
-				if status == jobsdb.Succeeded.State || status == jobsdb.Aborted.State {
-					worker.failedJobIDMutex.RLock()
-					lastJobID, ok := worker.failedJobIDMap[userID]
-					worker.failedJobIDMutex.RUnlock()
-					if ok && lastJobID == resp.status.JobID {
-						rt.toClearFailJobIDMutex.Lock()
-						rt.logger.Debugf("[%v Router] :: clearing failedJobIDMap for userID: %v", rt.destName, userID)
-						_, ok := rt.toClearFailJobIDMap[worker.workerID]
-						if !ok {
-							rt.toClearFailJobIDMap[worker.workerID] = make([]string, 0)
+			if rt.keepOrderOnFailure {
+				//#JobOrder (see other #JobOrder comment)
+				for _, resp := range responseList {
+					status := resp.status.JobState
+					userID := resp.userID
+					worker := resp.worker
+					if status == jobsdb.Succeeded.State || status == jobsdb.Aborted.State {
+						worker.failedJobIDMutex.RLock()
+						lastJobID, ok := worker.failedJobIDMap[userID]
+						worker.failedJobIDMutex.RUnlock()
+						if ok && lastJobID == resp.status.JobID {
+							rt.toClearFailJobIDMutex.Lock()
+							rt.logger.Debugf("[%v Router] :: clearing failedJobIDMap for userID: %v", rt.destName, userID)
+							_, ok := rt.toClearFailJobIDMap[worker.workerID]
+							if !ok {
+								rt.toClearFailJobIDMap[worker.workerID] = make([]string, 0)
+							}
+							rt.toClearFailJobIDMap[worker.workerID] = append(rt.toClearFailJobIDMap[worker.workerID], userID)
+							rt.toClearFailJobIDMutex.Unlock()
 						}
-						rt.toClearFailJobIDMap[worker.workerID] = append(rt.toClearFailJobIDMap[worker.workerID], userID)
-						rt.toClearFailJobIDMutex.Unlock()
 					}
 				}
+				//End #JobOrder
 			}
-			//End #JobOrder
 			responseList = nil
 			lastUpdate = time.Now()
 			countStat.Count(len(responseList))
@@ -819,19 +825,21 @@ func (rt *HandleT) generatorLoop() {
 	for {
 		generatorStat.Start()
 
-		//#JobOrder (See comment marked #JobOrder
-		rt.toClearFailJobIDMutex.Lock()
-		for idx := range rt.toClearFailJobIDMap {
-			wrk := rt.workers[idx]
-			wrk.failedJobIDMutex.Lock()
-			for _, userID := range rt.toClearFailJobIDMap[idx] {
-				delete(wrk.failedJobIDMap, userID)
+		if rt.keepOrderOnFailure {
+			//#JobOrder (See comment marked #JobOrder
+			rt.toClearFailJobIDMutex.Lock()
+			for idx := range rt.toClearFailJobIDMap {
+				wrk := rt.workers[idx]
+				wrk.failedJobIDMutex.Lock()
+				for _, userID := range rt.toClearFailJobIDMap[idx] {
+					delete(wrk.failedJobIDMap, userID)
+				}
+				wrk.failedJobIDMutex.Unlock()
 			}
-			wrk.failedJobIDMutex.Unlock()
+			rt.toClearFailJobIDMap = make(map[int][]string)
+			rt.toClearFailJobIDMutex.Unlock()
+			//End of #JobOrder
 		}
-		rt.toClearFailJobIDMap = make(map[int][]string)
-		rt.toClearFailJobIDMutex.Unlock()
-		//End of #JobOrder
 
 		toQuery := jobQueryBatchSize
 		retryList := rt.jobsDB.GetToRetry([]string{rt.destName}, toQuery, nil)
