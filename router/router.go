@@ -52,7 +52,7 @@ type HandleT struct {
 	customDestinationManager      customdestinationmanager.DestinationManager
 	throttler                     *throttler.HandleT
 	throttlerMutex                sync.RWMutex
-	keepOrderOnFailure            bool
+	guaranteeUserEventOrder       bool
 	netClientTimeout              time.Duration
 	enableBatching                bool
 	transformer                   transformer.Transformer
@@ -99,17 +99,11 @@ var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfWorkers, noOfJobsPerChannel, ser int
 	maxFailedCountForJob                                                           int
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
-	randomWorkerAssign                                                             bool
 	testSinkURL                                                                    string
 	retryTimeWindow, minRetryBackoff, maxRetryBackoff, jobsBatchTimeout            time.Duration
 	noOfJobsToBatchInAWorker                                                       int
 	pkgLogger                                                                      logger.LoggerI
 )
-
-var userOrderingRequiredMap = map[string]bool{
-	"GA": true,
-	"AM": true, // make it false to disable
-}
 
 type requestMetric struct {
 	RequestRetries       int
@@ -134,7 +128,6 @@ func loadConfig() {
 	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(60)) * time.Second
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
-	randomWorkerAssign = config.GetBool("Router.randomWorkerAssign", false)
 	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 3)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
@@ -206,7 +199,7 @@ func (worker *workerT) workerProcess() {
 
 			var isPrevFailedUser bool
 			var previousFailedJobID int64
-			if worker.rt.keepOrderOnFailure {
+			if worker.rt.guaranteeUserEventOrder {
 				//If there is a failed jobID from this user, we cannot pass future jobs
 				worker.failedJobIDMutex.RLock()
 				previousFailedJobID, isPrevFailedUser = worker.failedJobIDMap[userID]
@@ -436,7 +429,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			}
 		}
 
-		if worker.rt.keepOrderOnFailure && addToFailedMap {
+		if worker.rt.guaranteeUserEventOrder && addToFailedMap {
 			//#JobOrder (see other #JobOrder comment)
 			worker.failedJobIDMutex.RLock()
 			_, isPrevFailedUser := worker.failedJobIDMap[destinationJobMetadata.UserID]
@@ -536,7 +529,7 @@ func (worker *workerT) handleThrottle(job *jobsdb.JobT, parameters JobParameters
 	worker.rt.throttlerMutex.Unlock()
 	if toThrottle {
 		// block other jobs of same user if userEventOrdering is required.
-		if worker.rt.keepOrderOnFailure && !isPrevFailedUser && userID != "" {
+		if worker.rt.guaranteeUserEventOrder && !isPrevFailedUser && userID != "" {
 			worker.rt.logger.Errorf("[%v Router] :: Request Failed for userID: %v. Adding user to failed users map to preserve ordering.", worker.rt.destName, userID)
 			worker.failedJobIDMutex.Lock()
 			worker.failedJobIDMap[userID] = job.JobID
@@ -609,38 +602,34 @@ func (rt *HandleT) initWorkers() {
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
-	userID := job.UserID
-
-	if randomWorkerAssign {
-		//if assigning worker randomly, returning here.
+	if !rt.guaranteeUserEventOrder {
+		//if guaranteeUserEventOrder is failse, assigning worker randomly and returning here.
 		return rt.workers[rand.Intn(noOfWorkers)]
 	}
+
+	userID := job.UserID
 
 	index := int(math.Abs(float64(misc.GetHash(userID) % noOfWorkers)))
 
 	worker := rt.workers[index]
 
-	if worker.rt.keepOrderOnFailure {
-		//#JobOrder (see other #JobOrder comment)
-		worker.failedJobIDMutex.RLock()
-		defer worker.failedJobIDMutex.RUnlock()
-		blockJobID, found := worker.failedJobIDMap[userID]
-		if !found {
-			return worker
-		}
-		//This job can only be higher than blocking
-		//We only let the blocking job pass
-		if job.JobID < blockJobID {
-			panic(fmt.Errorf("job.JobID:%d < blockJobID:%d", job.JobID, blockJobID))
-		}
-		if job.JobID == blockJobID {
-			return worker
-		}
-		return nil
-		//#EndJobOrder
+	//#JobOrder (see other #JobOrder comment)
+	worker.failedJobIDMutex.RLock()
+	defer worker.failedJobIDMutex.RUnlock()
+	blockJobID, found := worker.failedJobIDMap[userID]
+	if !found {
+		return worker
 	}
-
-	return worker
+	//This job can only be higher than blocking
+	//We only let the blocking job pass
+	if job.JobID < blockJobID {
+		panic(fmt.Errorf("job.JobID:%d < blockJobID:%d", job.JobID, blockJobID))
+	}
+	if job.JobID == blockJobID {
+		return worker
+	}
+	return nil
+	//#EndJobOrder
 }
 
 // ResetSleep  this makes the workers reset their sleep
@@ -719,7 +708,7 @@ func (rt *HandleT) statusInsertLoop() {
 				rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
 			}
 
-			if rt.keepOrderOnFailure {
+			if rt.guaranteeUserEventOrder {
 				//#JobOrder (see other #JobOrder comment)
 				for _, resp := range responseList {
 					status := resp.status.JobState
@@ -827,7 +816,7 @@ func (rt *HandleT) generatorLoop() {
 	for {
 		generatorStat.Start()
 
-		if rt.keepOrderOnFailure {
+		if rt.guaranteeUserEventOrder {
 			//#JobOrder (See comment marked #JobOrder
 			rt.toClearFailJobIDMutex.Lock()
 			for idx := range rt.toClearFailJobIDMap {
@@ -915,15 +904,6 @@ func (rt *HandleT) crashRecover() {
 	rt.jobsDB.DeleteExecuting([]string{rt.destName}, -1, nil)
 }
 
-func (rt *HandleT) setUserEventsOrderingRequirement() {
-	// user event ordering is required by default unless specified
-	required := true
-	if _, ok := userOrderingRequiredMap[rt.destName]; ok {
-		required = userOrderingRequiredMap[rt.destName]
-	}
-	rt.keepOrderOnFailure = config.GetBool(fmt.Sprintf(`Router.%s.keepOrderOnFailure`, rt.destName), required)
-}
-
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
@@ -949,7 +929,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 
 	rt.customDestinationManager = customDestinationManager.New(destName)
 
-	rt.setUserEventsOrderingRequirement()
+	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 
 	rt.batchInputCountStat = stats.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, map[string]string{

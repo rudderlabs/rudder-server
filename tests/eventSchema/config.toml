@@ -42,10 +42,9 @@ ser = 3
 maxSleepInS = 60
 minSleepInS = 0
 maxStatusUpdateWaitInS = 1
-randomWorkerAssign = false
 useTestSink = true
 maxFailedCountForJob = 8
-keepOrderOnFailure = true
+guaranteeUserEventOrder = true
 
 [Processor]
 loopSleepInMS = 10
