@@ -473,6 +473,36 @@ func (jd *HandleT) TearDown() {
 	jd.dbHandle.Close()
 }
 
+var dsComparitor = func(src, dst []string) bool {
+	k := 0
+	for {
+		if k >= len(src) {
+			//src has same prefix but is shorter
+			//For example, src=1.1 while dest=1.1.1
+			jd.assert(k < len(dst), fmt.Sprintf("k:%d >= len(dst):%d", k, len(dst)))
+			jd.assert(k > 0, fmt.Sprintf("k:%d <= 0", k))
+			return true
+		}
+		if k >= len(dst) {
+			//Opposite of case above
+			jd.assert(k > 0, fmt.Sprintf("k:%d <= 0", k))
+			jd.assert(k < len(src), fmt.Sprintf("k:%d >= len(src):%d", k, len(src)))
+			return false
+		}
+		if src[k] == dst[k] {
+			//Loop
+			k++
+			continue
+		}
+		//Strictly ordered. Return
+		srcInt, err := strconv.Atoi(src[k])
+		jd.assertError(err)
+		dstInt, err := strconv.Atoi(dst[k])
+		jd.assertError(err)
+		return srcInt < dstInt
+	}
+}
+
 /*
 Function to sort table suffixes. We should not have any use case
 for having > 2 len suffixes (e.g. 1_1_1 - see comment below)
@@ -482,33 +512,7 @@ func (jd *HandleT) sortDnumList(dnumList []string) {
 	sort.Slice(dnumList, func(i, j int) bool {
 		src := strings.Split(dnumList[i], "_")
 		dst := strings.Split(dnumList[j], "_")
-		k := 0
-		for {
-			if k >= len(src) {
-				//src has same prefix but is shorter
-				//For example, src=1.1 while dest=1.1.1
-				jd.assert(k < len(dst), fmt.Sprintf("k:%d >= len(dst):%d", k, len(dst)))
-				jd.assert(k > 0, fmt.Sprintf("k:%d <= 0", k))
-				return true
-			}
-			if k >= len(dst) {
-				//Opposite of case above
-				jd.assert(k > 0, fmt.Sprintf("k:%d <= 0", k))
-				jd.assert(k < len(src), fmt.Sprintf("k:%d >= len(src):%d", k, len(src)))
-				return false
-			}
-			if src[k] == dst[k] {
-				//Loop
-				k++
-				continue
-			}
-			//Strictly ordered. Return
-			srcInt, err := strconv.Atoi(src[k])
-			jd.assertError(err)
-			dstInt, err := strconv.Atoi(dst[k])
-			jd.assertError(err)
-			return srcInt < dstInt
-		}
+		return dsComparitor(src, dst)
 	})
 }
 
@@ -827,7 +831,8 @@ func (jd *HandleT) computeNewIdxForAppend() string {
 	return newDSIdx
 }
 
-func (jd *HandleT) computeNewIdxForInterNodeMigration(insertBeforeDS dataSetT) string {
+//If we approve the new approach, we won't need this func anymore.
+func (jd *HandleT) computeNewIdxForInterNodeMigration(insertBeforeDS dataSetT) string { //ClusterMigration
 	jd.logger.Infof("computeNewIdxForInterNodeMigration, insertBeforeDS : %v", insertBeforeDS)
 	dList := jd.getDSList(true)
 	jd.logger.Infof("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
@@ -845,7 +850,8 @@ func (jd *HandleT) computeNewIdxForInterNodeMigration(insertBeforeDS dataSetT) s
 				logger.Infof("idx = 0 case with insertForImport and ds at idx 0 is %v", ds)
 				levelsPre = 1
 				levelPreVals = []int{levelVals[0] - 1}
-			} else {
+			} else { //Inplace cluster migration
+				jd.assert(false, "Inplace cluster migration is not supported at this moment")
 				jd.logger.Infof("ds to insert before found in dList is %v", ds)
 				levelsPre, levelPreVals = jd.mapDSToLevel(dList[idx-1])
 			}
@@ -900,6 +906,8 @@ Returns
 0 if ds1 == ds2,
 1 if ds1 comes after ds2
 */
+
+//TODO: Fix this
 func lexicographicSliceCompare(ds1, ds2 []int) int {
 	ds1Str := sliceToDSIndex(ds1)
 	ds2Str := sliceToDSIndex(ds2)
@@ -916,7 +924,7 @@ func computeInsertVals(before, after []int) []int {
 	calculatedVals[len(calculatedVals)-1] = calculatedVals[len(calculatedVals)-1] + 1
 
 	if lexicographicSliceCompare(calculatedVals, after) == -1 &&
-		calculatedVals[0] == before[0] { //The second condition is to make sure the Level0 is maintained. It may not be necessary
+		len(calculatedVals) >= len(after) {
 		return calculatedVals
 	}
 
@@ -925,6 +933,7 @@ func computeInsertVals(before, after []int) []int {
 }
 
 func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
+	//TODO: Fix this
 	if strings.Compare(beforeIndex, afterIndex) != -1 {
 		return "", fmt.Errorf("Not a valid insert request between %s and %s", beforeIndex, afterIndex)
 	}
@@ -957,6 +966,7 @@ func (jd *HandleT) computeNewIdxForIntraNodeMigration(insertBeforeDS dataSetT) s
 	jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
 	for idx, ds := range dList {
 		if ds.Index == insertBeforeDS.Index {
+			jd.assert(idx > 0, "We never want to insert before first dataset")
 			newDSIdx, err = computeInsertIdx(dList[idx-1].Index, insertBeforeDS.Index)
 			jd.assertError(err)
 		}
@@ -2404,7 +2414,7 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		var importDest dataSetT
 		json.Unmarshal(opPayload, &importDest)
 		jd.dropDS(importDest, true)
-		jd.deleteSetupCheckpoint(ImportOp)
+		//jd.deleteSetupCheckpoint(ImportOp) //TODO: move it to post setupForMigration somehow
 		undoOp = true
 	case postMigrateDSOperation:
 		//Some of the source datasets would have been
