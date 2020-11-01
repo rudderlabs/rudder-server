@@ -2,12 +2,12 @@ package kvstoremanager
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/go-redis/redis"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -42,9 +42,13 @@ func (m *redisManagerT) Connect() {
 		if skipServerCertCheck, ok := m.config["skipVerify"].(bool); ok && skipServerCertCheck {
 			tlsConfig.InsecureSkipVerify = true
 		}
+		if serverCACert, ok := m.config["caCertificate"].(string); ok && len(strings.TrimSpace(serverCACert)) > 0 {
+			caCert := []byte(serverCACert)
+			caCertPool := x509.NewCertPool()
+			caCertPool.AppendCertsFromPEM(caCert)
+			tlsConfig.RootCAs = caCertPool
+		}
 	}
-
-	logger.Infof("[Redis] Conn Info: %+v", opts)
 
 	redisClient := redis.NewClient(&opts)
 	m.client = redisClient
