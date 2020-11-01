@@ -1,11 +1,13 @@
 package kvstoremanager
 
 import (
+	"crypto/tls"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/go-redis/redis"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -28,11 +30,23 @@ func (m *redisManagerT) Connect() {
 		db, _ = strconv.Atoi(dbStr)
 	}
 
-	redisClient := redis.NewClient(&redis.Options{
+	opts := redis.Options{
 		Addr:     addr,
 		Password: password,
 		DB:       db,
-	})
+	}
+
+	if shouldSecureConn, ok := m.config["secure"].(bool); ok && shouldSecureConn {
+		tlsConfig := tls.Config{}
+		opts.TLSConfig = &tlsConfig
+		if skipServerCertCheck, ok := m.config["skipVerify"].(bool); ok && skipServerCertCheck {
+			tlsConfig.InsecureSkipVerify = true
+		}
+	}
+
+	logger.Infof("[Redis] Conn Info: %+v", opts)
+
+	redisClient := redis.NewClient(&opts)
 	m.client = redisClient
 }
 
