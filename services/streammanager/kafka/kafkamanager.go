@@ -37,6 +37,8 @@ var (
 	kafkaWriteTimeoutInSec        int64
 )
 
+var pkgLogger logger.LoggerI
+
 const (
 	azureEventHubUser = "$ConnectionString"
 )
@@ -44,6 +46,7 @@ const (
 func init() {
 	loadConfig()
 	loadCertificate()
+	pkgLogger = logger.NewLogger().Child("services").Child("streammanager").Child("kafkamanager")
 }
 
 func loadConfig() {
@@ -165,7 +168,7 @@ func CloseProducer(producer interface{}) error {
 	if ok {
 		err := kafkaProducer.Close()
 		if err != nil {
-			logger.Errorf("error in closing Kafka producer: %s", err.Error())
+			pkgLogger.Errorf("error in closing Kafka producer: %s", err.Error())
 		}
 		return err
 	}
@@ -185,7 +188,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	jsonConfig, err := json.Marshal(destConfig)
 	err = json.Unmarshal(jsonConfig, &config)
 
-	//logger.Infof("Created Producer %v\n", producer)
+	//pkgLogger.Infof("Created Producer %v\n", producer)
 
 	topic := config.Topic
 
@@ -204,10 +207,10 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		returnMessage = fmt.Sprintf("%s error occured.", err.Error())
 		statusCode = GetStatusCodeFromError(err) //400
 		errorMessage = err.Error()
-		logger.Error(returnMessage)
+		pkgLogger.Error(returnMessage)
 	} else {
 		returnMessage = fmt.Sprintf("Message delivered at Offset: %v , Partition: %v for topic: %s", offset, partition, topic)
-		//logger.Info(returnMessage)
+		//pkgLogger.Info(returnMessage)
 		statusCode = 200
 		errorMessage = returnMessage
 	}

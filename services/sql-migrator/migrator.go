@@ -33,6 +33,13 @@ type Migrator struct {
 	ShouldForceSetLowerVersion bool
 }
 
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("services").Child("sql-migrator").Child("migrator")
+
+}
+
 // Migrate migrates database schema using migration SQL scripts.
 func (m *Migrator) Migrate(migrationsDir string) error {
 	destinationDriver, err := m.getDestinationDriver()
@@ -66,7 +73,7 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 		// to handle cases where we are reverting back to old version
 		// this assumes applied changes on database are also compatible with older versions
 		if versionInDB > latestVersionOnFile {
-			logger.Infof("Force setting migration version to %d in %s", latestVersionOnFile, m.MigrationsTable)
+			pkgLogger.Infof("Force setting migration version to %d in %s", latestVersionOnFile, m.MigrationsTable)
 			err = migration.Force(latestVersionOnFile)
 			if err != nil {
 				return fmt.Errorf("Could not force set migration to latest version on file: %w", err)
@@ -77,7 +84,7 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 	err = migration.Up()
 	if err != nil && err != migrate.ErrNoChange { // migrate library reports that no change was required, using ErrNoChange
 		if err == os.ErrNotExist {
-			logger.Infof("\n*****************\nMigrate could not find migration file for the version in db.\nPlease set env RSERVER_SQLMIGRATOR_FORCE_SET_LOWER_VERSION to true and restart to force set version in DB to latest version of migration sql files\nAlso please keep in mind that this does not undo the additional migrations done in version specified in DB. It just sets the value in MigrationsTable and marks it as dirty false.\n*****************\n")
+			pkgLogger.Infof("\n*****************\nMigrate could not find migration file for the version in db.\nPlease set env RSERVER_SQLMIGRATOR_FORCE_SET_LOWER_VERSION to true and restart to force set version in DB to latest version of migration sql files\nAlso please keep in mind that this does not undo the additional migrations done in version specified in DB. It just sets the value in MigrationsTable and marks it as dirty false.\n*****************\n")
 		}
 		return fmt.Errorf("Could not run migration from directory '%v', %w", migrationsDir, err)
 	}

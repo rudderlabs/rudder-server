@@ -13,12 +13,18 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("services").Child("filemanager").Child("azureBlobStoragemanager")
+}
+
 func supressMinorErrors(err error) error {
 	if err != nil {
 		if serr, ok := err.(azblob.StorageError); ok { // This error is a Service-specific
 			switch serr.ServiceCode() { // Compare serviceCode to ServiceCodeXxx constants
 			case azblob.ServiceCodeContainerAlreadyExists:
-				logger.Debug("Received 409. Container already exists")
+				pkgLogger.Debug("Received 409. Container already exists")
 				return nil
 			}
 		}

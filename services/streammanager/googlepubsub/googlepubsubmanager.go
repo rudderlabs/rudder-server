@@ -24,6 +24,12 @@ type pubsubClient struct {
 	TopicMap map[string]*pubsub.Topic
 }
 
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("services").Child("streammanager").Child("googlepubsubmanager")
+}
+
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}) (*pubsubClient, error) {
 	var config Config
@@ -75,7 +81,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if err != nil {
 		respStatus = "Failure"
 		responseMessage = "[GooglePubSub] error  :: " + err.Error()
-		logger.Errorf("[GooglePubSub] error  :: %w", err)
+		pkgLogger.Errorf("[GooglePubSub] error  :: %w", err)
 		statusCode := 400
 		return statusCode, respStatus, responseMessage
 	}
@@ -84,7 +90,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		if !ok {
 			respStatus = "Failure"
 			responseMessage = "[GooglePubSub] error :: Could not parse topic id to string"
-			logger.Error(responseMessage)
+			pkgLogger.Error(responseMessage)
 			statusCode := 400
 			return statusCode, respStatus, responseMessage
 		}
@@ -131,7 +137,7 @@ func CloseProducer(producer interface{}) error {
 			}
 			err := pbs.Pbs.Close()
 			if err != nil {
-				logger.Errorf("error in closing Google Pub/Sub producer: %s", err.Error())
+				pkgLogger.Errorf("error in closing Google Pub/Sub producer: %s", err.Error())
 			}
 		}
 		return err

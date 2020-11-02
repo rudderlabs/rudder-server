@@ -48,6 +48,7 @@ var enableCPUStats bool
 var enableMemStats bool
 var enableGCStats bool
 var rc runtimeStatsCollector
+var pkgLogger logger.LoggerI
 
 // DefaultStats is a common implementation of StatsD stats managements
 var DefaultStats Stats
@@ -61,6 +62,8 @@ func init() {
 	enableCPUStats = config.GetBool("RuntimeStats.enableCPUStats", true)
 	enableMemStats = config.GetBool("RuntimeStats.enabledMemStats", true)
 	enableGCStats = config.GetBool("RuntimeStats.enableGCStats", true)
+	pkgLogger = logger.NewLogger().Child("services").Child("stats").Child("stats")
+
 }
 
 // Stats manages provisioning of RudderStats
@@ -115,7 +118,7 @@ func Setup() {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
 		// just log the error and go on.
-		logger.Error(err)
+		pkgLogger.Error(err)
 	}
 	if client != nil {
 		rruntime.Go(func() {
@@ -167,7 +170,7 @@ func (s *HandleT) NewTaggedStat(Name string, StatType string, tags map[string]st
 		var err error
 		taggedClientsMap[tagStr], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...))
 		if err != nil {
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 
@@ -198,7 +201,7 @@ func (s *HandleT) NewWriteKeyStat(Name string, StatType string, writeKey string)
 			// If nothing is listening on the target port, an error is returned and
 			// the returned client does nothing but is still usable. So we can
 			// just log the error and go on.
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 	return &RudderStatsT{
@@ -227,7 +230,7 @@ func (s *HandleT) NewBatchDestStat(Name string, StatType string, destID string) 
 		var err error
 		batchDestClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destID", destID))
 		if err != nil {
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 	return &RudderStatsT{
@@ -256,7 +259,7 @@ func (s *HandleT) NewDestStat(Name string, StatType string, destID string) Rudde
 		var err error
 		destClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destID", destID))
 		if err != nil {
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 	return &RudderStatsT{
@@ -287,7 +290,7 @@ func (s *HandleT) GetRouterStat(Name string, StatType string, destName string, r
 		var err error
 		routerClientsMap[key], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destName", destName, "respStatusCode", strconv.Itoa(respStatusCode)))
 		if err != nil {
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 	return &RudderStatsT{
@@ -317,7 +320,7 @@ func (s *HandleT) GetProcErrorStat(Name string, StatType string, destName string
 		var err error
 		procErrorClientsMap[key], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destName", destName, "statusCode", strconv.Itoa(statusCode), "stage", stage))
 		if err != nil {
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 	return &RudderStatsT{
@@ -346,7 +349,7 @@ func (s *HandleT) NewJobsDBStat(Name string, StatType string, customVal string) 
 		var err error
 		jobsdbClientsMap[customVal], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "customVal", customVal))
 		if err != nil {
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 	return &RudderStatsT{
@@ -374,7 +377,7 @@ func (s *HandleT) NewMigratorStat(Name string, StatType string, migrationType st
 		var err error
 		migratorsMap[migrationType], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "migrationType", migrationType))
 		if err != nil {
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 	return &RudderStatsT{

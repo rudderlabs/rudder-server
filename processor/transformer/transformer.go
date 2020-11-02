@@ -100,7 +100,7 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("processorTransformer")
+	pkgLogger = logger.NewLogger().Child("processor").Child("transformer")
 }
 
 type TransformerResponseT struct {
@@ -134,7 +134,7 @@ func (trans *HandleT) transformWorker() {
 			if err != nil {
 				transformRequestTimerStat.End()
 				reqFailed = true
-				logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
+				trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
 				if retryCount > maxRetry {
 					panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err))
 				}
@@ -144,7 +144,7 @@ func (trans *HandleT) transformWorker() {
 				continue
 			}
 			if reqFailed {
-				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
+				trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
 			}
 
 			// perform version compatability check only on success
@@ -154,7 +154,7 @@ func (trans *HandleT) transformWorker() {
 					transformerAPIVersion = 0
 				}
 				if supportedTransformerAPIVersion != transformerAPIVersion {
-					logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url)
+					trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url)
 					panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url))
 				}
 			}
@@ -168,7 +168,7 @@ func (trans *HandleT) transformWorker() {
 			resp.StatusCode == http.StatusBadRequest ||
 			resp.StatusCode == http.StatusNotFound ||
 			resp.StatusCode == http.StatusRequestEntityTooLarge) {
-			logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
+			trans.logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
 		}
 
 		var transformerResponses []TransformerResponseT
@@ -204,7 +204,7 @@ func (trans *HandleT) Setup() {
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 	for i := 0; i < numTransformWorker; i++ {
-		logger.Info("Starting transformer worker", i)
+		trans.logger.Info("Starting transformer worker", i)
 		rruntime.Go(func() {
 			trans.transformWorker()
 		})
@@ -266,7 +266,7 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 						panic(fmt.Errorf("GetRudderID failed"))
 					}
 					if currentUserID != prevUserID {
-						logger.Debug("Breaking batch at", inputIdx, prevUserID, currentUserID)
+						trans.logger.Debug("Breaking batch at", inputIdx, prevUserID, currentUserID)
 						break
 					}
 				}

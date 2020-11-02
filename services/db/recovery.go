@@ -41,6 +41,12 @@ type RecoveryDataT struct {
 	Mode                            string
 }
 
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("services").Child("db").Child("recovery")
+}
+
 func getRecoveryData() RecoveryDataT {
 	storagePath := config.GetString("recovery.storagePath", "/tmp/recovery_data.json")
 	data, err := ioutil.ReadFile(storagePath)
@@ -143,7 +149,7 @@ func alertOps(mode string) {
 
 	alertManager, err := alert.New()
 	if err != nil {
-		logger.Errorf("Unable to initialize the alertManager: %s", err.Error())
+		pkgLogger.Errorf("Unable to initialize the alertManager: %s", err.Error())
 	} else {
 		alertManager.Alert(fmt.Sprintf("Dataplane server %s entered %s mode", instanceName, mode))
 	}
@@ -178,7 +184,7 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode str
 
 	//If MIGRATION_MODE environment variable is present and is equal to "import", "export", "import-export", then server mode is forced to be Migration.
 	if IsValidMigrationMode(forceMigrationMode) {
-		logger.Info("Setting server mode to Migration. If this is not intended remove environment variables related to Migration.")
+		pkgLogger.Info("Setting server mode to Migration. If this is not intended remove environment variables related to Migration.")
 		forceMode = migrationMode
 	} else {
 		forceMode = getForceRecoveryMode(forceNormal, forceDegraded)
@@ -197,10 +203,10 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode str
 	recoveryHandler := NewRecoveryHandler(&recoveryData)
 
 	if !isForced && recoveryHandler.HasThresholdReached() {
-		logger.Info("DB Recovery: Moving to next State. Threshold reached for " + recoveryData.Mode)
+		pkgLogger.Info("DB Recovery: Moving to next State. Threshold reached for " + recoveryData.Mode)
 		nextMode := getNextMode(recoveryData.Mode)
 		if nextMode == "" {
-			logger.Fatal("Threshold reached for degraded mode")
+			pkgLogger.Fatal("Threshold reached for degraded mode")
 			panic("Not a valid mode")
 		} else {
 			recoveryData.Mode = nextMode
@@ -212,7 +218,7 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode str
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
-	logger.Infof("Starting in %s mode", recoveryData.Mode)
+	pkgLogger.Infof("Starting in %s mode", recoveryData.Mode)
 	CurrentMode = recoveryData.Mode
 	rruntime.Go(func() {
 		sendRecoveryModeStat()
