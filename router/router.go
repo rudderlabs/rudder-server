@@ -322,7 +322,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			// END: request to destination endpoint
 
 			routerResponseStat := stats.GetRouterStat("router_response_counts", stats.CountType, worker.rt.destName, respStatusCode)
-			routerResponseStat.Increment()
+			routerResponseStat.Count(len(destinationJob.JobMetadataArray))
 
 			worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
 		} else {
