@@ -16,6 +16,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -212,6 +213,29 @@ func (trans *HandleT) Setup() {
 type ResponseT struct {
 	Events       []TransformerResponseT
 	FailedEvents []TransformerResponseT
+}
+
+//GetVersion gets the transformer version by asking it on /transfomerBuildVersion
+func GetVersion() string {
+	transformerBuildVersion := "Not an official release. Get the latest release from dockerhub."
+	url := integrations.GetTransformerURL() + "/transformerBuildVersion"
+	resp, err := http.Get(url)
+	if err != nil {
+		logger.Errorf("Unable to make a transfomer build version call with error : %s", err.Error())
+	}
+
+	if resp.Body != nil {
+		defer resp.Body.Close()
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			logger.Errorf("Unable to read response into bytes with error : %s", err.Error())
+		}
+		transformerBuildVersion = string(bodyBytes)
+	}
+	return transformerBuildVersion
 }
 
 //Transform function is used to invoke transformer API

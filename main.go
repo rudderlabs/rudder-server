@@ -16,6 +16,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 
+	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -132,7 +133,7 @@ func init() {
 }
 
 func versionInfo() map[string]interface{} {
-	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL}
+	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL, "TransformerVersion": transformer.GetVersion()}
 }
 
 func versionHandler(w http.ResponseWriter, r *http.Request) {
