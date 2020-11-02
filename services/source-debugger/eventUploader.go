@@ -48,7 +48,7 @@ var (
 
 func init() {
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("services").Child("source-debugger").Child("eventUploader")
+	pkgLogger = logger.NewLogger().Child("source-debugger").Child("eventUploader")
 
 }
 

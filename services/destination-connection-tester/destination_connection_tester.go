@@ -42,8 +42,7 @@ type DestinationConnectionTesterResponse struct {
 
 func init() {
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("services").Child("destination_connection_tester")
-
+	pkgLogger = logger.NewLogger().Child("destination-connection-tester")
 }
 
 func loadConfig() {

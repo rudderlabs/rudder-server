@@ -13,7 +13,7 @@ var pagerDutyEndPoint = "https://events.pagerduty.com/v2/enqueue"
 var pkgLogger logger.LoggerI
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("services").Child("alert")
+	pkgLogger = logger.NewLogger().Child("alert")
 }
 
 func (ops *PagerDuty) Alert(message string) {

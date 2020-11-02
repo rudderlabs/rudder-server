@@ -824,7 +824,7 @@ func loadConfig() {
 func init() {
 	loadConfig()
 	uploadedRawDataJobsCache = make(map[string]map[string]bool)
-	pkgLogger = logger.NewLogger().Child("router").Child("batchrouter")
+	pkgLogger = logger.NewLogger().Child("batchrouter")
 }
 
 //Setup initializes this module

@@ -44,7 +44,7 @@ type RecoveryDataT struct {
 var pkgLogger logger.LoggerI
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("services").Child("db").Child("recovery")
+	pkgLogger = logger.NewLogger().Child("db").Child("recovery")
 }
 
 func getRecoveryData() RecoveryDataT {

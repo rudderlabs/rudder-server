@@ -22,7 +22,7 @@ type Config struct {
 var pkgLogger logger.LoggerI
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("services").Child("streammanager").Child("eventbridgemanager")
+	pkgLogger = logger.NewLogger().Child("streammanager").Child("eventbridge")
 
 }
 

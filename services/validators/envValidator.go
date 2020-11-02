@@ -24,7 +24,7 @@ const (
 var pkgLogger logger.LoggerI
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("services").Child("validators").Child("envValidator")
+	pkgLogger = logger.NewLogger().Child("validators").Child("envValidator")
 }
 
 func createWorkspaceTable(dbHandle *sql.DB) {

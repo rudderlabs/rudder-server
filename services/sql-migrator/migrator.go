@@ -36,8 +36,7 @@ type Migrator struct {
 var pkgLogger logger.LoggerI
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("services").Child("sql-migrator").Child("migrator")
-
+	pkgLogger = logger.NewLogger().Child("sql-migrator").Child("migrator")
 }
 
 // Migrate migrates database schema using migration SQL scripts.

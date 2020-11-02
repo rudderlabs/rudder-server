@@ -13,7 +13,7 @@ import (
 var pkgLogger logger.LoggerI
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("runtime")
+	pkgLogger = logger.NewLogger().Child("rruntime")
 }
 
 //Go Starts the excution of the function passed as argument in a new Goroutine

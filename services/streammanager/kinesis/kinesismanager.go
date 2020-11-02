@@ -31,7 +31,7 @@ func init() {
 		"KMSAccessDeniedException", "KMSDisabledException", "KMSInvalidStateException", "KMSNotFoundException", "KMSOptInRequired",
 		"ResourceNotFoundException", "UnrecognizedClientException", "ValidationError"}
 
-	pkgLogger = logger.NewLogger().Child("services").Child("streammanager").Child("kinesismanager")
+	pkgLogger = logger.NewLogger().Child("streammanager").Child("kinesismanager")
 
 }
 

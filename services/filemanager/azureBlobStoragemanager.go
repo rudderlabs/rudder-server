@@ -16,7 +16,7 @@ import (
 var pkgLogger logger.LoggerI
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("services").Child("filemanager").Child("azureBlobStoragemanager")
+	pkgLogger = logger.NewLogger().Child("filemanager").Child("azureBlobStorage")
 }
 
 func supressMinorErrors(err error) error {

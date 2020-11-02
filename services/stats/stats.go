@@ -62,7 +62,7 @@ func init() {
 	enableCPUStats = config.GetBool("RuntimeStats.enableCPUStats", true)
 	enableMemStats = config.GetBool("RuntimeStats.enabledMemStats", true)
 	enableGCStats = config.GetBool("RuntimeStats.enableGCStats", true)
-	pkgLogger = logger.NewLogger().Child("services").Child("stats").Child("stats")
+	pkgLogger = logger.NewLogger().Child("stats")
 
 }
 

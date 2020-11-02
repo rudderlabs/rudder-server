@@ -27,7 +27,7 @@ type pubsubClient struct {
 var pkgLogger logger.LoggerI
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("services").Child("streammanager").Child("googlepubsubmanager")
+	pkgLogger = logger.NewLogger().Child("streammanager").Child("googlepubsub")
 }
 
 // NewProducer creates a producer based on destination config

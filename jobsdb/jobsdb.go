@@ -406,7 +406,7 @@ in the retention time
 */
 func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
 
-	jd.logger = pkgLogger
+	jd.logger = pkgLogger.Child(tablePrefix)
 	var err error
 	jd.migrationState.migrationMode = migrationMode
 	psqlInfo := GetConnectionString()

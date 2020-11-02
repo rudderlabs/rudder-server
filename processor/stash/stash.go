@@ -29,7 +29,7 @@ var (
 
 func init() {
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("processor").Child("processor")
+	pkgLogger = logger.NewLogger().Child("processor").Child("stash")
 }
 
 func loadConfig() {

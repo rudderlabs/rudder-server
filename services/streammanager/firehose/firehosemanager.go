@@ -23,7 +23,7 @@ type Config struct {
 var pkgLogger logger.LoggerI
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("services").Child("streammanager").Child("firehosemanager")
+	pkgLogger = logger.NewLogger().Child("streammanager").Child("firehose")
 }
 
 // NewProducer creates a producer based on destination config
