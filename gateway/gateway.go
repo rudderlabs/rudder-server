@@ -144,7 +144,7 @@ type HandleT struct {
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {
 	for sourceTag, count := range sourceStats {
 		tags := map[string]string{
-			"sourceTag": sourceTag,
+			"source": sourceTag,
 		}
 		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)

@@ -261,12 +261,16 @@ func (webhook *HandleT) Register(name string) {
 	}
 }
 
-func newWebhookStat(destID string) *webhookSourceStatT {
-	numEvents := stats.NewDestStat("webhook_num_events", stats.CountType, destID)
-	numOutputEvents := stats.NewDestStat("webhook_num_output_events", stats.CountType, destID)
-	sourceTransform := stats.NewDestStat("webhook_dest_transform", stats.TimerType, destID)
+//TODO: Check if correct
+func newWebhookStat(sourceType string) *webhookSourceStatT {
+	tags := map[string]string{
+		"sourceType": sourceType,
+	}
+	numEvents := stats.NewTaggedStat("webhook_num_events", stats.CountType, tags)
+	numOutputEvents := stats.NewTaggedStat("webhook_num_output_events", stats.CountType, tags)
+	sourceTransform := stats.NewTaggedStat("webhook_dest_transform", stats.TimerType, tags)
 	return &webhookSourceStatT{
-		id:              destID,
+		id:              sourceType,
 		numEvents:       numEvents,
 		numOutputEvents: numOutputEvents,
 		sourceTransform: sourceTransform,

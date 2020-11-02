@@ -89,20 +89,6 @@ func (mr *MockStatsMockRecorder) NewBatchStat(arg0, arg1, arg2 interface{}) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewBatchStat", reflect.TypeOf((*MockStats)(nil).NewBatchStat), arg0, arg1, arg2)
 }
 
-// NewDestStat mocks base method
-func (m *MockStats) NewDestStat(arg0, arg1, arg2 string) stats.RudderStats {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewDestStat", arg0, arg1, arg2)
-	ret0, _ := ret[0].(stats.RudderStats)
-	return ret0
-}
-
-// NewDestStat indicates an expected call of NewDestStat
-func (mr *MockStatsMockRecorder) NewDestStat(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewDestStat", reflect.TypeOf((*MockStats)(nil).NewDestStat), arg0, arg1, arg2)
-}
-
 // NewJobsDBStat mocks base method
 func (m *MockStats) NewJobsDBStat(arg0, arg1, arg2 string) stats.RudderStats {
 	m.ctrl.T.Helper()

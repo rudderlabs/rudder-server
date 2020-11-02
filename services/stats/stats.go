@@ -69,7 +69,6 @@ type Stats interface {
 	NewLatencyStat(Name string, StatType string) (rStats RudderStats)
 	NewBatchStat(Name string, StatType string, index int) (rStats RudderStats)
 	NewBatchDestStat(Name string, StatType string, destID string) RudderStats
-	NewDestStat(Name string, StatType string, destID string) RudderStats
 	GetRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats
 	GetProcErrorStat(Name string, StatType string, destName string, statusCode int, stage string) RudderStats
 	NewTaggedStat(Name string, StatType string, tags map[string]string) RudderStats
@@ -209,36 +208,6 @@ func (s *HandleT) NewBatchDestStat(Name string, StatType string, destID string) 
 // Deprecated: Use DefaultStats for managing stats instead
 func NewBatchDestStat(Name string, StatType string, destID string) RudderStats {
 	return DefaultStats.NewBatchDestStat(Name, StatType, destID)
-}
-
-/*
-NewDestStat is used to create new destination specific stat.
-Destination id Writekey is added as the value of 'destID' tag in this case.
-If destination id has been used on this function before, a RudderStats with the same underlying client will be returned.
-*/
-func (s *HandleT) NewDestStat(Name string, StatType string, destID string) RudderStats {
-	destClientsMapLock.Lock()
-	defer destClientsMapLock.Unlock()
-	if _, found := destClientsMap[destID]; !found {
-		var err error
-		destClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destID", destID))
-		if err != nil {
-			logger.Error(err)
-		}
-	}
-	return &RudderStatsT{
-		Name:        Name,
-		StatType:    StatType,
-		DestID:      destID,
-		Client:      destClientsMap[destID],
-		dontProcess: false,
-	}
-}
-
-// NewDestStat is used to create new destination specific stat.
-// Deprecated: Use DefaultStats for managing stats instead
-func NewDestStat(Name string, StatType string, destID string) RudderStats {
-	return DefaultStats.NewDestStat(Name, StatType, destID)
 }
 
 /*
