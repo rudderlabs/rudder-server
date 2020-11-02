@@ -199,9 +199,9 @@ func (c *context) Finish() {
 func (c *context) expectWriteKeyStat(name string, writeKey string, count int) *gomock.Call {
 	mockStat := mocksStats.NewMockRudderStats(c.mockCtrl)
 
-	c.mockStats.EXPECT().NewWriteKeyStat(name, stats.CountType, writeKey).
-		Return(mockStat).Times(1).
-		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.new.%s.%s", name, writeKey)))
+	// c.mockStats.EXPECT().NewWriteKeyStat(name, stats.CountType, writeKey).
+	// 	Return(mockStat).Times(1).
+	// 	Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.new.%s.%s", name, writeKey)))
 
 	return mockStat.EXPECT().Count(count).
 		Times(1).

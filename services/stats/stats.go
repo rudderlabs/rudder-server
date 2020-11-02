@@ -68,7 +68,6 @@ type Stats interface {
 	NewStat(Name string, StatType string) (rStats RudderStats)
 	NewLatencyStat(Name string, StatType string) (rStats RudderStats)
 	NewBatchStat(Name string, StatType string, index int) (rStats RudderStats)
-	NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats RudderStats)
 	NewBatchDestStat(Name string, StatType string, destID string) RudderStats
 	NewDestStat(Name string, StatType string, destID string) RudderStats
 	GetRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats
@@ -100,7 +99,7 @@ type RudderStatsT struct {
 	Name        string
 	StatType    string
 	Timing      statsd.Timing
-	writeKey    string
+	sourceTag   string
 	DestID      string
 	Client      *statsd.Client
 	dontProcess bool
@@ -181,38 +180,6 @@ func (s *HandleT) NewTaggedStat(Name string, StatType string, tags map[string]st
 
 func NewTaggedStat(Name string, StatType string, tags map[string]string) (rStats RudderStats) {
 	return DefaultStats.NewTaggedStat(Name, StatType, tags)
-}
-
-/*
-NewWriteKeyStat is used to create new writekey specific stat.
-Writekey is added as the value of 'writekey' tags in this case.
-If writekey has been used on this function before, a RudderStats with the same underlying client will be returned.
-*/
-func (s *HandleT) NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats RudderStats) {
-	writeKeyClientsMapLock.Lock()
-	defer writeKeyClientsMapLock.Unlock()
-	if _, found := writeKeyClientsMap[writeKey]; !found {
-		var err error
-		writeKeyClientsMap[writeKey], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "writekey", writeKey))
-		if err != nil {
-			// If nothing is listening on the target port, an error is returned and
-			// the returned client does nothing but is still usable. So we can
-			// just log the error and go on.
-			logger.Error(err)
-		}
-	}
-	return &RudderStatsT{
-		Name:     Name,
-		StatType: StatType,
-		writeKey: writeKey,
-		Client:   writeKeyClientsMap[writeKey],
-	}
-}
-
-// NewWriteKeyStat is used to create new writekey specific stat.
-// Deprecated: Use DefaultStats for managing stats instead
-func NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats RudderStats) {
-	return DefaultStats.NewWriteKeyStat(Name, StatType, writeKey)
 }
 
 /*
