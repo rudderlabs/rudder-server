@@ -762,6 +762,10 @@ func (brt *HandleT) crashRecover() {
 	}
 }
 
+func IsObjectStorageDestination(destType string) bool {
+	return misc.Contains(objectStorageDestinations, destType)
+}
+
 func getWarehouseURL() (url string) {
 	if warehouseMode == config.EmbeddedMode {
 		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))

@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -81,10 +82,16 @@ type DestStatT struct {
 	destTransform    stats.RudderStats
 }
 
-func (proc *HandleT) newDestinationStat(destID string, destName string) *DestStatT {
-	destinationTag := misc.GetTagName(destID, destName)
+func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) *DestStatT {
+	destinationTag := misc.GetTagName(destination.ID, destination.Name)
+	var module = "router"
+	if batchrouter.IsObjectStorageDestination(destination.DestinationDefinition.Name) {
+		module = "batchrouter"
+	}
 	tags := map[string]string{
+		"module":      module,
 		"destination": destinationTag,
+		"destType":    destination.DestinationDefinition.DisplayName,
 	}
 	numEvents := proc.stats.NewTaggedStat("proc_num_events", stats.CountType, tags)
 	numOutputEvents := proc.stats.NewTaggedStat("proc_num_output_events", stats.CountType, tags)
@@ -92,7 +99,7 @@ func (proc *HandleT) newDestinationStat(destID string, destName string) *DestSta
 	userTransform := proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
 	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
 	return &DestStatT{
-		id:               destID,
+		id:               destination.ID,
 		numEvents:        numEvents,
 		numOutputEvents:  numOutputEvents,
 		sessionTransform: sessionTransform,
@@ -272,7 +279,7 @@ func (proc *HandleT) backendConfigSubscriber() {
 					destinationTransformationEnabledMap[destination.ID] = len(destination.Transformations) > 0
 					_, ok := proc.destStats[destination.ID]
 					if !ok {
-						proc.destStats[destination.ID] = proc.newDestinationStat(destination.ID, destination.Name)
+						proc.destStats[destination.ID] = proc.newDestinationStat(destination)
 					}
 				}
 			}
