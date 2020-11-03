@@ -151,7 +151,6 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				if err != nil {
 					panic(err)
 				}
-				defer rows.Close()
 				responses := []ResponseT{}
 				for rows.Next() {
 					var payload json.RawMessage
@@ -163,6 +162,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 						Error:   error,
 					})
 				}
+				rows.Close()
 				*ch <- responses
 				break
 			} else {
