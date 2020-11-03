@@ -323,6 +323,16 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 			routerResponseStat := stats.GetRouterStat("router_response_counts", stats.CountType, worker.rt.destName, respStatusCode)
 			routerResponseStat.Count(len(destinationJob.JobMetadataArray))
+			destinationTag := misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name)
+			tags := map[string]string{
+				"module":      "router",
+				"destType":    worker.rt.destName,
+				"destination": destinationTag,
+			}
+			eventsDeliveredStat := stats.NewTaggedStat("events_delivered", stats.CountType, tags)
+			if isSuccessStatus(respStatusCode) {
+				eventsDeliveredStat.Count(len(destinationJob.JobMetadataArray))
+			}
 
 			worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
 		} else {
@@ -350,7 +360,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 			worker.postStatusOnResponseQ(respStatusCode, respBody, &destinationJobMetadata, &status)
 
-			worker.sendEventDeliveryStat(&destinationJobMetadata, &status)
+			worker.sendEventDeliveryStat(&destinationJobMetadata, &status, &destinationJob.Destination)
 
 			worker.sendDestinationResponseToConfigBackend(destinationJob.Message, &destinationJobMetadata, &status)
 		}
@@ -453,16 +463,17 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	}
 }
 
-func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
+func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
 	if destinationJobMetadata.ReceivedAt != "" {
 		if status.JobState == jobsdb.Succeeded.State {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
 			if err == nil {
+				destinationTag := misc.GetTagName(destination.ID, destination.Name)
 				eventsDeliveryTimeStat := stats.NewTaggedStat(
 					"event_delivery_time", stats.TimerType, map[string]string{
-						"module":   "router",
-						"destType": worker.rt.destName,
-						"id":       destinationJobMetadata.DestinationID,
+						"module":      "router",
+						"destType":    worker.rt.destName,
+						"destination": destinationTag,
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Now().Sub(receivedTime))
