@@ -111,8 +111,11 @@ var SnowflakeStorageMap = map[string]string{
 	"AZURE": "AZURE_BLOB",
 }
 
+var pkgLogger logger.LoggerI
+
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("utils")
 }
 
 func loadConfig() {
@@ -173,12 +176,12 @@ type StagingFileT struct {
 func GetCurrentSchema(dbHandle *sql.DB, warehouse WarehouseT) (map[string]map[string]string, error) {
 	var rawSchema json.RawMessage
 	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.namespace='%[4]s') ORDER BY %[1]s.id DESC`, WarehouseSchemasTable, warehouse.Source.ID, warehouse.Destination.ID, warehouse.Namespace)
-	logger.Infof("WH: Fetching current schema from wh postgresql: %s", sqlStatement)
+	pkgLogger.Infof("WH: Fetching current schema from wh postgresql: %s", sqlStatement)
 
 	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logger.Infof("WH: No current schema found for %s with namespace: %s", warehouse.Destination.ID, warehouse.Namespace)
+			pkgLogger.Infof("WH: No current schema found for %s with namespace: %s", warehouse.Destination.ID, warehouse.Namespace)
 			return nil, nil
 		}
 		if err != nil {
@@ -302,7 +305,7 @@ func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.
 }
 
 func SetUploadStatus(upload UploadT, status string, dbHandle *sql.DB, additionalFields ...UploadColumnT) (err error) {
-	logger.Infof("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
+	pkgLogger.Infof("WH: Setting status of %s for wh_upload:%v", status, upload.ID)
 	marshalledTimings := GetNewTimings(upload, dbHandle, status)
 	opts := []UploadColumnT{
 		{Column: UploadStatusField, Value: status},
@@ -342,7 +345,7 @@ func SetUploadColumns(upload UploadT, dbHandle *sql.DB, fields ...UploadColumnT)
 }
 
 func SetUploadError(upload UploadT, statusError error, state string, dbHandle *sql.DB) (err error) {
-	logger.Errorf("WH: Failed during %s stage: %v\n", state, statusError.Error())
+	pkgLogger.Errorf("WH: Failed during %s stage: %v\n", state, statusError.Error())
 	SetUploadStatus(upload, state, dbHandle)
 	var e map[string]map[string]interface{}
 	json.Unmarshal(upload.Error, &e)
@@ -391,7 +394,7 @@ func SetStagingFilesStatus(ids []int64, status string, dbHandle *sql.DB) (err er
 }
 
 func SetStagingFilesError(ids []int64, status string, dbHandle *sql.DB, statusError error) (err error) {
-	logger.Errorf("WH: Failed processing staging files: %v", statusError.Error())
+	pkgLogger.Errorf("WH: Failed processing staging files: %v", statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, WarehouseStagingFilesTable)
 	_, err = dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), pq.Array(ids))
 	if err != nil {
@@ -410,7 +413,7 @@ func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHan
 		execValues = append(execValues, timeutil.Now())
 	}
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 %s WHERE wh_upload_id=$3 AND table_name=$4`, WarehouseTableUploadsTable, lastExec)
-	logger.Infof("WH: Setting table upload status: %v", sqlStatement)
+	pkgLogger.Infof("WH: Setting table upload status: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, execValues...)
 	if err != nil {
 		panic(err)
@@ -419,9 +422,9 @@ func SetTableUploadStatus(status string, uploadID int64, tableName string, dbHan
 }
 
 func SetTableUploadError(status string, uploadID int64, tableName string, statusError error, dbHandle *sql.DB) (err error) {
-	logger.Errorf("WH: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
+	pkgLogger.Errorf("WH: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, error=$3 WHERE wh_upload_id=$4 AND table_name=$5`, WarehouseTableUploadsTable)
-	logger.Infof("WH: Setting table upload error: %v", sqlStatement)
+	pkgLogger.Infof("WH: Setting table upload error: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), misc.QuoteLiteral(statusError.Error()), uploadID, tableName)
 	if err != nil {
 		panic(err)

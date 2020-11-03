@@ -20,6 +20,12 @@ type Config struct {
 	AccessKey   string
 }
 
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("streammanager").Child("firehose")
+}
+
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}) (firehose.Firehose, error) {
 	var config Config
@@ -65,7 +71,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if err != nil {
 		respStatus = "Failure"
 		responseMessage = "[FireHose] error :: " + err.Error()
-		logger.Errorf("[FireHose] error  :: %w", err)
+		pkgLogger.Errorf("[FireHose] error  :: %w", err)
 		statusCode := 400
 		return statusCode, respStatus, responseMessage
 	}
@@ -73,7 +79,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if err != nil {
 		respStatus = "Failure"
 		responseMessage = "[FireHose] error  :: " + err.Error()
-		logger.Errorf("[FireHose] error  :: %w", err)
+		pkgLogger.Errorf("[FireHose] error  :: %w", err)
 		statusCode := 400
 		return statusCode, respStatus, responseMessage
 	}
@@ -90,7 +96,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if err != nil {
 		respStatus = "Failure"
 		responseMessage = "[FireHose] error  :: " + err.Error()
-		logger.Errorf("[FireHose] error  :: %w", err)
+		pkgLogger.Errorf("[FireHose] error  :: %w", err)
 		statusCode := 400
 		return statusCode, respStatus, responseMessage
 	}
@@ -100,7 +106,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		if !ok {
 			respStatus = "Failure"
 			responseMessage = "[FireHose] error :: Could not parse delivery stream to string"
-			logger.Error(responseMessage)
+			pkgLogger.Error(responseMessage)
 			statusCode := 400
 			return statusCode, respStatus, responseMessage
 		}
@@ -124,7 +130,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 					responseMessage = "[FireHose] error  :: " + reqErr.Error()
 					respStatus = awsErr.Code()
 					statusCode = reqErr.StatusCode()
-					logger.Errorf("[FireHose] error  :: %v + %v", awsErr.Code(), reqErr.Error())
+					pkgLogger.Errorf("[FireHose] error  :: %v + %v", awsErr.Code(), reqErr.Error())
 				}
 			}
 			return statusCode, respStatus, responseMessage

@@ -21,6 +21,7 @@ var (
 	retriggerInterval  time.Duration
 	retriggerCount     int
 	trackBatchInterval time.Duration
+	pkgLogger          logger.LoggerI
 )
 
 const (
@@ -37,6 +38,7 @@ func init() {
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
 	retriggerInterval = time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
 	retriggerCount = config.GetInt("PgNotifier.retriggerCount", 100)
+	pkgLogger = logger.NewLogger().Child("pgnotifier")
 }
 
 type PgNotifierT struct {
@@ -74,7 +76,7 @@ type ClaimResponseT struct {
 }
 
 func New(connectionInfo string) (notifier PgNotifierT, err error) {
-	logger.Infof("PgNotifier: Initializing PgNotifier...")
+	pkgLogger.Infof("PgNotifier: Initializing PgNotifier...")
 	dbHandle, err := sql.Open("postgres", connectionInfo)
 	if err != nil {
 		return
@@ -89,7 +91,7 @@ func New(connectionInfo string) (notifier PgNotifierT, err error) {
 
 func (notifier PgNotifierT) AddTopic(topic string) (err error) {
 	stmt := fmt.Sprintf("DELETE FROM %s WHERE topic ='%s'", queueName, topic)
-	logger.Infof("PgNotifier: Deleting all jobs on topic: %s", topic)
+	pkgLogger.Infof("PgNotifier: Deleting all jobs on topic: %s", topic)
 	_, err = notifier.dbHandle.Exec(stmt)
 	if err != nil {
 		return
@@ -122,7 +124,7 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 			WaitingState,
 			FailedState,
 			retriggerCount)
-		logger.Debugf("PgNotifier: triggering pending jobs")
+		pkgLogger.Debugf("PgNotifier: triggering pending jobs")
 		_, err := notifier.dbHandle.Exec(stmt)
 		if err != nil {
 			panic(err)
@@ -140,7 +142,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 			var count int
 			err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
 			if err != nil {
-				logger.Errorf("PgNotifier: Failed to query for tracking jobs by batch_id: %s, connInfo: %s", stmt, notifier.URI)
+				pkgLogger.Errorf("PgNotifier: Failed to query for tracking jobs by batch_id: %s, connInfo: %s", stmt, notifier.URI)
 				panic(err)
 			}
 			if count == 0 {
@@ -164,7 +166,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				*ch <- responses
 				break
 			} else {
-				logger.Infof("PgNotifier: Pending %d files to process in batch: %s", count, batchID)
+				pkgLogger.Infof("PgNotifier: Pending %d files to process in batch: %s", count, batchID)
 			}
 		}
 	})
@@ -175,7 +177,7 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 		response := <-ch
 		var err error
 		if response.Err != nil {
-			logger.Error(response.Err.Error())
+			pkgLogger.Error(response.Err.Error())
 			stmt := fmt.Sprintf(`UPDATE %[1]s SET status=(CASE
 									WHEN attempt > %[2]d
 									THEN CAST ( '%[3]s' AS pg_notifier_status_type)
@@ -193,7 +195,7 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 		} else {
 			// TODO: verify rollback is necessary on error
 			tx.Rollback()
-			logger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
+			pkgLogger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
 		}
 	})
 }
@@ -225,7 +227,7 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 
 	if err != nil {
-		logger.Errorf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
+		pkgLogger.Errorf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
 		// TODO: verify rollback is necessary on error
 		tx.Rollback()
 		return
@@ -259,7 +261,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 	defer stmt.Close()
 
 	batchID := uuid.NewV4().String()
-	logger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(messages), queueName, batchID)
+	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(messages), queueName, batchID)
 	for _, message := range messages {
 		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload))
 		if err != nil {
@@ -268,15 +270,15 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 	}
 	_, err = stmt.Exec()
 	if err != nil {
-		logger.Errorf("PgNotifier: Error publishing messages: %v", err)
+		pkgLogger.Errorf("PgNotifier: Error publishing messages: %v", err)
 		return
 	}
 	err = txn.Commit()
 	if err != nil {
-		logger.Errorf("PgNotifier: Error in publishing messages: %v", err)
+		pkgLogger.Errorf("PgNotifier: Error in publishing messages: %v", err)
 		return
 	}
-	logger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(messages), queueName, batchID)
+	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(messages), queueName, batchID)
 	notifier.trackBatch(batchID, &ch)
 	return
 }
@@ -287,9 +289,9 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 		10*time.Second,
 		time.Minute,
 		func(ev pq.ListenerEventType, err error) {
-			logger.Debugf("PgNotifier: Event received in pq listener %v", ev)
+			pkgLogger.Debugf("PgNotifier: Event received in pq listener %v", ev)
 			if err != nil {
-				logger.Debugf("PgNotifier: Error in pq listener for event type: %v %v ", ev, err)
+				pkgLogger.Debugf("PgNotifier: Error in pq listener for event type: %v %v ", ev, err)
 			}
 		})
 	err = listener.Listen(topic)
@@ -308,15 +310,15 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 					if err != nil {
 						panic(err)
 					}
-					logger.Debugf("PgNotifier: Received data from channel: %s, data: %v", notification.Channel, event)
+					pkgLogger.Debugf("PgNotifier: Received data from channel: %s, data: %v", notification.Channel, event)
 					if event.Status == WaitingState || event.Status == FailedState {
 						ch <- event
 					} else {
-						logger.Debugf("PgNotifier: Not notifying subscriber for event with id: %d type: %s", event.ID, event.Status)
+						pkgLogger.Debugf("PgNotifier: Not notifying subscriber for event with id: %d type: %s", event.ID, event.Status)
 					}
 				}
 			case <-time.After(90 * time.Second):
-				logger.Debugf("PgNotifier: Received no events for 90 seconds, checking connection")
+				pkgLogger.Debugf("PgNotifier: Received no events for 90 seconds, checking connection")
 				go func() {
 					listener.Ping()
 				}()
@@ -350,7 +352,7 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
-		logger.Errorf("PgNotifier: Error creating trigger func: %v", err)
+		pkgLogger.Errorf("PgNotifier: Error creating trigger func: %v", err)
 		return
 	}
 
@@ -370,7 +372,7 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 }
 
 func (notifier *PgNotifierT) setupQueue() (err error) {
-	logger.Infof("PgNotifier: Creating Job Queue Tables ")
+	pkgLogger.Infof("PgNotifier: Creating Job Queue Tables ")
 
 	//create status type
 	sqlStmt := `DO $$ BEGIN

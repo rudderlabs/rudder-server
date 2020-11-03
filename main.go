@@ -58,6 +58,7 @@ var (
 	routerLoaded                     bool
 	processorLoaded                  bool
 	enableSuppressUserFeature        bool
+	pkgLogger                        logger.LoggerI
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -108,7 +109,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 				if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
 					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 					if !ok {
-						logger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
+						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
 						var brt batchrouter.HandleT
 						brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
 						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
@@ -116,7 +117,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 				} else {
 					_, ok := dstToRouter[destination.DestinationDefinition.Name]
 					if !ok {
-						logger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
+						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
 						var router router.HandleT
 						router.Setup(routerDB, destination.DestinationDefinition.Name)
 						dstToRouter[destination.DestinationDefinition.Name] = &router
@@ -129,6 +130,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("main")
 }
 
 func versionInfo() map[string]interface{} {
@@ -152,7 +154,7 @@ func startWarehouseService() {
 }
 
 func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
-	logger.Info("Main starting")
+	pkgLogger.Info("Main starting")
 
 	if !validators.ValidateEnv() {
 		panic(errors.New("Failed to start rudder-server"))
@@ -175,7 +177,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 	var procErrorDB jobsdb.HandleT
 
 	runtime.GOMAXPROCS(maxProcess)
-	logger.Info("Clearing DB ", *clearDB)
+	pkgLogger.Info("Clearing DB ", *clearDB)
 
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
@@ -280,7 +282,7 @@ func main() {
 				}})
 
 			misc.RecordAppError(fmt.Errorf("%v", r))
-			logger.Fatal(r)
+			pkgLogger.Fatal(r)
 			panic(r)
 		}
 	}()
@@ -306,7 +308,7 @@ func main() {
 		if application.Features().SuppressUser != nil {
 			pollRegulations = true
 		} else {
-			logger.Info("Suppress User feature is enterprise only. Unable to poll regulations.")
+			pkgLogger.Info("Suppress User feature is enterprise only. Unable to poll regulations.")
 		}
 	}
 
@@ -350,4 +352,3 @@ func main() {
 
 	misc.KeepProcessAlive()
 }
-
