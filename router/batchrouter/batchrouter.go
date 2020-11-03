@@ -65,7 +65,7 @@ type HandleT struct {
 	diagnosisTicker         *time.Ticker
 	batchRequestsMetric     []batchRequestMetric
 	logger                  logger.LoggerI
-	noOfWorkers				      int
+	noOfWorkers             int
 }
 
 type BatchDestinationT struct {
