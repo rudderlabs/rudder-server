@@ -96,6 +96,7 @@ type WarehouseT struct {
 	Namespace   string
 	Type        string
 	Identifier  string
+	// LastUploadedEventTime time.Time
 }
 
 type DestinationT struct {

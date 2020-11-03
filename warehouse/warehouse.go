@@ -96,7 +96,7 @@ type HandleT struct {
 	configSubscriberLock sync.RWMutex
 	workerChannelMap     map[string]chan []*UploadJobT
 	workerChannelMapLock sync.RWMutex
-	uploadJobsQ          chan *UploadJobT
+	uploadJobsQ          chan []*UploadJobT
 }
 
 type ErrorResponseT struct {
@@ -593,7 +593,10 @@ func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (numJobs int
 			logger.Errorf("[WH]: Failed to create upload jobs for %s from pending uploads with error: %w", warehouse.Identifier, err)
 			return 0, err
 		}
-		wh.addToUploadJobsQ(uploadJobs)
+		if len(uploadJobs) == 0 {
+			return 0, nil
+		}
+		wh.uploadJobsQ <- uploadJobs
 		enqueuedJobs = true
 		return len(uploadJobs), nil
 	}
@@ -621,17 +624,14 @@ func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (numJobs int
 		logger.Errorf("[WH]: Failed to create upload jobs for %s for new staging files with error: %w", warehouse.Identifier, err)
 		return 0, err
 	}
+	if len(uploadJobs) == 0 {
+		return 0, nil
+	}
 
 	setLastExec(warehouse)
-	wh.addToUploadJobsQ(uploadJobs)
+	wh.uploadJobsQ <- uploadJobs
 	enqueuedJobs = true
 	return len(uploadJobs), nil
-}
-
-func (wh *HandleT) addToUploadJobsQ(uploadJobs []*UploadJobT) {
-	for _, j := range uploadJobs {
-		wh.uploadJobsQ <- j
-	}
 }
 
 func (wh *HandleT) sortWarehousesByLastEventAt(warehouses []warehouseutils.WarehouseT) {
@@ -643,9 +643,9 @@ func (wh *HandleT) sortWarehousesByLastEventAt(warehouses []warehouseutils.Wareh
 				ROW_NUMBER() OVER (PARTITION BY source_id, destination_id ORDER BY id desc) AS row_number,
 				t.*
 			FROM
-				wh_uploads t) x
+				wh_uploads t) grouped_uploads
 		WHERE
-			x.row_number = 1;`,
+			grouped_uploads.row_number = 1;`,
 	)
 
 	rows, err := wh.dbHandle.Query(sqlStatement)
@@ -710,12 +710,12 @@ func (wh *HandleT) mainLoop() {
 func (wh *HandleT) runUploadJobAllocater() {
 	for {
 		select {
-		case uploadJob := <-wh.uploadJobsQ:
-			workerName := workerIdentifier(uploadJob.warehouse)
+		case uploadJobs := <-wh.uploadJobsQ:
+			workerName := workerIdentifier(uploadJobs[0].warehouse)
 			// Waits till a worker is available to process
 			wh.waitAndLockAvailableWorker()
 			wh.workerChannelMapLock.Lock()
-			wh.workerChannelMap[workerName] <- []*UploadJobT{uploadJob}
+			wh.workerChannelMap[workerName] <- uploadJobs
 			wh.workerChannelMapLock.Unlock()
 		}
 	}
@@ -766,7 +766,7 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
-	wh.uploadJobsQ = make(chan *UploadJobT, 1000)
+	wh.uploadJobsQ = make(chan []*UploadJobT, 1000)
 	wh.workerChannelMap = make(map[string]chan []*UploadJobT)
 	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
