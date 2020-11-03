@@ -378,7 +378,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			if req.reqType != "batch" {
 				body, _ = sjson.SetBytes(body, "type", req.reqType)
 				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
-				misc.IncrementMapByKey(sourceEventStats, sourceTag, 1)
 			}
 
 			// set anonymousId if not set in payload
