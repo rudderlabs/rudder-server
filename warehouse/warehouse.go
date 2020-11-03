@@ -934,5 +934,8 @@ func Start() {
 		rruntime.Go(func() {
 			monitorDestRouters()
 		})
+		rruntime.Go(func() {
+			runArchiver(dbHandle)
+		})
 	}
 }
