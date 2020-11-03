@@ -907,14 +907,19 @@ func computeInsertVals(before, after []string) ([]string, error) {
 	if err != nil {
 		return calculatedVals, err
 	}
+	//Just increment the last value of the index as a possible candidate
 	calculatedVals[len(calculatedVals)-1] = fmt.Sprintf("%d", lastVal+1)
 
 	comparison, err := dsComparitor(calculatedVals, after)
 	if err != nil {
 		return calculatedVals, err
 	}
+
+	//The basic requirement is that the possible candidate should be smaller compared to the insertBeforeDS.
 	if comparison &&
 		len(calculatedVals) >= len(after) {
+		//Only when the index starts with 0, we allow three levels. This would be when we have to insert an internal migration DS between two import DSs
+		//In all other cases, we allow only two levels
 		if before[0] == "0" && len(calculatedVals) == 3 || before[0] != "0" && len(calculatedVals) == 2 {
 			return calculatedVals, nil
 		}
