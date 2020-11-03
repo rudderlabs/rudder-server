@@ -473,33 +473,48 @@ func (jd *HandleT) TearDown() {
 	jd.dbHandle.Close()
 }
 
-var dsComparitor = func(src, dst []string) bool {
+var dsComparitor = func(src, dst []string) (bool, error) {
 	k := 0
 	for {
 		if k >= len(src) {
 			//src has same prefix but is shorter
 			//For example, src=1.1 while dest=1.1.1
-			jd.assert(k < len(dst), fmt.Sprintf("k:%d >= len(dst):%d", k, len(dst)))
-			jd.assert(k > 0, fmt.Sprintf("k:%d <= 0", k))
-			return true
+			if k >= len(dst) {
+				return false, fmt.Errorf("k:%d >= len(dst):%d", k, len(dst))
+			}
+			if k <= 0 {
+				return false, fmt.Errorf("k:%d <= 0", k)
+			}
+			return true, nil
 		}
 		if k >= len(dst) {
 			//Opposite of case above
-			jd.assert(k > 0, fmt.Sprintf("k:%d <= 0", k))
-			jd.assert(k < len(src), fmt.Sprintf("k:%d >= len(src):%d", k, len(src)))
-			return false
+			if k <= 0 {
+				return false, fmt.Errorf("k:%d <= 0", k)
+			}
+			if k >= len(src) {
+				return false, fmt.Errorf("k:%d >= len(src):%d", k, len(src))
+			}
+			return false, nil
 		}
 		if src[k] == dst[k] {
 			//Loop
 			k++
+			if k == len(src) || k == len(dst) {
+				return false, nil
+			}
 			continue
 		}
 		//Strictly ordered. Return
 		srcInt, err := strconv.Atoi(src[k])
-		jd.assertError(err)
+		if err != nil {
+			return false, fmt.Errorf("string to int conversion failed for source %v. with error %w", src, err)
+		}
 		dstInt, err := strconv.Atoi(dst[k])
-		jd.assertError(err)
-		return srcInt < dstInt
+		if err != nil {
+			return false, fmt.Errorf("string to int conversion failed for destination %v. with error %w", dst, err)
+		}
+		return srcInt < dstInt, nil
 	}
 }
 
@@ -512,7 +527,9 @@ func (jd *HandleT) sortDnumList(dnumList []string) {
 	sort.Slice(dnumList, func(i, j int) bool {
 		src := strings.Split(dnumList[i], "_")
 		dst := strings.Split(dnumList[j], "_")
-		return dsComparitor(src, dst)
+		comparison, err := dsComparitor(src, dst)
+		jd.assertError(err)
+		return comparison
 	})
 }
 
@@ -882,74 +899,48 @@ func (jd *HandleT) computeNewIdxForInterNodeMigration(insertBeforeDS dataSetT) s
 	return newDSIdx
 }
 
-func sliceToDSIndex(dsIdxSlice []int) string {
-	return strings.Trim(strings.Replace(fmt.Sprint(dsIdxSlice), " ", "_", -1), "[]")
-}
-
-func dsIndexToSlice(dsIndex string) ([]int, error) {
-	strSlice := strings.Split(dsIndex, "_")
-	var dsIndexSlice []int
-	for _, str := range strSlice {
-		levelInt, err := strconv.Atoi(str)
-		if err != nil {
-			return nil, err
-		}
-		dsIndexSlice = append(dsIndexSlice, levelInt)
-	}
-	return dsIndexSlice, nil
-}
-
-/*
-Compares elements between ds1 and ds2 from index 0 going forward.
-Returns
--1 if ds1 comes before ds2,
-0 if ds1 == ds2,
-1 if ds1 comes after ds2
-*/
-
-//TODO: Fix this
-func lexicographicSliceCompare(ds1, ds2 []int) int {
-	ds1Str := sliceToDSIndex(ds1)
-	ds2Str := sliceToDSIndex(ds2)
-
-	return strings.Compare(ds1Str, ds2Str)
-}
-
-/// 1, 2, 3, 4, 5 => 2_1, 3, 4, 5 => 2_3, 4_3, 5
-
 //Tries to give a slice between before and after by incrementing last value in before. If the order doesn't maintain, it adds a level and recurses.
-func computeInsertVals(before, after []int) []int {
-	calculatedVals := make([]int, len(before))
+func computeInsertVals(before, after []string) ([]string, error) {
+	calculatedVals := make([]string, len(before))
 	copy(calculatedVals, before)
-	calculatedVals[len(calculatedVals)-1] = calculatedVals[len(calculatedVals)-1] + 1
+	lastVal, err := strconv.Atoi(calculatedVals[len(calculatedVals)-1])
+	if err != nil {
+		return calculatedVals, err
+	}
+	calculatedVals[len(calculatedVals)-1] = fmt.Sprintf("%d", lastVal+1)
 
-	if lexicographicSliceCompare(calculatedVals, after) == -1 &&
+	comparison, err := dsComparitor(calculatedVals, after)
+	if err != nil {
+		return calculatedVals, err
+	}
+	if comparison &&
 		len(calculatedVals) >= len(after) {
-		return calculatedVals
+		if before[0] == "0" && len(calculatedVals) == 3 || before[0] != "0" && len(calculatedVals) == 2 {
+			return calculatedVals, nil
+		}
 	}
 
-	before = append(before, 0)
+	before = append(before, "0")
 	return computeInsertVals(before, after)
 }
 
 func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 	//TODO: Fix this
-	if strings.Compare(beforeIndex, afterIndex) != -1 {
+	comparison, err := dsComparitor(strings.Split(beforeIndex, "_"), strings.Split(afterIndex, "_"))
+	if err != nil {
+		return "", fmt.Errorf("Error while comparing beforeIndex: %s and afterIndex: %s with error : %w", beforeIndex, afterIndex, err)
+	}
+	if !comparison {
 		return "", fmt.Errorf("Not a valid insert request between %s and %s", beforeIndex, afterIndex)
 	}
 
-	beforeVals, err := dsIndexToSlice(beforeIndex)
+	beforeVals := strings.Split(beforeIndex, "_")
+	afterVals := strings.Split(afterIndex, "_")
+	calculatedInsertVals, err := computeInsertVals(beforeVals, afterVals)
 	if err != nil {
-		return "", fmt.Errorf("Unable to break first dsIndex: %s into an int slice with error : %w", beforeIndex, err)
+		return "", fmt.Errorf("Failed to calculate InserVals with error: %w", err)
 	}
-
-	afterVals, err := dsIndexToSlice(afterIndex)
-	if err != nil {
-		return "", fmt.Errorf("Unable to break second dsIndex: %s into an int slice with error : %w", afterIndex, err)
-	}
-
-	calculatedInsertVals := computeInsertVals(beforeVals, afterVals)
-	calculatedIdx := sliceToDSIndex(calculatedInsertVals)
+	calculatedIdx := strings.Join(calculatedInsertVals, "_")
 	if len(calculatedInsertVals) > 3 {
 		return "", fmt.Errorf("We don't expect a ds to be computed to Level3. We got %s while trying to insert between %s and %s", calculatedIdx, beforeIndex, afterIndex)
 	}

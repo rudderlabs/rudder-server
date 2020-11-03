@@ -1,9 +1,6 @@
 package jobsdb
 
 import (
-	"fmt"
-	"strings"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
@@ -12,8 +9,7 @@ import (
 var _ = Describe("Calculate newDSIdx", func() {
 	var _ = DescribeTable("newDSIdx tests",
 		func(before, after, expected string) {
-			computedSlice, err := computeInsertIdx(before, after)
-			computedIdx := strings.Trim(strings.Replace(fmt.Sprint(computedSlice), " ", "_", -1), "[]")
+			computedIdx, err := computeInsertIdx(before, after)
 			Expect(computedIdx).To(Equal(expected))
 			Expect(err).To(BeNil())
 		},
@@ -51,8 +47,8 @@ var _ = Describe("Calculate newDSIdx", func() {
 		Entry("ClusterMigraion Case 4 Test 2 : ", "0_1_1", "0_2_1", "0_1_2"),
 
 		//dList => 0_1 0_2_1 1 2 3
-		Entry("ClusterMigraion Case 5 Test 1 : ", "0_1", "0_2_1", "0_1_1"), //Failing test - Do we really need to level up here?
+		Entry("ClusterMigraion Case 5 Test 1 : ", "0_1", "0_2_1", "0_1_1"),
 
-		Entry("OrderTest Case 1 Test 1 : ", "9", "10", "9_1"), //Failing test - Do we really need to level up here?
+		Entry("OrderTest Case 1 Test 1 : ", "9", "10", "9_1"),
 	)
 })
