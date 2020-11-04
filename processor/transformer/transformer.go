@@ -237,6 +237,7 @@ func GetVersion() string {
 		bodyBytes, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			logger.Errorf("Unable to read response into bytes with error : %s", err.Error())
+			return ""
 		}
 		transformerBuildVersion = string(bodyBytes)
 	}
