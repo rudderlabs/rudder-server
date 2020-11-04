@@ -64,7 +64,7 @@ type HandleT struct {
 	batchInputOutputDiffCountStat stats.RudderStats
 	retryAttemptsStat             stats.RudderStats
 	eventsAbortedStat             stats.RudderStats
-	noOfWorkers				 	  int
+	noOfWorkers                   int
 }
 
 type jobResponseT struct {
@@ -97,13 +97,13 @@ type workerT struct {
 }
 
 var (
-	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel, ser 			   int
-	maxFailedCountForJob                                                           int
-	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
-	testSinkURL                                                                    string
-	retryTimeWindow, minRetryBackoff, maxRetryBackoff, jobsBatchTimeout            time.Duration
-	noOfJobsToBatchInAWorker                                                       int
-	pkgLogger                                                                      logger.LoggerI
+	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel, ser       int
+	maxFailedCountForJob                                                    int
+	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
+	testSinkURL                                                             string
+	retryTimeWindow, minRetryBackoff, maxRetryBackoff, jobsBatchTimeout     time.Duration
+	noOfJobsToBatchInAWorker                                                int
+	pkgLogger                                                               logger.LoggerI
 )
 
 type requestMetric struct {
@@ -923,6 +923,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.toClearFailJobIDMap = make(map[int][]string)
 	rt.isEnabled = true
 	rt.netHandle = &NetHandleT{}
+	rt.netHandle.logger = pkgLogger.Child("network")
 	rt.netHandle.Setup(destName, rt.netClientTimeout)
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
