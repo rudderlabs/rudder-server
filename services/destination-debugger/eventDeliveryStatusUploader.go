@@ -40,8 +40,11 @@ var (
 	disableEventDeliveryStatusUploads      bool
 )
 
+var pkgLogger logger.LoggerI
+
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("services").Child("destination-debugger").Child("eventDeliveryStatusUploader")
 }
 
 func loadConfig() {
@@ -114,7 +117,7 @@ func uploadJobs(deliveryStatusesBuffer []*DeliveryStatusT) {
 
 	rawJSON, err := json.Marshal(res)
 	if err != nil {
-		logger.Debugf(string(rawJSON))
+		pkgLogger.Debugf(string(rawJSON))
 		misc.AssertErrorIfDev(err)
 		return
 	}
@@ -137,9 +140,9 @@ func uploadJobs(deliveryStatusesBuffer []*DeliveryStatusT) {
 
 		resp, err = client.Do(req)
 		if err != nil {
-			logger.Error("Config Backend connection error", err)
+			pkgLogger.Error("Config Backend connection error", err)
 			if retryCount > maxRetry {
-				logger.Errorf("Max retries exceeded trying to connect to config backend")
+				pkgLogger.Errorf("Max retries exceeded trying to connect to config backend")
 				return
 			}
 			retryCount++
@@ -152,7 +155,7 @@ func uploadJobs(deliveryStatusesBuffer []*DeliveryStatusT) {
 
 	if !(resp.StatusCode == http.StatusOK ||
 		resp.StatusCode == http.StatusBadRequest) {
-		logger.Errorf("Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
+		pkgLogger.Errorf("Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
 	}
 }
 

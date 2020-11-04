@@ -77,6 +77,8 @@ var (
 	enableSuppressUserFeature                                   bool
 	enableProtocolsFeature                                      bool
 	dedupWindow, diagnosisTickerTime                            time.Duration
+	allowReqsWithoutUserIDAndAnonymousID                        bool
+	pkgLogger                                                   logger.LoggerI
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -91,6 +93,7 @@ var BatchEvent = []byte(`
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("gateway")
 }
 
 type userWorkerBatchRequestT struct {
@@ -138,6 +141,7 @@ type HandleT struct {
 	suppressUserHandler                           types.SuppressUserI
 	protocolHandler                               types.ProtocolsI
 	versionHandler                                func(w http.ResponseWriter, r *http.Request)
+	logger                                        logger.LoggerI
 }
 
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -150,7 +154,7 @@ func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket
 func (gateway *HandleT) initUserWebRequestWorkers() {
 	gateway.userWebRequestWorkers = make([]*userWebRequestWorkerT, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
-		logger.Debug("User Web Request Worker Started", i)
+		gateway.logger.Debug("User Web Request Worker Started", i)
 		var userWebRequestWorker *userWebRequestWorkerT
 		userWebRequestWorker = &userWebRequestWorkerT{
 			webRequestQ:    make(chan *webRequestT, maxUserWebRequestBatchSize),
@@ -175,7 +179,7 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 
 func (gateway *HandleT) initDBWriterWorkers() {
 	for i := 0; i < maxDBWriterProcess; i++ {
-		logger.Debug("DB Writer Worker Started", i)
+		gateway.logger.Debug("DB Writer Worker Started", i)
 		j := i
 		rruntime.Go(func() {
 			gateway.dbWriterWorkerProcess(j)
@@ -348,6 +352,10 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
 			}
+			if req.reqType != "batch" {
+				body, _ = sjson.SetBytes(body, "type", req.reqType)
+				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
+			}
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(writeKeyEventStats, writeKey, totalEventsInReq)
 			if len(body) > maxReqSize {
@@ -369,11 +377,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				continue
 			}
 
-			if req.reqType != "batch" {
-				body, _ = sjson.SetBytes(body, "type", req.reqType)
-				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
-			}
-
 			// set anonymousId if not set in payload
 			var index int
 			result := gjson.GetBytes(body, "batch")
@@ -384,17 +387,18 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				anonIDFromReq := strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).String())
 				userIDFromReq := strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.userId`, index)).String())
 				if anonIDFromReq == "" {
-					if userIDFromReq == "" {
+					if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
 						notIdentifiable = true
 						return false
 					}
-					newAnonymousID, err := misc.GetMD5UUID(userIDFromReq)
-					if err != nil {
-						notIdentifiable = true
-						return false
-					}
-					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index), newAnonymousID)
 				}
+				// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
+				rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+				if err != nil {
+					notIdentifiable = true
+					return false
+				}
+				body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.rudderId`, index), rudderId)
 				if strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String()) == "" {
 					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index), uuid.NewV4().String())
 				}
@@ -432,7 +436,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 			}
 
-			logger.Debug("IP address is ", ipAddr)
+			gateway.logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
@@ -442,7 +446,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				UserID:       gjson.GetBytes(body, "batch.0.anonymousId").Str,
+				UserID:       gjson.GetBytes(body, "batch.0.rudderId").Str,
 				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, sourceID, counter)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
@@ -562,7 +566,7 @@ func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSe
 	sort.Ints(toRemoveMessageIndexes)
 	count := 0
 	for _, idx := range toRemoveMessageIndexes {
-		logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
+		gateway.logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
 		misc.IncrementMapByKey(writeKeyDupStats, writeKey, 1)
 		*body, err = sjson.DeleteBytes(*body, fmt.Sprintf(`batch.%v`, idx-count))
 		if err != nil {
@@ -616,7 +620,7 @@ func (gateway *HandleT) printStats() {
 		time.Sleep(10 * time.Second)
 		recvCount := atomic.LoadUint64(&gateway.recvCount)
 		ackCount := atomic.LoadUint64(&gateway.ackCount)
-		logger.Debug("Gateway Recv/Ack ", recvCount, ackCount)
+		gateway.logger.Debug("Gateway Recv/Ack ", recvCount, ackCount)
 	}
 }
 
@@ -632,13 +636,13 @@ func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request
 func (gateway *HandleT) protocolWebHandler(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !enableProtocolsFeature {
-			logger.Debug("Protocols feature is disabled. You can enabled it through enableProtocolsFeature flag in config.toml")
+			gateway.logger.Debug("Protocols feature is disabled. You can enabled it through enableProtocolsFeature flag in config.toml")
 			http.Error(w, "Protocols feature is disabled", 400)
 			return
 		}
 
 		if gateway.protocolHandler == nil {
-			logger.Debug("Protocols feature is enterprise only feature.")
+			gateway.logger.Debug("Protocols feature is enterprise only feature.")
 			http.Error(w, "Protocols feature is enterprise only feature", 400)
 			return
 		}
@@ -682,8 +686,12 @@ func (gateway *HandleT) pixelTrackHandler(w http.ResponseWriter, r *http.Request
 	gateway.pixelHandler(w, r, "track")
 }
 
+func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.beaconHandler(w, r, "batch")
+}
+
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
-	logger.LogRequest(r)
+	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	done := make(chan string, 1)
 	gateway.AddToWebRequestQ(r, &w, done, reqType)
@@ -693,10 +701,10 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	atomic.AddUint64(&gateway.ackCount, 1)
 	gateway.trackRequestMetrics(errorMessage)
 	if errorMessage != "" {
-		logger.Debug(errorMessage)
+		gateway.logger.Debug(errorMessage)
 		http.Error(w, errorMessage, 400)
 	} else {
-		logger.Debug(response.GetStatus(response.Ok))
+		gateway.logger.Debug(response.GetStatus(response.Ok))
 		w.Write([]byte(response.GetStatus(response.Ok)))
 	}
 }
@@ -804,6 +812,21 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 	}
 }
 
+func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, reqType string) {
+	queryParams := r.URL.Query()
+	if writeKey, present := queryParams["writeKey"]; present && writeKey[0] != "" {
+
+		// set basic auth header
+		r.SetBasicAuth(writeKey[0], "")
+		delete(queryParams, "writeKey")
+
+		// send req to webHandler
+		gateway.webHandler(w, r, reqType)
+	} else {
+		http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
+	}
+}
+
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
 	var dbService string = "UP"
 	var enabledRouter string = "TRUE"
@@ -838,7 +861,7 @@ This function will block.
 */
 func (gateway *HandleT) StartWebHandler() {
 
-	logger.Infof("Starting in %d", webPort)
+	gateway.logger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/v1/batch", gateway.stat(gateway.webBatchHandler))
 	srvMux.HandleFunc("/v1/identify", gateway.stat(gateway.webIdentifyHandler))
@@ -853,21 +876,23 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
 	srvMux.HandleFunc("/version", gateway.versionHandler)
 	srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
+	srvMux.HandleFunc("/beacon/v1/batch", gateway.stat(gateway.beaconBatchHandler))
 
 	// Protocols
 	if enableProtocolsFeature && gateway.protocolHandler != nil {
-		srvMux.HandleFunc("/protocols/event-models", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModels))
-		srvMux.HandleFunc("/protocols/event-versions", gateway.protocolWebHandler(gateway.protocolHandler.GetEventVersions))
-		srvMux.HandleFunc("/protocols/event-model/{EventID}/key-counts", gateway.protocolWebHandler(gateway.protocolHandler.GetKeyCounts))
-		srvMux.HandleFunc("/protocols/event-model/{EventID}/metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModelMetadata))
-		srvMux.HandleFunc("/protocols/event-version/{VersionID}/metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMetadata))
-		srvMux.HandleFunc("/protocols/event-version/{VersionID}/missing-keys", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMissingKeys))
+		srvMux.HandleFunc("/schemas/event-models", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModels))
+		srvMux.HandleFunc("/schemas/event-versions", gateway.protocolWebHandler(gateway.protocolHandler.GetEventVersions))
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", gateway.protocolWebHandler(gateway.protocolHandler.GetKeyCounts))
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModelMetadata))
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMetadata))
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMissingKeys))
 	}
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
 		AllowedHeaders:   []string{"*"},
+		MaxAge:           900, // 15 mins
 	})
 	if diagnostics.EnableServerStartedMetric {
 		diagnostics.Track(diagnostics.ServerStarted, map[string]interface{}{
@@ -1001,6 +1026,7 @@ Setup initializes this module:
 This function will block until backend config is initialy received.
 */
 func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, s stats.Stats, clearDB *bool, versionHandler func(w http.ResponseWriter, r *http.Request)) {
+	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = s
 

@@ -5,6 +5,7 @@ package stats
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -24,6 +25,9 @@ var client *statsd.Client
 var writeKeyClientsMap = make(map[string]*statsd.Client)
 var batchDestClientsMap = make(map[string]*statsd.Client)
 var destClientsMap = make(map[string]*statsd.Client)
+var routerClientsMap = make(map[string]*statsd.Client)
+var procErrorClientsMap = make(map[string]*statsd.Client)
+var taggedClientsMap = make(map[string]*statsd.Client)
 var jobsdbClientsMap = make(map[string]*statsd.Client)
 var migratorsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
@@ -33,6 +37,9 @@ var conn statsd.Option
 var writeKeyClientsMapLock sync.Mutex
 var batchDestClientsMapLock sync.Mutex
 var destClientsMapLock sync.Mutex
+var routerClientsMapLock sync.Mutex
+var procErrorClientsMapLock sync.Mutex
+var taggedClientsMapLock sync.Mutex
 var jobsdbClientsMapLock sync.Mutex
 var migratorsMapLock sync.Mutex
 var enabled bool
@@ -41,6 +48,7 @@ var enableCPUStats bool
 var enableMemStats bool
 var enableGCStats bool
 var rc runtimeStatsCollector
+var pkgLogger logger.LoggerI
 
 // DefaultStats is a common implementation of StatsD stats managements
 var DefaultStats Stats
@@ -54,6 +62,8 @@ func init() {
 	enableCPUStats = config.GetBool("RuntimeStats.enableCPUStats", true)
 	enableMemStats = config.GetBool("RuntimeStats.enabledMemStats", true)
 	enableGCStats = config.GetBool("RuntimeStats.enableGCStats", true)
+	pkgLogger = logger.NewLogger().Child("stats")
+
 }
 
 // Stats manages provisioning of RudderStats
@@ -64,6 +74,9 @@ type Stats interface {
 	NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats RudderStats)
 	NewBatchDestStat(Name string, StatType string, destID string) RudderStats
 	NewDestStat(Name string, StatType string, destID string) RudderStats
+	GetRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats
+	GetProcErrorStat(Name string, StatType string, destName string, statusCode int, stage string) RudderStats
+	NewTaggedStat(Name string, StatType string, tags map[string]string) RudderStats
 	NewJobsDBStat(Name string, StatType string, customVal string) RudderStats
 	NewMigratorStat(Name string, StatType string, customVal string) RudderStats
 }
@@ -82,6 +95,7 @@ type RudderStats interface {
 	Start()
 	End()
 	DeferredTimer()
+	SendTiming(duration time.Duration)
 }
 
 // RudderStatsT is the default implementation of a StatsD stat
@@ -104,7 +118,7 @@ func Setup() {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
 		// just log the error and go on.
-		logger.Error(err)
+		pkgLogger.Error(err)
 	}
 	if client != nil {
 		rruntime.Go(func() {
@@ -141,6 +155,37 @@ func NewStat(Name string, StatType string) (rStats RudderStats) {
 	return DefaultStats.NewStat(Name, StatType)
 }
 
+func (s *HandleT) NewTaggedStat(Name string, StatType string, tags map[string]string) (rStats RudderStats) {
+	taggedClientsMapLock.Lock()
+	defer taggedClientsMapLock.Unlock()
+
+	tags["instanceName"] = instanceID
+	tagStr := StatType
+	tagVals := make([]string, 0, len(tags)*2)
+	for tagName, tagVal := range tags {
+		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
+		tagVals = append(tagVals, tagName, tagVal)
+	}
+	if _, found := taggedClientsMap[tagStr]; !found {
+		var err error
+		taggedClientsMap[tagStr], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...))
+		if err != nil {
+			pkgLogger.Error(err)
+		}
+	}
+
+	return &RudderStatsT{
+		Name:        Name,
+		StatType:    StatType,
+		Client:      taggedClientsMap[tagStr],
+		dontProcess: false,
+	}
+}
+
+func NewTaggedStat(Name string, StatType string, tags map[string]string) (rStats RudderStats) {
+	return DefaultStats.NewTaggedStat(Name, StatType, tags)
+}
+
 /*
 NewWriteKeyStat is used to create new writekey specific stat.
 Writekey is added as the value of 'writekey' tags in this case.
@@ -156,7 +201,7 @@ func (s *HandleT) NewWriteKeyStat(Name string, StatType string, writeKey string)
 			// If nothing is listening on the target port, an error is returned and
 			// the returned client does nothing but is still usable. So we can
 			// just log the error and go on.
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 	return &RudderStatsT{
@@ -185,7 +230,7 @@ func (s *HandleT) NewBatchDestStat(Name string, StatType string, destID string) 
 		var err error
 		batchDestClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destID", destID))
 		if err != nil {
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 	return &RudderStatsT{
@@ -214,7 +259,7 @@ func (s *HandleT) NewDestStat(Name string, StatType string, destID string) Rudde
 		var err error
 		destClientsMap[destID], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destID", destID))
 		if err != nil {
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 	return &RudderStatsT{
@@ -233,6 +278,66 @@ func NewDestStat(Name string, StatType string, destID string) RudderStats {
 }
 
 /*
+GetRouterStat is used to create new destination specific stat.
+Destination name and response status are added as tags in this case.
+If Destination name and response status have been used on this function before, a RudderStats with the same underlying client will be returned.
+*/
+func (s *HandleT) GetRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats {
+	routerClientsMapLock.Lock()
+	defer routerClientsMapLock.Unlock()
+	key := fmt.Sprintf("%s|%d", destName, respStatusCode)
+	if _, found := routerClientsMap[key]; !found {
+		var err error
+		routerClientsMap[key], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destName", destName, "respStatusCode", strconv.Itoa(respStatusCode)))
+		if err != nil {
+			pkgLogger.Error(err)
+		}
+	}
+	return &RudderStatsT{
+		Name:        Name,
+		StatType:    StatType,
+		Client:      routerClientsMap[key],
+		dontProcess: false,
+	}
+}
+
+// GetRouterStat is used to create new destination specific stat.
+// Deprecated: Use DefaultStats for managing stats instead
+func GetRouterStat(Name string, StatType string, destName string, respStatusCode int) RudderStats {
+	return DefaultStats.GetRouterStat(Name, StatType, destName, respStatusCode)
+}
+
+/*
+GetProcErrorStat is used to create new destination specific stat.
+Destination name and response status are added as tags in this case.
+If Destination name and response status have been used on this function before, a RudderStats with the same underlying client will be returned.
+*/
+func (s *HandleT) GetProcErrorStat(Name string, StatType string, destName string, statusCode int, stage string) RudderStats {
+	procErrorClientsMapLock.Lock()
+	defer procErrorClientsMapLock.Unlock()
+	key := fmt.Sprintf("%s|%d|%s", destName, statusCode, stage)
+	if _, found := procErrorClientsMap[key]; !found {
+		var err error
+		procErrorClientsMap[key], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "destName", destName, "statusCode", strconv.Itoa(statusCode), "stage", stage))
+		if err != nil {
+			pkgLogger.Error(err)
+		}
+	}
+	return &RudderStatsT{
+		Name:        Name,
+		StatType:    StatType,
+		Client:      procErrorClientsMap[key],
+		dontProcess: false,
+	}
+}
+
+// GetProcErrorStat is used to create new destination specific stat.
+// Deprecated: Use DefaultStats for managing stats instead
+func GetProcErrorStat(Name string, StatType string, destName string, statusCode int, stage string) RudderStats {
+	return DefaultStats.GetProcErrorStat(Name, StatType, destName, statusCode, stage)
+}
+
+/*
 NewJobsDBStat is used to create new JobsDB specific stat.
 JobsDB customVal is added as the value of 'customVal' tag in this case.
 If customVal has been used on this function before, a RudderStats with the same underlying client will be returned.
@@ -244,7 +349,7 @@ func (s *HandleT) NewJobsDBStat(Name string, StatType string, customVal string) 
 		var err error
 		jobsdbClientsMap[customVal], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "customVal", customVal))
 		if err != nil {
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 	return &RudderStatsT{
@@ -272,7 +377,7 @@ func (s *HandleT) NewMigratorStat(Name string, StatType string, migrationType st
 		var err error
 		migratorsMap[migrationType], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "migrationType", migrationType))
 		if err != nil {
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 	return &RudderStatsT{
@@ -349,6 +454,17 @@ func (rStats *RudderStatsT) DeferredTimer() {
 		return
 	}
 	rStats.Client.NewTiming().Send(rStats.Name)
+}
+
+// Timing sends a timing for this stat. Only applies to TimerType stats
+func (rStats *RudderStatsT) SendTiming(duration time.Duration) {
+	if !statsEnabled || rStats.dontProcess {
+		return
+	}
+	if rStats.StatType != TimerType {
+		panic(fmt.Errorf("rStats.StatType:%s is not timer", rStats.StatType))
+	}
+	rStats.Client.Timing(rStats.Name, int(duration/time.Millisecond))
 }
 
 func collectRuntimeStats(client *statsd.Client) {

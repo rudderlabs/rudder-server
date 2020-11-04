@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/warehousemanager"
@@ -28,6 +27,7 @@ var (
 	retrySleep                    time.Duration
 	instanceID                    string
 	rudderConnectionTestingFolder string
+	pkgLogger                     logger.LoggerI
 )
 
 const destinationConnectionTesterEndpoint = "dataplane/testConnectionResponse"
@@ -42,6 +42,7 @@ type DestinationConnectionTesterResponse struct {
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("destination-connection-tester")
 }
 
 func loadConfig() {
@@ -62,14 +63,14 @@ func UploadDestinationConnectionTesterResponse(testResponse string, destinationI
 	}
 	url := fmt.Sprintf("%s/%s", configBackendURL, destinationConnectionTesterEndpoint)
 	if err := makePostRequest(url, payload); err != nil {
-		logger.Errorf("failed to send destination connection response: %v", err)
+		pkgLogger.Errorf("failed to send destination connection response: %v", err)
 	}
 }
 
 func makePostRequest(url string, payload interface{}) error {
 	rawJSON, err := json.Marshal(payload)
 	if err != nil {
-		logger.Debugf(string(rawJSON))
+		pkgLogger.Debugf(string(rawJSON))
 		misc.AssertErrorIfDev(err)
 		return err
 	}
@@ -90,9 +91,9 @@ func makePostRequest(url string, payload interface{}) error {
 		if err == nil {
 			break
 		}
-		logger.Errorf("DCT: Config Backend connection error", err)
+		pkgLogger.Errorf("DCT: Config Backend connection error", err)
 		if retryCount > maxRetry {
-			logger.Error("DCT: max retries exceeded trying to connect to config backend")
+			pkgLogger.Error("DCT: max retries exceeded trying to connect to config backend")
 			return err
 		}
 		retryCount++
@@ -100,7 +101,7 @@ func makePostRequest(url string, payload interface{}) error {
 	}
 
 	if !(resp.StatusCode == http.StatusOK) {
-		logger.Errorf("DCT: response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
+		pkgLogger.Errorf("DCT: response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
 	}
 	return nil
 }
@@ -108,19 +109,19 @@ func makePostRequest(url string, payload interface{}) error {
 func createTestFileForBatchDestination(destinationID string) string {
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		logger.Errorf("DCT: Failed to create tmp dir for testing this destination id %s: err %v", destinationID, err)
+		pkgLogger.Errorf("DCT: Failed to create tmp dir for testing this destination id %s: err %v", destinationID, err)
 		panic(err)
 	}
 
 	gzipFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.csv.gz", tmpDirPath, rudderConnectionTestingFolder, destinationID, uuid.NewV4(), time.Now().Unix())
 	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	if err != nil {
-		logger.Errorf("DCT: Failed to make dir %s for testing this destination id %s: err %v", gzipFilePath, destinationID, err)
+		pkgLogger.Errorf("DCT: Failed to make dir %s for testing this destination id %s: err %v", gzipFilePath, destinationID, err)
 		panic(err)
 	}
 	gzWriter, err := misc.CreateGZ(gzipFilePath)
 	if err != nil {
-		logger.Errorf("DCT: Failed to create gzip writer for testing this destination id %s: err %v", gzipFilePath, destinationID, err)
+		pkgLogger.Errorf("DCT: Failed to create gzip writer for testing this destination id %s: err %v", gzipFilePath, destinationID, err)
 		panic(err)
 	}
 	gzWriter.WriteGZ(testPayload)
@@ -128,27 +129,27 @@ func createTestFileForBatchDestination(destinationID string) string {
 	return gzipFilePath
 }
 
-func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, provider string, destination backendconfig.DestinationT) (err error) {
+func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, provider string, destination backendconfig.DestinationT) (objectName string, err error) {
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config:   misc.GetObjectStorageConfig(provider, destination.Config),
 	})
 	if err != nil {
-		logger.Errorf("DCT: Failed to initiate filemanager config for testing this destination id %s: err %v", destination.ID, err)
+		pkgLogger.Errorf("DCT: Failed to initiate filemanager config for testing this destination id %s: err %v", destination.ID, err)
 		panic(err)
 	}
 	uploadFile, err := os.Open(filename)
 	if err != nil {
-		logger.Errorf("DCT: Failed to open file %s for testing this destination id %s: err %v", filename, destination.ID, err)
+		pkgLogger.Errorf("DCT: Failed to open file %s for testing this destination id %s: err %v", filename, destination.ID, err)
 		panic(err)
 	}
 	defer misc.RemoveFilePaths(filename)
 	defer uploadFile.Close()
-	_, err = uploader.Upload(uploadFile, keyPrefixes...)
+	uploadOutput, err := uploader.Upload(uploadFile, keyPrefixes...)
 	if err != nil {
-		logger.Errorf("DCT: Failed to upload test file %s for testing this destination id %s: err %v", filename, destination.ID, err)
+		pkgLogger.Errorf("DCT: Failed to upload test file %s for testing this destination id %s: err %v", filename, destination.ID, err)
 	}
-	return err
+	return uploadOutput.ObjectName, err
 }
 
 func downloadTestFileForBatchDestination(testObjectKey string, provider string, destination backendconfig.DestinationT) (err error) {
@@ -157,7 +158,7 @@ func downloadTestFileForBatchDestination(testObjectKey string, provider string, 
 		Config:   misc.GetObjectStorageConfig(provider, destination.Config),
 	})
 	if err != nil {
-		logger.Errorf("DCT: Failed to initiate filemanager config for testing this destination id %s: err %v", destination.ID, err)
+		pkgLogger.Errorf("DCT: Failed to initiate filemanager config for testing this destination id %s: err %v", destination.ID, err)
 		panic(err)
 	}
 
@@ -173,7 +174,7 @@ func downloadTestFileForBatchDestination(testObjectKey string, provider string, 
 	}
 	err = downloader.Download(testFile, testObjectKey)
 	if err != nil {
-		logger.Errorf("DCT: Failed to download test file %s for testing this destination id %s: err %v", testObjectKey, destination.ID, err)
+		pkgLogger.Errorf("DCT: Failed to download test file %s for testing this destination id %s: err %v", testObjectKey, destination.ID, err)
 	}
 	testFile.Close()
 	misc.RemoveFilePaths(testFilePath)
@@ -184,7 +185,7 @@ func downloadTestFileForBatchDestination(testObjectKey string, provider string, 
 func TestBatchDestinationConnection(destination backendconfig.DestinationT) string {
 	testFileName := createTestFileForBatchDestination(destination.ID)
 	keyPrefixes := []string{config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload"), destination.ID, time.Now().Format("01-02-2006")}
-	err := uploadTestFileForBatchDestination(testFileName, keyPrefixes, destination.DestinationDefinition.Name, destination)
+	_, err := uploadTestFileForBatchDestination(testFileName, keyPrefixes, destination.DestinationDefinition.Name, destination)
 	var error string
 	if err != nil {
 		error = err.Error()
@@ -201,13 +202,11 @@ func TestWarehouseDestinationConnection(destination backendconfig.DestinationT) 
 	testFileNameWithPath := createTestFileForBatchDestination(destination.ID)
 	storageProvider := warehouseutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config)
 	keyPrefixes := []string{rudderConnectionTestingFolder, destination.ID, time.Now().Format("01-02-2006")}
-	err = uploadTestFileForBatchDestination(testFileNameWithPath, keyPrefixes, storageProvider, destination)
+	objectKeyName, err := uploadTestFileForBatchDestination(testFileNameWithPath, keyPrefixes, storageProvider, destination)
 	if err != nil {
 		return err.Error()
 	}
-	fileSplit := strings.Split(testFileNameWithPath, "/")
-	keyName := strings.Join(append(keyPrefixes, fileSplit[len(fileSplit)-1]), "/")
-	err = downloadTestFileForBatchDestination(keyName, storageProvider, destination)
+	err = downloadTestFileForBatchDestination(objectKeyName, storageProvider, destination)
 	if err != nil {
 		return err.Error()
 	}

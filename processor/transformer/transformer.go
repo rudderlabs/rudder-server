@@ -33,14 +33,14 @@ const supportedTransformerAPIVersion = 1
 type MetadataT struct {
 	SourceID        string `json:"sourceId"`
 	DestinationID   string `json:"destinationId"`
-	UserID          string `json:"userId"`
 	JobID           int64  `json:"jobId"`
 	DestinationType string `json:"destinationType"`
 	MessageID       string `json:"messageId"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
-	MessageIDs  []string `json:"messageIds"`
-	AnonymousID string   `json:"anonymousId"`
-	SessionID   string   `json:"sessionId,omitempty"`
+	MessageIDs []string `json:"messageIds"`
+	RudderID   string   `json:"rudderId"`
+	SessionID  string   `json:"sessionId,omitempty"`
+	ReceivedAt string   `json:"receivedAt"`
 }
 
 type TransformerEventT struct {
@@ -73,6 +73,7 @@ type HandleT struct {
 	receivedStat       stats.RudderStats
 	failedStat         stats.RudderStats
 	transformTimerStat stats.RudderStats
+	logger             logger.LoggerI
 }
 
 //Transformer provides methods to transform events
@@ -89,6 +90,7 @@ func NewTransformer() *HandleT {
 var (
 	maxChanSize, numTransformWorker, maxRetry int
 	retrySleep                                time.Duration
+	pkgLogger                                 logger.LoggerI
 )
 
 func loadConfig() {
@@ -100,6 +102,7 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("processor").Child("transformer")
 }
 
 type TransformerResponseT struct {
@@ -133,7 +136,7 @@ func (trans *HandleT) transformWorker() {
 			if err != nil {
 				transformRequestTimerStat.End()
 				reqFailed = true
-				logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
+				trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
 				if retryCount > maxRetry {
 					panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err))
 				}
@@ -143,7 +146,7 @@ func (trans *HandleT) transformWorker() {
 				continue
 			}
 			if reqFailed {
-				logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
+				trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
 			}
 
 			// perform version compatability check only on success
@@ -153,7 +156,7 @@ func (trans *HandleT) transformWorker() {
 					transformerAPIVersion = 0
 				}
 				if supportedTransformerAPIVersion != transformerAPIVersion {
-					logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url)
+					trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url)
 					panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url))
 				}
 			}
@@ -167,7 +170,7 @@ func (trans *HandleT) transformWorker() {
 			resp.StatusCode == http.StatusBadRequest ||
 			resp.StatusCode == http.StatusNotFound ||
 			resp.StatusCode == http.StatusRequestEntityTooLarge) {
-			logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
+			trans.logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
 		}
 
 		var transformerResponses []TransformerResponseT
@@ -193,6 +196,7 @@ func (trans *HandleT) transformWorker() {
 
 //Setup initializes this class
 func (trans *HandleT) Setup() {
+	trans.logger = pkgLogger
 	trans.requestQ = make(chan *transformMessageT, maxChanSize)
 	trans.responseQ = make(chan *transformedMessageT, maxChanSize)
 	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
@@ -202,7 +206,7 @@ func (trans *HandleT) Setup() {
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 	for i := 0; i < numTransformWorker; i++ {
-		logger.Info("Starting transformer worker", i)
+		trans.logger.Info("Starting transformer worker", i)
 		rruntime.Go(func() {
 			trans.transformWorker()
 		})
@@ -279,16 +283,16 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 					if !breakIntoBatchWhenUserChanges || inputIdx >= len(clientEvents) {
 						break
 					}
-					prevUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx-1].Message)
+					prevUserID, ok := misc.GetRudderID(clientEvents[inputIdx-1].Message)
 					if !ok {
-						panic(fmt.Errorf("GetAnonymousID failed"))
+						panic(fmt.Errorf("GetRudderID failed"))
 					}
-					currentUserID, ok := misc.GetAnonymousID(clientEvents[inputIdx].Message)
+					currentUserID, ok := misc.GetRudderID(clientEvents[inputIdx].Message)
 					if !ok {
-						panic(fmt.Errorf("GetAnonymousID failed"))
+						panic(fmt.Errorf("GetRudderID failed"))
 					}
 					if currentUserID != prevUserID {
-						logger.Debug("Breaking batch at", inputIdx, prevUserID, currentUserID)
+						trans.logger.Debug("Breaking batch at", inputIdx, prevUserID, currentUserID)
 						break
 					}
 				}

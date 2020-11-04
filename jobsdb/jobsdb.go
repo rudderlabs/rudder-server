@@ -157,6 +157,7 @@ type HandleT struct {
 	jobsdbQueryTimeStat           stats.RudderStats
 	migrationState                MigrationState
 	inProgressMigrationTargetDS   *dataSetT
+	logger                        logger.LoggerI
 }
 
 //The struct which is written to the journal
@@ -205,7 +206,7 @@ func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
 		jd.printLists(true)
-		logger.Fatal(jd.dsEmptyResultCache)
+		jd.logger.Fatal(jd.dsEmptyResultCache)
 		panic(err)
 	}
 }
@@ -214,7 +215,7 @@ func (jd *HandleT) assertErrorAndRollbackTx(err error, tx *sql.Tx) {
 	if err != nil {
 		tx.Rollback()
 		jd.printLists(true)
-		logger.Fatal(jd.dsEmptyResultCache)
+		jd.logger.Fatal(jd.dsEmptyResultCache)
 		panic(err)
 	}
 }
@@ -222,7 +223,7 @@ func (jd *HandleT) assertErrorAndRollbackTx(err error, tx *sql.Tx) {
 func (jd *HandleT) assert(cond bool, errorString string) {
 	if !cond {
 		jd.printLists(true)
-		logger.Fatal(jd.dsEmptyResultCache)
+		jd.logger.Fatal(jd.dsEmptyResultCache)
 		panic(errorString)
 	}
 }
@@ -339,6 +340,7 @@ var (
 	backupCheckSleepDuration                     time.Duration
 	useJoinForUnprocessed                        bool
 	backupRowsBatchSize                          int64
+	pkgLogger                                    logger.LoggerI
 )
 
 //Different scenarios for addNewDS
@@ -384,6 +386,7 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("jobsdb")
 }
 
 func GetConnectionString() string {
@@ -403,6 +406,7 @@ in the retention time
 */
 func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
 
+	jd.logger = pkgLogger.Child(tablePrefix)
 	var err error
 	jd.migrationState.migrationMode = migrationMode
 	psqlInfo := GetConnectionString()
@@ -425,7 +429,7 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	err = jd.dbHandle.Ping()
 	jd.assertError(err)
 
-	logger.Infof("Connected to %s DB", tablePrefix)
+	jd.logger.Infof("Connected to %s DB", tablePrefix)
 
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
@@ -615,7 +619,7 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 		row := jd.dbHandle.QueryRow(sqlStatement)
 		err := row.Scan(&minID, &maxID)
 		jd.assertError(err)
-		logger.Debug(sqlStatement, minID, maxID)
+		jd.logger.Debug(sqlStatement, minID, maxID)
 		//We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
 		// 2. Migration target ds
@@ -712,13 +716,13 @@ func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 
 	tableSize := jd.getTableSize(ds.JobTable)
 	if tableSize > maxTableSize {
-		logger.Infof("[JobsDB] %s is full in size. Count: %v, Size: %v", ds.JobTable, jd.getTableRowCount(ds.JobTable), tableSize)
+		jd.logger.Infof("[JobsDB] %s is full in size. Count: %v, Size: %v", ds.JobTable, jd.getTableRowCount(ds.JobTable), tableSize)
 		return true
 	}
 
 	totalCount := jd.getTableRowCount(ds.JobTable)
 	if totalCount > maxDSSize {
-		logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, jd.getTableSize(ds.JobTable))
+		jd.logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, jd.getTableSize(ds.JobTable))
 		return true
 	}
 
@@ -823,9 +827,9 @@ func (jd *HandleT) computeNewIdxForAppend() string {
 }
 
 func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataSetT) string {
-	logger.Infof("newDSType : %s, insertBeforeDS : %v", newDSType, insertBeforeDS)
+	jd.logger.Infof("newDSType : %s, insertBeforeDS : %v", newDSType, insertBeforeDS)
 	dList := jd.getDSList(true)
-	logger.Infof("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
+	jd.logger.Infof("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
 	newDSIdx := ""
 	jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
 	for idx, ds := range dList {
@@ -836,11 +840,11 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 				levelPreVals []int
 			)
 			if idx == 0 && newDSType == insertForImport {
-				logger.Infof("idx = 0 case with insertForImport and ds at idx0 is %v", ds)
+				jd.logger.Infof("idx = 0 case with insertForImport and ds at idx0 is %v", ds)
 				levelsPre = 1
 				levelPreVals = []int{levelVals[0] - 1}
 			} else {
-				logger.Infof("ds to insert before found in dList is %v", ds)
+				jd.logger.Infof("ds to insert before found in dList is %v", ds)
 				//We never insert before the first element
 				jd.assert(idx > 0, fmt.Sprintf("idx: %d <= 0", idx))
 				levelsPre, levelPreVals = jd.mapDSToLevel(dList[idx-1])
@@ -892,7 +896,7 @@ func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataS
 				jd.assert(levelPreVals[0] == 0, fmt.Sprintf("Cannot have three levels except for cluster migration"))
 				newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], levelPreVals[2]+1)
 			} else {
-				logger.Infof("Unhandled scenario. levelsPre : %v and levels : %v", levelsPre, levels)
+				jd.logger.Infof("Unhandled scenario. levelsPre : %v and levels : %v", levelsPre, levels)
 				jd.assert(false, fmt.Sprintf("Unexpected insert between %s and %s", dList[idx-1].Index, ds.Index))
 			}
 		}
@@ -1256,6 +1260,8 @@ func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []
 		return
 	}
 
+	errorMessagesMap = make(map[uuid.UUID]string)
+
 	for _, job := range jobList {
 		err := jd.storeJobDS(ds, job)
 		if err != nil {
@@ -1458,7 +1464,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	jd.checkValidJobState(stateFilters)
 
 	if jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
-		logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
 		return []*JobT{}, nil
 	}
 
@@ -1563,7 +1569,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	}
 
 	if len(jobList) == 0 {
-		logger.Debugf("[getProcessedJobsDS] Setting empty cache for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		jd.logger.Debugf("[getProcessedJobsDS] Setting empty cache for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
 		jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, true)
 	}
 
@@ -1578,7 +1584,7 @@ parameterFilters do a AND query on values included in the map
 func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	order bool, count int, parameterFilters []ParameterFilterT) ([]*JobT, error) {
 	if jd.isEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters) {
-		logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		return []*JobT{}, nil
 	}
 
@@ -1640,7 +1646,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	}
 
 	if len(jobList) == 0 {
-		logger.Debugf("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+		jd.logger.Debugf("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		jd.markClearEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters, true)
 	}
 
@@ -1738,7 +1744,7 @@ so take both the list and data lock
 func (jd *HandleT) addNewDSLoop() {
 	for {
 		time.Sleep(addNewDSLoopSleepDuration)
-		logger.Debugf("[[ %s : addNewDSLoop ]]: Start", jd.tablePrefix)
+		jd.logger.Debugf("[[ %s : addNewDSLoop ]]: Start", jd.tablePrefix)
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
 		jd.dsListLock.RUnlock()
@@ -1748,7 +1754,7 @@ func (jd *HandleT) addNewDSLoop() {
 			//Doesn't move any data so we only
 			//take the list lock
 			jd.dsListLock.Lock()
-			logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
+			jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
 			jd.addNewDS(appendToDsList, dataSetT{})
 			jd.dsListLock.Unlock()
 		}
@@ -1759,11 +1765,11 @@ func (jd *HandleT) migrateDSLoop() {
 
 	for {
 		time.Sleep(migrateDSLoopSleepDuration)
-		logger.Debugf("[[ %s : migrateDSLoop ]]: Start", jd.tablePrefix)
+		jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Start", jd.tablePrefix)
 
 		//This block disables internal migration/consolidation while cluster-level migration is in progress
 		if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
-			logger.Debugf("[[ %s : migrateDSLoop ]]: migration mode = %s, so skipping internal migrations", jd.tablePrefix, jd.migrationState.migrationMode)
+			jd.logger.Debugf("[[ %s : migrateDSLoop ]]: migration mode = %s, so skipping internal migrations", jd.tablePrefix, jd.migrationState.migrationMode)
 			continue
 		}
 
@@ -1779,7 +1785,7 @@ func (jd *HandleT) migrateDSLoop() {
 		for idx, ds := range dsList {
 
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
-			logger.Debugf("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
+			jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Migrate check %v, ds: %v", jd.tablePrefix, ifMigrate, ds)
 
 			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idx == len(dsList)-1 {
 				break
@@ -1811,9 +1817,9 @@ func (jd *HandleT) migrateDSLoop() {
 				jd.inProgressMigrationTargetDS = &migrateTo
 				jd.dsListLock.Unlock()
 
-				logger.Infof("[[ %s : migrateDSLoop ]]: Migrate from: %v", jd.tablePrefix, migrateFrom)
-				logger.Infof("[[ %s : migrateDSLoop ]]: Next: %v", jd.tablePrefix, insertBeforeDS)
-				logger.Infof("[[ %s : migrateDSLoop ]]: To: %v", jd.tablePrefix, migrateTo)
+				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate from: %v", jd.tablePrefix, migrateFrom)
+				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Next: %v", jd.tablePrefix, insertBeforeDS)
+				jd.logger.Infof("[[ %s : migrateDSLoop ]]: To: %v", jd.tablePrefix, migrateTo)
 				//Mark the start of copy operation. If we fail here
 				//we just delete the new DS being copied into. The
 				//sources are still around
@@ -1824,7 +1830,7 @@ func (jd *HandleT) migrateDSLoop() {
 
 				totalJobsMigrated := 0
 				for _, ds := range migrateFrom {
-					logger.Infof("[[ %s : migrateDSLoop ]]: Migrate: %v to: %v", jd.tablePrefix, ds, migrateTo)
+					jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate: %v to: %v", jd.tablePrefix, ds, migrateTo)
 					noJobsMigrated, _ := jd.migrateJobs(ds, migrateTo)
 					totalJobsMigrated += noJobsMigrated
 				}
@@ -1861,7 +1867,7 @@ func (jd *HandleT) migrateDSLoop() {
 func (jd *HandleT) backupDSLoop() {
 	for {
 		time.Sleep(backupCheckSleepDuration)
-		logger.Info("BackupDS check:Start")
+		jd.logger.Info("BackupDS check:Start")
 		backupDSRange := jd.getBackupDSRange()
 		// check if non empty dataset is present to backup
 		// else continue
@@ -1897,24 +1903,24 @@ func (jd *HandleT) backupDS(backupDSRange dataSetRangeT) bool {
 	// return after backing up aboprted jobs if the flag is turned on
 	// backupDS is only called when BackupSettings.BackupEnabled is true
 	if jd.BackupSettings.FailedOnly {
-		logger.Info("[JobsDB] ::  backupDS: starting backing up aborted")
+		jd.logger.Info("[JobsDB] ::  backupDS: starting backing up aborted")
 		_, err := jd.backupTable(backupDSRange, false)
 		if err != nil {
-			logger.Errorf("[JobsDB] :: Failed to backup aborted jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
+			jd.logger.Errorf("[JobsDB] :: Failed to backup aborted jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 			return false
 		}
 	} else {
 		// write jobs table to JOBS_BACKUP_STORAGE_PROVIDER
 		_, err := jd.backupTable(backupDSRange, false)
 		if err != nil {
-			logger.Errorf("[JobsDB] :: Failed to backup table %v. Err: %v", backupDSRange.ds.JobTable, err)
+			jd.logger.Errorf("[JobsDB] :: Failed to backup table %v. Err: %v", backupDSRange.ds.JobTable, err)
 			return false
 		}
 
 		// write job_status table to JOBS_BACKUP_STORAGE_PROVIDER
 		_, err = jd.backupTable(backupDSRange, true)
 		if err != nil {
-			logger.Errorf("[JobsDB] :: Failed to backup table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
+			jd.logger.Errorf("[JobsDB] :: Failed to backup table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 			return false
 		}
 
@@ -1996,7 +2002,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	// if backupOnlyAborted, process join of aborted rows of jobstatus with jobs table
 	// else upload entire jobstatus and jobs table from pre_drop
 	if jd.BackupSettings.FailedOnly {
-		logger.Info("[JobsDB] :: backupTable: backing up aborted/failed entries")
+		jd.logger.Info("[JobsDB] :: backupTable: backing up aborted/failed entries")
 		tableName = backupDSRange.ds.JobStatusTable
 		pathPrefix = strings.TrimPrefix(tableName, "pre_drop_")
 		path = fmt.Sprintf(`%v%v_%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, Aborted.State)
@@ -2024,7 +2030,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	}
 
-	logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
+	jd.logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
 
 	var totalCount, rowEndPatternMatchCount int64
 	err = jd.dbHandle.QueryRow(countStmt).Scan(&totalCount)
@@ -2035,7 +2041,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 	// return without doing anything as no jobs not present in ds
 	if totalCount == 0 {
 		//  Do not record stat for this case?
-		logger.Infof("[JobsDB] ::  not processiong table dump as no rows match criteria. %v", tableName)
+		jd.logger.Infof("[JobsDB] ::  not processiong table dump as no rows match criteria. %v", tableName)
 		return true, nil
 	}
 
@@ -2054,7 +2060,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 		row := jd.dbHandle.QueryRow(stmt)
 		err = row.Scan(&rawJSONRows)
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("Scanning row failed with error : %w", err))
 		}
 
 		rowEndPatternMatchCount += int64(bytes.Count(rawJSONRows, []byte("}, \n {")))
@@ -2093,7 +2099,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 		pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
 	}
 
-	logger.Infof("[JobsDB] :: Uploading backup table to object storage: %v", tableName)
+	jd.logger.Infof("[JobsDB] :: Uploading backup table to object storage: %v", tableName)
 	var output filemanager.UploadOutput
 	// get a file uploader
 	fileUploader, errored := jd.getFileUploader()
@@ -2102,14 +2108,14 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	if err != nil {
 		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
-		logger.Errorf("[JobsDB] :: Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
+		jd.logger.Errorf("[JobsDB] :: Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
 		return false, err
 	}
 
 	// Do not record stat in error case as error case time might be low and skew stats
 	fileUploadTimeStat.End()
 	totalTableDumpTimeStat.End()
-	logger.Infof("[JobsDB] :: Backed up table: %v at %v", tableName, output.Location)
+	jd.logger.Infof("[JobsDB] :: Backed up table: %v at %v", tableName, output.Location)
 	return true, nil
 }
 
@@ -2324,14 +2330,14 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		newDS := opPayloadJSON.To
 		undoOp = true
 		//Drop the table we were tring to create
-		logger.Info("Recovering new DS operation", newDS)
+		jd.logger.Info("Recovering new DS operation", newDS)
 		jd.dropDS(newDS, true)
 	case migrateCopyOperation:
 		migrateDest := opPayloadJSON.To
 		//Delete the destination of the interrupted
 		//migration. After we start, code should
 		//redo the migration
-		logger.Info("Recovering migrateCopy operation", migrateDest)
+		jd.logger.Info("Recovering migrateCopy operation", migrateDest)
 		jd.dropDS(migrateDest, true)
 		undoOp = true
 	case migrateImportOperation:
@@ -2351,18 +2357,18 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 				jd.dropDS(ds, true)
 			}
 		}
-		logger.Info("Recovering migrateDel operation", migrateSrc)
+		jd.logger.Info("Recovering migrateDel operation", migrateSrc)
 		undoOp = false
 	case backupDSOperation:
 		jd.removeTableJSONDumps()
-		logger.Info("Removing all stale json dumps of tables")
+		jd.logger.Info("Removing all stale json dumps of tables")
 		undoOp = true
 	case dropDSOperation, backupDropDSOperation:
 		//Some of the source datasets would have been
 		var dataset dataSetT
 		json.Unmarshal(opPayload, &dataset)
 		jd.dropDS(dataset, true)
-		logger.Info("Recovering dropDS operation", dataset)
+		jd.logger.Info("Recovering dropDS operation", dataset)
 		undoOp = false
 	}
 
@@ -2456,7 +2462,7 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 			//The JobID is outside this DS's range
 			if statusList[i].JobID > maxID {
 				if i > lastPos {
-					logger.Debug("Range:", ds, statusList[lastPos].JobID,
+					jd.logger.Debug("Range:", ds, statusList[lastPos].JobID,
 						statusList[i-1].JobID, lastPos, i-1)
 				}
 				var updatedStates []string
@@ -2464,20 +2470,26 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 				if err != nil {
 					return
 				}
-				updatedStatesByDS[ds.ds] = updatedStates
+				// do not set for ds without any new state written as it would clear emptyCache
+				if len(updatedStates) > 0 {
+					updatedStatesByDS[ds.ds] = updatedStates
+				}
 				lastPos = i
 				break
 			}
 		}
 		//Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
-			logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
+			jd.logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
 			var updatedStates []string
 			updatedStates, err = jd.updateJobStatusDSInTxn(txHandler, ds.ds, statusList[lastPos:i])
 			if err != nil {
 				return
 			}
-			updatedStatesByDS[ds.ds] = updatedStates
+			// do not set for ds without any new state written as it would clear emptyCache
+			if len(updatedStates) > 0 {
+				updatedStatesByDS[ds.ds] = updatedStates
+			}
 			lastPos = i
 			break
 		}
@@ -2489,13 +2501,16 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 		dsList := jd.getDSList(false)
 		jd.assert(len(dsRangeList) >= len(dsList)-2, fmt.Sprintf("len(dsRangeList):%d < len(dsList):%d-2", len(dsRangeList), len(dsList)))
 		//Update status in the last element
-		logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
+		jd.logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
 		var updatedStates []string
 		updatedStates, err = jd.updateJobStatusDSInTxn(txHandler, dsList[len(dsList)-1], statusList[lastPos:])
 		if err != nil {
 			return
 		}
-		updatedStatesByDS[dsList[len(dsList)-1]] = updatedStates
+		// do not set for ds without any new state written as it would clear emptyCache
+		if len(updatedStates) > 0 {
+			updatedStatesByDS[dsList[len(dsList)-1]] = updatedStates
+		}
 	}
 	return
 }
@@ -2533,8 +2548,8 @@ the current in-memory copy of jobs and job ranges
 func (jd *HandleT) printLists(console bool) {
 
 	//This being an internal function, we don't lock
-	logger.Debug("List:", jd.getDSList(false))
-	logger.Debug("Ranges:", jd.getDSRangeList(false))
+	jd.logger.Debug("List:", jd.getDSList(false))
+	jd.logger.Debug("Ranges:", jd.getDSRangeList(false))
 	if console {
 		fmt.Println("List:", jd.getDSList(false))
 		fmt.Println("Ranges:", jd.getDSRangeList(false))
@@ -2700,12 +2715,12 @@ func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 	var sqlStatement string
 	if customValQuery == "" && sourceQuery == "" {
 		sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN
-                                                   (SELECT MAX(id) from %[1]s GROUP BY job_id) %[2]s 
+                                                   (SELECT MAX(id) from %[1]s GROUP BY job_id) %[2]s
                                              AND retry_time < $1`,
 			ds.JobStatusTable, stateQuery)
 	} else {
 		sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN
-                                                   (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s %[4]s %[5]s) GROUP BY job_id) %[3]s 
+                                                   (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s %[4]s %[5]s) GROUP BY job_id) %[3]s
                                              AND retry_time < $1`,
 			ds.JobStatusTable, ds.JobTable, stateQuery, customValQuery, sourceQuery)
 	}

@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
@@ -33,6 +32,9 @@ type context struct {
 	asyncHelper       testutils.AsyncTestHelper
 	configInitialised bool
 
+	minDBReadBatchSize int
+	maxDBReadBatchSize int
+
 	mockCtrl              *gomock.Controller
 	mockBackendConfig     *mocksBackendConfig.MockBackendConfig
 	mockGatewayJobsDB     *mocksJobsDB.MockJobsDB
@@ -41,23 +43,28 @@ type context struct {
 	mockProcErrorsDB      *mocksJobsDB.MockJobsDB
 	mockStats             *mocksStats.MockStats
 
-	mockStatGatewayDBRead         *mocksStats.MockRudderStats
-	mockStatGatewayDBWrite        *mocksStats.MockRudderStats
-	mockStatRouterDBWrite         *mocksStats.MockRudderStats
-	mockStatBatchRouterDBWrite    *mocksStats.MockRudderStats
-	mockStatActiveUsers           *mocksStats.MockRudderStats
-	mockStatGatewayDBReadTime     *mocksStats.MockRudderStats
-	mockStatGatewayDBWriteTime    *mocksStats.MockRudderStats
-	mockStatLoopTime              *mocksStats.MockRudderStats
-	mockStatSessionTransformTime  *mocksStats.MockRudderStats
-	mockStatUserTransformTime     *mocksStats.MockRudderStats
-	mockStatDestTransformTime     *mocksStats.MockRudderStats
-	mockStatJobListSort           *mocksStats.MockRudderStats
-	mockStatMarshalSingularEvents *mocksStats.MockRudderStats
-	mockStatDestProcessing        *mocksStats.MockRudderStats
-	mockStatProcErrDBWrite        *mocksStats.MockRudderStats
-	mockEnabledADestStats         *DestStatT
-	mockEnabledBDestStats         *DestStatT
+	mockStatGatewayDBRead            *mocksStats.MockRudderStats
+	mockStatGatewayDBWrite           *mocksStats.MockRudderStats
+	mockStatRouterDBWrite            *mocksStats.MockRudderStats
+	mockStatBatchRouterDBWrite       *mocksStats.MockRudderStats
+	mockStatActiveUsers              *mocksStats.MockRudderStats
+	mockStatGatewayDBReadTime        *mocksStats.MockRudderStats
+	mockStatGatewayDBWriteTime       *mocksStats.MockRudderStats
+	mockStatLoopTime                 *mocksStats.MockRudderStats
+	mockStatSessionTransformTime     *mocksStats.MockRudderStats
+	mockStatUserTransformTime        *mocksStats.MockRudderStats
+	mockStatDestTransformTime        *mocksStats.MockRudderStats
+	mockStatJobListSort              *mocksStats.MockRudderStats
+	mockStatMarshalSingularEvents    *mocksStats.MockRudderStats
+	mockStatDestProcessing           *mocksStats.MockRudderStats
+	mockStatProcErrDBWrite           *mocksStats.MockRudderStats
+	mockStatNumRequests              *mocksStats.MockRudderStats
+	mockStatNumEvents                *mocksStats.MockRudderStats
+	mockStatDestNumOuputEvents       *mocksStats.MockRudderStats
+	mockStatBatchDestNumOutputEvents *mocksStats.MockRudderStats
+
+	mockEnabledADestStats *DestStatT
+	mockEnabledBDestStats *DestStatT
 }
 
 func (c *context) Setup() {
@@ -81,9 +88,18 @@ func (c *context) Setup() {
 		Do(c.asyncHelper.ExpectAndNotifyCallback()).
 		Return().Times(1)
 
+	c.minDBReadBatchSize = 100
+	c.maxDBReadBatchSize = 10000
+
 	registerStatMocks := func(name string, statType string) *mocksStats.MockRudderStats {
 		stat := mocksStats.NewMockRudderStats(c.mockCtrl)
 		c.mockStats.EXPECT().NewStat(name, statType).Return(stat).Times(1)
+		return stat
+	}
+
+	registerTaggedStatMocks := func(name string, statType string) *mocksStats.MockRudderStats {
+		stat := mocksStats.NewMockRudderStats(c.mockCtrl)
+		c.mockStats.EXPECT().NewTaggedStat(name, statType, gomock.Any()).Return(stat).Times(1)
 		return stat
 	}
 
@@ -128,6 +144,10 @@ func (c *context) Setup() {
 	c.mockStatMarshalSingularEvents = registerStatMocks("processor.marshal_singular_events", stats.TimerType)
 	c.mockStatDestProcessing = registerStatMocks("processor.dest_processing", stats.TimerType)
 	c.mockStatProcErrDBWrite = registerStatMocks("processor.proc_err_db_write", stats.CountType)
+	c.mockStatNumRequests = registerStatMocks("processor.num_requests", stats.CountType)
+	c.mockStatNumEvents = registerStatMocks("processor.num_events", stats.CountType)
+	c.mockStatDestNumOuputEvents = registerTaggedStatMocks("processor.num_output_events", stats.CountType)
+	c.mockStatBatchDestNumOutputEvents = registerTaggedStatMocks("processor.num_output_events", stats.CountType)
 
 	c.mockEnabledADestStats = registerDestStatMocks(DestinationIDEnabledA)
 	c.mockEnabledBDestStats = registerDestStatMocks(DestinationIDEnabledB)
@@ -222,7 +242,6 @@ var _ = Describe("Processor", func() {
 		c.Setup()
 
 		// setup static requirements of dependencies
-		logger.Setup()
 		stats.Setup()
 	})
 
@@ -240,9 +259,10 @@ var _ = Describe("Processor", func() {
 			}
 
 			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
+			processor.ResetDBReadBatchSize()
 		})
 
 		It("should recover after crash", func() {
@@ -289,7 +309,7 @@ var _ = Describe("Processor", func() {
 			}
 
 			// GetExecuting is called in a loop until all executing jobs have been updated. Each executing job should be updated to failed status
-			var executingCall1 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(executingJobsList[0:2]).Times(1)
+			var executingCall1 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(executingJobsList[0:2]).Times(1)
 			var updateCall1 = c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(2), gatewayCustomVal, nil).After(executingCall1).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(executingJobsList[0], statuses[0], jobsdb.Failed.State, "", "{}", 2)
@@ -297,22 +317,23 @@ var _ = Describe("Processor", func() {
 				})
 
 			// second loop iteration
-			var executingCall2 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(emptyJobsList).After(updateCall1).Return(executingJobsList[2:]).Times(1)
+			var executingCall2 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).After(updateCall1).Return(executingJobsList[2:]).Times(1)
 			var updateCall2 = c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(1), gatewayCustomVal, nil).After(executingCall2).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(executingJobsList[2], statuses[0], jobsdb.Failed.State, "", "{}", 1)
 				})
 
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
+			processor.ResetDBReadBatchSize()
 		})
 	})
 
 	Context("normal operation", func() {
 		BeforeEach(func() {
 			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
 		})
 
 		It("should only send proper stats, if not pending jobs are returned", func() {
@@ -324,12 +345,13 @@ var _ = Describe("Processor", func() {
 			}
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
+			processor.ResetDBReadBatchSize()
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
 
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, 10000, nil).Return(emptyJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, 10000, nil).Return(emptyJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(emptyJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(emptyJobsList).Times(1).After(callRetry)
 
 			c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
 
@@ -450,14 +472,16 @@ var _ = Describe("Processor", func() {
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, 10000, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, 10000-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.minDBReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
 			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
 			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
 			callListSortEnd := c.mockStatJobListSort.EXPECT().End().Times(1).After(callListSort)
-			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callListSortEnd)
+			callNumRequests := c.mockStatNumRequests.EXPECT().Count(5).Times(1).After(callListSortEnd)
+			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callNumRequests)
 			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
+			c.mockStatNumEvents.EXPECT().Count(5).Times(1).After(callMarshallSingularEvents)
 			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
 			callDestANumEvents := c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(4).Times(1).After(callDestProcessing)
 			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
@@ -513,6 +537,9 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
+			c.mockStatDestNumOuputEvents.EXPECT().Count(2).Times(1)
+			c.mockStatBatchDestNumOutputEvents.EXPECT().Count(2).Times(1)
+
 			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
 			callDBWrite := c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
 
@@ -524,7 +551,7 @@ var _ = Describe("Processor", func() {
 				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer"}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer", "received_at": ""}`))
 			}
 
 			// One Store call is expected for all events
@@ -571,10 +598,10 @@ var _ = Describe("Processor", func() {
 		})
 	})
 
-	Context("sessions", func() {
+	/*Context("sessions", func() {
 		BeforeEach(func() {
 			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
 		})
 
 		It("should process ToRetry and Unprocessed jobs, when total events are less than sessionThreshold", func() {
@@ -691,8 +718,8 @@ var _ = Describe("Processor", func() {
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, 10000, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, 10000-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.minDBReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
 			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
 			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
@@ -708,8 +735,10 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
 
-			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callUpdateJobs)
+			callNumRequests := c.mockStatNumRequests.EXPECT().Count(gomock.Any()).AnyTimes().After(callUpdateJobs)
+			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callNumRequests)
 			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
+			c.mockStatNumEvents.EXPECT().Count(gomock.Any()).AnyTimes().After(callMarshallSingularEvents)
 			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
 			callDestANumEvents := c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(4).Times(1).After(callDestProcessing)
 			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
@@ -767,6 +796,9 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
+			c.mockStatDestNumOuputEvents.EXPECT().Count(gomock.Any()).AnyTimes()
+			c.mockStatBatchDestNumOutputEvents.EXPECT().Count(gomock.Any()).AnyTimes()
+
 			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
 			callDBWrite := c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
 
@@ -778,7 +810,7 @@ var _ = Describe("Processor", func() {
 				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer"}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer", "received_at": ""}`))
 			}
 
 			// One Store call is expected for all events
@@ -948,8 +980,8 @@ var _ = Describe("Processor", func() {
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, 10000, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, 10000-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.minDBReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
 			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
 			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
@@ -968,8 +1000,10 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Executing.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
 
-			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callUpdateJobs)
+			callNumRequests := c.mockStatNumRequests.EXPECT().Count(gomock.Any()).AnyTimes().After(callUpdateJobs)
+			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callNumRequests)
 			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
+			c.mockStatNumEvents.EXPECT().Count(gomock.Any()).AnyTimes().After(callMarshallSingularEvents)
 			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
 			callDestANumEvents := c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(4).Times(1).After(callDestProcessing)
 			c.mockEnabledADestStats.destTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
@@ -1027,6 +1061,9 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
+			c.mockStatDestNumOuputEvents.EXPECT().Count(gomock.Any()).AnyTimes()
+			c.mockStatBatchDestNumOutputEvents.EXPECT().Count(gomock.Any()).AnyTimes()
+
 			callDestProcessingEnd := c.mockStatDestProcessing.EXPECT().End().Times(1).After(callDestProcessing)
 			callDBWrite := c.mockStatGatewayDBWriteTime.EXPECT().Start().Times(1).After(callDestProcessingEnd)
 
@@ -1038,7 +1075,7 @@ var _ = Describe("Processor", func() {
 				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer"}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer", "received_at": ""}`))
 			}
 
 			// One Store call is expected for all events
@@ -1096,7 +1133,7 @@ var _ = Describe("Processor", func() {
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
-	})
+	})*/
 
 	Context("transformations", func() {
 		It("messages should be skipped on destination transform failures, without failing the job", func() {
@@ -1175,21 +1212,23 @@ var _ = Describe("Processor", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{}
 
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, 10000, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, 10000-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.minDBReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
 			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
 			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
 			callListSortEnd := c.mockStatJobListSort.EXPECT().End().Times(1).After(callListSort)
-			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callListSortEnd)
+			callNumRequests := c.mockStatNumRequests.EXPECT().Count(1).Times(1).After(callListSortEnd)
+			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callNumRequests)
 			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
+			c.mockStatNumEvents.EXPECT().Count(2).Times(1).After(callMarshallSingularEvents)
 			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
 			c.mockEnabledADestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
 			c.mockEnabledADestStats.numOutputEvents.(*mocksStats.MockRudderStats).EXPECT().Count(0).Times(1).After(callDestProcessing)
@@ -1310,21 +1349,23 @@ var _ = Describe("Processor", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{}
 
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, 10000, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, 10000, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, 10000-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.minDBReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
 			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
 			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
 			callListSortEnd := c.mockStatJobListSort.EXPECT().End().Times(1).After(callListSort)
-			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callListSortEnd)
+			callNumRequests := c.mockStatNumRequests.EXPECT().Count(1).Times(1).After(callListSortEnd)
+			callMarshallSingularEvents := c.mockStatMarshalSingularEvents.EXPECT().Start().Times(1).After(callNumRequests)
 			callMarshallSingularEventsEnd := c.mockStatMarshalSingularEvents.EXPECT().End().Times(1).After(callMarshallSingularEvents)
+			c.mockStatNumEvents.EXPECT().Count(2).Times(1).After(callMarshallSingularEvents)
 			callDestProcessing := c.mockStatDestProcessing.EXPECT().Start().Times(1).After(callMarshallSingularEventsEnd)
 			c.mockEnabledBDestStats.numEvents.(*mocksStats.MockRudderStats).EXPECT().Count(2).Times(1).After(callDestProcessing)
 			c.mockEnabledBDestStats.userTransform.(*mocksStats.MockRudderStats).EXPECT().Start().Times(1).After(callDestProcessing)
@@ -1396,7 +1437,7 @@ type transformExpectation struct {
 
 func createMessagePayload(e mockEventData) string {
 	integrations, _ := json.Marshal(e.integrations)
-	return fmt.Sprintf(`{"anonymousId": "some-anonymous-id", "messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s"}`, e.id, integrations, e.id, e.originalTimestamp, e.sentAt)
+	return fmt.Sprintf(`{"rudderId": "some-rudder-id", "messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s"}`, e.id, integrations, e.id, e.originalTimestamp, e.sentAt)
 }
 
 func createBatchPayload(writeKey string, receivedAt string, events []mockEventData) []byte {
@@ -1515,6 +1556,7 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 
 func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
 	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
+	processor.ResetDBReadBatchSize()
 
 	// make sure the mock backend config has sent the configuration
 	testutils.RunTestWithTimeout(func() {

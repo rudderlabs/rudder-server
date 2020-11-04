@@ -32,3 +32,6 @@ type ProtocolsI interface {
 type ConfigEnvI interface {
 	ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte)
 }
+
+// ConfigT simple map config structure
+type ConfigT map[string]interface{}

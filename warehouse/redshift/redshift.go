@@ -35,6 +35,7 @@ var (
 	stagingTablePrefix    string
 	maxParallelLoads      int
 	setVarCharMax         bool
+	pkgLogger             logger.LoggerI
 )
 
 type HandleT struct {
@@ -131,7 +132,7 @@ func (rs *HandleT) createTable(name string, columns map[string]string) (err erro
 		distKeySql = `DISTSTYLE KEY DISTKEY("id")`
 	}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY("%s") `, name, columnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
-	logger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -146,9 +147,15 @@ func (rs *HandleT) tableExists(tableName string) (exists bool, err error) {
 	return
 }
 
+func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, rs.Namespace)
+	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
+	return
+}
+
 func (rs *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, getRSDataType(columnType))
-	logger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -156,14 +163,14 @@ func (rs *HandleT) addColumn(tableName string, columnName string, columnType str
 // alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift
 func (rs *HandleT) alterStringToText(tableName string, columnName string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ALTER COLUMN "%s" TYPE %s`, tableName, columnName, getRSDataType("text"))
-	logger.Infof("Altering column type in redshift from string to text(varchar(max)) RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("Altering column type in redshift from string to text(varchar(max)) RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
 
 func (rs *HandleT) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, rs.Namespace)
-	logger.Infof("Creating schemaname in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("Creating schemaname in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -172,7 +179,10 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	diff := warehouseutils.GetSchemaDiff(rs.CurrentSchema, rs.Upload.Schema)
 	updatedSchema = diff.UpdatedSchema
 	if len(rs.CurrentSchema) == 0 {
-		err = rs.createSchema()
+		var schemaExists bool
+		if schemaExists, err = rs.schemaExists(rs.Namespace); !schemaExists {
+			err = rs.createSchema()
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -202,7 +212,7 @@ func (rs *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 				err := rs.addColumn(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName, columnType)
 				if err != nil {
 					if checkAndIgnoreAlreadyExistError(err) {
-						logger.Infof("RS: Column %s already exists on %s.%s \nResponse: %v", columnName, rs.Namespace, tableName, err)
+						pkgLogger.Infof("RS: Column %s already exists on %s.%s \nResponse: %v", columnName, rs.Namespace, tableName, err)
 					} else {
 						return nil, err
 					}
@@ -248,7 +258,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		logger.Errorf("RS: Error in fetching schema from redshift destination:%v, query: %v", rs.Warehouse.Destination.ID, sqlStatement)
+		pkgLogger.Errorf("RS: Error in fetching schema from redshift destination:%v, query: %v", rs.Warehouse.Destination.ID, sqlStatement)
 		return
 	}
 	if err == sql.ErrNoRows {
@@ -260,7 +270,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace st
 		var charLength sql.NullInt64
 		err = rows.Scan(&tName, &cName, &cType, &charLength)
 		if err != nil {
-			logger.Errorf("RS: Error in processing fetched schema from redshift destination:%v", rs.Warehouse.Destination.ID)
+			pkgLogger.Errorf("RS: Error in processing fetched schema from redshift destination:%v", rs.Warehouse.Destination.ID)
 			return
 		}
 		if _, ok := schema[tName]; !ok {
@@ -307,7 +317,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	for _, location := range csvS3Locations {
 		manifest.Entries = append(manifest.Entries, S3ManifestEntryT{Url: location, Mandatory: true})
 	}
-	logger.Infof("RS: Generated manifest for table:%s", tableName)
+	pkgLogger.Infof("RS: Generated manifest for table:%s", tableName)
 	manifestJSON, err := json.Marshal(&manifest)
 
 	manifestFolder := "rudder-redshift-manifests"
@@ -356,10 +366,10 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 
 func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
 	for _, stagingTableName := range stagingTableNames {
-		logger.Infof("WH: dropping table %+v\n", stagingTableName)
+		pkgLogger.Infof("WH: dropping table %+v\n", stagingTableName)
 		_, err := rs.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
-			logger.Errorf("WH: RS:  Error dropping staging tables in redshift: %v", err)
+			pkgLogger.Errorf("WH: RS:  Error dropping staging tables in redshift: %v", err)
 		}
 	}
 }
@@ -368,7 +378,7 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 	if !forceLoad {
 		status, _ := warehouseutils.GetTableUploadStatus(rs.Upload.ID, tableName, rs.DbHandle)
 		if status == warehouseutils.ExportedDataState {
-			logger.Infof("RS: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
+			pkgLogger.Infof("RS: Skipping load for table:%s as it has been succesfully loaded earlier", tableName)
 			return
 		}
 	}
@@ -377,7 +387,7 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 		return
 	}
 
-	logger.Infof("RS: Starting load for table:%s\n", tableName)
+	pkgLogger.Infof("RS: Starting load for table:%s\n", tableName)
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, rs.Upload.ID, tableName, rs.DbHandle)
 
 	timer := warehouseutils.DestStat(stats.TimerType, "generate_manifest_time", rs.Warehouse.Destination.ID)
@@ -388,7 +398,7 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 		return
 	}
-	logger.Infof("RS: Generated and stored manifest for table:%s at %s\n", tableName, manifestLocation)
+	pkgLogger.Infof("RS: Generated and stored manifest for table:%s at %s\n", tableName, manifestLocation)
 
 	// sort columnnames
 	keys := reflect.ValueOf(columnMap).MapKeys()
@@ -429,7 +439,7 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 	// create session token and temporary credentials
 	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
 	if err != nil {
-		logger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
+		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 		return
 	}
@@ -440,12 +450,12 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
 	})
 	if regexErr == nil {
-		logger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
+		pkgLogger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
 	}
 
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("RS: Error running COPY command: %v\n", err)
+		pkgLogger.Errorf("RS: Error running COPY command: %v\n", err)
 		tx.Rollback()
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 		return
@@ -467,10 +477,10 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 	}
 
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s)`, rs.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
-	logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	pkgLogger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
+		pkgLogger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
 		tx.Rollback()
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 		return
@@ -485,11 +495,11 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 	}
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
-	logger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 
 	if err != nil {
-		logger.Errorf("RS: Error inserting into original table: %v\n", err)
+		pkgLogger.Errorf("RS: Error inserting into original table: %v\n", err)
 		tx.Rollback()
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 		return
@@ -497,18 +507,38 @@ func (rs *HandleT) loadTable(tableName string, columnMap map[string]string, skip
 
 	err = tx.Commit()
 	if err != nil {
-		logger.Errorf("RS: Error in transaction commit: %v\n", err)
+		pkgLogger.Errorf("RS: Error in transaction commit: %v\n", err)
 		tx.Rollback()
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, tableName, err, rs.DbHandle)
 		return
 	}
 	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, rs.Upload.ID, tableName, rs.DbHandle)
-	logger.Infof("RS: Complete load for table:%s\n", tableName)
+	pkgLogger.Infof("RS: Complete load for table:%s\n", tableName)
 	return
 }
 
 func (rs *HandleT) loadUserTables() (err error) {
-	logger.Infof("RS: Starting load for identifies and users tables\n")
+	pkgLogger.Infof("RS: Starting load for identifies and users tables\n")
+
+	_, hasUserRecordsToLoad := rs.Upload.Schema[warehouseutils.UsersTable]
+	var haveBeenLoaded bool
+	identifiesStatus, _ := warehouseutils.GetTableUploadStatus(rs.Upload.ID, warehouseutils.IdentifiesTable, rs.DbHandle)
+	if identifiesStatus == warehouseutils.ExportedDataState {
+		if hasUserRecordsToLoad {
+			usersStatus, _ := warehouseutils.GetTableUploadStatus(rs.Upload.ID, warehouseutils.UsersTable, rs.DbHandle)
+			if usersStatus == warehouseutils.ExportedDataState {
+				haveBeenLoaded = true
+			}
+		} else {
+			haveBeenLoaded = true
+		}
+	}
+
+	if haveBeenLoaded {
+		pkgLogger.Infof("RS: Skipping load for user tables as they have been succesfully loaded earlier")
+		return
+	}
+
 	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, rs.Upload.Schema[warehouseutils.IdentifiesTable], true, true)
 	if err != nil {
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, warehouseutils.IdentifiesTable, err, rs.DbHandle)
@@ -517,13 +547,13 @@ func (rs *HandleT) loadUserTables() (err error) {
 	}
 	defer rs.dropStagingTables([]string{identifyStagingTable})
 
-	if _, ok := rs.Upload.Schema["users"]; !ok {
+	if !hasUserRecordsToLoad {
 		return
 	}
 
-	userColMap := rs.CurrentSchema["users"]
+	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, rs.Upload.ID, warehouseutils.UsersTable, rs.DbHandle)
+	userColMap := rs.CurrentSchema[warehouseutils.UsersTable]
 	var userColNames, firstValProps []string
-	firstValPropsForIdentifies := []string{fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY anonymous_id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, "user_id")}
 	for colName := range userColMap {
 		// do not reference uuid in queries as it can be an autoincrementing field set by segment compatible tables
 		if colName == "id" || colName == "user_id" || colName == "uuid" {
@@ -531,19 +561,19 @@ func (rs *HandleT) loadUserTables() (err error) {
 		}
 		userColNames = append(userColNames, colName)
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
-		firstValPropsForIdentifies = append(firstValPropsForIdentifies, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY anonymous_id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), "users"), 127)
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), warehouseutils.UsersTable), 127)
+
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
 										(
 											SELECT
 											id, %[3]s
 											FROM (
 												(
-													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT user_id FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL)
+													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT DISTINCT(user_id) FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL)
 												) UNION
 												(
-													SELECT user_id, %[6]s FROM (SELECT %[7]s FROM "%[1]s"."%[8]s") WHERE user_id IS NOT NULL
+													SELECT user_id, %[6]s FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL
 												)
 											)
 										)
@@ -554,8 +584,6 @@ func (rs *HandleT) loadUserTables() (err error) {
 		warehouseutils.UsersTable,
 		identifyStagingTable,
 		strings.Join(userColNames, ","),
-		strings.Join(firstValPropsForIdentifies, ","),
-		warehouseutils.IdentifiesTable,
 	)
 
 	// BEGIN TRANSACTION
@@ -565,10 +593,10 @@ func (rs *HandleT) loadUserTables() (err error) {
 		return
 	}
 
-	logger.Debugf("RS: Creating staging table for users: %s\n", sqlStatement)
+	pkgLogger.Debugf("RS: Creating staging table for users: %s\n", sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("RS: Error creating users staging table from original table and identifies staging table: %v\n", err)
+		pkgLogger.Errorf("RS: Error creating users staging table from original table and identifies staging table: %v\n", err)
 		tx.Rollback()
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, warehouseutils.UsersTable, err, rs.DbHandle)
 		return
@@ -577,21 +605,21 @@ func (rs *HandleT) loadUserTables() (err error) {
 
 	primaryKey := "id"
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
-	logger.Infof("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+	pkgLogger.Infof("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
+		pkgLogger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
 		tx.Rollback()
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, warehouseutils.UsersTable, err, rs.DbHandle)
 		return
 	}
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
-	logger.Infof("RS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 
 	if err != nil {
-		logger.Errorf("RS: Error inserting into users table from staging table: %v\n", err)
+		pkgLogger.Errorf("RS: Error inserting into users table from staging table: %v\n", err)
 		tx.Rollback()
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, warehouseutils.UsersTable, err, rs.DbHandle)
 		return
@@ -599,7 +627,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 
 	err = tx.Commit()
 	if err != nil {
-		logger.Errorf("RS: Error in transaction commit for users table: %v\n", err)
+		pkgLogger.Errorf("RS: Error in transaction commit for users table: %v\n", err)
 		tx.Rollback()
 		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, rs.Upload.ID, warehouseutils.UsersTable, err, rs.DbHandle)
 		return
@@ -609,7 +637,7 @@ func (rs *HandleT) loadUserTables() (err error) {
 }
 
 func (rs *HandleT) load() (errList []error) {
-	logger.Infof("RS: Starting load for all %v tables\n", len(rs.Upload.Schema))
+	pkgLogger.Infof("RS: Starting load for all %v tables\n", len(rs.Upload.Schema))
 	if _, ok := rs.Upload.Schema["identifies"]; ok {
 		err := rs.loadUserTables()
 		if err != nil {
@@ -637,7 +665,7 @@ func (rs *HandleT) load() (errList []error) {
 		})
 	}
 	wg.Wait()
-	logger.Infof("RS: Completed load for all tables\n")
+	pkgLogger.Infof("RS: Completed load for all tables\n")
 	return
 }
 
@@ -697,13 +725,14 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("redshift")
 }
 
 func (rs *HandleT) MigrateSchema() (err error) {
 	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", rs.Warehouse.Destination.ID)
 	timer.Start()
 	warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.UpdatingSchemaState, rs.DbHandle)
-	logger.Infof("RS: Updaing schema for redshfit schemaname: %s", rs.Namespace)
+	pkgLogger.Infof("RS: Updaing schema for redshfit schemaname: %s", rs.Namespace)
 	updatedSchema, err := rs.updateSchema()
 	if err != nil {
 		warehouseutils.SetUploadError(rs.Upload, err, warehouseutils.UpdatingSchemaFailedState, rs.DbHandle)
@@ -724,7 +753,7 @@ func (rs *HandleT) MigrateSchema() (err error) {
 }
 
 func (rs *HandleT) Export() (err error) {
-	logger.Infof("RS: Starting export to redshift for source:%s and wh_upload:%v", rs.Warehouse.Source.ID, rs.Upload.ID)
+	pkgLogger.Infof("RS: Starting export to redshift for source:%s and wh_upload:%v", rs.Warehouse.Source.ID, rs.Upload.ID)
 	err = warehouseutils.SetUploadStatus(rs.Upload, warehouseutils.ExportingDataState, rs.DbHandle)
 	if err != nil {
 		panic(err)
@@ -759,7 +788,7 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
 	rows, err := rs.Db.Query(sqlStatement)
 	if err != nil {
-		logger.Errorf("WH: RS:  Error dropping dangling staging tables in redshift: %v\n", err)
+		pkgLogger.Errorf("WH: RS:  Error dropping dangling staging tables in redshift: %v\n", err)
 		return false
 	}
 	defer rows.Close()
@@ -773,12 +802,12 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
-	logger.Infof("WH: RS: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
+	pkgLogger.Infof("WH: RS: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
 		_, err := rs.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, rs.Namespace, stagingTableName))
 		if err != nil {
-			logger.Errorf("WH: RS:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
+			pkgLogger.Errorf("WH: RS:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
 			delSuccess = false
 		}
 	}

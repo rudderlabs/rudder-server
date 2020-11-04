@@ -72,15 +72,16 @@ maxUserRequestBatchSize = 128
 maxDBBatchSize = 128
 userWebRequestBatchTimeoutInMS = 15
 dbBatchWriteTimeoutInMS = 5
-maxReqSizeInKB = 100000
+maxReqSizeInKB = 4000
 enableDedup = false
 enableRateLimit = false
 enableSuppressUserFeature = true
 dedupWindowInS = 86400
 allowPartialWriteWithErrors = true
+allowReqsWithoutUserIDAndAnonymousID = false
 
-[Protocols]
-enableProtocolsFeature = false
+[EventSchemas]
+enableEventSchemasFeature = false
 syncIntervalInS = 5
 
 [Gateway.webhook]
@@ -139,19 +140,25 @@ jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
 readSleepInMS = 1000
 noOfWorkers = 64
+noOfJobsPerChannel = 1000
+noOfJobsToBatchInAWorker = 20
+jobsBatchTimeoutInSec = 5
 ser = 3
 maxSleepInS = 60
 minSleepInS = 0
 maxStatusUpdateWaitInS = 5
-randomWorkerAssign = false
 useTestSink = false
 maxFailedCountForJob = 3
-keepOrderOnFailure = true
+guaranteeUserEventOrder = true
 kafkaWriteTimeoutInSec = 2
 kafkaDialTimeoutInSec = 10
 retryTimeWindowInMins = 180
 minRetryBackoffInS = 10
 maxRetryBackoffInS = 300
+    [Router.BRAZE]
+    forceHTTP1=true
+    httpTimeoutInS=120
+    httpMaxIdleConnsPerHost=32
     # settings similar to below one can be used to throttle router
     # sending events to downstream destinations
     # [Router.throttler.AM]
@@ -182,7 +189,7 @@ minUploadBackoffInS = 60
 maxUploadBackoffInS = 1800
 warehouseSyncPreFetchCount = 10
 warehouseSyncFreqIgnore = false
-stagingFilesBatchSize = 240
+stagingFilesBatchSize = 960
     [Warehouse.redshift]
     maxParallelLoads = 3
     setVarCharMax = false
@@ -201,7 +208,8 @@ stagingFilesBatchSize = 240
 [Processor]
 loopSleepInMS = 10
 maxLoopSleepInMS = 5000
-dbReadBatchSize = 10000
+maxDBReadBatchSize = 10000
+minDBReadBatchSize = 100
 transformBatchSize = 100
 userTransformBatchSize = 200
 sessionThresholdEvents = 100
@@ -227,8 +235,6 @@ maxRegulationsPerRequest = 1000
 # If the server crashes 'crashThreshold' times in 'durationInS' seconds,
 #       then we mark it degraded
 # If the server crashes 'degradedCrashThreshold' times in 'degradedDurationInS' seconds in degraded mode,
-#       then we mark it maintenance
-# If the server crashes 'maintenanceCrashThreshold' times in 'maintenanceDurationInS' seconds in maintenance mode,
 #       then we stop the server
 # Stores related metadata in storagePath
 [recovery]
@@ -239,9 +245,6 @@ storagePath = "/tmp/recovery_data.json"
     crashThreshold = 5
     durationInS = 300
     [recovery.degraded]
-    crashThreshold = 5
-    durationInS = 300
-    [recovery.maintenance]
     crashThreshold = 5
     durationInS = 300
 
@@ -256,7 +259,7 @@ logFileSize = 100 # in MB
 enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
-
+#moduleLevels="processor.transformer=ERROR:batchrouter=ERROR:pgnotifier=ERROR:warehouse=ERROR"
 
 [Diagnostics]
 enableDiagnostics = true
