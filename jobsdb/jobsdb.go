@@ -2409,7 +2409,7 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 		var importDest dataSetT
 		json.Unmarshal(opPayload, &importDest)
 		jd.dropDS(importDest, true)
-		//jd.deleteSetupCheckpoint(ImportOp) //TODO: move it to post setupForMigration somehow
+		jd.deleteSetupCheckpoint(ImportOp)
 		undoOp = true
 	case postMigrateDSOperation:
 		//Some of the source datasets would have been
@@ -2457,9 +2457,11 @@ func (jd *HandleT) recoverFromJournal() {
 	jd.recoverFromCrash(addDSGoRoutine)
 	jd.recoverFromCrash(mainGoRoutine)
 	jd.recoverFromCrash(backupGoRoutine)
-	if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
-		jd.recoverFromCrash(migratorRoutine)
-	}
+}
+
+//RecoverFromMigrationJournal is an exposed function for migrator package to handle journal crashes during migration
+func (jd *HandleT) RecoverFromMigrationJournal() {
+	jd.recoverFromCrash(migratorRoutine)
 }
 
 /*
