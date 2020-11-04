@@ -473,6 +473,21 @@ func (jd *HandleT) TearDown() {
 	jd.dbHandle.Close()
 }
 
+/*
+Function to sort table suffixes. We should not have any use case
+for having > 2 len suffixes (e.g. 1_1_1 - see comment below)
+but this sort handles the general case
+*/
+func (jd *HandleT) sortDnumList(dnumList []string) {
+	sort.Slice(dnumList, func(i, j int) bool {
+		src := strings.Split(dnumList[i], "_")
+		dst := strings.Split(dnumList[j], "_")
+		comparison, err := dsComparitor(src, dst)
+		jd.assertError(err)
+		return comparison
+	})
+}
+
 var dsComparitor = func(src, dst []string) (bool, error) {
 	k := 0
 	for {
@@ -516,21 +531,6 @@ var dsComparitor = func(src, dst []string) (bool, error) {
 		}
 		return srcInt < dstInt, nil
 	}
-}
-
-/*
-Function to sort table suffixes. We should not have any use case
-for having > 2 len suffixes (e.g. 1_1_1 - see comment below)
-but this sort handles the general case
-*/
-func (jd *HandleT) sortDnumList(dnumList []string) {
-	sort.Slice(dnumList, func(i, j int) bool {
-		src := strings.Split(dnumList[i], "_")
-		dst := strings.Split(dnumList[j], "_")
-		comparison, err := dsComparitor(src, dst)
-		jd.assertError(err)
-		return comparison
-	})
 }
 
 //Function to get all table names form Postgres
