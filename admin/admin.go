@@ -72,6 +72,7 @@ type Admin struct {
 }
 
 var instance Admin
+var pkgLogger logger.LoggerI
 
 func init() {
 	instance = Admin{
@@ -79,6 +80,7 @@ func init() {
 		rpcServer:      rpc.NewServer(),
 	}
 	instance.rpcServer.Register(instance)
+	pkgLogger = logger.NewLogger().Child("admin")
 }
 
 // Status reports overall server status by fetching status of all registered admin handlers
@@ -152,7 +154,7 @@ func StartServer() {
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
-	logger.Info("Serving on admin interface @ ", sockAddr)
+	pkgLogger.Info("Serving on admin interface @ ", sockAddr)
 	srvMux := http.NewServeMux()
 	srvMux.Handle(rpc.DefaultRPCPath, instance.rpcServer)
 	http.Serve(l, srvMux)

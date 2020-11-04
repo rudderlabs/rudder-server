@@ -10,6 +10,11 @@ import (
 )
 
 var pagerDutyEndPoint = "https://events.pagerduty.com/v2/enqueue"
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("alert")
+}
 
 func (ops *PagerDuty) Alert(message string) {
 
@@ -30,18 +35,18 @@ func (ops *PagerDuty) Alert(message string) {
 	resp, err := client.Post(pagerDutyEndPoint, "application/json", bytes.NewBuffer(eventJSON))
 	// Not handling errors when sending alert to victorops
 	if err != nil {
-		logger.Errorf("Alert: Failed to alert service: %s", err.Error())
+		pkgLogger.Errorf("Alert: Failed to alert service: %s", err.Error())
 		return
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		logger.Errorf("Alert: Got error response %d", resp.StatusCode)
+		pkgLogger.Errorf("Alert: Got error response %d", resp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
-	logger.Infof("Alert: Successful %s", string(body))
+	pkgLogger.Infof("Alert: Successful %s", string(body))
 }
 
 type PagerDuty struct {

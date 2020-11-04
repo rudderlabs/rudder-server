@@ -19,6 +19,13 @@ type Config struct {
 	AccessKey   string
 }
 
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("streammanager").Child("eventbridge")
+
+}
+
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}) (eventbridge.EventBridge, error) {
 	config := Config{}
@@ -71,7 +78,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	// send request to event bridge
 	putEventsOutput, err := ebc.PutEvents(&requestInput)
 	if err != nil {
-		logger.Errorf("[EventBridge] Error while sending event :: %w", err)
+		pkgLogger.Errorf("[EventBridge] Error while sending event :: %w", err)
 
 		// set default status code as 500
 		statusCode := 500

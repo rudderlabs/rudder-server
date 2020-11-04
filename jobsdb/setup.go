@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // SchemaMigrationTable returns the table name used for storing current schema version.
@@ -50,8 +49,8 @@ func (jd *HandleT) setupDatabaseTables(clearAll bool) {
 }
 
 func (jd *HandleT) dropDatabaseTables() {
-	logger.Infof("[JobsDB:%v] Dropping all database tables", jd.tablePrefix)
 
+	jd.logger.Infof("[JobsDB:%v] Dropping all database tables", jd.tablePrefix)
 	jd.dropSchemaMigrationTables()
 	jd.dropAllDS()
 	jd.dropJournal()

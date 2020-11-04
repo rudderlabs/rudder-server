@@ -1,6 +1,8 @@
 package kvstoremanager
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,11 +30,27 @@ func (m *redisManagerT) Connect() {
 		db, _ = strconv.Atoi(dbStr)
 	}
 
-	redisClient := redis.NewClient(&redis.Options{
+	opts := redis.Options{
 		Addr:     addr,
 		Password: password,
 		DB:       db,
-	})
+	}
+
+	if shouldSecureConn, ok := m.config["secure"].(bool); ok && shouldSecureConn {
+		tlsConfig := tls.Config{}
+		opts.TLSConfig = &tlsConfig
+		if skipServerCertCheck, ok := m.config["skipVerify"].(bool); ok && skipServerCertCheck {
+			tlsConfig.InsecureSkipVerify = true
+		}
+		if serverCACert, ok := m.config["caCertificate"].(string); ok && len(strings.TrimSpace(serverCACert)) > 0 {
+			caCert := []byte(serverCACert)
+			caCertPool := x509.NewCertPool()
+			caCertPool.AppendCertsFromPEM(caCert)
+			tlsConfig.RootCAs = caCertPool
+		}
+	}
+
+	redisClient := redis.NewClient(&opts)
 	m.client = redisClient
 }
 

@@ -23,10 +23,13 @@ var (
 	maxWebhookBatchSize   int
 	webhookRetryMax       int
 	webhookRetryWaitMax   time.Duration
+	pkgLogger             logger.LoggerI
 )
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("gateway").Child("webhook")
+
 }
 
 type webhookT struct {
@@ -92,7 +95,7 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	var writeKeyFailStats = make(map[string]int)
 	misc.IncrementMapByKey(writeKeyFailStats, stat, 1)
 	webhook.gwHandle.UpdateSourceStats(writeKeyFailStats, "gateway.write_key_failed_requests")
-	logger.Debugf("Webhook: Failing request since: %v", reason)
+	pkgLogger.Debugf("Webhook: Failing request since: %v", reason)
 	statusCode := 400
 	if code != 0 {
 		statusCode = code
@@ -102,7 +105,7 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 }
 
 func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
-	logger.LogRequest(r)
+	pkgLogger.LogRequest(r)
 	webhook.gwHandle.IncrementRecvCount(1)
 	atomic.AddUint64(&webhook.recvCount, 1)
 
@@ -134,10 +137,10 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		if resp.statusCode != 0 {
 			code = resp.statusCode
 		}
-		logger.Debug(resp.err)
+		pkgLogger.Debug(resp.err)
 		http.Error(w, resp.err, code)
 	} else {
-		logger.Debug(response.GetStatus(response.Ok))
+		pkgLogger.Debug(response.GetStatus(response.Ok))
 		w.Write([]byte(response.GetStatus(response.Ok)))
 	}
 }
@@ -284,7 +287,7 @@ func (webhook *HandleT) printStats() {
 		if lastRecvCount != webhook.recvCount || lastackCount != webhook.ackCount {
 			lastRecvCount = webhook.recvCount
 			lastackCount = webhook.ackCount
-			logger.Info("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
+			pkgLogger.Info("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
 		}
 	}
 }
