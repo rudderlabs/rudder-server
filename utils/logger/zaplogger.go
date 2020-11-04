@@ -44,7 +44,7 @@ func configureLogger() *zap.SugaredLogger {
 	var cores []zapcore.Core
 	if enableConsole {
 		writer := zapcore.Lock(os.Stdout)
-		core := zapcore.NewCore(getEncoderConfig(consoleJsonFormat), writer, getZapLevel(level))
+		core := zapcore.NewCore(getEncoderConfig(consoleJsonFormat), writer, zapcore.DebugLevel)
 		cores = append(cores, core)
 	}
 	if enableFile {
@@ -54,7 +54,7 @@ func configureLogger() *zap.SugaredLogger {
 			Compress:  true,
 			LocalTime: true,
 		})
-		core := zapcore.NewCore(getEncoderConfig(fileJsonFormat), writer, getZapLevel(level))
+		core := zapcore.NewCore(getEncoderConfig(fileJsonFormat), writer, zapcore.DebugLevel)
 		cores = append(cores, core)
 	}
 	combinedCore := zapcore.NewTee(cores...)

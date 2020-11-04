@@ -2,12 +2,14 @@ package router
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -19,14 +21,16 @@ type NetHandleT struct {
 	httpClient *http.Client
 }
 
+//var pkgLogger logger.LoggerI
+
 //sendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
-func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, status string, respBody string) {
+func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody string) {
 	client := network.httpClient
 	//Parse the response to get parameters
 	postInfo, err := integrations.GetPostInfo(jsonData)
 	if err != nil {
-		return 400, "", fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
+		return 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 	}
 	isRest := postInfo.Type == "REST"
 
@@ -54,8 +58,8 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, status str
 
 		req, err := http.NewRequest(requestMethod, postInfo.URL, nil)
 		if err != nil {
-			logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
-			return 400, "", fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
+			pkgLogger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
+			return 400, fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
 		}
 
 		// add queryparams to the url
@@ -109,28 +113,30 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, status str
 
 		if resp != nil && resp.Body != nil {
 			respBody, _ = ioutil.ReadAll(resp.Body)
+			pkgLogger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 			defer resp.Body.Close()
 		}
 
 		if err != nil {
-			logger.Error("Errored when sending request to the server", err)
-			return http.StatusGatewayTimeout, "", string(respBody)
+			pkgLogger.Error("Errored when sending request to the server", err)
+			return http.StatusGatewayTimeout, string(respBody)
 		}
 
-		return resp.StatusCode, resp.Status, string(respBody)
+		return resp.StatusCode, string(respBody)
 
 	}
 
 	// returning 200 with a message in case of unsupported processing
 	// so that we don't process again. can change this code to anything
 	// to be not picked up by router again
-	return 200, "method not implemented", ""
+	return 200, ""
 
 }
 
 //Setup initializes the module
-func (network *NetHandleT) Setup(destID string) {
-	logger.Info("Network Handler Startup")
+func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) {
+	pkgLogger = logger.NewLogger().Child("router").Child("network")
+	pkgLogger.Info("Network Handler Startup")
 	//Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
 	defaultRoundTripper := http.DefaultTransport
 	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
@@ -142,8 +148,21 @@ func (network *NetHandleT) Setup(destID string) {
 	//https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU
 	//Solved in go1.8 https://github.com/golang/go/issues/26013
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
-	defaultTransportCopy.MaxIdleConns = 100
-	defaultTransportCopy.MaxIdleConnsPerHost = 100
-	network.httpClient = &http.Client{Transport: &defaultTransportCopy}
-	//network.httpClient = &http.Client{}
+	pkgLogger.Info("forceHTTP1: ", getRouterConfigBool("forceHTTP1", destID, false))
+	if getRouterConfigBool("forceHTTP1", destID, false) {
+		pkgLogger.Info("Forcing HTTP1 connection for ", destID)
+		var tlsClientConfigCopy tls.Config
+		misc.Copy(&tlsClientConfigCopy, defaultTransportCopy.TLSClientConfig)
+		defaultTransportCopy.ForceAttemptHTTP2 = false
+		tlsClientConfigCopy.NextProtos = []string{"http/1.1"}
+
+		defaultTransportCopy.TLSClientConfig = &tlsClientConfigCopy
+	}
+	pkgLogger.Info(destID, defaultTransportCopy.TLSClientConfig.NextProtos)
+	defaultTransportCopy.MaxIdleConns = getRouterConfigInt("httpMaxIdleConns", destID, 100)
+	defaultTransportCopy.MaxIdleConnsPerHost = getRouterConfigInt("httpMaxIdleConnsPerHost", destID, 100)
+	pkgLogger.Info(destID, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
+	pkgLogger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
+	pkgLogger.Info("netClientTimeout: ", netClientTimeout)
+	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
 }

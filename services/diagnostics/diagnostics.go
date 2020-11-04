@@ -71,7 +71,7 @@ func init() {
 
 func loadConfig() {
 	EnableDiagnostics = config.GetBool("Diagnostics.enableDiagnostics", true)
-	endpoint = config.GetString("Diagnostics.endpoint", "https://hosted.rudderlabs.com")
+	endpoint = config.GetString("Diagnostics.endpoint", "https://rudderstack-dataplane.rudderstack.com")
 	writekey = config.GetString("Diagnostics.writekey", "1aWPBIROQvFYW9FHxgc03nUsLza")
 	EnableServerStartMetric = config.GetBool("Diagnostics.enableServerStartMetric", true)
 	EnableConfigIdentifyMetric = config.GetBool("Diagnostics.enableConfigIdentifyMetric", true)

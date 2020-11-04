@@ -8,7 +8,6 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
@@ -48,7 +47,7 @@ func ReplaceDB(dbName, targetName string) {
 
 	renameDBStatement := fmt.Sprintf("ALTER DATABASE \"%s\" RENAME TO \"%s\"",
 		dbName, targetName)
-	logger.Debug(renameDBStatement)
+	pkgLogger.Debug(renameDBStatement)
 	_, err = db.Exec(renameDBStatement)
 
 	// If execution of ALTER returns error, pacicking

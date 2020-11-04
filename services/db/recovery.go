@@ -17,10 +17,9 @@ import (
 )
 
 const (
-	normalMode      = "normal"
-	degradedMode    = "degraded"
-	maintenanceMode = "maintenance"
-	migrationMode   = "migration"
+	normalMode    = "normal"
+	degradedMode  = "degraded"
+	migrationMode = "migration"
 )
 
 type RecoveryHandler interface {
@@ -33,15 +32,19 @@ var CurrentMode string = normalMode // default mode
 
 // RecoveryDataT : DS to store the recovery process data
 type RecoveryDataT struct {
-	StartTimes                        []int64
-	ReadableStartTimes                []string
-	DegradedModeStartTimes            []int64
-	ReadableDegradedModeStartTimes    []string
-	MaintenanceModeStartTimes         []int64
-	ReadableMaintenanceModeStartTimes []string
-	MigrationModeStartTimes           []int64
-	ReadableMigrationModeStartTimes   []string
-	Mode                              string
+	StartTimes                      []int64
+	ReadableStartTimes              []string
+	DegradedModeStartTimes          []int64
+	ReadableDegradedModeStartTimes  []string
+	MigrationModeStartTimes         []int64
+	ReadableMigrationModeStartTimes []string
+	Mode                            string
+}
+
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("db").Child("recovery")
 }
 
 func getRecoveryData() RecoveryDataT {
@@ -103,14 +106,12 @@ func CheckOccurences(occurences []int64, numTimes int, numSecs int) (occurred bo
 	return
 }
 
-func getForceRecoveryMode(forceNormal bool, forceDegraded bool, forceMaintenance bool) string {
+func getForceRecoveryMode(forceNormal bool, forceDegraded bool) string {
 	switch {
 	case forceNormal:
 		return normalMode
 	case forceDegraded:
 		return degradedMode
-	case forceMaintenance:
-		return maintenanceMode
 	}
 	return ""
 
@@ -121,8 +122,6 @@ func getNextMode(currentMode string) string {
 	case normalMode:
 		return degradedMode
 	case degradedMode:
-		return maintenanceMode
-	case maintenanceMode:
 		return ""
 	case migrationMode: //Staying in the migrationMode forever on repeated restarts.
 		return migrationMode
@@ -137,8 +136,6 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 		recoveryHandler = &NormalModeHandler{recoveryData: recoveryData}
 	case degradedMode:
 		recoveryHandler = &DegradedModeHandler{recoveryData: recoveryData}
-	case maintenanceMode:
-		recoveryHandler = &MaintenanceModeHandler{recoveryData: recoveryData}
 	case migrationMode:
 		recoveryHandler = &MigrationModeHandler{recoveryData: recoveryData}
 	default:
@@ -152,7 +149,7 @@ func alertOps(mode string) {
 
 	alertManager, err := alert.New()
 	if err != nil {
-		logger.Errorf("Unable to initialize the alertManager: %s", err.Error())
+		pkgLogger.Errorf("Unable to initialize the alertManager: %s", err.Error())
 	} else {
 		alertManager.Alert(fmt.Sprintf("Dataplane server %s entered %s mode", instanceName, mode))
 	}
@@ -168,8 +165,6 @@ func sendRecoveryModeStat() {
 			recoveryModeStat.Gauge(1)
 		case degradedMode:
 			recoveryModeStat.Gauge(2)
-		case maintenanceMode:
-			recoveryModeStat.Gauge(3)
 		case migrationMode:
 			recoveryModeStat.Gauge(4)
 		}
@@ -177,7 +172,7 @@ func sendRecoveryModeStat() {
 }
 
 // HandleRecovery decides the recovery Mode in which app should run based on earlier crashes
-func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool, forceMigrationMode string, currTime int64) {
+func HandleRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode string, currTime int64) {
 
 	enabled := config.GetBool("recovery.enabled", false)
 	if !enabled {
@@ -189,10 +184,10 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 
 	//If MIGRATION_MODE environment variable is present and is equal to "import", "export", "import-export", then server mode is forced to be Migration.
 	if IsValidMigrationMode(forceMigrationMode) {
-		logger.Info("Setting server mode to Migration. If this is not intended remove environment variables related to Migration.")
+		pkgLogger.Info("Setting server mode to Migration. If this is not intended remove environment variables related to Migration.")
 		forceMode = migrationMode
 	} else {
-		forceMode = getForceRecoveryMode(forceNormal, forceDegraded, forceMaintenance)
+		forceMode = getForceRecoveryMode(forceNormal, forceDegraded)
 	}
 
 	recoveryData := getRecoveryData()
@@ -208,10 +203,10 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 	recoveryHandler := NewRecoveryHandler(&recoveryData)
 
 	if !isForced && recoveryHandler.HasThresholdReached() {
-		logger.Info("DB Recovery: Moving to next State. Threshold reached for " + recoveryData.Mode)
+		pkgLogger.Info("DB Recovery: Moving to next State. Threshold reached for " + recoveryData.Mode)
 		nextMode := getNextMode(recoveryData.Mode)
 		if nextMode == "" {
-			logger.Fatal("Threshold reached for maintenance mode")
+			pkgLogger.Fatal("Threshold reached for degraded mode")
 			panic("Not a valid mode")
 		} else {
 			recoveryData.Mode = nextMode
@@ -223,7 +218,7 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMaintenance bool,
 	recoveryHandler.RecordAppStart(currTime)
 	saveRecoveryData(recoveryData)
 	recoveryHandler.Handle()
-	logger.Infof("Starting in %s mode", recoveryData.Mode)
+	pkgLogger.Infof("Starting in %s mode", recoveryData.Mode)
 	CurrentMode = recoveryData.Mode
 	rruntime.Go(func() {
 		sendRecoveryModeStat()

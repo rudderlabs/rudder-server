@@ -138,6 +138,15 @@ func GetDuration(key string, defaultValue time.Duration) (value time.Duration) {
 	return viper.GetDuration(key)
 }
 
+// IsSet checks if config is set for a key
+func IsSet(key string) bool {
+	if _, exists := os.LookupEnv(transformKey(key)); exists {
+		return true
+	}
+
+	return viper.IsSet(key)
+}
+
 // GetEnv returns the environment value stored in key variable
 func GetEnv(key string, defaultVal string) string {
 	if value, exists := os.LookupEnv(key); exists {

@@ -30,7 +30,6 @@ import (
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
@@ -225,7 +224,6 @@ var _ = Describe("Gateway Enterprise", func() {
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled, WriteKeyEnabled).Return(true).AnyTimes()
 
 		// setup static requirements of dependencies
-		logger.Setup()
 		stats.Setup()
 
 		// setup common environment, override in BeforeEach when required
@@ -285,7 +283,6 @@ var _ = Describe("Gateway", func() {
 		c.initializeAppFeatures()
 
 		// setup static requirements of dependencies
-		logger.Setup()
 		stats.Setup()
 
 		// setup common environment, override in BeforeEach when required
@@ -350,20 +347,17 @@ var _ = Describe("Gateway", func() {
 
 		assertJobBatchItem := func(payload gjson.Result) {
 			messageID := payload.Get("messageId")
-			anonymousID := payload.Get("anonymousId")
 			messageType := payload.Get("type")
 
 			// Assertions regarding batch message
 			Expect(messageID.Exists()).To(BeTrue())
 			Expect(messageID.String()).To(testutils.BeValidUUID())
-			Expect(anonymousID.Exists()).To(BeTrue())
-			Expect(anonymousID.String()).To(testutils.BeValidUUID())
 			Expect(messageType.Exists()).To(BeTrue())
 		}
 
 		stripJobPayload := func(payload gjson.Result) string {
 			strippedPayload, _ := sjson.Delete(payload.String(), "messageId")
-			strippedPayload, _ = sjson.Delete(strippedPayload, "anonymousId")
+			strippedPayload, _ = sjson.Delete(strippedPayload, "rudderId")
 			strippedPayload, _ = sjson.Delete(strippedPayload, "type")
 
 			return strippedPayload
@@ -378,12 +372,10 @@ var _ = Describe("Gateway", func() {
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_size.count"))
 				c.mockStatDBWritesStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_writes"))
 				c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
-
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 				c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 1)
-				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
-				c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 0)
-
+				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
+				c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 1)
 				c.mockJobsDB.
 					EXPECT().StoreWithRetryEach(gomock.Any()).
 					DoAndReturn(func(jobs []*jobsdb.JobT) map[uuid.UUID]string {
@@ -399,7 +391,6 @@ var _ = Describe("Gateway", func() {
 
 							messageType := payload.Get("type")
 							Expect(messageType.String()).To(Equal(handlerType))
-
 							Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
 						}
 						c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
@@ -526,8 +517,8 @@ var _ = Describe("Gateway", func() {
 
 			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 			c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 1)
-			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
-			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 0)
+			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
+			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 1)
 
 			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(`{"userId":"dummyId"}`)), 200, "OK")
 		})
@@ -579,24 +570,16 @@ var _ = Describe("Gateway", func() {
 			})
 
 			It("should reject requests with both userId and anonymousId not present", func() {
-				var validBody string
+				validBody := `{"data": "valid-json"}`
 				if handlerType == "batch" {
 					validBody = `{"batch": [{"data": "valid-json"}]}`
-				} else {
-					validBody = `{"data": "valid-json"}`
 				}
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", "notIdentifiable", 1)
-
-				if handlerType == "batch" {
-					c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
-				} else {
-					c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 0)
-				}
-
+				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 400, response.NonIdentifiableRequest+"\n")
 			})
 
@@ -627,42 +610,46 @@ var _ = Describe("Gateway", func() {
 					data[i] = 'a'
 				}
 				body := fmt.Sprintf(`{"data":"%s"}`, string(data))
-
+				if handlerType == "batch" {
+					body = fmt.Sprintf(`{"batch":[%s]}`, body)
+				}
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyInvalid, 1)
-				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyInvalid, 0)
-				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyInvalid, 0)
+				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyInvalid, 1)
+				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyInvalid, 1)
 
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(body)), 400, response.RequestBodyTooLarge+"\n")
 			})
 
 			It("should reject requests with invalid write keys", func() {
 				validBody := `{"data":"valid-json"}`
-
+				if handlerType == "batch" {
+					validBody = `{"batch":[{"data":"valid-json"}]}`
+				}
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyInvalid, 1)
-				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyInvalid, 0)
-				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyInvalid, 0)
+				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyInvalid, 1)
+				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyInvalid, 1)
 
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), 400, response.InvalidWriteKey+"\n")
 			})
 
 			It("should reject requests with disabled write keys", func() {
 				validBody := `{"data":"valid-json"}`
-
+				if handlerType == "batch" {
+					validBody = `{"batch":[{"data":"valid-json"}]}`
+				}
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 
 				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyDisabled, 1)
 				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyDisabled, 1)
-				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyDisabled, 0)
-				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyDisabled, 0)
+				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyDisabled, 1)
+				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyDisabled, 1)
 
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), 400, response.InvalidWriteKey+"\n")
 			})
