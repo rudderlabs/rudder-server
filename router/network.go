@@ -19,6 +19,7 @@ import (
 //NetHandleT is the wrapper holding private variables
 type NetHandleT struct {
 	httpClient *http.Client
+	logger     logger.LoggerI
 }
 
 //var pkgLogger logger.LoggerI
@@ -58,7 +59,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 
 		req, err := http.NewRequest(requestMethod, postInfo.URL, nil)
 		if err != nil {
-			pkgLogger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
+			network.logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
 			return 400, fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
 		}
 
@@ -113,12 +114,12 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 
 		if resp != nil && resp.Body != nil {
 			respBody, _ = ioutil.ReadAll(resp.Body)
-			pkgLogger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
+			network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 			defer resp.Body.Close()
 		}
 
 		if err != nil {
-			pkgLogger.Error("Errored when sending request to the server", err)
+			network.logger.Error("Errored when sending request to the server", err)
 			return http.StatusGatewayTimeout, string(respBody)
 		}
 
@@ -135,8 +136,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 
 //Setup initializes the module
 func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) {
-	pkgLogger = logger.NewLogger().Child("router").Child("network")
-	pkgLogger.Info("Network Handler Startup")
+	network.logger.Info("Network Handler Startup")
 	//Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
 	defaultRoundTripper := http.DefaultTransport
 	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
@@ -148,9 +148,9 @@ func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) 
 	//https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU
 	//Solved in go1.8 https://github.com/golang/go/issues/26013
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
-	pkgLogger.Info("forceHTTP1: ", getRouterConfigBool("forceHTTP1", destID, false))
+	network.logger.Info("forceHTTP1: ", getRouterConfigBool("forceHTTP1", destID, false))
 	if getRouterConfigBool("forceHTTP1", destID, false) {
-		pkgLogger.Info("Forcing HTTP1 connection for ", destID)
+		network.logger.Info("Forcing HTTP1 connection for ", destID)
 		var tlsClientConfigCopy tls.Config
 		misc.Copy(&tlsClientConfigCopy, defaultTransportCopy.TLSClientConfig)
 		defaultTransportCopy.ForceAttemptHTTP2 = false
@@ -158,11 +158,11 @@ func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) 
 
 		defaultTransportCopy.TLSClientConfig = &tlsClientConfigCopy
 	}
-	pkgLogger.Info(destID, defaultTransportCopy.TLSClientConfig.NextProtos)
+	network.logger.Info(destID, defaultTransportCopy.TLSClientConfig.NextProtos)
 	defaultTransportCopy.MaxIdleConns = getRouterConfigInt("httpMaxIdleConns", destID, 100)
 	defaultTransportCopy.MaxIdleConnsPerHost = getRouterConfigInt("httpMaxIdleConnsPerHost", destID, 100)
-	pkgLogger.Info(destID, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
-	pkgLogger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
-	pkgLogger.Info("netClientTimeout: ", netClientTimeout)
+	network.logger.Info(destID, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
+	network.logger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
+	network.logger.Info("netClientTimeout: ", netClientTimeout)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
 }
