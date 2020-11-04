@@ -867,8 +867,7 @@ func (jd *HandleT) computeNewIdxForInterNodeMigration(insertBeforeDS dataSetT) s
 				logger.Infof("idx = 0 case with insertForImport and ds at idx 0 is %v", ds)
 				levelsPre = 1
 				levelPreVals = []int{levelVals[0] - 1}
-			} else { //Inplace cluster migration
-				jd.assert(false, "Inplace cluster migration is not supported at this moment")
+			} else {
 				jd.logger.Infof("ds to insert before found in dList is %v", ds)
 				levelsPre, levelPreVals = jd.mapDSToLevel(dList[idx-1])
 			}
