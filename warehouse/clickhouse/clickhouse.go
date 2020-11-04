@@ -344,7 +344,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			record, err = csvReader.Read()
 			if err != nil {
 				if err == io.EOF {
-					logger.Infof("CH: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFileName)
+					logger.Debugf("CH: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFileName)
 					break
 				} else {
 					logger.Errorf("CH: Error while reading csv file %s for loading in table:%s: %v", objectFileName, tableName, err)

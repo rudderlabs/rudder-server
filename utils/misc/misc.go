@@ -639,7 +639,11 @@ func (w GZipWriter) CloseGZ() error {
 	}
 	err = w.File.Close()
 	if err != nil {
-		logger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
+		if pathErr, ok := err.(*os.PathError); ok && pathErr.Err == os.ErrClosed {
+			err = nil
+		} else {
+			logger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
+		}
 	}
 	return err
 }

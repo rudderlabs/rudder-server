@@ -797,66 +797,73 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 
 	job.setStagingFilesStatus(warehouseutils.StagingFileExecutingState, nil)
 
-	logger.Debugf("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", len(stagingFiles), noOfWorkers, destType, destID)
-	var messages []pgnotifier.MessageT
-	for _, stagingFile := range stagingFiles {
-		payload := PayloadT{
-			UploadID:            job.upload.ID,
-			StagingFileID:       stagingFile.ID,
-			StagingFileLocation: stagingFile.Location,
-			Schema:              job.upload.Schema,
-			SourceID:            job.warehouse.Source.ID,
-			DestinationID:       destID,
-			DestinationType:     destType,
-			DestinationConfig:   job.warehouse.Destination.Config,
+	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
+	logger.Infof("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", publishBatchSize, noOfWorkers, destType, destID)
+	for i := 0; i < len(stagingFiles); i += publishBatchSize {
+		j := i + publishBatchSize
+		if j > len(stagingFiles) {
+			j = len(stagingFiles)
 		}
 
-		payloadJSON, err := json.Marshal(payload)
+		var messages []pgnotifier.MessageT
+		for _, stagingFile := range stagingFiles[i:j] {
+			payload := PayloadT{
+				UploadID:            job.upload.ID,
+				StagingFileID:       stagingFile.ID,
+				StagingFileLocation: stagingFile.Location,
+				Schema:              job.upload.Schema,
+				SourceID:            job.warehouse.Source.ID,
+				DestinationID:       destID,
+				DestinationType:     destType,
+				DestinationConfig:   job.warehouse.Destination.Config,
+			}
+
+			payloadJSON, err := json.Marshal(payload)
+			if err != nil {
+				panic(err)
+			}
+			message := pgnotifier.MessageT{
+				Payload: payloadJSON,
+			}
+			messages = append(messages, message)
+		}
+
+		logger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
+		ch, err := job.pgNotifier.Publish(StagingFilesPGNotifierChannel, messages)
 		if err != nil {
 			panic(err)
 		}
-		message := pgnotifier.MessageT{
-			Payload: payloadJSON,
-		}
-		messages = append(messages, message)
-	}
 
-	logger.Infof("[WH]: Publishing %d staging files to PgNotifier", len(messages))
-	// var loadFileIDs []int64
-	ch, err := job.pgNotifier.Publish(StagingFilesPGNotifierChannel, messages)
-	if err != nil {
-		panic(err)
-	}
-
-	responses := <-ch
-	logger.Infof("[WH]: Received responses from PgNotifier")
-	for _, resp := range responses {
-		// TODO: make it aborted
-		if resp.Status == "aborted" {
-			logger.Errorf("Error in genrating load files: %v", resp.Error)
-			continue
+		responses := <-ch
+		logger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", stagingFiles[i].ID, stagingFiles[j-1].ID, destType, destID)
+		for _, resp := range responses {
+			// TODO: make it aborted
+			if resp.Status == "aborted" {
+				logger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
+				continue
+			}
+			var payload map[string]interface{}
+			err = json.Unmarshal(resp.Payload, &payload)
+			if err != nil {
+				panic(err)
+			}
+			respIDs, ok := payload["LoadFileIDs"].([]interface{})
+			if !ok {
+				logger.Errorf("[WH]: No LoadFileIDS returned by wh worker")
+				continue
+			}
+			ids := make([]int64, len(respIDs))
+			for i := range respIDs {
+				ids[i] = int64(respIDs[i].(float64))
+			}
+			loadFileIDs = append(loadFileIDs, ids...)
 		}
-		var payload map[string]interface{}
-		err = json.Unmarshal(resp.Payload, &payload)
-		if err != nil {
-			panic(err)
-		}
-		respIDs, ok := payload["LoadFileIDs"].([]interface{})
-		if !ok {
-			logger.Errorf("No LoadFIleIDS returned by wh worker")
-			continue
-		}
-		ids := make([]int64, len(respIDs))
-		for i := range respIDs {
-			ids[i] = int64(respIDs[i].(float64))
-		}
-		loadFileIDs = append(loadFileIDs, ids...)
 	}
 
 	timer.End()
 
 	if len(loadFileIDs) == 0 {
-		err = fmt.Errorf(responses[0].Error)
+		err = fmt.Errorf("No load files generated")
 		return loadFileIDs, err
 	}
 	sort.Slice(loadFileIDs, func(i, j int) bool { return loadFileIDs[i] < loadFileIDs[j] })
