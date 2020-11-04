@@ -207,9 +207,9 @@ func SetModuleLevel(module string, levelStr string) error {
 		rootLevel = level
 	} else {
 		levelConfig[module] = level
-		loggerLevelsCache = make(map[string]int)
 		Log.Info(levelConfig)
 	}
+	loggerLevelsCache = make(map[string]int)
 	levelConfigLock.Unlock()
 
 	return nil
