@@ -260,6 +260,7 @@ func canStartWarehouse() bool {
 }
 
 func main() {
+	logger.Setup()
 	version := versionInfo()
 
 	bugsnag.Configure(bugsnag.Configuration{
@@ -285,8 +286,6 @@ func main() {
 			panic(r)
 		}
 	}()
-
-	logger.Setup()
 
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()

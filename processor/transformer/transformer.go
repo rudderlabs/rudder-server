@@ -215,19 +215,20 @@ type ResponseT struct {
 	FailedEvents []TransformerResponseT
 }
 
-//GetVersion gets the transformer version by asking it on /transfomerBuildVersion
+//GetVersion gets the transformer version by asking it on /transfomerBuildVersion. if there is any error it returns empty string
 func GetVersion() string {
 	transformerBuildVersion := "Not an official release. Get the latest release from dockerhub."
 	url := integrations.GetTransformerURL() + "/transformerBuildVersion"
 	resp, err := http.Get(url)
 	if err != nil {
 		logger.Errorf("Unable to make a transfomer build version call with error : %s", err.Error())
-	}
+		return ""
 
-	if resp.Body != nil {
-		defer resp.Body.Close()
 	}
-
+	if resp == nil {
+		return ""
+	}
+	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
 		bodyBytes, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
