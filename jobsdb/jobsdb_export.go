@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
@@ -19,7 +18,7 @@ func (jd *HandleT) SetupForExport() {
 	jd.migrationState.lastDsForExport = jd.findOrCreateDsFromSetupCheckpoint(ExportOp)
 	nonExportedJobsCountByDS = make(map[string]int64)
 	doesDSHaveJobsToMigrateMap = make(map[string]bool)
-	logger.Infof("[[ %s-JobsDB Export ]] Last ds for export : %v", jd.GetTablePrefix(), jd.migrationState.lastDsForExport)
+	jd.logger.Infof("[[ %s-JobsDB Export ]] Last ds for export : %v", jd.GetTablePrefix(), jd.migrationState.lastDsForExport)
 }
 
 func (jd *HandleT) getLastDsForExport(dsList []dataSetT) dataSetT {
@@ -40,7 +39,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	queryStat.Start()
 	defer queryStat.End()
 
-	logger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated waiting for locks", jd.GetTablePrefix())
+	jd.logger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated waiting for locks", jd.GetTablePrefix())
 	//The order of lock is very important. The mainCheckLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
@@ -48,7 +47,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
 	defer jd.dsListLock.RUnlock()
-	logger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated and got locks", jd.GetTablePrefix())
+	jd.logger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated and got locks", jd.GetTablePrefix())
 
 	dsList := jd.getDSList(false)
 	outJobs := make([]*JobT, 0)
@@ -173,7 +172,7 @@ func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, er
 	jd.assert(count > 0, fmt.Sprintf("count should be greater than 0, but count = %d", count))
 	sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 
-	logger.Info(sqlStatement)
+	jd.logger.Info(sqlStatement)
 	rows, err = jd.dbHandle.Query(sqlStatement)
 	jd.assertError(err)
 	defer rows.Close()
@@ -189,7 +188,7 @@ func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, er
 			&sqlJobStatusT.ExecTime, &sqlJobStatusT.RetryTime,
 			&sqlJobStatusT.ErrorCode, &sqlJobStatusT.ErrorResponse)
 		if err != nil {
-			logger.Info(err)
+			jd.logger.Info(err)
 		}
 		jd.assertError(err)
 		if sqlJobStatusT.JobState.Valid {
@@ -286,7 +285,7 @@ func (jd *HandleT) getNonExportedJobsCountDS(ds dataSetT) int64 {
 			order by %[1]s.job_id asc, %[2]s.id desc
 		) as temp WHERE job_state IS NULL OR (job_state != 'migrated' AND job_state != 'wont_migrate')`, ds.JobTable, ds.JobStatusTable)
 
-	logger.Info(sqlStatement)
+	jd.logger.Info(sqlStatement)
 
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	var count sql.NullInt64
@@ -331,14 +330,14 @@ func (jd *HandleT) PostExportCleanup() {
 
 func (jd *HandleT) deleteWontMigrateJobStatusDS(ds dataSetT) {
 	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE job_state='wont_migrate'`, ds.JobStatusTable)
-	logger.Info(sqlStatement)
+	jd.logger.Info(sqlStatement)
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 }
 
 func (jd *HandleT) deleteMigratingJobStatusDS(ds dataSetT) {
 	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE job_state='migrating'`, ds.JobStatusTable)
-	logger.Info(sqlStatement)
+	jd.logger.Info(sqlStatement)
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 }

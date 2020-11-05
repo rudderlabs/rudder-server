@@ -78,6 +78,7 @@ var (
 	enableProtocolsFeature                                      bool
 	dedupWindow, diagnosisTickerTime                            time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                        bool
+	pkgLogger                                                   logger.LoggerI
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -92,6 +93,7 @@ var BatchEvent = []byte(`
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("gateway")
 }
 
 type userWorkerBatchRequestT struct {
@@ -139,6 +141,7 @@ type HandleT struct {
 	suppressUserHandler                           types.SuppressUserI
 	protocolHandler                               types.ProtocolsI
 	versionHandler                                func(w http.ResponseWriter, r *http.Request)
+	logger                                        logger.LoggerI
 }
 
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
@@ -151,7 +154,7 @@ func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket
 func (gateway *HandleT) initUserWebRequestWorkers() {
 	gateway.userWebRequestWorkers = make([]*userWebRequestWorkerT, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
-		logger.Debug("User Web Request Worker Started", i)
+		gateway.logger.Debug("User Web Request Worker Started", i)
 		var userWebRequestWorker *userWebRequestWorkerT
 		userWebRequestWorker = &userWebRequestWorkerT{
 			webRequestQ:    make(chan *webRequestT, maxUserWebRequestBatchSize),
@@ -176,7 +179,7 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 
 func (gateway *HandleT) initDBWriterWorkers() {
 	for i := 0; i < maxDBWriterProcess; i++ {
-		logger.Debug("DB Writer Worker Started", i)
+		gateway.logger.Debug("DB Writer Worker Started", i)
 		j := i
 		rruntime.Go(func() {
 			gateway.dbWriterWorkerProcess(j)
@@ -349,6 +352,10 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
 			}
+			if req.reqType != "batch" {
+				body, _ = sjson.SetBytes(body, "type", req.reqType)
+				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
+			}
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(writeKeyEventStats, writeKey, totalEventsInReq)
 			if len(body) > maxReqSize {
@@ -368,11 +375,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
 				continue
-			}
-
-			if req.reqType != "batch" {
-				body, _ = sjson.SetBytes(body, "type", req.reqType)
-				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
 			}
 
 			// set anonymousId if not set in payload
@@ -434,7 +436,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 			}
 
-			logger.Debug("IP address is ", ipAddr)
+			gateway.logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
@@ -564,7 +566,7 @@ func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSe
 	sort.Ints(toRemoveMessageIndexes)
 	count := 0
 	for _, idx := range toRemoveMessageIndexes {
-		logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
+		gateway.logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
 		misc.IncrementMapByKey(writeKeyDupStats, writeKey, 1)
 		*body, err = sjson.DeleteBytes(*body, fmt.Sprintf(`batch.%v`, idx-count))
 		if err != nil {
@@ -618,7 +620,7 @@ func (gateway *HandleT) printStats() {
 		time.Sleep(10 * time.Second)
 		recvCount := atomic.LoadUint64(&gateway.recvCount)
 		ackCount := atomic.LoadUint64(&gateway.ackCount)
-		logger.Debug("Gateway Recv/Ack ", recvCount, ackCount)
+		gateway.logger.Debug("Gateway Recv/Ack ", recvCount, ackCount)
 	}
 }
 
@@ -634,13 +636,13 @@ func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request
 func (gateway *HandleT) protocolWebHandler(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !enableProtocolsFeature {
-			logger.Debug("Protocols feature is disabled. You can enabled it through enableProtocolsFeature flag in config.toml")
+			gateway.logger.Debug("Protocols feature is disabled. You can enabled it through enableProtocolsFeature flag in config.toml")
 			http.Error(w, "Protocols feature is disabled", 400)
 			return
 		}
 
 		if gateway.protocolHandler == nil {
-			logger.Debug("Protocols feature is enterprise only feature.")
+			gateway.logger.Debug("Protocols feature is enterprise only feature.")
 			http.Error(w, "Protocols feature is enterprise only feature", 400)
 			return
 		}
@@ -689,7 +691,7 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 }
 
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
-	logger.LogRequest(r)
+	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	done := make(chan string, 1)
 	gateway.AddToWebRequestQ(r, &w, done, reqType)
@@ -699,10 +701,10 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	atomic.AddUint64(&gateway.ackCount, 1)
 	gateway.trackRequestMetrics(errorMessage)
 	if errorMessage != "" {
-		logger.Debug(errorMessage)
+		gateway.logger.Debug(errorMessage)
 		http.Error(w, errorMessage, 400)
 	} else {
-		logger.Debug(response.GetStatus(response.Ok))
+		gateway.logger.Debug(response.GetStatus(response.Ok))
 		w.Write([]byte(response.GetStatus(response.Ok)))
 	}
 }
@@ -854,7 +856,7 @@ This function will block.
 */
 func (gateway *HandleT) StartWebHandler() {
 
-	logger.Infof("Starting in %d", webPort)
+	gateway.logger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/v1/batch", gateway.stat(gateway.webBatchHandler))
 	srvMux.HandleFunc("/v1/identify", gateway.stat(gateway.webIdentifyHandler))
@@ -1018,6 +1020,7 @@ Setup initializes this module:
 This function will block until backend config is initialy received.
 */
 func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, s stats.Stats, clearDB *bool, versionHandler func(w http.ResponseWriter, r *http.Request)) {
+	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = s
 

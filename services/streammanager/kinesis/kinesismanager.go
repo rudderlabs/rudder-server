@@ -14,6 +14,7 @@ import (
 )
 
 var abortableErrors = []string{}
+var pkgLogger logger.LoggerI
 
 // Config is the config that is required to send data to Kinesis
 type Config struct {
@@ -29,6 +30,8 @@ func init() {
 		"InvalidParameterValue", "InvalidQueryParameter", "MissingAuthenticationToken", "MissingParameter", "InvalidArgumentException",
 		"KMSAccessDeniedException", "KMSDisabledException", "KMSInvalidStateException", "KMSNotFoundException", "KMSOptInRequired",
 		"ResourceNotFoundException", "UnrecognizedClientException", "ValidationError"}
+
+	pkgLogger = logger.NewLogger().Child("streammanager").Child("kinesis")
 }
 
 // NewProducer creates a producer based on destination config
@@ -89,7 +92,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		PartitionKey: partitionKey,
 	})
 	if err != nil {
-		logger.Errorf("error in kinesis :: %v", err.Error())
+		pkgLogger.Errorf("error in kinesis :: %v", err.Error())
 		statusCode := GetStatusCodeFromError(err)
 
 		return statusCode, err.Error(), err.Error()

@@ -21,6 +21,7 @@ type HandleT struct {
 	tr                        *http.Transport
 	client                    *http.Client
 	transformRequestTimerStat stats.RudderStats
+	logger                    logger.LoggerI
 }
 
 //Transformer provides methods to transform events
@@ -37,6 +38,7 @@ func NewTransformer() *HandleT {
 var (
 	maxChanSize, numTransformWorker, maxRetry int
 	retrySleep                                time.Duration
+	pkgLogger                                 logger.LoggerI
 )
 
 func loadConfig() {
@@ -48,6 +50,8 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("router").Child("transformer")
+
 }
 
 //Transform transforms router jobs to destination jobs
@@ -57,7 +61,7 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 	if err != nil {
 		panic(err)
 	}
-	logger.Debugf("[Router Transfomrer] :: input payload : %s", string(rawJSON))
+	trans.logger.Debugf("[Router Transfomrer] :: input payload : %s", string(rawJSON))
 
 	retryCount := 0
 	var resp *http.Response
@@ -72,7 +76,7 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 		if err != nil {
 			trans.transformRequestTimerStat.End()
 			reqFailed = true
-			logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
+			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
 			if retryCount > maxRetry {
 				panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err))
 			}
@@ -82,7 +86,7 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 			continue
 		}
 		if reqFailed {
-			logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
+			trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
 		}
 
 		trans.transformRequestTimerStat.End()
@@ -91,7 +95,7 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 
 	// Remove Assertion?
 	if resp.StatusCode != http.StatusOK {
-		logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
+		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
 	}
 
 	var destinationJobs []types.DestinationJobT
@@ -100,7 +104,7 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 		if err != nil {
 			panic(err)
 		}
-		logger.Debugf("[Router Transfomrer] :: output payload : %s", string(rawJSON))
+		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(rawJSON))
 		err = json.Unmarshal(respData, &destinationJobs)
 		//This is returned by our JS engine so should  be parsable
 		//but still handling it
@@ -116,6 +120,7 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 }
 
 func (trans *HandleT) Setup() {
+	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
 	trans.client = &http.Client{Transport: trans.tr}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)

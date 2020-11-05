@@ -37,6 +37,8 @@ type HandleT struct {
 	userLimiter     *Limiter
 }
 
+var pkgLogger logger.LoggerI
+
 func (throttler *HandleT) setLimits() {
 	destName := throttler.destinationName
 
@@ -48,7 +50,7 @@ func (throttler *HandleT) setLimits() {
 
 	// enable dest throttler
 	if throttler.destLimiter.eventLimit != 0 && throttler.destLimiter.timeWindow != 0 {
-		logger.Infof(`[[ %s-router-throttler: Enabled throttler with eventLimit:%d, timeWindowInS: %v]]`, throttler.destinationName, throttler.destLimiter.eventLimit, throttler.destLimiter.timeWindow)
+		pkgLogger.Infof(`[[ %s-router-throttler: Enabled throttler with eventLimit:%d, timeWindowInS: %v]]`, throttler.destinationName, throttler.destLimiter.eventLimit, throttler.destLimiter.timeWindow)
 		throttler.destLimiter.enabled = true
 	}
 
@@ -60,13 +62,14 @@ func (throttler *HandleT) setLimits() {
 
 	// enable dest throttler
 	if throttler.userLimiter.eventLimit != 0 && throttler.userLimiter.timeWindow != 0 {
-		logger.Infof(`[[ %s-router-throttler: Enabled user level throttler with eventLimit:%d, timeWindowInS: %v]]`, throttler.destinationName, throttler.userLimiter.eventLimit, throttler.userLimiter.timeWindow)
+		pkgLogger.Infof(`[[ %s-router-throttler: Enabled user level throttler with eventLimit:%d, timeWindowInS: %v]]`, throttler.destinationName, throttler.userLimiter.eventLimit, throttler.userLimiter.timeWindow)
 		throttler.userLimiter.enabled = true
 	}
 }
 
 //SetUp eventLimiter
 func (throttler *HandleT) SetUp(destName string) {
+	pkgLogger = logger.NewLogger().Child("router").Child("throttler")
 	throttler.destinationName = destName
 	throttler.destLimiter = &Limiter{}
 	throttler.userLimiter = &Limiter{}
@@ -95,7 +98,7 @@ func (throttler *HandleT) LimitReached(destID string, userID string) bool {
 		limitStatus, err := throttler.destLimiter.ratelimiter.Check(destKey)
 		if err != nil {
 			// TODO: handle this
-			logger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, throttler.destinationName, err)
+			pkgLogger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, throttler.destinationName, err)
 		} else {
 			destLevelLimitReached = limitStatus.IsLimited
 		}
@@ -106,7 +109,7 @@ func (throttler *HandleT) LimitReached(destID string, userID string) bool {
 		limitStatus, err := throttler.userLimiter.ratelimiter.Check(userKey)
 		if err != nil {
 			// TODO: handle this
-			logger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, throttler.destinationName, err)
+			pkgLogger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, throttler.destinationName, err)
 		} else {
 			userLevelLimitReached = limitStatus.IsLimited
 		}
