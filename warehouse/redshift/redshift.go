@@ -31,6 +31,7 @@ import (
 var (
 	stagingTablePrefix string
 	setVarCharMax      bool
+	pkgLogger          logger.LoggerI
 )
 
 type HandleT struct {

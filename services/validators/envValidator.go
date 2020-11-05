@@ -164,7 +164,8 @@ func IsPostgresCompatible(db *sql.DB) (bool, error) {
 func ValidateEnv() bool {
 	dbHandle := createDBConnection()
 	defer closeDBConnection(dbHandle)
-	if !IsPostgresCompatible(dbHandle) {
+	isPostgresCompatible, _ := IsPostgresCompatible(dbHandle)
+	if !isPostgresCompatible {
 		pkgLogger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
 		return false
 	}

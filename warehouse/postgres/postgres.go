@@ -24,6 +24,7 @@ import (
 
 var (
 	stagingTablePrefix string
+	pkgLogger          logger.LoggerI
 )
 
 const (

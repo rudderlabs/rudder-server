@@ -24,6 +24,7 @@ import (
 var (
 	warehouseUploadsTable string
 	stagingTablePrefix    string
+	pkgLogger             logger.LoggerI
 )
 
 type HandleT struct {
