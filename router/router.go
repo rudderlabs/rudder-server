@@ -64,7 +64,7 @@ type HandleT struct {
 	batchInputOutputDiffCountStat stats.RudderStats
 	retryAttemptsStat             stats.RudderStats
 	eventsAbortedStat             stats.RudderStats
-	noOfWorkers				 	  int
+	noOfWorkers                   int
 }
 
 type jobResponseT struct {
@@ -97,13 +97,13 @@ type workerT struct {
 }
 
 var (
-	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel, ser 			   int
-	maxFailedCountForJob                                                           int
-	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
-	testSinkURL                                                                    string
-	retryTimeWindow, minRetryBackoff, maxRetryBackoff, jobsBatchTimeout            time.Duration
-	noOfJobsToBatchInAWorker                                                       int
-	pkgLogger                                                                      logger.LoggerI
+	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel, ser       int
+	maxFailedCountForJob                                                    int
+	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
+	testSinkURL                                                             string
+	retryTimeWindow, minRetryBackoff, maxRetryBackoff, jobsBatchTimeout     time.Duration
+	noOfJobsToBatchInAWorker                                                int
+	pkgLogger                                                               logger.LoggerI
 )
 
 type requestMetric struct {
@@ -322,7 +322,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				"destType":    worker.rt.destName,
 				"destination": destinationTag,
 			}
-			eventsDeliveredStat := stats.NewTaggedStat("events_delivered", stats.CountType, tags)
+			eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, tags)
 			if isSuccessStatus(respStatusCode) {
 				eventsDeliveredStat.Count(len(destinationJob.JobMetadataArray))
 			}
