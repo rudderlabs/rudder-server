@@ -79,6 +79,7 @@ var (
 	dedupWindow, diagnosisTickerTime                            time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                        bool
 	pkgLogger                                                   logger.LoggerI
+	Diagnostics                                                 diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -728,7 +729,7 @@ func (gateway *HandleT) collectMetrics() {
 			case _ = <-gateway.diagnosisTicker.C:
 				gateway.requestMetricLock.RLock()
 				if gateway.trackSuccessCount > 0 || gateway.trackFailureCount > 0 {
-					diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
+					Diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
 						diagnostics.GatewaySuccess: gateway.trackSuccessCount,
 						diagnostics.GatewayFailure: gateway.trackFailureCount,
 					})
@@ -889,7 +890,7 @@ func (gateway *HandleT) StartWebHandler() {
 		MaxAge:           900, // 15 mins
 	})
 	if diagnostics.EnableServerStartedMetric {
-		diagnostics.Track(diagnostics.ServerStarted, map[string]interface{}{
+		Diagnostics.Track(diagnostics.ServerStarted, map[string]interface{}{
 			diagnostics.ServerStarted: time.Now(),
 		})
 	}
