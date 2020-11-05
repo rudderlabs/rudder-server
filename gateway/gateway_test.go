@@ -242,10 +242,8 @@ var _ = Describe("Gateway Enterprise", func() {
 			suppressedUserEventData := fmt.Sprintf("{\"batch\":[{\"userId\": \"%s\"}]}", SuppressedUserID)
 
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("batch-size"))
-			"write_key"
-			"name"
 
-			c.expectNewTaggedStat("gateway.write_key_requests", "", 1)
+			c.expectNewTaggedStat("gateway.write_key_requests", 1)
 			c.expectNewTaggedStat("gateway.write_key_events", 1)
 			// Why GET
 			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), 200, "OK")
