@@ -151,13 +151,13 @@ func closeDBConnection(handle *sql.DB) {
 }
 
 //IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
-func IsPostgresCompatible(db *sql.DB) bool {
+func IsPostgresCompatible(db *sql.DB) (bool, error) {
 	var versionNum int
 	err := db.QueryRow("SHOW server_version_num;").Scan(&versionNum)
 	if err != nil {
-		return false
+		return false, err
 	}
-	return versionNum >= minPostgresVersion
+	return versionNum >= minPostgresVersion, nil
 }
 
 //ValidateEnv validates the current environment available for the server

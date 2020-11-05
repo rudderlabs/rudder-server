@@ -581,6 +581,17 @@ func MakeJSONArray(bytesArray [][]byte) []byte {
 	return joinedArray
 }
 
+func SingleQuotedJoin(slice []string) string {
+	var str string
+	for index, key := range slice {
+		if index > 0 {
+			str += fmt.Sprintf(`, `)
+		}
+		str += fmt.Sprintf(`'%s'`, key)
+	}
+	return str
+}
+
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number
 // of garage collection cycles completed.
 func PrintMemUsage() {
@@ -631,7 +642,7 @@ func (w GZipWriter) Write(b []byte) {
 	}
 }
 
-func (w GZipWriter) CloseGZ() {
+func (w GZipWriter) CloseGZ() error {
 	err := w.BufWriter.Flush()
 	if err != nil {
 		pkgLogger.Errorf(`[GZWriter]: Error flushing GZipWriter.BufWriter : %v`, err)
@@ -644,6 +655,7 @@ func (w GZipWriter) CloseGZ() {
 	if err != nil {
 		pkgLogger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
 	}
+	return err
 }
 
 func GetMacAddress() string {
