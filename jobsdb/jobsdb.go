@@ -799,7 +799,7 @@ func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
 }
 
 func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT {
-	logger.Infof("Creating new DS of type %s before ds %s for %s jobsdb", newDSType, insertBeforeDS.Index, jd.tablePrefix)
+	jd.logger.Infof("Creating new DS of type %s before ds %s for %s jobsdb", newDSType, insertBeforeDS.Index, jd.tablePrefix)
 	var newDSIdx string
 	appendLast := newDSType == appendToDsList
 
@@ -850,7 +850,7 @@ func (jd *HandleT) computeNewIdxForAppend() string {
 }
 
 func (jd *HandleT) computeNewIdxForInterNodeMigration(insertBeforeDS dataSetT) string { //ClusterMigration
-	jd.logger.Infof("computeNewIdxForInterNodeMigration, insertBeforeDS : %v", insertBeforeDS)
+	jd.logger.Debugf("computeNewIdxForInterNodeMigration, insertBeforeDS : %v", insertBeforeDS)
 	dList := jd.getDSList(true)
 	newIdx, err := computeIdxForClusterMigration(jd.tablePrefix, dList, insertBeforeDS)
 	jd.assertError(err)
@@ -858,7 +858,7 @@ func (jd *HandleT) computeNewIdxForInterNodeMigration(insertBeforeDS dataSetT) s
 }
 
 func computeIdxForClusterMigration(tablePrefix string, dList []dataSetT, insertBeforeDS dataSetT) (newDSIdx string, err error) {
-	// logger.Infof("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
+	pkgLogger.Debugf("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
 	if len(dList) <= 0 {
 		return "", fmt.Errorf("len(dList): %d <= 0", len(dList))
 	}
@@ -879,11 +879,11 @@ func computeIdxForClusterMigration(tablePrefix string, dList []dataSetT, insertB
 				levelPreVals []int
 			)
 			if idx == 0 {
-				// logger.Infof("idx = 0 case with insertForImport and ds at idx 0 is %v", ds)
+				pkgLogger.Debugf("idx = 0 case with insertForImport and ds at idx 0 is %v", ds)
 				levelsPre = 1
 				levelPreVals = []int{levelVals[0] - 1}
 			} else {
-				// logger.Infof("ds to insert before found in dList is %v", ds)
+				pkgLogger.Debugf("ds to insert before found in dList is %v", ds)
 				levelsPre, levelPreVals, err = mapDSToLevel(dList[idx-1])
 				if err != nil {
 					return
@@ -989,9 +989,9 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 }
 
 func (jd *HandleT) computeNewIdxForIntraNodeMigration(insertBeforeDS dataSetT) string { //Within the node
-	logger.Infof("computeNewIdxForIntraNodeMigration, insertBeforeDS : %v", insertBeforeDS)
+	jd.logger.Debugf("computeNewIdxForIntraNodeMigration, insertBeforeDS : %v", insertBeforeDS)
 	dList := jd.getDSList(true)
-	logger.Infof("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
+	jd.logger.Debugf("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
 	newDSIdx := ""
 	var err error
 	jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
