@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/go-redis/redis"
@@ -15,7 +14,7 @@ var abortableErrors = []string{}
 
 type redisManagerT struct {
 	config types.ConfigT
-	client *redis.Client
+	client *redis.ClusterClient
 }
 
 func init() {
@@ -25,15 +24,14 @@ func init() {
 func (m *redisManagerT) Connect() {
 	addr, _ := m.config["address"].(string)
 	password, _ := m.config["password"].(string)
-	var db int
-	if dbStr, ok := m.config["database"].(string); ok {
-		db, _ = strconv.Atoi(dbStr)
-	}
+	// var db int
+	// if dbStr, ok := m.config["database"].(string); ok {
+	// 	db, _ = strconv.Atoi(dbStr)
+	// }
 
-	opts := redis.Options{
-		Addr:     addr,
+	opts := redis.ClusterOptions{
+		Addrs:    []string{addr},
 		Password: password,
-		DB:       db,
 	}
 
 	if shouldSecureConn, ok := m.config["secure"].(bool); ok && shouldSecureConn {
@@ -50,7 +48,8 @@ func (m *redisManagerT) Connect() {
 		}
 	}
 
-	redisClient := redis.NewClient(&opts)
+	redisClient := redis.NewClusterClient(&opts)
+
 	m.client = redisClient
 }
 
