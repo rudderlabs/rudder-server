@@ -101,12 +101,71 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 	)
 
 	var _ = DescribeTable("Error cases",
-		func(dList []dataSetT, after dataSetT, expected string) {
-			computedIdx, err := computeIdxForClusterMigration("table_prefix", dList, after)
-			Expect(computedIdx).To(Equal(expected))
-			Expect(err).To()
+		func(dList []dataSetT, after dataSetT) {
+			_, err := computeIdxForClusterMigration("table_prefix", dList, after)
+			Expect(err != nil).Should(BeTrue())
 		},
 
-		Entry(),
+		Entry("ClusterMigration Case 1",
+			[]dataSetT{
+				dataSetT{
+					JobTable:       "",
+					JobStatusTable: "",
+					Index:          "1_1",
+				},
+			},
+			dataSetT{
+				JobTable:       "",
+				JobStatusTable: "",
+				Index:          "1_1",
+			},
+		),
+
+		Entry("ClusterMigration Case 2",
+			[]dataSetT{
+				dataSetT{
+					JobTable:       "",
+					JobStatusTable: "",
+					Index:          "1",
+				},
+				dataSetT{
+					JobTable:       "",
+					JobStatusTable: "",
+					Index:          "1_1",
+				},
+			},
+			dataSetT{
+				JobTable:       "",
+				JobStatusTable: "",
+				Index:          "1_1",
+			},
+		),
+
+		Entry("ClusterMigration Case 4",
+			[]dataSetT{},
+			dataSetT{
+				JobTable:       "",
+				JobStatusTable: "",
+				Index:          "1_1",
+			},
+		),
+
+		Entry("ClusterMigration Case 5",
+			[]dataSetT{},
+			dataSetT{
+				JobTable:       "",
+				JobStatusTable: "",
+				Index:          "1_1_1_1",
+			},
+		),
+
+		Entry("ClusterMigration Case 6",
+			[]dataSetT{},
+			dataSetT{
+				JobTable:       "",
+				JobStatusTable: "",
+				Index:          "1_1_!_1",
+			},
+		),
 	)
 })

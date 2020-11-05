@@ -488,6 +488,9 @@ func (jd *HandleT) sortDnumList(dnumList []string) {
 	})
 }
 
+// returns true, nil if src is less than dst
+// returns false, nil if src is greater than dst
+// returns false, someError if src is equal to dst
 var dsComparitor = func(src, dst []string) (bool, error) {
 	k := 0
 	for {
@@ -868,7 +871,8 @@ func computeIdxForClusterMigration(tablePrefix string, dList []dataSetT, insertB
 				return
 			}
 			if levels != 1 {
-				return "", fmt.Errorf("insertBeforeDS called for ds : %s_%s. insertBeforeDS should always be called for dsForNewEvents and this should always be a Level0 dataset", tablePrefix, ds.Index)
+				err = fmt.Errorf("insertBeforeDS called for ds : %s_%s. insertBeforeDS should always be called for dsForNewEvents and this should always be a Level0 dataset", tablePrefix, ds.Index)
+				return
 			}
 			var (
 				levelsPre    int
@@ -948,11 +952,11 @@ func computeInsertVals(before, after []string) ([]string, error) {
 	}
 
 	//The basic requirement is that the possible candidate should be smaller compared to the insertBeforeDS.
-	if comparison &&
-		len(calculatedVals) >= len(after) {
+	if comparison {
 		//Only when the index starts with 0, we allow three levels. This would be when we have to insert an internal migration DS between two import DSs
 		//In all other cases, we allow only two levels
-		if before[0] == "0" && len(calculatedVals) == 3 || before[0] != "0" && len(calculatedVals) == 2 {
+		if (before[0] == "0" && len(calculatedVals) == 3) ||
+			(before[0] != "0" && len(calculatedVals) == 2) {
 			return calculatedVals, nil
 		}
 	}
