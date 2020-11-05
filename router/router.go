@@ -923,7 +923,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.toClearFailJobIDMap = make(map[int][]string)
 	rt.isEnabled = true
 	rt.netHandle = &NetHandleT{}
-	rt.netHandle.logger = pkgLogger.Child("network")
+	rt.netHandle.logger = rt.logger.Child("network")
 	rt.netHandle.Setup(destName, rt.netClientTimeout)
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)

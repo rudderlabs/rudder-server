@@ -391,3 +391,7 @@ func (l *LoggerT) LogRequest(req *http.Request) {
 func LogRequest(req *http.Request) {
 	log.LogRequest(req)
 }
+
+func GetLoggingConfig() map[string]int {
+	return loggerLevelsCache
+}
