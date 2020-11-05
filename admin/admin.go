@@ -31,6 +31,7 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -137,6 +138,20 @@ func (a Admin) SetLogLevel(l LogLevel, reply *string) error {
 	if err == nil {
 		*reply = fmt.Sprintf("Module %s log level set to %s", l.Module, l.Level)
 	}
+	return err
+}
+
+//GetLoggingConfig returns the logging configuration
+func (a Admin) GetLoggingConfig(noArgs struct{}, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error(r)
+			err = errors.New("Internal Rudder Server Error")
+		}
+	}()
+	loggingConfigMap := logger.GetLoggingConfig()
+	formattedOutput, err := json.MarshalIndent(loggingConfigMap, "", "  ")
+	*reply = string(formattedOutput)
 	return err
 }
 
