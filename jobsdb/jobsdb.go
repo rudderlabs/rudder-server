@@ -515,9 +515,6 @@ var dsComparitor = func(src, dst []string) (bool, error) {
 		if src[k] == dst[k] {
 			//Loop
 			k++
-			if k == len(src) || k == len(dst) {
-				return false, nil
-			}
 			continue
 		}
 		//Strictly ordered. Return
@@ -909,9 +906,25 @@ func computeInsertVals(before, after []string) ([]string, error) {
 	//Just increment the last value of the index as a possible candidate
 	calculatedVals[len(calculatedVals)-1] = fmt.Sprintf("%d", lastVal+1)
 
-	comparison, err := dsComparitor(calculatedVals, after)
-	if err != nil {
-		return calculatedVals, err
+	var equals bool
+	if len(calculatedVals) == len(after) {
+		equals = true
+		for k := 0; k < len(calculatedVals); k++ {
+			if calculatedVals[k] == after[k] {
+				continue
+			}
+			equals = false
+		}
+	}
+
+	var comparison bool
+	if !equals {
+		comparison, err = dsComparitor(calculatedVals, after)
+		if err != nil {
+			return calculatedVals, err
+		}
+	} else {
+		comparison = false
 	}
 
 	//The basic requirement is that the possible candidate should be smaller compared to the insertBeforeDS.
