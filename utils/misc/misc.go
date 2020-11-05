@@ -503,6 +503,14 @@ func TruncateStr(str string, limit int) string {
 	return str
 }
 
+// TailTruncateStr returns the last `count` digits of a string
+func TailTruncateStr(str string, count int) string {
+	if len(str) > count {
+		str = str[len(str)-count:]
+	}
+	return str
+}
+
 func SortedMapKeys(input interface{}) []string {
 	inValue := reflect.ValueOf(input)
 	mapKeys := inValue.MapKeys()
@@ -859,4 +867,9 @@ func GetMandatoryJSONFieldNames(st interface{}) []string {
 		}
 	}
 	return mandatoryJSONFieldNames
+}
+
+//GetTagName gets the tag name using a uuid and name
+func GetTagName(id string, name string) string {
+	return TruncateStr(name, 15) + "_" + TailTruncateStr(id, 6)
 }

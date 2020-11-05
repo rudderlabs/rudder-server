@@ -489,17 +489,21 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
 }
 
-func (brt *HandleT) recordUploadStats(output StorageUploadOutput) {
+func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUploadOutput) {
+	destinationTag := misc.GetTagName(destination.Destination.ID, destination.Destination.Name)
 	eventDeliveryStat := stats.NewTaggedStat("event_delivery", stats.CountType, map[string]string{
-		"module": "batch_router",
+		"module":      "batch_router",
+		"destType":    brt.destType,
+		"destination": destinationTag,
 	})
 	eventDeliveryStat.Count(output.TotalEvents)
 
 	receivedTime, err := time.Parse(misc.RFC3339Milli, output.FirstEventAt)
 	if err != nil {
 		eventDeliveryTimeStat := stats.NewTaggedStat("event_delivery_time", stats.CountType, map[string]string{
-			"module":   "batch_router",
-			"destType": brt.destType,
+			"module":      "batch_router",
+			"destType":    brt.destType,
+			"destination": destinationTag,
 		})
 		loadDelayInS := int(time.Now().Sub(receivedTime) / time.Second)
 		eventDeliveryTimeStat.Count(loadDelayInS)
@@ -599,7 +603,7 @@ func (brt *HandleT) initWorkers() {
 										brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
 									}
 									if output.Error == nil {
-										brt.recordUploadStats(output)
+										brt.recordUploadStats(*batchJobs.BatchDestination, output)
 									}
 
 									destUploadStat.End()
