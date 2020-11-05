@@ -772,21 +772,21 @@ Now if an internal migration is to happen and we migrate 1, 2, 3, 4, 4_1, we nee
 create a newDS between 4_1 and 4_2. This is assigned to 4_1_1, 4_1_2 and so on.
 */
 
-func (jd *HandleT) mapDSToLevel(ds dataSetT) (int, []int) {
+func mapDSToLevel(ds dataSetT) (levelInt int, levelVals []int, err error) {
 	indexStr := strings.Split(ds.Index, "_")
 	//Currently we don't have a scenario where we need more than 3 levels.
-	jd.assert(len(indexStr) <= 3, fmt.Sprintf("len(indexStr): %d > 3", len(indexStr)))
-	var (
-		levelVals []int
-		levelInt  int
-		err       error
-	)
+	if len(indexStr) > 3 {
+		err = fmt.Errorf("len(indexStr): %d > 3", len(indexStr))
+		return
+	}
 	for _, str := range indexStr {
 		levelInt, err = strconv.Atoi(str)
-		jd.assertError(err)
+		if err != nil {
+			return
+		}
 		levelVals = append(levelVals, levelInt)
 	}
-	return len(levelVals), levelVals
+	return len(levelVals), levelVals, nil
 }
 
 func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
@@ -837,7 +837,8 @@ func (jd *HandleT) computeNewIdxForAppend() string {
 	if len(dList) == 0 {
 		newDSIdx = "1"
 	} else {
-		levels, levelVals := jd.mapDSToLevel(dList[len(dList)-1])
+		levels, levelVals, err := mapDSToLevel(dList[len(dList)-1])
+		jd.assertError(err)
 		//Last one can only be Level0
 		jd.assert(levels == 1, fmt.Sprintf("levels:%d != 1", levels))
 		newDSIdx = fmt.Sprintf("%d", levelVals[0]+1)
@@ -845,30 +846,49 @@ func (jd *HandleT) computeNewIdxForAppend() string {
 	return newDSIdx
 }
 
-//If we approve the new approach, we won't need this func anymore.
 func (jd *HandleT) computeNewIdxForInterNodeMigration(insertBeforeDS dataSetT) string { //ClusterMigration
 	jd.logger.Infof("computeNewIdxForInterNodeMigration, insertBeforeDS : %v", insertBeforeDS)
 	dList := jd.getDSList(true)
-	jd.logger.Infof("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
-	newDSIdx := ""
-	jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
+	newIdx, err := computeIdxForClusterMigration(jd.tablePrefix, dList, insertBeforeDS)
+	jd.assertError(err)
+	return newIdx
+}
+
+func computeIdxForClusterMigration(tablePrefix string, dList []dataSetT, insertBeforeDS dataSetT) (newDSIdx string, err error) {
+	// logger.Infof("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
+	if len(dList) <= 0 {
+		return "", fmt.Errorf("len(dList): %d <= 0", len(dList))
+	}
 	for idx, ds := range dList {
 		if ds.Index == insertBeforeDS.Index {
-			levels, levelVals := jd.mapDSToLevel(ds)
-			jd.assert(levels == 1, fmt.Sprintf("insertBeforeDS called for ds : %s_%s. insertBeforeDS should always be called for dsForNewEvents and this should always be a Level0 dataset", jd.tablePrefix, ds.Index))
+			var levels int
+			var levelVals []int
+			levels, levelVals, err = mapDSToLevel(ds)
+			if err != nil {
+				return
+			}
+			if levels != 1 {
+				return "", fmt.Errorf("insertBeforeDS called for ds : %s_%s. insertBeforeDS should always be called for dsForNewEvents and this should always be a Level0 dataset", tablePrefix, ds.Index)
+			}
 			var (
 				levelsPre    int
 				levelPreVals []int
 			)
 			if idx == 0 {
-				logger.Infof("idx = 0 case with insertForImport and ds at idx 0 is %v", ds)
+				// logger.Infof("idx = 0 case with insertForImport and ds at idx 0 is %v", ds)
 				levelsPre = 1
 				levelPreVals = []int{levelVals[0] - 1}
 			} else {
-				jd.logger.Infof("ds to insert before found in dList is %v", ds)
-				levelsPre, levelPreVals = jd.mapDSToLevel(dList[idx-1])
+				// logger.Infof("ds to insert before found in dList is %v", ds)
+				levelsPre, levelPreVals, err = mapDSToLevel(dList[idx-1])
+				if err != nil {
+					return
+				}
 			}
-			jd.assert(levelPreVals[0] < levelVals[0], fmt.Sprintf("First level val of previous ds should be less than the first(and only) levelVal of insertBeforeDS. Found %s_%d and %s_%s instead", jd.tablePrefix, levelPreVals[0], jd.tablePrefix, ds.Index))
+			if levelPreVals[0] >= levelVals[0] {
+				err = fmt.Errorf("First level val of previous ds should be less than the first(and only) levelVal of insertBeforeDS. Found %s_%d and %s_%s instead", tablePrefix, levelPreVals[0], tablePrefix, ds.Index)
+				return
+			}
 			switch levelsPre {
 			case 1:
 				/*
@@ -886,13 +906,13 @@ func (jd *HandleT) computeNewIdxForInterNodeMigration(insertBeforeDS dataSetT) s
 
 				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
 			default:
-				jd.assert(false, fmt.Sprintf("The previous ds can only be a Level0 or Level1. Found %s_%s instead", jd.tablePrefix, dList[idx-1].Index))
+				err = fmt.Errorf("The previous ds can only be a Level0 or Level1. Found %s_%s instead", tablePrefix, dList[idx-1].Index)
+				return
 
 			}
 		}
 	}
-
-	return newDSIdx
+	return
 }
 
 //Tries to give a slice between before and after by incrementing last value in before. If the order doesn't maintain, it adds a level and recurses.
@@ -942,7 +962,6 @@ func computeInsertVals(before, after []string) ([]string, error) {
 }
 
 func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
-	//TODO: Fix this
 	comparison, err := dsComparitor(strings.Split(beforeIndex, "_"), strings.Split(afterIndex, "_"))
 	if err != nil {
 		return "", fmt.Errorf("Error while comparing beforeIndex: %s and afterIndex: %s with error : %w", beforeIndex, afterIndex, err)
