@@ -921,48 +921,48 @@ func computeIdxForClusterMigration(tablePrefix string, dList []dataSetT, insertB
 
 //Tries to give a slice between before and after by incrementing last value in before. If the order doesn't maintain, it adds a level and recurses.
 func computeInsertVals(before, after []string) ([]string, error) {
-	calculatedVals := make([]string, len(before))
-	copy(calculatedVals, before)
-	lastVal, err := strconv.Atoi(calculatedVals[len(calculatedVals)-1])
-	if err != nil {
-		return calculatedVals, err
-	}
-	//Just increment the last value of the index as a possible candidate
-	calculatedVals[len(calculatedVals)-1] = fmt.Sprintf("%d", lastVal+1)
-
-	var equals bool
-	if len(calculatedVals) == len(after) {
-		equals = true
-		for k := 0; k < len(calculatedVals); k++ {
-			if calculatedVals[k] == after[k] {
-				continue
-			}
-			equals = false
-		}
-	}
-
-	var comparison bool
-	if !equals {
-		comparison, err = dsComparitor(calculatedVals, after)
+	for {
+		calculatedVals := make([]string, len(before))
+		copy(calculatedVals, before)
+		lastVal, err := strconv.Atoi(calculatedVals[len(calculatedVals)-1])
 		if err != nil {
 			return calculatedVals, err
 		}
-	} else {
-		comparison = false
-	}
+		//Just increment the last value of the index as a possible candidate
+		calculatedVals[len(calculatedVals)-1] = fmt.Sprintf("%d", lastVal+1)
 
-	//The basic requirement is that the possible candidate should be smaller compared to the insertBeforeDS.
-	if comparison {
-		//Only when the index starts with 0, we allow three levels. This would be when we have to insert an internal migration DS between two import DSs
-		//In all other cases, we allow only two levels
-		if (before[0] == "0" && len(calculatedVals) == 3) ||
-			(before[0] != "0" && len(calculatedVals) == 2) {
-			return calculatedVals, nil
+		var equals bool
+		if len(calculatedVals) == len(after) {
+			equals = true
+			for k := 0; k < len(calculatedVals); k++ {
+				if calculatedVals[k] == after[k] {
+					continue
+				}
+				equals = false
+			}
 		}
-	}
 
-	before = append(before, "0")
-	return computeInsertVals(before, after)
+		var comparison bool
+		if !equals {
+			comparison, err = dsComparitor(calculatedVals, after)
+			if err != nil {
+				return calculatedVals, err
+			}
+		} else {
+			comparison = false
+		}
+
+		//The basic requirement is that the possible candidate should be smaller compared to the insertBeforeDS.
+		if comparison {
+			//Only when the index starts with 0, we allow three levels. This would be when we have to insert an internal migration DS between two import DSs
+			//In all other cases, we allow only two levels
+			if (before[0] == "0" && len(calculatedVals) == 3) ||
+				(before[0] != "0" && len(calculatedVals) == 2) {
+				return calculatedVals, nil
+			}
+		}
+		before = append(before, "0")
+	}
 }
 
 func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
