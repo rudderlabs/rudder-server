@@ -14,8 +14,10 @@ import (
 var abortableErrors = []string{}
 
 type redisManagerT struct {
-	config types.ConfigT
-	client *redis.Client
+	clusterMode   bool
+	config        types.ConfigT
+	client        *redis.Client
+	clusterClient *redis.ClusterClient
 }
 
 func init() {
@@ -23,22 +25,13 @@ func init() {
 }
 
 func (m *redisManagerT) Connect() {
+	m.clusterMode, _ = m.config["clusterMode"].(bool)
+	shouldSecureConn, _ := m.config["secure"].(bool)
 	addr, _ := m.config["address"].(string)
 	password, _ := m.config["password"].(string)
-	var db int
-	if dbStr, ok := m.config["database"].(string); ok {
-		db, _ = strconv.Atoi(dbStr)
-	}
 
-	opts := redis.Options{
-		Addr:     addr,
-		Password: password,
-		DB:       db,
-	}
-
-	if shouldSecureConn, ok := m.config["secure"].(bool); ok && shouldSecureConn {
-		tlsConfig := tls.Config{}
-		opts.TLSConfig = &tlsConfig
+	tlsConfig := tls.Config{}
+	if shouldSecureConn {
 		if skipServerCertCheck, ok := m.config["skipVerify"].(bool); ok && skipServerCertCheck {
 			tlsConfig.InsecureSkipVerify = true
 		}
@@ -50,16 +43,45 @@ func (m *redisManagerT) Connect() {
 		}
 	}
 
-	redisClient := redis.NewClient(&opts)
-	m.client = redisClient
+	if m.clusterMode {
+		opts := redis.ClusterOptions{
+			Addrs:    []string{addr},
+			Password: password,
+		}
+		if shouldSecureConn {
+			opts.TLSConfig = &tlsConfig
+		}
+		m.clusterClient = redis.NewClusterClient(&opts)
+	} else {
+		var db int
+		if dbStr, ok := m.config["database"].(string); ok {
+			db, _ = strconv.Atoi(dbStr)
+		}
+		opts := redis.Options{
+			Addr:     addr,
+			Password: password,
+			DB:       db,
+		}
+		if shouldSecureConn {
+			opts.TLSConfig = &tlsConfig
+		}
+		m.client = redis.NewClient(&opts)
+	}
 }
 
 func (m *redisManagerT) Close() error {
+	if m.clusterMode {
+		return m.clusterClient.Close()
+	}
 	return m.client.Close()
 }
 
-func (m *redisManagerT) HMSet(key string, fields map[string]interface{}) error {
-	_, err := m.client.HMSet(key, fields).Result()
+func (m *redisManagerT) HMSet(key string, fields map[string]interface{}) (err error) {
+	if m.clusterMode {
+		_, err = m.clusterClient.HMSet(key, fields).Result()
+	} else {
+		_, err = m.client.HMSet(key, fields).Result()
+	}
 	return err
 }
 
