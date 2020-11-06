@@ -25,7 +25,11 @@ func init() {
 }
 
 func (m *redisManagerT) Connect() {
-	m.clusterMode, _ = m.config["clusterMode"].(bool)
+	var ok bool
+	if m.clusterMode, ok = m.config["clusterMode"].(bool); !ok {
+		// setting redis to cluster mode by default if setting missing in config
+		m.clusterMode = true
+	}
 	shouldSecureConn, _ := m.config["secure"].(bool)
 	addr, _ := m.config["address"].(string)
 	password, _ := m.config["password"].(string)
@@ -44,8 +48,12 @@ func (m *redisManagerT) Connect() {
 	}
 
 	if m.clusterMode {
+		addrs := strings.Split(addr, ",")
+		for i := range addrs {
+			addrs[i] = strings.TrimSpace(addrs[i])
+		}
 		opts := redis.ClusterOptions{
-			Addrs:    []string{addr},
+			Addrs:    addrs,
 			Password: password,
 		}
 		if shouldSecureConn {
@@ -58,7 +66,7 @@ func (m *redisManagerT) Connect() {
 			db, _ = strconv.Atoi(dbStr)
 		}
 		opts := redis.Options{
-			Addr:     addr,
+			Addr:     strings.TrimSpace(addr),
 			Password: password,
 			DB:       db,
 		}
