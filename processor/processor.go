@@ -92,7 +92,7 @@ func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) 
 	tags := map[string]string{
 		"module":      module,
 		"destination": destinationTag,
-		"destType":    destination.DestinationDefinition.DisplayName,
+		"destType":    destination.DestinationDefinition.Name,
 	}
 	numEvents := proc.stats.NewTaggedStat("proc_num_events", stats.CountType, tags)
 	numOutputEvents := proc.stats.NewTaggedStat("proc_num_output_events", stats.CountType, tags)
