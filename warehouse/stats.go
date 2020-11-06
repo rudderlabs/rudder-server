@@ -68,8 +68,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 		return
 	}
 
-	loadDelayInS := int(time.Now().Sub(firstEventAt) / time.Second)
-	job.counterStat("event_delivery_time").Count(loadDelayInS)
+	job.timerStat("event_delivery_time").SendTiming(time.Now().Sub(firstEventAt))
 
 	job.counterStat("upload_success").Count(1)
 }
