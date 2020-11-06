@@ -94,6 +94,8 @@ type workerT struct {
 	rt               *HandleT                // handle to router
 	deliveryTimeStat stats.RudderStats
 	batchTimeStat    stats.RudderStats
+	abortedUserIDMap map[string][]int64 // aborted user to allowedJobs map
+	abortedUserMutex sync.Mutex
 }
 
 var (
@@ -388,6 +390,13 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		status.JobState = jobsdb.Succeeded.State
 		worker.rt.logger.Debugf("[%v Router] :: sending success status to response", worker.rt.destName)
 		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID}
+
+		if worker.rt.guaranteeUserEventOrder {
+			//Removing the user from aborted user map
+			worker.abortedUserMutex.Lock()
+			delete(worker.abortedUserIDMap, destinationJobMetadata.UserID)
+			worker.abortedUserMutex.Unlock()
+		}
 	} else {
 		// the job failed
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
@@ -429,16 +438,40 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			}
 		}
 
-		if worker.rt.guaranteeUserEventOrder && addToFailedMap {
-			//#JobOrder (see other #JobOrder comment)
-			worker.failedJobIDMutex.RLock()
-			_, isPrevFailedUser := worker.failedJobIDMap[destinationJobMetadata.UserID]
-			worker.failedJobIDMutex.RUnlock()
-			if !isPrevFailedUser && destinationJobMetadata.UserID != "" {
-				worker.rt.logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", worker.rt.destName, destinationJobMetadata.UserID)
-				worker.failedJobIDMutex.Lock()
-				worker.failedJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
-				worker.failedJobIDMutex.Unlock()
+		if worker.rt.guaranteeUserEventOrder {
+			if addToFailedMap {
+				//#JobOrder (see other #JobOrder comment)
+				worker.failedJobIDMutex.RLock()
+				_, isPrevFailedUser := worker.failedJobIDMap[destinationJobMetadata.UserID]
+				worker.failedJobIDMutex.RUnlock()
+				if !isPrevFailedUser && destinationJobMetadata.UserID != "" {
+					worker.rt.logger.Errorf("[%v Router] :: userId %v failed for the first time adding to map", worker.rt.destName, destinationJobMetadata.UserID)
+					worker.failedJobIDMutex.Lock()
+					worker.failedJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
+					worker.failedJobIDMutex.Unlock()
+				}
+			} else {
+				//Job is aborted, so adding the user to aborted map.
+				//This map is used to limit the pick up of aborted users's job.
+				worker.abortedUserMutex.Lock()
+				worker.rt.logger.Debugf("[%v Router] :: adding userID to abortedUserMap : %s", worker.rt.destName, destinationJobMetadata.UserID)
+				allowedJobIDs, ok := worker.abortedUserIDMap[destinationJobMetadata.UserID]
+				if !ok {
+					worker.abortedUserIDMap[destinationJobMetadata.UserID] = make([]int64, 0)
+				} else {
+					//removing aborted jobID from allowedJobIDs.
+					//This is necessary to let other jobs of the same user to get a worker.
+					var idx int
+					var jobID int64
+					for idx, jobID = range allowedJobIDs {
+						if jobID == destinationJobMetadata.JobID {
+							break
+						}
+					}
+					worker.abortedUserIDMap[destinationJobMetadata.UserID] = append(allowedJobIDs[:idx], allowedJobIDs[idx+1:]...)
+				}
+
+				worker.abortedUserMutex.Unlock()
 			}
 		}
 		worker.rt.logger.Debugf("[%v Router] :: sending failed/aborted state as response", worker.rt.destName)
@@ -592,7 +625,8 @@ func (rt *HandleT) initWorkers() {
 			destinationJobs:  make([]types.DestinationJobT, 0),
 			rt:               rt,
 			deliveryTimeStat: stats.NewStat(fmt.Sprintf("router.%s_delivery_time", rt.destName), stats.TimerType),
-			batchTimeStat:    stats.NewStat(fmt.Sprintf("router.%s_batch_time", rt.destName), stats.TimerType)}
+			batchTimeStat:    stats.NewStat(fmt.Sprintf("router.%s_batch_time", rt.destName), stats.TimerType),
+			abortedUserIDMap: make(map[string][]int64)}
 		rt.workers[i] = worker
 		rruntime.Go(func() {
 			worker.workerProcess()
@@ -618,6 +652,23 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	defer worker.failedJobIDMutex.RUnlock()
 	blockJobID, found := worker.failedJobIDMap[userID]
 	if !found {
+		//not a failed user
+		//checking if he is an aborted user,
+		//if yes returning worker only for the job with minimum jobID
+		worker.abortedUserMutex.Lock()
+		defer worker.abortedUserMutex.Unlock()
+		if allowedJobIDs, ok := worker.abortedUserIDMap[userID]; ok {
+			if len(allowedJobIDs) > 0 {
+				rt.logger.Debugf("[%v Router] :: allowedJobIDs > 0 for userID %s. returing nil worker", rt.destName, userID)
+				return nil
+			}
+
+			rt.logger.Debugf("[%v Router] :: userID not found in abortedUserIDtoJobMap. %s. jobID: %d. returing worker", rt.destName, userID, job.JobID)
+			worker.abortedUserIDMap[userID] = append(worker.abortedUserIDMap[userID], job.JobID)
+			return worker
+		}
+
+		//if not returing worker
 		return worker
 	}
 	//This job can only be higher than blocking
