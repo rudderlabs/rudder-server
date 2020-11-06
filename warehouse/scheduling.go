@@ -112,6 +112,10 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) t
 	return t.Time
 }
 
+func checkCurrentTimeExistsInExcludeWindow(startTime string, endTime string) bool {
+
+}
+
 // canStartUpload indicates if a upload can be started now for the warehouse based on its configured schedule
 func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
@@ -120,6 +124,12 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	}
 	if warehouseSyncFreqIgnore {
 		return !uploadFrequencyExceeded(warehouse, "")
+	}
+	// get exclude start time and end time
+	excludeWindowStartTime := warehouseutils.GetConfigValue("excludeWindowStartTime", warehouse)
+	excludeWindowEndTime := warehouseutils.GetConfigValue("excludeWindowEndTime", warehouse)
+	if checkCurrentTimeExistsInExcludeWindow(excludeWindowStartTime, excludeWindowEndTime) {
+		return false
 	}
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
