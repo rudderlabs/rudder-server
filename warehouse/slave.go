@@ -138,13 +138,14 @@ func (job *PayloadT) getColumnName(columnName string) string {
 
 func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile *misc.GZipWriter, tableName string) (filemanager.UploadOutput, error) {
 	job := jobRun.job
-	file, err := os.Open(uploadFile.File.Name())
+	uploadFile.CloseGZ()                         // flushes any buffered data before uploading
+	file, err := os.Open(uploadFile.File.Name()) // opens file in read mode
 	if err != nil {
 		logger.Errorf("[WH]: Failed to Open File: %s", uploadFile.File.Name())
 		return filemanager.UploadOutput{}, err
 	}
-
-	defer os.Remove(uploadFile.File.Name())
+	defer os.Remove(uploadFile.File.Name()) // rm created load files from the machine after uplpading it to bucket
+	defer file.Close()
 	logger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
 	uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.BatchID, tableName))
 	return uploadLocation, err
@@ -209,18 +210,15 @@ func (jobRun *JobRunT) cleanup() {
 		}
 	}
 
-	if jobRun.outputFileWritersMap != nil {
-		for _, writer := range jobRun.outputFileWritersMap {
-			err := writer.CloseGZ()
-			if err != nil {
-				logger.Errorf("[WH]: Failed to close output load file: %w", err)
-			}
-			os.Remove(writer.File.Name())
-			if err != nil {
-				logger.Errorf("[WH]: Failed to delete output load file: %w", err)
-			}
-		}
-	}
+	//if jobRun.outputFileWritersMap != nil {
+	//	for _, writer := range jobRun.outputFileWritersMap {
+	//		err := writer.CloseGZ()
+	//		if err != nil {
+	//			logger.Errorf("[WH]: Failed to close output load file: %w", err)
+	//		}
+	//		os.Remove(writer.File.Name())
+	//	}
+	//}
 }
 
 func (event *BatchRouterEventT) getColumnInfo(columnName string) (columnInfo ColumnInfoT, ok bool) {
@@ -394,7 +392,6 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		gzWriter.WriteGZ(eventData)
 		jobRun.tableEventCountMap[tableName]++
 	}
-
 	timer.End()
 	misc.PrintMemUsage()
 

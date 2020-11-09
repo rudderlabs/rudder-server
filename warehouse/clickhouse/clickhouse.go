@@ -323,14 +323,14 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		var gzipFile *os.File
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
-			logger.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
+			logger.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s: %v", objectFileName, tableName, err.Error())
 			return
 		}
 
 		var gzipReader *gzip.Reader
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
-			logger.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
+			logger.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: %v", gzipFile.Name(), tableName, err.Error())
 			rruntime.Go(func() {
 				misc.RemoveFilePaths(objectFileName)
 			})
