@@ -3,6 +3,7 @@ package warehouse
 import (
 	"database/sql"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"strconv"
 	"strings"
 	"time"
@@ -112,8 +113,22 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) t
 	return t.Time
 }
 
-func checkCurrentTimeExistsInExcludeWindow(startTime string, endTime string) bool {
-
+func checkCurrentTimeExistsInExcludeWindow(windowStartTime string, windowEndTime string) bool {
+	startTime, ok := misc.GetParsedTimestamp(windowStartTime)
+	fmt.Println(startTime)
+	if !ok {
+		return false
+	}
+	endTime, ok := misc.GetParsedTimestamp(windowEndTime)
+	fmt.Println(endTime)
+	if !ok {
+		return false
+	}
+	currentTime := time.Now().UTC()
+	if startTime.Before(currentTime) && endTime.After(currentTime) {
+		return true
+	}
+	return false
 }
 
 // canStartUpload indicates if a upload can be started now for the warehouse based on its configured schedule
@@ -126,11 +141,16 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 		return !uploadFrequencyExceeded(warehouse, "")
 	}
 	// get exclude start time and end time
-	excludeWindowStartTime := warehouseutils.GetConfigValue("excludeWindowStartTime", warehouse)
-	excludeWindowEndTime := warehouseutils.GetConfigValue("excludeWindowEndTime", warehouse)
+	fmt.Println(warehouse.Destination.Config)
+	excludeWindowStartTime := warehouseutils.GetConfigValue(warehouseutils.ExcludeWindowStartTime, warehouse)
+	excludeWindowEndTime := warehouseutils.GetConfigValue(warehouseutils.ExcludeWindowEndTime, warehouse)
+	fmt.Println(excludeWindowStartTime)
+	fmt.Println(excludeWindowEndTime)
 	if checkCurrentTimeExistsInExcludeWindow(excludeWindowStartTime, excludeWindowEndTime) {
+		fmt.Println("********************")
 		return false
 	}
+	fmt.Println("%%%%%%%%%%%%%%%%%%%%%%%")
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
 	if syncFrequency != "" && syncStartAt != "" {

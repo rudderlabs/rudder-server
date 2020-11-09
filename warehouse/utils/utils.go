@@ -69,9 +69,11 @@ const (
 )
 
 const (
-	DiscardsTable = "rudder_discards"
-	SyncFrequency = "syncFrequency"
-	SyncStartAt   = "syncStartAt"
+	DiscardsTable          = "rudder_discards"
+	SyncFrequency          = "syncFrequency"
+	SyncStartAt            = "syncStartAt"
+	ExcludeWindowStartTime = "excludeWindowStartTime"
+	ExcludeWindowEndTime   = "excludeWindowEndTime"
 )
 
 const (
