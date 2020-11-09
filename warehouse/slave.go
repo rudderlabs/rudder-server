@@ -138,7 +138,6 @@ func (job *PayloadT) getColumnName(columnName string) string {
 
 func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile *misc.GZipWriter, tableName string) (filemanager.UploadOutput, error) {
 	job := jobRun.job
-	uploadFile.CloseGZ()
 	file, err := os.Open(uploadFile.File.Name())
 	if err != nil {
 		logger.Errorf("[WH]: Failed to Open File: %s", uploadFile.File.Name())
@@ -215,6 +214,10 @@ func (jobRun *JobRunT) cleanup() {
 			err := writer.CloseGZ()
 			if err != nil {
 				logger.Errorf("[WH]: Failed to close output load file: %w", err)
+			}
+			os.Remove(writer.File.Name())
+			if err != nil {
+				logger.Errorf("[WH]: Failed to delete output load file: %w", err)
 			}
 		}
 	}

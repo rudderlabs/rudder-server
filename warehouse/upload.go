@@ -180,14 +180,7 @@ func (job *UploadJobT) shouldTableBeLoaded(tableName string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-
-	// TODO: Do we need this?
-	hasLoadfiles, err := job.hasLoadFiles(tableName)
-	if err != nil {
-		return false, err
-	}
-
-	return (!loaded && hasLoadfiles), nil
+	return !loaded, nil
 }
 
 func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
@@ -460,7 +453,6 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 			wg.Done()
 			continue
 		}
-		var loadTable bool
 		loadTable, err := job.shouldTableBeLoaded(tableName)
 		if err != nil {
 			panic(err)
@@ -469,7 +461,17 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 			wg.Done()
 			continue
 		}
-
+		// TODO: Do we need this?
+		hasLoadfiles, err := job.hasLoadFiles(tableName)
+		if err != nil {
+			panic(err)
+		}
+		if !hasLoadfiles && tableName == warehouseutils.DiscardsTable { //TODO: what if for a table load files are not generated because of an error and corresponding events are present. should we mark upload failed?
+			// no rows in discard table, so marking it exported
+			tableUpload := NewTableUpload(job.upload.ID, tableName)
+			tableUpload.setStatus(TableUploadExported)
+			continue
+		}
 		tName := tableName
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
