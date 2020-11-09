@@ -85,11 +85,11 @@ type DestStatT struct {
 }
 
 func (proc *HandleT) newDestinationStat(destID string) *DestStatT {
-	numEvents := proc.stats.NewDestStat("proc_num_events", stats.CountType, destID)
-	numOutputEvents := proc.stats.NewDestStat("proc_num_output_events", stats.CountType, destID)
-	sessionTransform := proc.stats.NewDestStat("proc_session_transform", stats.TimerType, destID)
-	userTransform := proc.stats.NewDestStat("proc_user_transform", stats.TimerType, destID)
-	destTransform := proc.stats.NewDestStat("proc_dest_transform", stats.TimerType, destID)
+	numEvents := proc.stats.NewTaggedStat("proc_num_events", stats.CountType, map[string]string{"destID": destID,})
+	numOutputEvents := proc.stats.NewTaggedStat("proc_num_output_events", stats.CountType, map[string]string{"destID": destID,})
+	sessionTransform := proc.stats.NewTaggedStat("proc_session_transform", stats.TimerType, map[string]string{"destID": destID,})
+	userTransform := proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, map[string]string{"destID": destID,})
+	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, map[string]string{"destID": destID,})
 	return &DestStatT{
 		id:               destID,
 		numEvents:        numEvents,
@@ -693,7 +693,12 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, metadata
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
-		procErrorStat := stats.GetProcErrorStat("proc_error_counts", stats.CountType, metadata.DestinationType, failedEvent.StatusCode, stage)
+		procErrorStat := stats.NewTaggedStat("proc_error_counts", stats.CountType, map[string]string{
+			"destName":   metadata.DestinationType,
+			"statusCode": strconv.Itoa(failedEvent.StatusCode),
+			"stage":      stage,
+		})
+
 		procErrorStat.Increment()
 	}
 	return failedEventsToStore

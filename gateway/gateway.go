@@ -147,7 +147,9 @@ type HandleT struct {
 
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
 	for writeKey, count := range writeKeyStats {
-		writeKeyStatsD := gateway.stats.NewWriteKeyStat(bucket, stats.CountType, writeKey)
+		writeKeyStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, map[string]string{
+			"writekey" : writeKey,
+		})
 		writeKeyStatsD.Count(count)
 	}
 }
@@ -624,7 +626,7 @@ func (gateway *HandleT) printStats() {
 
 func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		latencyStat := gateway.stats.NewLatencyStat("gateway.response_time", stats.TimerType)
+		latencyStat := gateway.stats.NewTaggedStat("gateway.response_time", stats.TimerType, map[string]string{})
 		latencyStat.Start()
 		wrappedFunc(w, r)
 		latencyStat.End()

@@ -57,7 +57,7 @@ func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 
 //StoreJobsAndCheckpoint is used to write the jobs to _tables
 func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint MigrationCheckpointT) {
-	queryStat := stats.NewJobsDBStat("store_imported_jobs_and_statuses", stats.TimerType, jd.tablePrefix)
+	queryStat := stats.NewTaggedStat("store_imported_jobs_and_statuses", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
 	queryStat.Start()
 	defer queryStat.End()
 
