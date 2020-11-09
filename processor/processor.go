@@ -224,7 +224,6 @@ var (
 	configSessionThresholdEvents        int
 	configProcessSessions               bool
 	writeKeyDestinationMap              map[string][]backendconfig.DestinationT
-	workspaceLibrariesMap               map[string][]backendconfig.LibraryT
 	destinationIDtoTypeMap              map[string]string
 	destinationTransformationEnabledMap map[string]bool
 	rawDataDestinations                 []string
@@ -245,7 +244,6 @@ func loadConfig() {
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
-
 	dbReadBatchSize = minDBReadBatchSize
 }
 
@@ -264,7 +262,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		destinationIDtoTypeMap = make(map[string]string)
 		destinationTransformationEnabledMap = make(map[string]bool)
-		workspaceLibrariesMap = make(map[string][]backendconfig.LibraryT)
 		sources := config.Data.(backendconfig.SourcesT)
 		for _, source := range sources.Sources {
 			if source.Enabled {

@@ -262,9 +262,7 @@ func canStartWarehouse() bool {
 }
 
 func main() {
-	logger.Setup()
 	version := versionInfo()
-
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),
