@@ -315,7 +315,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 			//routerResponseStat := stats.GetRouterStat("router_response_counts", stats.CountType, worker.rt.destName, respStatusCode)
 			routerResponseStat := stats.NewTaggedStat("router_response_counts", stats.CountType, map[string]string{
-				"module":   "router",
 				"destType": worker.rt.destName,
 				"respStatusCode": strconv.Itoa(respStatusCode),
 			})

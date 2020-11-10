@@ -117,6 +117,11 @@ type context struct {
 }
 
 func (c *context) initializeSetupStats() {
+	registerStatMocks := func(name string, statType string) *mocksStats.MockRudderStats {
+		stat := mocksStats.NewMockRudderStats(c.mockCtrl)
+		c.mockStats.EXPECT().NewStat(name, statType).Return(stat).Times(1)
+		return stat
+	}
 	c.mockStatGatewayBatchSize = mocksStats.NewMockRudderStats(c.mockCtrl)
 	c.mockStatDBWritesStat = mocksStats.NewMockRudderStats(c.mockCtrl)
 	c.mockStatDBWorkersBufferFullStat = mocksStats.NewMockRudderStats(c.mockCtrl)
@@ -125,9 +130,9 @@ func (c *context) initializeSetupStats() {
 	c.mockStatGatewayBufferFullStat = make([]*mocksStats.MockRudderStats, maxUserWebRequestWorkerProcess)
 	c.mockStatGatewayTimeOutStat = make([]*mocksStats.MockRudderStats, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
-		c.mockStatGatewayBatchTime[i] = mocksStats.NewMockRudderStats(c.mockCtrl)
-		c.mockStatGatewayBufferFullStat[i] = mocksStats.NewMockRudderStats(c.mockCtrl)
-		c.mockStatGatewayTimeOutStat[i] = mocksStats.NewMockRudderStats(c.mockCtrl)
+		c.mockStatGatewayBatchTime[i] = registerStatMocks("gateway.batch_time",stats.TimerType)
+		c.mockStatGatewayBufferFullStat[i] = registerStatMocks(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full", i),stats.CountType)
+		c.mockStatGatewayTimeOutStat[i] = registerStatMocks(fmt.Sprintf("gateway.user_request_worker_%d_time_out", i),stats.CountType)
 		//Since we have 64 User request batch workers, not all workers might get
 		//Start and End calls while running tests. So using AnyTimes() instead of Times(1)
 		c.mockStatGatewayBatchTime[i].EXPECT().Start().AnyTimes()
@@ -142,17 +147,6 @@ func (c *context) initializeSetupStats() {
 	c.mockStats.EXPECT().NewStat("gateway.db_workers_buffer_full", stats.CountType).Return(c.mockStatDBWorkersBufferFullStat).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.db_workers_buffer_full.new"))
 	c.mockStats.EXPECT().NewStat("gateway.db_workers_time_out", stats.CountType).Return(c.mockStatDBWorkersTimeOutStat).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.db_workers_time_out.new"))
 
-	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
-		c.mockStats.EXPECT().NewBatchStat("gateway.batch_time", stats.TimerType, i).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_time.new")).DoAndReturn(func(Name string, StatType string, index int) *mocksStats.MockRudderStats {
-			return c.mockStatGatewayBatchTime[index]
-		})
-		c.mockStats.EXPECT().NewBatchStat(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full", i), stats.CountType, i).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full.new", i))).DoAndReturn(func(Name string, StatType string, index int) *mocksStats.MockRudderStats {
-			return c.mockStatGatewayBufferFullStat[index]
-		})
-		c.mockStats.EXPECT().NewBatchStat(fmt.Sprintf("gateway.user_request_worker_%d_time_out", i), stats.CountType, i).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("gateway.user_request_worker_%d_time_out.new", i))).DoAndReturn(func(Name string, StatType string, index int) *mocksStats.MockRudderStats {
-			return c.mockStatGatewayTimeOutStat[index]
-		})
-	}
 }
 
 func (c *context) initializeAppFeatures() {
@@ -199,7 +193,7 @@ func (c *context) Finish() {
 func (c *context) expectWriteKeyStat(name string, writeKey string, count int) *gomock.Call {
 	mockStat := mocksStats.NewMockRudderStats(c.mockCtrl)
 
-	c.mockStats.EXPECT().NewWriteKeyStat(name, stats.CountType, writeKey).
+	c.mockStats.EXPECT().NewTaggedStat(name, stats.CountType, map[string]string{"writekey" : writeKey,}).
 		Return(mockStat).Times(1).
 		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.new.%s.%s", name, writeKey)))
 

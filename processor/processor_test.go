@@ -112,11 +112,11 @@ func (c *context) Setup() {
 
 		// These are registered asynchronously when a new backend config is received
 		c.asyncHelper.RegisterCalls(
-			c.mockStats.EXPECT().NewDestStat("proc_num_events", stats.CountType, destID).Return(numEvents).Times(1),
-			c.mockStats.EXPECT().NewDestStat("proc_num_output_events", stats.CountType, destID).Return(numOutputEvents).Times(1),
-			c.mockStats.EXPECT().NewDestStat("proc_session_transform", stats.TimerType, destID).Return(sessionTransform).Times(1),
-			c.mockStats.EXPECT().NewDestStat("proc_user_transform", stats.TimerType, destID).Return(userTransform).Times(1),
-			c.mockStats.EXPECT().NewDestStat("proc_dest_transform", stats.TimerType, destID).Return(destTransform).Times(1),
+			c.mockStats.EXPECT().NewTaggedStat("proc_num_events", stats.CountType, map[string]string{"destID": destID,}).Return(numEvents).Times(1),
+			c.mockStats.EXPECT().NewTaggedStat("proc_num_output_events", stats.CountType, map[string]string{"destID": destID,}).Return(numOutputEvents).Times(1),
+			c.mockStats.EXPECT().NewTaggedStat("proc_session_transform", stats.TimerType, map[string]string{"destID": destID,}).Return(sessionTransform).Times(1),
+			c.mockStats.EXPECT().NewTaggedStat("proc_user_transform", stats.TimerType, map[string]string{"destID": destID,}).Return(userTransform).Times(1),
+			c.mockStats.EXPECT().NewTaggedStat("proc_dest_transform", stats.TimerType, map[string]string{"destID": destID,}).Return(destTransform).Times(1),
 		)
 
 		return &DestStatT{
