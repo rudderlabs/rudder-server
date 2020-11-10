@@ -69,7 +69,6 @@ func init() {
 // Stats manages provisioning of RudderStats
 type Stats interface {
 	NewStat(Name string, StatType string) (rStats RudderStats)
-	NewBatchStat(Name string, StatType string, index int) (rStats RudderStats)
 	NewTaggedStat(Name string, StatType string, tags map[string]string) RudderStats
 }
 
@@ -128,11 +127,6 @@ func (s *HandleT) NewStat(Name string, StatType string) (rStats RudderStats) {
 		StatType: StatType,
 		Client:   client,
 	}
-}
-
-// NewBatchStat creates a new RudderStats with provided Name and Type
-func (s *HandleT) NewBatchStat(Name string, StatType string, index int) (rStats RudderStats) {
-	return s.NewStat(Name, StatType)
 }
 
 // NewStat creates a new RudderStats with provided Name and Type

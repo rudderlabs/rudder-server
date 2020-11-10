@@ -164,9 +164,9 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 			batchRequestQ:  make(chan *batchWebRequestT),
 			reponseQ:       make(chan map[uuid.UUID]string),
 			workerID:       i,
-			batchTimeStat:  gateway.stats.NewBatchStat("gateway.batch_time", stats.TimerType, i),
-			bufferFullStat: gateway.stats.NewBatchStat(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full", i), stats.CountType, i),
-			timeOutStat:    gateway.stats.NewBatchStat(fmt.Sprintf("gateway.user_request_worker_%d_time_out", i), stats.CountType, i),
+			batchTimeStat:  gateway.stats.NewStat("gateway.batch_time", stats.TimerType),
+			bufferFullStat: gateway.stats.NewStat(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full", i), stats.CountType),
+			timeOutStat:    gateway.stats.NewStat(fmt.Sprintf("gateway.user_request_worker_%d_time_out", i), stats.CountType),
 		}
 		gateway.userWebRequestWorkers[i] = userWebRequestWorker
 		rruntime.Go(func() {
