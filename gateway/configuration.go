@@ -30,7 +30,7 @@ func loadConfig() {
 	// Dedup time window in hours
 	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 	// Enable rate limit on incoming events. false by default
-	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
+	enableRateLimit = config.GetBool("Gateway.enableRateLimit", true)
 	// Enable suppress user feature. false by default
 	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
 	// Protocols feature. false by default
