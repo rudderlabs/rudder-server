@@ -255,7 +255,7 @@ type jobStateT struct {
 //State definitions
 var (
 	//Not valid, Not terminal
-	NotProcessed = jobStateT{isValid: false, isTerminal: false, State: "NP"}
+	NotProcessed = jobStateT{isValid: false, isTerminal: false, State: "not_picked_yet"}
 
 	//Valid, Not terminal
 	Failed       = jobStateT{isValid: true, isTerminal: false, State: "failed"}
@@ -1341,7 +1341,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 	}
 
 	//Empty customValFilters means we want to clear for all
-	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, mayFindJobs, nil)
+	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
 	// fmt.Println("Bursting CACHE")
 
 	return nil
@@ -1406,7 +1406,7 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 	if err == nil {
 		//Empty customValFilters means we want to clear for all
-		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, mayFindJobs, nil)
+		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
 		// fmt.Println("Bursting CACHE")
 		return
 	}
@@ -1447,12 +1447,22 @@ func (jd *HandleT) constructParameterJSONQuery(table string, parameterFilters []
 	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
 }
 
-type cacheValue int
+type cacheValue string
 
 const (
-	mayFindJobs cacheValue = iota
-	noJobs
-	willTryToSet
+	hasJobs cacheValue = "Has Jobs"
+	noJobs  cacheValue = "No Jobs"
+	/*
+	* willTryToSet value is used to prevent wrongly setting empty result when
+	* a db update (new jobs or job status updates) happens during get(Un)Processed db query is in progress.
+	*
+	* getUnprocessedJobs() {  # OR getProcessedJobsDS
+	* 0. Sets cache value to willTryToSet
+	* 1. out = queryDB()
+	* 2. check and set cache to (len(out) == 0) only if cache value is willTryToSet
+	* }
+	 */
+	willTryToSet cacheValue = "Query in progress"
 )
 
 /*
@@ -1472,7 +1482,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 	//We process ALL only during internal migration and caching empty
 	//results is not important
 	if len(stateFilters) == 0 || len(customValFilters) == 0 {
-		if value == mayFindJobs {
+		if value == hasJobs {
 			delete(jd.dsEmptyResultCache, ds)
 		}
 		return
@@ -1675,7 +1685,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 		jobList = append(jobList, &job)
 	}
 
-	result := mayFindJobs
+	result := hasJobs
 	if len(jobList) == 0 {
 		jd.logger.Debugf("[getProcessedJobsDS] Setting empty cache for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
 		result = noJobs
@@ -1758,7 +1768,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 		jobList = append(jobList, &job)
 	}
 
-	result := mayFindJobs
+	result := hasJobs
 	if len(jobList) == 0 {
 		jd.logger.Debugf("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		result = noJobs
@@ -1789,7 +1799,7 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 	if err != nil {
 		return err
 	}
-	jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, mayFindJobs, nil)
+	jd.markClearEmptyResult(ds, stateFilters, customValFilters, parameterFilters, hasJobs, nil)
 	return nil
 }
 
@@ -2536,7 +2546,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 	err = txn.Commit()
 	jd.assertError(err)
 	for ds, stateList := range updatedStatesByDS {
-		jd.markClearEmptyResult(ds, stateList, customValFilters, parameterFilters, mayFindJobs, nil)
+		jd.markClearEmptyResult(ds, stateList, customValFilters, parameterFilters, hasJobs, nil)
 	}
 }
 
