@@ -215,6 +215,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	if err != nil {
 		panic(err)
 	}
+	defer os.Remove(localManifestPath)
 	_ = ioutil.WriteFile(localManifestPath, manifestJSON, 0644)
 
 	file, err := os.Open(localManifestPath)
