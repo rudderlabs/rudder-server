@@ -16,7 +16,7 @@
 
 
 
-Questions? Please join our [Slack channel](https://resources.rudderstack.com/join-rudderstack-slack) or read about us on [ProductHunt](https://www.producthunt.com/posts/rudderstack).
+Questions? Please join our [Slack channel](https://resources.rudderstack.com/join-rudderstack-slack) or read about us on [Product Hunt](https://www.producthunt.com/posts/rudderstack).
 
 # Why Use RudderStack?
 
