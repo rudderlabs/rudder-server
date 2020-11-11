@@ -68,10 +68,6 @@ func (a *App) initEnterpriseFeatures() {
 		a.features.SuppressUser = suppressUserFeatureSetup(a)
 	}
 
-	if protocolsFeatureSetup != nil {
-		a.features.Protocols = protocolsFeatureSetup(a)
-	}
-
 	if configEnvFeatureSetup != nil {
 		a.features.ConfigEnv = configEnvFeatureSetup(a)
 	}

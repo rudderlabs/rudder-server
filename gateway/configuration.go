@@ -33,8 +33,8 @@ func loadConfig() {
 	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
 	// Enable suppress user feature. false by default
 	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
-	// Protocols feature. false by default
-	enableProtocolsFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", true)
+	// EventSchemas feature. true by default
+	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", true)
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
