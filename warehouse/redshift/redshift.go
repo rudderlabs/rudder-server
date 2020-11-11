@@ -338,21 +338,9 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		panic(err)
 	}
 	defer file.Close()
-	var accessKeyID, accessKey string
-	if misc.HasAWSKeysInConfig(rs.Warehouse.Destination.Config) {
-		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, rs.Warehouse)
-		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse)
-	} else {
-		accessKeyID = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-		accessKey = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
-	}
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
-		Config: map[string]interface{}{
-			"bucketName":  warehouseutils.GetConfigValue(AWSBucketNameConfig, rs.Warehouse),
-			"accessKeyID": accessKeyID,
-			"accessKey":   accessKey,
-		},
+		Config:   misc.GetObjectStorageConfig("S3", rs.Warehouse.Destination.Config),
 	})
 
 	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
