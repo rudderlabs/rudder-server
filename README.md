@@ -13,7 +13,7 @@
 
 RudderStack's backend is written in Go, with a rich UI written in React.js.
 
-| Keeping up with our commitment to the Open Source community, we've launched [RudderStack Cloud Free](https://app.rudderstack.com/signup) - a no time limit, no credit card required, completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderstack.com/signup) to get started. |
+| We've launched [RudderStack Cloud Free](https://app.rudderstack.com/signup) - a no time limit, no credit card required, completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderstack.com/signup) to get started. |
 |:------|
 
 
