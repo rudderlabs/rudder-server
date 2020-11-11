@@ -138,13 +138,11 @@ func (job *PayloadT) getColumnName(columnName string) string {
 
 func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile *misc.GZipWriter, tableName string) (filemanager.UploadOutput, error) {
 	job := jobRun.job
-	uploadFile.CloseGZ()                         // flushes any buffered data before uploading
 	file, err := os.Open(uploadFile.File.Name()) // opens file in read mode
 	if err != nil {
 		logger.Errorf("[WH]: Failed to Open File: %s", uploadFile.File.Name())
 		return filemanager.UploadOutput{}, err
 	}
-	defer os.Remove(uploadFile.File.Name()) // rm created load files from the machine after uplpading it to bucket
 	defer file.Close()
 	logger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
 	uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.BatchID, tableName))
@@ -195,7 +193,7 @@ func (jobRun *JobRunT) getWriter(tableName string) (misc.GZipWriter, error) {
 	return writer, nil
 }
 
-func (jobRun *JobRunT) cleanup() {
+func (jobRun *JobRunT) cleanup(cleanOutputFileWriters bool) {
 	if jobRun.stagingFileReader != nil {
 		err := jobRun.stagingFileReader.Close()
 		if err != nil {
@@ -209,16 +207,15 @@ func (jobRun *JobRunT) cleanup() {
 			logger.Errorf("[WH]: Failed to remove staging file: %w", err)
 		}
 	}
-
-	//if jobRun.outputFileWritersMap != nil {
-	//	for _, writer := range jobRun.outputFileWritersMap {
-	//		err := writer.CloseGZ()
-	//		if err != nil {
-	//			logger.Errorf("[WH]: Failed to close output load file: %w", err)
-	//		}
-	//		os.Remove(writer.File.Name())
-	//	}
-	//}
+	if cleanOutputFileWriters && jobRun.outputFileWritersMap != nil {
+		for _, writer := range jobRun.outputFileWritersMap {
+			err := writer.CloseGZ()
+			if err != nil {
+				logger.Errorf("[WH]: Failed to close output load file: %w", err)
+			}
+			os.Remove(writer.File.Name())
+		}
+	}
 }
 
 func (event *BatchRouterEventT) getColumnInfo(columnName string) (columnInfo ColumnInfoT, ok bool) {
@@ -250,7 +247,10 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		job:          job,
 		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 	}
-	defer jobRun.cleanup()
+	allLoadFilesCleaned := false
+	defer func() {
+		jobRun.cleanup(!allLoadFilesCleaned)
+	}()
 
 	logger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
 
@@ -406,14 +406,17 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	}
 
 	for tableName, outputFile := range jobRun.outputFileWritersMap {
+		outputFile.CloseGZ()
 		uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, &outputFile, tableName)
+		os.Remove(outputFile.File.Name()) // rm created load files from the machine after uploading it to bucket
 		if err != nil {
 			// TODO: If we break in between, we have only few load files. How do we handle this?
-			return loadFileIDs, err
+			return []int64{}, err
 		}
 		fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
 		loadFileIDs = append(loadFileIDs, fileID)
 	}
+	allLoadFilesCleaned = true
 	return loadFileIDs, nil
 }
 
