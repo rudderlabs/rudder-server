@@ -59,9 +59,9 @@ IdleTimeoutInSec = 720
 MaxHeaderBytes = 524288
 
 [RateLimit]
-eventLimit=1000
-rateLimitWindowInMins=60
-noOfBucketsInWindow=12
+eventLimit=500000
+rateLimitWindowInMins=60*24*7
+noOfBucketsInWindow=60
 
 [Gateway]
 webPort = 8080
@@ -74,7 +74,7 @@ userWebRequestBatchTimeoutInMS = 15
 dbBatchWriteTimeoutInMS = 5
 maxReqSizeInKB = 4000
 enableDedup = false
-enableRateLimit = false
+enableRateLimit = true
 enableSuppressUserFeature = true
 dedupWindowInS = 86400
 allowPartialWriteWithErrors = true
