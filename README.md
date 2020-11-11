@@ -1,6 +1,6 @@
 <p align="center"><a href="https://rudderstack.com"><img src="https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png" alt="RudderStack - An Open Source Customer Data Platform" height="90"/></a></p>
 <h1 align="center"></h1>
-<p align="center"><b>The Customer Data Platform for Developers</b></p>
+<p align="center"><b>The warehouse-first customer data platform built for devs</b></p>
 
 <p align="center">
 	<a href="https://rudderstack.com"><img src="https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master" height="22"/></a>
@@ -11,12 +11,12 @@
 
 [RudderStack](https://rudderstack.com/) is an **open source**, **warehouse-first** customer data platform built for developers. It builds your CDP on your data warehouse for you. RudderStack makes it easy to collect, unify, transform, and store your customer data as well as securely route it to a wide range of common, popular tools.
 
-| We've launched [RudderStack Cloud Free](https://app.rudderstack.com/signup) - a no time limit, no credit card required, completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderstack.com/signup) to get started. |
+| We've launched **RudderStack Cloud Free** - a no time limit, no credit card required, completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to get started building a better CDP for free with RudderStack Cloud Free. |
 |:------|
 
 
 
-Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord channel](https://discordapp.com/invite/xNEdEGw) or read about us on [ProductHunt](https://www.producthunt.com/posts/rudderstack).
+Questions? Please join our [Slack channel](https://resources.rudderstack.com/join-rudderstack-slack) or read about us on [ProductHunt](https://www.producthunt.com/posts/rudderstack).
 
 # Why Use RudderStack?
 
@@ -122,20 +122,34 @@ For more information on RudderStack's features and functionalities, make sure yo
 
 # Follow Us
 
-- [Discord][discord]
-- [Product Hunt](https://www.producthunt.com/posts/rudderstack)
-- [LinkedIn](https://www.linkedin.com/company/rudderlabs/)
-- [Twitter][twitter]
-- [HackerNews][hackernews]
 - [RudderStack Blog][rudderstack-blog]
+- [Slack][slack]
+- [Twitter][twitter]
+- [LinkedIn][linkedin]
+- [dev.to][devto]
+- [Medium][medium]
+- [YouTube][youtube]
+- [HackerNews][hackernews]
+- [Product Hunt][producthunt]
+
+# :clap:  Supporters
+[![Stargazers repo roster for @rudderlabs/rudder-server](https://reporoster.com/stars/rudderlabs/rudder-server)](https://github.com/rudderlabs/rudder-server/stargazers)
+[![Forkers repo roster for @rudderlabs/rudder-server](https://reporoster.com/forks/rudderlabs/rudder-server)](https://github.com/rudderlabs/rudder-server/network/members)
 
 <!----variables---->
 
 [build status]: https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master
 [release]: https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver
-[discord]: https://discordapp.com/invite/xNEdEGw
 [docs]: https://docs.rudderstack.com/
+[slack]: https://resources.rudderstack.com/join-rudderstack-slack
 [twitter]: https://twitter.com/rudderstack
+[linkedin]: https://www.linkedin.com/company/rudderlabs/
+[devto]: https://dev.to/rudderstack
+[medium]: https://rudderstack.medium.com/
+[youtube]: https://www.youtube.com/channel/UCgV-B77bV_-LOmKYHw8jvBw
+[rudderstack-blog]: https://rudderstack.com/blog/
+[hackernews]: https://news.ycombinator.com/item?id=21081756
+[producthunt]: https://www.producthunt.com/posts/rudderstack
 [go-report-card]: https://go-report-card.com/report/github.com/rudderlabs/rudder-server
 [go-report-card-badge]: https://go-report-card.com/badge/github.com/rudderlabs/rudder-server
 [ssh]: https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls
@@ -148,7 +162,6 @@ For more information on RudderStack's features and functionalities, make sure yo
 [dashboard-native]: https://app.rudderstack.com/signup?utm_source=github&utm_medium=rdr-srv&utm_campaign=selfhosted&utm_content=native
 [agplv3_license]: https://www.gnu.org/licenses/agpl-3.0-standalone.html
 [sspl_license]: https://www.mongodb.com/licensing/server-side-public-license
-[hackernews]: https://news.ycombinator.com/item?id=21081756
 [helm-scripts-git-repo]: https://github.com/rudderlabs/rudderstack-helm
 [terraform-scripts-git-repo]: https://github.com/rudderlabs/rudder-terraform
 [golang]: https://golang.org/dl/
@@ -161,6 +174,5 @@ For more information on RudderStack's features and functionalities, make sure yo
 [rudder-logo]: https://repository-images.githubusercontent.com/197743848/b352c900-dbc8-11e9-9d45-4deb9274101f
 [rudder-server-releases]: https://github.com/rudderlabs/rudder-server/releases
 [rudder-transformer-releases]: https://github.com/rudderlabs/rudder-transformer/releases
-[rudderstack-blog]: https://rudderstack.com/blog/
 [rudder-server-sample-env]: https://github.com/rudderlabs/rudder-server/blob/master/config/sample.env
 [rudder-docker-yml]: https://github.com/rudderlabs/rudder-server/blob/master/rudder-docker.yml
