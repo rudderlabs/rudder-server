@@ -59,6 +59,7 @@ var (
 	processorLoaded                  bool
 	enableSuppressUserFeature        bool
 	pkgLogger                        logger.LoggerI
+	Diagnostics                      diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -163,7 +164,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 
 	// Check if there is a probable inconsistent state of Data
 	if diagnostics.EnableServerStartMetric {
-		diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
+		Diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
 			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
 		})
 	}

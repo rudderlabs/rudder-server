@@ -17,8 +17,8 @@ type SuppressUserI interface {
 	IsSuppressedUser(userID, sourceID, writeKey string) bool
 }
 
-// ProtocolsI is interface to access Protocols user feature
-type ProtocolsI interface {
+// EventSchemasI is interface to access EventSchemas feature
+type EventSchemasI interface {
 	RecordEventSchema(writeKey string, eventBatch string) bool
 	GetEventModels(w http.ResponseWriter, r *http.Request)
 	GetEventVersions(w http.ResponseWriter, r *http.Request)
