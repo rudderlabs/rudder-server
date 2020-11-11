@@ -86,6 +86,10 @@ Once you have installed RudderStack, [send test events](https://docs.rudderstack
 
 ![Events Page](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-M8Fo18nKM8Y3sHNQwW3%2F-M8FoF_Gnu9CBQgUujZW%2FScreenshot%202020-05-26%20at%205.12.19%20PM.png?alt=media&token=71165ae7-964c-4370-9826-29315ab3e3b4)
 
+### Connecting a Source to a Destination
+
+![Sources Destinations](https://user-images.githubusercontent.com/59817155/98811482-f021f500-2446-11eb-9abd-5951fe8b2546.gif)
+
 # RudderStack Architecture
 
 RudderStack has two major components, namely:
