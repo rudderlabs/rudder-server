@@ -103,7 +103,8 @@ RudderStack has two major components, namely:
 For a detailed understanding of the RudderStack architecture, please check our [documentation](https://docs.rudderstack.com/get-started/rudderstack-architecture).
 
 A high-level view of RudderStack's architecture is as shown:
-![Architecture](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-Lz111ICiMeHdy_Gu6JX%2F-Lz1A_NxMgbjhbSrVL2h%2FRudder%20Core%20Architecture.png?alt=media&token=2c524db9-7c5c-44e9-a351-cbb1c46a8063)
+
+![Architecture](https://user-images.githubusercontent.com/59817155/98810368-23fc1b00-2445-11eb-9519-025867b94de1.png)
 
 # License
 
