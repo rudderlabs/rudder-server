@@ -20,7 +20,7 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord cha
 
 # Why Use RudderStack?
 
-- **Developer-focused**: RudderStack integrates seamlessly with the tools that the developers already use and love. RudderStack's backend is written in Go, with a rich UI written in React.js.
+- **Developer-focused**: RudderStack integrates seamlessly with the tools that the developers already use and love. Also, its backend is written in Go, with a rich UI written in React.js.
 
 - **Data Warehouse-centric**: RudderStack treats your data warehouse as a first class citizen among destinations, with advanced features and configurable, near real-time sync.
 
