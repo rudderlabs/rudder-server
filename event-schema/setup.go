@@ -1,7 +1,6 @@
 package event_schema
 
 import (
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -11,7 +10,7 @@ var (
 
 // GetInstance returns an instance of EventSchemaManagerT
 func GetInstance() types.EventSchemasI {
-	logger.Info("[[ EventSchemas ]] Setting up EventSchemas FeatureValue")
+	pkgLogger.Info("[[ EventSchemas ]] Setting up EventSchemas FeatureValue")
 	if eventSchemaManager == nil {
 		schemaManager := &EventSchemaManagerT{}
 		schemaManager.Setup()
