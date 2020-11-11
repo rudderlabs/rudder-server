@@ -51,6 +51,13 @@ func IsEnableRateLimit() bool {
 	return enableRateLimit
 }
 
+//SetEnableEventSchemasFeature overrides enableEventSchemasFeature configuration and returns previous value
+func SetEnableEventSchemasFeature(b bool) bool {
+	prev := enableEventSchemasFeature
+	enableEventSchemasFeature = b
+	return prev
+}
+
 //SetEnableRateLimit overrides enableRateLimit configuration and returns previous value
 func SetEnableRateLimit(b bool) bool {
 	prev := enableRateLimit
