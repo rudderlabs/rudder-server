@@ -3,7 +3,6 @@ package warehouse
 import (
 	"database/sql"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"strconv"
 	"strings"
 	"time"
@@ -113,19 +112,20 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) t
 	return t.Time
 }
 
-func checkCurrentTimeExistsInExcludeWindow(windowStartTime string, windowEndTime string) bool {
-	startTime, ok := misc.GetParsedTimestamp(windowStartTime)
-	fmt.Println(startTime)
-	if !ok {
-		return false
+func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTime string, windowEndTime string) bool {
+	startTimeMins := timeutil.MinsOfDay(windowStartTime)
+	endTimeMins := timeutil.MinsOfDay(windowEndTime)
+	currentTimeMins := timeutil.GetElapsedMinsInThisDay(currentTime)
+	// startTime, currentTime, endTime: 05:09, 06:19, 09:07 - > window between this day 05:09 and 09:07
+	if startTimeMins < currentTimeMins && currentTimeMins < endTimeMins {
+		return true
 	}
-	endTime, ok := misc.GetParsedTimestamp(windowEndTime)
-	fmt.Println(endTime)
-	if !ok {
-		return false
+	// startTime, currentTime, endTime: 22:09, 06:19, 09:07 -> window between this day 22:09 and tomorrow 09:07
+	if startTimeMins > currentTimeMins && currentTimeMins < endTimeMins && startTimeMins > endTimeMins {
+		return true
 	}
-	currentTime := time.Now().UTC()
-	if startTime.Before(currentTime) && endTime.After(currentTime) {
+	// startTime, currentTime, endTime: 22:09, 23:19, 09:07 -> window between this day 22:09 and tomorrow 09:07
+	if startTimeMins < currentTimeMins && currentTimeMins > endTimeMins && startTimeMins > endTimeMins {
 		return true
 	}
 	return false
@@ -140,17 +140,12 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	if warehouseSyncFreqIgnore {
 		return !uploadFrequencyExceeded(warehouse, "")
 	}
-	// get exclude start time and end time
-	fmt.Println(warehouse.Destination.Config)
+	// gets exclude window start time and end time
 	excludeWindowStartTime := warehouseutils.GetConfigValue(warehouseutils.ExcludeWindowStartTime, warehouse)
 	excludeWindowEndTime := warehouseutils.GetConfigValue(warehouseutils.ExcludeWindowEndTime, warehouse)
-	fmt.Println(excludeWindowStartTime)
-	fmt.Println(excludeWindowEndTime)
-	if checkCurrentTimeExistsInExcludeWindow(excludeWindowStartTime, excludeWindowEndTime) {
-		fmt.Println("********************")
+	if CheckCurrentTimeExistsInExcludeWindow(timeutil.Now(), excludeWindowStartTime, excludeWindowEndTime) {
 		return false
 	}
-	fmt.Println("%%%%%%%%%%%%%%%%%%%%%%%")
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
 	if syncFrequency != "" && syncStartAt != "" {
