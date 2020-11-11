@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/warehouse"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
@@ -108,7 +109,7 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 func GetDestinationURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
 	if misc.Contains(warehouse.WarehouseDestinations, destType) {
-		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s", config.GetWHSchemaVersion())
+		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", config.GetWHSchemaVersion(), warehouseutils.IDResolutionEnabled())
 		if destType == "RS" {
 			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + rsAlterStringToTextQueryParam
@@ -116,7 +117,6 @@ func GetDestinationURL(destType string) string {
 		return destinationEndPoint + "?" + whSchemaVersionQueryParam
 	}
 	return destinationEndPoint
-
 }
 
 //GetUserTransformURL returns the port of running user transform
