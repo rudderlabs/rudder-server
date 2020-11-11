@@ -5,7 +5,6 @@ import (
 	"encoding/csv"
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -45,7 +44,7 @@ func (loader *csvLoader) AddEmptyColumn(columnName string) {
 func (loader *csvLoader) WriteToString() (string, error) {
 	err := loader.csvWriter.Write(loader.csvRow)
 	if err != nil {
-		logger.Errorf(`[CSVWriter]: Error writing discardRow to buffer: %w`, err)
+		pkgLogger.Errorf(`[CSVWriter]: Error writing discardRow to buffer: %w`, err)
 		return "", err
 	}
 	loader.csvWriter.Flush()

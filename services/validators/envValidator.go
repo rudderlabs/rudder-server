@@ -21,6 +21,12 @@ const (
 	minPostgresVersion = 100000
 )
 
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("validators").Child("envValidator")
+}
+
 func createWorkspaceTable(dbHandle *sql.DB) {
 	//Create table to store workspace token
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS workspace (
@@ -163,7 +169,7 @@ func ValidateEnv() bool {
 		panic(err)
 	}
 	if !isDBCompatible {
-		logger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
+		pkgLogger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
 		return false
 	}
 	return true
@@ -196,7 +202,7 @@ func InitializeEnv() {
 	//db connection should be closed. Else alter db fails.
 	closeDBConnection(dbHandle)
 
-	logger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
+	pkgLogger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
 
 	dbName := config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
 	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB)

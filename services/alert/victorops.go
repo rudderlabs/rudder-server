@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 func (ops *VictorOps) Alert(message string) {
@@ -23,18 +21,18 @@ func (ops *VictorOps) Alert(message string) {
 	resp, err := client.Post(victorOpsUrl, "application/json", bytes.NewBuffer(eventJSON))
 	// Not handling errors when sending alert to victorops
 	if err != nil {
-		logger.Errorf("Alert: Failed to alert service: %s", err.Error())
+		pkgLogger.Errorf("Alert: Failed to alert service: %s", err.Error())
 		return
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		logger.Errorf("Alert: Got error response %d", resp.StatusCode)
+		pkgLogger.Errorf("Alert: Got error response %d", resp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
-	logger.Infof("Alert: Successful %s", string(body))
+	pkgLogger.Infof("Alert: Successful %s", string(body))
 }
 
 type VictorOps struct {

@@ -21,6 +21,12 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("identity")
+}
+
 type WarehouseManager interface {
 	DownloadIdentityRules(*misc.GZipWriter) error
 }
@@ -64,7 +70,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 		additionalClause = fmt.Sprintf(`OR (merge_property_type='%s' AND merge_property_value='%s')`, prop2Type.String, prop2Val.String)
 	}
 	sqlStatement = fmt.Sprintf(`SELECT ARRAY_AGG(DISTINCT(rudder_id)) FROM %s WHERE (merge_property_type='%s' AND merge_property_value='%s') %s`, idr.mappingsTable(), prop1Type.String, prop1Val.String, additionalClause)
-	logger.Debugf(`IDR: Fetching all rudder_id's corresponding to the merge_rule: %v`, sqlStatement)
+	pkgLogger.Debugf(`IDR: Fetching all rudder_id's corresponding to the merge_rule: %v`, sqlStatement)
 	err = txn.QueryRow(sqlStatement).Scan(pq.Array(&rudderIDs))
 	if err != nil {
 		panic(err)
@@ -98,7 +104,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 		}
 
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.Warehouse))
-		logger.Debugf(`IDR: Inserting properties from merge_rule into mappings table: %v`, sqlStatement)
+		pkgLogger.Debugf(`IDR: Inserting properties from merge_rule into mappings table: %v`, sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
 			return
@@ -119,7 +125,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 
 		quotedRudderIDs := misc.SingleQuotedJoin(rudderIDs)
 		sqlStatement := fmt.Sprintf(`SELECT merge_property_type, merge_property_value FROM %s WHERE rudder_id IN (%v)`, idr.mappingsTable(), quotedRudderIDs)
-		logger.Debugf(`IDR: Get all merge properties from mapping table with rudder_id's %v: %v`, quotedRudderIDs, sqlStatement)
+		pkgLogger.Debugf(`IDR: Get all merge properties from mapping table with rudder_id's %v: %v`, quotedRudderIDs, sqlStatement)
 		var rows *sql.Rows
 		rows, err = txn.Query(sqlStatement)
 		if err != nil {
@@ -137,14 +143,14 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 		}
 
 		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN (%v)`, idr.mappingsTable(), newID, currentTimeString, quotedRudderIDs)
-		logger.Debugf(`IDR: Update rudder_id for all properties in mapping table with rudder_id's %v: %v`, quotedRudderIDs, sqlStatement)
+		pkgLogger.Debugf(`IDR: Update rudder_id for all properties in mapping table with rudder_id's %v: %v`, quotedRudderIDs, sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
 			return
 		}
 
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.Warehouse))
-		logger.Debugf(`IDR: Insert new mappings into %s: %v`, idr.mappingsTable(), sqlStatement)
+		pkgLogger.Debugf(`IDR: Insert new mappings into %s: %v`, idr.mappingsTable(), sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
 			return
@@ -168,17 +174,17 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 						AS SELECT * FROM %s
 						WITH NO DATA;`, mergeRulesStagingTable, idr.mergeRulesTable())
 
-	logger.Infof(`IDR: Creating temp table %s in postgres for loading %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), sqlStatement)
+	pkgLogger.Infof(`IDR: Creating temp table %s in postgres for loading %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf(`IDR: Error creating temp table %s in postgres: %v`, mergeRulesStagingTable, err)
+		pkgLogger.Errorf(`IDR: Error creating temp table %s in postgres: %v`, mergeRulesStagingTable, err)
 		return
 	}
 
 	sortedColumnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value", "id"}
 	stmt, err := txn.Prepare(pq.CopyIn(mergeRulesStagingTable, sortedColumnNames...))
 	if err != nil {
-		logger.Errorf(`IDR: Error starting bulk copy using CopyIn: %v`, err)
+		pkgLogger.Errorf(`IDR: Error starting bulk copy using CopyIn: %v`, err)
 		return
 	}
 
@@ -187,14 +193,14 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		var gzipFile *os.File
 		gzipFile, err = os.Open(loadFileName)
 		if err != nil {
-			logger.Errorf(`IDR: Error opeining downloaded load file at %s: %v`, loadFileName, err)
+			pkgLogger.Errorf(`IDR: Error opeining downloaded load file at %s: %v`, loadFileName, err)
 			return
 		}
 
 		var gzipReader *gzip.Reader
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
-			logger.Errorf(`IDR: Error reading downloaded load file at %s: %v`, loadFileName, err)
+			pkgLogger.Errorf(`IDR: Error reading downloaded load file at %s: %v`, loadFileName, err)
 			return
 		}
 
@@ -206,7 +212,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 				if err == io.EOF {
 					break
 				} else {
-					logger.Errorf("IDR: Error while reading csv file for loading in staging table locally:%s: %v", mergeRulesStagingTable, err)
+					pkgLogger.Errorf("IDR: Error while reading csv file for loading in staging table locally:%s: %v", mergeRulesStagingTable, err)
 					gzipReader.Close()
 					gzipFile.Close()
 					return
@@ -229,7 +235,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 
 	_, err = stmt.Exec()
 	if err != nil {
-		logger.Errorf(`IDR: Error bulk copy using CopyIn: %v`, err)
+		pkgLogger.Errorf(`IDR: Error bulk copy using CopyIn: %v`, err)
 		return
 	}
 
@@ -244,17 +250,17 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 					AND
 					(original.merge_property_2_value = staging.merge_property_2_value)`,
 		mergeRulesStagingTable, idr.mergeRulesTable())
-	logger.Infof(`IDR: Deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), sqlStatement)
+	pkgLogger.Infof(`IDR: Deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf(`IDR: Error deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), err)
+		pkgLogger.Errorf(`IDR: Error deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), err)
 		return
 	}
 
 	// write merge rules to file to be uploaded to warehouse in later steps
 	err = idr.writeTableToFile(mergeRulesStagingTable, txn, gzWriter)
 	if err != nil {
-		logger.Errorf(`IDR: Error writing staging table %s to file: %v`, mergeRulesStagingTable, err)
+		pkgLogger.Errorf(`IDR: Error writing staging table %s to file: %v`, mergeRulesStagingTable, err)
 		return
 	}
 
@@ -269,17 +275,17 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 							FROM %s
 						) t
 		 				ORDER BY id ASC RETURNING id`, idr.mergeRulesTable(), mergeRulesStagingTable)
-	logger.Infof(`IDR: Inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, sqlStatement)
+	pkgLogger.Infof(`IDR: Inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, sqlStatement)
 	rows, err := txn.Query(sqlStatement)
 	if err != nil {
-		logger.Errorf(`IDR: Error inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, err)
+		pkgLogger.Errorf(`IDR: Error inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, err)
 		return
 	}
 	for rows.Next() {
 		var id int64
 		err = rows.Scan(&id)
 		if err != nil {
-			logger.Errorf(`IDR: Error reading id from inserted column in %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, err)
+			pkgLogger.Errorf(`IDR: Error reading id from inserted column in %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, err)
 			return
 		}
 		ids = append(ids, id)
@@ -336,24 +342,24 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 	for _, objectLocation := range objectLocations {
 		objectName, err := warehouseutils.GetObjectName(objectLocation, idr.Warehouse.Destination.Config, warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config))
 		if err != nil {
-			logger.Errorf("IDR: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
+			pkgLogger.Errorf("IDR: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
 			return nil, err
 		}
 		dirName := "/rudder-warehouse-load-uploads-tmp/"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
-			logger.Errorf("IDR: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("IDR: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		objectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.ID, time.Now().Unix()) + objectName
 		err = os.MkdirAll(filepath.Dir(objectPath), os.ModePerm)
 		if err != nil {
-			logger.Errorf("IDR: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("IDR: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		objectFile, err := os.Create(objectPath)
 		if err != nil {
-			logger.Errorf("IDR: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("IDR: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		downloader, err := filemanager.New(&filemanager.SettingsT{
@@ -362,12 +368,12 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 		})
 		err = downloader.Download(objectFile, objectName)
 		if err != nil {
-			logger.Errorf("IDR: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("IDR: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		fileName := objectFile.Name()
 		if err = objectFile.Close(); err != nil {
-			logger.Errorf("IDR: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("IDR: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		fileNames = append(fileNames, fileName)
@@ -390,7 +396,7 @@ func (idr *HandleT) uploadFile(filePath string, txn *sql.Tx, tableName string, t
 	}
 
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET location='%s', total_events=%d WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, output.Location, totalRecords, idr.UploadID, warehouseutils.ToProviderCase(idr.Warehouse.Destination.DestinationDefinition.Name, tableName))
-	logger.Infof(`IDR: Updating load file location for table: %s: %s `, tableName, sqlStatement)
+	pkgLogger.Infof(`IDR: Updating load file location for table: %s: %s `, tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -428,11 +434,11 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 
 	ruleIDs, err := idr.addRules(txn, fileNames, &mergeRulesFileGzWriter)
 	if err != nil {
-		logger.Errorf(`IDR: Error adding rules to %s: %v`, idr.mergeRulesTable(), err)
+		pkgLogger.Errorf(`IDR: Error adding rules to %s: %v`, idr.mergeRulesTable(), err)
 		return
 	}
 	mergeRulesFileGzWriter.CloseGZ()
-	logger.Infof(`IDR: Added %d unique rules to %s and file`, len(ruleIDs), idr.mergeRulesTable())
+	pkgLogger.Infof(`IDR: Added %d unique rules to %s and file`, len(ruleIDs), idr.mergeRulesTable())
 	// END: Add new merge rules to local pg table and also to file
 
 	// START: Add new/changed identity mappings to local pg table and also to file
@@ -443,12 +449,12 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 		var count int
 		count, err = idr.applyRule(txn, ruleID, &mappingsFileGzWriter)
 		if err != nil {
-			logger.Errorf(`IDR: Error applying rule %d in %s: %v`, ruleID, idr.mergeRulesTable(), err)
+			pkgLogger.Errorf(`IDR: Error applying rule %d in %s: %v`, ruleID, idr.mergeRulesTable(), err)
 			return
 		}
 		totalMappingRecords += count
 		if idx%10 == 0 {
-			logger.Infof(`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namepsace: %s, Destination: %s:%s`, idx+1, len(ruleIDs), totalMappingRecords, idr.Warehouse.Namespace, idr.Warehouse.Type, idr.Warehouse.Destination.ID)
+			pkgLogger.Infof(`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namepsace: %s, Destination: %s:%s`, idx+1, len(ruleIDs), totalMappingRecords, idr.Warehouse.Namespace, idr.Warehouse.Type, idr.Warehouse.Destination.ID)
 		}
 	}
 	mappingsFileGzWriter.CloseGZ()
@@ -457,20 +463,20 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 	// upload new merge rules to object storage
 	err = idr.uploadFile(mergeRulesFilePath, txn, idr.whMergeRulesTable(), len(ruleIDs))
 	if err != nil {
-		logger.Errorf(`IDR: Error uploading load file for %s at %s to object storage: %v`, idr.mergeRulesTable(), mergeRulesFilePath, err)
+		pkgLogger.Errorf(`IDR: Error uploading load file for %s at %s to object storage: %v`, idr.mergeRulesTable(), mergeRulesFilePath, err)
 		return
 	}
 
 	// upload new/changed identity mappings to object storage
 	err = idr.uploadFile(mappingsFilePath, txn, idr.whMappingsTable(), totalMappingRecords)
 	if err != nil {
-		logger.Errorf(`IDR: Error uploading load file for %s at %s to object storage: %v`, mappingsFilePath, mergeRulesFilePath, err)
+		pkgLogger.Errorf(`IDR: Error uploading load file for %s at %s to object storage: %v`, mappingsFilePath, mergeRulesFilePath, err)
 		return
 	}
 
 	err = txn.Commit()
 	if err != nil {
-		logger.Errorf(`IDR: Error commiting transaction: %v`, err)
+		pkgLogger.Errorf(`IDR: Error commiting transaction: %v`, err)
 		return
 	}
 	return
@@ -487,7 +493,7 @@ func (idr *HandleT) Resolve() (err error) {
 	defer misc.RemoveFilePaths(loadFileNames...)
 	loadFileNames, err = idr.downloadLoadFiles(idr.whMergeRulesTable())
 	if err != nil {
-		logger.Errorf(`IDR: Failed to download load files for %s with error: %v`, idr.mergeRulesTable(), err)
+		pkgLogger.Errorf(`IDR: Failed to download load files for %s with error: %v`, idr.mergeRulesTable(), err)
 		return
 	}
 
@@ -501,7 +507,7 @@ func (idr *HandleT) ResolveHistoricIdentities() (err error) {
 	err = idr.WarehouseManager.DownloadIdentityRules(&csvGzWriter)
 	csvGzWriter.CloseGZ()
 	if err != nil {
-		logger.Errorf(`IDR: Failed to download identity information from warehouse with error: %v`, err)
+		pkgLogger.Errorf(`IDR: Failed to download identity information from warehouse with error: %v`, err)
 		return
 	}
 	loadFileNames = append(loadFileNames, csvPath)

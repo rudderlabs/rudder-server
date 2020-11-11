@@ -24,10 +24,12 @@ var (
 	errDBReadBatchSize      int
 	noOfErrStashWorkers     int
 	maxFailedCountForErrJob int
+	pkgLogger               logger.LoggerI
 )
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("processor").Child("stash")
 }
 
 func loadConfig() {
@@ -50,6 +52,7 @@ type HandleT struct {
 	stats           stats.Stats
 	statErrDBR      stats.RudderStats
 	statErrDBW      stats.RudderStats
+	logger          logger.LoggerI
 }
 
 func New() *HandleT {
@@ -57,6 +60,8 @@ func New() *HandleT {
 }
 
 func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
+
+	st.logger = pkgLogger
 	st.errorDB = errorDB
 	st.stats = stats.DefaultStats
 	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
@@ -72,7 +77,7 @@ func (st *HandleT) crashRecover() {
 		if len(execList) == 0 {
 			break
 		}
-		logger.Debug("Process Error Stash crash recovering", len(execList))
+		st.logger.Debug("Process Error Stash crash recovering", len(execList))
 
 		var statusList []*jobsdb.JobStatusT
 
@@ -139,7 +144,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 	localTmpDirName := "/rudder-processor-errors/"
 
 	uuid := uuid.NewV4()
-	logger.Debug("[Processor: storeErrorsToObjectStorage]: Starting logging to object storage")
+	st.logger.Debug("[Processor: storeErrorsToObjectStorage]: Starting logging to object storage")
 
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -215,7 +220,7 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 }
 
 func (st *HandleT) readErrJobsLoop() {
-	logger.Info("Processor errors stash loop started")
+	st.logger.Info("Processor errors stash loop started")
 
 	for {
 		time.Sleep(errReadLoopSleep)
@@ -231,7 +236,7 @@ func (st *HandleT) readErrJobsLoop() {
 		combinedList := append(retryList, unprocessedList...)
 
 		if len(combinedList) == 0 {
-			logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")
+			st.logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")
 			continue
 		}
 

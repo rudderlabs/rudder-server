@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
@@ -144,7 +143,7 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 		case _ = <-ch:
 			// do nothing
 		case <-time.After(longRunningUploadStatThresholdInMin):
-			logger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
+			pkgLogger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
 			warehouseutils.DestStat(stats.CountType, "long_running_upload", job.warehouse.Destination.ID).Count(1)
 		}
 	})
@@ -237,7 +236,7 @@ func (job *UploadJobT) run() (err error) {
 	if !hasSchemaChanged {
 		schemaHandle.uploadSchema = job.upload.Schema
 	} else {
-		logger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
+		pkgLogger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
 	}
 
 	whManager := job.whManager
@@ -259,7 +258,7 @@ func (job *UploadJobT) run() (err error) {
 		err = nil
 
 		job.setUploadStatus(nextUploadState.inProgress)
-		logger.Debugf("[WH] Upload: %d, Current state: %s", job.upload.ID, nextUploadState.inProgress)
+		pkgLogger.Debugf("[WH] Upload: %d, Current state: %s", job.upload.ID, nextUploadState.inProgress)
 
 		targetStatus := nextUploadState.completed
 
@@ -400,7 +399,7 @@ func (job *UploadJobT) run() (err error) {
 			newStatus = Waiting
 		}
 
-		logger.Debugf("[WH] Upload: %d, Next state: %s", job.upload.ID, newStatus)
+		pkgLogger.Debugf("[WH] Upload: %d, Next state: %s", job.upload.ID, newStatus)
 		job.setUploadStatus(newStatus)
 
 		if newStatus == ExportedData {
@@ -408,7 +407,7 @@ func (job *UploadJobT) run() (err error) {
 		}
 
 		if err != nil {
-			logger.Errorf("[WH] Upload: %d, TargetState: %s, NewState: %s, Error: %w", job.upload.ID, targetStatus, newStatus, err.Error())
+			pkgLogger.Errorf("[WH] Upload: %d, TargetState: %s, NewState: %s, Error: %w", job.upload.ID, targetStatus, newStatus, err.Error())
 			state, err := job.setUploadError(err, newStatus)
 			if err == nil && state == Aborted {
 				job.generateUploadAbortedMetrics()
@@ -473,7 +472,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 		tName := tableName
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
-			logger.Infof(`[WH]: Starting load for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+			pkgLogger.Infof(`[WH]: Starting load for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 			tableUpload := NewTableUpload(job.upload.ID, tName)
 			tableUpload.setStatus(TableUploadExecuting)
 			err := job.whManager.LoadTable(tName)
@@ -532,13 +531,13 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 }
 
 func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (loadErrors []error, tableUploadErr error) {
-	logger.Infof(`[WH]: Starting load for identity tables in namespace %s of destination %s:%s`, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+	pkgLogger.Infof(`[WH]: Starting load for identity tables in namespace %s of destination %s:%s`, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 	errorMap := make(map[string]error)
 	// var generated bool
 	if generated, err := job.areIdentityTablesLoadFilesGenerated(); !generated {
 		err = job.resolveIdentities(populateHistoricIdentities)
 		if err != nil {
-			logger.Errorf(`SF: ID Resolution operation failed: %v`, err)
+			pkgLogger.Errorf(`SF: ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
 			return job.processLoadTableResponse(errorMap)
 		}
@@ -642,7 +641,7 @@ func (job *UploadJobT) getUploadFirstAttemptTime() (timing time.Time) {
 }
 
 func (job *UploadJobT) setUploadStatus(status string, additionalFields ...UploadColumnT) (err error) {
-	logger.Debugf("[WH]: Setting status of %s for wh_upload:%v", status, job.upload.ID)
+	pkgLogger.Debugf("[WH]: Setting status of %s for wh_upload:%v", status, job.upload.ID)
 	marshalledTimings, timings := job.getNewTimings(status)
 	opts := []UploadColumnT{
 		{Column: UploadStatusField, Value: status},
@@ -702,7 +701,7 @@ func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
 }
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
-	logger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
+	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
 	job.counterStat("failed_uploads").Count(1)
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 
@@ -765,7 +764,7 @@ func (job *UploadJobT) setStagingFilesStatus(status string, statusError error) (
 }
 
 func (job *UploadJobT) setStagingFilesError(ids []int64, status string, statusError error) (err error) {
-	logger.Errorf("[WH]: Failed processing staging files: %v", statusError.Error())
+	pkgLogger.Errorf("[WH]: Failed processing staging files: %v", statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseutils.WarehouseStagingFilesTable)
 	_, err = job.dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), pq.Array(ids))
 	if err != nil {
@@ -798,7 +797,7 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 	job.setStagingFilesStatus(warehouseutils.StagingFileExecutingState, nil)
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
-	logger.Infof("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", publishBatchSize, noOfWorkers, destType, destID)
+	pkgLogger.Infof("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", publishBatchSize, noOfWorkers, destType, destID)
 	for i := 0; i < len(stagingFiles); i += publishBatchSize {
 		j := i + publishBatchSize
 		if j > len(stagingFiles) {
@@ -828,18 +827,18 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 			messages = append(messages, message)
 		}
 
-		logger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
+		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
 		ch, err := job.pgNotifier.Publish(StagingFilesPGNotifierChannel, messages)
 		if err != nil {
 			panic(err)
 		}
 
 		responses := <-ch
-		logger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", stagingFiles[i].ID, stagingFiles[j-1].ID, destType, destID)
+		pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", stagingFiles[i].ID, stagingFiles[j-1].ID, destType, destID)
 		for _, resp := range responses {
 			// TODO: make it aborted
 			if resp.Status == "aborted" {
-				logger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
+				pkgLogger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
 				continue
 			}
 			var payload map[string]interface{}
@@ -849,7 +848,7 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 			}
 			respIDs, ok := payload["LoadFileIDs"].([]interface{})
 			if !ok {
-				logger.Errorf("[WH]: No LoadFileIDS returned by wh worker")
+				pkgLogger.Errorf("[WH]: No LoadFileIDS returned by wh worker")
 				continue
 			}
 			ids := make([]int64, len(respIDs))
@@ -971,7 +970,7 @@ func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.T
 
 func (job *UploadJobT) GetSingleLoadFileLocation(tableName string) (string, error) {
 	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, tableName)
-	logger.Infof("SF: Fetching load file location for %s: %s", tableName, sqlStatement)
+	pkgLogger.Infof("SF: Fetching load file location for %s: %s", tableName, sqlStatement)
 	var location string
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&location)
 	return location, err

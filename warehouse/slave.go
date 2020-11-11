@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -37,10 +36,10 @@ type JobRunT struct {
 func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
 
 	job := jobRun.job
-	logger.Debugf("Starting read from downloaded staging file: %s", job.StagingFileLocation)
+	pkgLogger.Debugf("Starting read from downloaded staging file: %s", job.StagingFileLocation)
 	rawf, err := os.Open(jobRun.stagingFilePath)
 	if err != nil {
-		logger.Errorf("[WH]: Error opening file using os.Open at path:%s downloaded from %s", jobRun.stagingFilePath, job.StagingFileLocation)
+		pkgLogger.Errorf("[WH]: Error opening file using os.Open at path:%s downloaded from %s", jobRun.stagingFilePath, job.StagingFileLocation)
 		panic(err)
 	}
 	reader, err = gzip.NewReader(rawf)
@@ -48,7 +47,7 @@ func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bo
 		if err.Error() == "EOF" {
 			return nil, true
 		}
-		logger.Errorf("[WH]: Error reading file using gzip.NewReader at path:%s downloaded from %s", jobRun.stagingFilePath, job.StagingFileLocation)
+		pkgLogger.Errorf("[WH]: Error reading file using gzip.NewReader at path:%s downloaded from %s", jobRun.stagingFilePath, job.StagingFileLocation)
 		panic(err)
 	}
 
@@ -64,7 +63,7 @@ func (jobRun *JobRunT) setStagingFileDownloadPath() (filePath string) {
 	dirName := "/rudder-warehouse-json-uploads-tmp/"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		logger.Errorf("[WH]: Failed to create tmp DIR")
+		pkgLogger.Errorf("[WH]: Failed to create tmp DIR")
 		panic(err)
 	}
 	filePath = tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, job.DestinationType, job.DestinationID) + job.StagingFileLocation
@@ -98,7 +97,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 	job := jobRun.job
 	downloader, err := jobRun.job.getFileManager()
 	if err != nil {
-		logger.Errorf("[WH]: Failed to initialize downloader")
+		pkgLogger.Errorf("[WH]: Failed to initialize downloader")
 		return err
 	}
 
@@ -107,7 +106,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 
 	err = downloader.Download(file, job.StagingFileLocation)
 	if err != nil {
-		logger.Errorf("[WH]: Failed to download file")
+		pkgLogger.Errorf("[WH]: Failed to download file")
 		return err
 	}
 	file.Close()
@@ -115,10 +114,10 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 
 	fi, err := os.Stat(filePath)
 	if err != nil {
-		logger.Errorf("[WH]: Error getting file size of downloaded staging file: ", err)
+		pkgLogger.Errorf("[WH]: Error getting file size of downloaded staging file: ", err)
 	}
 	fileSize := fi.Size()
-	logger.Debugf("[WH]: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
+	pkgLogger.Debugf("[WH]: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
 
 	return nil
 }
@@ -141,12 +140,12 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	uploadFile.CloseGZ()
 	file, err := os.Open(uploadFile.File.Name())
 	if err != nil {
-		logger.Errorf("[WH]: Failed to Open File: %s", uploadFile.File.Name())
+		pkgLogger.Errorf("[WH]: Failed to Open File: %s", uploadFile.File.Name())
 		return filemanager.UploadOutput{}, err
 	}
 
 	defer os.Remove(uploadFile.File.Name())
-	logger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
+	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
 	uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.BatchID, tableName))
 	return uploadLocation, err
 }
@@ -199,14 +198,14 @@ func (jobRun *JobRunT) cleanup() {
 	if jobRun.stagingFileReader != nil {
 		err := jobRun.stagingFileReader.Close()
 		if err != nil {
-			logger.Errorf("[WH]: Failed to close staging file: %w", err)
+			pkgLogger.Errorf("[WH]: Failed to close staging file: %w", err)
 		}
 	}
 
 	if jobRun.stagingFilePath != "" {
 		err := os.Remove(jobRun.stagingFilePath)
 		if err != nil {
-			logger.Errorf("[WH]: Failed to remove staging file: %w", err)
+			pkgLogger.Errorf("[WH]: Failed to remove staging file: %w", err)
 		}
 	}
 
@@ -214,7 +213,7 @@ func (jobRun *JobRunT) cleanup() {
 		for _, writer := range jobRun.outputFileWritersMap {
 			err := writer.CloseGZ()
 			if err != nil {
-				logger.Errorf("[WH]: Failed to close output load file: %w", err)
+				pkgLogger.Errorf("[WH]: Failed to close output load file: %w", err)
 			}
 		}
 	}
@@ -251,7 +250,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	}
 	defer jobRun.cleanup()
 
-	logger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
+	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
 
 	jobRun.setStagingFileDownloadPath()
 
@@ -295,7 +294,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		if !ok {
 			scanErr := scanner.Err()
 			if scanErr != nil {
-				logger.Errorf("WH: Error in scanner reading line from staging file: %v", scanErr)
+				pkgLogger.Errorf("WH: Error in scanner reading line from staging file: %v", scanErr)
 			}
 			break
 		}
@@ -305,7 +304,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		var batchRouterEvent BatchRouterEventT
 		err := json.Unmarshal(lineBytes, &batchRouterEvent)
 		if err != nil {
-			logger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
+			pkgLogger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
 			continue
 		}
 
@@ -355,7 +354,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 					err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, discardWriter)
 
 					if err != nil {
-						logger.Error("[WH]: Failed to write to discards: %w", err)
+						pkgLogger.Error("[WH]: Failed to write to discards: %w", err)
 					}
 					jobRun.tableEventCountMap[discardsTable]++
 					continue
@@ -372,7 +371,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 			if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
 				marshalledVal, err := json.Marshal(columnVal)
 				if err != nil {
-					logger.Errorf("[WH]: Error in marshalling []interface{} columnVal: %w", err)
+					pkgLogger.Errorf("[WH]: Error in marshalling []interface{} columnVal: %w", err)
 					eventLoader.AddEmptyColumn(columnName)
 					continue
 				}
@@ -385,7 +384,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		// Completed parsing all columns, write single event to the file
 		eventData, err := eventLoader.WriteToString()
 		if err != nil {
-			logger.Errorf("[WH]: Failed to write event to string: %w", err)
+			pkgLogger.Errorf("[WH]: Failed to write event to string: %w", err)
 			return loadFileIDs, err
 		}
 		gzWriter.WriteGZ(eventData)
@@ -395,7 +394,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	timer.End()
 	misc.PrintMemUsage()
 
-	logger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
+	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
 
 	// Upload each generated load file to ObjectStorage
@@ -418,11 +417,11 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 }
 
 func claimAndProcess(workerIdx int, slaveID string) {
-	logger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
+	pkgLogger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
 	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
 	claim, claimed := notifier.Claim(workerID)
 	if claimed {
-		logger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claim.ID, workerIdx, slaveID)
+		pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claim.ID, workerIdx, slaveID)
 		var payload PayloadT
 		json.Unmarshal(claim.Payload, &payload)
 		payload.BatchID = claim.BatchID
@@ -442,7 +441,7 @@ func claimAndProcess(workerIdx int, slaveID string) {
 		claim.ClaimResponseChan <- response
 	}
 	slaveWorkerRoutineBusy[workerIdx-1] = false
-	logger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
+	pkgLogger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
 }
 
 func setupSlave() {
@@ -455,7 +454,7 @@ func setupSlave() {
 		}
 		for {
 			ev := <-jobNotificationChannel
-			logger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
+			pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
 			for workerIdx := 1; workerIdx <= noOfSlaveWorkerRoutines; workerIdx++ {
 				if !slaveWorkerRoutineBusy[workerIdx-1] {
 					slaveWorkerRoutineBusy[workerIdx-1] = true

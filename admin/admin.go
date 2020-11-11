@@ -31,6 +31,8 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -71,6 +73,7 @@ type Admin struct {
 }
 
 var instance Admin
+var pkgLogger logger.LoggerI
 
 func init() {
 	instance = Admin{
@@ -78,6 +81,7 @@ func init() {
 		rpcServer:      rpc.NewServer(),
 	}
 	instance.rpcServer.Register(instance)
+	pkgLogger = logger.NewLogger().Child("admin")
 }
 
 // Status reports overall server status by fetching status of all registered admin handlers
@@ -124,6 +128,33 @@ func (a Admin) ServerConfig(noArgs struct{}, reply *string) error {
 	return err
 }
 
+type LogLevel struct {
+	Module string
+	Level  string
+}
+
+func (a Admin) SetLogLevel(l LogLevel, reply *string) error {
+	err := logger.SetModuleLevel(l.Module, l.Level)
+	if err == nil {
+		*reply = fmt.Sprintf("Module %s log level set to %s", l.Module, l.Level)
+	}
+	return err
+}
+
+//GetLoggingConfig returns the logging configuration
+func (a Admin) GetLoggingConfig(noArgs struct{}, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error(r)
+			err = errors.New("Internal Rudder Server Error")
+		}
+	}()
+	loggingConfigMap := logger.GetLoggingConfig()
+	formattedOutput, err := json.MarshalIndent(loggingConfigMap, "", "  ")
+	*reply = string(formattedOutput)
+	return err
+}
+
 // StartServer starts an http server listening on unix socket and serving rpc communication
 func StartServer() {
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -138,7 +169,7 @@ func StartServer() {
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
-	logger.Info("Serving on admin interface @ ", sockAddr)
+	pkgLogger.Info("Serving on admin interface @ ", sockAddr)
 	srvMux := http.NewServeMux()
 	srvMux.Handle(rpc.DefaultRPCPath, instance.rpcServer)
 	http.Serve(l, srvMux)
