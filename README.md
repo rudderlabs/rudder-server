@@ -9,11 +9,14 @@
 
 # What is RudderStack?
 
-[RudderStack](https://rudderstack.com/) is an **open-source Segment alternative** for collecting, storing and routing customer event data **securely** to your data warehouse and dozens of other tools. It is **enterprise-ready**, and provides a powerful transformation framework to process your event data on the fly.
+[RudderStack](https://rudderstack.com/) is an **open source**, **warehouse-first** customer data platform built for developers. It builds your CDP on your data warehouse for you. RudderStack makes it easy to collect, unify, transform, and store your customer data as well as securely route it to a wide range of common, popular tools.
 
 RudderStack's backend is written in Go, with a rich UI written in React.js.
 
-You can also signup for a 14 day free trial of [RudderStack Cloud](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) to get started.
+| Sign up for [RudderStack Cloud Free](https://app.rudderstack.com/signup) and get a first-hand experience of RudderStack's unique features . Click [here](https://app.rudderstack.com/signup) to get started. |
+|:------|
+
+
 
 Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord channel](https://discordapp.com/invite/xNEdEGw) or read about us on [ProductHunt](https://www.producthunt.com/posts/rudderstack).
 
