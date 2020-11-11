@@ -11,8 +11,6 @@
 
 [RudderStack](https://rudderstack.com/) is an **open source**, **warehouse-first** customer data platform built for developers. It builds your CDP on your data warehouse for you. RudderStack makes it easy to collect, unify, transform, and store your customer data as well as securely route it to a wide range of common, popular tools.
 
-RudderStack's backend is written in Go, with a rich UI written in React.js.
-
 | We've launched [RudderStack Cloud Free](https://app.rudderstack.com/signup) - a no time limit, no credit card required, completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderstack.com/signup) to get started. |
 |:------|
 
@@ -22,7 +20,7 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord cha
 
 # Why Use RudderStack?
 
-- **Developer-focused**: RudderStack integrates seamlessly with the tools that the developers already use and love.
+- **Developer-focused**: RudderStack integrates seamlessly with the tools that the developers already use and love. RudderStack's backend is written in Go, with a rich UI written in React.js.
 
 - **Data Warehouse-centric**: RudderStack treats your data warehouse as a first class citizen among destinations, with advanced features and configurable, near real-time sync.
 
