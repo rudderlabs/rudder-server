@@ -25,7 +25,7 @@ Questions? Please join our [Slack channel](https://resources.rudderstack.com/joi
 
 - **Data Warehouse-centric**: RudderStack treats your data warehouse as a first class citizen among destinations, with advanced features and configurable, near real-time sync.
 
-- **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, **1mg**, **Nana**, **OnceHub**,  and dozens of large companies use RudderStack for collecting their events. Note: If you're using RudderStack and would like to add your name in this list, please submit a PR.
+- **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, **1mg**, **Nana**, **OnceHub**,  and dozens of large companies use RudderStack for collecting their events. **Note**: If you're using RudderStack and would like to add your name in this list, please submit a PR.
 
 - **Extreme Scale**: One of our largest installations currently sends **300 Million** events/day with peak of **40K** req/sec, via a two-node RudderStack setup.
 
@@ -95,7 +95,7 @@ RudderStack has two major components, namely:
 
 - **Control Plane**: The control plane allows you to manage the configuration of your sources and destinations. There are two options for setting up the connections:
 
-  - [Managed control plane](https://app.rudderstack.com/): This is the easiest way to manage your source and destination configurations.
+  - [Managed Control Plane](https://app.rudderlabs.com/signup?type=freetrial): This is the easiest way to manage your source and destination configurations.
   - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. **Please note that you cannot create transformations or Live Debugger with the RudderStack Config Generator**.
 
 - **Data Plane**: This is the core engine that is responsible for:
