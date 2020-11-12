@@ -33,7 +33,7 @@ Questions? Please join our [Slack channel](https://resources.rudderstack.com/joi
 
 - **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
 
-- **Seamless Integration**: RudderStack currently supports integration with over 45 popular [destination platforms](https://docs.rudderstack.com/destinations-guides) such as Google Analytics, Amplitude, Mixpanel, Amazon S3, and more. Moreover, it also supports [data warehouse integrations](https://docs.rudderstack.com/data-warehouse-integration-guides) for Snowflake, Redshift, PostgreSQL and Google BigQuery.
+- **Seamless Integration**: RudderStack currently supports integration with over 60 popular [destination platforms](https://docs.rudderstack.com/destinations-guides) such as Google Analytics, Amplitude, Mixpanel, Amazon S3, and more. Moreover, it also supports [data warehouse integrations](https://docs.rudderstack.com/data-warehouse-integration-guides) for Snowflake, Redshift, PostgreSQL and Google BigQuery.
 
 - **Client-side SDK Support**: RudderStack offers client-side SDKs for [JavaScript](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-javascript-sdk), [Android](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-android-sdk), [iOS](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-ios-sdk), and [Unity](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/getting-started-with-unity-sdk).
 
