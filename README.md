@@ -1,24 +1,35 @@
-![Build Status][build status]
-[![Release]][release]
+<p align="center"><a href="https://rudderstack.com"><img src="https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png" alt="RudderStack - An Open Source Customer Data Platform" height="90"/></a></p>
+<h1 align="center"></h1>
+<p align="center"><b>The warehouse-first customer data platform built for devs</b></p>
 
-# [![RudderStack](https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png)](https://rudderstack.com)
+<p align="center">
+	<a href="https://rudderstack.com"><img src="https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master" height="22"/></a>
+    <a href="https://rudderstack.com"><img src="https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver" alt="Release" height="22"/></a>
+</p>
+<br/>
 
 # What is RudderStack?
 
-[RudderStack](https://rudderstack.com/) is an **open-source Segment alternative** for collecting, storing and routing customer event data **securely** to your data warehouse and dozens of other tools. It is **enterprise-ready**, and provides a powerful transformation framework to process your event data on the fly.
+[RudderStack](https://rudderstack.com/) is an **open source**, **warehouse-first** customer data platform built for developers. It builds your CDP on your data warehouse for you. RudderStack makes it easy to collect, unify, transform, and store your customer data as well as securely route it to a wide range of common, popular tools.
 
-RudderStack's backend is written in Go, with a rich UI written in React.js.
+| We've launched **RudderStack Cloud Free** - a no time limit, no credit card required, completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to start building a better CDP for free, with RudderStack Cloud Free. |
+|:------|
 
-You can also signup for a 14 day free trial of [RudderStack Cloud](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) to experience the product. Click [here](https://app.rudderstack.com/signup?type=freetrial&utm_source=github&utm_medium=rdr-srv&utm_campaign=hosted&utm_content=intro) to get started.
 
-Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord channel](https://discordapp.com/invite/xNEdEGw) or read about us on [ProductHunt](https://www.producthunt.com/posts/rudderstack).
+
+Questions? Please join our [Slack channel](https://resources.rudderstack.com/join-rudderstack-slack) or read about us on [Product Hunt](https://www.producthunt.com/posts/rudderstack).
 
 # Why Use RudderStack?
 
-- **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, **1mg**, **Nana**, **OnceHub**,  and dozens of large companies use RudderStack for collecting their events. 
-   Note: If you are using RudderStack and your name is not on the list, please submit a PR.
+- **Developer-focused**: RudderStack integrates seamlessly with the tools that the developers already use and love. Also, its backend is written in Go, with a rich UI written in React.js.
+
+- **Data Warehouse-centric**: RudderStack treats your data warehouse as a first class citizen among destinations, with advanced features and configurable, near real-time sync.
+
+- **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, **1mg**, **Nana**, **OnceHub**,  and dozens of large companies use RudderStack for collecting their events. **Note**: If you're using RudderStack and would like to add your name in this list, please submit a PR.
 
 - **Extreme Scale**: One of our largest installations currently sends **300 Million** events/day with peak of **40K** req/sec, via a two-node RudderStack setup.
+
+- **High Availability**: RudderStack comes with at least 99.99% uptime. We have built a sophisticated error handling and retry system that ensures that your data will be delivered even in the event of network partitions or destinations downtime.
 
 - **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
 
@@ -49,13 +60,13 @@ Questions? Please [join](https://discordapp.com/invite/xNEdEGw) our [Discord cha
 [![1mg](https://user-images.githubusercontent.com/59817155/95971154-74745e80-0e2e-11eb-8468-9f9cf1bfcf46.png)](https://www.1mg.com/) [![Grofers](https://user-images.githubusercontent.com/59817155/95970797-fe6ff780-0e2d-11eb-9c08-d4550b2c68b5.png)](https://grofers.com/) [![IFTTT](https://user-images.githubusercontent.com/59817155/95970944-2cedd280-0e2e-11eb-83d3-500c46c3a290.png)](https://ifttt.com/) [![Mattermost](https://user-images.githubusercontent.com/59817155/95971043-4c84fb00-0e2e-11eb-8ef8-2e47970221c6.png)](https://mattermost.com/) [![Wynn Casino](https://user-images.githubusercontent.com/59817155/95969926-f9f70f00-0e2c-11eb-8985-27b62d34fc65.png)](https://www.wynnlasvegas.com/) [![Acorns](https://user-images.githubusercontent.com/59817155/95970244-58bc8880-0e2d-11eb-9c7b-2ca08e2b11d7.png)](https://www.acorns.com/) [![Hinge](https://user-images.githubusercontent.com/59817155/95970463-9de0ba80-0e2d-11eb-91b1-bbfe55b91228.png)](https://hinge.co/) [![Proposify](https://user-images.githubusercontent.com/59817155/95971522-f82e4b00-0e2e-11eb-8c58-95fcb8a0e76c.png)](https://www.proposify.com/) [![Barstool Sports](https://user-images.githubusercontent.com/59817155/95971526-f95f7800-0e2e-11eb-85d3-fa81dbf9aa6e.png)](https://www.barstoolsports.com/)
 
 
-# RudderStack Setup
+# Get Started
 
-The easiest way to experience RudderStack is to [signup](https://app.rudderstack.com/signup?type=freetrial) for **14-day Free Trial** of our hosted service, RudderStack cloud. Click [here](https://app.rudderstack.com/signup?type=freetrial) to get started.
+The easiest way to experience RudderStack is to [sign up](https://app.rudderlabs.com/signup?type=freetrial) for **RudderStack Cloud Free** - a completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to get started.
 
 You can also set up and use RudderStack on your platform of choice.
 
-**Note:** If you are planning to use RudderStack in production, we **strongly** recommend the Kubernetes helm charts. We update our docker images with bug fixes etc much more frequently than our GitHub repo (where we release once a month).
+**Note:** If you are planning to use RudderStack in production, we **strongly** recommend the Kubernetes Helm charts. We update our Docker images with bug fixes etc much more frequently than our GitHub repo (where we release once a month).
 
 - [Setting up RudderStack on Docker](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/docker)
 - [Setting up RudderStack on Kubernetes](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/kubernetes)
@@ -74,13 +85,17 @@ Once you have installed RudderStack, [send test events](https://docs.rudderstack
 
 ![Events Page](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-M8Fo18nKM8Y3sHNQwW3%2F-M8FoF_Gnu9CBQgUujZW%2FScreenshot%202020-05-26%20at%205.12.19%20PM.png?alt=media&token=71165ae7-964c-4370-9826-29315ab3e3b4)
 
+### Connecting a Source to a Destination
+
+![Sources Destinations](https://user-images.githubusercontent.com/59817155/98811482-f021f500-2446-11eb-9abd-5951fe8b2546.gif)
+
 # RudderStack Architecture
 
 RudderStack has two major components, namely:
 
 - **Control Plane**: The control plane allows you to manage the configuration of your sources and destinations. There are two options for setting up the connections:
 
-  - [Managed control plane](https://app.rudderstack.com/): This is the easiest way to manage your source and destination configurations.
+  - [Managed Control Plane](https://app.rudderlabs.com/signup?type=freetrial): This is the easiest way to manage your source and destination configurations.
   - [RudderStack Config Generator](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Config-Generator): RudderStack also allows you to manage your source and destination configurations without having to sign up and use our hosted services. **Please note that you cannot create transformations or Live Debugger with the RudderStack Config Generator**.
 
 - **Data Plane**: This is the core engine that is responsible for:
@@ -91,7 +106,8 @@ RudderStack has two major components, namely:
 For a detailed understanding of the RudderStack architecture, please check our [documentation](https://docs.rudderstack.com/get-started/rudderstack-architecture).
 
 A high-level view of RudderStack's architecture is as shown:
-![Architecture](https://gblobscdn.gitbook.com/assets%2F-Lq5Ea6fHVg3dSxMCgyQ%2F-Lz111ICiMeHdy_Gu6JX%2F-Lz1A_NxMgbjhbSrVL2h%2FRudder%20Core%20Architecture.png?alt=media&token=2c524db9-7c5c-44e9-a351-cbb1c46a8063)
+
+![Architecture](https://user-images.githubusercontent.com/59817155/98810368-23fc1b00-2445-11eb-9519-025867b94de1.png)
 
 # License
 
@@ -107,20 +123,34 @@ For more information on RudderStack's features and functionalities, make sure yo
 
 # Follow Us
 
-- [Discord][discord]
-- [Product Hunt](https://www.producthunt.com/posts/rudderstack)
-- [LinkedIn](https://www.linkedin.com/company/rudderlabs/)
-- [Twitter][twitter]
-- [HackerNews][hackernews]
 - [RudderStack Blog][rudderstack-blog]
+- [Slack][slack]
+- [Twitter][twitter]
+- [LinkedIn][linkedin]
+- [dev.to][devto]
+- [Medium][medium]
+- [YouTube][youtube]
+- [HackerNews][hackernews]
+- [Product Hunt][producthunt]
+
+# :clap:  Our Supporters
+[![Stargazers repo roster for @rudderlabs/rudder-server](https://reporoster.com/stars/rudderlabs/rudder-server)](https://github.com/rudderlabs/rudder-server/stargazers)
+[![Forkers repo roster for @rudderlabs/rudder-server](https://reporoster.com/forks/rudderlabs/rudder-server)](https://github.com/rudderlabs/rudder-server/network/members)
 
 <!----variables---->
 
 [build status]: https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master
 [release]: https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver
-[discord]: https://discordapp.com/invite/xNEdEGw
 [docs]: https://docs.rudderstack.com/
+[slack]: https://resources.rudderstack.com/join-rudderstack-slack
 [twitter]: https://twitter.com/rudderstack
+[linkedin]: https://www.linkedin.com/company/rudderlabs/
+[devto]: https://dev.to/rudderstack
+[medium]: https://rudderstack.medium.com/
+[youtube]: https://www.youtube.com/channel/UCgV-B77bV_-LOmKYHw8jvBw
+[rudderstack-blog]: https://rudderstack.com/blog/
+[hackernews]: https://news.ycombinator.com/item?id=21081756
+[producthunt]: https://www.producthunt.com/posts/rudderstack
 [go-report-card]: https://go-report-card.com/report/github.com/rudderlabs/rudder-server
 [go-report-card-badge]: https://go-report-card.com/badge/github.com/rudderlabs/rudder-server
 [ssh]: https://help.github.com/en/articles/which-remote-url-should-i-use#cloning-with-ssh-urls
@@ -133,7 +163,6 @@ For more information on RudderStack's features and functionalities, make sure yo
 [dashboard-native]: https://app.rudderstack.com/signup?utm_source=github&utm_medium=rdr-srv&utm_campaign=selfhosted&utm_content=native
 [agplv3_license]: https://www.gnu.org/licenses/agpl-3.0-standalone.html
 [sspl_license]: https://www.mongodb.com/licensing/server-side-public-license
-[hackernews]: https://news.ycombinator.com/item?id=21081756
 [helm-scripts-git-repo]: https://github.com/rudderlabs/rudderstack-helm
 [terraform-scripts-git-repo]: https://github.com/rudderlabs/rudder-terraform
 [golang]: https://golang.org/dl/
@@ -146,6 +175,5 @@ For more information on RudderStack's features and functionalities, make sure yo
 [rudder-logo]: https://repository-images.githubusercontent.com/197743848/b352c900-dbc8-11e9-9d45-4deb9274101f
 [rudder-server-releases]: https://github.com/rudderlabs/rudder-server/releases
 [rudder-transformer-releases]: https://github.com/rudderlabs/rudder-transformer/releases
-[rudderstack-blog]: https://rudderstack.com/blog/
 [rudder-server-sample-env]: https://github.com/rudderlabs/rudder-server/blob/master/config/sample.env
 [rudder-docker-yml]: https://github.com/rudderlabs/rudder-server/blob/master/rudder-docker.yml
