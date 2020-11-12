@@ -12,7 +12,7 @@
 
 [RudderStack](https://rudderstack.com/) is an **open source**, **warehouse-first** customer data platform built for developers. It builds your CDP on your data warehouse for you. RudderStack makes it easy to collect, unify, transform, and store your customer data as well as securely route it to a wide range of common, popular tools.
 
-| We've launched **RudderStack Cloud Free** - a no time limit, no credit card required, completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to get started building a better CDP for free with RudderStack Cloud Free. |
+| We've launched **RudderStack Cloud Free** - a no time limit, no credit card required, completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to start building a better CDP for free, with RudderStack Cloud Free. |
 |:------|
 
 
