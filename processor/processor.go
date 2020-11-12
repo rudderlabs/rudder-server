@@ -1063,7 +1063,7 @@ func (proc *HandleT) mainLoop() {
 
 	for {
 		if proc.handlePendingGatewayJobs() {
-			currLoopSleep = time.Duration(0)
+			currLoopSleep = time.Duration(config.GetEnvAsInt("RSERVER_PROC_MIN_SLEEP", 0))
 		} else {
 			currLoopSleep = 2*currLoopSleep + loopSleep
 			if currLoopSleep > maxLoopSleep {
