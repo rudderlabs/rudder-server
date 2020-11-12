@@ -24,7 +24,19 @@ import (
 var (
 	warehouseUploadsTable string
 	stagingTablePrefix    string
+	maxParallelLoads      int
+	pkgLogger             logger.LoggerI
 )
+
+func init() {
+	loadConfig()
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("snowflake")
+}
+
+func loadConfig() {
+	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
+	stagingTablePrefix = "RUDDER_STAGING_"
+}
 
 type HandleT struct {
 	Db            *sql.DB
@@ -128,7 +140,7 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 
 func (sf *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v )`, name, columnsWithDataTypes(columns, ""))
-	logger.Infof("SF: Creating table in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
 }
@@ -164,14 +176,14 @@ func (sf *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 
 func (sf *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType])
-	logger.Infof("SF: Adding column in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("SF: Adding column in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
 }
 
 func (sf *HandleT) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, sf.Namespace)
-	logger.Infof("SF: Creating schemaname in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("SF: Creating schemaname in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
 }
@@ -200,12 +212,12 @@ func (sf *HandleT) authString() string {
 }
 
 func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, dbHandle *sql.DB, skipClosingDBSession bool) (tableLoadResp tableLoadRespT, err error) {
-	logger.Infof("SF: Starting load for table:%s\n", tableName)
+	pkgLogger.Infof("SF: Starting load for table:%s\n", tableName)
 
 	if dbHandle == nil {
 		dbHandle, err = connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
 		if err != nil {
-			logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", tableName, err)
+			pkgLogger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", tableName, err)
 			return
 		}
 	}
@@ -232,10 +244,10 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, tableName)
 
-	logger.Debugf("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
+	pkgLogger.Debugf("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("SF: Error creating temporary table for table:%s: %v\n", tableName, err)
+		pkgLogger.Errorf("SF: Error creating temporary table for table:%s: %v\n", tableName, err)
 		return
 	}
 	tableLoadResp.stagingTable = stagingTableName
@@ -254,12 +266,12 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
 	})
 	if regexErr == nil {
-		logger.Infof("SF: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
+		pkgLogger.Infof("SF: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
 	}
 
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("SF: Error running COPY command: %v\n", err)
+		pkgLogger.Errorf("SF: Error running COPY command: %v\n", err)
 		return
 	}
 
@@ -301,21 +313,21 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 									UPDATE SET %[6]s
 									WHEN NOT MATCHED THEN
 									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey)
-	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
+		pkgLogger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
 		return
 	}
 
-	logger.Infof("SF: Complete load for table:%s\n", tableName)
+	pkgLogger.Infof("SF: Complete load for table:%s\n", tableName)
 	return
 }
 
 func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
-	logger.Infof("SF: Starting load for table:%s\n", identityMergeRulesTable)
+	pkgLogger.Infof("SF: Starting load for table:%s\n", identityMergeRulesTable)
 
-	logger.Infof("SF: Fetching load file location for %s", identityMergeRulesTable)
+	pkgLogger.Infof("SF: Fetching load file location for %s", identityMergeRulesTable)
 	var location string
 	location, err = sf.Uploader.GetSingleLoadFileLocation(identityMergeRulesTable)
 	if err != nil {
@@ -324,7 +336,7 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 
 	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
 	if err != nil {
-		logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", identityMergeRulesTable, err)
+		pkgLogger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", identityMergeRulesTable, err)
 		return
 	}
 
@@ -338,21 +350,21 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
 	})
 	if regexErr == nil {
-		logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMergeRulesTable, sanitisedSQLStmt)
+		pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMergeRulesTable, sanitisedSQLStmt)
 	}
 
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
+		pkgLogger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
 		return
 	}
-	logger.Infof("SF: Complete load for table:%s\n", identityMergeRulesTable)
+	pkgLogger.Infof("SF: Complete load for table:%s\n", identityMergeRulesTable)
 	return
 }
 
 func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
-	logger.Infof("SF: Starting load for table:%s\n", identityMappingsTable)
-	logger.Infof("SF: Fetching load file location for %s", identityMappingsTable)
+	pkgLogger.Infof("SF: Starting load for table:%s\n", identityMappingsTable)
+	pkgLogger.Infof("SF: Fetching load file location for %s", identityMappingsTable)
 	var location string
 
 	location, err = sf.Uploader.GetSingleLoadFileLocation(identityMappingsTable)
@@ -362,17 +374,17 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 
 	dbHandle, err := connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
 	if err != nil {
-		logger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", identityMappingsTable, err)
+		pkgLogger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", identityMappingsTable, err)
 		return
 	}
 
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), identityMappingsTable), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, identityMappingsTable)
 
-	logger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
+	pkgLogger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("SF: Error creating temporary table for table:%s: %v\n", identityMappingsTable, err)
+		pkgLogger.Errorf("SF: Error creating temporary table for table:%s: %v\n", identityMappingsTable, err)
 		return
 	}
 
@@ -380,10 +392,10 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	sqlStatement = fmt.Sprintf(`COPY INTO %v(MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE, RUDDER_ID, UPDATED_AT) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, stagingTableName), loadLocation, sf.authString())
 
-	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
+	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
+		pkgLogger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
 		return
 	}
 
@@ -398,13 +410,13 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 									UPDATE SET original.RUDDER_ID = staging.RUDDER_ID, original.UPDATED_AT =  staging.UPDATED_AT
 									WHEN NOT MATCHED THEN
 									INSERT (MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE, RUDDER_ID, UPDATED_AT) VALUES (staging.MERGE_PROPERTY_TYPE, staging.MERGE_PROPERTY_VALUE, staging.RUDDER_ID, staging.UPDATED_AT)`, identityMappingsTable, stagingTableName)
-	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
+	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
+		pkgLogger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
 		return
 	}
-	logger.Infof("SF: Complete load for table:%s\n", identityMappingsTable)
+	pkgLogger.Infof("SF: Complete load for table:%s\n", identityMappingsTable)
 	return
 }
 
@@ -413,7 +425,7 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 	errorMap = map[string]error{identifiesTable: nil}
-	logger.Infof("SF: Starting load for identifies and users tables\n")
+	pkgLogger.Infof("SF: Starting load for identifies and users tables\n")
 
 	resp, err := sf.loadTable(identifiesTable, sf.Uploader.GetTableSchemaInUpload(identifiesTable), nil, true)
 	if err != nil {
@@ -458,10 +470,10 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		resp.stagingTable,                // 5
 		strings.Join(userColNames, ","),  // 6
 	)
-	logger.Debugf("SF: Creating staging table for users: %s\n", sqlStatement)
+	pkgLogger.Debugf("SF: Creating staging table for users: %s\n", sqlStatement)
 	_, err = resp.dbHandle.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("SF: Error creating temporary table for table:%s: %v\n", usersTable, err)
+		pkgLogger.Errorf("SF: Error creating temporary table for table:%s: %v\n", usersTable, err)
 		return
 	}
 
@@ -486,10 +498,10 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 									UPDATE SET %[5]s
 									WHEN NOT MATCHED THEN
 									INSERT (%[3]s) VALUES (%[6]s)`, usersTable, stagingTableName, columnNamesStr, primaryKey, columnsWithValues, stagingColumnValues)
-	logger.Infof("SF: Dedup records for table:%s using staging table: %s\n", usersTable, sqlStatement)
+	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", usersTable, sqlStatement)
 	_, err = resp.dbHandle.Exec(sqlStatement)
 	if err != nil {
-		logger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
+		pkgLogger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
 		return
 	}
 	return
@@ -523,21 +535,12 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 	}
 
 	alterStatement := fmt.Sprintf(`ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`)
-	logger.Infof("SF: Altering session with abort_detached_query for snowflake account:%s, database:%s %v", cred.account, cred.dbName, alterStatement)
+	pkgLogger.Infof("SF: Altering session with abort_detached_query for snowflake: %v", alterStatement)
 	_, err = db.Exec(alterStatement)
 	if err != nil {
 		return nil, fmt.Errorf("SF: snowflake alter session error : (%v)", err)
 	}
 	return db, nil
-}
-
-func loadConfig() {
-	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
-	stagingTablePrefix = "RUDDER_STAGING_"
-}
-
-func init() {
-	loadConfig()
 }
 
 func (sf *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
@@ -583,7 +586,7 @@ func (sf *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
 				err = sf.addColumn(tableName, columnName, columnType)
 				if err != nil {
 					if checkAndIgnoreAlreadyExistError(err) {
-						logger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, sf.Namespace, tableName, err)
+						pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, sf.Namespace, tableName, err)
 					} else {
 						return
 					}
@@ -629,7 +632,7 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 		} else if hasUserID {
 			toSelectFields = "NULL AS ANONYMOUS_ID, USER_ID"
 		} else {
-			logger.Infof("SF: ANONYMOUS_ID, USER_ID columns not present in table: %s", tableName)
+			pkgLogger.Infof("SF: ANONYMOUS_ID, USER_ID columns not present in table: %s", tableName)
 			return nil
 		}
 
@@ -638,7 +641,7 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 		for {
 			// TODO: Handle case for missing anonymous_id, user_id columns
 			sqlStatement = fmt.Sprintf(`SELECT DISTINCT %s FROM %s.%s LIMIT %d OFFSET %d`, toSelectFields, sf.Namespace, tableName, batchSize, offset)
-			logger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s, totalRows: %d", sqlStatement, totalRows)
+			pkgLogger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s, totalRows: %d", sqlStatement, totalRows)
 			var rows *sql.Rows
 			rows, err = sf.Db.Query(sqlStatement)
 			if err != nil {
@@ -783,7 +786,7 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		logger.Errorf("SF: Error in fetching schema from snowflake destination:%v, query: %v", sf.Warehouse.Destination.ID, sqlStatement)
+		pkgLogger.Errorf("SF: Error in fetching schema from snowflake destination:%v, query: %v", sf.Warehouse.Destination.ID, sqlStatement)
 		return
 	}
 	if err == sql.ErrNoRows {
@@ -794,7 +797,7 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		var tName, cName, cType string
 		err = rows.Scan(&tName, &cName, &cType)
 		if err != nil {
-			logger.Errorf("SF: Error in processing fetched schema from snowflake destination:%v", sf.Warehouse.Destination.ID)
+			pkgLogger.Errorf("SF: Error in processing fetched schema from snowflake destination:%v", sf.Warehouse.Destination.ID)
 			return
 		}
 		if _, ok := schema[tName]; !ok {

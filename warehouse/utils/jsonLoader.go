@@ -2,8 +2,6 @@ package warehouseutils
 
 import (
 	"encoding/json"
-
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 const LOADED_AT_COLUMN = "loaded_at"
@@ -47,7 +45,7 @@ func (loader *jsonLoader) AddEmptyColumn(columnName string) {
 func (loader *jsonLoader) WriteToString() (string, error) {
 	jsonData, err := json.Marshal(loader.columnData)
 	if err != nil {
-		logger.Errorf(`[JSONWriter]: Error writing discardRow to buffer: %w`, err)
+		pkgLogger.Errorf(`[JSONWriter]: Error writing discardRow to buffer: %w`, err)
 		return "", err
 	}
 	return string(jsonData) + "\n", nil

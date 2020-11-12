@@ -81,17 +81,6 @@ func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err er
 	return postInfo, err
 }
 
-// GetUserIDFromTransformerResponse parses the payload to get userId
-func GetUserIDFromTransformerResponse(transformRaw json.RawMessage) (userID string, found bool) {
-	parsedJSON := gjson.ParseBytes(transformRaw)
-	userIDVal := parsedJSON.Get("userId").Value()
-
-	if userIDVal != nil {
-		return fmt.Sprintf("%v", userIDVal), true
-	}
-	return
-}
-
 //FilterClientIntegrations parses the destination names from the
 //input JSON, matches them with enabled destinations from controle plane and returns the IDSs
 func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {

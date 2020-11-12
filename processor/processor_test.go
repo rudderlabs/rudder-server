@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
@@ -174,6 +173,13 @@ var (
 	emptyJobsList    []*jobsdb.JobT
 )
 
+//SetEnableEventSchemasFeature overrides enableEventSchemasFeature configuration and returns previous value
+func SetEnableEventSchemasFeature(b bool) bool {
+	prev := enableEventSchemasFeature
+	enableEventSchemasFeature = b
+	return prev
+}
+
 // This configuration is assumed by all processor tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.SourcesT{
 	Sources: []backendconfig.SourceT{
@@ -245,8 +251,9 @@ var _ = Describe("Processor", func() {
 		c.Setup()
 
 		// setup static requirements of dependencies
-		logger.Setup()
 		stats.Setup()
+
+		SetEnableEventSchemasFeature(false)
 	})
 
 	AfterEach(func() {

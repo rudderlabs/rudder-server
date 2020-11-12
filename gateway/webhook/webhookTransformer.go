@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -45,7 +44,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 
 	bt.stats.transformTimerStat.End()
 	if err != nil {
-		logger.Error(err)
+		pkgLogger.Error(err)
 		bt.stats.failedStat.Count(len(events))
 		return transformerBatchResponseT{batchError: errors.New("Internal server error in source transformer")}
 	}
@@ -59,7 +58,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		logger.Errorf("Source Transformer returned status code: %v", resp.StatusCode)
+		pkgLogger.Errorf("Source Transformer returned status code: %v", resp.StatusCode)
 		bt.stats.failedStat.Count(len(events))
 		return transformerBatchResponseT{batchError: fmt.Errorf(`Source Transformer returned non-success status code: %v, Error: %v`, resp.StatusCode, string(respBody))}
 	}

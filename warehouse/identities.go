@@ -9,7 +9,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -269,24 +268,24 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		upload, hasPendingLoad = wh.getPendingPopulateIdentitiesLoad(warehouse)
 
 		if hasPendingLoad {
-			logger.Infof("[WH]: Found pending load (populateHistoricIdentites) for %s:%s", wh.destType, warehouse.Destination.ID)
+			pkgLogger.Infof("[WH]: Found pending load (populateHistoricIdentites) for %s:%s", wh.destType, warehouse.Destination.ID)
 		} else {
 			if wh.hasLocalIdentityData(warehouse) {
-				logger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentites) for %s:%s as data exists locally", wh.destType, warehouse.Destination.ID)
+				pkgLogger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentites) for %s:%s as data exists locally", wh.destType, warehouse.Destination.ID)
 				return
 			}
 			var hasData bool
 			hasData, err = wh.hasWarehouseData(warehouse)
 			if err != nil {
-				logger.Errorf(`[WH]: Error checking for data in %s:%s:%s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name)
+				pkgLogger.Errorf(`[WH]: Error checking for data in %s:%s:%s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name)
 				return
 			}
 			if !hasData {
-				logger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentites) for %s:%s as warehouse does not have any data", wh.destType, warehouse.Destination.ID)
+				pkgLogger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentites) for %s:%s as warehouse does not have any data", wh.destType, warehouse.Destination.ID)
 				return
 			}
-			logger.Infof("[WH]: Did not find local identity tables..")
-			logger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
+			pkgLogger.Infof("[WH]: Did not find local identity tables..")
+			pkgLogger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
 			upload = wh.initPrePopulateDestIndetitiesUpload(warehouse)
 		}
 
@@ -311,7 +310,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			err := job.initTableUploads()
 			if err != nil {
 				// TODO: Handle error / Retry
-				logger.Error("[WH]: Error creating records in wh_table_uploads", err)
+				pkgLogger.Error("[WH]: Error creating records in wh_table_uploads", err)
 			}
 		}
 
@@ -325,7 +324,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		var schemaInWarehouse warehouseutils.SchemaT
 		schemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
 		if err != nil {
-			logger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
+			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, Aborted)
 			return
 		}

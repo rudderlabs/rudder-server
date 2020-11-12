@@ -7,18 +7,17 @@ import (
 	"math"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 //SetupForImport is used to setup jobsdb for export or for import or for both
 func (jd *HandleT) SetupForImport() {
 	jd.migrationState.dsForNewEvents = jd.findOrCreateDsFromSetupCheckpoint(AcceptNewEventsOp)
-	logger.Infof("[[ %s-JobsDB Import ]] Ds for new events :%v", jd.GetTablePrefix(), jd.migrationState.dsForNewEvents)
+	jd.logger.Infof("[[ %s-JobsDB Import ]] Ds for new events :%v", jd.GetTablePrefix(), jd.migrationState.dsForNewEvents)
 }
 
 func (jd *HandleT) getDsForImport(dsList []dataSetT) dataSetT {
 	ds := jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
-	logger.Infof("[[ %s-JobsDB Import ]] Should Checkpoint Import Setup event for the new ds : %v", jd.GetTablePrefix(), ds)
+	jd.logger.Infof("[[ %s-JobsDB Import ]] Should Checkpoint Import Setup event for the new ds : %v", jd.GetTablePrefix(), ds)
 	return ds
 }
 
@@ -33,7 +32,6 @@ func (jd *HandleT) GetLastJobIDBeforeImport() int64 {
 	for idx, dataSet := range dsList {
 		if dataSet.Index == jd.migrationState.dsForNewEvents.Index {
 			if idx > 0 {
-				jd.assert(idx != len(dsList)-1, "Shouldn't be the last ds")
 				lastJobIDBeforeNewImports = jd.getMaxIDForDs(dsList[idx-1])
 			}
 		}
@@ -53,7 +51,7 @@ func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 
 	seqNoForNewDS := int64(jd.migrationState.toVersion)*int64(math.Pow10(13)) + 1
 	jd.updateSequenceNumber(ds, seqNoForNewDS)
-	logger.Infof("[[ %sJobsDB Import ]] New dataSet %s is prepared with start sequence : %d", jd.GetTablePrefix(), ds, seqNoForNewDS)
+	jd.logger.Infof("[[ %sJobsDB Import ]] New dataSet %s is prepared with start sequence : %d", jd.GetTablePrefix(), ds, seqNoForNewDS)
 	return ds
 }
 
@@ -66,6 +64,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	var found bool
 	var opID int64
 	jd.migrationState.importLock.Lock()
+	defer jd.migrationState.importLock.Unlock()
 
 	// This if block should be idempotent. It is currently good. But if it changes we need to add separate locks outside
 	if jd.migrationState.dsForImport.Index == "" {
@@ -75,13 +74,11 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	}
 
 	if !found {
-		defer jd.migrationState.importLock.Unlock()
 		jd.migrationState.dsForImport = jd.createSetupCheckpointAndGetDs(ImportOp)
 		opPayload, err := json.Marshal(&jd.migrationState.dsForImport)
 		jd.assertError(err)
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
 	} else if jd.checkIfFullDS(jd.migrationState.dsForImport) {
-		defer jd.migrationState.importLock.Unlock()
 		jd.dsListLock.Lock()
 		jd.migrationState.dsForImport = jd.addNewDS(insertForImport, jd.migrationState.dsForNewEvents)
 		setupCheckpoint, found := jd.GetSetupCheckpoint(ImportOp)
@@ -92,8 +89,6 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 		opPayload, err := json.Marshal(&jd.migrationState.dsForImport)
 		jd.assertError(err)
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
-	} else {
-		jd.migrationState.importLock.Unlock()
 	}
 
 	jd.assert(jd.migrationState.dsForImport.Index != "", "dsForImportEvents was not setup. Go debug")
@@ -112,11 +107,11 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
-	logger.Debugf("[[ %s-JobsDB Import ]] %d jobs found in file:%s. Writing to db", jd.GetTablePrefix(), len(jobList), migrationCheckpoint.FileLocation)
+	jd.logger.Debugf("[[ %s-JobsDB Import ]] %d jobs found in file:%s. Writing to db", jd.GetTablePrefix(), len(jobList), migrationCheckpoint.FileLocation)
 	err = jd.storeJobsDSInTxn(txn, jd.migrationState.dsForImport, true, jobList)
 	jd.assertErrorAndRollbackTx(err, txn)
 
-	logger.Debugf("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), migrationCheckpoint.FileLocation)
+	jd.logger.Debugf("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), migrationCheckpoint.FileLocation)
 	_, err = jd.updateJobStatusDSInTxn(txn, jd.migrationState.dsForImport, statusList) //Not collecting updatedStates here because the entire ds is un-marked for empty result after commit below
 	jd.assertErrorAndRollbackTx(err, txn)
 
