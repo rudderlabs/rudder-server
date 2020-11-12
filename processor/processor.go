@@ -905,6 +905,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				rudderID = "random-" + id.String()
 			}
 
+			sizeStat := proc.stats.NewTaggedStat("transformed_event_size", stats.CountType, map[string]string{
+				"module":   "router",
+				"destType": destType,
+				"destID":   destID,
+			})
+			sizeStat.Count(len(destEventJSON))
+
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       rudderID,
