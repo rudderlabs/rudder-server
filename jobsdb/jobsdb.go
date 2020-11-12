@@ -1789,10 +1789,10 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 		return
 	}
 
-	updatedStatesMap := map[string]bool{}
+	updatedStatesMap := map[string]int{}
 	for _, status := range statusList {
 		//  Handle the case when google analytics returns gif in response
-		updatedStatesMap[status.JobState] = true
+		updatedStatesMap[status.JobState] = updatedStatesMap[status.JobState] + 1
 		if !utf8.ValidString(string(status.ErrorResponse)) {
 			status.ErrorResponse = []byte(`{}`)
 		}
@@ -1810,6 +1810,13 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 	_, err = stmt.Exec()
 	if err != nil {
 		return
+	}
+
+	for state, count := range updatedStatesMap {
+		tags := make(map[string]string)
+		tags["tablePrefix"] = jd.tablePrefix
+		tags["state"] = state
+		stats.NewTaggedStat("update_status_count", stats.CountType, tags).Count(count)
 	}
 
 	return
