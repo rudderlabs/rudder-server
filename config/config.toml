@@ -60,7 +60,7 @@ MaxHeaderBytes = 524288
 
 [RateLimit]
 eventLimit=500000
-rateLimitWindowInMins=60*24*7
+rateLimitWindowInMins=43200
 noOfBucketsInWindow=60
 
 [Gateway]
