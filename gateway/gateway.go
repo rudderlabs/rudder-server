@@ -30,6 +30,7 @@ import (
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -41,7 +42,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	uuid "github.com/satori/go.uuid"
-
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -75,10 +75,11 @@ var (
 	enableDedup                                                 bool
 	enableRateLimit                                             bool
 	enableSuppressUserFeature                                   bool
-	enableProtocolsFeature                                      bool
+	enableEventSchemasFeature                                   bool
 	dedupWindow, diagnosisTickerTime                            time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                        bool
 	pkgLogger                                                   logger.LoggerI
+	Diagnostics                                                 diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -139,7 +140,7 @@ type HandleT struct {
 	userWebRequestWorkers                         []*userWebRequestWorkerT
 	webhookHandler                                *webhook.HandleT
 	suppressUserHandler                           types.SuppressUserI
-	protocolHandler                               types.ProtocolsI
+	eventSchemaHandler                            types.EventSchemasI
 	versionHandler                                func(w http.ResponseWriter, r *http.Request)
 	logger                                        logger.LoggerI
 }
@@ -492,9 +493,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		for _, eventBatch := range eventBatchesToRecord {
 			writeKey := gjson.Get(eventBatch, "writeKey").Str
 			sourcedebugger.RecordEvent(writeKey, eventBatch)
-			if enableProtocolsFeature && gateway.protocolHandler != nil {
-				gateway.protocolHandler.RecordEventSchema(writeKey, eventBatch)
-			}
 		}
 
 		userWebRequestWorker.batchTimeStat.End()
@@ -651,17 +649,11 @@ func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request
 	}
 }
 
-func (gateway *HandleT) protocolWebHandler(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+func (gateway *HandleT) eventSchemaWebHandler(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !enableProtocolsFeature {
-			gateway.logger.Debug("Protocols feature is disabled. You can enabled it through enableProtocolsFeature flag in config.toml")
-			http.Error(w, "Protocols feature is disabled", 400)
-			return
-		}
-
-		if gateway.protocolHandler == nil {
-			gateway.logger.Debug("Protocols feature is enterprise only feature.")
-			http.Error(w, "Protocols feature is enterprise only feature", 400)
+		if !enableEventSchemasFeature {
+			gateway.logger.Debug("EventSchemas feature is disabled. You can enabled it through enableEventSchemasFeature flag in config.toml")
+			http.Error(w, "EventSchemas feature is disabled", 400)
 			return
 		}
 		wrappedFunc(w, r)
@@ -690,6 +682,10 @@ func (gateway *HandleT) webScreenHandler(w http.ResponseWriter, r *http.Request)
 
 func (gateway *HandleT) webAliasHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webHandler(w, r, "alias")
+}
+
+func (gateway *HandleT) webMergeHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "merge")
 }
 
 func (gateway *HandleT) webGroupHandler(w http.ResponseWriter, r *http.Request) {
@@ -746,7 +742,7 @@ func (gateway *HandleT) collectMetrics() {
 			case _ = <-gateway.diagnosisTicker.C:
 				gateway.requestMetricLock.RLock()
 				if gateway.trackSuccessCount > 0 || gateway.trackFailureCount > 0 {
-					diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
+					Diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
 						diagnostics.GatewaySuccess: gateway.trackSuccessCount,
 						diagnostics.GatewayFailure: gateway.trackFailureCount,
 					})
@@ -882,22 +878,23 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/v1/page", gateway.stat(gateway.webPageHandler))
 	srvMux.HandleFunc("/v1/screen", gateway.stat(gateway.webScreenHandler))
 	srvMux.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler))
+	srvMux.HandleFunc("/v1/merge", gateway.stat(gateway.webMergeHandler))
 	srvMux.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
 	srvMux.HandleFunc("/health", gateway.healthHandler)
+	srvMux.HandleFunc("/", gateway.healthHandler)
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
 	srvMux.HandleFunc("/version", gateway.versionHandler)
 	srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
 	srvMux.HandleFunc("/beacon/v1/batch", gateway.stat(gateway.beaconBatchHandler))
 
-	// Protocols
-	if enableProtocolsFeature && gateway.protocolHandler != nil {
-		srvMux.HandleFunc("/schemas/event-models", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModels))
-		srvMux.HandleFunc("/schemas/event-versions", gateway.protocolWebHandler(gateway.protocolHandler.GetEventVersions))
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", gateway.protocolWebHandler(gateway.protocolHandler.GetKeyCounts))
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetEventModelMetadata))
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMetadata))
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.protocolWebHandler(gateway.protocolHandler.GetSchemaVersionMissingKeys))
+	if enableEventSchemasFeature {
+		srvMux.HandleFunc("/schemas/event-models", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels))
+		srvMux.HandleFunc("/schemas/event-versions", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions))
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts))
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata))
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata))
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys))
 	}
 
 	c := cors.New(cors.Options{
@@ -907,7 +904,7 @@ func (gateway *HandleT) StartWebHandler() {
 		MaxAge:           900, // 15 mins
 	})
 	if diagnostics.EnableServerStartedMetric {
-		diagnostics.Track(diagnostics.ServerStarted, map[string]interface{}{
+		Diagnostics.Track(diagnostics.ServerStarted, map[string]interface{}{
 			diagnostics.ServerStarted: time.Now(),
 		})
 	}
@@ -1068,8 +1065,8 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 		gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
 	}
 
-	if gateway.application.Features().Protocols != nil {
-		gateway.protocolHandler = application.Features().Protocols.Setup()
+	if enableEventSchemasFeature {
+		gateway.eventSchemaHandler = event_schema.GetInstance()
 	}
 
 	rruntime.Go(func() {

@@ -104,6 +104,7 @@ var (
 	retryTimeWindow, minRetryBackoff, maxRetryBackoff, jobsBatchTimeout     time.Duration
 	noOfJobsToBatchInAWorker                                                int
 	pkgLogger                                                               logger.LoggerI
+	Diagnostics                                                             diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
 
 type requestMetric struct {
@@ -277,7 +278,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	// START: request to destination endpoint
 	worker.batchTimeStat.Start()
 
-	var respStatusCode, prevRespStatusCode, attempts int
+	var respStatusCode, prevRespStatusCode int
 	var respBody string
 	handledJobMetadatas := make(map[int64]*types.JobMetadataT)
 
@@ -285,10 +286,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 		var attemptedToSendTheJob bool
 		if prevRespStatusCode == 0 || isSuccessStatus(prevRespStatusCode) {
 			diagnosisStartTime := time.Now()
-			worker.rt.logger.Debugf("[%v Router] :: trying to send payload. Attempt no. %v of max attempts %v", worker.rt.destName, attempts, ser)
-
 			worker.deliveryTimeStat.Start()
-
 			ch := worker.trackStuckDelivery()
 			if worker.rt.customDestinationManager != nil {
 				sourceID := destinationJob.JobMetadataArray[0].SourceID
@@ -390,6 +388,7 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 		reqMetric.RequestRetries = reqMetric.RequestRetries + 1
 	}
 	reqMetric.RequestCompletedTime = time.Now().Sub(*diagnosisStartTime)
+	worker.rt.trackRequestMetrics(reqMetric)
 }
 
 func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
@@ -698,7 +697,7 @@ func (rt *HandleT) statusInsertLoop() {
 						} else {
 							event = diagnostics.RouterAborted
 						}
-						diagnostics.Track(event, map[string]interface{}{
+						Diagnostics.Track(event, map[string]interface{}{
 							diagnostics.RouterDestination: rt.destName,
 							diagnostics.UserID:            resp.userID,
 							diagnostics.RouterAttemptNum:  resp.status.AttemptNum,
@@ -779,7 +778,7 @@ func (rt *HandleT) collectMetrics() {
 						},
 					}
 
-					diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
+					Diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
 				}
 
 				rt.requestsMetric = nil
@@ -934,6 +933,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.toClearFailJobIDMap = make(map[int][]string)
 	rt.isEnabled = true
 	rt.netHandle = &NetHandleT{}
+	rt.netHandle.logger = rt.logger.Child("network")
 	rt.netHandle.Setup(destName, rt.netClientTimeout)
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)

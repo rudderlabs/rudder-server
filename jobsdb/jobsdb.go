@@ -482,34 +482,55 @@ func (jd *HandleT) sortDnumList(dnumList []string) {
 	sort.Slice(dnumList, func(i, j int) bool {
 		src := strings.Split(dnumList[i], "_")
 		dst := strings.Split(dnumList[j], "_")
-		k := 0
-		for {
-			if k >= len(src) {
-				//src has same prefix but is shorter
-				//For example, src=1.1 while dest=1.1.1
-				jd.assert(k < len(dst), fmt.Sprintf("k:%d >= len(dst):%d", k, len(dst)))
-				jd.assert(k > 0, fmt.Sprintf("k:%d <= 0", k))
-				return true
-			}
-			if k >= len(dst) {
-				//Opposite of case above
-				jd.assert(k > 0, fmt.Sprintf("k:%d <= 0", k))
-				jd.assert(k < len(src), fmt.Sprintf("k:%d >= len(src):%d", k, len(src)))
-				return false
-			}
-			if src[k] == dst[k] {
-				//Loop
-				k++
-				continue
-			}
-			//Strictly ordered. Return
-			srcInt, err := strconv.Atoi(src[k])
-			jd.assertError(err)
-			dstInt, err := strconv.Atoi(dst[k])
-			jd.assertError(err)
-			return srcInt < dstInt
-		}
+		comparison, err := dsComparitor(src, dst)
+		jd.assertError(err)
+		return comparison
 	})
+}
+
+// returns true, nil if src is less than dst
+// returns false, nil if src is greater than dst
+// returns false, someError if src is equal to dst
+var dsComparitor = func(src, dst []string) (bool, error) {
+	k := 0
+	for {
+		if k >= len(src) {
+			//src has same prefix but is shorter
+			//For example, src=1.1 while dest=1.1.1
+			if k >= len(dst) {
+				return false, fmt.Errorf("k:%d >= len(dst):%d", k, len(dst))
+			}
+			if k <= 0 {
+				return false, fmt.Errorf("k:%d <= 0", k)
+			}
+			return true, nil
+		}
+		if k >= len(dst) {
+			//Opposite of case above
+			if k <= 0 {
+				return false, fmt.Errorf("k:%d <= 0", k)
+			}
+			if k >= len(src) {
+				return false, fmt.Errorf("k:%d >= len(src):%d", k, len(src))
+			}
+			return false, nil
+		}
+		if src[k] == dst[k] {
+			//Loop
+			k++
+			continue
+		}
+		//Strictly ordered. Return
+		srcInt, err := strconv.Atoi(src[k])
+		if err != nil {
+			return false, fmt.Errorf("string to int conversion failed for source %v. with error %w", src, err)
+		}
+		dstInt, err := strconv.Atoi(dst[k])
+		if err != nil {
+			return false, fmt.Errorf("string to int conversion failed for destination %v. with error %w", dst, err)
+		}
+		return srcInt < dstInt, nil
+	}
 }
 
 //Function to get all table names form Postgres
@@ -754,21 +775,21 @@ Now if an internal migration is to happen and we migrate 1, 2, 3, 4, 4_1, we nee
 create a newDS between 4_1 and 4_2. This is assigned to 4_1_1, 4_1_2 and so on.
 */
 
-func (jd *HandleT) mapDSToLevel(ds dataSetT) (int, []int) {
+func mapDSToLevel(ds dataSetT) (levelInt int, levelVals []int, err error) {
 	indexStr := strings.Split(ds.Index, "_")
 	//Currently we don't have a scenario where we need more than 3 levels.
-	jd.assert(len(indexStr) <= 3, fmt.Sprintf("len(indexStr): %d > 3", len(indexStr)))
-	var (
-		levelVals []int
-		levelInt  int
-		err       error
-	)
+	if len(indexStr) > 3 {
+		err = fmt.Errorf("len(indexStr): %d > 3", len(indexStr))
+		return
+	}
 	for _, str := range indexStr {
 		levelInt, err = strconv.Atoi(str)
-		jd.assertError(err)
+		if err != nil {
+			return
+		}
 		levelVals = append(levelVals, levelInt)
 	}
-	return len(levelVals), levelVals
+	return len(levelVals), levelVals, nil
 }
 
 func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
@@ -778,6 +799,7 @@ func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
 }
 
 func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT {
+	jd.logger.Infof("Creating new DS of type %s before ds %s for %s jobsdb", newDSType, insertBeforeDS.Index, jd.tablePrefix)
 	var newDSIdx string
 	appendLast := newDSType == appendToDsList
 
@@ -789,9 +811,9 @@ func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT 
 	case appendToDsList:
 		newDSIdx = jd.computeNewIdxForAppend()
 	case insertForMigration:
-		newDSIdx = jd.computeNewIdxForInsert(newDSType, insertBeforeDS)
+		newDSIdx = jd.computeNewIdxForIntraNodeMigration(insertBeforeDS)
 	case insertForImport:
-		newDSIdx = jd.computeNewIdxForInsert(newDSType, insertBeforeDS)
+		newDSIdx = jd.computeNewIdxForInterNodeMigration(insertBeforeDS)
 	default:
 		panic("Unknown usage for newDSType : " + newDSType)
 
@@ -818,89 +840,167 @@ func (jd *HandleT) computeNewIdxForAppend() string {
 	if len(dList) == 0 {
 		newDSIdx = "1"
 	} else {
+		levels, levelVals, err := mapDSToLevel(dList[len(dList)-1])
+		jd.assertError(err)
 		//Last one can only be Level0
-		levels, levelVals := jd.mapDSToLevel(dList[len(dList)-1])
 		jd.assert(levels == 1, fmt.Sprintf("levels:%d != 1", levels))
 		newDSIdx = fmt.Sprintf("%d", levelVals[0]+1)
 	}
 	return newDSIdx
 }
 
-func (jd *HandleT) computeNewIdxForInsert(newDSType string, insertBeforeDS dataSetT) string {
-	jd.logger.Infof("newDSType : %s, insertBeforeDS : %v", newDSType, insertBeforeDS)
+func (jd *HandleT) computeNewIdxForInterNodeMigration(insertBeforeDS dataSetT) string { //ClusterMigration
+	jd.logger.Debugf("computeNewIdxForInterNodeMigration, insertBeforeDS : %v", insertBeforeDS)
 	dList := jd.getDSList(true)
-	jd.logger.Infof("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
-	newDSIdx := ""
-	jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
+	newIdx, err := computeIdxForClusterMigration(jd.tablePrefix, dList, insertBeforeDS)
+	jd.assertError(err)
+	return newIdx
+}
+
+func computeIdxForClusterMigration(tablePrefix string, dList []dataSetT, insertBeforeDS dataSetT) (newDSIdx string, err error) {
+	pkgLogger.Debugf("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
+	if len(dList) <= 0 {
+		return "", fmt.Errorf("len(dList): %d <= 0", len(dList))
+	}
 	for idx, ds := range dList {
 		if ds.Index == insertBeforeDS.Index {
-			levels, levelVals := jd.mapDSToLevel(ds)
+			var levels int
+			var levelVals []int
+			levels, levelVals, err = mapDSToLevel(ds)
+			if err != nil {
+				return
+			}
+			if levels != 1 {
+				err = fmt.Errorf("insertBeforeDS called for ds : %s_%s. insertBeforeDS should always be called for dsForNewEvents and this should always be a Level0 dataset", tablePrefix, ds.Index)
+				return
+			}
 			var (
 				levelsPre    int
 				levelPreVals []int
 			)
-			if idx == 0 && newDSType == insertForImport {
-				jd.logger.Infof("idx = 0 case with insertForImport and ds at idx0 is %v", ds)
+			if idx == 0 {
+				pkgLogger.Debugf("idx = 0 case with insertForImport and ds at idx 0 is %v", ds)
 				levelsPre = 1
 				levelPreVals = []int{levelVals[0] - 1}
 			} else {
-				jd.logger.Infof("ds to insert before found in dList is %v", ds)
-				//We never insert before the first element
-				jd.assert(idx > 0, fmt.Sprintf("idx: %d <= 0", idx))
-				levelsPre, levelPreVals = jd.mapDSToLevel(dList[idx-1])
+				pkgLogger.Debugf("ds to insert before found in dList is %v", ds)
+				levelsPre, levelPreVals, err = mapDSToLevel(dList[idx-1])
+				if err != nil {
+					return
+				}
 			}
-			//Some sanity checks (see comment above)
-			//Insert before is never required on level3 or above.
-			// jd.assert(levels <= 2, fmt.Sprintf("levels:%d  > 2", levels))
-			if levelsPre == 1 {
+			if levelPreVals[0] >= levelVals[0] {
+				err = fmt.Errorf("First level val of previous ds should be less than the first(and only) levelVal of insertBeforeDS. Found %s_%d and %s_%s instead", tablePrefix, levelPreVals[0], tablePrefix, ds.Index)
+				return
+			}
+			switch levelsPre {
+			case 1:
 				/*
-					| levelsPre | levels | newDSIdx |
-					| --------- | ------ | -------- |
-					| 1         | 2      | 1_1      |
-					| 1         | 3_1    | 1_1      |
+					| prevDS    | insertBeforeDS | newDSIdx |
+					| --------- | -------------- | -------- |
+					| 0         | 1              | 0_1      |
 				*/
 				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], 1)
-			} else if levelsPre == 2 {
-				if levelPreVals[0] == 0 {
-					// This is from cluster migration
-					/*
-						| levelsPre | levels | newDSIdx |
-						| --------- | ------ | -------- |
-						| 0_2       | 1      | 0_2_1    |
-						| 0_2       | 0_4    | 0_2_1    |
-						| 0_2       | 0_5_1  | 0_2_1    |
-						| 0_2       | 3_2    | 0_2_1    |
-					*/
-					newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], 1)
-
-				} else {
-					/*
-						| levelsPre | levels | newDSIdx |
-						| --------- | ------ | -------- |
-						| 2_3       | 3      | 2_4      |
-						| 2_3       | 4_2    | 2_4      |
-					*/
-					jd.assert(levelPreVals[0] != levelVals[0], fmt.Sprintf("Cannot have two ds with same levels[0]: %d", levelVals[0]))
-					newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
-				}
-
-			} else if levelsPre == 3 {
+			case 2:
 				/*
-					| levelsPre | levels | newDSIdx |
-					| --------- | ------ | -------- |
-					| 0_1_2     | 0_2_2  | 0_1_3    |
-					| 0_1_2     | 0_3    | 0_1_3    |
-					| 0_1_2     | 1_3    | 0_1_3    |
-					| 0_1_2     | 2      | 0_1_3    |
+					| prevDS    | insertBeforeDS | newDSIdx |
+					| --------- | -------------- | -------- |
+					| 0_1       | 1              | 0_2      |
 				*/
-				jd.assert(levelPreVals[0] == 0, fmt.Sprintf("Cannot have three levels except for cluster migration"))
-				newDSIdx = fmt.Sprintf("%d_%d_%d", levelPreVals[0], levelPreVals[1], levelPreVals[2]+1)
-			} else {
-				jd.logger.Infof("Unhandled scenario. levelsPre : %v and levels : %v", levelsPre, levels)
-				jd.assert(false, fmt.Sprintf("Unexpected insert between %s and %s", dList[idx-1].Index, ds.Index))
+
+				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
+			default:
+				err = fmt.Errorf("The previous ds can only be a Level0 or Level1. Found %s_%s instead", tablePrefix, dList[idx-1].Index)
+				return
+
+			}
+		}
+	}
+	return
+}
+
+//Tries to give a slice between before and after by incrementing last value in before. If the order doesn't maintain, it adds a level and recurses.
+func computeInsertVals(before, after []string) ([]string, error) {
+	for {
+		calculatedVals := make([]string, len(before))
+		copy(calculatedVals, before)
+		lastVal, err := strconv.Atoi(calculatedVals[len(calculatedVals)-1])
+		if err != nil {
+			return calculatedVals, err
+		}
+		//Just increment the last value of the index as a possible candidate
+		calculatedVals[len(calculatedVals)-1] = fmt.Sprintf("%d", lastVal+1)
+
+		var equals bool
+		if len(calculatedVals) == len(after) {
+			equals = true
+			for k := 0; k < len(calculatedVals); k++ {
+				if calculatedVals[k] == after[k] {
+					continue
+				}
+				equals = false
 			}
 		}
 
+		var comparison bool
+		if !equals {
+			comparison, err = dsComparitor(calculatedVals, after)
+			if err != nil {
+				return calculatedVals, err
+			}
+		} else {
+			comparison = false
+		}
+
+		//The basic requirement is that the possible candidate should be smaller compared to the insertBeforeDS.
+		if comparison {
+			//Only when the index starts with 0, we allow three levels. This would be when we have to insert an internal migration DS between two import DSs
+			//In all other cases, we allow only two levels
+			if (before[0] == "0" && len(calculatedVals) == 3) ||
+				(before[0] != "0" && len(calculatedVals) == 2) {
+				return calculatedVals, nil
+			}
+		}
+		before = append(before, "0")
+	}
+}
+
+func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
+	comparison, err := dsComparitor(strings.Split(beforeIndex, "_"), strings.Split(afterIndex, "_"))
+	if err != nil {
+		return "", fmt.Errorf("Error while comparing beforeIndex: %s and afterIndex: %s with error : %w", beforeIndex, afterIndex, err)
+	}
+	if !comparison {
+		return "", fmt.Errorf("Not a valid insert request between %s and %s", beforeIndex, afterIndex)
+	}
+
+	beforeVals := strings.Split(beforeIndex, "_")
+	afterVals := strings.Split(afterIndex, "_")
+	calculatedInsertVals, err := computeInsertVals(beforeVals, afterVals)
+	if err != nil {
+		return "", fmt.Errorf("Failed to calculate InserVals with error: %w", err)
+	}
+	calculatedIdx := strings.Join(calculatedInsertVals, "_")
+	if len(calculatedInsertVals) > 3 {
+		return "", fmt.Errorf("We don't expect a ds to be computed to Level3. We got %s while trying to insert between %s and %s", calculatedIdx, beforeIndex, afterIndex)
+	}
+
+	return calculatedIdx, nil
+}
+
+func (jd *HandleT) computeNewIdxForIntraNodeMigration(insertBeforeDS dataSetT) string { //Within the node
+	jd.logger.Debugf("computeNewIdxForIntraNodeMigration, insertBeforeDS : %v", insertBeforeDS)
+	dList := jd.getDSList(true)
+	jd.logger.Debugf("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
+	newDSIdx := ""
+	var err error
+	jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
+	for idx, ds := range dList {
+		if ds.Index == insertBeforeDS.Index {
+			jd.assert(idx > 0, "We never want to insert before first dataset")
+			newDSIdx, err = computeInsertIdx(dList[idx-1].Index, insertBeforeDS.Index)
+			jd.assertError(err)
+		}
 	}
 	return newDSIdx
 }
@@ -2393,9 +2493,11 @@ func (jd *HandleT) recoverFromJournal() {
 	jd.recoverFromCrash(addDSGoRoutine)
 	jd.recoverFromCrash(mainGoRoutine)
 	jd.recoverFromCrash(backupGoRoutine)
-	if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
-		jd.recoverFromCrash(migratorRoutine)
-	}
+}
+
+//RecoverFromMigrationJournal is an exposed function for migrator package to handle journal crashes during migration
+func (jd *HandleT) RecoverFromMigrationJournal() {
+	jd.recoverFromCrash(migratorRoutine)
 }
 
 /*

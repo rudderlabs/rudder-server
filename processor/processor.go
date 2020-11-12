@@ -12,6 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -72,6 +73,7 @@ type HandleT struct {
 	userJobPQ                    pqT
 	userPQLock                   sync.Mutex
 	logger                       logger.LoggerI
+	eventSchemaHandler           types.EventSchemasI
 }
 
 type DestStatT struct {
@@ -195,14 +197,15 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 		"module": "batch_router",
 	})
 	proc.destStats = make(map[string]*DestStatT)
-
+	if enableEventSchemasFeature {
+		proc.eventSchemaHandler = event_schema.GetInstance()
+	}
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
 	proc.transformer.Setup()
 
 	proc.crashRecover()
-
 	if proc.processSessions {
 		proc.logger.Info("Starting session processor")
 		rruntime.Go(func() {
@@ -241,6 +244,7 @@ var (
 	configSubscriberLock                sync.RWMutex
 	customDestinations                  []string
 	pkgLogger                           logger.LoggerI
+	enableEventSchemasFeature           bool
 )
 
 func loadConfig() {
@@ -255,7 +259,8 @@ func loadConfig() {
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
-
+	// EventSchemas feature. true by default
+	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", true)
 	dbReadBatchSize = minDBReadBatchSize
 }
 
@@ -1023,7 +1028,12 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		proc.pStatsDBR.End(0)
 		return false
 	}
-
+	if enableEventSchemasFeature {
+		for _, unprocessedJob := range unprocessedList {
+			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
+			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
+		}
+	}
 	// handle pending jobs
 	proc.statListSort.Start()
 	combinedList := append(unprocessedList, retryList...)
