@@ -230,6 +230,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		SetEnableRateLimit(false)
 		SetEnableDedup(false)
 		SetEnableSuppressUserFeature(true)
+		SetEnableEventSchemasFeature(false)
 	})
 
 	AfterEach(func() {
@@ -288,6 +289,7 @@ var _ = Describe("Gateway", func() {
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
 		SetEnableDedup(false)
+		SetEnableEventSchemasFeature(false)
 	})
 
 	AfterEach(func() {
