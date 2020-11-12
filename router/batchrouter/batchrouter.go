@@ -394,6 +394,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		warehouseServiceFailedTimeLock.Unlock()
 	}
 
+	var abortedJobCount int
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 
@@ -419,6 +420,9 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			ErrorResponse: errorResp,
 		}
 		statusList = append(statusList, &status)
+		if jobState == jobsdb.Aborted.State {
+			abortedJobCount++
+		}
 	}
 
 	//tracking batch router errors
@@ -440,6 +444,13 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	}
 	//Mark the status of the jobs
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
+	tags := make(map[string]string)
+	tags["destType"] = brt.destType
+	tags["isWarehouse"] = fmt.Sprintf("%t", isWarehouse)
+	for _, paramFilter := range parameterFilters {
+		tags[fmt.Sprintf("param_%s", paramFilter.Name)] = paramFilter.Value
+	}
+	stats.NewTaggedStat("aborted_job_count", stats.CountType, tags).Count(abortedJobCount)
 }
 
 func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {
