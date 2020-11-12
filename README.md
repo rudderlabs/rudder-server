@@ -62,7 +62,7 @@ Questions? Please join our [Slack channel](https://resources.rudderstack.com/joi
 
 # Get Started
 
-The easiest way to experience RudderStack is to [sign up](https://app.rudderstack.com/signup) for **RudderStack Cloud Free** - a completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderstack.com/signup) to get started.
+The easiest way to experience RudderStack is to [sign up](https://app.rudderlabs.com/signup?type=freetrial) for **RudderStack Cloud Free** - a completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to get started.
 
 You can also set up and use RudderStack on your platform of choice.
 
@@ -133,7 +133,7 @@ For more information on RudderStack's features and functionalities, make sure yo
 - [HackerNews][hackernews]
 - [Product Hunt][producthunt]
 
-# :clap:  Supporters
+# :clap:  Our Supporters
 [![Stargazers repo roster for @rudderlabs/rudder-server](https://reporoster.com/stars/rudderlabs/rudder-server)](https://github.com/rudderlabs/rudder-server/stargazers)
 [![Forkers repo roster for @rudderlabs/rudder-server](https://reporoster.com/forks/rudderlabs/rudder-server)](https://github.com/rudderlabs/rudder-server/network/members)
 
