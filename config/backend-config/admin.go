@@ -2,7 +2,6 @@ package backendconfig
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -19,7 +18,7 @@ func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error(r)
-			err = errors.New("Internal Rudder Server Error")
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
 

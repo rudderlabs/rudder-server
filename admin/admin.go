@@ -31,7 +31,6 @@ package admin
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -87,7 +86,7 @@ func (a Admin) Status(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error(r)
-			err = errors.New("Internal Rudder Server Error")
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
 	statusObj := make(map[string]interface{})
@@ -106,7 +105,7 @@ func (a Admin) PrintStack(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error(r)
-			err = errors.New("Internal Rudder Server Error")
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
 	byteArr := make([]byte, 2048*1024)
@@ -120,7 +119,7 @@ func (a Admin) HeapDump(path *string, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error(r)
-			err = errors.New("Internal Rudder Server Error")
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
 	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0755)
@@ -138,7 +137,7 @@ func (a Admin) ServerConfig(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error(r)
-			err = errors.New("Internal Rudder Server Error")
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
 
@@ -160,7 +159,7 @@ func (a Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error(r)
-			err = errors.New("Internal Rudder Server Error")
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
 	err = logger.SetModuleLevel(l.Module, l.Level)
