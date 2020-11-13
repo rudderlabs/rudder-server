@@ -197,7 +197,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 				StartRouter(enableRouter, &routerDB, &batchRouterDB)
 			}
 			startProcessorFunc := func() {
-				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, clearDB)
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -207,14 +207,14 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 	}
 
 	StartRouter(enableRouter, &routerDB, &batchRouterDB)
-	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, clearDB)
 
 	if enableGateway {
 		var gateway gateway.HandleT
 		var rateLimiter ratelimiter.HandleT
 
 		rateLimiter.SetUp()
-		gateway.Setup(application, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, stats.DefaultStats, clearDB, versionHandler)
+		gateway.Setup(application, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, stats.DefaultStats, versionHandler)
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
@@ -236,7 +236,7 @@ func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
 }
 
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT) {
+func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, clearDB *bool) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
 
@@ -246,7 +246,7 @@ func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jo
 
 	if enableProcessor {
 		var processor = processor.NewProcessor()
-		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, stats.DefaultStats)
+		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, stats.DefaultStats, clearDB)
 		processor.Start()
 
 		processorLoaded = true

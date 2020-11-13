@@ -252,7 +252,7 @@ var _ = Describe("Processor", func() {
 
 		// setup static requirements of dependencies
 		stats.Setup()
-
+		SetEnableDedup(false)
 		SetEnableEventSchemasFeature(false)
 	})
 
@@ -261,6 +261,8 @@ var _ = Describe("Processor", func() {
 	})
 
 	Context("Initialization", func() {
+		var clearDB = false
+
 		It("should initialize (no jobs to recover)", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
@@ -272,7 +274,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats, &clearDB)
 			processor.ResetDBReadBatchSize()
 		})
 
@@ -336,12 +338,14 @@ var _ = Describe("Processor", func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats, &clearDB)
 			processor.ResetDBReadBatchSize()
 		})
 	})
 
 	Context("normal operation", func() {
+		var clearDB = false
+
 		BeforeEach(func() {
 			// crash recovery check
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
@@ -355,7 +359,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats, &clearDB)
 			processor.ResetDBReadBatchSize()
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
@@ -1559,7 +1563,9 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 }
 
 func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
-	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
+	var clearDB = false
+
+	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats, &clearDB)
 	processor.ResetDBReadBatchSize()
 
 	// make sure the mock backend config has sent the configuration

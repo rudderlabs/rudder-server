@@ -3,6 +3,8 @@ package processor
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dgraph-io/badger"
+	"github.com/tidwall/sjson"
 	"reflect"
 	"sort"
 	"strconv"
@@ -73,6 +75,7 @@ type HandleT struct {
 	userPQLock                   sync.Mutex
 	logger                       logger.LoggerI
 	eventSchemaHandler           types.EventSchemasI
+	badgerDB                     *badger.DB
 }
 
 type DestStatT struct {
@@ -140,7 +143,7 @@ func NewProcessor() *HandleT {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, s stats.Stats) {
+func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, s stats.Stats, clearDB *bool) {
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = s
@@ -189,6 +192,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
 	}
+	if enableDedup {
+		proc.openBadger(clearDB)
+	}
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
@@ -234,6 +240,8 @@ var (
 	customDestinations                  []string
 	pkgLogger                           logger.LoggerI
 	enableEventSchemasFeature           bool
+	enableDedup                         bool
+	dedupWindow							time.Duration
 )
 
 func loadConfig() {
@@ -246,6 +254,10 @@ func loadConfig() {
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
+	// Enable dedup of incoming events by default
+	enableDedup = config.GetBool("Processor.enableDedup", false)
+	// Dedup time window in hours
+	dedupWindow = config.GetDuration("Processor.dedupWindowInS", time.Duration(86400))
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
 	// EventSchemas feature. true by default
@@ -1017,15 +1029,81 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		proc.pStatsDBR.End(0)
 		return false
 	}
+	var writeKeyDupStats = make(map[string]int)
+
 	if enableEventSchemasFeature {
 		for _, unprocessedJob := range unprocessedList {
 			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
 			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
 		}
 	}
+	var uniqueUnprocessedList []*jobsdb.JobT
+	var duplicateList []*jobsdb.JobT
+
+	if enableDedup{
+		allMessageIdsSet := make(map[string]struct{})
+		for _, unprocessedJob := range unprocessedList {
+			body,err := unprocessedJob.EventPayload.MarshalJSON()
+			if err != nil {
+				proc.logger.Infof("Marshalling job payload failed with : %s", err.Error())
+				continue
+			}
+			result := gjson.GetBytes(body, "batch")
+			var index int
+			var reqMessageIDs []string
+			result.ForEach(func(_, _ gjson.Result) bool {
+				reqMessageIDs = append(reqMessageIDs, gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String())
+				index++
+				return true // keep iterating
+			})
+
+			writeKey := gjson.GetBytes(body, "writeKey").Str
+			proc.dedup(&body, reqMessageIDs, allMessageIdsSet, writeKey, writeKeyDupStats)
+			if len(gjson.GetBytes(body, "batch").Array()) == 0 {
+				duplicateList = append(duplicateList, unprocessedJob)
+				continue
+			}
+			addToSet(allMessageIdsSet, reqMessageIDs)
+			uniqueUnprocessedList = append(uniqueUnprocessedList, unprocessedJob)
+		}
+
+		if len(uniqueUnprocessedList) > 0{
+			messageIdsArr := make([]string, 0)
+			for msgId := range allMessageIdsSet{
+				messageIdsArr = append(messageIdsArr, msgId)
+			}
+			rruntime.Go(func() {
+				proc.writeToBadger(messageIdsArr)
+			})
+		}
+		//Mark all as executing so next query doesn't pick it up
+		var statusList []*jobsdb.JobStatusT
+		for _, batchEvent := range duplicateList {
+			newStatus := jobsdb.JobStatusT{
+				JobID:         batchEvent.JobID,
+				JobState:      jobsdb.Succeeded.State,
+				AttemptNum:    1,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "200",
+				ErrorResponse: []byte(`{"success":"OK"}`),
+			}
+			statusList = append(statusList, &newStatus)
+		}
+		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+
+		proc.updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
+	}
+
+
 	// handle pending jobs
 	proc.statListSort.Start()
-	combinedList := append(unprocessedList, retryList...)
+	var combinedList []*jobsdb.JobT
+	if enableDedup {
+		combinedList = append(uniqueUnprocessedList, retryList...)
+	} else {
+		combinedList = append(unprocessedList, retryList...)
+	}
 	proc.logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total: %v", len(retryList), len(unprocessedList), len(combinedList))
 	proc.pStatsDBR.End(len(combinedList))
 	proc.statGatewayDBR.Count(len(combinedList))
@@ -1110,4 +1188,137 @@ func (proc *HandleT) crashRecover() {
 		}
 		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
 	}
+}
+
+func (proc *HandleT) openBadger(clearDB *bool) {
+	var err error
+	badgerPathName := "/badgerdb"
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
+	path := fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
+	proc.badgerDB, err = badger.Open(badger.DefaultOptions(path))
+	if err != nil {
+		panic(err)
+	}
+	if *clearDB {
+		err = proc.badgerDB.DropAll()
+		if err != nil {
+			panic(err)
+		}
+	}
+	rruntime.Go(func() {
+		proc.gcBadgerDB()
+	})
+}
+
+func (proc *HandleT) gcBadgerDB() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+	again:
+		err := proc.badgerDB.RunValueLogGC(0.5)
+		if err == nil {
+			goto again
+		}
+	}
+}
+
+func (proc *HandleT) writeToBadger(messageIDs []string) {
+	if enableDedup {
+		err := proc.badgerDB.Update(func(txn *badger.Txn) error {
+			for _, messageID := range messageIDs {
+				e := badger.NewEntry([]byte(messageID), nil).WithTTL(dedupWindow * time.Second)
+				if err := txn.SetEntry(e); err == badger.ErrTxnTooBig {
+					_ = txn.Commit()
+					txn = proc.badgerDB.NewTransaction(true)
+					_ = txn.SetEntry(e)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func (proc *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSet map[string]struct{}, writeKey string, writeKeyDupStats map[string]int) {
+	toRemoveMessageIndexesSet := make(map[int]struct{})
+	//Dedup within events batch in a web request
+	messageIDSet := make(map[string]struct{})
+
+	// Eg messageIDs: [m1, m2, m3, m1, m1, m1]
+	//Constructing a set out of messageIDs
+	for _, messageID := range messageIDs {
+		messageIDSet[messageID] = struct{}{}
+	}
+	// Eg messagIDSet: [m1, m2, m3]
+	//In this loop it will remove from set for first occurance and if not found in set it means its a duplicate
+	for idx, messageID := range messageIDs {
+		if _, ok := messageIDSet[messageID]; ok {
+			delete(messageIDSet, messageID)
+		} else {
+			toRemoveMessageIndexesSet[idx] = struct{}{}
+		}
+	}
+
+	//Dedup within batch of web requests
+	for idx, messageID := range messageIDs {
+		if _, ok := allMessageIDsSet[messageID]; ok {
+			toRemoveMessageIndexesSet[idx] = struct{}{}
+		}
+	}
+
+	//Dedup with badgerDB
+	err := proc.badgerDB.View(func(txn *badger.Txn) error {
+		for idx, messageID := range messageIDs {
+			_, err := txn.Get([]byte(messageID))
+			if err != badger.ErrKeyNotFound {
+				toRemoveMessageIndexesSet[idx] = struct{}{}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	toRemoveMessageIndexes := make([]int, 0, len(toRemoveMessageIndexesSet))
+	for k := range toRemoveMessageIndexesSet {
+		toRemoveMessageIndexes = append(toRemoveMessageIndexes, k)
+	}
+
+	sort.Ints(toRemoveMessageIndexes)
+	count := 0
+	for _, idx := range toRemoveMessageIndexes {
+		proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
+		misc.IncrementMapByKey(writeKeyDupStats, writeKey, 1)
+		*body, err = sjson.DeleteBytes(*body, fmt.Sprintf(`batch.%v`, idx-count))
+		if err != nil {
+			panic(err)
+		}
+		count++
+	}
+}
+
+func (proc *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
+	for writeKey, count := range writeKeyStats {
+		writeKeyStatsD := proc.stats.NewWriteKeyStat(bucket, stats.CountType, writeKey)
+		writeKeyStatsD.Count(count)
+	}
+}
+
+func addToSet(set map[string]struct{}, elements []string) {
+	for _, element := range elements {
+		set[element] = struct{}{}
+	}
+}
+
+//SetEnableDedup overrides enableDedup configuration and returns previous value
+func SetEnableDedup(b bool) bool {
+	prev := enableDedup
+	enableDedup = b
+	return prev
 }
