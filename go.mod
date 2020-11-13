@@ -34,6 +34,7 @@ require (
 	github.com/gorilla/mux v1.7.4
 	github.com/hashicorp/go-retryablehttp v0.6.6
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334
+	github.com/jeremywohl/flatten v1.0.1
 	github.com/joho/godotenv v1.3.0
 	github.com/lib/pq v1.3.0
 	github.com/mattn/go-ieproxy v0.0.0-20200203040449-2dbc853185d9 // indirect
@@ -49,6 +50,7 @@ require (
 	github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c // indirect
 	github.com/segmentio/ksuid v1.0.2
 	github.com/snowflakedb/gosnowflake v1.3.4
+	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/afero v1.2.2 // indirect
 	github.com/spf13/cast v1.3.1
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
@@ -59,17 +61,15 @@ require (
 	github.com/tidwall/pretty v1.0.1 // indirect
 	github.com/tidwall/sjson v1.0.4
 	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
-	go.uber.org/automaxprocs v1.3.0 // indirect
 	go.uber.org/multierr v1.5.0 // indirect
 	go.uber.org/zap v1.14.0
-	golang.org/x/lint v0.0.0-20200302205851-738671d3881b // indirect
+	golang.org/x/net v0.0.0-20200226121028-0de0cce0169b // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
-	golang.org/x/tools v0.0.0-20201113202037-1643af1435f3 // indirect
+	golang.org/x/tools v0.0.0-20200226224502-204d844ad48d // indirect
 	google.golang.org/api v0.19.0
 	google.golang.org/genproto v0.0.0-20200226201735-46b91f19d98c // indirect
 	google.golang.org/grpc v1.27.1
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
 	gopkg.in/ini.v1 v1.52.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
-	honnef.co/go/tools v0.0.1-2020.1.6 // indirect
 )

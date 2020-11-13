@@ -150,11 +150,7 @@ func traverse(files []*ast.File) []event {
 		extent += int(f.End() - f.Pos())
 	}
 	// This estimate is based on the net/http package.
-	capacity := extent * 33 / 100
-	if capacity > 1e6 {
-		capacity = 1e6 // impose some reasonable maximum
-	}
-	events := make([]event, 0, capacity)
+	events := make([]event, 0, extent*33/100)
 
 	var stack []event
 	for _, f := range files {

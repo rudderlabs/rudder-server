@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/build"
 	"go/scanner"
 	"io"
 	"io/ioutil"
@@ -21,7 +22,6 @@ import (
 	"runtime/pprof"
 	"strings"
 
-	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
 )
 
@@ -43,8 +43,14 @@ var (
 		TabIndent: true,
 		Comments:  true,
 		Fragment:  true,
+		// This environment, and its caches, will be reused for the whole run.
 		Env: &imports.ProcessEnv{
-			GocmdRunner: &gocommand.Runner{},
+			GOPATH:      build.Default.GOPATH,
+			GOROOT:      build.Default.GOROOT,
+			GOFLAGS:     os.Getenv("GOFLAGS"),
+			GO111MODULE: os.Getenv("GO111MODULE"),
+			GOPROXY:     os.Getenv("GOPROXY"),
+			GOSUMDB:     os.Getenv("GOSUMDB"),
 		},
 	}
 	exitCode = 0
@@ -52,7 +58,7 @@ var (
 
 func init() {
 	flag.BoolVar(&options.AllErrors, "e", false, "report all errors (not just the first 10 on different lines)")
-	flag.StringVar(&options.LocalPrefix, "local", "", "put imports beginning with this string after 3rd-party packages; comma-separated list")
+	flag.StringVar(&options.Env.LocalPrefix, "local", "", "put imports beginning with this string after 3rd-party packages; comma-separated list")
 	flag.BoolVar(&options.FormatOnly, "format-only", false, "if true, don't fix imports and only format. In this mode, goimports is effectively gofmt, with the addition that imports are grouped into sections.")
 }
 
@@ -154,12 +160,7 @@ func processFile(filename string, in io.Reader, out io.Writer, argType argumentT
 				// filename is "<standard input>"
 				return errors.New("can't use -w on stdin")
 			}
-			// On Windows, we need to re-set the permissions from the file. See golang/go#38225.
-			var perms os.FileMode
-			if fi, err := os.Stat(filename); err == nil {
-				perms = fi.Mode() & os.ModePerm
-			}
-			err = ioutil.WriteFile(filename, res, perms)
+			err = ioutil.WriteFile(filename, res, 0)
 			if err != nil {
 				return err
 			}
@@ -261,7 +262,7 @@ func gofmtMain() {
 
 	if verbose {
 		log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-		options.Env.Logf = log.Printf
+		options.Env.Debug = true
 	}
 	if options.TabWidth < 0 {
 		fmt.Fprintf(os.Stderr, "negative tabwidth %d\n", options.TabWidth)
