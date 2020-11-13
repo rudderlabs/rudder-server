@@ -47,7 +47,6 @@ import (
 var (
 	application                      app.Interface
 	warehouseMode                    string
-	maxProcess                       int
 	gwDBRetention, routerDBRetention time.Duration
 	enableProcessor, enableRouter    bool
 	enabledDestinations              []backendconfig.DestinationT
@@ -65,7 +64,6 @@ var version = "Not an official release. Get the latest release from the github r
 var major, minor, commit, buildDate, builtBy, gitURL, patch string
 
 func loadConfig() {
-	maxProcess = config.GetInt("maxProcess", 12)
 	gwDBRetention = config.GetDuration("gwDBRetentionInHr", 0) * time.Hour
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
@@ -176,7 +174,6 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 	var batchRouterDB jobsdb.HandleT
 	var procErrorDB jobsdb.HandleT
 
-	runtime.GOMAXPROCS(maxProcess)
 	pkgLogger.Info("Clearing DB ", *clearDB)
 
 	destinationdebugger.Setup()
