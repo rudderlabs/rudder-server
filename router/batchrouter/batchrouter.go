@@ -444,9 +444,12 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	}
 	//Mark the status of the jobs
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
-	tags := make(map[string]string)
-	tags["destType"] = brt.destType
-	tags["isWarehouse"] = fmt.Sprintf("%t", isWarehouse)
+
+	tags := map[string]string{
+		"module":      "batch_router",
+		"destType":    brt.destType,
+		"isWarehouse": fmt.Sprintf("%t", isWarehouse),
+	}
 	for _, paramFilter := range parameterFilters {
 		tags[fmt.Sprintf("param_%s", paramFilter.Name)] = paramFilter.Value
 	}
