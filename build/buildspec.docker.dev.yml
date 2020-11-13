@@ -6,6 +6,7 @@ env:
     dockerhub_passwd: "/dev/codebuild/dockerhub-password"
     CODECOV_TOKEN: "/codebuild/codecov-token"
 
+
 phases:
   install:
     runtime-versions:
