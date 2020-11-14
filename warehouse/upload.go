@@ -483,6 +483,10 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 				tableUpload.setError(TableUploadExportingFailed, err)
 			} else {
 				tableUpload.setStatus(TableUploadExported)
+				numEvents, queryErr := tableUpload.getNumEvents()
+				if queryErr == nil {
+					job.recordTableLoad(tName, numEvents)
+				}
 			}
 			wg.Done()
 			<-loadChan
@@ -588,8 +592,8 @@ func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (erro
 			tableUploadErr = tableUpload.setStatus(TableUploadExported)
 			if tableUploadErr == nil {
 				// Since load is successful, we assume all events in load files are uploaded
-				numEvents, tableUploadErr := tableUpload.getNumEvents()
-				if tableUploadErr == nil {
+				numEvents, queryErr := tableUpload.getNumEvents()
+				if queryErr == nil {
 					job.recordTableLoad(tName, numEvents)
 				}
 			}
