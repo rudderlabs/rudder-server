@@ -143,7 +143,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 		return filemanager.UploadOutput{}, err
 	}
 	defer file.Close()
-	logger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
+	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
 	uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.BatchID, tableName))
 	return uploadLocation, err
 }
