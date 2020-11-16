@@ -952,6 +952,7 @@ func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location str
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
+	err = nil
 	return
 }
 
