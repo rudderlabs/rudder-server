@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -58,11 +59,24 @@ func getRecoveryData() RecoveryDataT {
 			panic(err)
 		}
 	}
-
 	var recoveryData RecoveryDataT
 	err = json.Unmarshal(data, &recoveryData)
-	if err != nil {
-		panic(err)
+
+	if err != nil{
+		const timeLayout = "20060102150405"
+		filePath := strings.Split(storagePath,".")
+		newFilePath := fmt.Sprintf("%s-%s.%s",filePath[0],time.Now().Format(timeLayout),filePath[1])
+		switch err.(type){
+			case *json.SyntaxError, *json.UnmarshalTypeError : {
+				pkgLogger.Infof("Error :  \"%s\" while unmarshalling: %s", err.Error(), storagePath)
+				if writeErr := ioutil.WriteFile(newFilePath, data, 0644); writeErr != nil{
+					panic(writeErr)
+				}
+				pkgLogger.Infof("Backed up : %s -> %s", storagePath, newFilePath)
+				recoveryData = RecoveryDataT{Mode: normalMode,}
+			}
+			default : panic(err)
+		}
 	}
 
 	return recoveryData
