@@ -193,7 +193,7 @@ func (jobRun *JobRunT) getWriter(tableName string) (misc.GZipWriter, error) {
 	return writer, nil
 }
 
-func (jobRun *JobRunT) cleanup(cleanOutputFileWriters bool) {
+func (jobRun *JobRunT) cleanup() {
 	if jobRun.stagingFileReader != nil {
 		err := jobRun.stagingFileReader.Close()
 		if err != nil {
@@ -207,12 +207,8 @@ func (jobRun *JobRunT) cleanup(cleanOutputFileWriters bool) {
 			logger.Errorf("[WH]: Failed to remove staging file: %w", err)
 		}
 	}
-	if cleanOutputFileWriters && jobRun.outputFileWritersMap != nil {
+	if jobRun.outputFileWritersMap != nil {
 		for _, writer := range jobRun.outputFileWritersMap {
-			err := writer.CloseGZ()
-			if err != nil {
-				logger.Errorf("[WH]: Failed to close output load file: %w", err)
-			}
 			os.Remove(writer.File.Name())
 		}
 	}
@@ -247,9 +243,9 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		job:          job,
 		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 	}
-	allLoadFilesCleaned := false
+
 	defer func() {
-		jobRun.cleanup(!allLoadFilesCleaned)
+		jobRun.cleanup()
 	}()
 
 	logger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
@@ -404,19 +400,17 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	if err != nil {
 		panic(err)
 	}
-
+	for _, loadFile := range jobRun.outputFileWritersMap {
+		loadFile.CloseGZ()
+	}
 	for tableName, outputFile := range jobRun.outputFileWritersMap {
-		outputFile.CloseGZ()
 		uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, &outputFile, tableName)
-		os.Remove(outputFile.File.Name()) // rm created load files from the machine after uploading it to bucket
 		if err != nil {
-			// TODO: If we break in between, we have only few load files. How do we handle this?
 			return []int64{}, err
 		}
 		fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
 		loadFileIDs = append(loadFileIDs, fileID)
 	}
-	allLoadFilesCleaned = true
 	return loadFileIDs, nil
 }
 

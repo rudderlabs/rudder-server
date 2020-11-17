@@ -104,6 +104,10 @@ const (
 	UploadLastExecAtField      = "last_exec_at"
 )
 
+var (
+	alwaysMarkExported = []string{warehouseutils.DiscardsTable}
+)
+
 var maxParallelLoads map[string]int
 
 func init() {
@@ -180,7 +184,11 @@ func (job *UploadJobT) shouldTableBeLoaded(tableName string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return !loaded, nil
+	hasLoadfiles, err := job.hasLoadFiles(tableName)
+	if err != nil {
+		return false, err
+	}
+	return !loaded && hasLoadfiles, nil
 }
 
 func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
@@ -455,21 +463,15 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 		}
 		loadTable, err := job.shouldTableBeLoaded(tableName)
 		if err != nil {
-			panic(err)
+			loadErrors = append(loadErrors, err)
+			continue
 		}
 		if !loadTable {
 			wg.Done()
-			continue
-		}
-		// TODO: Do we need this?
-		hasLoadfiles, err := job.hasLoadFiles(tableName)
-		if err != nil {
-			panic(err)
-		}
-		if !hasLoadfiles && tableName == warehouseutils.DiscardsTable { //TODO: what if for a table load files are not generated because of an error and corresponding events are present. should we mark upload failed?
-			// no rows in discard table, so marking it exported
-			tableUpload := NewTableUpload(job.upload.ID, tableName)
-			tableUpload.setStatus(TableUploadExported)
+			if misc.ContainsString(alwaysMarkExported, tableName) {
+				tableUpload := NewTableUpload(job.upload.ID, tableName)
+				tableUpload.setStatus(TableUploadExported)
+			}
 			continue
 		}
 		tName := tableName
