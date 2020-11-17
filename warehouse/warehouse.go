@@ -325,7 +325,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
-		allSources := config.Data.(backendconfig.SourcesT)
+		allSources := config.Data.(backendconfig.ConfigT)
 
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
@@ -1564,7 +1564,7 @@ func monitorDestRouters() {
 	for {
 		config := <-ch
 		pkgLogger.Debug("Got config from config-backend", config)
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
 			for _, destination := range source.Destinations {

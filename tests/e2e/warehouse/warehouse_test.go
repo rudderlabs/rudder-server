@@ -25,7 +25,7 @@ var loadTablesTimeout int = 200
 var eventName string = "ginkgo"
 var warehouseTables []string
 var writeKey string = "1arW7vLmzvmwMkTzDFwmcKiAikX"
-var sourceJSON backendconfig.SourcesT
+var sourceJSON backendconfig.ConfigT
 
 var (
 	warehouseLoadFolder string
@@ -56,7 +56,7 @@ var _ = BeforeSuite(func() {
 	initializeWarehouseConfig()
 })
 
-func getWorkspaceConfig() backendconfig.SourcesT {
+func getWorkspaceConfig() backendconfig.ConfigT {
 	backendConfig := new(backendconfig.WorkspaceConfig)
 	sourceJSON, _ := backendConfig.Get()
 	return sourceJSON

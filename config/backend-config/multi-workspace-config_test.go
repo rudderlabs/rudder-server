@@ -15,7 +15,7 @@ import (
 )
 
 var workspaceId = "testWordSpaceId"
-var SampleWorkspaceSources = map[string]SourcesT{
+var SampleWorkspaceSources = map[string]ConfigT{
 	workspaceId: SampleBackendConfig,
 }
 var _ = Describe("workspace-config", func() {
@@ -92,7 +92,7 @@ var _ = Describe("workspace-config", func() {
 			workspaceToken = "testToken"
 			mockLogger.EXPECT().Error("Error while parsing request", gomock.Any(), "", http.StatusNoContent).Times(1)
 			config, ok := backendConfig.Get()
-			Expect(config).To(Equal(SourcesT{}))
+			Expect(config).To(Equal(ConfigT{}))
 			Expect(ok).To(BeFalse())
 		})
 		It("Expect to make the correct actions if fail to create the request", func() {
@@ -100,7 +100,7 @@ var _ = Describe("workspace-config", func() {
 			mockLogger.EXPECT().Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %w, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
 			config, ok := backendConfig.Get()
-			Expect(config).To(Equal(SourcesT{}))
+			Expect(config).To(Equal(ConfigT{}))
 			Expect(ok).To(BeFalse())
 		})
 		It("Expect to make the correct actions if fail to send the request", func() {
@@ -109,7 +109,7 @@ var _ = Describe("workspace-config", func() {
 			mockLogger.EXPECT().Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %w, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
 			config, ok := backendConfig.Get()
-			Expect(config).To(Equal(SourcesT{}))
+			Expect(config).To(Equal(ConfigT{}))
 			Expect(ok).To(BeFalse())
 		})
 	})

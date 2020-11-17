@@ -215,7 +215,7 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 	backendconfig.Subscribe(ch, "backendConfig")
 	for {
 		config := <-ch
-		allSources := config.Data.(backendconfig.SourcesT)
+		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			for _, destination := range source.Destinations {
 				if destination.DestinationDefinition.Name == customManager.destType {

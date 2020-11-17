@@ -20,7 +20,7 @@ import (
 )
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
-var SampleBackendConfig = SourcesT{
+var SampleBackendConfig = ConfigT{
 	Sources: []SourceT{
 		{
 			ID:       "1",
@@ -44,7 +44,7 @@ var SampleBackendConfig = SourcesT{
 		},
 	},
 }
-var SampleFilteredSources = SourcesT{
+var SampleFilteredSources = ConfigT{
 	Sources: []SourceT{
 		{
 			ID:           "1",
@@ -65,7 +65,7 @@ var SampleFilteredSources = SourcesT{
 		},
 	},
 }
-var SampleBackendConfig2 = SourcesT{
+var SampleBackendConfig2 = ConfigT{
 	Sources: []SourceT{
 		{
 			ID:       "3",

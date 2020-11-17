@@ -38,7 +38,7 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(work
 }
 
 //Get returns sources from the workspace
-func (workspaceConfig *WorkspaceConfig) Get() (SourcesT, bool) {
+func (workspaceConfig *WorkspaceConfig) Get() (ConfigT, bool) {
 	if configFromFile {
 		return workspaceConfig.getFromFile()
 	} else {
@@ -56,7 +56,7 @@ func (workspaceConfig *WorkspaceConfig) GetRegulations() (RegulationsT, bool) {
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
+func (workspaceConfig *WorkspaceConfig) getFromAPI() (ConfigT, bool) {
 	url := fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL)
 
 	var respBody []byte
@@ -75,7 +75,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 
 	if err != nil {
 		log.Error("Error sending request to the server", err)
-		return SourcesT{}, false
+		return ConfigT{}, false
 	}
 
 	configEnvHandler := workspaceConfig.CommonBackendConfig.configEnvHandler
@@ -83,11 +83,11 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
 
-	var sourcesJSON SourcesT
+	var sourcesJSON ConfigT
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
 		log.Error("Error while parsing request", err, string(respBody), statusCode)
-		return SourcesT{}, false
+		return ConfigT{}, false
 	}
 
 	workspaceConfig.workspaceIDLock.Lock()
@@ -100,18 +100,18 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 }
 
 // getFromFile reads the workspace config from JSON file
-func (workspaceConfig *WorkspaceConfig) getFromFile() (SourcesT, bool) {
+func (workspaceConfig *WorkspaceConfig) getFromFile() (ConfigT, bool) {
 	log.Info("Reading workspace config from JSON file")
 	data, err := IoUtil.ReadFile(configJSONPath)
 	if err != nil {
 		log.Errorf("Unable to read backend config from file: %s with error : %s", configJSONPath, err.Error())
-		return SourcesT{}, false
+		return ConfigT{}, false
 	}
-	var configJSON SourcesT
+	var configJSON ConfigT
 	error := json.Unmarshal(data, &configJSON)
 	if error != nil {
 		log.Errorf("Unable to parse backend config from file: %s", configJSONPath)
-		return SourcesT{}, false
+		return ConfigT{}, false
 	}
 	return configJSON, true
 }

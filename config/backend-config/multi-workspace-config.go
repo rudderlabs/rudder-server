@@ -20,7 +20,7 @@ type MultiWorkspaceConfig struct {
 
 //WorkspacesT holds sources of workspaces
 type WorkspacesT struct {
-	WorkspaceSourcesMap map[string]SourcesT `json:"-"`
+	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
 }
 type WorkspaceT struct {
 	WorkspaceID string `json:"id"`
@@ -64,7 +64,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceLibrariesForWorksp
 }
 
 //Get returns sources from all hosted workspaces
-func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
+func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 
 	var respBody []byte
@@ -83,18 +83,18 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
 
 	if err != nil {
 		log.Error("Error sending request to the server", err)
-		return SourcesT{}, false
+		return ConfigT{}, false
 	}
 	var workspaces WorkspacesT
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
 		log.Error("Error while parsing request", err, string(respBody), statusCode)
-		return SourcesT{}, false
+		return ConfigT{}, false
 	}
 
 	writeKeyToWorkspaceIDMap := make(map[string]string)
 	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
-	sourcesJSON := SourcesT{}
+	sourcesJSON := ConfigT{}
 	sourcesJSON.Sources = make([]SourceT, 0)
 	for workspaceID, workspaceConfig := range workspaces.WorkspaceSourcesMap {
 		for _, source := range workspaceConfig.Sources {

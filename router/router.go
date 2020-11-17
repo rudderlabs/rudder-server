@@ -64,7 +64,7 @@ type HandleT struct {
 	batchInputOutputDiffCountStat stats.RudderStats
 	retryAttemptsStat             stats.RudderStats
 	eventsAbortedStat             stats.RudderStats
-	noOfWorkers				 	  int
+	noOfWorkers                   int
 }
 
 type jobResponseT struct {
@@ -97,13 +97,13 @@ type workerT struct {
 }
 
 var (
-	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel, ser 			   int
-	maxFailedCountForJob                                                           int
-	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime        time.Duration
-	testSinkURL                                                                    string
-	retryTimeWindow, minRetryBackoff, maxRetryBackoff, jobsBatchTimeout            time.Duration
-	noOfJobsToBatchInAWorker                                                       int
-	pkgLogger                                                                      logger.LoggerI
+	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel, ser       int
+	maxFailedCountForJob                                                    int
+	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
+	testSinkURL                                                             string
+	retryTimeWindow, minRetryBackoff, maxRetryBackoff, jobsBatchTimeout     time.Duration
+	noOfJobsToBatchInAWorker                                                int
+	pkgLogger                                                               logger.LoggerI
 )
 
 type requestMetric struct {
@@ -977,7 +977,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		rt.configSubscriberLock.Lock()
 		rt.destinationsMap = map[string]backendconfig.DestinationT{}
-		allSources := config.Data.(backendconfig.SourcesT)
+		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {

@@ -34,7 +34,7 @@ var (
 	pollInterval, regulationsPollInterval time.Duration
 	configFromFile                        bool
 	configJSONPath                        string
-	curSourceJSON                         SourcesT
+	curSourceJSON                         ConfigT
 	curSourceJSONLock                     sync.RWMutex
 	curRegulationJSON                     RegulationsT
 	curRegulationJSONLock                 sync.RWMutex
@@ -132,7 +132,7 @@ type SourceRegulationT struct {
 	UserID         string
 }
 
-type SourcesT struct {
+type ConfigT struct {
 	EnableMetrics bool       `json:"enableMetrics"`
 	WorkspaceID   string     `json:"workspaceId"`
 	Sources       []SourceT  `json:"sources"`
@@ -174,7 +174,7 @@ type LibrariesT []LibraryT
 
 type BackendConfig interface {
 	SetUp()
-	Get() (SourcesT, bool)
+	Get() (ConfigT, bool)
 	GetRegulations() (RegulationsT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
@@ -240,7 +240,7 @@ func init() {
 	loadConfig()
 }
 
-func trackConfig(preConfig SourcesT, curConfig SourcesT) {
+func trackConfig(preConfig ConfigT, curConfig ConfigT) {
 	Diagnostics.DisableMetrics(curConfig.EnableMetrics)
 	if diagnostics.EnableConfigIdentifyMetric {
 		if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
@@ -262,10 +262,10 @@ func trackConfig(preConfig SourcesT, curConfig SourcesT) {
 	}
 }
 
-func filterProcessorEnabledDestinations(config SourcesT) SourcesT {
-	var modifiedSources SourcesT
-	modifiedSources.Libraries = config.Libraries
-	modifiedSources.Sources = make([]SourceT, 0)
+func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
+	var modifiedConfig ConfigT
+	modifiedConfig.Libraries = config.Libraries
+	modifiedConfig.Sources = make([]SourceT, 0)
 	for _, source := range config.Sources {
 		destinations := make([]DestinationT, 0)
 		for _, destination := range source.Destinations {
@@ -275,9 +275,9 @@ func filterProcessorEnabledDestinations(config SourcesT) SourcesT {
 			}
 		}
 		source.Destinations = destinations
-		modifiedSources.Sources = append(modifiedSources.Sources, source)
+		modifiedConfig.Sources = append(modifiedConfig.Sources, source)
 	}
-	return modifiedSources
+	return modifiedConfig
 }
 
 func regulationsUpdate(statConfigBackendError stats.RudderStats) {
@@ -354,7 +354,7 @@ func pollRegulations() {
 	}
 }
 
-func GetConfig() SourcesT {
+func GetConfig() ConfigT {
 	return curSourceJSON
 }
 
@@ -377,7 +377,7 @@ func Subscribe(channel chan utils.DataEvent, topic Topic) {
 /*
 Subscribe subscribes a channel to a specific topic of backend config updates.
 Channel will receive a new utils.DataEvent each time the backend configuration is updated.
-Data of the DataEvent should be a backendconfig.SourcesT struct.
+Data of the DataEvent should be a backendconfig.ConfigT struct.
 Available topics are:
 - TopicBackendConfig: Will receive complete backend configuration
 - TopicProcessConfig: Will receive only backend configuration of processor enabled destinations

@@ -35,10 +35,10 @@ func (m *MockBackendConfig) EXPECT() *MockBackendConfigMockRecorder {
 }
 
 // Get mocks base method
-func (m *MockBackendConfig) Get() (backendconfig.SourcesT, bool) {
+func (m *MockBackendConfig) Get() (backendconfig.ConfigT, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get")
-	ret0, _ := ret[0].(backendconfig.SourcesT)
+	ret0, _ := ret[0].(backendconfig.ConfigT)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
