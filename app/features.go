@@ -38,36 +38,21 @@ func RegisterSuppressUserFeature(f SuppressUserFeatureSetup) {
 	suppressUserFeatureSetup = f
 }
 
-// ProtocolsFeature handles event schemas
-type ProtocolsFeature interface {
-	Setup() types.ProtocolsI
-}
-
-// ProtocolsFeatureSetup is a function that initializes a Protocols feature, based on application instance
-type ProtocolsFeatureSetup func(Interface) ProtocolsFeature
-
-var protocolsFeatureSetup ProtocolsFeatureSetup
-
-// RegisterProtocolsFeature registers a protocols feature implementation
-func RegisterProtocolsFeature(f ProtocolsFeatureSetup) {
-	protocolsFeatureSetup = f
-}
-
 /*********************************
 DestinationConfig Env Support
 *********************************/
 
-// ProtocolsFeature handles event schemas
+// ConfigEnvFeature handles override of config from ENV variables.
 type ConfigEnvFeature interface {
 	Setup() types.ConfigEnvI
 }
 
-// ProtocolsFeatureSetup is a function that initializes a Protocols feature, based on application instance
+// ConfigEnvFeatureSetup is a function that initializes a ConfigEnv feature
 type ConfigEnvFeatureSetup func(Interface) ConfigEnvFeature
 
 var configEnvFeatureSetup ConfigEnvFeatureSetup
 
-// RegisterProtocolsFeature registers a protocols feature implementation
+// RegisterConfigEnvFeature registers a config env feature implementation
 func RegisterConfigEnvFeature(f ConfigEnvFeatureSetup) {
 	configEnvFeatureSetup = f
 }
@@ -76,6 +61,5 @@ func RegisterConfigEnvFeature(f ConfigEnvFeatureSetup) {
 type Features struct {
 	Migrator     MigratorFeature
 	SuppressUser SuppressUserFeature
-	Protocols    ProtocolsFeature
 	ConfigEnv    ConfigEnvFeature
 }
