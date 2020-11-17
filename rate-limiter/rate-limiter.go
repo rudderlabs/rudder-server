@@ -14,6 +14,7 @@ var (
 	eventLimit            int
 	rateLimitWindowInMins time.Duration
 	noOfBucketsInWindow   int
+	pkgLogger             logger.LoggerI
 )
 
 //RateLimiter is an interface for rate limiting functions
@@ -28,6 +29,7 @@ type HandleT struct {
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("rate-limiter")
 }
 
 func loadConfig() {
@@ -43,7 +45,7 @@ func loadConfig() {
 func (rateLimiter *HandleT) SetUp() {
 	store, err := restrictor.NewMemoryStore()
 	if err != nil {
-		logger.Error("memory store failed")
+		pkgLogger.Error("memory store failed")
 	}
 
 	rateLimiter.restrictor = restrictor.NewRestrictor(rateLimitWindowInMins, uint32(eventLimit), uint32(noOfBucketsInWindow), store)

@@ -10,7 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/tablearchiver"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -44,11 +43,11 @@ func archiveOldRecords(tableName string, dbHandle *sql.DB) {
 	var filesCount, minID, maxID int64
 	err := dbHandle.QueryRow(stmt).Scan(&filesCount, &minID, &maxID)
 	if err != nil {
-		logger.Errorf(`[WH Archiver]: Error in fetching %s records count for archival: %v`, tableName, err)
+		pkgLogger.Errorf(`[WH Archiver]: Error in fetching %s records count for archival: %v`, tableName, err)
 		return
 	}
 	if filesCount == 0 {
-		logger.Infof(`[WH Archiver]: No %s records found to archive`, tableName)
+		pkgLogger.Infof(`[WH Archiver]: No %s records found to archive`, tableName)
 		return
 	}
 
@@ -59,10 +58,10 @@ func archiveOldRecords(tableName string, dbHandle *sql.DB) {
 		stmt = fmt.Sprintf(`DELETE FROM  %s WHERE id >= %d and id <= %d`, tableName, minID, maxID)
 		_, err = dbHandle.Exec(stmt)
 		if err != nil {
-			logger.Errorf(`[WH Archiver]: Error in deleting %s records: %v`, tableName, err)
+			pkgLogger.Errorf(`[WH Archiver]: Error in deleting %s records: %v`, tableName, err)
 			return
 		}
-		logger.Infof(`[WH Archiver]: Deleted %s records %d to %d. No objet storage was configured for archival`, tableName, minID, maxID)
+		pkgLogger.Infof(`[WH Archiver]: Deleted %s records %d to %d. No objet storage was configured for archival`, tableName, minID, maxID)
 		return
 	}
 
@@ -95,18 +94,18 @@ func archiveOldRecords(tableName string, dbHandle *sql.DB) {
 	storedLocation, err := tableJSONArchiver.Do()
 
 	if err != nil {
-		logger.Errorf(`[WH Archiver]: Error archiving table %s: %v`, tableName, err)
+		pkgLogger.Errorf(`[WH Archiver]: Error archiving table %s: %v`, tableName, err)
 		return
 	}
 
 	stmt = fmt.Sprintf(`DELETE FROM  %s WHERE id >= %d and id <= %d`, tableName, minID, maxID)
 	_, err = dbHandle.Exec(stmt)
 	if err != nil {
-		logger.Errorf(`[WH Archiver]: Error in deleting %s records after archival: %v`, tableName, err)
+		pkgLogger.Errorf(`[WH Archiver]: Error in deleting %s records after archival: %v`, tableName, err)
 		return
 	}
 
-	logger.Infof(`[WH Archiver]: Archived %s records %d to %d at %s`, tableName, minID, maxID, storedLocation)
+	pkgLogger.Infof(`[WH Archiver]: Archived %s records %d to %d at %s`, tableName, minID, maxID, storedLocation)
 }
 
 func runArchiver(dbHandle *sql.DB) {

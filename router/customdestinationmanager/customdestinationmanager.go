@@ -25,6 +25,7 @@ var (
 	KVStoreDestinations      []string
 	Destinations             []string
 	customManagerMap         map[string]*CustomManagerT
+	pkgLogger                logger.LoggerI
 )
 
 // DestinationManager implements the method to send the events to custom destinations
@@ -49,6 +50,7 @@ type CustomDestination struct {
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("router").Child("customdestinationmanager")
 }
 
 func loadConfig() {
@@ -165,16 +167,16 @@ func (customManager *CustomManagerT) onConfigChange(destination backendconfig.De
 			return nil
 		}
 
-		logger.Infof("[CDM %s] Config changed. Closing Existing client for destination: %s", customManager.destType, destination.Name)
+		pkgLogger.Infof("[CDM %s] Config changed. Closing Existing client for destination: %s", customManager.destType, destination.Name)
 		customManager.close(destination)
 	}
 
 	customDestination, err := customManager.newClient(destination.ID)
 	if err != nil {
-		logger.Errorf("[CDM %s] DestID: %s, Error while creating new customer client: %w", customManager.destType, destination.ID, err)
+		pkgLogger.Errorf("[CDM %s] DestID: %s, Error while creating new customer client: %w", customManager.destType, destination.ID, err)
 		return err
 	}
-	logger.Infof("[CDM %s] DestID: %s, Created new client", customManager.destType, destination.ID)
+	pkgLogger.Infof("[CDM %s] DestID: %s, Created new client", customManager.destType, destination.ID)
 	return nil
 }
 

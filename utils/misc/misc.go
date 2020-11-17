@@ -63,6 +63,12 @@ type RudderError struct {
 	Code              int
 }
 
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
+}
+
 func getErrorStore() (ErrorStoreT, error) {
 	var errorStore ErrorStoreT
 	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
@@ -71,14 +77,14 @@ func getErrorStore() (ErrorStoreT, error) {
 		defaultErrorStoreJSON := "{\"Errors\":[]}"
 		data = []byte(defaultErrorStoreJSON)
 	} else if err != nil {
-		logger.Fatal("Failed to get ErrorStore", err)
+		pkgLogger.Fatal("Failed to get ErrorStore", err)
 		return errorStore, err
 	}
 
 	err = json.Unmarshal(data, &errorStore)
 
 	if err != nil {
-		logger.Fatal("Failed to unmarshall ErrorStore to json", err)
+		pkgLogger.Fatal("Failed to unmarshall ErrorStore to json", err)
 		return errorStore, err
 	}
 
@@ -88,13 +94,13 @@ func getErrorStore() (ErrorStoreT, error) {
 func saveErrorStore(errorStore ErrorStoreT) {
 	errorStoreJSON, err := json.MarshalIndent(&errorStore, "", " ")
 	if err != nil {
-		logger.Fatal("failed to marshal errorStore", errorStore)
+		pkgLogger.Fatal("failed to marshal errorStore", errorStore)
 		return
 	}
 	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
 	err = ioutil.WriteFile(errorStorePath, errorStoreJSON, 0644)
 	if err != nil {
-		logger.Fatal("failed to write to errorStore")
+		pkgLogger.Fatal("failed to write to errorStore")
 	}
 }
 
@@ -137,7 +143,7 @@ func AssertErrorIfDev(err error) {
 
 	goEnv := os.Getenv("GO_ENV")
 	if goEnv == "production" {
-		logger.Error(err.Error())
+		pkgLogger.Error(err.Error())
 		return
 	}
 
@@ -173,7 +179,7 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT
 	var gatewayBatchEvent types.GatewayBatchRequestT
 	err := json.Unmarshal(eventPayload, &gatewayBatchEvent)
 	if err != nil {
-		logger.Debug("json parsing of event payload failed ", string(eventPayload))
+		pkgLogger.Debug("json parsing of event payload failed ", string(eventPayload))
 		return nil, false
 	}
 
@@ -277,7 +283,7 @@ func RemoveFilePaths(filepaths ...string) {
 	for _, filepath := range filepaths {
 		err := os.Remove(filepath)
 		if err != nil {
-			logger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 }
@@ -308,7 +314,7 @@ func CreateTMPDIR() (string, error) {
 		_, err := os.Stat(fallbackPath)
 		if err == nil {
 			tmpdirPath = fallbackPath
-			logger.Debugf("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
+			pkgLogger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
 		}
 	}
 	if tmpdirPath == "" {
@@ -355,7 +361,7 @@ func (stats *PerfStats) Print() {
 	if time.Since(stats.lastPrintTime) > time.Duration(stats.printThres)*time.Second {
 		overallRate := float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime)
 		instantRate := float64(stats.eventCount-stats.lastPrintEventCount) * float64(time.Second) / float64(stats.elapsedTime-stats.lastPrintElapsedTime)
-		logger.Infof("%s: Total: %d Overall:%f, Instant(print):%f, Instant(call):%f",
+		pkgLogger.Infof("%s: Total: %d Overall:%f, Instant(print):%f, Instant(call):%f",
 			stats.compStr, stats.eventCount, overallRate, instantRate, stats.instantRateCall)
 		stats.lastPrintEventCount = stats.eventCount
 		stats.lastPrintElapsedTime = stats.elapsedTime
@@ -414,7 +420,7 @@ func GetIPFromReq(req *http.Request) string {
 	addresses := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
 	if addresses[0] == "" {
 		splits := strings.Split(req.RemoteAddr, ":")
-		logger.Debugf("%#v", req)
+		pkgLogger.Debugf("%#v", req)
 		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
 	}
 
@@ -592,12 +598,12 @@ func PrintMemUsage() {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
-	logger.Debug("#########")
-	logger.Debugf("Alloc = %v MiB\n", bToMb(m.Alloc))
-	logger.Debugf("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
-	logger.Debugf("\tSys = %v MiB\n", bToMb(m.Sys))
-	logger.Debugf("\tNumGC = %v\n", m.NumGC)
-	logger.Debug("#########")
+	pkgLogger.Debug("#########")
+	pkgLogger.Debugf("Alloc = %v MiB\n", bToMb(m.Alloc))
+	pkgLogger.Debugf("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
+	pkgLogger.Debugf("\tSys = %v MiB\n", bToMb(m.Sys))
+	pkgLogger.Debugf("\tNumGC = %v\n", m.NumGC)
+	pkgLogger.Debug("#########")
 }
 
 type GZipWriter struct {
@@ -625,32 +631,32 @@ func CreateGZ(s string) (w GZipWriter, err error) {
 func (w GZipWriter) WriteGZ(s string) {
 	count, err := w.BufWriter.WriteString(s)
 	if err != nil {
-		logger.Errorf(`[GZWriter]: Error writing string of length %d by GZipWriter.WriteGZ. Bytes written: %d. Error: %v`, len(s), count, err)
+		pkgLogger.Errorf(`[GZWriter]: Error writing string of length %d by GZipWriter.WriteGZ. Bytes written: %d. Error: %v`, len(s), count, err)
 	}
 }
 
 func (w GZipWriter) Write(b []byte) {
 	count, err := w.BufWriter.Write(b)
 	if err != nil {
-		logger.Errorf(`[GZWriter]: Error writing bytes of length %d by GZipWriter.Write. Bytes written: %d. Error: %v`, len(b), count, err)
+		pkgLogger.Errorf(`[GZWriter]: Error writing bytes of length %d by GZipWriter.Write. Bytes written: %d. Error: %v`, len(b), count, err)
 	}
 }
 
 func (w GZipWriter) CloseGZ() error {
 	err := w.BufWriter.Flush()
 	if err != nil {
-		logger.Errorf(`[GZWriter]: Error flushing GZipWriter.BufWriter : %v`, err)
+		pkgLogger.Errorf(`[GZWriter]: Error flushing GZipWriter.BufWriter : %v`, err)
 	}
 	err = w.GzWriter.Close()
 	if err != nil {
-		logger.Errorf(`[GZWriter]: Error closing GZipWriter : %v`, err)
+		pkgLogger.Errorf(`[GZWriter]: Error closing GZipWriter : %v`, err)
 	}
 	err = w.File.Close()
 	if err != nil {
 		if pathErr, ok := err.(*os.PathError); ok && pathErr.Err == os.ErrClosed {
 			err = nil
 		} else {
-			logger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
+			pkgLogger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
 		}
 	}
 	return err
@@ -802,7 +808,7 @@ func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (re
 	body, err := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
-	logger.Debugf("Post request: Successful %s", string(body))
+	pkgLogger.Debugf("Post request: Successful %s", string(body))
 	return body, resp.StatusCode, nil
 }
 

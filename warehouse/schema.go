@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
@@ -77,12 +76,12 @@ func (sHandle *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Sch
 
 	var rawSchema json.RawMessage
 	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[2]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, warehouseutils.WarehouseSchemasTable, destID, namespace)
-	logger.Infof("[WH]: Fetching current schema from wh postgresql: %s", sqlStatement)
+	pkgLogger.Infof("[WH]: Fetching current schema from wh postgresql: %s", sqlStatement)
 
 	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logger.Infof("[WH]: No current schema found for %s with namespace: %s", destID, namespace)
+			pkgLogger.Infof("[WH]: No current schema found for %s with namespace: %s", destID, namespace)
 			return
 		}
 		if err != nil {
@@ -153,7 +152,7 @@ func (sHandle *SchemaHandleT) fetchSchemaFromWarehouse() (schemaInWarehouse ware
 
 	schemaInWarehouse, err = whManager.FetchSchema(sHandle.warehouse)
 	if err != nil {
-		logger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
+		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 		return warehouseutils.SchemaT{}, err
 	}
 	return schemaInWarehouse, nil

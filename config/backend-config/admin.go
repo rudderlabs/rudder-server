@@ -5,13 +5,23 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // BackendConfigAdmin is container object to expose admin functions
 type BackendConfigAdmin struct{}
 
 // RoutingConfig reports current backend config and process config after masking secret fields
-func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string) error {
+func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string) (err error) {
+
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+
 	curSourceJSONLock.RLock()
 	defer curSourceJSONLock.RUnlock()
 	outputJSON := curSourceJSON

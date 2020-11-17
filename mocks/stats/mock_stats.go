@@ -5,10 +5,9 @@
 package mocks_stats
 
 import (
-	reflect "reflect"
-
 	gomock "github.com/golang/mock/gomock"
 	stats "github.com/rudderlabs/rudder-server/services/stats"
+	reflect "reflect"
 )
 
 // MockStats is a mock of Stats interface

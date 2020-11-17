@@ -17,6 +17,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -81,8 +82,11 @@ var SnowflakeStorageMap = map[string]string{
 	"AZURE": "AZURE_BLOB",
 }
 
+var pkgLogger logger.LoggerI
+
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("utils")
 }
 
 func loadConfig() {

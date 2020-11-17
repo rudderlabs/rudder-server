@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -95,7 +94,7 @@ func (jd *HandleT) CheckpointInTxn(txHandler transactionHandler, migrationCheckp
 		stmt *sql.Stmt
 		err  error
 	)
-	logger.Debugf("Checkpointing with query : %s with migrationCheckpoint %+v", sqlStatement, migrationCheckpoint)
+	jd.logger.Debugf("Checkpointing with query : %s with migrationCheckpoint %+v", sqlStatement, migrationCheckpoint)
 	var mcID int64
 
 	stmt, err = txHandler.Prepare(sqlStatement)
@@ -121,7 +120,7 @@ func (jd *HandleT) CheckpointInTxn(txHandler transactionHandler, migrationCheckp
 		return mcID, err
 	}
 
-	logger.Infof("%s-Migration: %s checkpoint %s from %s to %s. file: %s containing %d jobs, status: %s for checkpointId: %d",
+	jd.logger.Infof("%s-Migration: %s checkpoint %s from %s to %s. file: %s containing %d jobs, status: %s for checkpointId: %d",
 		jd.tablePrefix,
 		migrationCheckpoint.MigrationType,
 		checkpointType,
@@ -178,7 +177,7 @@ func (jd *HandleT) SetupCheckpointTable() {
 
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
-	logger.Infof("%s-Migration: %s table created", jd.GetTablePrefix(), jd.getCheckpointTableName())
+	jd.logger.Infof("%s-Migration: %s table created", jd.GetTablePrefix(), jd.getCheckpointTableName())
 }
 
 func (jd *HandleT) getCheckpointTableName() string {
