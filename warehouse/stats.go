@@ -1,11 +1,13 @@
 package warehouse
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const moduleName = "warehouse"
@@ -15,8 +17,12 @@ type tag struct {
 	value string
 }
 
+func getWarehouseTagName(destID, sourceName, destName string) string {
+	return misc.GetTagName(destID, sourceName, destName)
+}
+
 func (job *UploadJobT) warehouseID() string {
-	return misc.GetTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name)
+	return getWarehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name)
 }
 
 func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.RudderStats {
@@ -122,4 +128,29 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		}
 		job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}).SendTiming(time.Now().Sub(firstEventAt))
 	}
+}
+
+func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {
+	stmt := fmt.Sprintf(`SELECT EXTRACT(EPOCH FROM (f2.created_at - f1.created_at))::integer as delta
+		FROM (SELECT created_at FROM %[1]s WHERE id=%[2]d) f1
+		CROSS JOIN
+		(SELECT created_at FROM %[1]s WHERE id=%[3]d) f2
+	`, warehouseutils.WarehouseLoadFilesTable, startID, endID)
+	var timeTakenInS time.Duration
+	err = job.dbHandle.QueryRow(stmt).Scan(&timeTakenInS)
+	if err != nil {
+		return
+	}
+	timeTakenInS = 400
+	job.timerStat("load_file_generation_time").SendTiming(timeTakenInS * time.Second)
+	return nil
+}
+
+func recordStagedRowsStat(totalEvents int, destType, destID, sourceName, destName string) {
+	tags := map[string]string{
+		"module":      moduleName,
+		"destType":    destType,
+		"warehouseID": getWarehouseTagName(destID, sourceName, destName),
+	}
+	stats.NewTaggedStat("rows_staged", stats.CountType, tags).Count(totalEvents)
 }

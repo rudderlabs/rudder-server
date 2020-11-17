@@ -880,6 +880,10 @@ func GetMandatoryJSONFieldNames(st interface{}) []string {
 }
 
 //GetTagName gets the tag name using a uuid and name
-func GetTagName(id string, name string) string {
-	return TruncateStr(name, 15) + "_" + TailTruncateStr(id, 6)
+func GetTagName(id string, names ...string) string {
+	var truncatedNames string
+	for _, name := range names {
+		truncatedNames += TruncateStr(name, 15) + "_"
+	}
+	return truncatedNames + TailTruncateStr(id, 6)
 }

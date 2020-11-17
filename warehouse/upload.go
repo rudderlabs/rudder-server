@@ -294,6 +294,7 @@ func (job *UploadJobT) run() (err error) {
 				break
 			}
 			job.setStagingFilesStatus(warehouseutils.StagingFileSucceededState, err)
+			job.recordLoadFileGenerationTimeStat(loadFileIDs[0], loadFileIDs[len(loadFileIDs)-1])
 
 			newStatus = nextUploadState.completed
 
@@ -794,10 +795,6 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 	destType := job.upload.DestinationType
 	stagingFiles := job.stagingFiles
 
-	// stat for time taken to process staging files in a single job
-	timer := job.timerStat("load_files_creation")
-	timer.Start()
-
 	job.setStagingFilesStatus(warehouseutils.StagingFileExecutingState, nil)
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
@@ -862,8 +859,6 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 			loadFileIDs = append(loadFileIDs, ids...)
 		}
 	}
-
-	timer.End()
 
 	if len(loadFileIDs) == 0 {
 		err = fmt.Errorf("No load files generated")
