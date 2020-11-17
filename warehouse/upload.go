@@ -3,6 +3,7 @@ package warehouse
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -954,8 +955,10 @@ func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location str
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
-	err = nil
-	return
+	if err == sql.ErrNoRows {
+		err = errors.New("Sample load file not found")
+	}
+	return location, nil
 }
 
 func (job *UploadJobT) GetSchemaInWarehouse() (schema warehouseutils.SchemaT) {
