@@ -82,6 +82,10 @@ var _ = Describe("Warehouse", func() {
 				endTime = "06:00"
 				currentTime = time.Date(2009, time.November, 10, 21, 30, 0, 0, time.UTC)
 				Expect(CheckCurrentTimeExistsInExcludeWindow(currentTime, startTime, endTime)).To(Equal(false))
+				startTime = ""
+				endTime = ""
+				currentTime = time.Date(2009, time.November, 10, 21, 30, 0, 0, time.UTC)
+				Expect(CheckCurrentTimeExistsInExcludeWindow(currentTime, startTime, endTime)).To(Equal(false))
 			})
 		})
 	})

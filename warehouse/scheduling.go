@@ -112,7 +112,21 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) t
 	return t.Time
 }
 
+func GetExludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
+	var startTime, endTime string
+	if time, ok := excludeWindow[warehouseutils.ExcludeWindowStartTime].(string); ok {
+		startTime = time
+	}
+	if time, ok := excludeWindow[warehouseutils.ExcludeWindowEndTime].(string); ok {
+		endTime = time
+	}
+	return startTime, endTime
+}
+
 func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTime string, windowEndTime string) bool {
+	if len(windowStartTime) == 0 || len(windowEndTime) == 0 {
+		return false
+	}
 	startTimeMins := timeutil.MinsOfDay(windowStartTime)
 	endTimeMins := timeutil.MinsOfDay(windowEndTime)
 	currentTimeMins := timeutil.GetElapsedMinsInThisDay(currentTime)
@@ -141,8 +155,8 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 		return !uploadFrequencyExceeded(warehouse, "")
 	}
 	// gets exclude window start time and end time
-	excludeWindowStartTime := warehouseutils.GetConfigValue(warehouseutils.ExcludeWindowStartTime, warehouse)
-	excludeWindowEndTime := warehouseutils.GetConfigValue(warehouseutils.ExcludeWindowEndTime, warehouse)
+	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse)
+	excludeWindowStartTime, excludeWindowEndTime := GetExludeWindowStartEndTimes(excludeWindow)
 	if CheckCurrentTimeExistsInExcludeWindow(timeutil.Now(), excludeWindowStartTime, excludeWindowEndTime) {
 		return false
 	}

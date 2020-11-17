@@ -72,6 +72,7 @@ const (
 	DiscardsTable          = "rudder_discards"
 	SyncFrequency          = "syncFrequency"
 	SyncStartAt            = "syncStartAt"
+	ExcludeWindow          = "excludeWindow"
 	ExcludeWindowStartTime = "excludeWindowStartTime"
 	ExcludeWindowEndTime   = "excludeWindowEndTime"
 )
@@ -838,6 +839,19 @@ func GetConfigValueBoolString(key string, warehouse WarehouseT) string {
 		}
 	}
 	return "false"
+}
+
+func GetConfigValueAsMap(key string, warehouse WarehouseT) map[string]interface{} {
+	config := warehouse.Destination.Config
+	value := map[string]interface{}{}
+	if config[key] != nil {
+		fmt.Println(config[key])
+		if val, ok := config[key].(map[string]interface{}); ok {
+			return val
+		}
+		fmt.Println("cant convert")
+	}
+	return value
 }
 
 func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
