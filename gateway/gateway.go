@@ -337,7 +337,18 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 					req.done <- response.GetStatus(response.TooManyRequests)
 					preDbStoreCount++
 					misc.IncrementMapByKey(workspaceDropRequestStats, restrictorKey, 1)
+					if !gateway.rateLimiter.HasLimitReachedNotified() {
+						gateway.rateLimiter.Notfiy(true)
+						gateway.rateLimiter.SetLimitReachedNotified(true)
+						gateway.rateLimiter.SetLimitRelaxedNotified(false)
+					}
 					continue
+				} else {
+					if !gateway.rateLimiter.HasLimitRelaxedNotified() {
+						gateway.rateLimiter.Notfiy(false)
+						gateway.rateLimiter.SetLimitRelaxedNotified(true)
+						gateway.rateLimiter.SetLimitReachedNotified(false)
+					}
 				}
 			}
 
