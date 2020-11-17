@@ -30,7 +30,6 @@ type HandleT struct {
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("rate-limiter")
-
 }
 
 func loadConfig() {

@@ -174,6 +174,13 @@ var (
 	emptyJobsList    []*jobsdb.JobT
 )
 
+//SetEnableEventSchemasFeature overrides enableEventSchemasFeature configuration and returns previous value
+func SetEnableEventSchemasFeature(b bool) bool {
+	prev := enableEventSchemasFeature
+	enableEventSchemasFeature = b
+	return prev
+}
+
 // This configuration is assumed by all processor tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
 	Sources: []backendconfig.SourceT{
@@ -243,6 +250,8 @@ var _ = Describe("Processor", func() {
 
 		// setup static requirements of dependencies
 		stats.Setup()
+
+		SetEnableEventSchemasFeature(false)
 	})
 
 	AfterEach(func() {

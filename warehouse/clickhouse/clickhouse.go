@@ -6,29 +6,26 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
 	stagingTablePrefix string
-	maxParallelLoads   int
 	queryDebugLogs     string
 	blockSize          string
 	poolSize           string
@@ -88,13 +85,11 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 }
 
 type HandleT struct {
-	DbHandle      *sql.DB
 	Db            *sql.DB
 	Namespace     string
-	CurrentSchema map[string]map[string]string
-	Warehouse     warehouseutils.WarehouseT
-	Upload        warehouseutils.UploadT
 	ObjectStorage string
+	Warehouse     warehouseutils.WarehouseT
+	Uploader      warehouseutils.UploaderI
 }
 
 type credentialsT struct {
@@ -146,7 +141,6 @@ func init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
-	maxParallelLoads = config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3)
 	queryDebugLogs = config.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
 	blockSize = config.GetString("Warehouse.clickhouse.blockSize", "1000")
 	poolSize = config.GetString("Warehouse.clickhouse.poolSize", "10")
@@ -213,84 +207,12 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string
 	return fmt.Sprintf(`Nullable(%s)`, columnType)
 }
 
-func (ch *HandleT) CrashRecover(config warehouseutils.ConfigT) (err error) {
-	return
-}
-
-// FetchSchema queries clickhouse and returns the schema associated with provided namespace
-func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT, namespace string) (schema map[string]map[string]string, err error) {
-	ch.Warehouse = warehouse
-	dbHandle, err := connect(ch.getConnectionCredentials())
-	if err != nil {
-		return
-	}
-	defer dbHandle.Close()
-	schema = make(map[string]map[string]string)
-	sqlStatement := fmt.Sprintf(`select table, name, type
-									from system.columns
-									where database = '%s'`, namespace)
-
-	rows, err := dbHandle.Query(sqlStatement)
-	if err != nil && err != sql.ErrNoRows {
-		pkgLogger.Errorf("CH: Error in fetching schema from clickhouse destination:%v, query: %v", ch.Warehouse.Destination.ID, sqlStatement)
-		return
-	}
-	if err == sql.ErrNoRows {
-		return schema, nil
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var tName, cName, cType string
-		err = rows.Scan(&tName, &cName, &cType)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in processing fetched schema from clickhouse destination:%v", ch.Warehouse.Destination.ID)
-			return
-		}
-		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(map[string]string)
-		}
-		if datatype, ok := clickhouseDataTypesMapToRudder[cType]; ok {
-			schema[tName][cName] = datatype
-		}
-	}
-	return
-}
-
-// Export starts exporting data to clickhouse
-func (ch *HandleT) Export() (err error) {
-	pkgLogger.Infof("CH: Starting export to clickhouse for source:%s and wh_upload:%v", ch.Warehouse.Source.ID, ch.Upload.ID)
-	err = warehouseutils.SetUploadStatus(ch.Upload, warehouseutils.ExportingDataState, ch.DbHandle)
-	if err != nil {
-		panic(err)
-	}
-	timer := warehouseutils.DestStat(stats.TimerType, "upload_time", ch.Warehouse.Destination.ID)
-	timer.Start()
-	errList := ch.load()
-	timer.End()
-	if len(errList) > 0 {
-		errStr := ""
-		for idx, err := range errList {
-			errStr += err.Error()
-			if idx < len(errList)-1 {
-				errStr += ", "
-			}
-		}
-		warehouseutils.SetUploadError(ch.Upload, errors.New(errStr), warehouseutils.ExportingDataFailedState, ch.DbHandle)
-		return errors.New(errStr)
-	}
-	err = warehouseutils.SetUploadStatus(ch.Upload, warehouseutils.ExportedDataState, ch.DbHandle)
-	if err != nil {
-		panic(err)
-	}
-	return
-}
-
 // DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations, _ := warehouseutils.GetLoadFileLocations(ch.DbHandle, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, tableName, ch.Upload.StartLoadFileID, ch.Upload.EndLoadFileID)
+	objectLocations, _ := ch.Uploader.GetLoadFileLocations(tableName)
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
-		object, err := warehouseutils.GetObjectName(ch.Warehouse.Destination.Config, objectLocation)
+		object, err := warehouseutils.GetObjectName(objectLocation, ch.Warehouse.Destination.Config, ch.ObjectStorage)
 		if err != nil {
 			pkgLogger.Errorf("CH: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
 			return nil, err
@@ -374,30 +296,15 @@ func typecastDataFromType(data string, dataType string) interface{} {
 }
 
 // loadTable loads table to clickhouse from the load files
-func (ch *HandleT) loadTable(tableName string, columnMap map[string]string) (err error) {
-	status, _ := warehouseutils.GetTableUploadStatus(ch.Upload.ID, tableName, ch.DbHandle)
-	if status == warehouseutils.ExportedDataState {
-		pkgLogger.Infof("CH: Skipping load for table:%s as it has been successfully loaded earlier", tableName)
-		return
-	}
-
-	if !warehouseutils.HasLoadFiles(ch.DbHandle, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, tableName, ch.Upload.StartLoadFileID, ch.Upload.EndLoadFileID) {
-		warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, ch.Upload.ID, tableName, ch.DbHandle)
-		return
-	}
+func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
 	pkgLogger.Infof("CH: Starting load for table:%s", tableName)
-	warehouseutils.SetTableUploadStatus(warehouseutils.ExecutingState, ch.Upload.ID, tableName, ch.DbHandle)
-	timer := warehouseutils.DestStat(stats.TimerType, "single_table_upload_time", ch.Warehouse.Destination.ID)
-	timer.Start()
-	defer timer.End()
 
 	// sort column names
-	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(columnMap)
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
 	fileNames, err := ch.DownloadLoadFiles(tableName)
 	if err != nil {
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
 	defer misc.RemoveFilePaths(fileNames...)
@@ -405,14 +312,12 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 	txn, err := ch.Db.Begin()
 	if err != nil {
 		pkgLogger.Errorf("CH: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
 
 	stmt, err := txn.Prepare(fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys))))
 	if err != nil {
 		pkgLogger.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: %v", tableName, err)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
 
@@ -421,7 +326,6 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			pkgLogger.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
-			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 			return
 		}
 
@@ -432,7 +336,6 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 			rruntime.Go(func() {
 				misc.RemoveFilePaths(objectFileName)
 			})
-			warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 			gzipFile.Close()
 			return
 
@@ -443,11 +346,10 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 			record, err = csvReader.Read()
 			if err != nil {
 				if err == io.EOF {
-					pkgLogger.Infof("CH: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFileName)
+					pkgLogger.Debugf("CH: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFileName)
 					break
 				} else {
 					pkgLogger.Errorf("CH: Error while reading csv file %s for loading in table:%s: %v", objectFileName, tableName, err)
-					warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 					txn.Rollback()
 					return
 				}
@@ -455,7 +357,7 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 			var recordInterface []interface{}
 			for index, value := range record {
 				columnName := sortedColumnKeys[index]
-				columnDataType := columnMap[columnName]
+				columnDataType := tableSchemaInUpload[columnName]
 				data := typecastDataFromType(value, columnDataType)
 				recordInterface = append(recordInterface, data)
 
@@ -464,7 +366,6 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 			_, err = stmt.Exec(recordInterface...)
 			if err != nil {
 				pkgLogger.Errorf("CH: Error in exec statement for loading in table:%s: %v", tableName, err)
-				warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 				txn.Rollback()
 				return
 			}
@@ -475,35 +376,9 @@ func (ch *HandleT) loadTable(tableName string, columnMap map[string]string) (err
 	}
 	if err = txn.Commit(); err != nil {
 		pkgLogger.Errorf("CH: Error while committing transaction as there was error while loading in table:%s: %v", tableName, err)
-		warehouseutils.SetTableUploadError(warehouseutils.ExportingDataFailedState, ch.Upload.ID, tableName, err, ch.DbHandle)
 		return
 	}
-	warehouseutils.SetTableUploadStatus(warehouseutils.ExportedDataState, ch.Upload.ID, tableName, ch.DbHandle)
 	pkgLogger.Infof("CH: Complete load for table:%s", tableName)
-	return
-}
-
-// load tables into clickhouse
-func (ch *HandleT) load() (errList []error) {
-	pkgLogger.Infof("CH: Starting load for all %v tables\n", len(ch.Upload.Schema))
-	var wg sync.WaitGroup
-	loadChan := make(chan struct{}, maxParallelLoads)
-	wg.Add(len(ch.Upload.Schema))
-	for tableName, columnMap := range ch.Upload.Schema {
-		tName := tableName
-		cMap := columnMap
-		loadChan <- struct{}{}
-		rruntime.Go(func() {
-			loadError := ch.loadTable(tName, cMap)
-			if loadError != nil {
-				errList = append(errList, loadError)
-			}
-			wg.Done()
-			<-loadChan
-		})
-	}
-	wg.Wait()
-	pkgLogger.Infof("CH: Completed load for all tables\n")
 	return
 }
 
@@ -576,26 +451,25 @@ func (ch *HandleT) addColumn(tableName string, columnName string, columnType str
 	return
 }
 
-func (ch *HandleT) updateSchema() (updatedSchema map[string]map[string]string, err error) {
-	diff := warehouseutils.GetSchemaDiff(ch.CurrentSchema, ch.Upload.Schema)
-	updatedSchema = diff.UpdatedSchema
-	if len(ch.CurrentSchema) == 0 {
+func (ch *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
+	if len(ch.Uploader.GetSchemaInWarehouse()) == 0 {
 		err = ch.createSchema()
 		if err != nil {
-			return nil, err
+			return
 		}
 	}
 
 	processedTables := make(map[string]bool)
 	for _, tableName := range diff.Tables {
-		tableExists, err := ch.tableExists(tableName)
+		var tableExists bool
+		tableExists, err = ch.tableExists(tableName)
 		if err != nil {
-			return nil, err
+			return
 		}
 		if !tableExists {
 			err = ch.createTable(fmt.Sprintf(`%s`, tableName), diff.ColumnMaps[tableName])
 			if err != nil {
-				return nil, err
+				return
 			}
 			processedTables[tableName] = true
 		}
@@ -608,10 +482,10 @@ func (ch *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 		}
 		if len(columnMap) > 0 {
 			for columnName, columnType := range columnMap {
-				err := ch.addColumn(tableName, columnName, columnType)
+				err = ch.addColumn(tableName, columnName, columnType)
 				if err != nil {
 					pkgLogger.Errorf("CH: Column %s already exists on %s.%s \nResponse: %v", columnName, ch.Namespace, tableName, err)
-					return nil, err
+					return
 				}
 			}
 		}
@@ -619,60 +493,9 @@ func (ch *HandleT) updateSchema() (updatedSchema map[string]map[string]string, e
 	return
 }
 
-// MigrateSchema will handle
-func (ch *HandleT) MigrateSchema() (err error) {
-	timer := warehouseutils.DestStat(stats.TimerType, "migrate_schema_time", ch.Warehouse.Destination.ID)
-	timer.Start()
-	warehouseutils.SetUploadStatus(ch.Upload, warehouseutils.UpdatingSchemaState, ch.DbHandle)
-	pkgLogger.Infof("CH: Updating schema for clickhouse schema name: %s", ch.Namespace)
-	updatedSchema, err := ch.updateSchema()
-	if err != nil {
-		warehouseutils.SetUploadError(ch.Upload, err, warehouseutils.UpdatingSchemaFailedState, ch.DbHandle)
-		return
-	}
-	ch.CurrentSchema = updatedSchema
-	err = warehouseutils.SetUploadStatus(ch.Upload, warehouseutils.UpdatedSchemaState, ch.DbHandle)
-	if err != nil {
-		panic(err)
-	}
-	err = warehouseutils.UpdateCurrentSchema(ch.Namespace, ch.Warehouse, ch.Upload.ID, updatedSchema, ch.DbHandle)
-	timer.End()
-	if err != nil {
-		warehouseutils.SetUploadError(ch.Upload, err, warehouseutils.UpdatingSchemaFailedState, ch.DbHandle)
-		return
-	}
-	return
-}
-
-// Process starts processing to export to clickhouse
-func (ch *HandleT) Process(config warehouseutils.ConfigT) (err error) {
-	ch.DbHandle = config.DbHandle
-	ch.Warehouse = config.Warehouse
-	ch.Upload = config.Upload
-	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, config.Warehouse.Destination.Config)
-
-	currSchema, err := warehouseutils.GetCurrentSchema(ch.DbHandle, ch.Warehouse)
-	if err != nil {
-		panic(err)
-	}
-	ch.CurrentSchema = currSchema
-	ch.Namespace = ch.Upload.Namespace
-
-	ch.Db, err = connect(ch.getConnectionCredentials())
-	if err != nil {
-		warehouseutils.SetUploadError(ch.Upload, err, warehouseutils.UpdatingSchemaFailedState, ch.DbHandle)
-		return err
-	}
-	defer ch.Db.Close()
-	if err = ch.MigrateSchema(); err == nil {
-		ch.Export()
-	}
-	return
-}
-
 // TestConnection is used destination connection tester to test the clickhouse connection
-func (ch *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
-	ch.Warehouse = config.Warehouse
+func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+	ch.Warehouse = warehouse
 	ch.Db, err = connect(ch.getConnectionCredentials())
 	if err != nil {
 		return
@@ -686,7 +509,120 @@ func (ch *HandleT) TestConnection(config warehouseutils.ConfigT) (err error) {
 	select {
 	case err = <-pingResultChannel:
 	case <-time.After(timeOut * time.Second):
-		err = errors.New(fmt.Sprintf("connection testing timed out after %v sec", timeOut))
+		err = fmt.Errorf("connection testing timed out after %v sec", timeOut)
 	}
 	return
+}
+
+func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+	ch.Warehouse = warehouse
+	ch.Namespace = warehouse.Namespace
+	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config)
+	ch.Uploader = uploader
+
+	ch.Db, err = connect(ch.getConnectionCredentials())
+	return err
+}
+
+func (ch *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+	return
+}
+
+// FetchSchema queries clickhouse and returns the schema associated with provided namespace
+func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+	ch.Warehouse = warehouse
+	ch.Namespace = warehouse.Namespace
+	dbHandle, err := connect(ch.getConnectionCredentials())
+	if err != nil {
+		return
+	}
+	defer dbHandle.Close()
+
+	schema = make(warehouseutils.SchemaT)
+	sqlStatement := fmt.Sprintf(`select table, name, type
+									from system.columns
+									where database = '%s'`, ch.Namespace)
+
+	rows, err := dbHandle.Query(sqlStatement)
+	if err != nil && err != sql.ErrNoRows {
+		pkgLogger.Errorf("CH: Error in fetching schema from clickhouse destination:%v, query: %v", ch.Warehouse.Destination.ID, sqlStatement)
+		return
+	}
+	if err == sql.ErrNoRows {
+		return schema, nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var tName, cName, cType string
+		err = rows.Scan(&tName, &cName, &cType)
+		if err != nil {
+			pkgLogger.Errorf("CH: Error in processing fetched schema from clickhouse destination:%v", ch.Warehouse.Destination.ID)
+			return
+		}
+		if _, ok := schema[tName]; !ok {
+			schema[tName] = make(map[string]string)
+		}
+		if datatype, ok := clickhouseDataTypesMapToRudder[cType]; ok {
+			schema[tName][cName] = datatype
+		}
+	}
+	return
+}
+
+func (ch *HandleT) LoadUserTables() (errorMap map[string]error) {
+	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
+	err := ch.loadTable(warehouseutils.IdentifiesTable, ch.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable))
+	if err != nil {
+		errorMap[warehouseutils.IdentifiesTable] = err
+		return
+	}
+
+	if len(ch.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
+		return
+	}
+	errorMap[warehouseutils.UsersTable] = nil
+	err = ch.loadTable(warehouseutils.UsersTable, ch.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable))
+	if err != nil {
+		errorMap[warehouseutils.UsersTable] = err
+		return
+	}
+	return
+}
+
+func (ch *HandleT) LoadTable(tableName string) error {
+	err := ch.loadTable(tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
+	return err
+}
+
+func (ch *HandleT) Cleanup() {
+	if ch.Db != nil {
+		ch.Db.Close()
+	}
+}
+
+func (ch *HandleT) LoadIdentityMergeRulesTable() (err error) {
+	return
+}
+
+func (ch *HandleT) LoadIdentityMappingsTable() (err error) {
+	return
+}
+
+func (ch *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+	return
+}
+
+func (ch *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+	return
+}
+
+func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+	ch.Warehouse = warehouse
+	ch.Namespace = warehouse.Namespace
+	dbHandle, err := connect(ch.getConnectionCredentials())
+	if err != nil {
+		return client.Client{}, err
+	}
+
+	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }

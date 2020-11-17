@@ -207,9 +207,9 @@ func SetModuleLevel(module string, levelStr string) error {
 		rootLevel = level
 	} else {
 		levelConfig[module] = level
-		loggerLevelsCache = make(map[string]int)
 		Log.Info(levelConfig)
 	}
+	loggerLevelsCache = make(map[string]int)
 	levelConfigLock.Unlock()
 
 	return nil
@@ -390,4 +390,8 @@ func (l *LoggerT) LogRequest(req *http.Request) {
 // Deprecated! Use instance of LoggerT instead
 func LogRequest(req *http.Request) {
 	log.LogRequest(req)
+}
+
+func GetLoggingConfig() map[string]int {
+	return loggerLevelsCache
 }

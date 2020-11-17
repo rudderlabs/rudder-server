@@ -81,7 +81,7 @@ allowPartialWriteWithErrors = true
 allowReqsWithoutUserIDAndAnonymousID = false
 
 [EventSchemas]
-enableEventSchemasFeature = false
+enableEventSchemasFeature = true
 syncIntervalInS = 5
 
 [Gateway.webhook]
@@ -182,7 +182,7 @@ webPort = 8082
 uploadFreqInS = 1800
 noOfWorkers = 8
 noOfSlaveWorkerRoutines = 4
-mainLoopSleepInS = 60
+mainLoopSleepInS = 5
 minRetryAttempts = 3
 retryTimeWindowInMins = 180
 minUploadBackoffInS = 60
@@ -190,6 +190,8 @@ maxUploadBackoffInS = 1800
 warehouseSyncPreFetchCount = 10
 warehouseSyncFreqIgnore = false
 stagingFilesBatchSize = 960
+enableIDResolution = false
+populateHistoricIdentities = false
     [Warehouse.redshift]
     maxParallelLoads = 3
     setVarCharMax = false
