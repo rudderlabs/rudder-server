@@ -707,7 +707,7 @@ func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
 	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
-	job.counterStat("failed_uploads").Count(1)
+	job.counterStat("warehouse_failed_uploads").Count(1)
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 
 	upload := job.upload
@@ -738,6 +738,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	if errorByState["attempt"].(int) > minRetryAttempts {
 		firstTiming := job.getUploadFirstAttemptTime()
 		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
+			job.counterStat("upload_aborted").Count(1)
 			state = Aborted
 		}
 	}

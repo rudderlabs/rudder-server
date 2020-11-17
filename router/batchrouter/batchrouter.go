@@ -243,6 +243,9 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 		firstEventAt = firstEventAtWithTimeZone.UTC().Format(time.RFC3339)
 		lastEventAt = lastEventAtWithTimeZone.UTC().Format(time.RFC3339)
+	} else {
+		firstEventAt = gjson.GetBytes(batchJobs.Jobs[0].EventPayload, "receivedAt").String()
+		lastEventAt = gjson.GetBytes(batchJobs.Jobs[len(batchJobs.Jobs)-1].EventPayload, "receivedAt").String()
 	}
 
 	brt.logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)

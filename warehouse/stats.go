@@ -118,16 +118,17 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	// add metric to record total loaded rows to standard tables
 	// adding metric for all event tables might result in too many metrics
 	tablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
-	if misc.Contains(tablesToRecordEventsMetric, strings.ToLower(tableName)) {
-		job.counterStat(`rows_synced`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
-		// Delay for the oldest event in the batch
-		firstEventAt, err := getFirstStagedEventAt(job.upload.StartStagingFileID)
-		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %w", job.warehouse.Identifier, err)
-			return
-		}
-		job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}).SendTiming(time.Now().Sub(firstEventAt))
+	if !misc.Contains(tablesToRecordEventsMetric, strings.ToLower(tableName)) {
+		tableName = "others"
 	}
+	job.counterStat(`rows_synced`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
+	// Delay for the oldest event in the batch
+	firstEventAt, err := getFirstStagedEventAt(job.upload.StartStagingFileID)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %w", job.warehouse.Identifier, err)
+		return
+	}
+	job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}).SendTiming(time.Now().Sub(firstEventAt))
 }
 
 func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {
@@ -141,7 +142,6 @@ func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (e
 	if err != nil {
 		return
 	}
-	timeTakenInS = 400
 	job.timerStat("load_file_generation_time").SendTiming(timeTakenInS * time.Second)
 	return nil
 }
