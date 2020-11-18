@@ -82,27 +82,13 @@ func getErrorStore() (ErrorStoreT, error) {
 	}
 
 	err = json.Unmarshal(data, &errorStore)
-
-	if err != nil{
-		const timeLayout = "20060102150405"
-		filePath := strings.Split(errorStorePath,".")
-		newFilePath := fmt.Sprintf("%s-%s.%s",filePath[0],time.Now().Format(timeLayout),filePath[1])
-		switch err.(type){
-			case *json.SyntaxError, *json.UnmarshalTypeError : {
-				pkgLogger.Infof("Error :  \"%s\" while unmarshalling: %s", err.Error(), errorStorePath)
-				if writeErr := ioutil.WriteFile(newFilePath, data, 0644); writeErr != nil{
-					panic(writeErr)
-				}
-				pkgLogger.Infof("Backed up : %s -> %s", errorStorePath, newFilePath)
-				errorStore = ErrorStoreT{Errors: []RudderError{}}
-			}
-			default : {
-				pkgLogger.Fatal("Failed to unmarshall ErrorStore to json", err)
-				return errorStore, err
-			}
+	if err != nil {
+		pkgLogger.Errorf("Error :  \"%s\" while unmarshalling: %s", err.Error(), errorStorePath)
+		if renameErr := os.Rename(errorStorePath, fmt.Sprintf("%s.bkp", errorStorePath)); renameErr != nil {
+			pkgLogger.Errorf("Error :  \"%s\" while backing up: %s", err.Error(), errorStorePath)
 		}
+		errorStore = ErrorStoreT{Errors: []RudderError{}}
 	}
-
 	return errorStore, nil
 }
 
