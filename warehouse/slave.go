@@ -144,7 +144,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 	var loadFileIDs []int64
 	loadFileIDChan := make(chan int64)
 	loadFileErrChan := make(chan error)
-	maxParallelLoadsChan := make(chan struct{}, 3) // TODO: add config variable
+	maxParallelLoadsChan := make(chan struct{}, maxParallelLoadFileUploads)
 
 	// Upload each generated load file to ObjectStorage
 	// On successful upload, store the saved fileID in wh_load_files table

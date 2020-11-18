@@ -192,6 +192,7 @@ warehouseSyncFreqIgnore = false
 stagingFilesBatchSize = 960
 enableIDResolution = false
 populateHistoricIdentities = false
+maxParallelLoadFileUploads = 8
     [Warehouse.redshift]
     maxParallelLoads = 3
     setVarCharMax = false
