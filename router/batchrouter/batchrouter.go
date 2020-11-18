@@ -147,14 +147,22 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func updateDestStatusStats(id string, count int, isSuccess bool) {
-	var destStatsD stats.RudderStats
-	if isSuccess {
-		destStatsD = stats.NewBatchDestStat("batch_router.dest_successful_events", stats.CountType, id)
-	} else {
-		destStatsD = stats.NewBatchDestStat("batch_router.dest_failed_attempts", stats.CountType, id)
+func updateDestStatusStats(id string, jobStateCount map[string]int, destType string, isWarehouse bool, parameterFilters []jobsdb.ParameterFilterT) {
+	tags := map[string]string{
+		"module":      "batch_router",
+		"destType":    destType,
+		"isWarehouse": fmt.Sprintf("%t", isWarehouse),
 	}
-	destStatsD.Count(count)
+	for _, paramFilter := range parameterFilters {
+		tags[fmt.Sprintf("param_%s", paramFilter.Name)] = paramFilter.Value
+	}
+
+	for jobState, count := range jobStateCount {
+		tags["job_state"] = jobState
+		if count > 0 {
+			stats.NewTaggedStat("batch_job_states", stats.CountType, tags).Count(count)
+		}
+	}
 }
 
 func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
@@ -371,13 +379,11 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 		batchReqMetric.batchRequestFailed = 1
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
-		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
 	} else {
 		brt.logger.Debugf("BRT: Uploaded to object storage : %v at %v", batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		batchJobState = jobsdb.Succeeded.State
 		errorResp = []byte(`{"success":"OK"}`)
 		batchReqMetric.batchRequestSuccess = 1
-		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
 	}
 	brt.trackRequestMetrics(batchReqMetric)
 	var statusList []*jobsdb.JobStatusT
@@ -394,7 +400,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		warehouseServiceFailedTimeLock.Unlock()
 	}
 
-	var abortedJobCount int
+	jobStateCount := make(map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 
@@ -420,9 +426,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			ErrorResponse: errorResp,
 		}
 		statusList = append(statusList, &status)
-		if jobState == jobsdb.Aborted.State {
-			abortedJobCount++
-		}
+		jobStateCount[jobState] = jobStateCount[jobState] + 1
 	}
 
 	//tracking batch router errors
@@ -445,15 +449,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	//Mark the status of the jobs
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 
-	tags := map[string]string{
-		"module":      "batch_router",
-		"destType":    brt.destType,
-		"isWarehouse": fmt.Sprintf("%t", isWarehouse),
-	}
-	for _, paramFilter := range parameterFilters {
-		tags[fmt.Sprintf("param_%s", paramFilter.Name)] = paramFilter.Value
-	}
-	stats.NewTaggedStat("aborted_job_count", stats.CountType, tags).Count(abortedJobCount)
+	updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, jobStateCount, brt.destType, isWarehouse, parameterFilters)
 }
 
 func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {
