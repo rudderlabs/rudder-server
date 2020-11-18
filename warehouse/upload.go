@@ -14,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
@@ -954,7 +953,7 @@ func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location str
 	)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
 	if err != nil && err != sql.ErrNoRows {
-		logger.Errorf(`[WH] Error querying for sample load file location: %v`, err)
+		pkgLogger.Errorf(`[WH] Error querying for sample load file location: %v`, err)
 	}
 	if err == sql.ErrNoRows {
 		err = errors.New("Sample load file not found")

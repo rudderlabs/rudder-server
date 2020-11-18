@@ -59,11 +59,11 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		log.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %w, retrying after %v", err, t)
+		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %w, retrying after %v", err, t)
 	})
 
 	if err != nil {
-		log.Error("Error sending request to the server", err)
+		pkgLogger.Error("Error sending request to the server", err)
 		return SourcesT{}, false
 	}
 
@@ -75,7 +75,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 	var sourcesJSON SourcesT
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
-		log.Error("Error while parsing request", err, string(respBody), statusCode)
+		pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
 		return SourcesT{}, false
 	}
 
@@ -88,16 +88,16 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 
 // getFromFile reads the workspace config from JSON file
 func (workspaceConfig *WorkspaceConfig) getFromFile() (SourcesT, bool) {
-	log.Info("Reading workspace config from JSON file")
+	pkgLogger.Info("Reading workspace config from JSON file")
 	data, err := IoUtil.ReadFile(configJSONPath)
 	if err != nil {
-		log.Errorf("Unable to read backend config from file: %s", configJSONPath)
+		pkgLogger.Errorf("Unable to read backend config from file: %s", configJSONPath)
 		return SourcesT{}, false
 	}
 	var configJSON SourcesT
 	error := json.Unmarshal(data, &configJSON)
 	if error != nil {
-		log.Errorf("Unable to parse backend config from file: %s", configJSONPath)
+		pkgLogger.Errorf("Unable to parse backend config from file: %s", configJSONPath)
 		return SourcesT{}, false
 	}
 	return configJSON, true
@@ -139,18 +139,18 @@ func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]Work
 
 		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-			log.Errorf("[[ Workspace-config ]] Failed to fetch workspace regulations from API with error: %w, retrying after %v", err, t)
+			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch workspace regulations from API with error: %w, retrying after %v", err, t)
 		})
 
 		if err != nil {
-			log.Error("Error sending request to the server", err)
+			pkgLogger.Error("Error sending request to the server", err)
 			return []WorkspaceRegulationT{}, false
 		}
 
 		var workspaceRegulationsJSON WRegulationsT
 		err = json.Unmarshal(respBody, &workspaceRegulationsJSON)
 		if err != nil {
-			log.Error("Error while parsing request", err, string(respBody), statusCode)
+			pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
 			return []WorkspaceRegulationT{}, false
 		}
 
@@ -184,17 +184,17 @@ func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceR
 
 		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-			log.Errorf("[[ Workspace-config ]] Failed to fetch source regulations from API with error: %w, retrying after %v", err, t)
+			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch source regulations from API with error: %w, retrying after %v", err, t)
 		})
 		if err != nil {
-			log.Error("Error sending request to the server", err)
+			pkgLogger.Error("Error sending request to the server", err)
 			return []SourceRegulationT{}, false
 		}
 
 		var sourceRegulationsJSON SRegulationsT
 		err = json.Unmarshal(respBody, &sourceRegulationsJSON)
 		if err != nil {
-			log.Error("Error while parsing request", err, string(respBody), statusCode)
+			pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
 			return []SourceRegulationT{}, false
 		}
 

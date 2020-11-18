@@ -66,17 +66,17 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		log.Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %w, retrying after %v", err, t)
+		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %w, retrying after %v", err, t)
 	})
 
 	if err != nil {
-		log.Error("Error sending request to the server", err)
+		pkgLogger.Error("Error sending request to the server", err)
 		return SourcesT{}, false
 	}
 	var workspaces WorkspacesT
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		log.Error("Error while parsing request", err, string(respBody), statusCode)
+		pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
 		return SourcesT{}, false
 	}
 
@@ -112,18 +112,18 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetRegulations() (RegulationsT
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		log.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspaces with error: %w, retrying after %v", err, t)
+		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspaces with error: %w, retrying after %v", err, t)
 	})
 
 	if err != nil {
-		log.Error("Error sending request to the server", err)
+		pkgLogger.Error("Error sending request to the server", err)
 		return RegulationsT{}, false
 	}
 
 	var hostedWorkspaces HostedWorkspacesT
 	err = json.Unmarshal(respBody, &hostedWorkspaces)
 	if err != nil {
-		log.Error("Error while parsing request", err, string(respBody), statusCode)
+		pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
 		return RegulationsT{}, false
 	}
 
@@ -166,18 +166,18 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(worksp
 
 		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-			log.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspace regulations with error: %w, retrying after %v", err, t)
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspace regulations with error: %w, retrying after %v", err, t)
 		})
 
 		if err != nil {
-			log.Error("Error sending request to the server", err)
+			pkgLogger.Error("Error sending request to the server", err)
 			return []WorkspaceRegulationT{}, false
 		}
 
 		var workspaceRegulationsJSON WRegulationsT
 		err = json.Unmarshal(respBody, &workspaceRegulationsJSON)
 		if err != nil {
-			log.Error("Error while parsing request", err, string(respBody), statusCode)
+			pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
 			return []WorkspaceRegulationT{}, false
 		}
 
@@ -211,18 +211,18 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getSourceRegulations(workspace
 
 		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-			log.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted source regulations with error: %w, retrying after %v", err, t)
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted source regulations with error: %w, retrying after %v", err, t)
 		})
 
 		if err != nil {
-			log.Error("Error sending request to the server", err)
+			pkgLogger.Error("Error sending request to the server", err)
 			return []SourceRegulationT{}, false
 		}
 
 		var sourceRegulationsJSON SRegulationsT
 		err = json.Unmarshal(respBody, &sourceRegulationsJSON)
 		if err != nil {
-			log.Error("Error while parsing request", err, string(respBody), statusCode)
+			pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
 			return []SourceRegulationT{}, false
 		}
 

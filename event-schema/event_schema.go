@@ -103,14 +103,14 @@ type EventSchemaManagerT struct {
 }
 
 var (
-	flushInterval 			time.Duration
-	adminUser 				string
-	adminPassword 			string
-	reservoirSampleSize 	int
-	eventSchemaChannel 		chan *GatewayEventBatchT
-	updatedEventModels 		map[string]*EventModelT
-	updatedSchemaVersions 	map[string]*SchemaVersionT
-	pkgLogger             	logger.LoggerI
+	flushInterval         time.Duration
+	adminUser             string
+	adminPassword         string
+	reservoirSampleSize   int
+	eventSchemaChannel    chan *GatewayEventBatchT
+	updatedEventModels    map[string]*EventModelT
+	updatedSchemaVersions map[string]*SchemaVersionT
+	pkgLogger             logger.LoggerI
 )
 
 const EVENT_MODELS_TABLE = "event_models"
