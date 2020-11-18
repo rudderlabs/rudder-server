@@ -6,6 +6,7 @@ package stats
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -163,6 +164,8 @@ func (s *HandleT) NewTaggedStat(Name string, StatType string, tags map[string]st
 	tagStr := StatType
 	tagVals := make([]string, 0, len(tags)*2)
 	for tagName, tagVal := range tags {
+		tagName = strings.ReplaceAll(tagName, ":", "-")
+		tagVal = strings.ReplaceAll(tagVal, ":", "-")
 		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
 		tagVals = append(tagVals, tagName, tagVal)
 	}
