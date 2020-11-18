@@ -215,8 +215,6 @@ func (proc *HandleT) Start() {
 var (
 	loopSleep                           time.Duration
 	maxLoopSleep                        time.Duration
-	maxDBReadBatchSize                  int
-	minDBReadBatchSize                  int
 	dbReadBatchSize                     int
 	transformBatchSize                  int
 	userTransformBatchSize              int
@@ -235,8 +233,7 @@ var (
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
 	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
-	maxDBReadBatchSize = config.GetInt("Processor.maxDBReadBatchSize", 10000)
-	minDBReadBatchSize = config.GetInt("Processor.minDBReadBatchSize", 100)
+	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 10000)
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
@@ -245,13 +242,6 @@ func loadConfig() {
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
 
-	dbReadBatchSize = minDBReadBatchSize
-}
-
-//ResetDBReadBatchSize - resets dbReadBatchSize to minDBReadBatchSize
-//This is written as a helper function for processor tests.
-func (proc *HandleT) ResetDBReadBatchSize() {
-	dbReadBatchSize = minDBReadBatchSize
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -957,26 +947,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
 
-	//deciding the dbReadBatchSize for the next query based on the totalEvents processed in this loop.
-	if len(jobList) != 0 && totalEvents != 0 {
-		if totalEvents > maxDBReadBatchSize {
-			divFactor := float64(totalEvents) / float64(len(jobList))
-			//divFactor can never be less than 1. Because len(jobList) < maxDbReadBatchSize < totalEvents
-			newDBReadBatchSize := float64(dbReadBatchSize) / divFactor
-			dbReadBatchSize = int(newDBReadBatchSize)
-			if dbReadBatchSize < minDBReadBatchSize {
-				dbReadBatchSize = minDBReadBatchSize
-			}
-			proc.logger.Debugf("[Processor] Total events processed(%d) hit the max. Resetting dbReadBatchSize to : %d", totalEvents, dbReadBatchSize)
-		} else if totalEvents < maxDBReadBatchSize {
-			dbReadBatchSize = 2 * dbReadBatchSize
-			if dbReadBatchSize > maxDBReadBatchSize {
-				dbReadBatchSize = maxDBReadBatchSize
-			}
-			proc.logger.Debugf("[Processor] Total events processed(%d) is less than allowed max. Resetting dbReadBatchSize to : %d", totalEvents, dbReadBatchSize)
-		}
-	}
-
 	proc.pStatsDBW.End(len(statusList))
 	proc.pStatsJobs.End(totalEvents)
 
@@ -987,6 +957,25 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
+}
+
+func getTruncatedEventList(jobList []*jobsdb.JobT, toQuery int) (truncatedList []*jobsdb.JobT) {
+	var totalEvents int
+	for idx, job := range jobList {
+		eventsInJob := int(gjson.GetBytes(job.Parameters, "total_events").Int())
+		if eventsInJob == 0 {
+			eventsInJob = 1
+		}
+		totalEvents += eventsInJob
+		if totalEvents > toQuery {
+			// return atleast one job
+			if idx == 0 {
+				idx = 1
+			}
+			return jobList[:idx]
+		}
+	}
+	return jobList
 }
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
@@ -1000,9 +989,12 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.logger.Debugf("Processor DB Read size: %v", toQuery)
 	//Should not have any failure while processing (in v0) so
 	//retryList should be empty. Remove the assert
-	retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
+	unTruncatedRetryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
+	retryList := getTruncatedEventList(unTruncatedRetryList, toQuery)
+
 	toQuery -= len(retryList)
-	unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
+	unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
+	unprocessedList := getTruncatedEventList(unTruncatedUnProcessedList, toQuery)
 
 	proc.statDBR.End()
 
@@ -1077,7 +1069,8 @@ func (proc *HandleT) mainLoop() {
 
 func (proc *HandleT) crashRecover() {
 	for {
-		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, maxDBReadBatchSize, nil)
+		unTruncatedExecList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize, nil)
+		execList := getTruncatedEventList(unTruncatedExecList, dbReadBatchSize)
 
 		if len(execList) == 0 {
 			break
