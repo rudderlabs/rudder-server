@@ -81,7 +81,7 @@ allowPartialWriteWithErrors = true
 allowReqsWithoutUserIDAndAnonymousID = false
 
 [EventSchemas]
-enableEventSchemasFeature = true
+enableEventSchemasFeature = false
 syncIntervalInS = 5
 
 [Gateway.webhook]

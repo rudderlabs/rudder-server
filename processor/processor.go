@@ -248,8 +248,8 @@ func loadConfig() {
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
-	// EventSchemas feature. true by default
-	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", true)
+	// EventSchemas feature. false by default
+	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
 	dbReadBatchSize = minDBReadBatchSize
 }
 
