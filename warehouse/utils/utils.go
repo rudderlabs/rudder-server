@@ -47,23 +47,15 @@ const (
 )
 
 const (
-	UploadStatusField          = "status"
-	UploadStartLoadFileIDField = "start_load_file_id"
-	UploadEndLoadFileIDField   = "end_load_file_id"
-	UploadUpdatedAtField       = "updated_at"
-	UploadTimingsField         = "timings"
-	UploadSchemaField          = "schema"
-	UploadLastExecAtField      = "last_exec_at"
 	DiscardsTable           = "rudder_discards"
 	IdentityMergeRulesTable = "rudder_identity_merge_rules"
 	IdentityMappingsTable   = "rudder_identity_mappings"
 	AliasTable              = "aliases"
 	SyncFrequency           = "syncFrequency"
 	SyncStartAt             = "syncStartAt"
-  ExcludeWindow          = "excludeWindow"
-	ExcludeWindowStartTime = "excludeWindowStartTime"
-	ExcludeWindowEndTime   = "excludeWindowEndTime"
-
+	ExcludeWindow           = "excludeWindow"
+	ExcludeWindowStartTime  = "excludeWindowStartTime"
+	ExcludeWindowEndTime    = "excludeWindowEndTime"
 )
 
 const (
