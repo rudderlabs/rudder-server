@@ -53,6 +53,9 @@ const (
 	AliasTable              = "aliases"
 	SyncFrequency           = "syncFrequency"
 	SyncStartAt             = "syncStartAt"
+	ExcludeWindow           = "excludeWindow"
+	ExcludeWindowStartTime  = "excludeWindowStartTime"
+	ExcludeWindowEndTime    = "excludeWindowEndTime"
 )
 
 const (
@@ -468,6 +471,16 @@ func GetConfigValueBoolString(key string, warehouse WarehouseT) string {
 		}
 	}
 	return "false"
+}
+
+func GetConfigValueAsMap(key string, config map[string]interface{}) map[string]interface{} {
+	value := map[string]interface{}{}
+	if config[key] != nil {
+		if val, ok := config[key].(map[string]interface{}); ok {
+			return val
+		}
+	}
+	return value
 }
 
 func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
