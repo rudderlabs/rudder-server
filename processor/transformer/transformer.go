@@ -220,28 +220,30 @@ type ResponseT struct {
 }
 
 //GetVersion gets the transformer version by asking it on /transfomerBuildVersion. if there is any error it returns empty string
-func GetVersion() string {
-	transformerBuildVersion := "Not an official release. Get the latest release from dockerhub."
+func GetVersion() (transformerBuildVersion string) {
+	transformerBuildVersion = "Not an official release. Get the latest release from dockerhub."
 	url := integrations.GetTransformerURL() + "/transformerBuildVersion"
 	resp, err := http.Get(url)
 	if err != nil {
 		pkgLogger.Errorf("Unable to make a transfomer build version call with error : %s", err.Error())
-		return ""
+		return
 
 	}
 	if resp == nil {
-		return ""
+		transformerBuildVersion = fmt.Sprintf("No response from transformer. %s", transformerBuildVersion)
+		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
 		bodyBytes, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			pkgLogger.Errorf("Unable to read response into bytes with error : %s", err.Error())
-			return ""
+			transformerBuildVersion = fmt.Sprintf("Unable to read response from transformer.")
+			return
 		}
 		transformerBuildVersion = string(bodyBytes)
 	}
-	return transformerBuildVersion
+	return
 }
 
 //Transform function is used to invoke transformer API
