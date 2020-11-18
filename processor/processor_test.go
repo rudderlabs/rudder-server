@@ -31,9 +31,7 @@ var testTimeout = 5 * time.Second
 type context struct {
 	asyncHelper       testutils.AsyncTestHelper
 	configInitialised bool
-
-	minDBReadBatchSize int
-	maxDBReadBatchSize int
+	dbReadBatchSize   int
 
 	mockCtrl              *gomock.Controller
 	mockBackendConfig     *mocksBackendConfig.MockBackendConfig
@@ -88,8 +86,7 @@ func (c *context) Setup() {
 		Do(c.asyncHelper.ExpectAndNotifyCallback()).
 		Return().Times(1)
 
-	c.minDBReadBatchSize = 100
-	c.maxDBReadBatchSize = 10000
+	c.dbReadBatchSize = 10000
 
 	registerStatMocks := func(name string, statType string) *mocksStats.MockRudderStats {
 		stat := mocksStats.NewMockRudderStats(c.mockCtrl)
@@ -261,10 +258,9 @@ var _ = Describe("Processor", func() {
 			}
 
 			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
-			processor.ResetDBReadBatchSize()
 		})
 
 		It("should recover after crash", func() {
@@ -311,7 +307,7 @@ var _ = Describe("Processor", func() {
 			}
 
 			// GetExecuting is called in a loop until all executing jobs have been updated. Each executing job should be updated to failed status
-			var executingCall1 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(executingJobsList[0:2]).Times(1)
+			var executingCall1 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(executingJobsList[0:2]).Times(1)
 			var updateCall1 = c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(2), gatewayCustomVal, nil).After(executingCall1).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(executingJobsList[0], statuses[0], jobsdb.Failed.State, "", "{}", 2)
@@ -319,23 +315,22 @@ var _ = Describe("Processor", func() {
 				})
 
 			// second loop iteration
-			var executingCall2 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).After(updateCall1).Return(executingJobsList[2:]).Times(1)
+			var executingCall2 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).After(updateCall1).Return(executingJobsList[2:]).Times(1)
 			var updateCall2 = c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(1), gatewayCustomVal, nil).After(executingCall2).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(executingJobsList[2], statuses[0], jobsdb.Failed.State, "", "{}", 1)
 				})
 
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
-			processor.ResetDBReadBatchSize()
 		})
 	})
 
 	Context("normal operation", func() {
 		BeforeEach(func() {
 			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
 		})
 
 		It("should only send proper stats, if not pending jobs are returned", func() {
@@ -347,13 +342,12 @@ var _ = Describe("Processor", func() {
 			}
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
-			processor.ResetDBReadBatchSize()
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
 
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(emptyJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(emptyJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1).After(callRetry)
 
 			c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
 
@@ -474,8 +468,8 @@ var _ = Describe("Processor", func() {
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.minDBReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
 			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
 			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
@@ -602,7 +596,7 @@ var _ = Describe("Processor", func() {
 	/*Context("sessions", func() {
 		BeforeEach(func() {
 			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
 		})
 
 		It("should process ToRetry and Unprocessed jobs, when total events are less than sessionThreshold", func() {
@@ -719,8 +713,8 @@ var _ = Describe("Processor", func() {
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.minDBReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
 			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
 			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
@@ -980,8 +974,8 @@ var _ = Describe("Processor", func() {
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.minDBReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
 			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
 			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
@@ -1210,15 +1204,15 @@ var _ = Describe("Processor", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{}
 
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.minDBReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
 			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
 			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
@@ -1345,15 +1339,15 @@ var _ = Describe("Processor", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{}
 
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.maxDBReadBatchSize, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			callLoopTime := c.mockStatLoopTime.EXPECT().Start().Times(1)
 			callDBRTime := c.mockStatGatewayDBReadTime.EXPECT().Start().Times(1).After(callLoopTime)
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.minDBReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.minDBReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 			callDBRTimeEnd := c.mockStatGatewayDBReadTime.EXPECT().End().Times(1).After(callUnprocessed)
 			callListSort := c.mockStatJobListSort.EXPECT().Start().Times(1).After(callDBRTimeEnd)
 			c.mockStatGatewayDBRead.EXPECT().Count(len(toRetryJobsList) + len(unprocessedJobsList)).Times(1).After(callListSort)
@@ -1551,7 +1545,6 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 
 func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
 	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, c.mockStats)
-	processor.ResetDBReadBatchSize()
 
 	// make sure the mock backend config has sent the configuration
 	testutils.RunTestWithTimeout(func() {

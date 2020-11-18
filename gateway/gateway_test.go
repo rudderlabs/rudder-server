@@ -323,7 +323,7 @@ var _ = Describe("Gateway", func() {
 
 		assertJobMetadata := func(job *jobsdb.JobT, batchLength int, batchId int) {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
-			Expect(job.Parameters).To(Equal(json.RawMessage(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, SourceIDEnabled, batchId))))
+			Expect(job.Parameters).To(Equal(json.RawMessage(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "total_events": %d}`, SourceIDEnabled, batchId, batchLength))))
 			Expect(job.CustomVal).To(Equal(CustomVal))
 
 			responseData := []byte(job.EventPayload)
