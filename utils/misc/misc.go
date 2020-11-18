@@ -83,9 +83,9 @@ func getErrorStore() (ErrorStoreT, error) {
 
 	err = json.Unmarshal(data, &errorStore)
 	if err != nil {
-		pkgLogger.Errorf("Error :  \"%s\" while unmarshalling: %s", err.Error(), errorStorePath)
+		pkgLogger.Errorf("Failed to Unmarshall %s. Error:  %w", errorStorePath, err)
 		if renameErr := os.Rename(errorStorePath, fmt.Sprintf("%s.bkp", errorStorePath)); renameErr != nil {
-			pkgLogger.Errorf("Error :  \"%s\" while backing up: %s", err.Error(), errorStorePath)
+			pkgLogger.Errorf("Failed to back up: %s. Error: %w", errorStorePath, err)
 		}
 		errorStore = ErrorStoreT{Errors: []RudderError{}}
 	}
