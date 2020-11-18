@@ -627,7 +627,8 @@ func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (numJobs int
 		return 0, err
 	}
 	if len(uploadJobs) == 0 {
-		return 0, nil
+		logger.Errorf("[WH]: Create 0 upload jobs for %s for new staging files - %d:%d", warehouse.Identifier, stagingFilesList[0].ID, stagingFilesList[len(stagingFilesList)-1].ID)
+		return 0, err
 	}
 
 	setLastExec(warehouse)
@@ -636,53 +637,58 @@ func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (numJobs int
 	return len(uploadJobs), nil
 }
 
-func (wh *HandleT) sortWarehousesByLastEventAt(warehouses []warehouseutils.WarehouseT) {
+func (wh *HandleT) sortWarehousesByOldestUnSyncedEventAt() (err error) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
-			concat(source_id, '_', destination_id) as wh_identifier, last_event_at
+			concat('%s', ':', source_id, ':', destination_id) as wh_identifier,
+			CASE
+				WHEN (status='exported_data' or status='aborted') THEN last_event_at
+				ELSE first_event_at
+				END AS oldest_unsynced_event
 		FROM (
 			SELECT
 				ROW_NUMBER() OVER (PARTITION BY source_id, destination_id ORDER BY id desc) AS row_number,
-				t.*
+				t.source_id, t.destination_id, t.last_event_at, t.first_event_at, t.status
 			FROM
 				wh_uploads t) grouped_uploads
 		WHERE
 			grouped_uploads.row_number = 1;`,
-	)
+		wh.destType)
 
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		return err
 	}
 	defer rows.Close()
 
-	lastEventAtMap := map[string]time.Time{}
+	oldestEventAtMap := map[string]time.Time{}
 
 	for rows.Next() {
 		var whIdentifier string
-		var lastEventAtNullTime sql.NullTime
-		err := rows.Scan(&whIdentifier, &lastEventAtNullTime)
+		var oldestUnSyncedEventAtNullTime sql.NullTime
+		err := rows.Scan(&whIdentifier, &oldestUnSyncedEventAtNullTime)
 		if err != nil {
-			panic(err)
+			return err
 		}
-		lastEventAt := lastEventAtNullTime.Time
-		if !lastEventAtNullTime.Valid {
-			lastEventAt = timeutil.Now()
+		oldestUnSyncedEventAt := oldestUnSyncedEventAtNullTime.Time
+		if !oldestUnSyncedEventAtNullTime.Valid {
+			oldestUnSyncedEventAt = timeutil.Now()
 		}
-		lastEventAtMap[whIdentifier] = lastEventAt
+		oldestEventAtMap[whIdentifier] = oldestUnSyncedEventAt
 	}
 
-	sort.Slice(warehouses, func(i, j int) bool {
+	sort.Slice(wh.warehouses, func(i, j int) bool {
 		var firstTime, secondTime time.Time
 		var ok bool
-		if firstTime, ok = lastEventAtMap[fmt.Sprintf(`%s_%s`, warehouses[i].Source.ID, warehouses[i].Destination.ID)]; !ok {
+		if firstTime, ok = oldestEventAtMap[warehouseutils.GetWarehouseIdentifier(wh.destType, wh.warehouses[i].Source.ID, wh.warehouses[i].Destination.ID)]; !ok {
 			firstTime = timeutil.Now()
 		}
-		if secondTime, ok = lastEventAtMap[fmt.Sprintf(`%s_%s`, warehouses[j].Source.ID, warehouses[j].Destination.ID)]; !ok {
+		if secondTime, ok = oldestEventAtMap[warehouseutils.GetWarehouseIdentifier(wh.destType, wh.warehouses[j].Source.ID, wh.warehouses[j].Destination.ID)]; !ok {
 			secondTime = timeutil.Now()
 		}
 		return firstTime.Before(secondTime)
 	})
+	return
 }
 
 func (wh *HandleT) mainLoop() {
@@ -694,11 +700,13 @@ func (wh *HandleT) mainLoop() {
 			continue
 		}
 
-		warehouses := wh.warehouses
-		wh.sortWarehousesByLastEventAt(warehouses)
+		err := wh.sortWarehousesByOldestUnSyncedEventAt()
 		wh.configSubscriberLock.RUnlock()
+		if err != nil {
+			logger.Errorf(`[WH] Error sorting warehouses by last event time: %v`, err)
+		}
 
-		for _, warehouse := range warehouses {
+		for _, warehouse := range wh.warehouses {
 			pkgLogger.Debugf("[WH] Processing Jobs for warehouse: %s", warehouse.Identifier)
 			_, err := wh.processJobs(warehouse)
 			if err != nil {
@@ -709,17 +717,15 @@ func (wh *HandleT) mainLoop() {
 	}
 }
 
-func (wh *HandleT) runUploadJobAllocater() {
+func (wh *HandleT) runUploadJobAllocator() {
 	for {
-		select {
-		case uploadJobs := <-wh.uploadJobsQ:
-			workerName := workerIdentifier(uploadJobs[0].warehouse)
-			// Waits till a worker is available to process
-			wh.waitAndLockAvailableWorker()
-			wh.workerChannelMapLock.Lock()
-			wh.workerChannelMap[workerName] <- uploadJobs
-			wh.workerChannelMapLock.Unlock()
-		}
+		uploadJobs := <-wh.uploadJobsQ
+		workerName := workerIdentifier(uploadJobs[0].warehouse)
+		// Waits till a worker is available to process
+		wh.waitAndLockAvailableWorker()
+		wh.workerChannelMapLock.Lock()
+		wh.workerChannelMap[workerName] <- uploadJobs
+		wh.workerChannelMapLock.Unlock()
 	}
 }
 
@@ -774,7 +780,7 @@ func (wh *HandleT) Setup(whType string) {
 		wh.backendConfigSubscriber()
 	})
 	rruntime.Go(func() {
-		wh.runUploadJobAllocater()
+		wh.runUploadJobAllocator()
 	})
 	rruntime.Go(func() {
 		wh.mainLoop()
