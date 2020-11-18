@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -108,7 +107,7 @@ func (tableUpload *TableUploadT) setStatus(status string) (err error) {
 		execValues = append(execValues, timeutil.Now())
 	}
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 %s WHERE wh_upload_id=$3 AND table_name=$4`, warehouseutils.WarehouseTableUploadsTable, lastExec)
-	logger.Debugf("[WH]: Setting table upload status: %v", sqlStatement)
+	pkgLogger.Debugf("[WH]: Setting table upload status: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, execValues...)
 	return err
 }
@@ -116,9 +115,9 @@ func (tableUpload *TableUploadT) setStatus(status string) (err error) {
 func (tableUpload *TableUploadT) setError(status string, statusError error) (err error) {
 	tableName := tableUpload.tableName
 	uploadID := tableUpload.uploadID
-	logger.Errorf("[WH]: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
+	pkgLogger.Errorf("[WH]: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2, error=$3 WHERE wh_upload_id=$4 AND table_name=$5`, warehouseutils.WarehouseTableUploadsTable)
-	logger.Debugf("[WH]: Setting table upload error: %v", sqlStatement)
+	pkgLogger.Debugf("[WH]: Setting table upload error: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), misc.QuoteLiteral(statusError.Error()), uploadID, tableName)
 	return err
 }

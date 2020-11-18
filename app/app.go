@@ -26,6 +26,12 @@ type Interface interface {
 	Features() *Features // Get this application's enterprise features
 }
 
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("app")
+}
+
 // Setup initializes application
 func (a *App) Setup() {
 	// If cpuprofile flag is present, setup cpu profiling
@@ -62,10 +68,6 @@ func (a *App) initEnterpriseFeatures() {
 		a.features.SuppressUser = suppressUserFeatureSetup(a)
 	}
 
-	if protocolsFeatureSetup != nil {
-		a.features.Protocols = protocolsFeatureSetup(a)
-	}
-
 	if configEnvFeatureSetup != nil {
 		a.features.ConfigEnv = configEnvFeatureSetup(a)
 	}
@@ -84,7 +86,7 @@ func (a *App) Features() *Features {
 // Stop stops application
 func (a *App) Stop() {
 	if a.options.Cpuprofile != "" {
-		logger.Info("Stopping CPU profile")
+		pkgLogger.Info("Stopping CPU profile")
 		pprof.StopCPUProfile()
 		a.cpuprofileOutput.Close()
 	}

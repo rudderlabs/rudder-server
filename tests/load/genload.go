@@ -20,7 +20,6 @@ import (
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -51,7 +50,6 @@ var loadStat stats.RudderStats
 var requestTimeStat stats.RudderStats
 
 func main() {
-	logger.Setup()
 	stats.Setup()
 
 	loadStat = stats.NewStat("genload.num_events", stats.CountType)

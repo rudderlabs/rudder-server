@@ -43,10 +43,13 @@ var (
 	maxBatchSize, maxRetry, maxESQueueSize int
 	batchTimeout, retrySleep               time.Duration
 	disableEventUploads                    bool
+	pkgLogger                              logger.LoggerI
 )
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("source-debugger").Child("eventUploader")
+
 }
 
 func loadConfig() {
@@ -104,7 +107,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 		batchedEvent := EventUploadBatchT{}
 		err := json.Unmarshal([]byte(event.eventBatch), &batchedEvent)
 		if err != nil {
-			logger.Errorf(string(event.eventBatch))
+			pkgLogger.Errorf(string(event.eventBatch))
 			misc.AssertErrorIfDev(err)
 			continue
 		}
@@ -134,7 +137,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 
 	rawJSON, err := json.Marshal(res)
 	if err != nil {
-		logger.Debugf(string(rawJSON))
+		pkgLogger.Debugf(string(rawJSON))
 		misc.AssertErrorIfDev(err)
 		return
 	}
@@ -157,9 +160,9 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 
 		resp, err = client.Do(req)
 		if err != nil {
-			logger.Error("Config Backend connection error", err)
+			pkgLogger.Error("Config Backend connection error", err)
 			if retryCount > maxRetry {
-				logger.Errorf("Max retries exceeded trying to connect to config backend")
+				pkgLogger.Errorf("Max retries exceeded trying to connect to config backend")
 				return
 			}
 			retryCount++
@@ -172,7 +175,7 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 
 	if !(resp.StatusCode == http.StatusOK ||
 		resp.StatusCode == http.StatusBadRequest) {
-		logger.Errorf("Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
+		pkgLogger.Errorf("Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
 	}
 }
 

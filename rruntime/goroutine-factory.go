@@ -10,6 +10,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+var pkgLogger logger.LoggerI
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("rruntime")
+}
+
 //Go Starts the excution of the function passed as argument in a new Goroutine
 //THING TO NOTE: If the function you are intending to run inside a goroutine takes any parameters,
 //before calling this function, create local variable for every argument (so that evaluation of the argument happens immediately)
@@ -33,7 +39,7 @@ func Go(function func()) {
 					}})
 
 				misc.RecordAppError(fmt.Errorf("%v", r))
-				logger.Fatal(r)
+				pkgLogger.Fatal(r)
 				panic(r)
 			}
 		}()

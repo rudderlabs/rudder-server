@@ -81,7 +81,7 @@ allowPartialWriteWithErrors = true
 allowReqsWithoutUserIDAndAnonymousID = false
 
 [EventSchemas]
-enableEventSchemasFeature = false
+enableEventSchemasFeature = true
 syncIntervalInS = 5
 
 [Gateway.webhook]
@@ -141,14 +141,15 @@ updateStatusBatchSize = 1000
 readSleepInMS = 1000
 noOfWorkers = 64
 noOfJobsPerChannel = 1000
+noOfJobsToBatchInAWorker = 20
+jobsBatchTimeoutInSec = 5
 ser = 3
 maxSleepInS = 60
 minSleepInS = 0
 maxStatusUpdateWaitInS = 5
-randomWorkerAssign = false
 useTestSink = false
 maxFailedCountForJob = 3
-keepOrderOnFailure = true
+guaranteeUserEventOrder = true
 kafkaWriteTimeoutInSec = 2
 kafkaDialTimeoutInSec = 10
 retryTimeWindowInMins = 180
@@ -260,7 +261,7 @@ logFileSize = 100 # in MB
 enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
-
+#moduleLevels="processor.transformer=ERROR:batchrouter=ERROR:pgnotifier=ERROR:warehouse=ERROR"
 
 [Diagnostics]
 enableDiagnostics = true
