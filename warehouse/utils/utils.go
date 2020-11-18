@@ -841,15 +841,12 @@ func GetConfigValueBoolString(key string, warehouse WarehouseT) string {
 	return "false"
 }
 
-func GetConfigValueAsMap(key string, warehouse WarehouseT) map[string]interface{} {
-	config := warehouse.Destination.Config
+func GetConfigValueAsMap(key string, config map[string]interface{}) map[string]interface{} {
 	value := map[string]interface{}{}
 	if config[key] != nil {
-		fmt.Println(config[key])
 		if val, ok := config[key].(map[string]interface{}); ok {
 			return val
 		}
-		fmt.Println("cant convert")
 	}
 	return value
 }

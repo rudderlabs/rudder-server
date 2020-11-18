@@ -155,7 +155,7 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 		return !uploadFrequencyExceeded(warehouse, "")
 	}
 	// gets exclude window start time and end time
-	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse)
+	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse.Destination.Config)
 	excludeWindowStartTime, excludeWindowEndTime := GetExludeWindowStartEndTimes(excludeWindow)
 	if CheckCurrentTimeExistsInExcludeWindow(timeutil.Now(), excludeWindowStartTime, excludeWindowEndTime) {
 		return false
