@@ -147,7 +147,7 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func updateDestStatusStats(id string, jobStateCount map[string]int, destType string, isWarehouse bool, parameterFilters []jobsdb.ParameterFilterT) {
+func sendDestStatusStats(id string, jobStateCount map[string]int, destType string, isWarehouse bool, parameterFilters []jobsdb.ParameterFilterT) {
 	tags := map[string]string{
 		"module":      "batch_router",
 		"destType":    destType,
@@ -160,7 +160,7 @@ func updateDestStatusStats(id string, jobStateCount map[string]int, destType str
 	for jobState, count := range jobStateCount {
 		tags["job_state"] = jobState
 		if count > 0 {
-			stats.NewTaggedStat("batch_job_states", stats.CountType, tags).Count(count)
+			stats.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
 		}
 	}
 }
@@ -449,7 +449,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	//Mark the status of the jobs
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 
-	updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, jobStateCount, brt.destType, isWarehouse, parameterFilters)
+	sendDestStatusStats(batchJobs.BatchDestination.Destination.ID, jobStateCount, brt.destType, isWarehouse, parameterFilters)
 }
 
 func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {
