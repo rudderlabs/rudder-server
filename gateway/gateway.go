@@ -652,7 +652,7 @@ func (gateway *HandleT) eventSchemaWebHandler(wrappedFunc func(http.ResponseWrit
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !enableEventSchemasFeature {
 			gateway.logger.Debug("EventSchemas feature is disabled. You can enabled it through enableEventSchemasFeature flag in config.toml")
-			http.Error(w, "EventSchemas feature is disabled", 400)
+			http.Error(w, response.MakeResponse("EventSchemas feature is disabled"), 400)
 			return
 		}
 		wrappedFunc(w, r)
@@ -715,10 +715,10 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	gateway.trackRequestMetrics(errorMessage)
 	if errorMessage != "" {
 		gateway.logger.Debug(errorMessage)
-		http.Error(w, errorMessage, 400)
+		http.Error(w, response.MakeResponse(errorMessage), 400)
 	} else {
 		gateway.logger.Debug(response.GetStatus(response.Ok))
-		w.Write([]byte(response.GetStatus(response.Ok)))
+		w.Write([]byte(response.GetResponse(response.Ok)))
 	}
 }
 
@@ -811,17 +811,17 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 			// convert the pixel request(r) to a web request(req)
 			err := gateway.setWebPayload(req, queryParams, reqType)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, response.MakeResponse(err.Error()), http.StatusBadRequest)
 				return
 			}
 
 			// send req to webHandler
 			gateway.webHandler(w, req, reqType)
 		} else {
-			http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
+			http.Error(w, response.GetResponse(response.NoWriteKeyInQueryParams), http.StatusUnauthorized)
 		}
 	} else {
-		http.Error(w, response.InvalidRequestMethod, http.StatusBadRequest)
+		http.Error(w, response.GetResponse(response.InvalidRequestMethod), http.StatusBadRequest)
 	}
 }
 
@@ -836,7 +836,7 @@ func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, re
 		// send req to webHandler
 		gateway.webHandler(w, r, reqType)
 	} else {
-		http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
+		http.Error(w, response.MakeResponse(response.NoWriteKeyInQueryParams), http.StatusUnauthorized)
 	}
 }
 
@@ -871,6 +871,7 @@ func (gateway *HandleT) StartWebHandler() {
 
 	gateway.logger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
+	srvMux.Use(headerMiddleware)
 	srvMux.HandleFunc("/v1/batch", gateway.stat(gateway.webBatchHandler))
 	srvMux.HandleFunc("/v1/identify", gateway.stat(gateway.webIdentifyHandler))
 	srvMux.HandleFunc("/v1/track", gateway.stat(gateway.webTrackHandler))
@@ -917,6 +918,15 @@ func (gateway *HandleT) StartWebHandler() {
 		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
 	}
 	gateway.logger.Fatal(srv.ListenAndServe())
+}
+
+//Currently only sets the content-type for all responses.
+//Note : responses via http.Error aren't affected. They default to text/plain
+func headerMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Content-Type", "application/json; charset=utf-8")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Gets the config from config backend and extracts enabled writekeys

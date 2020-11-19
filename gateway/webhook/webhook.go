@@ -100,7 +100,7 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	if code != 0 {
 		statusCode = code
 	}
-	http.Error(w, reason, statusCode)
+	http.Error(w, response.MakeResponse(reason), statusCode)
 	webhook.gwHandle.IncrementAckCount(1)
 }
 
@@ -138,10 +138,10 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 			code = resp.statusCode
 		}
 		pkgLogger.Debug(resp.err)
-		http.Error(w, resp.err, code)
+		http.Error(w, response.MakeResponse(resp.err), code)
 	} else {
 		pkgLogger.Debug(response.GetStatus(response.Ok))
-		w.Write([]byte(response.GetStatus(response.Ok)))
+		w.Write([]byte(response.GetResponse(response.Ok)))
 	}
 }
 

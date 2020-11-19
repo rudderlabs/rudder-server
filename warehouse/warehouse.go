@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/gateway/response"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -875,7 +876,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error reading body: %v", err)
-		http.Error(w, "can't read body", http.StatusBadRequest)
+		http.Error(w, response.MakeResponse("can't read body"), http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()

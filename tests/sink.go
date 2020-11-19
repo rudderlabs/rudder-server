@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/gateway/response"
 	"math/rand"
 	"net/http"
 	"net/http/httputil"
@@ -47,7 +48,7 @@ func limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if limiter.Allow() == false {
 			//fmt.Println("====sending 429 =====")
-			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+			http.Error(w, response.MakeResponse(http.StatusText(http.StatusTooManyRequests)), http.StatusTooManyRequests)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -63,9 +64,9 @@ var isInactive int32
 
 func handleActiveReq(rw http.ResponseWriter, req *http.Request) {
 	if atomic.LoadInt32(&isInactive) == 1 {
-		rw.Write([]byte("no"))
+		rw.Write([]byte(response.MakeResponse("no")))
 	} else {
-		rw.Write([]byte("yes"))
+		rw.Write([]byte(response.MakeResponse("yes")))
 	}
 }
 
@@ -99,7 +100,7 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 	var respMessage string
 	if burstError {
 		//fmt.Println("====sending 401 ======")
-		http.Error(rw, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		http.Error(rw, response.MakeResponse(http.StatusText(http.StatusUnauthorized)), http.StatusUnauthorized)
 		countError("401")
 		return
 	}
@@ -112,13 +113,13 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 			countError("200")
 		case 400:
 			//fmt.Println("====sending 400 =======")
-			http.Error(rw, http.StatusText(http.StatusBadRequest),
+			http.Error(rw, response.MakeResponse(http.StatusText(http.StatusBadRequest)),
 				http.StatusBadRequest)
 			countError("400")
 			return
 		case 500:
 			//fmt.Println("====sending 500 =======")
-			http.Error(rw, http.StatusText(http.StatusInternalServerError),
+			http.Error(rw, response.MakeResponse(http.StatusText(http.StatusInternalServerError)),
 				http.StatusInternalServerError)
 			countError("500")
 			return
@@ -129,7 +130,7 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	//Reached here means no synthetic error OR error-code = 200
-	rw.Write([]byte(respMessage))
+	rw.Write([]byte(response.MakeResponse(respMessage)))
 	successStat.Increment()
 
 	if enableTestStats {

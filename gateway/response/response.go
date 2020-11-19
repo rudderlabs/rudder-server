@@ -1,6 +1,7 @@
 package response
 
 import (
+	"encoding/json"
 	"net/http"
 )
 
@@ -47,10 +48,10 @@ var (
 	statusMap map[string]ResponseStatus
 )
 
-//ResponseStatus holds gateway response status message and code
+//ResponseStatus holds gateway response status Message and code
 type ResponseStatus struct {
-	message string
-	code    int
+	Message string `json:"msg,omitempty"`
+	code    int    `json:"-,"`
 }
 
 func init() {
@@ -59,30 +60,30 @@ func init() {
 
 func loadStatusMap() {
 	statusMap = make(map[string]ResponseStatus)
-	statusMap[Ok] = ResponseStatus{message: Ok, code: http.StatusOK}
-	statusMap[RequestBodyNil] = ResponseStatus{message: RequestBodyNil, code: http.StatusBadRequest}
-	statusMap[InvalidRequestMethod] = ResponseStatus{message: InvalidRequestMethod, code: http.StatusBadRequest}
-	statusMap[TooManyRequests] = ResponseStatus{message: TooManyRequests, code: http.StatusTooManyRequests}
-	statusMap[NoWriteKeyInBasicAuth] = ResponseStatus{message: NoWriteKeyInBasicAuth, code: http.StatusUnauthorized}
-	statusMap[NoWriteKeyInQueryParams] = ResponseStatus{message: NoWriteKeyInQueryParams, code: http.StatusUnauthorized}
-	statusMap[RequestBodyReadFailed] = ResponseStatus{message: RequestBodyReadFailed, code: http.StatusBadRequest}
-	statusMap[RequestBodyTooLarge] = ResponseStatus{message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge}
-	statusMap[InvalidWriteKey] = ResponseStatus{message: InvalidWriteKey, code: http.StatusUnauthorized}
-	statusMap[InvalidJSON] = ResponseStatus{message: InvalidJSON, code: http.StatusBadRequest}
+	statusMap[Ok] = ResponseStatus{Message: Ok, code: http.StatusOK}
+	statusMap[RequestBodyNil] = ResponseStatus{Message: RequestBodyNil, code: http.StatusBadRequest}
+	statusMap[InvalidRequestMethod] = ResponseStatus{Message: InvalidRequestMethod, code: http.StatusBadRequest}
+	statusMap[TooManyRequests] = ResponseStatus{Message: TooManyRequests, code: http.StatusTooManyRequests}
+	statusMap[NoWriteKeyInBasicAuth] = ResponseStatus{Message: NoWriteKeyInBasicAuth, code: http.StatusUnauthorized}
+	statusMap[NoWriteKeyInQueryParams] = ResponseStatus{Message: NoWriteKeyInQueryParams, code: http.StatusUnauthorized}
+	statusMap[RequestBodyReadFailed] = ResponseStatus{Message: RequestBodyReadFailed, code: http.StatusBadRequest}
+	statusMap[RequestBodyTooLarge] = ResponseStatus{Message: RequestBodyTooLarge, code: http.StatusRequestEntityTooLarge}
+	statusMap[InvalidWriteKey] = ResponseStatus{Message: InvalidWriteKey, code: http.StatusUnauthorized}
+	statusMap[InvalidJSON] = ResponseStatus{Message: InvalidJSON, code: http.StatusBadRequest}
 	// webhook specific status
-	statusMap[InvalidWebhookSource] = ResponseStatus{message: InvalidWebhookSource, code: http.StatusBadRequest}
-	statusMap[SourceTransformerFailed] = ResponseStatus{message: SourceTransformerFailed, code: http.StatusBadRequest}
-	statusMap[SourceTransformerResponseErrorReadFailed] = ResponseStatus{message: SourceTransformerResponseErrorReadFailed, code: http.StatusBadRequest}
-	statusMap[SourceTransformerFailedToReadOutput] = ResponseStatus{message: SourceTransformerFailedToReadOutput, code: http.StatusBadRequest}
-	statusMap[SourceTransformerInvalidResponseFormat] = ResponseStatus{message: SourceTransformerInvalidResponseFormat, code: http.StatusBadRequest}
-	statusMap[SourceTransformerInvalidOutputFormatInResponse] = ResponseStatus{message: SourceTransformerInvalidOutputFormatInResponse, code: http.StatusBadRequest}
-	statusMap[SourceTransformerInvalidOutputJSON] = ResponseStatus{message: SourceTransformerInvalidOutputJSON, code: http.StatusBadRequest}
-	statusMap[NonIdentifiableRequest] = ResponseStatus{message: NonIdentifiableRequest, code: http.StatusBadRequest}
+	statusMap[InvalidWebhookSource] = ResponseStatus{Message: InvalidWebhookSource, code: http.StatusBadRequest}
+	statusMap[SourceTransformerFailed] = ResponseStatus{Message: SourceTransformerFailed, code: http.StatusBadRequest}
+	statusMap[SourceTransformerResponseErrorReadFailed] = ResponseStatus{Message: SourceTransformerResponseErrorReadFailed, code: http.StatusBadRequest}
+	statusMap[SourceTransformerFailedToReadOutput] = ResponseStatus{Message: SourceTransformerFailedToReadOutput, code: http.StatusBadRequest}
+	statusMap[SourceTransformerInvalidResponseFormat] = ResponseStatus{Message: SourceTransformerInvalidResponseFormat, code: http.StatusBadRequest}
+	statusMap[SourceTransformerInvalidOutputFormatInResponse] = ResponseStatus{Message: SourceTransformerInvalidOutputFormatInResponse, code: http.StatusBadRequest}
+	statusMap[SourceTransformerInvalidOutputJSON] = ResponseStatus{Message: SourceTransformerInvalidOutputJSON, code: http.StatusBadRequest}
+	statusMap[NonIdentifiableRequest] = ResponseStatus{Message: NonIdentifiableRequest, code: http.StatusBadRequest}
 }
 
 func GetStatus(key string) string {
 	if status, ok := statusMap[key]; ok {
-		return status.message
+		return status.Message
 	}
 
 	return ""
@@ -94,4 +95,20 @@ func GetStatusCode(key string) int {
 	}
 
 	return 200
+}
+
+//Always returns a valid response json
+func GetResponse(key string) string {
+	if status, ok := statusMap[key]; ok {
+		response, _ := json.Marshal(status)
+		return string(response)
+	}
+	return "{}"
+}
+
+func MakeResponse(msg string) string {
+	resp, _ := json.Marshal(ResponseStatus{Message: msg})
+	//json.MarshalIndent(ResponseStatus{Message: msg},""," ")
+	//json.Marshal(ResponseStatus{Message: msg})
+	return string(resp)
 }
