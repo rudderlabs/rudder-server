@@ -596,8 +596,7 @@ func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (numJobs int
 			pkgLogger.Errorf("[WH]: Failed to create upload jobs for %s from pending uploads with error: %w", warehouse.Identifier, err)
 			return 0, err
 		}
-		wh.enqueueUploadJobs(uploadJobs, warehouse)
-		enqueuedJobs = true
+		enqueuedJobs = wh.enqueueUploadJobs(uploadJobs, warehouse)
 		return len(uploadJobs), nil
 	}
 
@@ -626,8 +625,7 @@ func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (numJobs int
 	}
 
 	setLastExec(warehouse)
-	wh.enqueueUploadJobs(uploadJobs, warehouse)
-	enqueuedJobs = true
+	enqueuedJobs = wh.enqueueUploadJobs(uploadJobs, warehouse)
 	return len(uploadJobs), nil
 }
 
@@ -655,15 +653,16 @@ func (wh *HandleT) mainLoop() {
 	}
 }
 
-func (wh *HandleT) enqueueUploadJobs(uploads []*UploadJobT, warehouse warehouseutils.WarehouseT) {
+func (wh *HandleT) enqueueUploadJobs(uploads []*UploadJobT, warehouse warehouseutils.WarehouseT) bool {
 	if len(uploads) == 0 {
 		pkgLogger.Errorf("[WH]: Zero upload jobs, not enqueuing")
-		return
+		return false
 	}
 	workerName := workerIdentifier(warehouse)
 	wh.workerChannelMapLock.Lock()
 	wh.workerChannelMap[workerName] <- uploads
 	wh.workerChannelMapLock.Unlock()
+	return true
 }
 
 func getBucketFolder(batchID string, tableName string) string {
