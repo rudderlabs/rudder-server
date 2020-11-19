@@ -994,10 +994,12 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 	toQuery -= totalRetryEvents
 	toProcessEvents -= totalRetryEvents
+
 	var unprocessedList []*jobsdb.JobT
+	var totalUnprocessedEvents int
 	if toProcessEvents > 0 {
 		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
-		unprocessedList, _ = getTruncatedEventList(unTruncatedUnProcessedList, toProcessEvents)
+		unprocessedList, totalUnprocessedEvents = getTruncatedEventList(unTruncatedUnProcessedList, toProcessEvents)
 	}
 
 	proc.statDBR.End()
@@ -1012,7 +1014,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	// handle pending jobs
 	proc.statListSort.Start()
 	combinedList := append(unprocessedList, retryList...)
-	proc.logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total: %v", len(retryList), len(unprocessedList), len(combinedList))
+	proc.logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total_requests: %v, total_events: %d", len(retryList), len(unprocessedList), len(combinedList), totalRetryEvents+totalUnprocessedEvents)
 	proc.pStatsDBR.End(len(combinedList))
 	proc.statGatewayDBR.Count(len(combinedList))
 
