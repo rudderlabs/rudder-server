@@ -147,13 +147,13 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func sendDestStatusStats(destId, sourceId string, jobStateCount map[string]int, destType string, isWarehouse bool) {
+func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[string]int, destType string, isWarehouse bool) {
 	tags := map[string]string{
 		"module":        "batch_router",
 		"destType":      destType,
 		"isWarehouse":   fmt.Sprintf("%t", isWarehouse),
-		"destinationId": destId,
-		"sourceId":      sourceId,
+		"destinationId": misc.GetTagName(batchDestination.Destination.ID, batchDestination.Destination.Name),
+		"sourceId":      misc.GetTagName(batchDestination.Source.ID, batchDestination.Source.Name),
 	}
 
 	for jobState, count := range jobStateCount {
@@ -448,7 +448,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	//Mark the status of the jobs
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 
-	sendDestStatusStats(batchJobs.BatchDestination.Destination.ID, batchJobs.BatchDestination.Source.ID, jobStateCount, brt.destType, isWarehouse)
+	sendDestStatusStats(batchJobs.BatchDestination, jobStateCount, brt.destType, isWarehouse)
 }
 
 func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {
