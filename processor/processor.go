@@ -216,8 +216,9 @@ func (proc *HandleT) Start() {
 var (
 	loopSleep                           time.Duration
 	maxLoopSleep                        time.Duration
-	dbReadBatchSize                     int
 	maxEventsToProcess                  int
+	avgEventsInRequest                  int
+	dbReadBatchSize                     int
 	transformBatchSize                  int
 	userTransformBatchSize              int
 	sessionInactivityThreshold          time.Duration
@@ -242,10 +243,10 @@ func loadConfig() {
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
-	dbReadBatchSize = config.GetInt("Processor.dbReadBatchSize", 10000)
 	maxEventsToProcess = config.GetInt("Processor.maxLoopProcessEvents", 10000)
+	avgEventsInRequest = config.GetInt("Processor.avgEventsInRequest", 1)
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
-	dbReadBatchSize = int(math.Min(float64(dbReadBatchSize), float64(maxEventsToProcess)))
+	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
