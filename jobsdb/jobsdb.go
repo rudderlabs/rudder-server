@@ -663,7 +663,7 @@ Or when the job_status table gets too big because of lot of retries/failures
 */
 
 func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (bool, int) {
-	queryStat := stats.NewTaggedStat("migration_ds_check", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("migration_ds_check", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	queryStat.Start()
 	defer queryStat.End()
 	var delCount, totalCount, statusCount int
@@ -803,7 +803,7 @@ func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT 
 	var newDSIdx string
 	appendLast := newDSType == appendToDsList
 
-	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 
 	queryStat.Start()
 	defer queryStat.End()
@@ -1260,7 +1260,7 @@ over. Then the status (only the latest) is set for those jobs
 */
 
 func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated int, err error) {
-	queryStat := stats.NewTaggedStat("migration_jobs", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("migration_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	queryStat.Start()
 	defer queryStat.End()
 	//Unprocessed jobs
@@ -1321,7 +1321,7 @@ Next set of functions are for reading/writing jobs and job_status for
 a given dataset. The names should be self explainatory
 */
 func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error { //When fixing callers make sure error is handled with assertError
-	queryStat := stats.NewTaggedStat("store_jobs", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("store_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1349,7 +1349,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 }
 
 func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
-	queryStat := stats.NewTaggedStat("store_jobs", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("store_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1522,7 +1522,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 }
 
 func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
-	queryStat := stats.NewTaggedStat("isEmptyCheck", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1591,7 +1591,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	if len(stateFilters) > 0 {
 		statName = statName + stateFilters[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"processed_jobs", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	queryStat = stats.NewTaggedStat(statName+"processed_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1714,7 +1714,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"unprocessed_jobs", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	queryStat = stats.NewTaggedStat(statName+"unprocessed_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1934,7 +1934,7 @@ func (jd *HandleT) migrateDSLoop() {
 		//Take the lock and run actual migration
 		jd.dsMigrationLock.Lock()
 
-		migrationLoopStat := stats.NewTaggedStat("migration_loop", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+		migrationLoopStat := stats.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 		migrationLoopStat.Start()
 		//Add a temp DS to append to
 		if len(migrateFrom) > 0 {
@@ -2117,9 +2117,9 @@ func (jd *HandleT) GetTablePrefix() string {
 }
 
 func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable bool) (success bool, err error) {
-	tableFileDumpTimeStat := stats.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	tableFileDumpTimeStat := stats.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	tableFileDumpTimeStat.Start()
-	totalTableDumpTimeStat := stats.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	totalTableDumpTimeStat := stats.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	totalTableDumpTimeStat.Start()
 	var tableName, path, pathPrefix, countStmt string
 	backupPathDirName := "/rudder-s3-dumps/"
@@ -2211,7 +2211,7 @@ func (jd *HandleT) backupTable(backupDSRange dataSetRangeT, isJobStatusTable boo
 
 	jd.assert(rowEndPatternMatchCount == totalCount-batchCount, fmt.Sprintf("rowEndPatternMatchCount:%d != (totalCount:%d-batchCount:%d). Ill formed json bytes could be written to a file. Panicking.", rowEndPatternMatchCount, totalCount, batchCount))
 
-	fileUploadTimeStat := stats.NewTaggedStat("fileUpload_TimeStat", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	fileUploadTimeStat := stats.NewTaggedStat("fileUpload_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	fileUploadTimeStat.Start()
 	file, err := os.Open(path)
 	jd.assertError(err)
@@ -2700,7 +2700,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"unprocessed", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	queryStat = stats.NewTaggedStat(statName+"unprocessed", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -2809,7 +2809,7 @@ func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 	if len(stateFilters) > 0 {
 		statName = statName + stateFilters[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"delete_job_status", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	queryStat = stats.NewTaggedStat(statName+"delete_job_status", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -2889,7 +2889,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	if len(stateFilter) > 0 {
 		statName = statName + stateFilter[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"processed", stats.TimerType, map[string]string{"customVal": jd.tablePrefix,})
+	queryStat = stats.NewTaggedStat(statName+"processed", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	queryStat.Start()
 	defer queryStat.End()
 

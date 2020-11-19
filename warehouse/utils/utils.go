@@ -324,7 +324,7 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 }
 
 func DestStat(statType string, statName string, id string) stats.RudderStats {
-	return stats.NewTaggedStat(fmt.Sprintf("warehouse.%s", statName), statType, map[string]string{"destID": id})
+	return stats.NewTaggedStat(fmt.Sprintf("warehouse.%s", statName), statType, stats.Tags{"destID": id})
 }
 
 func Datatype(in interface{}) string {

@@ -66,10 +66,12 @@ func init() {
 
 }
 
+type Tags map[string]string
+
 // Stats manages provisioning of RudderStats
 type Stats interface {
 	NewStat(Name string, StatType string) (rStats RudderStats)
-	NewTaggedStat(Name string, StatType string, tags map[string]string) RudderStats
+	NewTaggedStat(Name string, StatType string, tags Tags) RudderStats
 }
 
 // HandleT is the default implementation of Stats
@@ -135,7 +137,7 @@ func NewStat(Name string, StatType string) (rStats RudderStats) {
 	return DefaultStats.NewStat(Name, StatType)
 }
 
-func (s *HandleT) NewTaggedStat(Name string, StatType string, tags map[string]string) (rStats RudderStats) {
+func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
 	taggedClientsMapLock.Lock()
 	defer taggedClientsMapLock.Unlock()
 
@@ -164,7 +166,7 @@ func (s *HandleT) NewTaggedStat(Name string, StatType string, tags map[string]st
 	}
 }
 
-func NewTaggedStat(Name string, StatType string, tags map[string]string) (rStats RudderStats) {
+func NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
 	return DefaultStats.NewTaggedStat(Name, StatType, tags)
 }
 

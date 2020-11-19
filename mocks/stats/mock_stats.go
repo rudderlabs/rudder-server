@@ -48,7 +48,7 @@ func (mr *MockStatsMockRecorder) NewStat(arg0, arg1 interface{}) *gomock.Call {
 }
 
 // NewTaggedStat mocks base method
-func (m *MockStats) NewTaggedStat(arg0, arg1 string, arg2 map[string]string) stats.RudderStats {
+func (m *MockStats) NewTaggedStat(arg0, arg1 string, arg2 stats.Tags) stats.RudderStats {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NewTaggedStat", arg0, arg1, arg2)
 	ret0, _ := ret[0].(stats.RudderStats)
