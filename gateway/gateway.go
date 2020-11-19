@@ -80,6 +80,7 @@ var (
 	allowReqsWithoutUserIDAndAnonymousID                        bool
 	pkgLogger                                                   logger.LoggerI
 	Diagnostics                                                 diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	rateLimitNotificationToConfigBackend                        bool
 )
 
 // CustomVal is used as a key in the jobsDB customval column

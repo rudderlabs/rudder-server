@@ -30,7 +30,7 @@ func loadConfig() {
 	// Dedup time window in hours
 	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 	// Enable rate limit on incoming events. false by default
-	enableRateLimit = config.GetBool("Gateway.enableRateLimit", true)
+	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
 	// Enable suppress user feature. false by default
 	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
 	// EventSchemas feature. true by default
@@ -39,6 +39,8 @@ func loadConfig() {
 	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
 	allowReqsWithoutUserIDAndAnonymousID = config.GetBool("Gateway.allowReqsWithoutUserIDAndAnonymousID", false)
+	// Enables notification to config-backend on max rate-limit
+	rateLimitNotificationToConfigBackend = config.GetBool("Gateway.rateLimitNotificationToConfigBackend", false)
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers
