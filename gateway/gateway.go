@@ -416,9 +416,8 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				continue
 			}
 
-			var totalEventsDeduped int
 			if enableDedup {
-				totalEventsDeduped = gateway.dedup(&body, reqMessageIDs, allMessageIdsSet, writeKey, writeKeyDupStats)
+				gateway.dedup(&body, reqMessageIDs, allMessageIdsSet, writeKey, writeKeyDupStats)
 				addToSet(allMessageIdsSet, reqMessageIDs)
 				if len(gjson.GetBytes(body, "batch").Array()) == 0 {
 					req.done <- ""
@@ -448,7 +447,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       gjson.GetBytes(body, "batch.0.rudderId").Str,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "total_events": %d}`, sourceID, counter, totalEventsInReq-totalEventsDeduped)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, sourceID, counter)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
@@ -518,7 +517,7 @@ func addToSet(set map[string]struct{}, elements []string) {
 	}
 }
 
-func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSet map[string]struct{}, writeKey string, writeKeyDupStats map[string]int) (totalEventsDeduped int) {
+func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSet map[string]struct{}, writeKey string, writeKeyDupStats map[string]int) {
 	toRemoveMessageIndexesSet := make(map[int]struct{})
 	//Dedup within events batch in a web request
 	messageIDSet := make(map[string]struct{})
@@ -574,11 +573,6 @@ func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSe
 		}
 		count++
 	}
-	totalEventsDeduped = len(toRemoveMessageIndexes)
-	if totalEventsDeduped > 0 {
-		misc.IncrementMapByKey(writeKeyDupStats, writeKey, totalEventsDeduped)
-	}
-	return totalEventsDeduped
 }
 
 func (gateway *HandleT) writeToBadger(messageIDs []string) {
