@@ -135,16 +135,58 @@ func (job *PayloadT) getColumnName(columnName string) string {
 	return warehouseutils.ToProviderCase(job.DestinationType, columnName)
 }
 
+// TODO: work in progress
+func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
+	job := jobRun.job
+	uploader, err := job.getFileManager()
+	if err != nil {
+		return []int64{}, err
+	}
+	var loadFileIDs []int64
+	var loadFileIDChan chan int64
+	var loadFileErrChan chan error
+	maxParallelLoadsChan := make(chan struct{}, 3) // TODO: add config variable
+	// Upload each generated load file to ObjectStorage
+	// On successful upload, store the saved fileID in wh_load_files table
+	for tableName, outputFile := range jobRun.outputFileWritersMap {
+		tableName := tableName
+		outputFile := outputFile
+		maxParallelLoadsChan <- struct{}{}
+		rruntime.Go(func() {
+			uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, &outputFile, tableName)
+			if err != nil {
+				loadFileErrChan <- err
+				return
+			}
+			fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
+			loadFileIDChan <- fileID
+			<-maxParallelLoadsChan
+		})
+	}
+	for {
+		select {
+		case loadFileID := <-loadFileIDChan:
+			loadFileIDs = append(loadFileIDs, loadFileID)
+			if len(loadFileIDs) == len(jobRun.outputFileWritersMap) {
+				break
+			}
+		case err := <-loadFileErrChan:
+			return []int64{}, err
+
+		}
+	}
+	return loadFileIDs, nil
+
+}
+
 func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile *misc.GZipWriter, tableName string) (filemanager.UploadOutput, error) {
 	job := jobRun.job
-	uploadFile.CloseGZ()
-	file, err := os.Open(uploadFile.File.Name())
+	file, err := os.Open(uploadFile.File.Name()) // opens file in read mode
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to Open File: %s", uploadFile.File.Name())
 		return filemanager.UploadOutput{}, err
 	}
-
-	defer os.Remove(uploadFile.File.Name())
+	defer file.Close()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
 	uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.BatchID, tableName))
 	return uploadLocation, err
@@ -208,13 +250,9 @@ func (jobRun *JobRunT) cleanup() {
 			pkgLogger.Errorf("[WH]: Failed to remove staging file: %w", err)
 		}
 	}
-
 	if jobRun.outputFileWritersMap != nil {
 		for _, writer := range jobRun.outputFileWritersMap {
-			err := writer.CloseGZ()
-			if err != nil {
-				pkgLogger.Errorf("[WH]: Failed to close output load file: %w", err)
-			}
+			os.Remove(writer.File.Name())
 		}
 	}
 }
@@ -248,7 +286,10 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		job:          job,
 		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 	}
-	defer jobRun.cleanup()
+
+	defer func() {
+		jobRun.cleanup()
+	}()
 
 	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
 
@@ -390,29 +431,15 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		gzWriter.WriteGZ(eventData)
 		jobRun.tableEventCountMap[tableName]++
 	}
-
 	timer.End()
 	misc.PrintMemUsage()
 
 	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
-
-	// Upload each generated load file to ObjectStorage
-	// On successful upload, store the saved fileID in wh_load_files table
-	uploader, err := job.getFileManager()
-	if err != nil {
-		panic(err)
+	for _, loadFile := range jobRun.outputFileWritersMap {
+		loadFile.CloseGZ()
 	}
-
-	for tableName, outputFile := range jobRun.outputFileWritersMap {
-		uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, &outputFile, tableName)
-		if err != nil {
-			// TODO: If we break in between, we have only few load files. How do we handle this?
-			return loadFileIDs, err
-		}
-		fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
-		loadFileIDs = append(loadFileIDs, fileID)
-	}
+	loadFileIDs, err = jobRun.uploadLoadFilesToObjectStorage()
 	return loadFileIDs, nil
 }
 

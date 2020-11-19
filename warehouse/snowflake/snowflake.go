@@ -254,7 +254,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	csvObjectLocation, err := sf.Uploader.GetSampleLoadFileLocation(tableName)
 	if err != nil {
-		panic(err)
+		return
 	}
 	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, csvObjectLocation)
 
