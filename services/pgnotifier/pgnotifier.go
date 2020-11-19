@@ -417,13 +417,6 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 		return
 	}
 
-	// change error type to text
-	sqlStmt = fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE TEXT`, queueName, "error")
-	_, err = notifier.dbHandle.Exec(sqlStmt)
-	if err != nil {
-		panic(err)
-	}
-
 	// create index on status
 	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_idx ON %[1]s (status);`, queueName)
 	_, err = notifier.dbHandle.Exec(sqlStmt)
