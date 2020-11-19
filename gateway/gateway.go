@@ -567,6 +567,7 @@ func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSe
 	count := 0
 	for _, idx := range toRemoveMessageIndexes {
 		gateway.logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
+		misc.IncrementMapByKey(writeKeyDupStats, writeKey, 1)
 		*body, err = sjson.DeleteBytes(*body, fmt.Sprintf(`batch.%v`, idx-count))
 		if err != nil {
 			panic(err)
