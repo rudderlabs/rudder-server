@@ -3,7 +3,6 @@ package processor
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/dedup"
 	"math"
 	"reflect"
 	"sort"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/dedup"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -89,6 +90,16 @@ type DestStatT struct {
 	destTransform    stats.RudderStats
 }
 
+type DBWritePayloadT struct {
+	jobs []*jobsdb.JobT
+	wg   *sync.WaitGroup
+}
+
+var (
+	routerDBWriterChan      chan *DBWritePayloadT
+	batchRouterDBWriterChan chan *DBWritePayloadT
+)
+
 func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) *DestStatT {
 	destinationTag := misc.GetTagName(destination.ID, destination.Name)
 	var module = "router"
@@ -146,6 +157,8 @@ func (proc *HandleT) Print() {
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("processor")
+	routerDBWriterChan = make(chan *DBWritePayloadT, 10000)
+	batchRouterDBWriterChan = make(chan *DBWritePayloadT, 10000)
 }
 
 // NewProcessor creates a new Processor intanstace
@@ -227,10 +240,18 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 
 // Start starts this processor's main loops.
 func (proc *HandleT) Start() {
+	rruntime.Go(func() {
+		proc.routerDBWriterLoop()
+	})
+
+	rruntime.Go(func() {
+		proc.batchRouterDBWriterLoop()
+	})
 
 	rruntime.Go(func() {
 		proc.mainLoop()
 	})
+
 	rruntime.Go(func() {
 		st := stash.New()
 		st.Setup(proc.errorDB)
@@ -733,12 +754,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.statNumRequests.Count(len(jobList))
 
-	var destJobs []*jobsdb.JobT
-	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
 	var eventsByMessageID = make(map[string]types.SingularEventT)
 	var procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
+	var totalRouterEvents int
+	var totalBatchRouterEvents int
 
 	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
 		panic(fmt.Errorf("parsedEventList != nil and len(jobList):%d != len(parsedEventList):%d", len(jobList), len(parsedEventList)))
@@ -871,6 +892,15 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.destProcessing.Start()
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
+
+	transformationBatchSize := int(math.Max(float64(transformBatchSize), float64(userTransformBatchSize)))
+	totalBatches := 0
+	for _, eventList := range groupedEvents {
+		totalBatches += int(math.Ceil(float64(len(eventList)) / float64(transformationBatchSize)))
+	}
+	var wg sync.WaitGroup
+	wg.Add(totalBatches)
+
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 		destination := eventList[0].Destination
@@ -885,96 +915,118 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		configSubscriberLock.RUnlock()
 
 		url := integrations.GetDestinationURL(destType)
-		var response transformer.ResponseT
-		var eventsToTransform []transformer.TransformerEventT
-		// Send to custom transformer only if the destination has a transformer enabled
-		if transformationEnabled {
-			proc.logger.Debug("Custom Transform input size", len(eventList))
-			if proc.processSessions {
-				// If processSessions is true, Transform should break into a new batch only when user changes.
-				// This way all the events of a user session are never broken into separate batches
-				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
-				destStat.sessionTransform.Start()
-				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, true)
-				destStat.sessionTransform.End()
+		for i := 0; i < len(eventList); i += transformationBatchSize {
+			j := i + transformationBatchSize
+			if j > len(eventList) {
+				j = len(eventList)
+			}
+			eventListChunk := eventList[i:j]
+			var outputJobs []*jobsdb.JobT
+
+			var response transformer.ResponseT
+			var eventsToTransform []transformer.TransformerEventT
+			// Send to custom transformer only if the destination has a transformer enabled
+			if transformationEnabled {
+				proc.logger.Debug("Custom Transform input size", len(eventListChunk))
+				if proc.processSessions {
+					// If processSessions is true, Transform should break into a new batch only when user changes.
+					// This way all the events of a user session are never broken into separate batches
+					// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
+					destStat.sessionTransform.Start()
+					response = proc.transformer.Transform(eventListChunk, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, true)
+					destStat.sessionTransform.End()
+				} else {
+					// We need not worry about breaking up a single user sessions in this case
+					destStat.userTransform.Start()
+					response = proc.transformer.Transform(eventListChunk, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, false)
+					destStat.userTransform.End()
+				}
+
+				eventsToTransform = proc.getDestTransformerEvents(response, metadata, destination)
+				failedJobs := proc.getFailedEventJobs(response, metadata, eventsByMessageID, transformer.UserTransformerStage)
+				if _, ok := procErrorJobsByDestID[destID]; !ok {
+					procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
+				}
+				procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
+				proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
 			} else {
-				// We need not worry about breaking up a single user sessions in this case
-				destStat.userTransform.Start()
-				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, false)
-				destStat.userTransform.End()
+				proc.logger.Debug("No custom transformation")
+				eventsToTransform = eventListChunk
 			}
 
-			eventsToTransform = proc.getDestTransformerEvents(response, metadata, destination)
-			failedJobs := proc.getFailedEventJobs(response, metadata, eventsByMessageID, transformer.UserTransformerStage)
+			if len(eventsToTransform) == 0 {
+				wg.Done()
+				continue
+			}
+
+			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
+			destStat.destTransform.Start()
+			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+			destStat.destTransform.End()
+
+			destTransformEventList := response.Events
+			proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
+			destStat.numOutputEvents.Count(len(destTransformEventList))
+
+			failedJobs := proc.getFailedEventJobs(response, metadata, eventsByMessageID, transformer.DestTransformerStage)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
 			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
-			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
-		} else {
-			proc.logger.Debug("No custom transformation")
-			eventsToTransform = eventList
-		}
 
-		if len(eventsToTransform) == 0 {
-			continue
-		}
+			//Save the JSON in DB. This is what the router uses
+			for _, destEvent := range destTransformEventList {
+				destEventJSON, err := json.Marshal(destEvent.Output)
+				//Should be a valid JSON since its our transformation
+				//but we handle anyway
+				if err != nil {
+					continue
+				}
 
-		proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
-		destStat.destTransform.Start()
-		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
-		destStat.destTransform.End()
+				//Need to replace UUID his with messageID from client
+				id := uuid.NewV4()
+				// read source_id from metadata that is replayed back from transformer
+				// in case of custom transformations metadata of first event is returned along with all events in session
+				// source_id will be same for all events belong to same user in a session
+				sourceID := destEvent.Metadata.SourceID
+				destID := destEvent.Metadata.DestinationID
+				rudderID := destEvent.Metadata.RudderID
+				receivedAt := destEvent.Metadata.ReceivedAt
+				//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
+				//This is done to respect findWorker logic in router.
+				if rudderID == "" {
+					rudderID = "random-" + id.String()
+				}
 
-		destTransformEventList := response.Events
-		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
-		destStat.numOutputEvents.Count(len(destTransformEventList))
+				newJob := jobsdb.JobT{
+					UUID:         id,
+					UserID:       rudderID,
+					Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v"}`, sourceID, destID, receivedAt)),
+					CreatedAt:    time.Now(),
+					ExpireAt:     time.Now(),
+					CustomVal:    destType,
+					EventPayload: destEventJSON,
+				}
+				outputJobs = append(outputJobs, &newJob)
+			}
 
-		failedJobs := proc.getFailedEventJobs(response, metadata, eventsByMessageID, transformer.DestTransformerStage)
-		if _, ok := procErrorJobsByDestID[destID]; !ok {
-			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
-		}
-		procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
-
-		//Save the JSON in DB. This is what the router uses
-		for _, destEvent := range destTransformEventList {
-			destEventJSON, err := json.Marshal(destEvent.Output)
-			//Should be a valid JSON since its our transformation
-			//but we handle anyway
-			if err != nil {
+			if len(outputJobs) == 0 {
+				wg.Done()
 				continue
 			}
 
-			//Need to replace UUID his with messageID from client
-			id := uuid.NewV4()
-			// read source_id from metadata that is replayed back from transformer
-			// in case of custom transformations metadata of first event is returned along with all events in session
-			// source_id will be same for all events belong to same user in a session
-			sourceID := destEvent.Metadata.SourceID
-			destID := destEvent.Metadata.DestinationID
-			rudderID := destEvent.Metadata.RudderID
-			receivedAt := destEvent.Metadata.ReceivedAt
-			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
-			//This is done to respect findWorker logic in router.
-			if rudderID == "" {
-				rudderID = "random-" + id.String()
-			}
-
-			newJob := jobsdb.JobT{
-				UUID:         id,
-				UserID:       rudderID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v"}`, sourceID, destID, receivedAt)),
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
-				CustomVal:    destType,
-				EventPayload: destEventJSON,
-			}
-			if misc.Contains(rawDataDestinations, newJob.CustomVal) {
-				batchDestJobs = append(batchDestJobs, &newJob)
+			payload := DBWritePayloadT{jobs: outputJobs, wg: &wg}
+			if misc.Contains(rawDataDestinations, outputJobs[0].CustomVal) {
+				totalRouterEvents += len(outputJobs)
+				batchRouterDBWriterChan <- &payload
 			} else {
-				destJobs = append(destJobs, &newJob)
+				totalBatchRouterEvents += len(outputJobs)
+				routerDBWriterChan <- &payload
 			}
 		}
 	}
+
+	wg.Wait()
 
 	proc.destProcessing.End()
 	if len(statusList) != len(jobList) {
@@ -983,16 +1035,14 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.statDBW.Start()
 	proc.pStatsDBW.Start()
-	//XX: Need to do this in a transaction
-	if len(destJobs) > 0 {
-		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-		proc.routerDB.Store(destJobs)
-		proc.statDestNumOutputEvents.Count(len(destJobs))
+
+	if totalRouterEvents > 0 {
+		proc.logger.Debug("[Processor] Total jobs written to router : ", totalRouterEvents)
+		proc.statDestNumOutputEvents.Count(totalRouterEvents)
 	}
-	if len(batchDestJobs) > 0 {
-		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
-		proc.batchRouterDB.Store(batchDestJobs)
-		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
+	if totalBatchRouterEvents > 0 {
+		proc.logger.Debug("[Processor] Total jobs written to batch router : ", totalBatchRouterEvents)
+		proc.statBatchDestNumOutputEvents.Count(totalBatchRouterEvents)
 	}
 
 	var procErrorJobs []*jobsdb.JobT
@@ -1006,31 +1056,48 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
+
 	if enableDedup {
 		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
 		if len(uniqueMessageIds) > 0 {
 			var dedupedMessageIdsAcrossJobs []string
-			for k, _ := range uniqueMessageIds {
+			for k := range uniqueMessageIds {
 				dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
 			}
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
+
 	proc.statDBW.End()
-
-	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
-	//XX: End of transaction
-
 	proc.pStatsDBW.End(len(statusList))
 	proc.pStatsJobs.End(totalEvents)
 
 	proc.statGatewayDBW.Count(len(statusList))
-	proc.statRouterDBW.Count(len(destJobs))
-	proc.statBatchRouterDBW.Count(len(batchDestJobs))
+	proc.statRouterDBW.Count(totalRouterEvents)
+	proc.statBatchRouterDBW.Count(totalBatchRouterEvents)
 	proc.statProcErrDBW.Count(len(procErrorJobs))
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
+}
+
+func (proc *HandleT) routerDBWriterLoop() {
+	for {
+		payload := <-routerDBWriterChan
+		// TODO: Need to do all writes in a transaction
+		proc.routerDB.Store(payload.jobs)
+		payload.wg.Done()
+	}
+}
+
+func (proc *HandleT) batchRouterDBWriterLoop() {
+	for {
+		payload := <-batchRouterDBWriterChan
+		// TODO: Need to do all writes in a transaction
+		proc.batchRouterDB.Store(payload.jobs)
+		payload.wg.Done()
+	}
 }
 
 func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList []*jobsdb.JobT, totalEvents int) {
