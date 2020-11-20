@@ -964,20 +964,24 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Print()
 }
 
-func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList []*jobsdb.JobT, totalEvents int) {
+func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList []*jobsdb.JobT, totalEvents int, hasMaxEvents bool) {
 	for idx, job := range jobList {
 		eventsInJob := len(gjson.GetBytes(job.EventPayload, "batch").Array())
 		totalEvents += eventsInJob
-		if totalEvents > maxEvents {
+		if totalEvents >= maxEvents {
+			hasMaxEvents = true
 			// return atleast one job to prevent processing first job with events > maxEvents
 			// eg. first job has 1500 events and maxEvents is only 1000
 			if idx == 0 {
-				return jobList[:1], totalEvents
+				return jobList[:1], totalEvents, hasMaxEvents
+			} else if totalEvents == maxEvents {
+				// if both are equal, include current index of slice also
+				return jobList[:idx+1], totalEvents, hasMaxEvents
 			}
-			return jobList[:idx], totalEvents - eventsInJob
+			return jobList[:idx], totalEvents - eventsInJob, hasMaxEvents
 		}
 	}
-	return jobList, totalEvents
+	return jobList, totalEvents, hasMaxEvents
 }
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
@@ -992,17 +996,23 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.logger.Debugf("Processor DB Read size: %v", toQuery)
 	//Should not have any failure while processing (in v0) so
 	//retryList should be empty. Remove the assert
+
+	var retryList, unprocessedList []*jobsdb.JobT
+	var totalRetryEvents, totalUnprocessedEvents int
+	var hasMaxEvents bool
+
 	unTruncatedRetryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
-	retryList, totalRetryEvents := getTruncatedEventList(unTruncatedRetryList, toProcessEvents)
+	retryList, totalRetryEvents, hasMaxEvents = getTruncatedEventList(unTruncatedRetryList, toProcessEvents)
 
-	toQuery -= totalRetryEvents
-	toProcessEvents -= totalRetryEvents
-
-	var unprocessedList []*jobsdb.JobT
-	var totalUnprocessedEvents int
-	if toProcessEvents > 0 {
-		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
-		unprocessedList, totalUnprocessedEvents = getTruncatedEventList(unTruncatedUnProcessedList, toProcessEvents)
+	if len(unTruncatedRetryList) >= dbReadBatchSize || hasMaxEvents {
+		// skip querying for unprocessed jobs if either retreived dbReadBatchSize or retreived maxEventToProcess
+	} else {
+		eventsLeftToProcess := maxEventsToProcess - totalRetryEvents
+		toQuery = misc.MinInt(eventsLeftToProcess, dbReadBatchSize)
+		if toProcessEvents > 0 {
+			unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
+			unprocessedList, totalUnprocessedEvents, hasMaxEvents = getTruncatedEventList(unTruncatedUnProcessedList, eventsLeftToProcess)
+		}
 	}
 
 	proc.statDBR.End()
@@ -1078,8 +1088,7 @@ func (proc *HandleT) mainLoop() {
 
 func (proc *HandleT) crashRecover() {
 	for {
-		unTruncatedExecList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize, nil)
-		execList, _ := getTruncatedEventList(unTruncatedExecList, maxEventsToProcess)
+		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize, nil)
 
 		if len(execList) == 0 {
 			break

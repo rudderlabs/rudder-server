@@ -854,3 +854,10 @@ func GetMandatoryJSONFieldNames(st interface{}) []string {
 	}
 	return mandatoryJSONFieldNames
 }
+
+func MinInt(a, b int) int {
+	if a <= b {
+		return a
+	}
+	return b
+}
