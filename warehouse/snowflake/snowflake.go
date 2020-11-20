@@ -282,7 +282,13 @@ func (sf *HandleT) authString() string {
 	return auth
 }
 
+var idResTables = []string{"RUDDER_IDENTITY_MERGE_RULES", "RUDDER_IDENTITY_MAPPINGS"}
+
 func (sf *HandleT) loadTable(tableName string, columnMap map[string]string, skipClosingDBSession bool, forceLoad bool) (tableLoadResp tableLoadRespT, err error) {
+	if misc.ContainsString(idResTables, tableName) {
+		return
+	}
+
 	if !forceLoad {
 		status, _ := warehouseutils.GetTableUploadStatus(sf.Upload.ID, tableName, sf.DbHandle)
 		if status == warehouseutils.ExportedDataState {
