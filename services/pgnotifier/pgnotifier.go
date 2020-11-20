@@ -38,7 +38,7 @@ func init() {
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
 	retriggerInterval = time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
 	retriggerCount = config.GetInt("PgNotifier.retriggerCount", 100)
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("pgnotifier")
+	pkgLogger = logger.NewLogger().Child("pgnotifier")
 }
 
 type PgNotifierT struct {
