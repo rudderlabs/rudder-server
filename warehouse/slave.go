@@ -135,7 +135,6 @@ func (job *PayloadT) getColumnName(columnName string) string {
 	return warehouseutils.ToProviderCase(job.DestinationType, columnName)
 }
 
-// TODO: work in progress
 func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 	job := jobRun.job
 	uploader, err := job.getFileManager()
@@ -151,21 +150,21 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 	// On successful upload, store the saved fileID in wh_load_files table
 
 	rruntime.Go(func() {
-	for tableName, outputFile := range jobRun.outputFileWritersMap {
-		tableName := tableName
-		outputFile := outputFile
-		maxParallelLoadsChan <- struct{}{}
-		rruntime.Go(func() {
-			uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, &outputFile, tableName)
-			if err != nil {
-				loadFileErrChan <- err
-				return
-			}
-			fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
-			loadFileIDChan <- fileID
-			<-maxParallelLoadsChan
-		})
-	}
+		for tableName, outputFile := range jobRun.outputFileWritersMap {
+			tableName := tableName
+			outputFile := outputFile
+			maxParallelLoadsChan <- struct{}{}
+			rruntime.Go(func() {
+				uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, &outputFile, tableName)
+				if err != nil {
+					loadFileErrChan <- err
+					return
+				}
+				fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
+				loadFileIDChan <- fileID
+				<-maxParallelLoadsChan
+			})
+		}
 	})
 
 	for {
@@ -291,9 +290,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 	}
 
-	defer func() {
-		jobRun.cleanup()
-	}()
+	defer jobRun.cleanup()
 
 	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
 
