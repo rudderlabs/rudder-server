@@ -395,6 +395,12 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			delete(worker.abortedUserIDMap, destinationJobMetadata.UserID)
 			worker.abortedUserMutex.Unlock()
 		}
+
+		//Deleting jobID from retryForJobMap. jobID goes into retryForJobMap if it is failed with 5xx or 429.
+		//Its safe to delete from the map, even if jobID is not present.
+		worker.retryForJobMapMutex.Lock()
+		delete(worker.retryForJobMap, destinationJobMetadata.JobID)
+		worker.retryForJobMapMutex.Unlock()
 	} else {
 		// the job failed
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
