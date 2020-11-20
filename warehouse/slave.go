@@ -143,11 +143,14 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 		return []int64{}, err
 	}
 	var loadFileIDs []int64
-	var loadFileIDChan chan int64
-	var loadFileErrChan chan error
+	loadFileIDChan := make(chan int64)
+	loadFileErrChan := make(chan error)
 	maxParallelLoadsChan := make(chan struct{}, 3) // TODO: add config variable
+
 	// Upload each generated load file to ObjectStorage
 	// On successful upload, store the saved fileID in wh_load_files table
+
+	rruntime.Go(func() {
 	for tableName, outputFile := range jobRun.outputFileWritersMap {
 		tableName := tableName
 		outputFile := outputFile
@@ -163,16 +166,17 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 			<-maxParallelLoadsChan
 		})
 	}
+	})
+
 	for {
 		select {
 		case loadFileID := <-loadFileIDChan:
 			loadFileIDs = append(loadFileIDs, loadFileID)
 			if len(loadFileIDs) == len(jobRun.outputFileWritersMap) {
-				break
+				return loadFileIDs, nil
 			}
 		case err := <-loadFileErrChan:
 			return []int64{}, err
-
 		}
 	}
 	return loadFileIDs, nil
@@ -440,7 +444,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		loadFile.CloseGZ()
 	}
 	loadFileIDs, err = jobRun.uploadLoadFilesToObjectStorage()
-	return loadFileIDs, nil
+	return loadFileIDs, err
 }
 
 func claimAndProcess(workerIdx int, slaveID string) {
