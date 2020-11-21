@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	gocontext "context"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -53,15 +54,8 @@ import (
  * the client.
  */
 
-type webRequestT struct {
-	request *http.Request
-	writer  *http.ResponseWriter
-	done    chan<- string
-	reqType string
-}
-
 type batchWebRequestT struct {
-	batchRequest []*webRequestT
+	batchRequest []*types.WebRequestT
 }
 
 var (
@@ -108,7 +102,7 @@ type batchUserWorkerBatchRequestT struct {
 }
 
 type userWebRequestWorkerT struct {
-	webRequestQ                 chan *webRequestT
+	webRequestQ                 chan *types.WebRequestT
 	batchRequestQ               chan *batchWebRequestT
 	reponseQ                    chan map[uuid.UUID]string
 	workerID                    int
@@ -119,7 +113,7 @@ type userWebRequestWorkerT struct {
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
 	application                                   app.Interface
-	webRequestQ                                   chan *webRequestT
+	webRequestQ                                   chan *types.WebRequestT
 	userWorkerBatchRequestQ                       chan *userWorkerBatchRequestT
 	batchUserWorkerBatchRequestQ                  chan *batchUserWorkerBatchRequestT
 	jobsDB                                        jobsdb.JobsDB
@@ -158,7 +152,7 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 		gateway.logger.Debug("User Web Request Worker Started", i)
 		var userWebRequestWorker *userWebRequestWorkerT
 		userWebRequestWorker = &userWebRequestWorkerT{
-			webRequestQ:    make(chan *webRequestT, maxUserWebRequestBatchSize),
+			webRequestQ:    make(chan *types.WebRequestT, maxUserWebRequestBatchSize),
 			batchRequestQ:  make(chan *batchWebRequestT),
 			reponseQ:       make(chan map[uuid.UUID]string),
 			workerID:       i,
@@ -262,7 +256,7 @@ func (gateway *HandleT) findUserWebRequestWorker(userID string) *userWebRequestW
 //Function to process the batch requests. It saves data in DB and
 //sends and ACK on the done channel which unblocks the HTTP handler
 func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebRequestWorkerT) {
-	var reqBuffer = make([]*webRequestT, 0)
+	var reqBuffer = make([]*types.WebRequestT, 0)
 	timeout := time.After(userWebRequestBatchTimeout)
 	for {
 		select {
@@ -275,7 +269,7 @@ func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebReque
 				userWebRequestWorker.bufferFullStat.Count(1)
 				userWebRequestWorker.batchRequestQ <- &breq
 				reqBuffer = nil
-				reqBuffer = make([]*webRequestT, 0)
+				reqBuffer = make([]*types.WebRequestT, 0)
 			}
 		case <-timeout:
 			timeout = time.After(userWebRequestBatchTimeout)
@@ -284,7 +278,7 @@ func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebReque
 				userWebRequestWorker.timeOutStat.Count(1)
 				userWebRequestWorker.batchRequestQ <- &breq
 				reqBuffer = nil
-				reqBuffer = make([]*webRequestT, 0)
+				reqBuffer = make([]*types.WebRequestT, 0)
 			}
 		}
 	}
@@ -294,7 +288,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 	for breq := range userWebRequestWorker.batchRequestQ {
 		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
 		var jobList []*jobsdb.JobT
-		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
+		var jobIDReqMap = make(map[uuid.UUID]*types.WebRequestT)
 		var jobWriteKeyMap = make(map[uuid.UUID]string)
 		var jobEventCountMap = make(map[uuid.UUID]int)
 		var writeKeyStats = make(map[string]int)
@@ -312,29 +306,36 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		userWebRequestWorker.batchTimeStat.Start()
 		allMessageIdsSet := make(map[string]struct{})
 		for _, req := range breq.batchRequest {
-			writeKey, _, ok := req.request.BasicAuth()
+			req.CancelMutex.RLock()
+			cancelled := req.Cancelled
+			req.CancelMutex.RUnlock()
+			if cancelled {
+				preDbStoreCount++
+				continue
+			}
+			writeKey, _, ok := req.Request.BasicAuth()
 			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
 			if !ok || writeKey == "" {
-				req.done <- response.GetStatus(response.NoWriteKeyInBasicAuth)
+				req.Done <- response.GetStatus(response.NoWriteKeyInBasicAuth)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
 				continue
 			}
 
-			ipAddr := misc.GetIPFromReq(req.request)
-			if req.request.Body == nil {
-				req.done <- response.GetStatus(response.RequestBodyNil)
+			ipAddr := misc.GetIPFromReq(req.Request)
+			if req.Request.Body == nil {
+				req.Done <- response.GetStatus(response.RequestBodyNil)
 				preDbStoreCount++
 				continue
 			}
-			body, err := ioutil.ReadAll(req.request.Body)
-			req.request.Body.Close()
+			body, err := ioutil.ReadAll(req.Request.Body)
+			req.Request.Body.Close()
 
 			if enableRateLimit {
 				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
 				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 				if gateway.rateLimiter.LimitReached(restrictorKey) {
-					req.done <- response.GetStatus(response.TooManyRequests)
+					req.Done <- response.GetStatus(response.TooManyRequests)
 					preDbStoreCount++
 					misc.IncrementMapByKey(workspaceDropRequestStats, restrictorKey, 1)
 					continue
@@ -342,25 +343,25 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			if err != nil {
-				req.done <- response.GetStatus(response.RequestBodyReadFailed)
+				req.Done <- response.GetStatus(response.RequestBodyReadFailed)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
 			}
 			if !gjson.ValidBytes(body) {
-				req.done <- response.GetStatus(response.InvalidJSON)
+				req.Done <- response.GetStatus(response.InvalidJSON)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				continue
 			}
-			if req.reqType != "batch" {
-				body, _ = sjson.SetBytes(body, "type", req.reqType)
+			if req.ReqType != "batch" {
+				body, _ = sjson.SetBytes(body, "type", req.ReqType)
 				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
 			}
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(writeKeyEventStats, writeKey, totalEventsInReq)
 			if len(body) > maxReqSize {
-				req.done <- response.GetStatus(response.RequestBodyTooLarge)
+				req.Done <- response.GetStatus(response.RequestBodyTooLarge)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
@@ -371,7 +372,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			// this prevents not setting sourceID in gw job if disabled before setting it
 			sourceID := gateway.getSourceIDForWriteKey(writeKey)
 			if !gateway.isWriteKeyEnabled(writeKey) {
-				req.done <- response.GetStatus(response.InvalidWriteKey)
+				req.Done <- response.GetStatus(response.InvalidWriteKey)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
 				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
@@ -411,7 +412,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			})
 
 			if notIdentifiable {
-				req.done <- response.GetStatus(response.NonIdentifiableRequest)
+				req.Done <- response.GetStatus(response.NonIdentifiableRequest)
 				preDbStoreCount++
 				misc.IncrementMapByKey(writeKeyFailStats, "notIdentifiable", 1)
 				continue
@@ -421,7 +422,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				gateway.dedup(&body, reqMessageIDs, allMessageIdsSet, writeKey, writeKeyDupStats)
 				addToSet(allMessageIdsSet, reqMessageIDs)
 				if len(gjson.GetBytes(body, "batch").Array()) == 0 {
-					req.done <- ""
+					req.Done <- ""
 					preDbStoreCount++
 					misc.IncrementMapByKey(writeKeySuccessEventStats, writeKey, totalEventsInReq)
 					continue
@@ -431,7 +432,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
 				userID := gjson.GetBytes(body, "batch.0.userId").String()
 				if gateway.suppressUserHandler.IsSuppressedUser(userID, gateway.getSourceIDForWriteKey(writeKey), writeKey) {
-					req.done <- ""
+					req.Done <- ""
 					preDbStoreCount++
 					continue
 				}
@@ -482,7 +483,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[job.UUID], 1)
 				misc.IncrementMapByKey(writeKeySuccessEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
 			}
-			jobIDReqMap[job.UUID].done <- err
+			jobIDReqMap[job.UUID].Done <- err
 		}
 		//Sending events to config backend
 		for _, eventBatch := range eventBatchesToRecord {
@@ -687,13 +688,30 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 }
 
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
+
+	// Create a context that is both manually cancellable and will signal
+	// cancel at the specified duration.
+	ctx, cancel := gocontext.WithTimeout(gocontext.Background(), time.Second*5)
+	defer cancel()
+
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	done := make(chan string, 1)
-	gateway.AddToWebRequestQ(r, &w, done, reqType)
+	webReq := types.WebRequestT{Request: r, Writer: &w, Done: done, ReqType: reqType}
+	gateway.AddToWebRequestQ(&webReq)
 
-	//Wait for batcher process to be done
-	errorMessage := <-done
+	var errorMessage string
+	// Wait for the work to finish. If it takes too long, move on.
+	select {
+	case errorMessage = <-done:
+	case <-ctx.Done():
+		errorMessage = response.GatewayTimedOut
+		webReq.CancelMutex.Lock()
+		webReq.Cancelled = true
+		close(done)
+		webReq.CancelMutex.Unlock()
+	}
+
 	atomic.AddUint64(&gateway.ackCount, 1)
 	gateway.trackRequestMetrics(errorMessage)
 	if errorMessage != "" {
@@ -965,9 +983,9 @@ Public methods on GatewayWebhookI
 */
 
 // AddToWebRequestQ provides access to add a request to the gateway's webRequestQ
-func (gateway *HandleT) AddToWebRequestQ(req *http.Request, writer *http.ResponseWriter, done chan string, reqType string) {
+func (gateway *HandleT) AddToWebRequestQ(webReq *types.WebRequestT) {
 
-	userIDHeader := req.Header.Get("AnonymousId")
+	userIDHeader := webReq.Request.Header.Get("AnonymousId")
 	//If necessary fetch userID from request body.
 	if userIDHeader == "" {
 		//If the request comes through proxy, proxy would already send this. So this shouldn't be happening in that case
@@ -975,8 +993,7 @@ func (gateway *HandleT) AddToWebRequestQ(req *http.Request, writer *http.Respons
 	}
 	userWebRequestWorker := gateway.findUserWebRequestWorker(userIDHeader)
 
-	webReq := webRequestT{request: req, writer: writer, done: done, reqType: reqType}
-	userWebRequestWorker.webRequestQ <- &webReq
+	userWebRequestWorker.webRequestQ <- webReq
 }
 
 // IncrementRecvCount increments the received count for gateway requests

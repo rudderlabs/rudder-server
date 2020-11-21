@@ -2,7 +2,20 @@
 
 package types
 
-import "net/http"
+import (
+	"net/http"
+	"sync"
+)
+
+//WebRequestT struct to handle incoming web request
+type WebRequestT struct {
+	Request     *http.Request
+	Writer      *http.ResponseWriter
+	Done        chan<- string
+	ReqType     string
+	Cancelled   bool
+	CancelMutex sync.RWMutex
+}
 
 //SingularEventT single event structrue
 type SingularEventT map[string]interface{}

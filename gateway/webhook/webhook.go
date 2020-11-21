@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var (
@@ -248,7 +249,9 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) {
 	// set write key in basic auth header
 	req.request.SetBasicAuth(req.writeKey, "")
 	done := make(chan string)
-	webhook.gwHandle.AddToWebRequestQ(req.request, req.writer, done, "batch")
+
+	webReq := types.WebRequestT{Request: req.request, Writer: req.writer, Done: done, ReqType: "batch"}
+	webhook.gwHandle.AddToWebRequestQ(&webReq)
 
 	//Wait for batcher process to be done
 	errorMessage := <-done

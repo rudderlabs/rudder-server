@@ -6,6 +6,7 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type GatewayI interface {
@@ -13,7 +14,7 @@ type GatewayI interface {
 	IncrementAckCount(count uint64)
 	UpdateWriteKeyStats(writeKeyStats map[string]int, bucket string)
 	TrackRequestMetrics(errorMessage string)
-	AddToWebRequestQ(req *http.Request, writer *http.ResponseWriter, done chan string, reqType string)
+	AddToWebRequestQ(webReq *types.WebRequestT)
 	GetWebhookSourceDefName(writeKey string) (name string, ok bool)
 }
 

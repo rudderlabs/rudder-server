@@ -13,6 +13,8 @@ const (
 	InvalidRequestMethod = "Invalid HTTP Request Method"
 	//TooManyRequests - too many requests
 	TooManyRequests = "Max Events Limit reached. Dropping Events."
+	//GatewayTimedOut - gateway timed out
+	GatewayTimedOut = "Gateway Timed Out"
 	//NoWriteKeyInBasicAuth - Failed to read writeKey from header
 	NoWriteKeyInBasicAuth = "Failed to read writeKey from header"
 	//NoWriteKeyInQueryParams - Failed to read writeKey from Query Params
