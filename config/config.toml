@@ -155,6 +155,7 @@ kafkaDialTimeoutInSec = 10
 retryTimeWindowInMins = 180
 minRetryBackoffInS = 10
 maxRetryBackoffInS = 300
+allowAbortedUserJobsCountForProcessing=1
     [Router.BRAZE]
     forceHTTP1=true
     httpTimeoutInS=120
