@@ -129,6 +129,7 @@ type HandleT struct {
 	rateLimiter                                   ratelimiter.RateLimiter
 	stats                                         stats.Stats
 	batchSizeStat                                 stats.RudderStats
+	batchPayloadSizeStat                          stats.RudderStats
 	dbWritesStat                                  stats.RudderStats
 	dbWorkersBufferFullStat, dbWorkersTimeOutStat stats.RudderStats
 	trackSuccessCount                             int
@@ -239,6 +240,11 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 		} else {
 			gateway.jobsDB.Store(jobList)
 		}
+		batchPayloadSize := 0
+		for _, req := range jobList {
+			batchPayloadSize += len(req.EventPayload)
+		}
+		gateway.batchPayloadSizeStat.Count(batchPayloadSize)
 		gateway.dbWritesStat.Count(1)
 
 		gateway.writeToBadger(messageIdsArr)
@@ -1051,6 +1057,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 
 	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
+	gateway.batchPayloadSizeStat = gateway.stats.NewStat("gateway.batch_payload_size", stats.CountType)
 	gateway.dbWritesStat = gateway.stats.NewStat("gateway.db_writes", stats.CountType)
 	gateway.dbWorkersBufferFullStat = gateway.stats.NewStat("gateway.db_workers_buffer_full", stats.CountType)
 	gateway.dbWorkersTimeOutStat = gateway.stats.NewStat("gateway.db_workers_time_out", stats.CountType)
