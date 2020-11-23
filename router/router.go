@@ -1,6 +1,7 @@
 package router
 
 import (
+	"container/list"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -144,6 +145,7 @@ func loadConfig() {
 	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
 	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
 	fixedLoopSleep = config.GetDuration("Router.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
+	maxFailedListCount = config.GetInt("Router.failedListCount", 10)
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -424,6 +426,8 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		atomic.AddUint64(&worker.rt.failCount, 1)
 		status.ErrorResponse = []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody)))
 
+		worker.rt.failedJobStatusChan <- *status
+
 		//addToFailedMap is used to decide whether the jobID has to be added to the failedJobIDMap.
 		//If the job is aborted then there is no point in adding it to the failedJobIDMap.
 		addToFailedMap := true
@@ -598,6 +602,29 @@ func durationBeforeNextAttempt(attempt int) (d time.Duration) {
 		d = b.NextBackOff()
 	}
 	return
+}
+
+func (rt *HandleT) addToFailedList(jobStatus jobsdb.JobStatusT) {
+	if rt.failedList.Len() == maxFailedListCount {
+		firstEnqueuedStatus := rt.failedList.Back()
+		rt.failedList.Remove(firstEnqueuedStatus)
+	}
+	rt.failedList.PushFront(jobStatus)
+}
+
+func (rt *HandleT) readFailedJobStatusChan() {
+	for {
+		select {
+		case jobStatus := <-rt.failedJobStatusChan:
+			rt.addToFailedList(jobStatus)
+		case <-time.After(200):
+			//fmt.Println("destName:: ", rt.destName, " failedList:: ", rt.failedList.Len())
+			// for e := rt.failedList.Front(); e != nil; e = e.Next() {
+			// 	status, _ := json.Marshal(e.Value)
+			// 	fmt.Println(string(status))
+			// }
+		}
+	}
 }
 
 func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
@@ -1028,6 +1055,8 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	rt.toClearFailJobIDMap = make(map[int][]string)
+	rt.failedList = list.New()
+	rt.failedJobStatusChan = make(chan jobsdb.JobStatusT)
 	rt.isEnabled = true
 	rt.netHandle = &NetHandleT{}
 	rt.netHandle.logger = rt.logger.Child("network")
@@ -1077,6 +1106,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.initWorkers()
 	rruntime.Go(func() {
 		rt.collectMetrics()
+	})
+	rruntime.Go(func() {
+		rt.readFailedJobStatusChan()
 	})
 	rruntime.Go(func() {
 		rt.statusInsertLoop()

@@ -1,6 +1,10 @@
 package router
 
-import "github.com/rudderlabs/rudder-server/admin"
+import (
+	"encoding/json"
+
+	"github.com/rudderlabs/rudder-server/admin"
+)
 
 type RouterAdmin struct {
 	handles map[string]*HandleT
@@ -27,7 +31,16 @@ func (ra *RouterAdmin) Status() interface{} {
 		routerStatus["name"] = name
 		routerStatus["success-count"] = router.successCount
 		routerStatus["failure-count"] = router.failCount
+		routerFailedList := make([]string, 0)
+		for e := router.failedList.Front(); e != nil; e = e.Next() {
+			status, _ := json.Marshal(e.Value)
+			routerFailedList = append(routerFailedList, string(status))
+		}
+		if len(routerFailedList) > 0 {
+			routerStatus["recent-failedstatuses"] = routerFailedList
+		}
 		statusList = append(statusList, routerStatus)
+
 	}
 	return statusList
 }
