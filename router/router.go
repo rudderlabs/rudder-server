@@ -44,6 +44,8 @@ type HandleT struct {
 	perfStats                              *misc.PerfStats
 	successCount                           uint64
 	failCount                              uint64
+	failedList                             *list.List
+	failedJobStatusChan                    chan jobsdb.JobStatusT
 	isEnabled                              bool
 	toClearFailJobIDMutex                  sync.Mutex
 	toClearFailJobIDMap                    map[int][]string
@@ -109,6 +111,7 @@ type workerT struct {
 
 var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel            int
+	maxFailedListCount                                                      int
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
 	testSinkURL                                                             string
 	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout                      time.Duration
@@ -426,13 +429,13 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		atomic.AddUint64(&worker.rt.failCount, 1)
 		status.ErrorResponse = []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody)))
 
-		worker.rt.failedJobStatusChan <- *status
-
 		//addToFailedMap is used to decide whether the jobID has to be added to the failedJobIDMap.
 		//If the job is aborted then there is no point in adding it to the failedJobIDMap.
 		addToFailedMap := true
 
 		status.JobState = jobsdb.Failed.State
+
+		worker.rt.failedJobStatusChan <- *status
 
 		// TODO: 429 should mark this throttled?
 		if respStatusCode >= 500 || respStatusCode == 429 {
