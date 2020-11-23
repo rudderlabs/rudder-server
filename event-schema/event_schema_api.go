@@ -10,8 +10,8 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	uuid "github.com/satori/go.uuid"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	uuid "github.com/satori/go.uuid"
 )
 
 func handleBasicAuth(r *http.Request) error {
@@ -108,14 +108,14 @@ func (manager *EventSchemaManagerT) GetKeyCounts(w http.ResponseWriter, r *http.
 	if err != nil {
 		logID := uuid.NewV4().String()
 		pkgLogger.Errorf("logID : %s, err: %s", logID, err.Error())
-		http.Error(w, response.MakeResponse(fmt.Sprintf("Interna Error: An error has been logged with logID : %s", logID)), 500)
+		http.Error(w, response.MakeResponse(fmt.Sprintf("Internal Error: An error has been logged with logID : %s", logID)), 500)
 		return
 	}
 	keyCountsJSON, err := json.Marshal(keyCounts)
 	if err != nil {
 		logID := uuid.NewV4().String()
 		pkgLogger.Errorf("logID : %s, err: %s", logID, err.Error())
-		http.Error(w, response.MakeResponse(fmt.Sprintf("Interna Error: An error has been logged with logID : %s", logID)), 500)
+		http.Error(w, response.MakeResponse(fmt.Sprintf("Internal Error: An error has been logged with logID : %s", logID)), 500)
 		return
 	}
 
@@ -251,7 +251,7 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseW
 	if err != nil {
 		logID := uuid.NewV4().String()
 		pkgLogger.Errorf("logID : %s, err: %s", logID, err.Error())
-		http.Error(w, response.MakeResponse(fmt.Sprintf("Interna Error: An error has been logged with logID : %s", logID)), 500)
+		http.Error(w, response.MakeResponse(fmt.Sprintf("Internal Error: An error has been logged with logID : %s", logID)), 500)
 		return
 	}
 
@@ -259,7 +259,7 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseW
 	if err != nil {
 		logID := uuid.NewV4().String()
 		pkgLogger.Errorf("logID : %s, err: %s", logID, err.Error())
-		http.Error(w, response.MakeResponse(fmt.Sprintf("Interna Error: An error has been logged with logID : %s", logID)), 500)
+		http.Error(w, response.MakeResponse(fmt.Sprintf("Internal Error: An error has been logged with logID : %s", logID)), 500)
 		return
 	}
 
