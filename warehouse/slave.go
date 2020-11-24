@@ -147,19 +147,17 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 	if err != nil {
 		return []int64{}, err
 	}
-
 	var loadFileIDs []int64
 	loadFileIDChan := make(chan int64, len(jobRun.outputFileWritersMap))
 	uploadJobChan := make(chan *loadFileUploadJob, 100)
 	uploadErrorChan := make(chan error)
-	numLoadFileUploadWorkers := maxParallelLoadFileUploads
-
 	ctx, cancel := context.WithCancel(context.Background())
 	for i := 0; i < numLoadFileUploadWorkers; i++ {
 		go func(ctx context.Context) {
 			for uploadJob := range uploadJobChan {
 				select {
 				case <-ctx.Done():
+					pkgLogger.Debugf("context is cancelled, stopped processing load file for staging file id %s ", job.StagingFileID)
 					return // stop further processing
 				default:
 					tableName := uploadJob.tableName
@@ -189,11 +187,11 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 				return loadFileIDs, nil
 			}
 		case err := <-uploadErrorChan:
+			pkgLogger.Errorf("received error while uploading load file to bucket for staging file id %s, cancelling the context: err %w", job.StagingFileID, err)
 			cancel()
-			close(uploadJobChan)
 			return []int64{}, err
-		case <-time.After(30 * 60 * time.Second): // Timeout is required?
-			return []int64{}, fmt.Errorf("Load files upload timed out for staging file: %v", jobRun.job.StagingFileID)
+		case <-time.After(3 * time.Hour):
+			return []int64{}, fmt.Errorf("Load files upload timed out for staging file id: %v", jobRun.job.StagingFileID)
 		}
 	}
 	return loadFileIDs, nil
