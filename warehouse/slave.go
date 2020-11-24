@@ -3,6 +3,7 @@ package warehouse
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -135,38 +136,51 @@ func (job *PayloadT) getColumnName(columnName string) string {
 	return warehouseutils.ToProviderCase(job.DestinationType, columnName)
 }
 
+type loadFileUploadJob struct {
+	tableName  string
+	outputFile misc.GZipWriter
+}
+
 func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 	job := jobRun.job
 	uploader, err := job.getFileManager()
 	if err != nil {
 		return []int64{}, err
 	}
+
 	var loadFileIDs []int64
-	loadFileIDChan := make(chan int64)
-	loadFileErrChan := make(chan error)
-	maxParallelLoadsChan := make(chan struct{}, maxParallelLoadFileUploads)
+	loadFileIDChan := make(chan int64, len(jobRun.outputFileWritersMap))
+	uploadJobChan := make(chan *loadFileUploadJob, 100)
+	uploadErrorChan := make(chan error)
+	numLoadFileUploadWorkers := maxParallelLoadFileUploads
 
-	// Upload each generated load file to ObjectStorage
-	// On successful upload, store the saved fileID in wh_load_files table
-
-	rruntime.Go(func() {
-		for tableName, outputFile := range jobRun.outputFileWritersMap {
-			tableName := tableName
-			outputFile := outputFile
-			maxParallelLoadsChan <- struct{}{}
-			rruntime.Go(func() {
-				uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, &outputFile, tableName)
-				if err != nil {
-					loadFileErrChan <- err
-					return
+	ctx, cancel := context.WithCancel(context.Background())
+	for i := 0; i < numLoadFileUploadWorkers; i++ {
+		go func(ctx context.Context) {
+			for uploadJob := range uploadJobChan {
+				select {
+				case <-ctx.Done():
+					return // stop further processing
+				default:
+					tableName := uploadJob.tableName
+					uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, uploadJob.outputFile, tableName)
+					if err != nil {
+						uploadErrorChan <- err
+						return
+					}
+					fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
+					loadFileIDChan <- fileID
 				}
-				fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
-				loadFileIDChan <- fileID
-				<-maxParallelLoadsChan
-			})
-		}
-	})
 
+			}
+		}(ctx)
+	}
+	// Create upload jobs
+	for tableName, loadFile := range jobRun.outputFileWritersMap {
+		uploadJobChan <- &loadFileUploadJob{tableName: tableName, outputFile: loadFile}
+	}
+
+	// Wait for response
 	for {
 		select {
 		case loadFileID := <-loadFileIDChan:
@@ -174,15 +188,19 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 			if len(loadFileIDs) == len(jobRun.outputFileWritersMap) {
 				return loadFileIDs, nil
 			}
-		case err := <-loadFileErrChan:
+		case err := <-uploadErrorChan:
+			cancel()
+			close(uploadJobChan)
 			return []int64{}, err
+		case <-time.After(30 * 60 * time.Second): // Timeout is required?
+			return []int64{}, fmt.Errorf("Load files upload timed out for staging file: %v", jobRun.job.StagingFileID)
 		}
 	}
 	return loadFileIDs, nil
 
 }
 
-func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile *misc.GZipWriter, tableName string) (filemanager.UploadOutput, error) {
+func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile misc.GZipWriter, tableName string) (filemanager.UploadOutput, error) {
 	job := jobRun.job
 	file, err := os.Open(uploadFile.File.Name()) // opens file in read mode
 	if err != nil {
