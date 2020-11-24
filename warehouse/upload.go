@@ -47,7 +47,7 @@ const (
 const (
 	TableUploadExecuting       = "executing"
 	TableUploadExporting       = "exporting_data"
-	TableUploadExportingFailed = "exporting_data"
+	TableUploadExportingFailed = "exporting_data_failed"
 	TableUploadExported        = "exported_data"
 )
 
