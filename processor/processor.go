@@ -1028,7 +1028,7 @@ func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList
 func addToTransformEventByTimePQ(event *transformRequestT, pq *transformRequestPQ) {
 	if pq.Len() == maxItemsInTransformEventsByTimePQ {
 		if pq.Top().processingTime < event.processingTime {
-			pq.Pop()
+			pq.RemoveTop()
 			pq.Add(event)
 
 		}
@@ -1042,6 +1042,7 @@ func (proc *HandleT) printPQ() {
 	for {
 		select {
 		case <-time.After(1000000000):
+			logger.Debug("-----------timer fired--------")
 			proc.destTransformEventsByTimeTaken.Print()
 		}
 	}

@@ -104,9 +104,9 @@ func (pq *transformRequestPQ) Push(x interface{}) {
 func (pq *transformRequestPQ) Pop() interface{} {
 	old := *pq
 	n := len(old)
-	item := old[0]
+	item := old[n-1]
 	item.index = -1
-	*pq = old[1:n]
+	*pq = old[0 : n-1]
 	return item
 }
 
@@ -128,6 +128,10 @@ func (pq *transformRequestPQ) Update(item *transformRequestT, nextItem *transfor
 
 func (pq *transformRequestPQ) Add(item *transformRequestT) {
 	heap.Push(pq, item)
+}
+
+func (pq *transformRequestPQ) RemoveTop() {
+	heap.Pop(pq)
 }
 
 func (pq *transformRequestPQ) Print() {
