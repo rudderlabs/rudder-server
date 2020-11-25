@@ -82,12 +82,13 @@ func getErrorStore() (ErrorStoreT, error) {
 	}
 
 	err = json.Unmarshal(data, &errorStore)
-
 	if err != nil {
-		pkgLogger.Fatal("Failed to unmarshall ErrorStore to json", err)
-		return errorStore, err
+		pkgLogger.Errorf("Failed to Unmarshall %s. Error:  %w", errorStorePath, err)
+		if renameErr := os.Rename(errorStorePath, fmt.Sprintf("%s.bkp", errorStorePath)); renameErr != nil {
+			pkgLogger.Errorf("Failed to back up: %s. Error: %w", errorStorePath, err)
+		}
+		errorStore = ErrorStoreT{Errors: []RudderError{}}
 	}
-
 	return errorStore, nil
 }
 
@@ -877,6 +878,13 @@ func GetMandatoryJSONFieldNames(st interface{}) []string {
 		}
 	}
 	return mandatoryJSONFieldNames
+}
+
+func MinInt(a, b int) int {
+	if a <= b {
+		return a
+	}
+	return b
 }
 
 //GetTagName gets the tag name using a uuid and name

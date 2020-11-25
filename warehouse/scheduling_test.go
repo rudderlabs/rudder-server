@@ -54,6 +54,43 @@ var _ = Describe("Warehouse", func() {
 				sTime := GetPrevScheduledTime("180", "00:00", now)
 				Expect(sTime).To(Equal(time.Date(2020, 04, 27, 21, 0, 0, 0, time.UTC)))
 			})
+
+			It("should return true if current time falls in excludeWindow", func() {
+				startTime := "05:00"
+				endTime := "06:00"
+				currentTime := time.Date(2009, time.November, 10, 5, 30, 0, 0, time.UTC)
+				Expect(CheckCurrentTimeExistsInExcludeWindow(currentTime, startTime, endTime)).To(Equal(true))
+				startTime = "22:00"
+				endTime = "06:00"
+				currentTime = time.Date(2009, time.November, 10, 5, 30, 0, 0, time.UTC)
+				Expect(CheckCurrentTimeExistsInExcludeWindow(currentTime, startTime, endTime)).To(Equal(true))
+				startTime = "22:00"
+				endTime = "06:00"
+				currentTime = time.Date(2009, time.November, 10, 23, 30, 0, 0, time.UTC)
+				Expect(CheckCurrentTimeExistsInExcludeWindow(currentTime, startTime, endTime)).To(Equal(true))
+			})
+			It("should return false if current time falls in excludeWindow", func() {
+				startTime := "05:00"
+				endTime := "06:00"
+				currentTime := time.Date(2009, time.November, 10, 7, 30, 0, 0, time.UTC)
+				Expect(CheckCurrentTimeExistsInExcludeWindow(currentTime, startTime, endTime)).To(Equal(false))
+				startTime = "22:00"
+				endTime = "06:00"
+				currentTime = time.Date(2009, time.November, 10, 7, 30, 0, 0, time.UTC)
+				Expect(CheckCurrentTimeExistsInExcludeWindow(currentTime, startTime, endTime)).To(Equal(false))
+				startTime = "22:00"
+				endTime = "06:00"
+				currentTime = time.Date(2009, time.November, 10, 21, 30, 0, 0, time.UTC)
+				Expect(CheckCurrentTimeExistsInExcludeWindow(currentTime, startTime, endTime)).To(Equal(false))
+				startTime = ""
+				endTime = ""
+				currentTime = time.Date(2009, time.November, 10, 21, 30, 0, 0, time.UTC)
+				Expect(CheckCurrentTimeExistsInExcludeWindow(currentTime, startTime, endTime)).To(Equal(false))
+				startTime = "22:00"
+				endTime = ""
+				currentTime = time.Date(2009, time.November, 10, 21, 30, 0, 0, time.UTC)
+				Expect(CheckCurrentTimeExistsInExcludeWindow(currentTime, startTime, endTime)).To(Equal(false))
+			})
 		})
 	})
 })

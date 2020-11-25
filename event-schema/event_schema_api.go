@@ -10,7 +10,6 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	uuid "github.com/satori/go.uuid"
 )
 
@@ -106,14 +105,14 @@ func (manager *EventSchemaManagerT) GetKeyCounts(w http.ResponseWriter, r *http.
 	keyCounts, err := manager.getKeyCounts(eventID)
 	if err != nil {
 		logID := uuid.NewV4().String()
-		logger.Errorf("logID : %s, err: %s", logID, err.Error())
+		pkgLogger.Errorf("logID : %s, err: %s", logID, err.Error())
 		http.Error(w, fmt.Sprintf("Interna Error: An error has been logged with logID : %s", logID), 500)
 		return
 	}
 	keyCountsJSON, err := json.Marshal(keyCounts)
 	if err != nil {
 		logID := uuid.NewV4().String()
-		logger.Errorf("logID : %s, err: %s", logID, err.Error())
+		pkgLogger.Errorf("logID : %s, err: %s", logID, err.Error())
 		http.Error(w, fmt.Sprintf("Interna Error: An error has been logged with logID : %s", logID), 500)
 		return
 	}
@@ -249,7 +248,7 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseW
 	err = json.Unmarshal(schema.Schema, &schemaMap)
 	if err != nil {
 		logID := uuid.NewV4().String()
-		logger.Errorf("logID : %s, err: %s", logID, err.Error())
+		pkgLogger.Errorf("logID : %s, err: %s", logID, err.Error())
 		http.Error(w, fmt.Sprintf("Interna Error: An error has been logged with logID : %s", logID), 500)
 		return
 	}
@@ -257,7 +256,7 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseW
 	err = json.Unmarshal(eventModel.Schema, &masterSchemaMap)
 	if err != nil {
 		logID := uuid.NewV4().String()
-		logger.Errorf("logID : %s, err: %s", logID, err.Error())
+		pkgLogger.Errorf("logID : %s, err: %s", logID, err.Error())
 		http.Error(w, fmt.Sprintf("Interna Error: An error has been logged with logID : %s", logID), 500)
 		return
 	}

@@ -81,7 +81,7 @@ allowPartialWriteWithErrors = true
 allowReqsWithoutUserIDAndAnonymousID = false
 
 [EventSchemas]
-enableEventSchemasFeature = true
+enableEventSchemasFeature = false
 syncIntervalInS = 5
 
 [Gateway.webhook]
@@ -155,6 +155,7 @@ kafkaDialTimeoutInSec = 10
 retryTimeWindowInMins = 180
 minRetryBackoffInS = 10
 maxRetryBackoffInS = 300
+allowAbortedUserJobsCountForProcessing=1
     [Router.BRAZE]
     forceHTTP1=true
     httpTimeoutInS=120
@@ -210,8 +211,8 @@ populateHistoricIdentities = false
 [Processor]
 loopSleepInMS = 10
 maxLoopSleepInMS = 5000
-maxDBReadBatchSize = 10000
-minDBReadBatchSize = 100
+maxLoopProcessEvents = 10000
+avgEventsInRequest = 1
 transformBatchSize = 100
 userTransformBatchSize = 200
 sessionThresholdEvents = 100
@@ -261,7 +262,7 @@ logFileSize = 100 # in MB
 enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
-#moduleLevels="processor.transformer=ERROR:batchrouter=ERROR:pgnotifier=ERROR:warehouse=ERROR"
+#moduleLevels="processor.transformer=ERROR:batchrouter=ERROR:pgnotifier=ERROR:warehouse=ERROR:enterprise.migrator=ERROR"
 
 [Diagnostics]
 enableDiagnostics = true

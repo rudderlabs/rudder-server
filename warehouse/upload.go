@@ -3,6 +3,7 @@ package warehouse
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -45,7 +46,7 @@ const (
 const (
 	TableUploadExecuting       = "executing"
 	TableUploadExporting       = "exporting_data"
-	TableUploadExportingFailed = "exporting_data"
+	TableUploadExportingFailed = "exporting_data_failed"
 	TableUploadExported        = "exported_data"
 )
 
@@ -101,6 +102,10 @@ const (
 	UploadTimingsField         = "timings"
 	UploadSchemaField          = "schema"
 	UploadLastExecAtField      = "last_exec_at"
+)
+
+var (
+	alwaysMarkExported = []string{warehouseutils.DiscardsTable}
 )
 
 var maxParallelLoads map[string]int
@@ -179,14 +184,11 @@ func (job *UploadJobT) shouldTableBeLoaded(tableName string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-
-	// TODO: Do we need this?
 	hasLoadfiles, err := job.hasLoadFiles(tableName)
 	if err != nil {
 		return false, err
 	}
-
-	return (!loaded && hasLoadfiles), nil
+	return !loaded && hasLoadfiles, nil
 }
 
 func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
@@ -460,16 +462,19 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 			wg.Done()
 			continue
 		}
-		var loadTable bool
 		loadTable, err := job.shouldTableBeLoaded(tableName)
 		if err != nil {
-			panic(err)
+			loadErrors = append(loadErrors, err)
+			continue
 		}
 		if !loadTable {
 			wg.Done()
+			if misc.ContainsString(alwaysMarkExported, tableName) {
+				tableUpload := NewTableUpload(job.upload.ID, tableName)
+				tableUpload.setStatus(TableUploadExported)
+			}
 			continue
 		}
-
 		tName := tableName
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
@@ -948,9 +953,12 @@ func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location str
 	)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		pkgLogger.Errorf(`[WH] Error querying for sample load file location: %v`, err)
 	}
-	return
+	if err == sql.ErrNoRows {
+		err = errors.New("Sample load file not found")
+	}
+	return location, err
 }
 
 func (job *UploadJobT) GetSchemaInWarehouse() (schema warehouseutils.SchemaT) {

@@ -28,16 +28,24 @@ type TableJSONArchiver struct {
 	FileManager   filemanager.FileManager
 }
 
+var (
+	pkgLogger logger.LoggerI
+)
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("tablearchiver")
+}
+
 func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 	err = os.MkdirAll(filepath.Dir(jsonArchiver.OutputPath), os.ModePerm)
 	if err != nil {
-		logger.Errorf(`[TableJSONArchiver]: Error in creating local directory: %v`, err)
+		pkgLogger.Errorf(`[TableJSONArchiver]: Error in creating local directory: %v`, err)
 		return location, err
 	}
 
 	gzWriter, err := misc.CreateGZ(jsonArchiver.OutputPath)
 	if err != nil {
-		logger.Errorf(`[TableJSONArchiver]: Error in creating gzWriter: %v`, err)
+		pkgLogger.Errorf(`[TableJSONArchiver]: Error in creating gzWriter: %v`, err)
 		return location, err
 	}
 
@@ -72,7 +80,7 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 		row := jsonArchiver.DbHandle.QueryRow(query)
 		err = row.Scan(&rawJSONRows)
 		if err != nil {
-			logger.Errorf(`[TableJSONArchiver]: Scanning row failed with error : %v`, err)
+			pkgLogger.Errorf(`[TableJSONArchiver]: Scanning row failed with error : %v`, err)
 			return location, err
 		}
 
@@ -100,7 +108,7 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 
 	file, err := os.Open(jsonArchiver.OutputPath)
 	if err != nil {
-		logger.Errorf(`[TableJSONArchiver]: Error opening local file dump: %v`, err)
+		pkgLogger.Errorf(`[TableJSONArchiver]: Error opening local file dump: %v`, err)
 		return
 	}
 	defer file.Close()
@@ -108,7 +116,7 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 	output, err := jsonArchiver.FileManager.Upload(file)
 
 	if err != nil {
-		logger.Errorf(`[TableJSONArchiver]: Error uploading local file dump to object storage: %v`, err)
+		pkgLogger.Errorf(`[TableJSONArchiver]: Error uploading local file dump to object storage: %v`, err)
 		return
 	}
 	location = output.Location
