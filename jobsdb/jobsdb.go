@@ -1078,7 +1078,7 @@ func (jd *HandleT) setSequenceNumber(newDSIdx string) dataSetT {
 	if len(dRangeList) > 0 {
 		newDSMin := dRangeList[len(dRangeList)-1].maxJobID
 		jd.assert(newDSMin > 0, fmt.Sprintf("newDSMin:%d <= 0", newDSMin))
-		sqlStatement := fmt.Sprintf(`SELECT setval('%s_jobs_%s_job_id_seq', %d)`,
+		sqlStatement := fmt.Sprintf(`SELECT setval(pg_get_serial_sequence('%s_jobs_%s', 'job_id'), %d)`,
 			jd.tablePrefix, newDSIdx, newDSMin)
 		_, err := jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
