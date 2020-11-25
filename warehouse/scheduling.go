@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -26,7 +25,6 @@ var (
 func init() {
 	scheduledTimesCache = map[string][]int{}
 	nextRetryTimeCache = map[string]time.Time{}
-	admin.RegisterAdminHandler("Warehouse", &WarehouseAdmin{})
 	minUploadBackoff = config.GetDuration("Warehouse.minUploadBackoffInS", time.Duration(60)) * time.Second
 	maxUploadBackoff = config.GetDuration("Warehouse.maxUploadBackoffInS", time.Duration(1800)) * time.Second
 }
@@ -112,6 +110,39 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) t
 	return t.Time
 }
 
+func GetExludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
+	var startTime, endTime string
+	if time, ok := excludeWindow[warehouseutils.ExcludeWindowStartTime].(string); ok {
+		startTime = time
+	}
+	if time, ok := excludeWindow[warehouseutils.ExcludeWindowEndTime].(string); ok {
+		endTime = time
+	}
+	return startTime, endTime
+}
+
+func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTime string, windowEndTime string) bool {
+	if len(windowStartTime) == 0 || len(windowEndTime) == 0 {
+		return false
+	}
+	startTimeMins := timeutil.MinsOfDay(windowStartTime)
+	endTimeMins := timeutil.MinsOfDay(windowEndTime)
+	currentTimeMins := timeutil.GetElapsedMinsInThisDay(currentTime)
+	// startTime, currentTime, endTime: 05:09, 06:19, 09:07 - > window between this day 05:09 and 09:07
+	if startTimeMins < currentTimeMins && currentTimeMins < endTimeMins {
+		return true
+	}
+	// startTime, currentTime, endTime: 22:09, 06:19, 09:07 -> window between this day 22:09 and tomorrow 09:07
+	if startTimeMins > currentTimeMins && currentTimeMins < endTimeMins && startTimeMins > endTimeMins {
+		return true
+	}
+	// startTime, currentTime, endTime: 22:09, 23:19, 09:07 -> window between this day 22:09 and tomorrow 09:07
+	if startTimeMins < currentTimeMins && currentTimeMins > endTimeMins && startTimeMins > endTimeMins {
+		return true
+	}
+	return false
+}
+
 // canStartUpload indicates if a upload can be started now for the warehouse based on its configured schedule
 func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
@@ -120,6 +151,12 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	}
 	if warehouseSyncFreqIgnore {
 		return !uploadFrequencyExceeded(warehouse, "")
+	}
+	// gets exclude window start time and end time
+	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse.Destination.Config)
+	excludeWindowStartTime, excludeWindowEndTime := GetExludeWindowStartEndTimes(excludeWindow)
+	if CheckCurrentTimeExistsInExcludeWindow(timeutil.Now(), excludeWindowStartTime, excludeWindowEndTime) {
+		return false
 	}
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
@@ -138,7 +175,7 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 }
 
 func burstRetryCache(warehouse warehouseutils.WarehouseT) {
-	delete(nextRetryTimeCache, connectionString(warehouse))
+	delete(nextRetryTimeCache, warehouse.Identifier)
 }
 
 func onSuccessfulUpload(warehouse warehouseutils.WarehouseT) {
@@ -160,7 +197,8 @@ func durationBeforeNextAttempt(attempt int64) time.Duration {
 	return d
 }
 
-func (wh *HandleT) canStartPendingUpload(upload warehouseutils.UploadT, warehouse warehouseutils.WarehouseT) bool {
+// Pending uploads should be retried with backoff
+func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {
 		return true
@@ -173,11 +211,11 @@ func (wh *HandleT) canStartPendingUpload(upload warehouseutils.UploadT, warehous
 	}
 
 	// check in cache
-	if nextRetryTime, ok := nextRetryTimeCache[connectionString(warehouse)]; ok {
+	if nextRetryTime, ok := nextRetryTimeCache[warehouse.Identifier]; ok {
 		canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
 		// delete in cache if is going to be started
 		if canStart {
-			delete(nextRetryTimeCache, connectionString(warehouse))
+			delete(nextRetryTimeCache, warehouse.Identifier)
 		}
 		return canStart
 	}
@@ -190,8 +228,8 @@ func (wh *HandleT) canStartPendingUpload(upload warehouseutils.UploadT, warehous
 	canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
 	// set in cache if not staring, to access on next hit
 	if !canStart {
-		pkgLogger.Infof("WH: Setting in nextRetryTimeCache for %s:%s, will retry again around %v", warehouse.Destination.Name, warehouse.Destination.ID, nextRetryTime)
-		nextRetryTimeCache[connectionString(warehouse)] = nextRetryTime
+		pkgLogger.Infof("[WH]: Setting in nextRetryTimeCache for %s:%s, will retry again around %v", warehouse.Destination.Name, warehouse.Destination.ID, nextRetryTime)
+		nextRetryTimeCache[warehouse.Identifier] = nextRetryTime
 	}
 
 	return canStart

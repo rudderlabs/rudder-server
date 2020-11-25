@@ -50,14 +50,14 @@ var (
 	EnableBatchRouterMetric         bool
 	EnableDestinationFailuresMetric bool
 )
-var diagnostics DiagnosticsI
+var Diagnostics DiagnosticsI
 
 type DiagnosticsI interface {
 	Track(event string, properties map[string]interface{})
 	DisableMetrics(enableMetrics bool)
 	Identify(properties map[string]interface{})
 }
-type Diagnostics struct {
+type diagnostics struct {
 	Client     analytics.Client
 	StartTime  time.Time
 	UniqueId   string
@@ -81,15 +81,15 @@ func loadConfig() {
 	EnableRouterMetric = config.GetBool("Diagnostics.enableRouterMetric", true)
 	EnableBatchRouterMetric = config.GetBool("Diagnostics.enableBatchRouterMetric", true)
 	EnableDestinationFailuresMetric = config.GetBool("Diagnostics.enableDestinationFailuresMetric", true)
-	diagnostics = NewDiagnostics()
+	Diagnostics = newDiagnostics()
 }
 
-// NewDiagnostics return new instace of diagnostics
-func NewDiagnostics() *Diagnostics {
+// newDiagnostics return new instace of diagnostics
+func newDiagnostics() *diagnostics {
 	instanceId := config.GetEnv("INSTANCE_ID", "1")
 
 	client := analytics.New(writekey, endpoint)
-	return &Diagnostics{
+	return &diagnostics{
 		InstanceId: instanceId,
 		Client:     client,
 		StartTime:  time.Now(),
@@ -97,7 +97,7 @@ func NewDiagnostics() *Diagnostics {
 	}
 }
 
-func (d *Diagnostics) Track(event string, properties map[string]interface{}) {
+func (d *diagnostics) Track(event string, properties map[string]interface{}) {
 	if EnableDiagnostics {
 		properties[StartTime] = d.StartTime
 		properties[InstanceId] = d.InstanceId
@@ -115,10 +115,10 @@ func (d *Diagnostics) Track(event string, properties map[string]interface{}) {
 
 // Deprecated! Use instance of diagnostics instead;
 func Track(event string, properties map[string]interface{}) {
-	diagnostics.Track(event, properties)
+	Diagnostics.Track(event, properties)
 }
 
-func (d *Diagnostics) DisableMetrics(enableMetrics bool) {
+func (d *diagnostics) DisableMetrics(enableMetrics bool) {
 	if !enableMetrics {
 		EnableServerStartedMetric = false
 		EnableConfigProcessedMetric = false
@@ -131,10 +131,10 @@ func (d *Diagnostics) DisableMetrics(enableMetrics bool) {
 
 // Deprecated! Use instance of diagnostics instead;
 func DisableMetrics(enableMetrics bool) {
-	diagnostics.DisableMetrics(enableMetrics)
+	Diagnostics.DisableMetrics(enableMetrics)
 }
 
-func (d *Diagnostics) Identify(properties map[string]interface{}) {
+func (d *diagnostics) Identify(properties map[string]interface{}) {
 	if EnableDiagnostics {
 		// add in traits
 		if val, ok := properties[ConfigIdentify]; ok {
@@ -151,5 +151,5 @@ func (d *Diagnostics) Identify(properties map[string]interface{}) {
 
 // Deprecated! Use instance of diagnostics instead;
 func Identify(properties map[string]interface{}) {
-	diagnostics.Identify(properties)
+	Diagnostics.Identify(properties)
 }

@@ -52,7 +52,7 @@ var (
 	Http                 sysUtils.HttpI           = sysUtils.NewHttp()
 	log                  logger.LoggerI           = logger.NewLogger()
 	IoUtil               sysUtils.IoUtilI         = sysUtils.NewIoUtil()
-	Diagnostics          diagnostics.DiagnosticsI = diagnostics.NewDiagnostics()
+	Diagnostics          diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
 
 var Eb utils.PublishSubscriber = new(utils.EventBus)
