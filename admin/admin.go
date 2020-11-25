@@ -33,7 +33,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -88,7 +87,7 @@ func init() {
 func (a Admin) Status(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Error(r)
+			pkgLogger.Error(r)
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
@@ -107,7 +106,7 @@ func (a Admin) Status(noArgs struct{}, reply *string) (err error) {
 func (a Admin) PrintStack(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Error(r)
+			pkgLogger.Error(r)
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
@@ -121,7 +120,7 @@ func (a Admin) PrintStack(noArgs struct{}, reply *string) (err error) {
 func (a Admin) HeapDump(path *string, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Error(r)
+			pkgLogger.Error(r)
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
@@ -139,7 +138,7 @@ func (a Admin) HeapDump(path *string, reply *string) (err error) {
 func (a Admin) ServerConfig(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Error(r)
+			pkgLogger.Error(r)
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
@@ -161,7 +160,7 @@ type LogLevel struct {
 func (a Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Error(r)
+			pkgLogger.Error(r)
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
@@ -176,7 +175,7 @@ func (a Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 func (a Admin) GetLoggingConfig(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Error(r)
+			pkgLogger.Error(r)
 			err = errors.New("Internal Rudder Server Error")
 		}
 	}()
@@ -194,11 +193,11 @@ func StartServer() {
 	}
 	sockAddr := filepath.Join(tmpDirPath, "rudder-server.sock")
 	if err := os.RemoveAll(sockAddr); err != nil {
-		log.Fatal(err)
+		pkgLogger.Fatal(err)
 	}
 	l, e := net.Listen("unix", sockAddr)
 	if e != nil {
-		log.Fatal("listen error:", e)
+		pkgLogger.Fatal("listen error:", e)
 	}
 	pkgLogger.Info("Serving on admin interface @ ", sockAddr)
 	srvMux := http.NewServeMux()

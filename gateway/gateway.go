@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -901,7 +900,7 @@ func (gateway *HandleT) StartWebHandler() {
 		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
 		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
 	}
-	log.Fatal(srv.ListenAndServe())
+	gateway.logger.Fatal(srv.ListenAndServe())
 }
 
 // Gets the config from config backend and extracts enabled writekeys

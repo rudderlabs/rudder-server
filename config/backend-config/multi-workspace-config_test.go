@@ -24,13 +24,13 @@ var _ = Describe("workspace-config", func() {
 		}
 		ctrl = gomock.NewController(GinkgoT())
 		mockLogger = mock_logger.NewMockLoggerI(ctrl)
-		log = mockLogger
+		pkgLogger = mockLogger
 	})
 	AfterEach(func() {
 		ctrl.Finish()
 		backendConfig = originalBackendConfig
 		Http = originalHttp
-		log = originalLogger
+		pkgLogger = originalLogger
 	})
 
 	Context("GetWorkspaceIDForWriteKey method", func() {
