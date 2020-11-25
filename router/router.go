@@ -152,7 +152,7 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 			// do nothing
 		case <-time.After(worker.rt.netClientTimeout * 2):
 			worker.rt.logger.Infof("[%s Router] Delivery to destination exceeded the 2 * configured timeout ", worker.rt.destName)
-			stat := stats.NewTaggedStat("router_delivery_exceeded_timeout", stats.CountType, map[string]string{
+			stat := stats.NewTaggedStat("router_delivery_exceeded_timeout", stats.CountType, stats.Tags{
 				"destType": worker.rt.destName,
 			})
 			stat.Increment()
@@ -313,7 +313,11 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 			// END: request to destination endpoint
 
-			routerResponseStat := stats.GetRouterStat("router_response_counts", stats.CountType, worker.rt.destName, respStatusCode)
+			routerResponseStat := stats.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
+				"destType":       worker.rt.destName,
+				"respStatusCode": strconv.Itoa(respStatusCode),
+			})
+
 			routerResponseStat.Count(len(destinationJob.JobMetadataArray))
 
 			worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
@@ -489,7 +493,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
 			if err == nil {
 				eventsDeliveryTimeStat := stats.NewTaggedStat(
-					"event_delivery_time", stats.TimerType, map[string]string{
+					"event_delivery_time", stats.TimerType, stats.Tags{
 						"module":   "router",
 						"destType": worker.rt.destName,
 						"id":       destinationJobMetadata.DestinationID,
@@ -1024,13 +1028,13 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
-	rt.batchInputCountStat = stats.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, map[string]string{
+	rt.batchInputCountStat = stats.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, stats.Tags{
 		"destType": rt.destName,
 	})
-	rt.batchOutputCountStat = stats.NewTaggedStat("router_batch_num_output_jobs", stats.CountType, map[string]string{
+	rt.batchOutputCountStat = stats.NewTaggedStat("router_batch_num_output_jobs", stats.CountType, stats.Tags{
 		"destType": rt.destName,
 	})
-	rt.batchInputOutputDiffCountStat = stats.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, map[string]string{
+	rt.batchInputOutputDiffCountStat = stats.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, stats.Tags{
 		"destType": rt.destName,
 	})
 
