@@ -976,6 +976,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 }
 
 func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList []*jobsdb.JobT, totalEvents int, gotMaxEvents bool) {
+	lastIndex := len(jobList)
 	for idx, job := range jobList {
 		eventsInJob := len(gjson.GetBytes(job.EventPayload, "batch").Array())
 		totalEvents += eventsInJob
@@ -984,15 +985,18 @@ func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList
 			// return atleast one job to prevent processing first job with events > maxEvents
 			// eg. first job has 1500 events and maxEvents is only 1000
 			if idx == 0 {
-				return jobList[:1], totalEvents, gotMaxEvents
+				lastIndex = 1
 			} else if totalEvents == maxEvents {
 				// if both are equal, include current index of slice also
-				return jobList[:idx+1], totalEvents, gotMaxEvents
+				lastIndex = idx + 1
+			} else {
+				lastIndex = idx
+				totalEvents = totalEvents - eventsInJob
 			}
-			return jobList[:idx], totalEvents - eventsInJob, gotMaxEvents
+			break
 		}
 	}
-	return jobList, totalEvents, gotMaxEvents
+	return jobList[:lastIndex], totalEvents, gotMaxEvents
 }
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
