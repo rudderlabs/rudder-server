@@ -1090,10 +1090,13 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	})
 
 	rruntime.Go(func() {
-		select {
-		case <-time.After(5000000):
-			err := gatewayAdmin.getDSStats("1")
-			fmt.Println(err)
+		for {
+			select {
+			case <-time.After(500000000):
+				err := gatewayAdmin.getDSStats("1")
+				fmt.Println(err)
+			}
 		}
+
 	})
 }

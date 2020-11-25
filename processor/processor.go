@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
@@ -55,8 +56,8 @@ type HandleT struct {
 	userPQItemMap                  map[string]*pqItemT
 	destTransformEventsByTimeTaken transformRequestPQ
 	userTransformEventsByTimeTaken transformRequestPQ
-	destTransformEventsByTimeChan  chan *transformRequestT
-	userTransformEventsByTimeChan  chan *transformRequestT
+	destTransformEventsByTimeChan  chan *TransformRequestT
+	userTransformEventsByTimeChan  chan *TransformRequestT
 	statJobs                       stats.RudderStats
 	statDBR                        stats.RudderStats
 	statDBW                        stats.RudderStats
@@ -157,6 +158,20 @@ func NewProcessor() *HandleT {
 	}
 }
 
+func (proc *HandleT) Status() interface{} {
+	statusRes := make(map[string][]TransformRequestT)
+	for _, pqDestEvent := range proc.destTransformEventsByTimeTaken {
+		fmt.Println(pqDestEvent.ProcessingTime)
+		statusRes["dest-transformer"] = append(statusRes["dest-transformer"], *pqDestEvent)
+	}
+	fmt.Println("--------------")
+	for _, pqUserEvent := range proc.userTransformEventsByTimeTaken {
+		fmt.Println(pqUserEvent.ProcessingTime)
+		statusRes["user-transformer"] = append(statusRes["user-transformer"], *pqUserEvent)
+	}
+	return statusRes
+}
+
 //Setup initializes the module
 func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB) {
 	proc.logger = pkgLogger
@@ -174,8 +189,8 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.userEventsMap = make(map[string][]types.SingularEventT)
 	proc.userPQItemMap = make(map[string]*pqItemT)
 	proc.userToSessionIDMap = make(map[string]string)
-	proc.userTransformEventsByTimeTaken = make([]*transformRequestT, 0, maxItemsInTransformEventsByTimePQ)
-	proc.destTransformEventsByTimeTaken = make([]*transformRequestT, 0, maxItemsInTransformEventsByTimePQ)
+	proc.userTransformEventsByTimeTaken = make([]*TransformRequestT, 0, maxItemsInTransformEventsByTimePQ)
+	proc.destTransformEventsByTimeTaken = make([]*TransformRequestT, 0, maxItemsInTransformEventsByTimePQ)
 	proc.userJobPQ = make(pqT, 0)
 	proc.pStatsJobs.Setup("ProcessorJobs")
 	proc.pStatsDBR.Setup("ProcessorDBRead")
@@ -206,6 +221,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statBatchDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "batch_router",
 	})
+	admin.RegisterStatusHandler("processor", proc)
 	proc.destStats = make(map[string]*DestStatT)
 	if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
@@ -888,7 +904,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				afterTransformerRequest = time.Now()
 				totalTimeToTransform = afterTransformerRequest.Sub(beforeTransformRequest).Seconds()
 				destStat.userTransform.End()
-				addToTransformEventByTimePQ(&transformRequestT{event: eventList, stage: "user-transformer", processingTime: totalTimeToTransform, index: -1}, &proc.userTransformEventsByTimeTaken)
+				addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: "user-transformer", ProcessingTime: totalTimeToTransform, Index: -1}, &proc.userTransformEventsByTimeTaken)
 			}
 
 			eventsToTransform = proc.getDestTransformerEvents(response, metadata, destination)
@@ -914,7 +930,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		afterTransformerRequest = time.Now()
 		totalTimeToTransform = afterTransformerRequest.Sub(beforeTransformRequest).Seconds()
 		destStat.destTransform.End()
-		addToTransformEventByTimePQ(&transformRequestT{event: eventsToTransform, stage: "destination-transformer", processingTime: totalTimeToTransform, index: -1}, &proc.destTransformEventsByTimeTaken)
+		addToTransformEventByTimePQ(&TransformRequestT{Event: eventsToTransform, Stage: "destination-transformer", ProcessingTime: totalTimeToTransform, Index: -1}, &proc.destTransformEventsByTimeTaken)
 
 		destTransformEventList := response.Events
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
@@ -1025,9 +1041,9 @@ func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList
 	return jobList, totalEvents
 }
 
-func addToTransformEventByTimePQ(event *transformRequestT, pq *transformRequestPQ) {
+func addToTransformEventByTimePQ(event *TransformRequestT, pq *transformRequestPQ) {
 	if pq.Len() == maxItemsInTransformEventsByTimePQ {
-		if pq.Top().processingTime < event.processingTime {
+		if pq.Top().ProcessingTime < event.ProcessingTime {
 			pq.RemoveTop()
 			pq.Add(event)
 

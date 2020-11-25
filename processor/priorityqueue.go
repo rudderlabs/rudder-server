@@ -71,33 +71,33 @@ func (pq *pqT) Print() {
 	}
 }
 
-type transformRequestT struct {
-	event          []transformer.TransformerEventT
-	stage          string
-	processingTime float64
-	index          int
+type TransformRequestT struct {
+	Event          []transformer.TransformerEventT
+	Stage          string
+	ProcessingTime float64
+	Index          int
 }
 
-type transformRequestPQ []*transformRequestT
+type transformRequestPQ []*TransformRequestT
 
 func (pq transformRequestPQ) Len() int {
 	return len(pq)
 }
 
 func (pq transformRequestPQ) Less(i, j int) bool {
-	return pq[i].processingTime < pq[j].processingTime
+	return pq[i].ProcessingTime < pq[j].ProcessingTime
 }
 
 func (pq transformRequestPQ) Swap(i, j int) {
 	pq[i], pq[j] = pq[j], pq[i]
-	pq[i].index = i
-	pq[j].index = j
+	pq[i].Index = i
+	pq[j].Index = j
 }
 
 func (pq *transformRequestPQ) Push(x interface{}) {
 	n := len(*pq)
-	item := x.(*transformRequestT)
-	item.index = n
+	item := x.(*TransformRequestT)
+	item.Index = n
 	*pq = append(*pq, item)
 }
 
@@ -105,28 +105,28 @@ func (pq *transformRequestPQ) Pop() interface{} {
 	old := *pq
 	n := len(old)
 	item := old[n-1]
-	item.index = -1
+	item.Index = -1
 	*pq = old[0 : n-1]
 	return item
 }
 
-func (pq *transformRequestPQ) Top() *transformRequestT {
+func (pq *transformRequestPQ) Top() *TransformRequestT {
 	item := (*pq)[0]
 	return item
 }
 
-func (pq *transformRequestPQ) Remove(item *transformRequestT) {
-	heap.Remove(pq, item.index)
+func (pq *transformRequestPQ) Remove(item *TransformRequestT) {
+	heap.Remove(pq, item.Index)
 }
 
-func (pq *transformRequestPQ) Update(item *transformRequestT, nextItem *transformRequestT) {
-	index := item.index
+func (pq *transformRequestPQ) Update(item *TransformRequestT, nextItem *TransformRequestT) {
+	index := item.Index
 	item = nextItem
-	item.index = index
-	heap.Fix(pq, item.index)
+	item.Index = index
+	heap.Fix(pq, item.Index)
 }
 
-func (pq *transformRequestPQ) Add(item *transformRequestT) {
+func (pq *transformRequestPQ) Add(item *TransformRequestT) {
 	heap.Push(pq, item)
 }
 
@@ -136,6 +136,6 @@ func (pq *transformRequestPQ) RemoveTop() {
 
 func (pq *transformRequestPQ) Print() {
 	for _, v := range *pq {
-		logger.Error(v.processingTime)
+		logger.Debug(v.ProcessingTime)
 	}
 }
