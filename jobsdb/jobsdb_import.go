@@ -57,7 +57,7 @@ func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
 
 //StoreJobsAndCheckpoint is used to write the jobs to _tables
 func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint MigrationCheckpointT) {
-	queryStat := stats.NewJobsDBStat("store_imported_jobs_and_statuses", stats.TimerType, jd.tablePrefix)
+	queryStat := stats.NewTaggedStat("store_imported_jobs_and_statuses", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -128,7 +128,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	jd.assertError(err)
 
 	//Empty customValFilters means we want to clear for all
-	jd.markClearEmptyResult(jd.migrationState.dsForImport, []string{}, []string{}, nil, false)
+	jd.markClearEmptyResult(jd.migrationState.dsForImport, []string{}, []string{}, nil, hasJobs, nil)
 	// fmt.Println("Bursting CACHE")
 
 }

@@ -36,8 +36,8 @@ services:
     image: rudderlabs/rudder-transformer:latest
     ports:
       - "9090:9090"
-  minio:
-    image: minio/minio
-    ports:
-      - "9000:9000"
-    command: server /data
+  # minio:
+  #   image: minio/minio
+  #   ports:
+  #     - "9000:9000"
+  #   command: server /data
