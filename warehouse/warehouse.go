@@ -66,6 +66,7 @@ var (
 	destinationsMapLock                 sync.RWMutex
 	longRunningUploadStatThresholdInMin time.Duration
 	pkgLogger                           logger.LoggerI
+	numLoadFileUploadWorkers            int
 )
 
 var (
@@ -139,6 +140,7 @@ func loadConfig() {
 	destinationsMap = map[string]warehouseutils.WarehouseT{}
 	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 10240)
 	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
+	numLoadFileUploadWorkers = config.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -595,12 +597,7 @@ func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (numJobs int
 			pkgLogger.Errorf("[WH]: Failed to create upload jobs for %s from pending uploads with error: %w", warehouse.Identifier, err)
 			return 0, err
 		}
-		if len(uploadJobs) == 0 {
-			enqueuedJobs = false
-			return 0, nil
-		}
-		wh.uploadJobsQ <- uploadJobs
-		enqueuedJobs = true
+		enqueuedJobs = wh.enqueueUploadJobs(uploadJobs)
 		return len(uploadJobs), nil
 	}
 
@@ -627,15 +624,9 @@ func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (numJobs int
 		pkgLogger.Errorf("[WH]: Failed to create upload jobs for %s for new staging files with error: %w", warehouse.Identifier, err)
 		return 0, err
 	}
-	if len(uploadJobs) == 0 {
-		logger.Errorf("[WH]: Create 0 upload jobs for %s for new staging files - %d:%d", warehouse.Identifier, stagingFilesList[0].ID, stagingFilesList[len(stagingFilesList)-1].ID)
-		enqueuedJobs = false
-		return 0, err
-	}
 
+	enqueuedJobs = wh.enqueueUploadJobs(uploadJobs)
 	setLastExec(warehouse)
-	wh.uploadJobsQ <- uploadJobs
-	enqueuedJobs = true
 	return len(uploadJobs), nil
 }
 
@@ -705,7 +696,7 @@ func (wh *HandleT) mainLoop() {
 		err := wh.sortWarehousesByOldestUnSyncedEventAt()
 		wh.configSubscriberLock.RUnlock()
 		if err != nil {
-			logger.Errorf(`[WH] Error sorting warehouses by last event time: %v`, err)
+			pkgLogger.Errorf(`[WH] Error sorting warehouses by last event time: %v`, err)
 		}
 
 		for _, warehouse := range wh.warehouses {
@@ -717,6 +708,15 @@ func (wh *HandleT) mainLoop() {
 		}
 		time.Sleep(mainLoopSleep)
 	}
+}
+
+func (wh *HandleT) enqueueUploadJobs(uploadJobs []*UploadJobT) bool {
+	if len(uploadJobs) == 0 {
+		pkgLogger.Errorf("[WH]: Zero upload jobs, not enqueuing")
+		return false
+	}
+	wh.uploadJobsQ <- uploadJobs
+	return true
 }
 
 func (wh *HandleT) runUploadJobAllocator() {

@@ -23,7 +23,6 @@ import (
 var (
 	warehouseUploadsTable string
 	stagingTablePrefix    string
-	maxParallelLoads      int
 	pkgLogger             logger.LoggerI
 )
 

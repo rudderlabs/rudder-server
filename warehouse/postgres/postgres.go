@@ -23,7 +23,6 @@ import (
 
 var (
 	stagingTablePrefix string
-	maxParallelLoads   int
 	pkgLogger          logger.LoggerI
 )
 
