@@ -1094,10 +1094,10 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 		for {
 			select {
 			case <-time.After(500000000):
-				dsStats := &DSStats{}
-				err := gatewayRPCHandler.GetDSStats("1", dsStats)
+				dsStats := ""
+				err := gatewayRPCHandler.GetDSStats("1", &dsStats)
 				fmt.Println(err)
-				fmt.Println(*dsStats)
+				fmt.Println(dsStats)
 			}
 		}
 
