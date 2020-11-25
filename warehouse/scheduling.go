@@ -110,6 +110,39 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) t
 	return t.Time
 }
 
+func GetExludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
+	var startTime, endTime string
+	if time, ok := excludeWindow[warehouseutils.ExcludeWindowStartTime].(string); ok {
+		startTime = time
+	}
+	if time, ok := excludeWindow[warehouseutils.ExcludeWindowEndTime].(string); ok {
+		endTime = time
+	}
+	return startTime, endTime
+}
+
+func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTime string, windowEndTime string) bool {
+	if len(windowStartTime) == 0 || len(windowEndTime) == 0 {
+		return false
+	}
+	startTimeMins := timeutil.MinsOfDay(windowStartTime)
+	endTimeMins := timeutil.MinsOfDay(windowEndTime)
+	currentTimeMins := timeutil.GetElapsedMinsInThisDay(currentTime)
+	// startTime, currentTime, endTime: 05:09, 06:19, 09:07 - > window between this day 05:09 and 09:07
+	if startTimeMins < currentTimeMins && currentTimeMins < endTimeMins {
+		return true
+	}
+	// startTime, currentTime, endTime: 22:09, 06:19, 09:07 -> window between this day 22:09 and tomorrow 09:07
+	if startTimeMins > currentTimeMins && currentTimeMins < endTimeMins && startTimeMins > endTimeMins {
+		return true
+	}
+	// startTime, currentTime, endTime: 22:09, 23:19, 09:07 -> window between this day 22:09 and tomorrow 09:07
+	if startTimeMins < currentTimeMins && currentTimeMins > endTimeMins && startTimeMins > endTimeMins {
+		return true
+	}
+	return false
+}
+
 // canStartUpload indicates if a upload can be started now for the warehouse based on its configured schedule
 func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
@@ -118,6 +151,12 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	}
 	if warehouseSyncFreqIgnore {
 		return !uploadFrequencyExceeded(warehouse, "")
+	}
+	// gets exclude window start time and end time
+	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse.Destination.Config)
+	excludeWindowStartTime, excludeWindowEndTime := GetExludeWindowStartEndTimes(excludeWindow)
+	if CheckCurrentTimeExistsInExcludeWindow(timeutil.Now(), excludeWindowStartTime, excludeWindowEndTime) {
+		return false
 	}
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)

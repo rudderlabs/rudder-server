@@ -128,7 +128,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	jd.assertError(err)
 
 	//Empty customValFilters means we want to clear for all
-	jd.markClearEmptyResult(jd.migrationState.dsForImport, []string{}, []string{}, nil, false)
+	jd.markClearEmptyResult(jd.migrationState.dsForImport, []string{}, []string{}, nil, hasJobs, nil)
 	// fmt.Println("Bursting CACHE")
 
 }

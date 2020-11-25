@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -254,7 +253,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	csvObjectLocation, err := sf.Uploader.GetSampleLoadFileLocation(tableName)
 	if err != nil {
-		panic(err)
+		return
 	}
 	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, csvObjectLocation)
 
@@ -759,10 +758,11 @@ func (sf *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	rruntime.Go(func() {
 		pingResultChannel <- sf.Db.Ping()
 	})
+	var timeOut time.Duration = 5
 	select {
 	case err = <-pingResultChannel:
 	case <-time.After(5 * time.Second):
-		err = errors.New("connection testing timed out")
+		err = fmt.Errorf("connection testing timed out after %d sec", timeOut)
 	}
 	return
 }

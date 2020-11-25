@@ -596,6 +596,7 @@ func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (numJobs int
 			return 0, err
 		}
 		if len(uploadJobs) == 0 {
+			enqueuedJobs = false
 			return 0, nil
 		}
 		wh.uploadJobsQ <- uploadJobs
@@ -628,6 +629,7 @@ func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (numJobs int
 	}
 	if len(uploadJobs) == 0 {
 		logger.Errorf("[WH]: Create 0 upload jobs for %s for new staging files - %d:%d", warehouse.Identifier, stagingFilesList[0].ID, stagingFilesList[len(stagingFilesList)-1].ID)
+		enqueuedJobs = false
 		return 0, err
 	}
 
