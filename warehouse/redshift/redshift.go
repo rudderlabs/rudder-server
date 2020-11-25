@@ -715,7 +715,7 @@ func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	select {
 	case err = <-pingResultChannel:
 	case <-time.After(timeOut * time.Second):
-		err = fmt.Errorf("connection testing timed out after %v sec", timeOut)
+		err = fmt.Errorf("connection testing timed out after %d sec", timeOut)
 	}
 	return
 }

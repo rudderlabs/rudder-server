@@ -80,7 +80,7 @@ var SampleBackendConfig2 = SourcesT{
 }
 var (
 	originalHttp       = Http
-	originalLogger     = log
+	originalLogger     = pkgLogger
 	mockLogger         *mock_logger.MockLoggerI
 	originalMockPubSub = Eb
 	ctrl               *gomock.Controller
@@ -95,12 +95,12 @@ var _ = Describe("BackendConfig", func() {
 		backendConfig = new(WorkspaceConfig)
 		ctrl = gomock.NewController(GinkgoT())
 		mockLogger = mock_logger.NewMockLoggerI(ctrl)
-		log = mockLogger
+		pkgLogger = mockLogger
 	})
 	AfterEach(func() {
 		ctrl.Finish()
 		Http = originalHttp
-		log = originalLogger
+		pkgLogger = originalLogger
 	})
 
 	Context("MakePostRequest method", func() {

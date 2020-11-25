@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -147,7 +146,9 @@ type HandleT struct {
 
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
 	for writeKey, count := range writeKeyStats {
-		writeKeyStatsD := gateway.stats.NewWriteKeyStat(bucket, stats.CountType, writeKey)
+		writeKeyStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, stats.Tags{
+			"writekey" : writeKey,
+		})
 		writeKeyStatsD.Count(count)
 	}
 }
@@ -162,9 +163,9 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 			batchRequestQ:  make(chan *batchWebRequestT),
 			reponseQ:       make(chan map[uuid.UUID]string),
 			workerID:       i,
-			batchTimeStat:  gateway.stats.NewBatchStat("gateway.batch_time", stats.TimerType, i),
-			bufferFullStat: gateway.stats.NewBatchStat(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full", i), stats.CountType, i),
-			timeOutStat:    gateway.stats.NewBatchStat(fmt.Sprintf("gateway.user_request_worker_%d_time_out", i), stats.CountType, i),
+			batchTimeStat:  gateway.stats.NewStat("gateway.batch_time", stats.TimerType),
+			bufferFullStat: gateway.stats.NewStat(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full", i), stats.CountType),
+			timeOutStat:    gateway.stats.NewStat(fmt.Sprintf("gateway.user_request_worker_%d_time_out", i), stats.CountType),
 		}
 		gateway.userWebRequestWorkers[i] = userWebRequestWorker
 		rruntime.Go(func() {
@@ -624,7 +625,7 @@ func (gateway *HandleT) printStats() {
 
 func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		latencyStat := gateway.stats.NewLatencyStat("gateway.response_time", stats.TimerType)
+		latencyStat := gateway.stats.NewTaggedStat("gateway.response_time", stats.TimerType, stats.Tags{})
 		latencyStat.Start()
 		wrappedFunc(w, r)
 		latencyStat.End()
@@ -899,7 +900,7 @@ func (gateway *HandleT) StartWebHandler() {
 		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
 		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
 	}
-	log.Fatal(srv.ListenAndServe())
+	gateway.logger.Fatal(srv.ListenAndServe())
 }
 
 // Gets the config from config backend and extracts enabled writekeys

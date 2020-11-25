@@ -4,7 +4,6 @@ import (
 	"compress/gzip"
 	"database/sql"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -539,7 +538,7 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	select {
 	case err = <-pingResultChannel:
 	case <-time.After(timeOut * time.Second):
-		err = errors.New(fmt.Sprintf("connection testing timed out after %v sec", timeOut))
+		err = fmt.Errorf("connection testing timed out after %d sec", timeOut)
 	}
 	return
 }

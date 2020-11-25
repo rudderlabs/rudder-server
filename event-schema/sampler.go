@@ -4,8 +4,6 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type ReservoirSample struct {
@@ -30,7 +28,7 @@ func NewReservoirSampler(reservoirSize int, currSize int, totalCount int64) (rs 
 
 func (rs *ReservoirSample) add(item interface{}) {
 	if item == nil {
-		logger.Info("Debug : Trying to add an empty event in reservoir sample")
+		pkgLogger.Info("Debug : Trying to add an empty event in reservoir sample")
 		return
 	}
 	rs.lock.Lock()

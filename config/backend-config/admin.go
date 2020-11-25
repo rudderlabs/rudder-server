@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 // BackendConfigAdmin is container object to expose admin functions
@@ -17,7 +15,7 @@ func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string
 
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Error(r)
+			pkgLogger.Error(r)
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()

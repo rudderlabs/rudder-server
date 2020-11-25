@@ -262,7 +262,7 @@ logFileSize = 100 # in MB
 enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
-#moduleLevels="processor.transformer=ERROR:batchrouter=ERROR:pgnotifier=ERROR:warehouse=ERROR"
+#moduleLevels="processor.transformer=ERROR:batchrouter=ERROR:pgnotifier=ERROR:warehouse=ERROR:enterprise.migrator=ERROR"
 
 [Diagnostics]
 enableDiagnostics = true
