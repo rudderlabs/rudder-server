@@ -26,7 +26,6 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/dgraph-io/badger"
 	"github.com/gorilla/mux"
-	. "github.com/onsi/ginkgo"
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -192,7 +191,6 @@ func (gateway *HandleT) initDBWriterWorkers() {
 }
 
 func (gateway *HandleT) userWorkerRequestBatcher() {
-	defer GinkgoRecover()
 	var userWorkerBatchRequestBuffer = make([]*userWorkerBatchRequestT, 0)
 	timeout := time.After(dbBatchWriteTimeout)
 	for {

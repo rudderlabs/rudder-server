@@ -192,8 +192,10 @@ func (c *context) Finish() {
 // helper function to add expectations about a specific writeKey stat. Returns gomock.Call of RudderStats Count()
 func (c *context) expectNewTaggedStat(name string, count int) *gomock.Call {
 	stat := mocksStats.NewMockRudderStats(c.mockCtrl)
-	c.mockStats.EXPECT().NewTaggedStat(name, stats.CountType, gomock.Any()).Return(stat).Times(1)
-	return stat.EXPECT().Count(count).Times(1)
+	c.mockStats.EXPECT().NewTaggedStat(name, stats.CountType, gomock.Any()).Return(stat).Times(1).
+		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("source_tag_name.new.%s", name)))
+	return stat.EXPECT().Count(count).Times(1).
+		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("source_tag_name.count.%s", name)))
 }
 
 var _ = Describe("Gateway Enterprise", func() {
