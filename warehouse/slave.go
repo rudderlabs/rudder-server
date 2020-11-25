@@ -149,8 +149,8 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 	}
 	var loadFileIDs []int64
 	loadFileIDChan := make(chan int64, len(jobRun.outputFileWritersMap))
-	uploadJobChan := make(chan *loadFileUploadJob, 100)
-	uploadErrorChan := make(chan error)
+	uploadJobChan := make(chan *loadFileUploadJob, len(jobRun.outputFileWritersMap))
+	uploadErrorChan := make(chan error, numLoadFileUploadWorkers)
 	ctx, cancel := context.WithCancel(context.Background())
 	for i := 0; i < numLoadFileUploadWorkers; i++ {
 		go func(ctx context.Context) {
