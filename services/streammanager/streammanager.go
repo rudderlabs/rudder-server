@@ -18,6 +18,9 @@ func NewProducer(destinationConfig interface{}, destType string) (interface{}, e
 	case "AZURE_EVENT_HUB":
 		producer, err := kafka.NewProducerForAzureEventHub(destinationConfig)
 		return producer, err
+	case "CONFLUENT_CLOUD":
+		producer, err := kafka.NewProducerForConfluentCloud(destinationConfig)
+		return producer, err
 	case "EVENTBRIDGE":
 		producer, err := eventbridge.NewProducer(destinationConfig)
 		return producer, err
@@ -45,7 +48,7 @@ func CloseProducer(producer interface{}, destType string) error {
 	switch destType {
 	case "KINESIS", "FIREHOSE", "EVENTBRIDGE":
 		return nil
-	case "KAFKA", "AZURE_EVENT_HUB":
+	case "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD":
 		err := kafka.CloseProducer(producer)
 		return err
 	case "GOOGLEPUBSUB":
@@ -66,7 +69,7 @@ func Produce(jsonData json.RawMessage, destType string, producer interface{}, co
 	switch destType {
 	case "KINESIS":
 		return kinesis.Produce(jsonData, producer, config)
-	case "KAFKA", "AZURE_EVENT_HUB":
+	case "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD":
 		return kafka.Produce(jsonData, producer, config)
 	case "FIREHOSE":
 		return firehose.Produce(jsonData, producer, config)

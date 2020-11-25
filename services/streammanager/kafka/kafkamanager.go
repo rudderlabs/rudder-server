@@ -30,6 +30,14 @@ type AzureEventHubConfig struct {
 	EventHubsConnectionString string
 }
 
+//ConfluentCloudConfig is the config that is required to send data to Confluent Cloud
+type ConfluentCloudConfig struct {
+	Topic           string
+	BootstrapServer string
+	APIKey          string
+	APISecret       string
+}
+
 var (
 	clientCertFile, clientKeyFile string
 	certificate                   tls.Certificate
@@ -121,6 +129,34 @@ func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProd
 	config.Net.SASL.Enable = true
 	config.Net.SASL.User = azureEventHubUser
 	config.Net.SASL.Password = destConfig.EventHubsConnectionString
+	config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+
+	config.Net.TLS.Enable = true
+	config.Net.TLS.Config = &tls.Config{
+		InsecureSkipVerify: true,
+		ClientAuth:         0,
+	}
+
+	producer, err := sarama.NewSyncProducer(hosts, config)
+
+	return producer, err
+}
+
+// NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
+func NewProducerForConfluentCloud(destinationConfig interface{}) (sarama.SyncProducer, error) {
+
+	var destConfig = ConfluentCloudConfig{}
+	jsonConfig, err := json.Marshal(destinationConfig)
+	err = json.Unmarshal(jsonConfig, &destConfig)
+
+	hostName := destConfig.BootstrapServer
+	hosts := []string{hostName}
+
+	config := getDefaultConfiguration()
+
+	config.Net.SASL.Enable = true
+	config.Net.SASL.User = destConfig.APIKey
+	config.Net.SASL.Password = destConfig.APISecret
 	config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 
 	config.Net.TLS.Enable = true
