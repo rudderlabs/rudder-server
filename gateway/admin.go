@@ -3,6 +3,8 @@ package gateway
 import (
 	"database/sql"
 	"fmt"
+
+	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 type GatewayAdmin struct {
@@ -27,6 +29,10 @@ func (g *GatewayAdmin) Status() interface{} {
 		"jobsdb":             g.handle.jobsDB.Status(),
 	}
 
+}
+
+type GatewayRPCHandler struct {
+	jobsDB jobsdb.JobsDB
 }
 
 type SqlRunner struct {
@@ -106,15 +112,23 @@ func (r *SqlRunner) getTableRowCount() int {
 	return numRows
 }
 
+type DSStats struct {
+	sources      []string
+	numUsers     int
+	avgBatchSize float64
+	tableSize    int64
+	numRows      int
+}
+
 // first_event, last_event min--maxid to event?
 // Average batch size ⇒ num_events we want per ds ?
 // writeKey, count(*)  we want source name...per ds?
 // Num Distinct users per ds?
 // Avg Event size = Table_size / (avg Batch size * Total rows)
-func (g *GatewayAdmin) getDSStats(dsName string) error {
+func (g *GatewayRPCHandler) GetDSStats(dsName string, result *DSStats) error {
 	jobTableName := prefix + dsName
 
-	dbHandle, err := sql.Open("postgres", g.handle.jobsDB.GetConnectionStringPresent())
+	dbHandle, err := sql.Open("postgres", g.jobsDB.GetConnectionStringPresent())
 	defer dbHandle.Close()
 	runner := &SqlRunner{dbHandle: dbHandle, jobTableName: jobTableName, err: err}
 
@@ -124,7 +138,9 @@ func (g *GatewayAdmin) getDSStats(dsName string) error {
 	tableSize := runner.getTableSize()
 	numRows := runner.getTableRowCount()
 
-	fmt.Println(sources, numUsers, avgBatchSize, tableSize, numRows)
+	//fmt.Println(sources, numUsers, avgBatchSize, tableSize, numRows)
+
+	*result = DSStats{sources, numUsers, avgBatchSize, tableSize, numRows}
 
 	return runner.err
 }

@@ -1059,9 +1059,10 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.webhookHandler = webhook.Setup(gateway)
 
 	gatewayAdmin := GatewayAdmin{handle: gateway}
+	gatewayRPCHandler := GatewayRPCHandler{jobsDB: gateway.jobsDB}
 
 	admin.RegisterStatusHandler("Gateway", &gatewayAdmin)
-	//admin.RegisterAdminHandler("Gateway", &gatewayAdmin)
+	admin.RegisterAdminHandler("Gateway", &gatewayRPCHandler)
 
 	if gateway.application.Features().SuppressUser != nil {
 		gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
@@ -1093,8 +1094,10 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 		for {
 			select {
 			case <-time.After(500000000):
-				err := gatewayAdmin.getDSStats("1")
+				dsStats := &DSStats{}
+				err := gatewayRPCHandler.GetDSStats("1", dsStats)
 				fmt.Println(err)
+				fmt.Println(*dsStats)
 			}
 		}
 
