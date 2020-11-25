@@ -880,6 +880,13 @@ func GetMandatoryJSONFieldNames(st interface{}) []string {
 	return mandatoryJSONFieldNames
 }
 
+func MinInt(a, b int) int {
+	if a <= b {
+		return a
+	}
+	return b
+}
+
 //GetTagName gets the tag name using a uuid and name
 func GetTagName(id string, name string) string {
 	return TruncateStr(name, 15) + "_" + TailTruncateStr(id, 6)

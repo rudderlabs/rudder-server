@@ -211,8 +211,8 @@ populateHistoricIdentities = false
 [Processor]
 loopSleepInMS = 10
 maxLoopSleepInMS = 5000
-maxDBReadBatchSize = 10000
-minDBReadBatchSize = 100
+maxLoopProcessEvents = 10000
+avgEventsInRequest = 1
 transformBatchSize = 100
 userTransformBatchSize = 200
 sessionThresholdEvents = 100
