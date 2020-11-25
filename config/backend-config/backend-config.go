@@ -50,7 +50,7 @@ var (
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
 	Http                 sysUtils.HttpI           = sysUtils.NewHttp()
-	pkgLogger            logger.LoggerI           = logger.NewLogger()
+	pkgLogger            logger.LoggerI           = logger.NewLogger().Child("backend-config")
 	IoUtil               sysUtils.IoUtilI         = sysUtils.NewIoUtil()
 	Diagnostics          diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )

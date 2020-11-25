@@ -33,7 +33,7 @@ var (
 )
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("table-archiver")
+	pkgLogger = logger.NewLogger().Child("tablearchiver")
 }
 
 func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
