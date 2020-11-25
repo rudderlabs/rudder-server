@@ -78,6 +78,7 @@ var (
 	dedupWindow, diagnosisTickerTime                            time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                        bool
 	pkgLogger                                                   logger.LoggerI
+	latencyStatSamplingRate                                     float64
 	Diagnostics                                                 diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
 
@@ -147,7 +148,7 @@ type HandleT struct {
 func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
 	for writeKey, count := range writeKeyStats {
 		writeKeyStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, stats.Tags{
-			"writekey" : writeKey,
+			"writekey": writeKey,
 		})
 		writeKeyStatsD.Count(count)
 	}
@@ -625,7 +626,7 @@ func (gateway *HandleT) printStats() {
 
 func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		latencyStat := gateway.stats.NewTaggedStat("gateway.response_time", stats.TimerType, stats.Tags{})
+		latencyStat := gateway.stats.NewSampledTaggedStat("gateway.response_time", stats.TimerType, stats.Tags{}, float32(latencyStatSamplingRate))
 		latencyStat.Start()
 		wrappedFunc(w, r)
 		latencyStat.End()

@@ -72,6 +72,7 @@ type Tags map[string]string
 type Stats interface {
 	NewStat(Name string, StatType string) (rStats RudderStats)
 	NewTaggedStat(Name string, StatType string, tags Tags) RudderStats
+	NewSampledTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) RudderStats
 }
 
 // HandleT is the default implementation of Stats
@@ -138,6 +139,14 @@ func NewStat(Name string, StatType string) (rStats RudderStats) {
 }
 
 func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
+	return newTaggedStat(Name, StatType, tags, 1)
+}
+
+func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
+	return newTaggedStat(Name, StatType, tags, samplingRate)
+}
+
+func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
 	taggedClientsMapLock.Lock()
 	defer taggedClientsMapLock.Unlock()
 
@@ -152,7 +161,7 @@ func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats
 	}
 	if _, found := taggedClientsMap[tagStr]; !found {
 		var err error
-		taggedClientsMap[tagStr], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...))
+		taggedClientsMap[tagStr], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
 		if err != nil {
 			pkgLogger.Error(err)
 		}
@@ -168,6 +177,10 @@ func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats
 
 func NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
 	return DefaultStats.NewTaggedStat(Name, StatType, tags)
+}
+
+func NewSampledTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
+	return DefaultStats.NewSampledTaggedStat(Name, StatType, tags, samplingRate)
 }
 
 /*
