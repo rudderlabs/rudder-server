@@ -219,6 +219,8 @@ var _ = Describe("Gateway Enterprise", func() {
 		SetEnableDedup(false)
 		SetEnableSuppressUserFeature(true)
 		SetEnableEventSchemasFeature(false)
+		// SetUserWebRequestBatchTimeout(time.Second)
+		// SetMaxDBBatchSize(1)
 	})
 
 	AfterEach(func() {

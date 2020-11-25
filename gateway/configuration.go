@@ -78,3 +78,15 @@ func SetEnableDedup(b bool) bool {
 	enableDedup = b
 	return prev
 }
+
+func SetMaxDBBatchSize(b int) int {
+	prev := maxDBBatchSize
+	maxDBBatchSize = 1
+	return prev
+}
+
+func SetUserWebRequestBatchTimeout(timeoutInMS time.Duration) time.Duration {
+	prev := userWebRequestBatchTimeout
+	userWebRequestBatchTimeout = timeoutInMS
+	return prev
+}
