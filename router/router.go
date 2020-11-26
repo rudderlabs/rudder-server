@@ -68,6 +68,8 @@ type HandleT struct {
 	noOfWorkers                            int
 	allowAbortedUserJobsCountForProcessing int
 	throttledUserMap                       map[string]struct{} // used before calling findWorker. A temp storage to save <userid> whose job can be throttled.
+	isBackendConfigInitialized             bool
+	backendConfigInitialized               chan bool
 }
 
 type jobResponseT struct {
@@ -1052,6 +1054,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.throttler = &throttler
 	rt.generatorThrottler = &generatorThrottler
 
+	rt.isBackendConfigInitialized = false
+	rt.backendConfigInitialized = make(chan bool)
+
 	rt.initWorkers()
 	rruntime.Go(func() {
 		rt.collectMetrics()
@@ -1060,6 +1065,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 		rt.statusInsertLoop()
 	})
 	rruntime.Go(func() {
+		<-rt.backendConfigInitialized
 		rt.generatorLoop()
 	})
 	rruntime.Go(func() {
@@ -1084,6 +1090,10 @@ func (rt *HandleT) backendConfigSubscriber() {
 					}
 				}
 			}
+		}
+		if !rt.isBackendConfigInitialized {
+			rt.isBackendConfigInitialized = true
+			rt.backendConfigInitialized <- true
 		}
 		rt.configSubscriberLock.Unlock()
 	}
