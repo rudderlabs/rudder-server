@@ -69,6 +69,7 @@ var (
 	userWebRequestBatchTimeout, dbBatchWriteTimeout             time.Duration
 	enabledWriteKeysSourceMap                                   map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                   map[string]string
+	enabledSourceIDToNameMap                                    map[string]string
 	configSubscriberLock                                        sync.RWMutex
 	maxReqSize                                                  int
 	enableDedup                                                 bool
@@ -928,8 +929,10 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		configSubscriberLock.Lock()
 		enabledWriteKeysSourceMap = map[string]backendconfig.SourceT{}
 		enabledWriteKeyWebhookMap = map[string]string{}
+		enabledSourceIDToNameMap = map[string]string{}
 		sources := config.Data.(backendconfig.SourcesT)
 		for _, source := range sources.Sources {
+			enabledSourceIDToNameMap[source.ID] = source.Name
 			if source.Enabled {
 				enabledWriteKeysSourceMap[source.WriteKey] = source
 				if source.SourceDefinition.Category == "webhook" {

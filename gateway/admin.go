@@ -42,24 +42,29 @@ type SqlRunner struct {
 	err          error
 }
 
-func (r *SqlRunner) getUniqueSources() []string {
-	sources := make([]string, 0)
+type SourceEvents struct {
+	Count  int
+	Source string
+}
+
+func (r *SqlRunner) getUniqueSources() []SourceEvents {
+	sources := make([]SourceEvents, 0)
 	if r.err != nil {
 		return sources
 	}
-	uniqueSourceValsStmt := fmt.Sprintf(`select  distinct parameters->'source_id' from %s`, r.jobTableName)
+	uniqueSourceValsStmt := fmt.Sprintf(`select count(*) as count, parameters -> 'source_id' as source from %s group by parameters -> 'source_id';`, r.jobTableName)
 	var rows *sql.Rows
 	rows, r.err = r.dbHandle.Query(uniqueSourceValsStmt)
 	defer rows.Close() // don't need to check error as we are firing read ops
 	if r.err != nil {
 		return sources
 	}
-	var sourceID string
+	sourceEvent := SourceEvents{}
 	for rows.Next() {
-		if r.err = rows.Scan(&sourceID); r.err != nil {
+		if r.err = rows.Scan(&sourceEvent.Count, &sourceEvent.Source); r.err != nil {
 			return sources
 		}
-		sources = append(sources, sourceID)
+		sources = append(sources, sourceEvent)
 	}
 
 	if r.err = rows.Err(); r.err != nil {
@@ -114,18 +119,18 @@ func (r *SqlRunner) getTableRowCount() int {
 }
 
 type DSStats struct {
-	Sources      []string
+	SourceNums   []SourceEvents
 	NumUsers     int
 	AvgBatchSize float64
 	TableSize    int64
 	NumRows      int
 }
 
-// first_event, last_event min--maxid to event?
-// Average batch size ⇒ num_events we want per ds ?
-// writeKey, count(*)  we want source name...per ds?
-// Num Distinct users per ds?
-// Avg Event size = Table_size / (avg Batch size * Total rows)
+// first_event, last_event min--maxid to event: available in dsrange?
+// Average batch size ⇒ num_events we want per ds
+// writeKey, count(*)  we want source name to count per ds
+// Num Distinct users per ds
+// Avg Event size = Table_size / (avg Batch size * Total rows) is Table_size correct measure?
 func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) error {
 	jobTableName := prefix + dsName
 	dbHandle, err := sql.Open("postgres", g.jobsDB.GetConnectionStringPresent())
@@ -139,8 +144,18 @@ func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) error {
 	tableSize := runner.getTableSize()
 	numRows := runner.getTableRowCount()
 
+	configSubscriberLock.RLock()
+	sourcesEventToCounts := make([]SourceEvents, 0)
+	for _, sourceEvent := range sources {
+		name, found := enabledSourceIDToNameMap[sourceEvent.Source[1:len(sourceEvent.Source)-1]]
+		if found {
+			sourcesEventToCounts = append(sourcesEventToCounts, SourceEvents{sourceEvent.Count, name})
+		}
+	}
+	configSubscriberLock.RUnlock()
+
 	//fmt.Println(sources, numUsers, avgBatchSize, tableSize, numRows)
-	response, err := json.MarshalIndent(DSStats{sources, numUsers, avgBatchSize, tableSize, numRows}, "", " ")
+	response, err := json.MarshalIndent(DSStats{sourcesEventToCounts, numUsers, avgBatchSize, tableSize, numRows}, "", " ")
 	if err != nil {
 		*result = ""
 	} else {
