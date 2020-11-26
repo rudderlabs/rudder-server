@@ -55,7 +55,7 @@ func (r *SqlRunner) getUniqueSources() []SourceEvents {
 	uniqueSourceValsStmt := fmt.Sprintf(`select count(*) as count, parameters -> 'source_id' as source from %s group by parameters -> 'source_id';`, r.jobTableName)
 	var rows *sql.Rows
 	rows, r.err = r.dbHandle.Query(uniqueSourceValsStmt)
-	defer rows.Close() // don't need to check error as we are firing read ops
+	//defer rows.Close() // don't need to check error as we are firing read ops/ but for error above this will give error too, so calling at the end
 	if r.err != nil {
 		return sources
 	}
@@ -68,6 +68,10 @@ func (r *SqlRunner) getUniqueSources() []SourceEvents {
 	}
 
 	if r.err = rows.Err(); r.err != nil {
+		return sources
+	}
+
+	if r.err = rows.Close(); r.err != nil {
 		return sources
 	}
 
@@ -136,8 +140,6 @@ func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) error {
 	dbHandle, err := sql.Open("postgres", g.jobsDB.GetConnectionStringPresent())
 	defer dbHandle.Close()
 	runner := &SqlRunner{dbHandle: dbHandle, jobTableName: jobTableName, err: err}
-
-	// TODO: Check for the case when table is not oresent
 	sources := runner.getUniqueSources()
 	numUsers := runner.getNumUniqueUsers()
 	avgBatchSize := runner.getAvgBatchSize()
@@ -153,8 +155,6 @@ func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) error {
 		}
 	}
 	configSubscriberLock.RUnlock()
-
-	//fmt.Println(sources, numUsers, avgBatchSize, tableSize, numRows)
 	response, err := json.MarshalIndent(DSStats{sourcesEventToCounts, numUsers, avgBatchSize, tableSize, numRows}, "", " ")
 	if err != nil {
 		*result = ""
