@@ -1093,16 +1093,17 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 		gateway.collectMetrics()
 	})
 
-	rruntime.Go(func() {
-		for {
-			select {
-			case <-time.After(500000000):
-				dsStats := ""
-				err := gatewayRPCHandler.GetDSStats("1", &dsStats)
-				fmt.Println(err)
-				fmt.Println(dsStats)
-			}
-		}
+	// for tests
+	// rruntime.Go(func() {
+	// 	for {
+	// 		select {
+	// 		case <-time.After(500000000):
+	// 			dsStats := ""
+	// 			err := gatewayRPCHandler.GetDSStats("1", &dsStats)
+	// 			fmt.Println(err)
+	// 			fmt.Println(dsStats)
+	// 		}
+	// 	}
 
-	})
+	// })
 }
