@@ -54,6 +54,7 @@ type HandleT struct {
 	userJobListMap                 map[string][]*jobsdb.JobT
 	userEventsMap                  map[string][]types.SingularEventT
 	userPQItemMap                  map[string]*pqItemT
+	transformEventsByTimeMutex     sync.RWMutex
 	destTransformEventsByTimeTaken transformRequestPQ
 	userTransformEventsByTimeTaken transformRequestPQ
 	destTransformEventsByTimeChan  chan *TransformRequestT
@@ -159,6 +160,8 @@ func NewProcessor() *HandleT {
 }
 
 func (proc *HandleT) Status() interface{} {
+	proc.transformEventsByTimeMutex.RLock()
+	defer proc.transformEventsByTimeMutex.RUnlock()
 	statusRes := make(map[string][]TransformRequestT)
 	for _, pqDestEvent := range proc.destTransformEventsByTimeTaken {
 		fmt.Println(pqDestEvent.ProcessingTime)
@@ -904,7 +907,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				afterTransformerRequest = time.Now()
 				totalTimeToTransform = afterTransformerRequest.Sub(beforeTransformRequest).Seconds()
 				destStat.userTransform.End()
-				addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: "user-transformer", ProcessingTime: totalTimeToTransform, Index: -1}, &proc.userTransformEventsByTimeTaken)
+				proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: "user-transformer", ProcessingTime: totalTimeToTransform, Index: -1}, &proc.userTransformEventsByTimeTaken)
 			}
 
 			eventsToTransform = proc.getDestTransformerEvents(response, metadata, destination)
@@ -930,7 +933,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		afterTransformerRequest = time.Now()
 		totalTimeToTransform = afterTransformerRequest.Sub(beforeTransformRequest).Seconds()
 		destStat.destTransform.End()
-		addToTransformEventByTimePQ(&TransformRequestT{Event: eventsToTransform, Stage: "destination-transformer", ProcessingTime: totalTimeToTransform, Index: -1}, &proc.destTransformEventsByTimeTaken)
+		proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventsToTransform, Stage: "destination-transformer", ProcessingTime: totalTimeToTransform, Index: -1}, &proc.destTransformEventsByTimeTaken)
 
 		destTransformEventList := response.Events
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
@@ -1041,7 +1044,9 @@ func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList
 	return jobList, totalEvents
 }
 
-func addToTransformEventByTimePQ(event *TransformRequestT, pq *transformRequestPQ) {
+func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *transformRequestPQ) {
+	proc.transformEventsByTimeMutex.Lock()
+	defer proc.transformEventsByTimeMutex.Unlock()
 	if pq.Len() == maxItemsInTransformEventsByTimePQ {
 		if pq.Top().ProcessingTime < event.ProcessingTime {
 			pq.RemoveTop()

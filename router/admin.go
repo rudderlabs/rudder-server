@@ -32,10 +32,12 @@ func (ra *RouterAdmin) Status() interface{} {
 		routerStatus["success-count"] = router.successCount
 		routerStatus["failure-count"] = router.failCount
 		routerFailedList := make([]string, 0)
+		router.failedListMutex.RLock()
 		for e := router.failedList.Front(); e != nil; e = e.Next() {
 			status, _ := json.Marshal(e.Value)
 			routerFailedList = append(routerFailedList, string(status))
 		}
+		router.failedListMutex.RUnlock()
 		if len(routerFailedList) > 0 {
 			routerStatus["recent-failedstatuses"] = routerFailedList
 		}

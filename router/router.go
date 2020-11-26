@@ -44,6 +44,7 @@ type HandleT struct {
 	perfStats                              *misc.PerfStats
 	successCount                           uint64
 	failCount                              uint64
+	failedListMutex                        sync.RWMutex
 	failedList                             *list.List
 	failedJobStatusChan                    chan jobsdb.JobStatusT
 	isEnabled                              bool
@@ -608,6 +609,8 @@ func durationBeforeNextAttempt(attempt int) (d time.Duration) {
 }
 
 func (rt *HandleT) addToFailedList(jobStatus jobsdb.JobStatusT) {
+	rt.failedListMutex.Lock()
+	defer rt.failedListMutex.Unlock()
 	if rt.failedList.Len() == maxFailedListCount {
 		firstEnqueuedStatus := rt.failedList.Back()
 		rt.failedList.Remove(firstEnqueuedStatus)
