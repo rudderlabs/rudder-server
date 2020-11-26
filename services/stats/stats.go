@@ -22,26 +22,12 @@ const (
 )
 
 var client *statsd.Client
-var writeKeyClientsMap = make(map[string]*statsd.Client)
-var batchDestClientsMap = make(map[string]*statsd.Client)
-var destClientsMap = make(map[string]*statsd.Client)
-var routerClientsMap = make(map[string]*statsd.Client)
-var procErrorClientsMap = make(map[string]*statsd.Client)
 var taggedClientsMap = make(map[string]*statsd.Client)
-var jobsdbClientsMap = make(map[string]*statsd.Client)
-var migratorsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
 var statsdServerURL string
 var instanceID string
 var conn statsd.Option
-var writeKeyClientsMapLock sync.Mutex
-var batchDestClientsMapLock sync.Mutex
-var destClientsMapLock sync.Mutex
-var routerClientsMapLock sync.Mutex
-var procErrorClientsMapLock sync.Mutex
-var taggedClientsMapLock sync.Mutex
-var jobsdbClientsMapLock sync.Mutex
-var migratorsMapLock sync.Mutex
+var taggedClientsMapLock sync.RWMutex
 var enabled bool
 var statsCollectionInterval int64
 var enableCPUStats bool
@@ -137,9 +123,6 @@ func NewStat(Name string, StatType string) (rStats RudderStats) {
 }
 
 func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
-	taggedClientsMapLock.Lock()
-	defer taggedClientsMapLock.Unlock()
-
 	tags["instanceName"] = instanceID
 	tagStr := StatType
 	tagVals := make([]string, 0, len(tags)*2)
@@ -149,9 +132,17 @@ func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats
 		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
 		tagVals = append(tagVals, tagName, tagVal)
 	}
-	if _, found := taggedClientsMap[tagStr]; !found {
+
+	taggedClientsMapLock.RLock()
+	taggedClient, found := taggedClientsMap[tagStr]
+	taggedClientsMapLock.RUnlock()
+
+	if !found {
+		taggedClientsMapLock.Lock()
 		var err error
-		taggedClientsMap[tagStr], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...))
+		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...))
+		taggedClientsMap[tagStr] = taggedClient
+		taggedClientsMapLock.Unlock()
 		if err != nil {
 			pkgLogger.Error(err)
 		}
@@ -160,7 +151,7 @@ func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats
 	return &RudderStatsT{
 		Name:        Name,
 		StatType:    StatType,
-		Client:      taggedClientsMap[tagStr],
+		Client:      taggedClient,
 		dontProcess: false,
 	}
 }
