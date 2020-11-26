@@ -149,6 +149,10 @@ func NewProducerForConfluentCloud(destinationConfig interface{}) (sarama.SyncPro
 	jsonConfig, err := json.Marshal(destinationConfig)
 	err = json.Unmarshal(jsonConfig, &destConfig)
 
+	if err != nil {
+		return nil, fmt.Errorf("[Confluent Cloud] Error while unmarshalling destination config :: %w", err)
+	}
+
 	hostName := destConfig.BootstrapServer
 	hosts := []string{hostName}
 
