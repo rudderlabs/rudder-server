@@ -89,20 +89,6 @@ func (mr *MockStatsMockRecorder) NewBatchStat(arg0, arg1, arg2 interface{}) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewBatchStat", reflect.TypeOf((*MockStats)(nil).NewBatchStat), arg0, arg1, arg2)
 }
 
-// NewDestStat mocks base method
-func (m *MockStats) NewDestStat(arg0, arg1, arg2 string) stats.RudderStats {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewDestStat", arg0, arg1, arg2)
-	ret0, _ := ret[0].(stats.RudderStats)
-	return ret0
-}
-
-// NewDestStat indicates an expected call of NewDestStat
-func (mr *MockStatsMockRecorder) NewDestStat(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewDestStat", reflect.TypeOf((*MockStats)(nil).NewDestStat), arg0, arg1, arg2)
-}
-
 // NewJobsDBStat mocks base method
 func (m *MockStats) NewJobsDBStat(arg0, arg1, arg2 string) stats.RudderStats {
 	m.ctrl.T.Helper()
@@ -160,7 +146,7 @@ func (mr *MockStatsMockRecorder) NewStat(arg0, arg1 interface{}) *gomock.Call {
 }
 
 // NewTaggedStat mocks base method
-func (m *MockStats) NewTaggedStat(arg0, arg1 string, arg2 map[string]string) stats.RudderStats {
+func (m *MockStats) NewTaggedStat(arg0, arg1 string, arg2 stats.Tags) stats.RudderStats {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NewTaggedStat", arg0, arg1, arg2)
 	ret0, _ := ret[0].(stats.RudderStats)
@@ -171,18 +157,4 @@ func (m *MockStats) NewTaggedStat(arg0, arg1 string, arg2 map[string]string) sta
 func (mr *MockStatsMockRecorder) NewTaggedStat(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewTaggedStat", reflect.TypeOf((*MockStats)(nil).NewTaggedStat), arg0, arg1, arg2)
-}
-
-// NewWriteKeyStat mocks base method
-func (m *MockStats) NewWriteKeyStat(arg0, arg1, arg2 string) stats.RudderStats {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewWriteKeyStat", arg0, arg1, arg2)
-	ret0, _ := ret[0].(stats.RudderStats)
-	return ret0
-}
-
-// NewWriteKeyStat indicates an expected call of NewWriteKeyStat
-func (mr *MockStatsMockRecorder) NewWriteKeyStat(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewWriteKeyStat", reflect.TypeOf((*MockStats)(nil).NewWriteKeyStat), arg0, arg1, arg2)
 }

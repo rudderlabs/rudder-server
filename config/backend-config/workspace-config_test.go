@@ -20,12 +20,12 @@ var _ = Describe("workspace-config", func() {
 		backendConfig = &WorkspaceConfig{}
 		ctrl = gomock.NewController(GinkgoT())
 		mockLogger = mock_logger.NewMockLoggerI(ctrl)
-		log = mockLogger
+		pkgLogger = mockLogger
 	})
 	AfterEach(func() {
 		ctrl.Finish()
 		Http = originalHttp
-		log = originalLogger
+		pkgLogger = originalLogger
 	})
 
 	Context("getFromAPI method", func() {

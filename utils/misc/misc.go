@@ -82,12 +82,13 @@ func getErrorStore() (ErrorStoreT, error) {
 	}
 
 	err = json.Unmarshal(data, &errorStore)
-
 	if err != nil {
-		pkgLogger.Fatal("Failed to unmarshall ErrorStore to json", err)
-		return errorStore, err
+		pkgLogger.Errorf("Failed to Unmarshall %s. Error:  %w", errorStorePath, err)
+		if renameErr := os.Rename(errorStorePath, fmt.Sprintf("%s.bkp", errorStorePath)); renameErr != nil {
+			pkgLogger.Errorf("Failed to back up: %s. Error: %w", errorStorePath, err)
+		}
+		errorStore = ErrorStoreT{Errors: []RudderError{}}
 	}
-
 	return errorStore, nil
 }
 
@@ -509,6 +510,14 @@ func TruncateStr(str string, limit int) string {
 	return str
 }
 
+// TailTruncateStr returns the last `count` digits of a string
+func TailTruncateStr(str string, count int) string {
+	if len(str) > count {
+		str = str[len(str)-count:]
+	}
+	return str
+}
+
 func SortedMapKeys(input interface{}) []string {
 	inValue := reflect.ValueOf(input)
 	mapKeys := inValue.MapKeys()
@@ -573,6 +582,17 @@ func MakeJSONArray(bytesArray [][]byte) []byte {
 	return joinedArray
 }
 
+func SingleQuotedJoin(slice []string) string {
+	var str string
+	for index, key := range slice {
+		if index > 0 {
+			str += fmt.Sprintf(`, `)
+		}
+		str += fmt.Sprintf(`'%s'`, key)
+	}
+	return str
+}
+
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number
 // of garage collection cycles completed.
 func PrintMemUsage() {
@@ -623,7 +643,7 @@ func (w GZipWriter) Write(b []byte) {
 	}
 }
 
-func (w GZipWriter) CloseGZ() {
+func (w GZipWriter) CloseGZ() error {
 	err := w.BufWriter.Flush()
 	if err != nil {
 		pkgLogger.Errorf(`[GZWriter]: Error flushing GZipWriter.BufWriter : %v`, err)
@@ -634,8 +654,13 @@ func (w GZipWriter) CloseGZ() {
 	}
 	err = w.File.Close()
 	if err != nil {
-		pkgLogger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
+		if pathErr, ok := err.(*os.PathError); ok && pathErr.Err == os.ErrClosed {
+			err = nil
+		} else {
+			pkgLogger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
+		}
 	}
+	return err
 }
 
 func GetMacAddress() string {
@@ -853,4 +878,21 @@ func GetMandatoryJSONFieldNames(st interface{}) []string {
 		}
 	}
 	return mandatoryJSONFieldNames
+}
+
+func MinInt(a, b int) int {
+	if a <= b {
+		return a
+	}
+	return b
+}
+
+//GetTagName gets the tag name using a uuid and name
+func GetTagName(id string, names ...string) string {
+	var truncatedNames string
+	for _, name := range names {
+		name = strings.ReplaceAll(name, ":", "-")
+		truncatedNames += TruncateStr(name, 15) + "_"
+	}
+	return truncatedNames + TailTruncateStr(id, 6)
 }

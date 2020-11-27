@@ -220,22 +220,12 @@ func (l *LoggerT) IsDebugLevel() bool {
 	return levelDebug >= l.getLoggingLevel()
 }
 
-// Deprecated! Use instance of LoggerT instead
-func IsDebugLevel() bool {
-	return log.IsDebugLevel()
-}
-
 // Debug level logging.
 // Most verbose logging level.
 func (l *LoggerT) Debug(args ...interface{}) {
 	if levelDebug >= l.getLoggingLevel() {
 		Log.Debug(args...)
 	}
-}
-
-// Deprecated! Use instance of LoggerT instead
-func Debug(args ...interface{}) {
-	log.Debug(args...)
 }
 
 // Info level logging.
@@ -246,11 +236,6 @@ func (l *LoggerT) Info(args ...interface{}) {
 	}
 }
 
-// Deprecated! Use instance of LoggerT instead
-func Info(args ...interface{}) {
-	log.Info(args...)
-}
-
 // Warn level logging.
 // Use this to log warnings
 func (l *LoggerT) Warn(args ...interface{}) {
@@ -259,22 +244,12 @@ func (l *LoggerT) Warn(args ...interface{}) {
 	}
 }
 
-// Deprecated! Use instance of LoggerT instead
-func Warn(args ...interface{}) {
-	log.Warn(args...)
-}
-
 // Error level logging.
 // Use this to log errors which dont immediately halt the application.
 func (l *LoggerT) Error(args ...interface{}) {
 	if levelError >= l.getLoggingLevel() {
 		Log.Error(args...)
 	}
-}
-
-// Deprecated! Use instance of LoggerT instead
-func Error(args ...interface{}) {
-	log.Error(args...)
 }
 
 // Fatal level logging.
@@ -295,22 +270,12 @@ func (l *LoggerT) Fatal(args ...interface{}) {
 	}
 }
 
-// Deprecated! Use instance of LoggerT instead
-func Fatal(args ...interface{}) {
-	log.Fatal(args...)
-}
-
 // Debugf does debug level logging similar to fmt.Printf.
 // Most verbose logging level
 func (l *LoggerT) Debugf(format string, args ...interface{}) {
 	if levelDebug >= l.getLoggingLevel() {
 		Log.Debugf(format, args...)
 	}
-}
-
-// Deprecated! Use instance of LoggerT instead
-func Debugf(format string, args ...interface{}) {
-	log.Debugf(format, args...)
 }
 
 // Infof does info level logging similar to fmt.Printf.
@@ -321,11 +286,6 @@ func (l *LoggerT) Infof(format string, args ...interface{}) {
 	}
 }
 
-// Deprecated! Use instance of LoggerT instead
-func Infof(format string, args ...interface{}) {
-	log.Infof(format, args...)
-}
-
 // Warnf does warn level logging similar to fmt.Printf.
 // Use this to log warnings
 func (l *LoggerT) Warnf(format string, args ...interface{}) {
@@ -334,22 +294,12 @@ func (l *LoggerT) Warnf(format string, args ...interface{}) {
 	}
 }
 
-// Deprecated! Use instance of LoggerT instead
-func Warnf(format string, args ...interface{}) {
-	log.Warnf(format, args...)
-}
-
 // Errorf does error level logging similar to fmt.Printf.
 // Use this to log errors which dont immediately halt the application.
 func (l *LoggerT) Errorf(format string, args ...interface{}) {
 	if levelError >= l.getLoggingLevel() {
 		Log.Errorf(format, args...)
 	}
-}
-
-// Deprecated! Use instance of LoggerT instead
-func Errorf(format string, args ...interface{}) {
-	log.Errorf(format, args...)
 }
 
 // Fatalf does fatal level logging similar to fmt.Printf.
@@ -370,11 +320,6 @@ func (l *LoggerT) Fatalf(format string, args ...interface{}) {
 	}
 }
 
-// Deprecated! Use instance of LoggerT instead
-func Fatalf(format string, args ...interface{}) {
-	log.Fatalf(format, args...)
-}
-
 // LogRequest reads and logs the request body and resets the body to original state.
 func (l *LoggerT) LogRequest(req *http.Request) {
 	if levelEvent >= l.getLoggingLevel() {
@@ -385,11 +330,6 @@ func (l *LoggerT) LogRequest(req *http.Request) {
 		//print raw request body for debugging purposes
 		Log.Debug("Request Body: ", bodyString)
 	}
-}
-
-// Deprecated! Use instance of LoggerT instead
-func LogRequest(req *http.Request) {
-	log.LogRequest(req)
 }
 
 func GetLoggingConfig() map[string]int {

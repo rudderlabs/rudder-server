@@ -50,9 +50,9 @@ var (
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
 	Http                 sysUtils.HttpI           = sysUtils.NewHttp()
-	log                  logger.LoggerI           = logger.NewLogger()
+	pkgLogger            logger.LoggerI           = logger.NewLogger().Child("backend-config")
 	IoUtil               sysUtils.IoUtilI         = sysUtils.NewIoUtil()
-	Diagnostics          diagnostics.DiagnosticsI = diagnostics.NewDiagnostics()
+	Diagnostics          diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
 
 var Eb utils.PublishSubscriber = new(utils.EventBus)
@@ -203,7 +203,7 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 	dataJSON, _ := json.Marshal(data)
 	request, err := Http.NewRequest("POST", backendURL, bytes.NewBuffer(dataJSON))
 	if err != nil {
-		log.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
+		pkgLogger.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
 		return []byte{}, false
 	}
 
@@ -213,17 +213,17 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 	resp, err := client.Do(request)
 	// Not handling errors when sending alert to victorops
 	if err != nil {
-		log.Errorf("ConfigBackend: Failed to execute request: %s, Error: %s", backendURL, err.Error())
+		pkgLogger.Errorf("ConfigBackend: Failed to execute request: %s, Error: %s", backendURL, err.Error())
 		return []byte{}, false
 	}
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		log.Errorf("ConfigBackend: Got error response %d", resp.StatusCode)
+		pkgLogger.Errorf("ConfigBackend: Got error response %d", resp.StatusCode)
 	}
 
 	body, err := IoUtil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
-	log.Debugf("ConfigBackend: Successful %s", string(body))
+	pkgLogger.Debugf("ConfigBackend: Successful %s", string(body))
 	return body, true
 }
 
@@ -263,7 +263,7 @@ func filterProcessorEnabledDestinations(config SourcesT) SourcesT {
 	for _, source := range config.Sources {
 		destinations := make([]DestinationT, 0)
 		for _, destination := range source.Destinations {
-			log.Debug(destination.Name, " IsProcessorEnabled: ", destination.IsProcessorEnabled)
+			pkgLogger.Debug(destination.Name, " IsProcessorEnabled: ", destination.IsProcessorEnabled)
 			if destination.IsProcessorEnabled {
 				destinations = append(destinations, destination)
 			}
@@ -291,7 +291,7 @@ func regulationsUpdate(statConfigBackendError stats.RudderStats) {
 	})
 
 	if ok && !reflect.DeepEqual(curRegulationJSON, regulationJSON) {
-		log.Info("Regulations changed")
+		pkgLogger.Info("Regulations changed")
 		curRegulationJSONLock.Lock()
 		curRegulationJSON = regulationJSON
 		curRegulationJSONLock.Unlock()
@@ -317,7 +317,7 @@ func configUpdate(statConfigBackendError stats.RudderStats) {
 	})
 
 	if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
-		log.Info("Workspace Config changed")
+		pkgLogger.Info("Workspace Config changed")
 		curSourceJSONLock.Lock()
 		trackConfig(curSourceJSON, sourceJSON)
 		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
@@ -407,7 +407,7 @@ func (bc *CommonBackendConfig) WaitForConfig() {
 			break
 		}
 		initializedLock.RUnlock()
-		log.Info("Waiting for initializing backend config")
+		pkgLogger.Info("Waiting for initializing backend config")
 		time.Sleep(time.Duration(pollInterval))
 	}
 }

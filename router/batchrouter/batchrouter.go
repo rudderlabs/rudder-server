@@ -14,6 +14,7 @@ import (
 	"time"
 
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
+	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
 
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -51,7 +52,10 @@ var (
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTimeinHr   time.Duration
+	encounteredMergeRuleMap            map[string]map[string]bool
+	encounteredMergeRuleMapLock        sync.RWMutex
 	pkgLogger                          logger.LoggerI
+	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
 
 type HandleT struct {
@@ -97,6 +101,17 @@ func (brt *HandleT) backendConfigSubscriber() {
 							brt.destinationsMap[destination.ID] = &BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
 						}
 						brt.destinationsMap[destination.ID].Sources = append(brt.destinationsMap[destination.ID].Sources, source)
+
+						// initialize map to track encountered anonymousIds for a warehouse destination
+						if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
+							identifier := connectionString(DestinationT{Destination: destination, Source: source})
+							encounteredMergeRuleMapLock.Lock()
+							if _, ok := encounteredMergeRuleMap[identifier]; !ok {
+								encounteredMergeRuleMap[identifier] = make(map[string]bool)
+							}
+							encounteredMergeRuleMapLock.Unlock()
+						}
+
 						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
 							destination := destination
 							rruntime.Go(func() {
@@ -132,14 +147,21 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func updateDestStatusStats(id string, count int, isSuccess bool) {
-	var destStatsD stats.RudderStats
-	if isSuccess {
-		destStatsD = stats.NewBatchDestStat("batch_router.dest_successful_events", stats.CountType, id)
-	} else {
-		destStatsD = stats.NewBatchDestStat("batch_router.dest_failed_attempts", stats.CountType, id)
+func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[string]int, destType string, isWarehouse bool) {
+	tags := map[string]string{
+		"module":        "batch_router",
+		"destType":      destType,
+		"isWarehouse":   fmt.Sprintf("%t", isWarehouse),
+		"destinationId": misc.GetTagName(batchDestination.Destination.ID, batchDestination.Destination.Name),
+		"sourceId":      misc.GetTagName(batchDestination.Source.ID, batchDestination.Source.Name),
 	}
-	destStatsD.Count(count)
+
+	for jobState, count := range jobStateCount {
+		tags["job_state"] = jobState
+		if count > 0 {
+			stats.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
+		}
+	}
 }
 
 func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
@@ -170,7 +192,24 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 
 	eventsFound := false
+	identifier := connectionString(*batchJobs.BatchDestination)
 	for _, job := range batchJobs.Jobs {
+		// do not add to staging file if the event is a rudder_identity_merge_rules record
+		// and has been previously added to it
+		if isWarehouse && warehouseutils.IDResolutionEnabled() && gjson.GetBytes(job.EventPayload, "metadata.isMergeRule").Bool() {
+			mergeProp1 := gjson.GetBytes(job.EventPayload, "metadata.mergePropOne").String()
+			mergeProp2 := gjson.GetBytes(job.EventPayload, "metadata.mergePropTwo").String()
+			ruleIdentifier := fmt.Sprintf(`%s::%s`, mergeProp1, mergeProp2)
+			encounteredMergeRuleMapLock.Lock()
+			if _, ok := encounteredMergeRuleMap[identifier][ruleIdentifier]; ok {
+				encounteredMergeRuleMapLock.Unlock()
+				continue
+			} else {
+				encounteredMergeRuleMap[identifier][ruleIdentifier] = true
+				encounteredMergeRuleMapLock.Unlock()
+			}
+		}
+
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
 		var ok bool
 		interruptedEventsMap, isDestInterrupted := uploadedRawDataJobsCache[batchJobs.BatchDestination.Destination.ID]
@@ -185,8 +224,8 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		}
 	}
 	gzWriter.CloseGZ()
-	if !isWarehouse && !eventsFound {
-		brt.logger.Infof("BRT: All events in this batch for %s are de-deuplicated...", provider)
+	if !eventsFound {
+		brt.logger.Infof("BRT: No events in this batch for upload to %s. Events are either de-deuplicated or skipped", provider)
 		return StorageUploadOutput{
 			LocalFilePaths: []string{gzipFilePath},
 		}
@@ -211,6 +250,9 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 		firstEventAt = firstEventAtWithTimeZone.UTC().Format(time.RFC3339)
 		lastEventAt = lastEventAtWithTimeZone.UTC().Format(time.RFC3339)
+	} else {
+		firstEventAt = gjson.GetBytes(batchJobs.Jobs[0].EventPayload, "receivedAt").String()
+		lastEventAt = gjson.GetBytes(batchJobs.Jobs[len(batchJobs.Jobs)-1].EventPayload, "receivedAt").String()
 	}
 
 	brt.logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
@@ -280,8 +322,12 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 		if err != nil {
 			panic(err)
 		}
-		tableName := payload["metadata"].(map[string]interface{})["table"].(string)
 		var ok bool
+		tableName, ok := payload["metadata"].(map[string]interface{})["table"].(string)
+		if !ok {
+			brt.logger.Errorf(`BRT: tableName not found in event metadata: %v`, payload["metadata"])
+			return nil
+		}
 		if _, ok = schemaMap[tableName]; !ok {
 			schemaMap[tableName] = make(map[string]interface{})
 		}
@@ -335,13 +381,11 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 		batchReqMetric.batchRequestFailed = 1
 		// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
-		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, 1, false)
 	} else {
 		brt.logger.Debugf("BRT: Uploaded to object storage : %v at %v", batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
 		batchJobState = jobsdb.Succeeded.State
 		errorResp = []byte(`{"success":"OK"}`)
 		batchReqMetric.batchRequestSuccess = 1
-		updateDestStatusStats(batchJobs.BatchDestination.Destination.ID, len(batchJobs.Jobs), true)
 	}
 	brt.trackRequestMetrics(batchReqMetric)
 	var statusList []*jobsdb.JobStatusT
@@ -358,6 +402,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		warehouseServiceFailedTimeLock.Unlock()
 	}
 
+	jobStateCount := make(map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 
@@ -383,12 +428,13 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			ErrorResponse: errorResp,
 		}
 		statusList = append(statusList, &status)
+		jobStateCount[jobState] = jobStateCount[jobState] + 1
 	}
 
 	//tracking batch router errors
 	if diagnostics.EnableDestinationFailuresMetric {
 		if batchJobState == jobsdb.Failed.State {
-			diagnostics.Track(diagnostics.BatchRouterFailed, map[string]interface{}{
+			Diagnostics.Track(diagnostics.BatchRouterFailed, map[string]interface{}{
 				diagnostics.BatchRouterDestination: brt.destType,
 				diagnostics.ErrorResponse:          string(errorResp),
 			})
@@ -404,6 +450,8 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	}
 	//Mark the status of the jobs
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
+
+	sendDestStatusStats(batchJobs.BatchDestination, jobStateCount, brt.destType, isWarehouse)
 }
 
 func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {
@@ -431,13 +479,13 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 	if err != nil {
 		jobState = jobsdb.Failed.State
 		if isWarehouse {
-			jobState = warehouseutils.GeneratingStagingFileFailedState
+			jobState = warehouse.GeneratingStagingFileFailedState
 		}
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 	} else {
 		jobState = jobsdb.Succeeded.State
 		if isWarehouse {
-			jobState = warehouseutils.GeneratedStagingFileState
+			jobState = warehouse.GeneratedStagingFileState
 		}
 		errorResp = []byte(`{"success":"OK"}`)
 	}
@@ -454,6 +502,26 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 		ErrorResponse: errorResp,
 	}
 	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
+}
+
+func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUploadOutput) {
+	destinationTag := misc.GetTagName(destination.Destination.ID, destination.Destination.Name)
+	eventDeliveryStat := stats.NewTaggedStat("event_delivery", stats.CountType, map[string]string{
+		"module":      "batch_router",
+		"destType":    brt.destType,
+		"destination": destinationTag,
+	})
+	eventDeliveryStat.Count(output.TotalEvents)
+
+	receivedTime, err := time.Parse(misc.RFC3339Milli, output.FirstEventAt)
+	if err != nil {
+		eventDeliveryTimeStat := stats.NewTaggedStat("event_delivery_time", stats.TimerType, map[string]string{
+			"module":      "batch_router",
+			"destType":    brt.destType,
+			"destination": destinationTag,
+		})
+		eventDeliveryTimeStat.SendTiming(time.Now().Sub(receivedTime))
+	}
 }
 
 func (brt *HandleT) initWorkers() {
@@ -548,6 +616,10 @@ func (brt *HandleT) initWorkers() {
 									if output.JournalOpID > 0 {
 										brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
 									}
+									if output.Error == nil {
+										brt.recordUploadStats(*batchJobs.BatchDestination, output)
+									}
+
 									destUploadStat.End()
 								case misc.ContainsString(warehouseDestinations, brt.destType):
 									objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config)
@@ -592,7 +664,7 @@ type BatchJobsT struct {
 }
 
 func connectionString(batchDestination DestinationT) string {
-	return fmt.Sprintf(`source:%s:destination:%s`, batchDestination.Source.ID, batchDestination.Destination.ID)
+	return fmt.Sprintf(`source:%s::destination:%s`, batchDestination.Source.ID, batchDestination.Destination.ID)
 }
 
 func isDestInProgress(destID string) bool {
@@ -764,6 +836,10 @@ func (brt *HandleT) crashRecover() {
 	}
 }
 
+func IsObjectStorageDestination(destType string) bool {
+	return misc.Contains(objectStorageDestinations, destType)
+}
+
 func getWarehouseURL() (url string) {
 	if warehouseMode == config.EmbeddedMode {
 		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
@@ -794,7 +870,7 @@ func (brt *HandleT) collectMetrics() {
 						},
 					}
 
-					diagnostics.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
+					Diagnostics.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
 				}
 
 				brt.batchRequestsMetric = nil
@@ -818,6 +894,7 @@ func loadConfig() {
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
+	encounteredMergeRuleMap = map[string]map[string]bool{}
 }
 
 func init() {

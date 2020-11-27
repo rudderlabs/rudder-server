@@ -33,7 +33,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -85,7 +84,13 @@ func init() {
 }
 
 // Status reports overall server status by fetching status of all registered admin handlers
-func (a Admin) Status(noArgs struct{}, reply *string) error {
+func (a Admin) Status(noArgs struct{}, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
 	statusObj := make(map[string]interface{})
 	statusObj["server-mode"] = db.CurrentMode
 
@@ -98,7 +103,13 @@ func (a Admin) Status(noArgs struct{}, reply *string) error {
 }
 
 // PrintStack fetches stack traces of all running goroutines
-func (a Admin) PrintStack(noArgs struct{}, reply *string) error {
+func (a Admin) PrintStack(noArgs struct{}, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
 	byteArr := make([]byte, 2048*1024)
 	n := runtime.Stack(byteArr, true)
 	*reply = string(byteArr[:n])
@@ -106,7 +117,13 @@ func (a Admin) PrintStack(noArgs struct{}, reply *string) error {
 }
 
 // HeapDump creates heap profile at given path using pprof
-func (a Admin) HeapDump(path *string, reply *string) error {
+func (a Admin) HeapDump(path *string, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
 	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0755)
 	if err != nil {
 		return err
@@ -118,7 +135,14 @@ func (a Admin) HeapDump(path *string, reply *string) error {
 }
 
 // ServerConfig fetches current configuration as set in viper
-func (a Admin) ServerConfig(noArgs struct{}, reply *string) error {
+func (a Admin) ServerConfig(noArgs struct{}, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+
 	config := make(map[string]interface{})
 	for _, key := range viper.AllKeys() {
 		config[key] = viper.Get(key)
@@ -133,8 +157,14 @@ type LogLevel struct {
 	Level  string
 }
 
-func (a Admin) SetLogLevel(l LogLevel, reply *string) error {
-	err := logger.SetModuleLevel(l.Module, l.Level)
+func (a Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	err = logger.SetModuleLevel(l.Module, l.Level)
 	if err == nil {
 		*reply = fmt.Sprintf("Module %s log level set to %s", l.Module, l.Level)
 	}
@@ -145,7 +175,7 @@ func (a Admin) SetLogLevel(l LogLevel, reply *string) error {
 func (a Admin) GetLoggingConfig(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Error(r)
+			pkgLogger.Error(r)
 			err = errors.New("Internal Rudder Server Error")
 		}
 	}()
@@ -163,11 +193,11 @@ func StartServer() {
 	}
 	sockAddr := filepath.Join(tmpDirPath, "rudder-server.sock")
 	if err := os.RemoveAll(sockAddr); err != nil {
-		log.Fatal(err)
+		pkgLogger.Fatal(err)
 	}
 	l, e := net.Listen("unix", sockAddr)
 	if e != nil {
-		log.Fatal("listen error:", e)
+		pkgLogger.Fatal("listen error:", e)
 	}
 	pkgLogger.Info("Serving on admin interface @ ", sockAddr)
 	srvMux := http.NewServeMux()

@@ -3,6 +3,7 @@ package processor
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -12,11 +13,13 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -71,6 +74,7 @@ type HandleT struct {
 	userJobPQ                    pqT
 	userPQLock                   sync.Mutex
 	logger                       logger.LoggerI
+	eventSchemaHandler           types.EventSchemasI
 }
 
 type DestStatT struct {
@@ -82,14 +86,24 @@ type DestStatT struct {
 	destTransform    stats.RudderStats
 }
 
-func (proc *HandleT) newDestinationStat(destID string) *DestStatT {
-	numEvents := proc.stats.NewDestStat("proc_num_events", stats.CountType, destID)
-	numOutputEvents := proc.stats.NewDestStat("proc_num_output_events", stats.CountType, destID)
-	sessionTransform := proc.stats.NewDestStat("proc_session_transform", stats.TimerType, destID)
-	userTransform := proc.stats.NewDestStat("proc_user_transform", stats.TimerType, destID)
-	destTransform := proc.stats.NewDestStat("proc_dest_transform", stats.TimerType, destID)
+func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) *DestStatT {
+	destinationTag := misc.GetTagName(destination.ID, destination.Name)
+	var module = "router"
+	if batchrouter.IsObjectStorageDestination(destination.DestinationDefinition.Name) {
+		module = "batch_router"
+	}
+	tags := map[string]string{
+		"module":      module,
+		"destination": destinationTag,
+		"destType":    destination.DestinationDefinition.Name,
+	}
+	numEvents := proc.stats.NewTaggedStat("proc_num_events", stats.CountType, tags)
+	numOutputEvents := proc.stats.NewTaggedStat("proc_num_output_events", stats.CountType, tags)
+	sessionTransform := proc.stats.NewTaggedStat("proc_session_transform", stats.TimerType, tags)
+	userTransform := proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
+	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
 	return &DestStatT{
-		id:               destID,
+		id:               destination.ID,
 		numEvents:        numEvents,
 		numOutputEvents:  numOutputEvents,
 		sessionTransform: sessionTransform,
@@ -177,21 +191,22 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statNumRequests = proc.stats.NewStat("processor.num_requests", stats.CountType)
 	proc.statNumEvents = proc.stats.NewStat("processor.num_events", stats.CountType)
 	// Add a separate tag for batch router
-	proc.statDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, map[string]string{
+	proc.statDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "router",
 	})
-	proc.statBatchDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, map[string]string{
+	proc.statBatchDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "batch_router",
 	})
 	proc.destStats = make(map[string]*DestStatT)
-
+	if enableEventSchemasFeature {
+		proc.eventSchemaHandler = event_schema.GetInstance()
+	}
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
 	proc.transformer.Setup()
 
 	proc.crashRecover()
-
 	if proc.processSessions {
 		proc.logger.Info("Starting session processor")
 		rruntime.Go(func() {
@@ -215,8 +230,8 @@ func (proc *HandleT) Start() {
 var (
 	loopSleep                           time.Duration
 	maxLoopSleep                        time.Duration
-	maxDBReadBatchSize                  int
-	minDBReadBatchSize                  int
+	maxEventsToProcess                  int
+	avgEventsInRequest                  int
 	dbReadBatchSize                     int
 	transformBatchSize                  int
 	userTransformBatchSize              int
@@ -230,13 +245,12 @@ var (
 	configSubscriberLock                sync.RWMutex
 	customDestinations                  []string
 	pkgLogger                           logger.LoggerI
+	enableEventSchemasFeature           bool
 )
 
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
 	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
-	maxDBReadBatchSize = config.GetInt("Processor.maxDBReadBatchSize", 10000)
-	minDBReadBatchSize = config.GetInt("Processor.minDBReadBatchSize", 100)
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
@@ -244,14 +258,12 @@ func loadConfig() {
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
-
-	dbReadBatchSize = minDBReadBatchSize
-}
-
-//ResetDBReadBatchSize - resets dbReadBatchSize to minDBReadBatchSize
-//This is written as a helper function for processor tests.
-func (proc *HandleT) ResetDBReadBatchSize() {
-	dbReadBatchSize = minDBReadBatchSize
+	// EventSchemas feature. false by default
+	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
+	maxEventsToProcess = config.GetInt("Processor.maxLoopProcessEvents", 10000)
+	avgEventsInRequest = config.GetInt("Processor.avgEventsInRequest", 1)
+	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
+	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -272,7 +284,7 @@ func (proc *HandleT) backendConfigSubscriber() {
 					destinationTransformationEnabledMap[destination.ID] = len(destination.Transformations) > 0
 					_, ok := proc.destStats[destination.ID]
 					if !ok {
-						proc.destStats[destination.ID] = proc.newDestinationStat(destination.ID)
+						proc.destStats[destination.ID] = proc.newDestinationStat(destination)
 					}
 				}
 			}
@@ -688,7 +700,12 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, metadata
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
-		procErrorStat := stats.GetProcErrorStat("proc_error_counts", stats.CountType, metadata.DestinationType, failedEvent.StatusCode, stage)
+		procErrorStat := stats.NewTaggedStat("proc_error_counts", stats.CountType, stats.Tags{
+			"destName":   metadata.DestinationType,
+			"statusCode": strconv.Itoa(failedEvent.StatusCode),
+			"stage":      stage,
+		})
+
 		procErrorStat.Increment()
 	}
 	return failedEventsToStore
@@ -957,26 +974,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
 
-	//deciding the dbReadBatchSize for the next query based on the totalEvents processed in this loop.
-	if len(jobList) != 0 && totalEvents != 0 {
-		if totalEvents > maxDBReadBatchSize {
-			divFactor := float64(totalEvents) / float64(len(jobList))
-			//divFactor can never be less than 1. Because len(jobList) < maxDbReadBatchSize < totalEvents
-			newDBReadBatchSize := float64(dbReadBatchSize) / divFactor
-			dbReadBatchSize = int(newDBReadBatchSize)
-			if dbReadBatchSize < minDBReadBatchSize {
-				dbReadBatchSize = minDBReadBatchSize
-			}
-			proc.logger.Debugf("[Processor] Total events processed(%d) hit the max. Resetting dbReadBatchSize to : %d", totalEvents, dbReadBatchSize)
-		} else if totalEvents < maxDBReadBatchSize {
-			dbReadBatchSize = 2 * dbReadBatchSize
-			if dbReadBatchSize > maxDBReadBatchSize {
-				dbReadBatchSize = maxDBReadBatchSize
-			}
-			proc.logger.Debugf("[Processor] Total events processed(%d) is less than allowed max. Resetting dbReadBatchSize to : %d", totalEvents, dbReadBatchSize)
-		}
-	}
-
 	proc.pStatsDBW.End(len(statusList))
 	proc.pStatsJobs.End(totalEvents)
 
@@ -987,6 +984,17 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
+}
+
+func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList []*jobsdb.JobT, totalEvents int) {
+	for idx, job := range jobList {
+		eventsInJob := len(gjson.GetBytes(job.EventPayload, "batch").Array())
+		totalEvents += eventsInJob
+		if totalEvents >= maxEvents {
+			return jobList[:idx+1], totalEvents
+		}
+	}
+	return jobList, totalEvents
 }
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
@@ -1000,9 +1008,21 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.logger.Debugf("Processor DB Read size: %v", toQuery)
 	//Should not have any failure while processing (in v0) so
 	//retryList should be empty. Remove the assert
-	retryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
-	toQuery -= len(retryList)
-	unprocessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
+
+	var retryList, unprocessedList []*jobsdb.JobT
+	var totalRetryEvents, totalUnprocessedEvents int
+
+	unTruncatedRetryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
+	retryList, totalRetryEvents = getTruncatedEventList(unTruncatedRetryList, maxEventsToProcess)
+
+	if len(unTruncatedRetryList) >= dbReadBatchSize || totalRetryEvents >= maxEventsToProcess {
+		// skip querying for unprocessed jobs if either retreived dbReadBatchSize or retreived maxEventToProcess
+	} else {
+		eventsLeftToProcess := maxEventsToProcess - totalRetryEvents
+		toQuery = misc.MinInt(eventsLeftToProcess, dbReadBatchSize)
+		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
+		unprocessedList, totalUnprocessedEvents = getTruncatedEventList(unTruncatedUnProcessedList, eventsLeftToProcess)
+	}
 
 	proc.statDBR.End()
 
@@ -1012,11 +1032,16 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		proc.pStatsDBR.End(0)
 		return false
 	}
-
+	if enableEventSchemasFeature {
+		for _, unprocessedJob := range unprocessedList {
+			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
+			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
+		}
+	}
 	// handle pending jobs
 	proc.statListSort.Start()
 	combinedList := append(unprocessedList, retryList...)
-	proc.logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total: %v", len(retryList), len(unprocessedList), len(combinedList))
+	proc.logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total_requests: %v, total_events: %d", len(retryList), len(unprocessedList), len(combinedList), totalRetryEvents+totalUnprocessedEvents)
 	proc.pStatsDBR.End(len(combinedList))
 	proc.statGatewayDBR.Count(len(combinedList))
 
@@ -1077,7 +1102,7 @@ func (proc *HandleT) mainLoop() {
 
 func (proc *HandleT) crashRecover() {
 	for {
-		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, maxDBReadBatchSize, nil)
+		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize, nil)
 
 		if len(execList) == 0 {
 			break
