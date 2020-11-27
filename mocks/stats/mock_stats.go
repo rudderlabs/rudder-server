@@ -33,6 +33,104 @@ func (m *MockStats) EXPECT() *MockStatsMockRecorder {
 	return m.recorder
 }
 
+// GetProcErrorStat mocks base method
+func (m *MockStats) GetProcErrorStat(arg0, arg1, arg2 string, arg3 int, arg4 string) stats.RudderStats {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProcErrorStat", arg0, arg1, arg2, arg3, arg4)
+	ret0, _ := ret[0].(stats.RudderStats)
+	return ret0
+}
+
+// GetProcErrorStat indicates an expected call of GetProcErrorStat
+func (mr *MockStatsMockRecorder) GetProcErrorStat(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProcErrorStat", reflect.TypeOf((*MockStats)(nil).GetProcErrorStat), arg0, arg1, arg2, arg3, arg4)
+}
+
+// GetRouterStat mocks base method
+func (m *MockStats) GetRouterStat(arg0, arg1, arg2 string, arg3 int) stats.RudderStats {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRouterStat", arg0, arg1, arg2, arg3)
+	ret0, _ := ret[0].(stats.RudderStats)
+	return ret0
+}
+
+// GetRouterStat indicates an expected call of GetRouterStat
+func (mr *MockStatsMockRecorder) GetRouterStat(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouterStat", reflect.TypeOf((*MockStats)(nil).GetRouterStat), arg0, arg1, arg2, arg3)
+}
+
+// NewBatchDestStat mocks base method
+func (m *MockStats) NewBatchDestStat(arg0, arg1, arg2 string) stats.RudderStats {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewBatchDestStat", arg0, arg1, arg2)
+	ret0, _ := ret[0].(stats.RudderStats)
+	return ret0
+}
+
+// NewBatchDestStat indicates an expected call of NewBatchDestStat
+func (mr *MockStatsMockRecorder) NewBatchDestStat(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewBatchDestStat", reflect.TypeOf((*MockStats)(nil).NewBatchDestStat), arg0, arg1, arg2)
+}
+
+// NewBatchStat mocks base method
+func (m *MockStats) NewBatchStat(arg0, arg1 string, arg2 int) stats.RudderStats {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewBatchStat", arg0, arg1, arg2)
+	ret0, _ := ret[0].(stats.RudderStats)
+	return ret0
+}
+
+// NewBatchStat indicates an expected call of NewBatchStat
+func (mr *MockStatsMockRecorder) NewBatchStat(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewBatchStat", reflect.TypeOf((*MockStats)(nil).NewBatchStat), arg0, arg1, arg2)
+}
+
+// NewJobsDBStat mocks base method
+func (m *MockStats) NewJobsDBStat(arg0, arg1, arg2 string) stats.RudderStats {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewJobsDBStat", arg0, arg1, arg2)
+	ret0, _ := ret[0].(stats.RudderStats)
+	return ret0
+}
+
+// NewJobsDBStat indicates an expected call of NewJobsDBStat
+func (mr *MockStatsMockRecorder) NewJobsDBStat(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewJobsDBStat", reflect.TypeOf((*MockStats)(nil).NewJobsDBStat), arg0, arg1, arg2)
+}
+
+// NewLatencyStat mocks base method
+func (m *MockStats) NewLatencyStat(arg0, arg1 string) stats.RudderStats {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewLatencyStat", arg0, arg1)
+	ret0, _ := ret[0].(stats.RudderStats)
+	return ret0
+}
+
+// NewLatencyStat indicates an expected call of NewLatencyStat
+func (mr *MockStatsMockRecorder) NewLatencyStat(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewLatencyStat", reflect.TypeOf((*MockStats)(nil).NewLatencyStat), arg0, arg1)
+}
+
+// NewMigratorStat mocks base method
+func (m *MockStats) NewMigratorStat(arg0, arg1, arg2 string) stats.RudderStats {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewMigratorStat", arg0, arg1, arg2)
+	ret0, _ := ret[0].(stats.RudderStats)
+	return ret0
+}
+
+// NewMigratorStat indicates an expected call of NewMigratorStat
+func (mr *MockStatsMockRecorder) NewMigratorStat(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewMigratorStat", reflect.TypeOf((*MockStats)(nil).NewMigratorStat), arg0, arg1, arg2)
+}
+
 // NewStat mocks base method
 func (m *MockStats) NewStat(arg0, arg1 string) stats.RudderStats {
 	m.ctrl.T.Helper()

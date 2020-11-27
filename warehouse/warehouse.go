@@ -903,6 +903,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
+	recordStagedRowsStat(stagingFile.TotalEvents, stagingFile.BatchDestination.Destination.DestinationDefinition.Name, stagingFile.BatchDestination.Destination.ID, stagingFile.BatchDestination.Source.Name, stagingFile.BatchDestination.Destination.Name)
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {

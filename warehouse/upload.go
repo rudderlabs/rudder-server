@@ -296,6 +296,7 @@ func (job *UploadJobT) run() (err error) {
 				break
 			}
 			job.setStagingFilesStatus(warehouseutils.StagingFileSucceededState, err)
+			job.recordLoadFileGenerationTimeStat(loadFileIDs[0], loadFileIDs[len(loadFileIDs)-1])
 
 			newStatus = nextUploadState.completed
 
@@ -488,6 +489,10 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 				tableUpload.setError(TableUploadExportingFailed, err)
 			} else {
 				tableUpload.setStatus(TableUploadExported)
+				numEvents, queryErr := tableUpload.getNumEvents()
+				if queryErr == nil {
+					job.recordTableLoad(tName, numEvents)
+				}
 			}
 			wg.Done()
 			<-loadChan
@@ -593,8 +598,8 @@ func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (erro
 			tableUploadErr = tableUpload.setStatus(TableUploadExported)
 			if tableUploadErr == nil {
 				// Since load is successful, we assume all events in load files are uploaded
-				numEvents, tableUploadErr := tableUpload.getNumEvents()
-				if tableUploadErr == nil {
+				numEvents, queryErr := tableUpload.getNumEvents()
+				if queryErr == nil {
 					job.recordTableLoad(tName, numEvents)
 				}
 			}
@@ -707,7 +712,7 @@ func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
 	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
-	job.counterStat("failed_uploads").Count(1)
+	job.counterStat("warehouse_failed_uploads").Count(1)
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 
 	upload := job.upload
@@ -738,6 +743,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	if errorByState["attempt"].(int) > minRetryAttempts {
 		firstTiming := job.getUploadFirstAttemptTime()
 		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
+			job.counterStat("upload_aborted").Count(1)
 			state = Aborted
 		}
 	}
@@ -794,10 +800,6 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 	destID := job.upload.DestinationID
 	destType := job.upload.DestinationType
 	stagingFiles := job.stagingFiles
-
-	// stat for time taken to process staging files in a single job
-	timer := job.timerStat("load_files_creation")
-	timer.Start()
 
 	job.setStagingFilesStatus(warehouseutils.StagingFileExecutingState, nil)
 
@@ -863,8 +865,6 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 			loadFileIDs = append(loadFileIDs, ids...)
 		}
 	}
-
-	timer.End()
 
 	if len(loadFileIDs) == 0 {
 		err = fmt.Errorf("No load files generated")

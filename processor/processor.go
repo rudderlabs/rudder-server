@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -85,14 +86,24 @@ type DestStatT struct {
 	destTransform    stats.RudderStats
 }
 
-func (proc *HandleT) newDestinationStat(destID string) *DestStatT {
-	numEvents := proc.stats.NewTaggedStat("proc_num_events", stats.CountType, stats.Tags{"destID": destID})
-	numOutputEvents := proc.stats.NewTaggedStat("proc_num_output_events", stats.CountType, stats.Tags{"destID": destID})
-	sessionTransform := proc.stats.NewTaggedStat("proc_session_transform", stats.TimerType, stats.Tags{"destID": destID})
-	userTransform := proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, stats.Tags{"destID": destID})
-	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, stats.Tags{"destID": destID})
+func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) *DestStatT {
+	destinationTag := misc.GetTagName(destination.ID, destination.Name)
+	var module = "router"
+	if batchrouter.IsObjectStorageDestination(destination.DestinationDefinition.Name) {
+		module = "batch_router"
+	}
+	tags := map[string]string{
+		"module":      module,
+		"destination": destinationTag,
+		"destType":    destination.DestinationDefinition.Name,
+	}
+	numEvents := proc.stats.NewTaggedStat("proc_num_events", stats.CountType, tags)
+	numOutputEvents := proc.stats.NewTaggedStat("proc_num_output_events", stats.CountType, tags)
+	sessionTransform := proc.stats.NewTaggedStat("proc_session_transform", stats.TimerType, tags)
+	userTransform := proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
+	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
 	return &DestStatT{
-		id:               destID,
+		id:               destination.ID,
 		numEvents:        numEvents,
 		numOutputEvents:  numOutputEvents,
 		sessionTransform: sessionTransform,
@@ -273,7 +284,7 @@ func (proc *HandleT) backendConfigSubscriber() {
 					destinationTransformationEnabledMap[destination.ID] = len(destination.Transformations) > 0
 					_, ok := proc.destStats[destination.ID]
 					if !ok {
-						proc.destStats[destination.ID] = proc.newDestinationStat(destination.ID)
+						proc.destStats[destination.ID] = proc.newDestinationStat(destination)
 					}
 				}
 			}

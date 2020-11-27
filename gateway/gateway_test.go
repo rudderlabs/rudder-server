@@ -52,7 +52,7 @@ const (
 	// SecondEnabledWriteKey     = "enabled-write-key-2"
 )
 
-var testTimeout = 10 * time.Second
+var testTimeout = 15 * time.Second
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.SourcesT{
@@ -130,9 +130,9 @@ func (c *context) initializeSetupStats() {
 	c.mockStatGatewayBufferFullStat = make([]*mocksStats.MockRudderStats, maxUserWebRequestWorkerProcess)
 	c.mockStatGatewayTimeOutStat = make([]*mocksStats.MockRudderStats, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
-		c.mockStatGatewayBatchTime[i] = registerStatMocks("gateway.batch_time",stats.TimerType)
-		c.mockStatGatewayBufferFullStat[i] = registerStatMocks(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full", i),stats.CountType)
-		c.mockStatGatewayTimeOutStat[i] = registerStatMocks(fmt.Sprintf("gateway.user_request_worker_%d_time_out", i),stats.CountType)
+		c.mockStatGatewayBatchTime[i] = registerStatMocks("gateway.batch_time", stats.TimerType)
+		c.mockStatGatewayBufferFullStat[i] = registerStatMocks(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full", i), stats.CountType)
+		c.mockStatGatewayTimeOutStat[i] = registerStatMocks(fmt.Sprintf("gateway.user_request_worker_%d_time_out", i), stats.CountType)
 		//Since we have 64 User request batch workers, not all workers might get
 		//Start and End calls while running tests. So using AnyTimes() instead of Times(1)
 		c.mockStatGatewayBatchTime[i].EXPECT().Start().AnyTimes()
@@ -190,16 +190,12 @@ func (c *context) Finish() {
 }
 
 // helper function to add expectations about a specific writeKey stat. Returns gomock.Call of RudderStats Count()
-func (c *context) expectWriteKeyStat(name string, writeKey string, count int) *gomock.Call {
-	mockStat := mocksStats.NewMockRudderStats(c.mockCtrl)
-
-	c.mockStats.EXPECT().NewTaggedStat(name, stats.CountType, stats.Tags{"writekey" : writeKey,}).
-		Return(mockStat).Times(1).
-		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.new.%s.%s", name, writeKey)))
-
-	return mockStat.EXPECT().Count(count).
-		Times(1).
-		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("write_key.count.%s.%s", name, writeKey)))
+func (c *context) expectNewTaggedStat(name string, count int) *gomock.Call {
+	stat := mocksStats.NewMockRudderStats(c.mockCtrl)
+	c.mockStats.EXPECT().NewTaggedStat(name, stats.CountType, gomock.Any()).Return(stat).Times(1).
+		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("source_tag_name.new.%s", name)))
+	return stat.EXPECT().Count(count).Times(1).
+		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(fmt.Sprintf("source_tag_name.count.%s", name)))
 }
 
 var _ = Describe("Gateway Enterprise", func() {
@@ -225,6 +221,8 @@ var _ = Describe("Gateway Enterprise", func() {
 		SetEnableDedup(false)
 		SetEnableSuppressUserFeature(true)
 		SetEnableEventSchemasFeature(false)
+		// SetUserWebRequestBatchTimeout(time.Second)
+		// SetMaxDBBatchSize(1)
 	})
 
 	AfterEach(func() {
@@ -244,8 +242,8 @@ var _ = Describe("Gateway Enterprise", func() {
 
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("batch-size"))
 
-			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
-			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
+			c.expectNewTaggedStat("gateway.write_key_requests", 1)
+			c.expectNewTaggedStat("gateway.write_key_events", 1)
 			// Why GET
 			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), 200, "OK")
 		})
@@ -258,10 +256,10 @@ var _ = Describe("Gateway Enterprise", func() {
 			c.mockStatDBWritesStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_writes"))
 			c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
-			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
-			c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 1)
-			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
-			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 1)
+			c.expectNewTaggedStat("gateway.write_key_requests", 1)
+			c.expectNewTaggedStat("gateway.write_key_successful_requests", 1)
+			c.expectNewTaggedStat("gateway.write_key_events", 1)
+			c.expectNewTaggedStat("gateway.write_key_successful_events", 1)
 			// Why GET
 			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(allowedUserEventData)), 200, "OK")
 		})
@@ -368,10 +366,12 @@ var _ = Describe("Gateway", func() {
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("gateway.batch_size.count"))
 				c.mockStatDBWritesStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_writes"))
 				c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
-				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
-				c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 1)
-				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
-				c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 1)
+
+				c.expectNewTaggedStat("gateway.write_key_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_successful_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_events", 1)
+				c.expectNewTaggedStat("gateway.write_key_successful_events", 1)
+
 				c.mockJobsDB.
 					EXPECT().StoreWithRetryEach(gomock.Any()).
 					DoAndReturn(func(jobs []*jobsdb.JobT) map[uuid.UUID]string {
@@ -511,10 +511,10 @@ var _ = Describe("Gateway", func() {
 			c.mockStatDBWritesStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_writes"))
 			c.mockStatDBWorkersTimeOutStat.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("db_workers_time_out"))
 
-			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
-			c.expectWriteKeyStat("gateway.write_key_successful_requests", WriteKeyEnabled, 1)
-			c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
-			c.expectWriteKeyStat("gateway.write_key_successful_events", WriteKeyEnabled, 1)
+			c.expectNewTaggedStat("gateway.write_key_requests", 1)
+			c.expectNewTaggedStat("gateway.write_key_successful_requests", 1)
+			c.expectNewTaggedStat("gateway.write_key_events", 1)
+			c.expectNewTaggedStat("gateway.write_key_successful_events", 1)
 
 			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(`{"userId":"dummyId"}`)), 200, "OK")
 		})
@@ -526,8 +526,8 @@ var _ = Describe("Gateway", func() {
 			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(true).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 			c.mockStatGatewayBatchSize.EXPECT().Count(1).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 
-			c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
-			c.expectWriteKeyStat("gateway.work_space_dropped_requests", workspaceID, 1)
+			c.expectNewTaggedStat("gateway.write_key_requests", 1)
+			c.expectNewTaggedStat("gateway.work_space_dropped_requests", 1)
 
 			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 400, response.TooManyRequests+"\n")
 		})
@@ -549,8 +549,8 @@ var _ = Describe("Gateway", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 
-				c.expectWriteKeyStat("gateway.write_key_requests", "", 1)
-				c.expectWriteKeyStat("gateway.write_key_failed_requests", "noWriteKey", 1)
+				c.expectNewTaggedStat("gateway.write_key_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_failed_requests", 1)
 
 				expectHandlerResponse(handler, unauthorizedRequest(nil), 400, response.NoWriteKeyInBasicAuth+"\n")
 			})
@@ -559,8 +559,8 @@ var _ = Describe("Gateway", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 
-				c.expectWriteKeyStat("gateway.write_key_requests", "", 1)
-				c.expectWriteKeyStat("gateway.write_key_failed_requests", "noWriteKey", 1)
+				c.expectNewTaggedStat("gateway.write_key_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_failed_requests", 1)
 
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 400, response.NoWriteKeyInBasicAuth+"\n")
 			})
@@ -573,9 +573,9 @@ var _ = Describe("Gateway", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 
-				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyEnabled, 1)
-				c.expectWriteKeyStat("gateway.write_key_failed_requests", "notIdentifiable", 1)
-				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyEnabled, 1)
+				c.expectNewTaggedStat("gateway.write_key_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_failed_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_events", 1)
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 400, response.NonIdentifiableRequest+"\n")
 			})
 
@@ -583,7 +583,7 @@ var _ = Describe("Gateway", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 
-				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
+				c.expectNewTaggedStat("gateway.write_key_requests", 1)
 
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), 400, response.RequestBodyNil+"\n")
 			})
@@ -594,8 +594,8 @@ var _ = Describe("Gateway", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 
-				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
-				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyInvalid, 1)
+				c.expectNewTaggedStat("gateway.write_key_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_failed_requests", 1)
 
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(invalidBody)), 400, response.InvalidJSON+"\n")
 			})
@@ -611,10 +611,10 @@ var _ = Describe("Gateway", func() {
 				}
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
-				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyInvalid, 1)
-				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyInvalid, 1)
-				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyInvalid, 1)
+				c.expectNewTaggedStat("gateway.write_key_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_failed_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_events", 1)
+				c.expectNewTaggedStat("gateway.write_key_failed_events", 1)
 
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(body)), 400, response.RequestBodyTooLarge+"\n")
 			})
@@ -626,10 +626,10 @@ var _ = Describe("Gateway", func() {
 				}
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
-				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyInvalid, 1)
-				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyInvalid, 1)
-				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyInvalid, 1)
-				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyInvalid, 1)
+				c.expectNewTaggedStat("gateway.write_key_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_failed_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_events", 1)
+				c.expectNewTaggedStat("gateway.write_key_failed_events", 1)
 
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), 400, response.InvalidWriteKey+"\n")
 			})
@@ -642,10 +642,10 @@ var _ = Describe("Gateway", func() {
 				c.mockStatGatewayBatchSize.EXPECT().Count(1).
 					Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName(""))
 
-				c.expectWriteKeyStat("gateway.write_key_requests", WriteKeyDisabled, 1)
-				c.expectWriteKeyStat("gateway.write_key_failed_requests", WriteKeyDisabled, 1)
-				c.expectWriteKeyStat("gateway.write_key_events", WriteKeyDisabled, 1)
-				c.expectWriteKeyStat("gateway.write_key_failed_events", WriteKeyDisabled, 1)
+				c.expectNewTaggedStat("gateway.write_key_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_failed_requests", 1)
+				c.expectNewTaggedStat("gateway.write_key_events", 1)
+				c.expectNewTaggedStat("gateway.write_key_failed_events", 1)
 
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), 400, response.InvalidWriteKey+"\n")
 			})

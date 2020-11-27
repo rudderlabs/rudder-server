@@ -67,7 +67,7 @@ var (
 	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess int
 	maxUserWebRequestBatchSize, maxDBBatchSize                  int
 	userWebRequestBatchTimeout, dbBatchWriteTimeout             time.Duration
-	enabledWriteKeysSourceMap                                   map[string]string
+	enabledWriteKeysSourceMap                                   map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                   map[string]string
 	configSubscriberLock                                        sync.RWMutex
 	maxReqSize                                                  int
@@ -144,12 +144,13 @@ type HandleT struct {
 	logger                                        logger.LoggerI
 }
 
-func (gateway *HandleT) updateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
-	for writeKey, count := range writeKeyStats {
-		writeKeyStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, stats.Tags{
-			"writekey" : writeKey,
-		})
-		writeKeyStatsD.Count(count)
+func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {
+	for sourceTag, count := range sourceStats {
+		tags := map[string]string{
+			"source": sourceTag,
+		}
+		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
+		sourceStatsD.Count(count)
 	}
 }
 
@@ -298,13 +299,13 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
 		var jobWriteKeyMap = make(map[uuid.UUID]string)
 		var jobEventCountMap = make(map[uuid.UUID]int)
-		var writeKeyStats = make(map[string]int)
-		var writeKeyEventStats = make(map[string]int)
-		var writeKeyDupStats = make(map[string]int)
-		var writeKeySuccessStats = make(map[string]int)
-		var writeKeySuccessEventStats = make(map[string]int)
-		var writeKeyFailStats = make(map[string]int)
-		var writeKeyFailEventStats = make(map[string]int)
+		var sourceStats = make(map[string]int)
+		var sourceEventStats = make(map[string]int)
+		var sourceDupStats = make(map[string]int)
+		var sourceSuccessStats = make(map[string]int)
+		var sourceSuccessEventStats = make(map[string]int)
+		var sourceFailStats = make(map[string]int)
+		var sourceFailEventStats = make(map[string]int)
 		var workspaceDropRequestStats = make(map[string]int)
 		var preDbStoreCount int
 		//Saving the event data read from req.request.Body to the splice.
@@ -314,11 +315,13 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		allMessageIdsSet := make(map[string]struct{})
 		for _, req := range breq.batchRequest {
 			writeKey, _, ok := req.request.BasicAuth()
-			misc.IncrementMapByKey(writeKeyStats, writeKey, 1)
+			sourceName := gateway.getSourceNameForWriteKey(writeKey)
+			sourceTag := misc.GetTagName(writeKey, sourceName)
+			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
 			if !ok || writeKey == "" {
 				req.done <- response.GetStatus(response.NoWriteKeyInBasicAuth)
 				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, "noWriteKey", 1)
+				misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
 				continue
 			}
 
@@ -345,13 +348,13 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			if err != nil {
 				req.done <- response.GetStatus(response.RequestBodyReadFailed)
 				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				continue
 			}
 			if !gjson.ValidBytes(body) {
 				req.done <- response.GetStatus(response.InvalidJSON)
 				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
+				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				continue
 			}
 			if req.reqType != "batch" {
@@ -359,12 +362,12 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
 			}
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
-			misc.IncrementMapByKey(writeKeyEventStats, writeKey, totalEventsInReq)
+			misc.IncrementMapByKey(sourceEventStats, sourceTag, totalEventsInReq)
 			if len(body) > maxReqSize {
 				req.done <- response.GetStatus(response.RequestBodyTooLarge)
 				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
-				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
+				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
+				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
 				continue
 			}
 
@@ -374,8 +377,8 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			if !gateway.isWriteKeyEnabled(writeKey) {
 				req.done <- response.GetStatus(response.InvalidWriteKey)
 				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, writeKey, 1)
-				misc.IncrementMapByKey(writeKeyFailEventStats, writeKey, totalEventsInReq)
+				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
+				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
 				continue
 			}
 
@@ -414,17 +417,17 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			if notIdentifiable {
 				req.done <- response.GetStatus(response.NonIdentifiableRequest)
 				preDbStoreCount++
-				misc.IncrementMapByKey(writeKeyFailStats, "notIdentifiable", 1)
+				misc.IncrementMapByKey(sourceFailStats, "notIdentifiable", 1)
 				continue
 			}
 
 			if enableDedup {
-				gateway.dedup(&body, reqMessageIDs, allMessageIdsSet, writeKey, writeKeyDupStats)
+				gateway.dedup(&body, reqMessageIDs, allMessageIdsSet, writeKey, sourceDupStats)
 				addToSet(allMessageIdsSet, reqMessageIDs)
 				if len(gjson.GetBytes(body, "batch").Array()) == 0 {
 					req.done <- ""
 					preDbStoreCount++
-					misc.IncrementMapByKey(writeKeySuccessEventStats, writeKey, totalEventsInReq)
+					misc.IncrementMapByKey(sourceSuccessEventStats, sourceTag, totalEventsInReq)
 					continue
 				}
 			}
@@ -456,7 +459,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			jobList = append(jobList, &newJob)
 
 			jobIDReqMap[newJob.UUID] = req
-			jobWriteKeyMap[newJob.UUID] = writeKey
+			jobWriteKeyMap[newJob.UUID] = sourceTag
 			jobEventCountMap[newJob.UUID] = totalEventsInReq
 		}
 
@@ -477,11 +480,11 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		for _, job := range jobList {
 			err, found := errorMessagesMap[job.UUID]
 			if found {
-				misc.IncrementMapByKey(writeKeyFailStats, jobWriteKeyMap[job.UUID], 1)
-				misc.IncrementMapByKey(writeKeyFailEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
+				misc.IncrementMapByKey(sourceFailStats, jobWriteKeyMap[job.UUID], 1)
+				misc.IncrementMapByKey(sourceFailEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
 			} else {
-				misc.IncrementMapByKey(writeKeySuccessStats, jobWriteKeyMap[job.UUID], 1)
-				misc.IncrementMapByKey(writeKeySuccessEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
+				misc.IncrementMapByKey(sourceSuccessStats, jobWriteKeyMap[job.UUID], 1)
+				misc.IncrementMapByKey(sourceSuccessEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
 			}
 			jobIDReqMap[job.UUID].done <- err
 		}
@@ -494,18 +497,18 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		userWebRequestWorker.batchTimeStat.End()
 		gateway.batchSizeStat.Count(len(breq.batchRequest))
 		// update stats request wise
-		gateway.updateWriteKeyStats(writeKeyStats, "gateway.write_key_requests")
-		gateway.updateWriteKeyStats(writeKeySuccessStats, "gateway.write_key_successful_requests")
-		gateway.updateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
+		gateway.updateSourceStats(sourceStats, "gateway.write_key_requests")
+		gateway.updateSourceStats(sourceSuccessStats, "gateway.write_key_successful_requests")
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests")
 		if enableRateLimit {
-			gateway.updateWriteKeyStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests")
+			gateway.updateSourceStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests")
 		}
 		// update stats event wise
-		gateway.updateWriteKeyStats(writeKeyEventStats, "gateway.write_key_events")
-		gateway.updateWriteKeyStats(writeKeySuccessEventStats, "gateway.write_key_successful_events")
-		gateway.updateWriteKeyStats(writeKeyFailEventStats, "gateway.write_key_failed_events")
+		gateway.updateSourceStats(sourceEventStats, "gateway.write_key_events")
+		gateway.updateSourceStats(sourceSuccessEventStats, "gateway.write_key_successful_events")
+		gateway.updateSourceStats(sourceFailEventStats, "gateway.write_key_failed_events")
 		if enableDedup {
-			gateway.updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
+			gateway.updateSourceStats(sourceDupStats, "gateway.write_key_duplicate_events")
 		}
 	}
 }
@@ -516,7 +519,7 @@ func addToSet(set map[string]struct{}, elements []string) {
 	}
 }
 
-func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSet map[string]struct{}, writeKey string, writeKeyDupStats map[string]int) {
+func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSet map[string]struct{}, writeKey string, sourceDupStats map[string]int) {
 	toRemoveMessageIndexesSet := make(map[int]struct{})
 	//Dedup within events batch in a web request
 	messageIDSet := make(map[string]struct{})
@@ -564,9 +567,11 @@ func (gateway *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSe
 
 	sort.Ints(toRemoveMessageIndexes)
 	count := 0
+	sourceName := gateway.getSourceNameForWriteKey(writeKey)
+	sourceTag := misc.GetTagName(writeKey, sourceName)
 	for _, idx := range toRemoveMessageIndexes {
 		gateway.logger.Debugf("Dropping event with duplicate messageId: %s", messageIDs[idx])
-		misc.IncrementMapByKey(writeKeyDupStats, writeKey, 1)
+		misc.IncrementMapByKey(sourceDupStats, sourceTag, 1)
 		*body, err = sjson.DeleteBytes(*body, fmt.Sprintf(`batch.%v`, idx-count))
 		if err != nil {
 			panic(err)
@@ -608,10 +613,21 @@ func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {
 	defer configSubscriberLock.RUnlock()
 
 	if _, ok := enabledWriteKeysSourceMap[writeKey]; ok {
-		return enabledWriteKeysSourceMap[writeKey]
+		return enabledWriteKeysSourceMap[writeKey].ID
 	}
 
 	return ""
+}
+
+func (gateway *HandleT) getSourceNameForWriteKey(writeKey string) string {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+
+	if _, ok := enabledWriteKeysSourceMap[writeKey]; ok {
+		return enabledWriteKeysSourceMap[writeKey].Name
+	}
+
+	return "-notFound-"
 }
 
 func (gateway *HandleT) printStats() {
@@ -910,12 +926,12 @@ func (gateway *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
-		enabledWriteKeysSourceMap = map[string]string{}
+		enabledWriteKeysSourceMap = map[string]backendconfig.SourceT{}
 		enabledWriteKeyWebhookMap = map[string]string{}
 		sources := config.Data.(backendconfig.SourcesT)
 		for _, source := range sources.Sources {
 			if source.Enabled {
-				enabledWriteKeysSourceMap[source.WriteKey] = source.ID
+				enabledWriteKeysSourceMap[source.WriteKey] = source
 				if source.SourceDefinition.Category == "webhook" {
 					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
 					gateway.webhookHandler.Register(source.SourceDefinition.Name)
@@ -990,9 +1006,9 @@ func (gateway *HandleT) IncrementAckCount(count uint64) {
 	atomic.AddUint64(&gateway.ackCount, count)
 }
 
-// UpdateWriteKeyStats creates a new stat for every writekey and updates it with the corresponding count
-func (gateway *HandleT) UpdateWriteKeyStats(writeKeyStats map[string]int, bucket string) {
-	gateway.updateWriteKeyStats(writeKeyStats, bucket)
+// UpdateSourceStats creates a new stat for every writekey and updates it with the corresponding count
+func (gateway *HandleT) UpdateSourceStats(sourceStats map[string]int, bucket string) {
+	gateway.updateSourceStats(sourceStats, bucket)
 }
 
 // TrackRequestMetrics provides access to add request success/failure telemetry

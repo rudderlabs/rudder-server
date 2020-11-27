@@ -22,26 +22,12 @@ const (
 )
 
 var client *statsd.Client
-var writeKeyClientsMap = make(map[string]*statsd.Client)
-var batchDestClientsMap = make(map[string]*statsd.Client)
-var destClientsMap = make(map[string]*statsd.Client)
-var routerClientsMap = make(map[string]*statsd.Client)
-var procErrorClientsMap = make(map[string]*statsd.Client)
 var taggedClientsMap = make(map[string]*statsd.Client)
-var jobsdbClientsMap = make(map[string]*statsd.Client)
-var migratorsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
 var statsdServerURL string
 var instanceID string
 var conn statsd.Option
-var writeKeyClientsMapLock sync.Mutex
-var batchDestClientsMapLock sync.Mutex
-var destClientsMapLock sync.Mutex
-var routerClientsMapLock sync.Mutex
-var procErrorClientsMapLock sync.Mutex
-var taggedClientsMapLock sync.Mutex
-var jobsdbClientsMapLock sync.Mutex
-var migratorsMapLock sync.Mutex
+var taggedClientsMapLock sync.RWMutex
 var enabled bool
 var statsCollectionInterval int64
 var enableCPUStats bool
@@ -96,7 +82,6 @@ type RudderStatsT struct {
 	Name        string
 	StatType    string
 	Timing      statsd.Timing
-	writeKey    string
 	DestID      string
 	Client      *statsd.Client
 	dontProcess bool
@@ -138,21 +123,29 @@ func NewStat(Name string, StatType string) (rStats RudderStats) {
 }
 
 func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
-	taggedClientsMapLock.Lock()
-	defer taggedClientsMapLock.Unlock()
-
-	tags["instanceName"] = instanceID
 	tagStr := StatType
-	tagVals := make([]string, 0, len(tags)*2)
+	tags["instanceName"] = instanceID
 	for tagName, tagVal := range tags {
 		tagName = strings.ReplaceAll(tagName, ":", "-")
-		tagVal = strings.ReplaceAll(tagVal, ":", "-")
 		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
-		tagVals = append(tagVals, tagName, tagVal)
 	}
-	if _, found := taggedClientsMap[tagStr]; !found {
+
+	taggedClientsMapLock.RLock()
+	taggedClient, found := taggedClientsMap[tagStr]
+	taggedClientsMapLock.RUnlock()
+
+	if !found {
+		taggedClientsMapLock.Lock()
+		tagVals := make([]string, 0, len(tags)*2)
+		for tagName, tagVal := range tags {
+			tagName = strings.ReplaceAll(tagName, ":", "-")
+			tagVal = strings.ReplaceAll(tagVal, ":", "-")
+			tagVals = append(tagVals, tagName, tagVal)
+		}
 		var err error
-		taggedClientsMap[tagStr], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...))
+		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...))
+		taggedClientsMap[tagStr] = taggedClient
+		taggedClientsMapLock.Unlock()
 		if err != nil {
 			pkgLogger.Error(err)
 		}
@@ -161,39 +154,13 @@ func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats
 	return &RudderStatsT{
 		Name:        Name,
 		StatType:    StatType,
-		Client:      taggedClientsMap[tagStr],
+		Client:      taggedClient,
 		dontProcess: false,
 	}
 }
 
 func NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
 	return DefaultStats.NewTaggedStat(Name, StatType, tags)
-}
-
-/*
-NewWriteKeyStat is used to create new writekey specific stat.
-Writekey is added as the value of 'writekey' tags in this case.
-If writekey has been used on this function before, a RudderStats with the same underlying client will be returned.
-*/
-func (s *HandleT) NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats RudderStats) {
-	writeKeyClientsMapLock.Lock()
-	defer writeKeyClientsMapLock.Unlock()
-	if _, found := writeKeyClientsMap[writeKey]; !found {
-		var err error
-		writeKeyClientsMap[writeKey], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "writekey", writeKey))
-		if err != nil {
-			// If nothing is listening on the target port, an error is returned and
-			// the returned client does nothing but is still usable. So we can
-			// just log the error and go on.
-			pkgLogger.Error(err)
-		}
-	}
-	return &RudderStatsT{
-		Name:     Name,
-		StatType: StatType,
-		writeKey: writeKey,
-		Client:   writeKeyClientsMap[writeKey],
-	}
 }
 
 // Count increases the stat by n. Only applies to CountType stats
