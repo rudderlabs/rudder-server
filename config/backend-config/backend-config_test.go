@@ -11,7 +11,6 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	mock_stats "github.com/rudderlabs/rudder-server/mocks/stats"
 	mock_utils "github.com/rudderlabs/rudder-server/mocks/utils"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	mock_sysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
@@ -167,8 +166,6 @@ var _ = Describe("BackendConfig", func() {
 	})
 	Context("configUpdate method", func() {
 		var (
-			mockStats              *mock_stats.MockStats
-			mockRubberStats        *mock_stats.MockRudderStats
 			statConfigBackendError stats.RudderStats
 			mockIoUtil             *mock_sysUtils.MockIoUtilI
 			originalIoUtil         = IoUtil
@@ -176,11 +173,8 @@ var _ = Describe("BackendConfig", func() {
 		)
 		BeforeEach(func() {
 			pollInterval = 500
-			mockStats = mock_stats.NewMockStats(ctrl)
-			mockRubberStats = mock_stats.NewMockRudderStats(ctrl)
-			var statsmock stats.Stats = mockStats
-			mockStats.EXPECT().NewStat(gomock.Any(), gomock.Any()).Return(mockRubberStats).Times(1)
-			statConfigBackendError = statsmock.NewStat("config_backend.errors", stats.CountType)
+			stats.Setup()
+			statConfigBackendError = stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
 			mockIoUtil = mock_sysUtils.NewMockIoUtilI(ctrl)
 			IoUtil = mockIoUtil
 			configFromFile = true
@@ -193,7 +187,6 @@ var _ = Describe("BackendConfig", func() {
 		It("Expect to make the correct actions if Get method fails", func() {
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, errors.New("TestRequestError")).Times(1)
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).Times(1)
-			mockRubberStats.EXPECT().Increment().Times(1)
 			mockLogger.EXPECT().Info(gomock.Any()).Times(0)
 			configUpdate(statConfigBackendError)
 		})
