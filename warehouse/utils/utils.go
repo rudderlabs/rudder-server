@@ -124,7 +124,7 @@ type StagingFileT struct {
 
 type UploaderI interface {
 	GetSchemaInWarehouse() SchemaT
-	GetTableSchemaAfterUpload(tableName string) TableSchemaT
+	GetTableSchemaInWarehouse(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
 	GetLoadFileLocations(tableName string) ([]string, error)
 	GetSampleLoadFileLocation(tableName string) (string, error)

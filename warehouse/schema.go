@@ -19,7 +19,6 @@ type SchemaHandleT struct {
 	localSchema       warehouseutils.SchemaT
 	schemaInWarehouse warehouseutils.SchemaT
 	uploadSchema      warehouseutils.SchemaT
-	schemaAfterUpload warehouseutils.SchemaT
 }
 
 func handleSchemaChange(existingDataType string, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
