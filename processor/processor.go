@@ -907,7 +907,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				afterTransformerRequest = time.Now()
 				totalTimeToTransform = afterTransformerRequest.Sub(beforeTransformRequest).Seconds()
 				destStat.userTransform.End()
-				proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: "user-transformer", ProcessingTime: totalTimeToTransform, Index: -1}, &proc.userTransformEventsByTimeTaken)
+				proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: totalTimeToTransform, Index: -1}, &proc.userTransformEventsByTimeTaken)
 			}
 
 			eventsToTransform = proc.getDestTransformerEvents(response, metadata, destination)
