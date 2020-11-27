@@ -235,7 +235,7 @@ func (bq *HandleT) loadUserTables() (errorMap map[string]error) {
 		return ""
 	}
 
-	userColMap := bq.Uploader.GetTableSchemaAfterUpload("users")
+	userColMap := bq.Uploader.GetTableSchemaInWarehouse("users")
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "id" {
