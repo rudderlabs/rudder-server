@@ -74,6 +74,8 @@ func (c *context) Finish() {
 
 const (
 	WriteKeyEnabled       = "enabled-write-key"
+	WriteKeyEnabledNoUT   = "enabled-write-key-no-ut"
+	WriteKeyEnabledOnlyUT = "enabled-write-key-only-ut"
 	SourceIDEnabled       = "enabled-source"
 	SourceIDDisabled      = "disabled-source"
 	DestinationIDEnabledA = "enabled-destination-a" // test destination router
@@ -149,6 +151,65 @@ var sampleBackendConfig = backendconfig.SourcesT{
 						Name:        "destination-definition-name-disabled",
 						DisplayName: "destination-definition-display-name-disabled",
 						Config:      map[string]interface{}{},
+					},
+				},
+			},
+		},
+		{
+			ID:       SourceIDEnabled,
+			WriteKey: WriteKeyEnabledNoUT,
+			Enabled:  true,
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestinationIDEnabledA,
+					Name:               "A",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "enabled-destination-a-definition-id",
+						Name:        "enabled-destination-a-definition-name",
+						DisplayName: "enabled-destination-a-definition-display-name",
+						Config:      map[string]interface{}{},
+					},
+				},
+				// This destination should receive no events
+				{
+					ID:                 DestinationIDDisabled,
+					Name:               "C",
+					Enabled:            false,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-disabled",
+						Name:        "destination-definition-name-disabled",
+						DisplayName: "destination-definition-display-name-disabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+			},
+		},
+		{
+			ID:       SourceIDEnabled,
+			WriteKey: WriteKeyEnabledOnlyUT,
+			Enabled:  true,
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestinationIDEnabledB,
+					Name:               "B",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "enabled-destination-b-definition-id",
+						Name:        "MINIO",
+						DisplayName: "enabled-destination-b-definition-display-name",
+						Config:      map[string]interface{}{},
+					},
+					Transformations: []backendconfig.TransformationT{
+						{
+							ID:          "transformation-id",
+							Name:        "transformation-name",
+							Description: "transformation-description",
+							VersionID:   "transformation-version-id",
+						},
 					},
 				},
 			},
@@ -275,7 +336,7 @@ var _ = Describe("Processor", func() {
 			Expect(didWork).To(Equal(false))
 		})
 
-		It("should process ToRetry and Unprocessed jobs", func() {
+		It("should process ToRetry and Unprocessed jobs to destination without user transformation", func() {
 			var messages map[string]mockEventData = map[string]mockEventData{
 				// this message should be delivered only to destination A
 				"message-1": {
@@ -288,7 +349,170 @@ var _ = Describe("Processor", func() {
 					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
 					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
 				},
-				// this message should be delivered only to destination A
+				// this message should not be delivered to destination A
+				"message-2": {
+					id:                        "2",
+					jobid:                     1010,
+					originalTimestamp:         "2000-02-02T01:23:45",
+					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
+				},
+				// this message should be delivered to all destinations
+				"message-3": {
+					id:                 "3",
+					jobid:              2010,
+					originalTimestamp:  "malformed timestamp",
+					sentAt:             "2000-03-02T01:23:15",
+					expectedSentAt:     "2000-03-02T01:23:15.000Z",
+					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+					integrations:       map[string]bool{"All": true},
+				},
+				// this message should be delivered to all destinations (default All value)
+				"message-4": {
+					id:                        "4",
+					jobid:                     2010,
+					originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
+					expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
+					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{},
+				},
+				// this message should not be delivered to any destination
+				"message-5": {
+					id:                 "5",
+					jobid:              2010,
+					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+					integrations:       map[string]bool{"All": false},
+				},
+			}
+
+			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         1010,
+					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  createBatchPayload(WriteKeyEnabledNoUT, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         1002,
+					CreatedAt:     time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+			}
+
+			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+				{
+					UUID:         uuid.NewV4(),
+					JobID:        2010,
+					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CustomVal:    gatewayCustomVal[0],
+					EventPayload: createBatchPayload(WriteKeyEnabledNoUT, "2002-01-02T02:23:45.000Z", []mockEventData{messages["message-3"], messages["message-4"], messages["message-5"]}),
+					LastJobStatus: jobsdb.JobStatusT{
+						AttemptNum: 1,
+					},
+					Parameters: nil,
+				},
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         2002,
+					CreatedAt:     time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         2003,
+					CreatedAt:     time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+			}
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+
+			transformExpectations := map[string]transformExpectation{
+				DestinationIDEnabledA: {
+					events:                    3,
+					messageIds:                "message-1,message-3,message-4",
+					receiveMetadata:           true,
+					destinationDefinitionName: "enabled-destination-a-definition-name",
+				},
+			}
+
+			// We expect one transform call to destination A, after callUnprocessed.
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
+				DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledA, transformExpectations[DestinationIDEnabledA]))
+
+			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
+				Expect(job.UUID.String()).To(testutils.BeValidUUID())
+				Expect(job.JobID).To(Equal(int64(0)))
+				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 10*time.Millisecond))
+				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
+				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer", "received_at": ""}`))
+			}
+
+			// One Store call is expected for all events
+			callStoreRouter := c.mockRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).
+				Do(func(jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(2))
+					for i, job := range jobs {
+						assertStoreJob(job, i, "value-enabled-destination-a")
+					}
+				})
+
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter).
+				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
+					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1) // id 1002
+					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1) // id 1010
+					assertJobStatus(toRetryJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2002
+					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2003
+					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2010
+				})
+
+			var processor *HandleT = &HandleT{
+				transformer: mockTransformer,
+			}
+
+			processorSetupAndAssertJobHandling(processor, c)
+		})
+
+		It("should process ToRetry and Unprocessed jobs to destination with only user transformation", func() {
+			var messages map[string]mockEventData = map[string]mockEventData{
+				// this message should only be delivered to destination B
+				"message-1": {
+					id:                        "1",
+					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-b-definition-display-name": true},
+				},
+				// this message should not be delivered to destination B
 				"message-2": {
 					id:                        "2",
 					jobid:                     1010,
@@ -332,7 +556,7 @@ var _ = Describe("Processor", func() {
 					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
 					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  createBatchPayload(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
+					EventPayload:  createBatchPayload(WriteKeyEnabledOnlyUT, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    nil,
 				},
@@ -355,7 +579,7 @@ var _ = Describe("Processor", func() {
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
 					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
 					CustomVal:    gatewayCustomVal[0],
-					EventPayload: createBatchPayload(WriteKeyEnabled, "2002-01-02T02:23:45.000Z", []mockEventData{messages["message-3"], messages["message-4"], messages["message-5"]}),
+					EventPayload: createBatchPayload(WriteKeyEnabledOnlyUT, "2002-01-02T02:23:45.000Z", []mockEventData{messages["message-3"], messages["message-4"], messages["message-5"]}),
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 1,
 					},
@@ -390,25 +614,15 @@ var _ = Describe("Processor", func() {
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 
 			transformExpectations := map[string]transformExpectation{
-				DestinationIDEnabledA: {
-					events:                    4,
-					messageIds:                "message-1,message-2,message-3,message-4",
-					receiveMetadata:           true,
-					destinationDefinitionName: "enabled-destination-a-definition-name",
-				},
 				DestinationIDEnabledB: {
-					events:                    2,
-					messageIds:                "message-3,message-4",
+					events:                    3,
+					messageIds:                "message-1,message-3,message-4",
 					destinationDefinitionName: "minio",
 				},
 			}
 
-			// We expect one transform call to destination A, after sending numEvents stat.
-			callDestATransform := mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
-				DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledA, transformExpectations[DestinationIDEnabledA]))
-
 			// We expect one call to user transform for destination B
-			callUserTransform := mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callDestATransform).
+			callUserTransform := mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
 				DoAndReturn(func(clientEvents []transformer.TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) transformer.ResponseT {
 					Expect(breakIntoBatchWhenUserChanges).To(BeFalse())
 					Expect(url).To(Equal("http://localhost:9090/customTransform"))
@@ -442,15 +656,6 @@ var _ = Describe("Processor", func() {
 				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer", "received_at": ""}`))
 			}
 
-			// One Store call is expected for all events
-			callStoreRouter := c.mockRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).
-				Do(func(jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
-					for i, job := range jobs {
-						assertStoreJob(job, i, "value-enabled-destination-a")
-					}
-				})
-
 			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).
 				Do(func(jobs []*jobsdb.JobT) {
 					Expect(jobs).To(HaveLen(2))
@@ -459,7 +664,7 @@ var _ = Describe("Processor", func() {
 					}
 				})
 
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).After(callStoreRouter).
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
 					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1) // id 1002
