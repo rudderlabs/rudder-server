@@ -92,6 +92,9 @@ func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) 
 	if batchrouter.IsObjectStorageDestination(destination.DestinationDefinition.Name) {
 		module = "batch_router"
 	}
+	if batchrouter.IsWarehouseDestination(destination.DestinationDefinition.Name) {
+		module = "warehouse"
+	}
 	tags := map[string]string{
 		"module":      module,
 		"destination": destinationTag,

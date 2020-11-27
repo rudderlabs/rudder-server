@@ -315,19 +315,19 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 			// END: request to destination endpoint
 
+			destinationTag := misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name)
 			routerResponseStat := stats.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
 				"destType":       worker.rt.destName,
 				"respStatusCode": strconv.Itoa(respStatusCode),
+				"destination":    destinationTag,
 			})
-
 			routerResponseStat.Count(len(destinationJob.JobMetadataArray))
-			destinationTag := misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name)
-			tags := map[string]string{
+
+			eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
 				"module":      "router",
 				"destType":    worker.rt.destName,
 				"destination": destinationTag,
-			}
-			eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, tags)
+			})
 			if isSuccessStatus(respStatusCode) {
 				eventsDeliveredStat.Count(len(destinationJob.JobMetadataArray))
 			}
@@ -1051,10 +1051,12 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 		"destType": rt.destName,
 	})
 
-	rt.retryAttemptsStat = stats.NewStat(
-		fmt.Sprintf("router.%s_retry_attempts", rt.destName), stats.CountType)
-	rt.eventsAbortedStat = stats.NewStat(
-		fmt.Sprintf("router.%s_events_aborted", rt.destName), stats.CountType)
+	rt.retryAttemptsStat = stats.NewTaggedStat(`router_retry_attempts`, stats.CountType, stats.Tags{
+		"destType": rt.destName,
+	})
+	rt.eventsAbortedStat = stats.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
+		"destType": rt.destName,
+	})
 
 	rt.transformer = transformer.NewTransformer()
 	rt.transformer.Setup()

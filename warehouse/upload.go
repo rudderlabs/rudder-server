@@ -815,7 +815,9 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 				StagingFileLocation: stagingFile.Location,
 				Schema:              job.upload.Schema,
 				SourceID:            job.warehouse.Source.ID,
+				SourceName:          job.warehouse.Source.Name,
 				DestinationID:       destID,
+				DestinationName:     job.warehouse.Destination.Name,
 				DestinationType:     destType,
 				DestinationConfig:   job.warehouse.Destination.Config,
 			}

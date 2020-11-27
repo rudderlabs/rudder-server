@@ -16,7 +16,9 @@ type PayloadT struct {
 	StagingFileLocation string
 	Schema              map[string]map[string]string
 	SourceID            string
+	SourceName          string
 	DestinationID       string
+	DestinationName     string
 	DestinationType     string
 	DestinationConfig   interface{}
 	LoadFileIDs         []int64
