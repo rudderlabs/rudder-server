@@ -55,7 +55,7 @@ func init() {
 }
 
 func loadConfig() {
-	ObjectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB"}
+	ObjectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "CONFLUENT_CLOUD"}
 	KVStoreDestinations = []string{"REDIS"}
 	Destinations = append(ObjectStreamDestinations, KVStoreDestinations...)
 	customManagerMap = make(map[string]*CustomManagerT)
