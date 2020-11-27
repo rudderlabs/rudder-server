@@ -124,11 +124,12 @@ func getNextMode(currentMode string) string {
 	case normalMode:
 		return degradedMode
 	case degradedMode:
-		return ""
+		return degradedMode
 	case migrationMode: //Staying in the migrationMode forever on repeated restarts.
 		return migrationMode
 	}
-	return ""
+
+	return degradedMode
 }
 
 func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
@@ -141,7 +142,10 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 	case migrationMode:
 		recoveryHandler = &MigrationModeHandler{recoveryData: recoveryData}
 	default:
-		panic("Invalid Recovery Mode " + recoveryData.Mode)
+		//If the recovery mode is not one of the above modes, defaulting to degraded mode.
+		pkgLogger.Info("DB Recovery: Invalid recovery mode. Defaulting to degraded mode.")
+		recoveryData.Mode = degradedMode
+		recoveryHandler = &DegradedModeHandler{recoveryData: recoveryData}
 	}
 	return recoveryHandler
 }
@@ -207,14 +211,9 @@ func HandleRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode str
 	if !isForced && recoveryHandler.HasThresholdReached() {
 		pkgLogger.Info("DB Recovery: Moving to next State. Threshold reached for " + recoveryData.Mode)
 		nextMode := getNextMode(recoveryData.Mode)
-		if nextMode == "" {
-			pkgLogger.Fatal("Threshold reached for degraded mode")
-			panic("Not a valid mode")
-		} else {
-			recoveryData.Mode = nextMode
-			recoveryHandler = NewRecoveryHandler(&recoveryData)
-			alertOps(recoveryData.Mode)
-		}
+		recoveryData.Mode = nextMode
+		recoveryHandler = NewRecoveryHandler(&recoveryData)
+		alertOps(recoveryData.Mode)
 	}
 
 	recoveryHandler.RecordAppStart(currTime)

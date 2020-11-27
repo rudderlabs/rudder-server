@@ -247,9 +247,6 @@ storagePath = "/tmp/recovery_data.json"
     [recovery.normal]
     crashThreshold = 5
     durationInS = 300
-    [recovery.degraded]
-    crashThreshold = 5
-    durationInS = 300
 
 # logger configuration
 [Logger]
