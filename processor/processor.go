@@ -155,10 +155,10 @@ func NewProcessor() *HandleT {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, s stats.Stats) {
+func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB) {
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
-	proc.stats = s
+	proc.stats = stats.DefaultStats
 
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
