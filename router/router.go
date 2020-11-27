@@ -323,12 +323,12 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			})
 			routerResponseStat.Count(len(destinationJob.JobMetadataArray))
 
-			eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
-				"module":      "router",
-				"destType":    worker.rt.destName,
-				"destination": destinationTag,
-			})
 			if isSuccessStatus(respStatusCode) {
+				eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
+					"module":      "router",
+					"destType":    worker.rt.destName,
+					"destination": destinationTag,
+				})
 				eventsDeliveredStat.Count(len(destinationJob.JobMetadataArray))
 			}
 
@@ -627,8 +627,8 @@ func (rt *HandleT) initWorkers() {
 			routerJobs:       make([]types.RouterJobT, 0),
 			destinationJobs:  make([]types.DestinationJobT, 0),
 			rt:               rt,
-			deliveryTimeStat: stats.NewStat(fmt.Sprintf("router.%s_delivery_time", rt.destName), stats.TimerType),
-			batchTimeStat:    stats.NewStat(fmt.Sprintf("router.%s_batch_time", rt.destName), stats.TimerType),
+			deliveryTimeStat: stats.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			batchTimeStat:    stats.NewTaggedStat("router_batch_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
 			abortedUserIDMap: make(map[string]int)}
 		rt.workers[i] = worker
 		rruntime.Go(func() {
@@ -753,8 +753,8 @@ func (rt *HandleT) statusInsertLoop() {
 	//Wait for the responses from statusQ
 	lastUpdate := time.Now()
 
-	statusStat := stats.NewStat("router.status_loop", stats.TimerType)
-	countStat := stats.NewStat("router.status_events", stats.CountType)
+	statusStat := stats.NewTaggedStat("router_status_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
+	countStat := stats.NewTaggedStat("router_status_events", stats.CountType, stats.Tags{"destType": rt.destName})
 
 	for {
 		rt.perfStats.Start()
@@ -908,8 +908,8 @@ func (rt *HandleT) generatorLoop() {
 
 	rt.logger.Info("Generator started")
 
-	generatorStat := stats.NewStat("router.generator_loop", stats.TimerType)
-	countStat := stats.NewStat("router.generator_events", stats.CountType)
+	generatorStat := stats.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
+	countStat := stats.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": rt.destName})
 
 	for {
 		generatorStat.Start()
