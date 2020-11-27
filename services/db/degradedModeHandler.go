@@ -19,9 +19,7 @@ func (handler *DegradedModeHandler) RecordAppStart(currTime int64) {
 }
 
 func (handler *DegradedModeHandler) HasThresholdReached() bool {
-	maxCrashes := config.GetInt("recovery.degraded.crashThreshold", 5)
-	duration := config.GetInt("recovery.degraded.durationInS", 300)
-	return CheckOccurences(handler.recoveryData.DegradedModeStartTimes, maxCrashes, duration)
+	return false
 }
 
 func (handler *DegradedModeHandler) Handle() {

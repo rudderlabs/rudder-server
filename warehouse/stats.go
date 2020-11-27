@@ -25,6 +25,10 @@ func (job *UploadJobT) warehouseID() string {
 	return getWarehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name)
 }
 
+func (jobRun *JobRunT) warehouseID() string {
+	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName)
+}
+
 func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.RudderStats {
 	tags := map[string]string{
 		"module":      moduleName,
@@ -53,7 +57,7 @@ func (jobRun *JobRunT) timerStat(name string) stats.RudderStats {
 	return stats.NewTaggedStat(name, stats.TimerType, map[string]string{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
-		"warehouseID": strings.ReplaceAll(jobRun.whIdentifier, ":", "-"),
+		"warehouseID": jobRun.warehouseID(),
 	})
 }
 
@@ -61,7 +65,7 @@ func (jobRun *JobRunT) counterStat(name string) stats.RudderStats {
 	return stats.NewTaggedStat(name, stats.CountType, map[string]string{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
-		"warehouseID": strings.ReplaceAll(jobRun.whIdentifier, ":", "-"),
+		"warehouseID": jobRun.warehouseID(),
 	})
 }
 
@@ -72,7 +76,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %w", job.warehouse.Identifier, err)
 		return
 	}
-	job.counterStat("rows_synced").Count(int(numUploadedEvents))
+	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
 
 	// Total staged events in the upload
 	numStagedEvents, err := getTotalEventsStaged(job.upload.StartStagingFileID, job.upload.EndStagingFileID)
@@ -81,15 +85,6 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 		return
 	}
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
-
-	// Delay for the oldest event in the batch
-	firstEventAt, err := getFirstStagedEventAt(job.upload.StartStagingFileID)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %w", job.warehouse.Identifier, err)
-		return
-	}
-
-	job.timerStat("event_delivery_time").SendTiming(time.Now().Sub(firstEventAt))
 
 	job.counterStat("upload_success").Count(1)
 }
@@ -101,7 +96,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %w", job.warehouse.Identifier, err)
 		return
 	}
-	job.counterStat("rows_synced").Count(int(numUploadedEvents))
+	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
 
 	// Total staged events in the upload
 	numStagedEvents, err := getTotalEventsStaged(job.upload.StartStagingFileID, job.upload.EndStagingFileID)
@@ -120,6 +115,8 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	tablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
 	if !misc.Contains(tablesToRecordEventsMetric, strings.ToLower(tableName)) {
 		tableName = "others"
+	} else {
+		job.counterStat(`event_delivery`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
 	}
 	job.counterStat(`rows_synced`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
