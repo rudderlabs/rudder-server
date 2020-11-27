@@ -53,7 +53,7 @@ func (jobRun *JobRunT) timerStat(name string) stats.RudderStats {
 	return stats.NewTaggedStat(name, stats.TimerType, map[string]string{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
-		"warehouseID": jobRun.whIdentifier,
+		"warehouseID": strings.ReplaceAll(jobRun.whIdentifier, ":", "-"),
 	})
 }
 
@@ -61,7 +61,7 @@ func (jobRun *JobRunT) counterStat(name string) stats.RudderStats {
 	return stats.NewTaggedStat(name, stats.CountType, map[string]string{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
-		"warehouseID": jobRun.whIdentifier,
+		"warehouseID": strings.ReplaceAll(jobRun.whIdentifier, ":", "-"),
 	})
 }
 

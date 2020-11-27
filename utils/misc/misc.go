@@ -891,6 +891,7 @@ func MinInt(a, b int) int {
 func GetTagName(id string, names ...string) string {
 	var truncatedNames string
 	for _, name := range names {
+		name = strings.ReplaceAll(name, ":", "-")
 		truncatedNames += TruncateStr(name, 15) + "_"
 	}
 	return truncatedNames + TailTruncateStr(id, 6)

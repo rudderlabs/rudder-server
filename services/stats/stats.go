@@ -123,14 +123,11 @@ func NewStat(Name string, StatType string) (rStats RudderStats) {
 }
 
 func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
-	tags["instanceName"] = instanceID
 	tagStr := StatType
-	tagVals := make([]string, 0, len(tags)*2)
+	tags["instanceName"] = instanceID
 	for tagName, tagVal := range tags {
 		tagName = strings.ReplaceAll(tagName, ":", "-")
-		tagVal = strings.ReplaceAll(tagVal, ":", "-")
 		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
-		tagVals = append(tagVals, tagName, tagVal)
 	}
 
 	taggedClientsMapLock.RLock()
@@ -139,6 +136,12 @@ func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats
 
 	if !found {
 		taggedClientsMapLock.Lock()
+		tagVals := make([]string, 0, len(tags)*2)
+		for tagName, tagVal := range tags {
+			tagName = strings.ReplaceAll(tagName, ":", "-")
+			tagVal = strings.ReplaceAll(tagVal, ":", "-")
+			tagVals = append(tagVals, tagName, tagVal)
+		}
 		var err error
 		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...))
 		taggedClientsMap[tagStr] = taggedClient
