@@ -437,7 +437,7 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	errorMap[usersTable] = nil
 
-	userColMap := sf.Uploader.GetTableSchemaAfterUpload(usersTable)
+	userColMap := sf.Uploader.GetTableSchemaInWarehouse(usersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "ID" {

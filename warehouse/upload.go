@@ -327,11 +327,7 @@ func (job *UploadJobT) run() (err error) {
 				if err != nil {
 					break
 				}
-				schemaHandle.schemaAfterUpload = diff.UpdatedSchema
-				schemaHandle.schemaInWarehouse = schemaHandle.schemaAfterUpload
-			} else {
-				// no alter done to schema in this upload
-				schemaHandle.schemaAfterUpload = schemaHandle.schemaInWarehouse
+				schemaHandle.schemaInWarehouse = diff.UpdatedSchema
 			}
 			newStatus = nextUploadState.completed
 
@@ -968,8 +964,8 @@ func (job *UploadJobT) GetSchemaInWarehouse() (schema warehouseutils.SchemaT) {
 	return job.schemaHandle.schemaInWarehouse
 }
 
-func (job *UploadJobT) GetTableSchemaAfterUpload(tableName string) warehouseutils.TableSchemaT {
-	return job.schemaHandle.schemaAfterUpload[tableName]
+func (job *UploadJobT) GetTableSchemaInWarehouse(tableName string) warehouseutils.TableSchemaT {
+	return job.schemaHandle.schemaInWarehouse[tableName]
 }
 
 func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
