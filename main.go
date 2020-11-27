@@ -185,9 +185,6 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 
 	migrationMode := application.Options().MigrationMode
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode, false)
-	routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode, true)
-	batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode, true)
-	procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
 
 	enableGateway := true
 
@@ -197,7 +194,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 				StartRouter(enableRouter, &routerDB, &batchRouterDB)
 			}
 			startProcessorFunc := func() {
-				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+				clearDBBool := false
+				StartProcessor(&clearDBBool, migrationMode, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -207,7 +205,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 	}
 
 	StartRouter(enableRouter, &routerDB, &batchRouterDB)
-	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+	StartProcessor(clearDB, migrationMode, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 
 	if enableGateway {
 		var gateway gateway.HandleT
@@ -218,6 +216,34 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+}
+
+//NOTE: StartProcessor and StartRouter should be called in order and from the same thread.
+//StartProcessor sets up router, batch router, proc error DBs, which router also depends on.
+//enableRouter will be true only if enableProcessor is true. This is a must.
+//If otherwise, server may crash because setup of router and batch router DB is not called.
+
+//StartProcessor atomically starts processor process if not already started
+func StartProcessor(clearDB *bool, migrationMode string, enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT) {
+	moduleLoadLock.Lock()
+	defer moduleLoadLock.Unlock()
+
+	if processorLoaded {
+		return
+	}
+
+	if enableProcessor {
+		//setting up router, batch router, proc error DBs only if processor is enabled.
+		routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode, true)
+		batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode, true)
+		procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
+
+		var processor = processor.NewProcessor()
+		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, stats.DefaultStats)
+		processor.Start()
+
+		processorLoaded = true
+	}
 }
 
 //StartRouter atomically starts router process if not already started
@@ -232,24 +258,6 @@ func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
 	if enableRouter {
 		go monitorDestRouters(routerDB, batchRouterDB)
 		routerLoaded = true
-	}
-}
-
-//StartProcessor atomically starts processor process if not already started
-func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT) {
-	moduleLoadLock.Lock()
-	defer moduleLoadLock.Unlock()
-
-	if processorLoaded {
-		return
-	}
-
-	if enableProcessor {
-		var processor = processor.NewProcessor()
-		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, stats.DefaultStats)
-		processor.Start()
-
-		processorLoaded = true
 	}
 }
 
