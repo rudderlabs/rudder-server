@@ -190,12 +190,12 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 
 	if application.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startRouterFunc := func() {
-				StartRouter(enableRouter, &routerDB, &batchRouterDB)
-			}
 			startProcessorFunc := func() {
 				clearDBBool := false
 				StartProcessor(&clearDBBool, migrationMode, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+			}
+			startRouterFunc := func() {
+				StartRouter(enableRouter, &routerDB, &batchRouterDB)
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -204,8 +204,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 		}
 	}
 
-	StartRouter(enableRouter, &routerDB, &batchRouterDB)
 	StartProcessor(clearDB, migrationMode, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+	StartRouter(enableRouter, &routerDB, &batchRouterDB)
 
 	if enableGateway {
 		var gateway gateway.HandleT
