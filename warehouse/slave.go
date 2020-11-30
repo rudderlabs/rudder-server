@@ -150,6 +150,8 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 	var loadFileIDs []int64
 	loadFileIDChan := make(chan int64, len(jobRun.outputFileWritersMap))
 	uploadJobChan := make(chan *loadFileUploadJob, len(jobRun.outputFileWritersMap))
+	// close chan to avoid memory leak ranging over it
+	defer close(uploadJobChan)
 	uploadErrorChan := make(chan error, numLoadFileUploadWorkers)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -190,7 +192,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 		case err := <-uploadErrorChan:
 			pkgLogger.Errorf("received error while uploading load file to bucket for staging file id %s, cancelling the context: err %w", job.StagingFileID, err)
 			return []int64{}, err
-		case <-time.After(5 * time.Minute):
+		case <-time.After(slaveUploadTimeout):
 			return []int64{}, fmt.Errorf("Load files upload timed out for staging file id: %v", jobRun.job.StagingFileID)
 		}
 	}
