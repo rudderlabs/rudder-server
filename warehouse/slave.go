@@ -152,6 +152,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 	uploadJobChan := make(chan *loadFileUploadJob, len(jobRun.outputFileWritersMap))
 	uploadErrorChan := make(chan error, numLoadFileUploadWorkers)
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	for i := 0; i < numLoadFileUploadWorkers; i++ {
 		go func(ctx context.Context) {
 			for uploadJob := range uploadJobChan {
@@ -194,8 +195,6 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 			return []int64{}, fmt.Errorf("Load files upload timed out for staging file id: %v", jobRun.job.StagingFileID)
 		}
 	}
-	return loadFileIDs, nil
-
 }
 
 func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile misc.GZipWriter, tableName string) (filemanager.UploadOutput, error) {
