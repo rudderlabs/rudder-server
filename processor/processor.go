@@ -1097,9 +1097,8 @@ func (proc *HandleT) mainLoop() {
 			if currLoopSleep > maxLoopSleep {
 				currLoopSleep = maxLoopSleep
 			}
-
-			time.Sleep(currLoopSleep)
 		}
+		time.Sleep(currLoopSleep)
 	}
 }
 
