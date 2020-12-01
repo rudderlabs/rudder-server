@@ -233,6 +233,7 @@ func (proc *HandleT) Start() {
 var (
 	loopSleep                           time.Duration
 	maxLoopSleep                        time.Duration
+	fixedLoopSleep                      time.Duration
 	maxEventsToProcess                  int
 	avgEventsInRequest                  int
 	dbReadBatchSize                     int
@@ -254,6 +255,7 @@ var (
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
 	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
+	fixedLoopSleep = config.GetDuration("Processor.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
@@ -1091,14 +1093,16 @@ func (proc *HandleT) mainLoop() {
 
 	for {
 		if proc.handlePendingGatewayJobs() {
-			currLoopSleep = 500 * loopSleep
+			currLoopSleep = time.Duration(0)
 		} else {
 			currLoopSleep = 2*currLoopSleep + loopSleep
 			if currLoopSleep > maxLoopSleep {
 				currLoopSleep = maxLoopSleep
 			}
+			time.Sleep(currLoopSleep)
 		}
-		time.Sleep(currLoopSleep)
+		time.Sleep(fixedLoopSleep)
+
 	}
 }
 

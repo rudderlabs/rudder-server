@@ -139,6 +139,7 @@ failedOnly=false
 jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
 readSleepInMS = 1000
+fixedLoopSleepInMS = 0
 noOfWorkers = 64
 noOfJobsPerChannel = 1000
 noOfJobsToBatchInAWorker = 20
@@ -211,6 +212,7 @@ populateHistoricIdentities = false
 [Processor]
 loopSleepInMS = 10
 maxLoopSleepInMS = 5000
+fixedLoopSleepInMS = 0
 maxLoopProcessEvents = 10000
 avgEventsInRequest = 1
 transformBatchSize = 100
