@@ -58,6 +58,7 @@ type HandleT struct {
 	statDBR                      stats.RudderStats
 	statDBW                      stats.RudderStats
 	statLoopTime                 stats.RudderStats
+	eventSchemasTime             stats.RudderStats
 	statSessionTransform         stats.RudderStats
 	statUserTransform            stats.RudderStats
 	statDestTransform            stats.RudderStats
@@ -185,6 +186,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statDBW = proc.stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
 	proc.statProcErrDBW = proc.stats.NewStat("processor.proc_err_db_write", stats.CountType)
 	proc.statLoopTime = proc.stats.NewStat("processor.loop_time", stats.TimerType)
+	proc.eventSchemasTime = proc.stats.NewStat("processor.event_schemas_time", stats.TimerType)
 	proc.statSessionTransform = proc.stats.NewStat("processor.session_transform_time", stats.TimerType)
 	proc.statUserTransform = proc.stats.NewStat("processor.user_transform_time", stats.TimerType)
 	proc.statDestTransform = proc.stats.NewStat("processor.dest_transform_time", stats.TimerType)
@@ -1035,12 +1037,14 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		proc.pStatsDBR.End(0)
 		return false
 	}
+	proc.eventSchemasTime.Start()
 	if enableEventSchemasFeature {
 		for _, unprocessedJob := range unprocessedList {
 			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
 			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
 		}
 	}
+	proc.eventSchemasTime.End()
 	// handle pending jobs
 	proc.statListSort.Start()
 	combinedList := append(unprocessedList, retryList...)

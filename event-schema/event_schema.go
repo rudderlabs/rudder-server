@@ -111,6 +111,7 @@ var (
 	updatedEventModels    map[string]*EventModelT
 	updatedSchemaVersions map[string]*SchemaVersionT
 	pkgLogger             logger.LoggerI
+	noOfWorkers			  int
 )
 
 const EVENT_MODELS_TABLE = "event_models"
@@ -137,6 +138,7 @@ func loadConfig() {
 	adminUser = config.GetEnv("RUDDER_ADMIN_USER", "rudder")
 	adminPassword = config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
 	reservoirSampleSize = config.GetInt("EventSchemas.sampleEventsSize", 5)
+	noOfWorkers = config.GetInt("EventSchemas.noOfWorkers", 128)
 
 	if adminPassword == "rudderstack" {
 		fmt.Println("[EventSchemas] You are using default password. Please change it by setting env variable RUDDER_ADMIN_PASSWORD")
@@ -608,11 +610,13 @@ func (manager *EventSchemaManagerT) Setup() {
 	manager.schemaVersionMap = make(SchemaVersionMapT)
 
 	manager.populateEventSchemas()
-	eventSchemaChannel = make(chan *GatewayEventBatchT, 1000)
+	eventSchemaChannel = make(chan *GatewayEventBatchT, 10000)
 
-	rruntime.Go(func() {
-		manager.recordEvents()
-	})
+	for i := 0; i < noOfWorkers; i++ {
+		rruntime.Go(func() {
+			manager.recordEvents()
+		})
+	}
 
 	rruntime.Go(func() {
 		manager.flushEventSchemas()
