@@ -185,6 +185,7 @@ func (manager *EventSchemaManagerT) updateEventModelCache(eventModel *EventModel
 		manager.eventModelMap[writeKey][eventType][eventIdentifier] = eventModel
 	} else {
 		stats.NewTaggedStat("eventSchemas.droppedEventModelsCount", stats.CountType, stats.Tags{}).Increment()
+		return
 	}
 
 	if toCreateOrUpdate {
@@ -204,7 +205,8 @@ func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *Sche
 	if len(manager.schemaVersionMap[eventModelID]) < schemaVersionPerEventModelLimit {
 		manager.schemaVersionMap[eventModelID][schemaHash] = schemaVersion
 	} else {
-		stats.NewTaggedStat("eventSchemas.droppedSchemaVersionsCount", stats.CountType, stats.Tags{"eventModelID":eventModelID}).Increment()
+		stats.NewTaggedStat("eventSchemas.droppedSchemaVersionsCount", stats.CountType, stats.Tags{"eventModelID": eventModelID}).Increment()
+		return
 	}
 
 	if toCreateOrUpdate {
