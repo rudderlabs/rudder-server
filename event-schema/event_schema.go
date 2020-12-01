@@ -162,7 +162,7 @@ func (manager *EventSchemaManagerT) RecordEventSchema(writeKey string, eventBatc
 	select {
 	case eventSchemaChannel <- &GatewayEventBatchT{writeKey, eventBatch}:
 	default:
-		stats.NewTaggedStat("eventSchemas.droppedEventsCount", stats.CountType, nil).Increment()
+		stats.NewTaggedStat("eventSchemas.droppedEventsCount", stats.CountType, stats.Tags{}).Increment()
 	}
 	return true
 }
@@ -184,7 +184,7 @@ func (manager *EventSchemaManagerT) updateEventModelCache(eventModel *EventModel
 	if len(manager.eventModelMap[writeKey]) < eventModelLimit {
 		manager.eventModelMap[writeKey][eventType][eventIdentifier] = eventModel
 	} else {
-		stats.NewTaggedStat("eventSchemas.droppedEventModelsCount", stats.CountType, nil).Increment()
+		stats.NewTaggedStat("eventSchemas.droppedEventModelsCount", stats.CountType, stats.Tags{}).Increment()
 	}
 
 	if toCreateOrUpdate {
@@ -204,7 +204,7 @@ func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *Sche
 	if len(manager.schemaVersionMap[eventModelID]) < schemaVersionPerEventModelLimit {
 		manager.schemaVersionMap[eventModelID][schemaHash] = schemaVersion
 	} else {
-		stats.NewTaggedStat("eventSchemas.droppedSchemaVersionsCount", stats.CountType, map[string]int{"evebtModelID":eventModelID}).Increment()
+		stats.NewTaggedStat("eventSchemas.droppedSchemaVersionsCount", stats.CountType, stats.Tags{"eventModelID":eventModelID}).Increment()
 	}
 
 	if toCreateOrUpdate {
