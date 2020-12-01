@@ -111,13 +111,20 @@ func (brt *HandleT) backendConfigSubscriber() {
 							}
 							encounteredMergeRuleMapLock.Unlock()
 						}
-
-						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
+						// test and send connection status to control plane
+						if val, ok := destination.Config["testConnection"].(bool); ok && val {
 							destination := destination
-							rruntime.Go(func() {
-								testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
-								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
-							})
+							if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
+								rruntime.Go(func() {
+									testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
+									destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
+								})
+							} else {
+								rruntime.Go(func() {
+									testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination)
+									destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
+								})
+							}
 						}
 					}
 				}
