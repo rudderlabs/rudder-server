@@ -1091,7 +1091,7 @@ func (proc *HandleT) mainLoop() {
 
 	for {
 		if proc.handlePendingGatewayJobs() {
-			currLoopSleep = 10 * loopSleep
+			currLoopSleep = 50 * loopSleep
 		} else {
 			currLoopSleep = 2*currLoopSleep + loopSleep
 			if currLoopSleep > maxLoopSleep {
