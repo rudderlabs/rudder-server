@@ -328,6 +328,7 @@ func (job *UploadJobT) run() (err error) {
 					break
 				}
 				schemaHandle.schemaInWarehouse = diff.UpdatedSchema
+				job.recordSchemaAlter(diff)
 			}
 			newStatus = nextUploadState.completed
 

@@ -151,3 +151,20 @@ func recordStagedRowsStat(totalEvents int, destType, destID, sourceName, destNam
 	}
 	stats.NewTaggedStat("rows_staged", stats.CountType, tags).Count(totalEvents)
 }
+
+func (job *UploadJobT) recordSchemaAlter(diff warehouseutils.SchemaDiffT) {
+	totalTablesAdded := len(diff.Tables)
+	if totalTablesAdded > 0 {
+		job.counterStat("tables_added").Count(totalTablesAdded)
+	}
+	totalColumnsAdded := 0
+	for tableName, columnMap := range diff.ColumnMaps {
+		if misc.ContainsString(diff.Tables, tableName) {
+			continue
+		}
+		totalColumnsAdded += len(columnMap)
+	}
+	if totalColumnsAdded > 0 {
+		job.counterStat("columns_added").Count(totalColumnsAdded)
+	}
+}

@@ -518,6 +518,11 @@ func connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 	if db, err = sql.Open("postgres", url); err != nil {
 		return nil, fmt.Errorf("redshift connect error : (%v)", err)
 	}
+	stmt := `SET query_group to 'RudderStack'`
+	_, err = db.Exec(stmt)
+	if err != nil {
+		return nil, fmt.Errorf("redshift set query_group error : %v", err)
+	}
 	return db, nil
 }
 
