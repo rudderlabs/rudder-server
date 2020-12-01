@@ -1003,6 +1003,7 @@ func (rt *HandleT) generatorLoop() {
 
 		countStat.Count(len(combinedList))
 		generatorStat.End()
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
