@@ -434,6 +434,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 			}
 			_, err = stmt.Exec()
 			assertTxnError(err, txn)
+			stats.NewTaggedStat("event_schemas_update_event_model_count", stats.GaugeType, stats.Tags{}).Gauge(len(eventModelIds))
 			pkgLogger.Debugf("[EventSchemas][Flush] %d new event types", len(updatedEventModels))
 		}
 
@@ -461,6 +462,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 			}
 			_, err = stmt.Exec()
 			assertTxnError(err, txn)
+			stats.NewTaggedStat("event_schemas_update_schema_version_count", stats.GaugeType, stats.Tags{}).Gauge(len(versionIDs))
 			pkgLogger.Debugf("[EventSchemas][Flush] %d new schema versions", len(schemaVersionsInCache))
 		}
 
