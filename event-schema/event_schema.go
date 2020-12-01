@@ -181,12 +181,7 @@ func (manager *EventSchemaManagerT) updateEventModelCache(eventModel *EventModel
 	if !ok {
 		manager.eventModelMap[writeKey][eventType] = make(map[string]*EventModelT)
 	}
-	if len(manager.eventModelMap[writeKey]) < eventModelLimit {
-		manager.eventModelMap[writeKey][eventType][eventIdentifier] = eventModel
-	} else {
-		stats.NewTaggedStat("event_schemas_dropped_event_models_count", stats.CountType, stats.Tags{}).Increment()
-		return
-	}
+	manager.eventModelMap[writeKey][eventType][eventIdentifier] = eventModel
 
 	if toCreateOrUpdate {
 		updatedEventModels[eventModelID] = eventModel
@@ -201,13 +196,7 @@ func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *Sche
 	if !ok {
 		manager.schemaVersionMap[eventModelID] = make(map[string]*SchemaVersionT)
 	}
-
-	if len(manager.schemaVersionMap[eventModelID]) < schemaVersionPerEventModelLimit {
-		manager.schemaVersionMap[eventModelID][schemaHash] = schemaVersion
-	} else {
-		stats.NewTaggedStat("event_schemas_dropped_schema_versions_count", stats.CountType, stats.Tags{"eventModelID": eventModelID}).Increment()
-		return
-	}
+	manager.schemaVersionMap[eventModelID][schemaHash] = schemaVersion
 
 	if toCreateOrUpdate {
 		updatedSchemaVersions[schemaVersion.UUID] = schemaVersion
@@ -259,7 +248,14 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	manager.schemaVersionLock.Lock()
 	defer manager.eventModelLock.Unlock()
 	defer manager.schemaVersionLock.Unlock()
-
+	totalEventModels :=0
+	for _,v := range manager.eventModelMap[writeKey] {
+		totalEventModels += len(v)
+	}
+	if totalEventModels >= eventModelLimit {
+		stats.NewTaggedStat("event_schemas_dropped_event_models_count", stats.CountType, stats.Tags{}).Increment()
+		return
+	}
 	eventModel, ok := manager.eventModelMap[writeKey][eventType][eventIdentifier]
 	if !ok {
 		eventModelID := uuid.NewV4().String()
@@ -273,6 +269,11 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 		eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, 0, 0)
 
 		manager.updateEventModelCache(eventModel, true)
+	}
+
+	if len(manager.schemaVersionMap[eventModel.UUID]) >= schemaVersionPerEventModelLimit {
+		stats.NewTaggedStat("event_schemas_dropped_schema_versions_count", stats.CountType, stats.Tags{"eventModelID": eventModel.UUID}).Increment()
+		return
 	}
 	eventModel.LastSeen = time.Now()
 
