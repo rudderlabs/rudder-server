@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
 
@@ -114,17 +114,10 @@ func (brt *HandleT) backendConfigSubscriber() {
 						// test and send connection status to control plane
 						if val, ok := destination.Config["testConnection"].(bool); ok && val {
 							destination := destination
-							if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
-								rruntime.Go(func() {
-									testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
-									destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
-								})
-							} else {
-								rruntime.Go(func() {
-									testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination)
-									destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
-								})
-							}
+							rruntime.Go(func() {
+								testDestination(destination)
+							})
+
 						}
 					}
 				}
@@ -152,6 +145,16 @@ type StorageUploadOutput struct {
 
 type ErrorResponseT struct {
 	Error string
+}
+
+func testDestination(destination backendconfig.DestinationT) {
+	var testResponse string
+	if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
+		testResponse = destinationConnectionTester.TestBatchDestinationConnection(destination)
+	} else {
+		testResponse = destinationConnectionTester.TestWarehouseDestinationConnection(destination)
+	}
+	destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 }
 
 func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[string]int, destType string, isWarehouse bool) {
