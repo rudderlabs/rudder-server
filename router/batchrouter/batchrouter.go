@@ -114,7 +114,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 						if val, ok := destination.Config["testConnection"].(bool); ok && val {
 							destination := destination
 							rruntime.Go(func() {
-								destinationConnectionTester.TestDestination(destination)
+								testDestination(destination)
 							})
 
 						}
@@ -144,6 +144,16 @@ type StorageUploadOutput struct {
 
 type ErrorResponseT struct {
 	Error string
+}
+
+func testDestination(destination backendconfig.DestinationT) {
+	var testResponse string
+	if misc.ContainsString(ObjectStorageDestinations, destination.DestinationDefinition.Name) {
+		testResponse = destinationConnectionTester.TestBatchDestinationConnection(destination)
+	} else {
+		testResponse = destinationConnectionTester.TestWarehouseDestinationConnection(destination)
+	}
+	destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 }
 
 func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[string]int, destType string, isWarehouse bool) {

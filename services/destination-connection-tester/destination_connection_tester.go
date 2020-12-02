@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -54,7 +53,7 @@ func loadConfig() {
 
 }
 
-func uploadDestinationConnectionTesterResponse(testResponse string, destinationId string) {
+func UploadDestinationConnectionTesterResponse(testResponse string, destinationId string) {
 	payload := DestinationConnectionTesterResponse{
 		Error:         testResponse,
 		TestedAt:      time.Now(),
@@ -182,7 +181,7 @@ func downloadTestFileForBatchDestination(testObjectKey string, provider string, 
 
 }
 
-func testBatchDestinationConnection(destination backendconfig.DestinationT) string {
+func TestBatchDestinationConnection(destination backendconfig.DestinationT) string {
 	testFileName := createTestFileForBatchDestination(destination.ID)
 	keyPrefixes := []string{config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload"), destination.ID, time.Now().Format("01-02-2006")}
 	_, err := uploadTestFileForBatchDestination(testFileName, keyPrefixes, destination.DestinationDefinition.Name, destination)
@@ -193,7 +192,7 @@ func testBatchDestinationConnection(destination backendconfig.DestinationT) stri
 	return error
 }
 
-func testWarehouseDestinationConnection(destination backendconfig.DestinationT) string {
+func TestWarehouseDestinationConnection(destination backendconfig.DestinationT) string {
 	provider := destination.DestinationDefinition.Name
 	whManager, err := manager.New(provider)
 	if err != nil {
@@ -217,14 +216,4 @@ func testWarehouseDestinationConnection(destination backendconfig.DestinationT) 
 		return err.Error()
 	}
 	return ""
-}
-
-func TestDestination(destination backendconfig.DestinationT) {
-	var testResponse string
-	if misc.ContainsString(batchrouter.ObjectStorageDestinations, destination.DestinationDefinition.Name) {
-		testResponse = testBatchDestinationConnection(destination)
-	} else {
-		testResponse = testWarehouseDestinationConnection(destination)
-	}
-	uploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 }
