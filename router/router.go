@@ -113,6 +113,7 @@ var (
 	noOfJobsToBatchInAWorker                                                int
 	pkgLogger                                                               logger.LoggerI
 	Diagnostics                                                             diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	fixedLoopSleep                                                          time.Duration
 )
 
 type requestMetric struct {
@@ -144,6 +145,7 @@ func loadConfig() {
 	retryTimeWindow = config.GetDuration("Router.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
 	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
+	fixedLoopSleep = config.GetDuration("Router.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -1003,6 +1005,7 @@ func (rt *HandleT) generatorLoop() {
 
 		countStat.Count(len(combinedList))
 		generatorStat.End()
+		time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
 	}
 }
 
