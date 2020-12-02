@@ -162,7 +162,7 @@ func (manager *EventSchemaManagerT) RecordEventSchema(writeKey string, eventBatc
 	select {
 	case eventSchemaChannel <- &GatewayEventBatchT{writeKey, eventBatch}:
 	default:
-		stats.NewTaggedStat("event_schemas_dropped_events_count", stats.CountType, stats.Tags{}).Increment()
+		stats.NewTaggedStat("dropped_events_count", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": writeKey}).Increment()
 	}
 	return true
 }
@@ -248,12 +248,12 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	manager.schemaVersionLock.Lock()
 	defer manager.eventModelLock.Unlock()
 	defer manager.schemaVersionLock.Unlock()
-	totalEventModels :=0
-	for _,v := range manager.eventModelMap[writeKey] {
+	totalEventModels := 0
+	for _, v := range manager.eventModelMap[writeKey] {
 		totalEventModels += len(v)
 	}
 	if totalEventModels >= eventModelLimit {
-		stats.NewTaggedStat("event_schemas_dropped_event_models_count", stats.CountType, stats.Tags{}).Increment()
+		stats.NewTaggedStat("dropped_event_models_count", stats.CountType, stats.Tags{"module": "event_schemas"}).Increment()
 		return
 	}
 	eventModel, ok := manager.eventModelMap[writeKey][eventType][eventIdentifier]
@@ -272,7 +272,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	}
 
 	if len(manager.schemaVersionMap[eventModel.UUID]) >= schemaVersionPerEventModelLimit {
-		stats.NewTaggedStat("event_schemas_dropped_schema_versions_count", stats.CountType, stats.Tags{"eventModelID": eventModel.UUID}).Increment()
+		stats.NewTaggedStat("dropped_schema_versions_count", stats.CountType, stats.Tags{"module": "event_schemas", "eventModelID": eventModelID}).Increment()
 		return
 	}
 	eventModel.LastSeen = time.Now()
@@ -435,7 +435,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 			}
 			_, err = stmt.Exec()
 			assertTxnError(err, txn)
-			stats.NewTaggedStat("event_schemas_update_event_model_count", stats.GaugeType, stats.Tags{}).Gauge(len(eventModelIds))
+			stats.NewTaggedStat("update_event_model_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(eventModelIds))
 			pkgLogger.Debugf("[EventSchemas][Flush] %d new event types", len(updatedEventModels))
 		}
 
@@ -463,7 +463,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 			}
 			_, err = stmt.Exec()
 			assertTxnError(err, txn)
-			stats.NewTaggedStat("event_schemas_update_schema_version_count", stats.GaugeType, stats.Tags{}).Gauge(len(versionIDs))
+			stats.NewTaggedStat("update_schema_version_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(versionIDs))
 			pkgLogger.Debugf("[EventSchemas][Flush] %d new schema versions", len(schemaVersionsInCache))
 		}
 
