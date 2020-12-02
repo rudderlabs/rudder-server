@@ -915,7 +915,6 @@ func (rt *HandleT) generatorLoop() {
 
 	for {
 		generatorStat.Start()
-		time.Sleep(fixedLoopSleep)
 
 		if rt.guaranteeUserEventOrder {
 			//#JobOrder (See comment marked #JobOrder
@@ -1005,6 +1004,7 @@ func (rt *HandleT) generatorLoop() {
 		}
 
 		countStat.Count(len(combinedList))
+		time.Sleep(fixedLoopSleep)
 		generatorStat.End()
 	}
 }
