@@ -40,8 +40,7 @@ var (
 	mainLoopSleep, diagnosisTickerTime time.Duration
 	uploadFreqInS                      int64
 	configSubscriberLock               sync.RWMutex
-	objectStorageDestinations          []string
-	warehouseDestinations              []string
+	ObjectStorageDestinations          []string
 	inProgressMap                      map[string]bool
 	inProgressMapLock                  sync.RWMutex
 	lastExecMap                        map[string]int64
@@ -115,7 +114,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 						if val, ok := destination.Config["testConnection"].(bool); ok && val {
 							destination := destination
 							rruntime.Go(func() {
-								testDestination(destination)
+								destinationConnectionTester.TestDestination(destination)
 							})
 
 						}
@@ -145,16 +144,6 @@ type StorageUploadOutput struct {
 
 type ErrorResponseT struct {
 	Error string
-}
-
-func testDestination(destination backendconfig.DestinationT) {
-	var testResponse string
-	if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
-		testResponse = destinationConnectionTester.TestBatchDestinationConnection(destination)
-	} else {
-		testResponse = destinationConnectionTester.TestWarehouseDestinationConnection(destination)
-	}
-	destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 }
 
 func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[string]int, destType string, isWarehouse bool) {
@@ -616,7 +605,7 @@ func (brt *HandleT) initWorkers() {
 							}
 							rruntime.Go(func() {
 								switch {
-								case misc.ContainsString(objectStorageDestinations, brt.destType):
+								case misc.ContainsString(ObjectStorageDestinations, brt.destType):
 									destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 									destUploadStat.Start()
 									output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
@@ -631,7 +620,7 @@ func (brt *HandleT) initWorkers() {
 									}
 
 									destUploadStat.End()
-								case misc.ContainsString(warehouseDestinations, brt.destType):
+								case misc.ContainsString(warehouse.WarehouseDestinations, brt.destType):
 									objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config)
 									destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 									destUploadStat.Start()
@@ -841,17 +830,17 @@ func (brt *HandleT) crashRecover() {
 		}
 		brt.jobsDB.UpdateJobStatus(statusList, []string{}, nil)
 	}
-	if misc.Contains(objectStorageDestinations, brt.destType) {
+	if misc.Contains(ObjectStorageDestinations, brt.destType) {
 		brt.dedupRawDataDestJobsOnCrash()
 	}
 }
 
 func IsObjectStorageDestination(destType string) bool {
-	return misc.Contains(objectStorageDestinations, destType)
+	return misc.Contains(ObjectStorageDestinations, destType)
 }
 
 func IsWarehouseDestination(destType string) bool {
-	return misc.Contains(warehouseDestinations, destType)
+	return misc.Contains(warehouse.WarehouseDestinations, destType)
 }
 
 func getWarehouseURL() (url string) {
@@ -899,8 +888,7 @@ func loadConfig() {
 	maxFailedCountForJob = config.GetInt("BatchRouter.maxFailedCountForJob", 128)
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
-	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
+	ObjectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")

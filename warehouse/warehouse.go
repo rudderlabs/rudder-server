@@ -21,7 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
-	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
@@ -256,14 +255,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 					destinationID := destination.ID
 					rruntime.Go(func() {
 						wh.syncLiveWarehouseStatus(sourceID, destinationID)
-					})
-				}
-				// test and send connection status to control plane
-				if val, ok := destination.Config["testConnection"].(bool); ok && val {
-					destination := destination
-					rruntime.Go(func() {
-						testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination)
-						destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 					})
 				}
 
