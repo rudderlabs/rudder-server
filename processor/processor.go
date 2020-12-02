@@ -1101,7 +1101,7 @@ func (proc *HandleT) mainLoop() {
 			}
 			time.Sleep(currLoopSleep)
 		}
-		time.Sleep(fixedLoopSleep)
+		time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
 
 	}
 }

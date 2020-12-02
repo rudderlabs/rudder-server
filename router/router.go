@@ -1004,8 +1004,8 @@ func (rt *HandleT) generatorLoop() {
 		}
 
 		countStat.Count(len(combinedList))
-		time.Sleep(fixedLoopSleep)
 		generatorStat.End()
+		time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
 	}
 }
 
