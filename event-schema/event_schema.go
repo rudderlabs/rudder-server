@@ -272,7 +272,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	}
 
 	if len(manager.schemaVersionMap[eventModel.UUID]) >= schemaVersionPerEventModelLimit {
-		stats.NewTaggedStat("dropped_schema_versions_count", stats.CountType, stats.Tags{"module": "event_schemas", "eventModelID": eventModelID}).Increment()
+		stats.NewTaggedStat("dropped_schema_versions_count", stats.CountType, stats.Tags{"module": "event_schemas", "eventModelID": eventModel.UUID}).Increment()
 		return
 	}
 	eventModel.LastSeen = time.Now()
