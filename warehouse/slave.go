@@ -245,7 +245,8 @@ func (jobRun *JobRunT) getWriter(tableName string) (misc.GZipWriter, error) {
 	if !ok {
 		outputFilePath := jobRun.getLoadFilePath(tableName)
 		var err error
-		writer, err = misc.CreateGZWithBuffer(outputFilePath, 4096*1024)
+		slaveBuffSize := config.GetEnvAsInt("SLAVE_BUFF_SIZE", 1024*1024)
+		writer, err = misc.CreateGZWithBuffer(outputFilePath, slaveBuffSize)
 		if err != nil {
 			return misc.GZipWriter{}, err
 		}
