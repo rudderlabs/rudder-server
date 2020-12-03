@@ -58,7 +58,7 @@ func (processor *ProcessorAppType) StartRudderCore(options *app.Options) {
 	destinationdebugger.Setup()
 
 	migrationMode := processor.App.Options().MigrationMode
-	gatewayDB.Setup(options.ClearDB, "gw", gwDBRetention, migrationMode, false)
+	gatewayDB.Setup(jobsdb.Read, options.ClearDB, "gw", gwDBRetention, migrationMode, false)
 
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {

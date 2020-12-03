@@ -158,6 +158,7 @@ type HandleT struct {
 	migrationState                MigrationState
 	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.LoggerI
+	dbType                        DBType
 }
 
 //The struct which is written to the journal
@@ -287,6 +288,14 @@ var jobStates []jobStateT = []jobStateT{
 	WontMigrate,
 }
 
+type DBType int
+
+const (
+	Read DBType = iota
+	Write
+	ReadWrite
+)
+
 func getValidStates() (validStates []string) {
 	for _, js := range jobStates {
 		if js.isValid {
@@ -337,6 +346,7 @@ var (
 	jobDoneMigrateThres, jobStatusMigrateThres   float64
 	migrateDSLoopSleepDuration                   time.Duration
 	addNewDSLoopSleepDuration                    time.Duration
+	refreshDSListLoopSleepDuration               time.Duration
 	backupCheckSleepDuration                     time.Duration
 	useJoinForUnprocessed                        bool
 	backupRowsBatchSize                          int64
@@ -368,6 +378,7 @@ func loadConfig() {
 	maxMigrateDSProbe: Maximum number of DSs that are checked from left to right if they are eligible for migration
 	migrateDSLoopSleepDuration: How often is the loop (which checks for migrating DS) run
 	addNewDSLoopSleepDuration: How often is the loop (which checks for adding new DS) run
+	refreshDSListLoopSleepDuration: How often is the loop (which refreshes DSList) run
 	maxTableSizeInMB: Maximum Table size in MB
 	*/
 	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres", 0.8)
@@ -379,6 +390,7 @@ func loadConfig() {
 	backupRowsBatchSize = config.GetInt64("JobsDB.backupRowsBatchSize", 10000)
 	migrateDSLoopSleepDuration = (config.GetDuration("JobsDB.migrateDSLoopSleepDurationInS", time.Duration(30)) * time.Second)
 	addNewDSLoopSleepDuration = (config.GetDuration("JobsDB.addNewDSLoopSleepDurationInS", time.Duration(5)) * time.Second)
+	refreshDSListLoopSleepDuration = (config.GetDuration("JobsDB.refreshDSListLoopSleepDurationInS", time.Duration(5)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 
@@ -404,8 +416,9 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
+func (jd *HandleT) Setup(dbType DBType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
 
+	jd.dbType = dbType
 	jd.logger = pkgLogger.Child(tablePrefix)
 	var err error
 	jd.migrationState.migrationMode = migrationMode
@@ -420,8 +433,10 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 
 	jd.BackupSettings = jd.getBackUpSettings()
 
-	//Kill any pending queries
-	jd.terminateQueries()
+	if jd.dbType == ReadWrite {
+		//Kill any pending queries
+		jd.terminateQueries()
+	}
 
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
@@ -435,8 +450,61 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
 	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
 
-	jd.setupDatabaseTables(clearAll)
+	switch dbType {
+	case Read:
+		jd.readerSetup()
+	case Write:
+		jd.setupDatabaseTables(clearAll)
+		jd.writerSetup()
+	case ReadWrite:
+		jd.setupDatabaseTables(clearAll)
+		jd.readerWriterSetup()
+	}
+}
 
+func (jd *HandleT) startBackupDSLoop() {
+	var err error
+	if jd.BackupSettings.BackupEnabled {
+		jd.jobsFileUploader, err = jd.getFileUploader()
+		jd.assertError(err)
+		rruntime.Go(func() {
+			jd.backupDSLoop()
+		})
+	}
+
+}
+
+func (jd *HandleT) startMigrateDSLoop() {
+	rruntime.Go(func() {
+		jd.migrateDSLoop()
+	})
+}
+
+func (jd *HandleT) readerSetup() {
+	jd.recoverFromReaderJournal()
+
+	//This is a thread-safe operation.
+	//Even if two different services (gateway and processor) perform this operation, there should not be any problem.
+	jd.recoverFromJournal()
+
+	//Refresh in memory list. We don't take lock
+	//here because this is called before anything
+	//else
+	jd.getDSList(true)
+	jd.getDSRangeList(true)
+
+	rruntime.Go(func() {
+		jd.refreshDSListLoop()
+	})
+
+	jd.startBackupDSLoop()
+	jd.startMigrateDSLoop()
+}
+
+func (jd *HandleT) writerSetup() {
+	jd.recoverFromWriterJournal()
+	//This is a thread-safe operation.
+	//Even if two different services (gateway and processor) perform this operation, there should not be any problem.
 	jd.recoverFromJournal()
 
 	//Refresh in memory list. We don't take lock
@@ -450,20 +518,18 @@ func (jd *HandleT) Setup(clearAll bool, tablePrefix string, retentionPeriod time
 		jd.addNewDS(appendToDsList, dataSetT{})
 	}
 
-	if jd.BackupSettings.BackupEnabled {
-		jd.jobsFileUploader, err = jd.getFileUploader()
-		jd.assertError(err)
-		rruntime.Go(func() {
-			jd.backupDSLoop()
-		})
-	}
-	rruntime.Go(func() {
-		jd.migrateDSLoop()
-	})
-
 	rruntime.Go(func() {
 		jd.addNewDSLoop()
 	})
+}
+
+func (jd *HandleT) readerWriterSetup() {
+	jd.recoverFromReaderJournal()
+
+	jd.writerSetup()
+
+	jd.startBackupDSLoop()
+	jd.startMigrateDSLoop()
 }
 
 /*
@@ -1578,7 +1644,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	customValFilters []string, limitCount int, parameterFilters []ParameterFilterT) []*JobT {
 	jd.checkValidJobState(stateFilters)
 
-	if jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
+	if jd.useDSCache(ds) && jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
 		return []*JobT{}
 	}
@@ -1697,6 +1763,13 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	return jobList
 }
 
+func (jd *HandleT) useDSCache(ds dataSetT) bool {
+	if jd.dbType == Read {
+		return false
+	}
+	return true
+}
+
 /*
 count == 0 means return all
 stateFilters and customValFilters do a OR query on values passed in array
@@ -1704,7 +1777,7 @@ parameterFilters do a AND query on values included in the map
 */
 func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
 	order bool, count int, parameterFilters []ParameterFilterT) []*JobT {
-	if jd.isEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters) {
+	if jd.useDSCache(ds) && jd.isEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		return []*JobT{}
 	}
@@ -1885,6 +1958,16 @@ func (jd *HandleT) addNewDSLoop() {
 			jd.addNewDS(appendToDsList, dataSetT{})
 			jd.dsListLock.Unlock()
 		}
+	}
+}
+
+func (jd *HandleT) refreshDSListLoop() {
+	for {
+		time.Sleep(refreshDSListLoopSleepDuration)
+		jd.logger.Debugf("[[ %s : refreshDSListLoop ]]: Start", jd.tablePrefix)
+		jd.dsListLock.RLock()
+		jd.getDSList(true)
+		jd.dsListLock.RUnlock()
 	}
 }
 
@@ -2321,6 +2404,26 @@ func (jd *HandleT) dropJournal() {
 	sqlStatement := fmt.Sprintf(`DROP TABLE IF EXISTS %s_journal`, jd.tablePrefix)
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
+
+	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s_reader_journal`, jd.tablePrefix)
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
+	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s_writer_journal`, jd.tablePrefix)
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+}
+
+func (jd *HandleT) getJournalTableName() string {
+	if jd.dbType == Read {
+		return fmt.Sprintf("%s_reader_journal", jd.tablePrefix)
+	} else if jd.dbType == Write {
+		return fmt.Sprintf("%s_writer_journal", jd.tablePrefix)
+	} else if jd.dbType == ReadWrite {
+		return fmt.Sprintf("%s_journal", jd.tablePrefix)
+	} else {
+		panic(fmt.Errorf("invalid jobsdb dbType. jd.dbType: %v", jd.dbType))
+	}
 }
 
 func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) int64 {
@@ -2334,8 +2437,8 @@ func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) in
 		opType == dropDSOperation ||
 		opType == RawDataDestUploadOperation, fmt.Sprintf("opType: %s is not a supported op", opType))
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time)
-                                       VALUES ($1, $2, $3, $4) RETURNING id`, jd.tablePrefix)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (operation, done, operation_payload, start_time)
+                                       VALUES ($1, $2, $3, $4) RETURNING id`, jd.getJournalTableName())
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
@@ -2356,7 +2459,7 @@ func (jd *HandleT) JournalMarkDone(opID int64) {
 
 //JournalMarkDoneInTxn marks the end of a journal action in a transaction
 func (jd *HandleT) journalMarkDoneInTxn(txHandler transactionHandler, opID int64) error {
-	sqlStatement := fmt.Sprintf(`UPDATE %s_journal SET done=$2, end_time=$3 WHERE id=$1`, jd.tablePrefix)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET done=$2, end_time=$3 WHERE id=$1`, jd.getJournalTableName())
 	_, err := txHandler.Exec(sqlStatement, opID, true, time.Now())
 	if err != nil {
 		return err
@@ -2365,19 +2468,19 @@ func (jd *HandleT) journalMarkDoneInTxn(txHandler transactionHandler, opID int64
 }
 
 func (jd *HandleT) JournalDeleteEntry(opID int64) {
-	sqlStatement := fmt.Sprintf(`DELETE FROM %s_journal WHERE id=$1`, jd.tablePrefix)
+	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE id=$1`, jd.getJournalTableName())
 	_, err := jd.dbHandle.Exec(sqlStatement, opID)
 	jd.assertError(err)
 }
 
 func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
-                                	FROM %s_journal
+                                	FROM %s
                                 	WHERE
 									done=False
 									AND
 									operation = '%s'
-									ORDER BY id`, jd.tablePrefix, opType)
+									ORDER BY id`, jd.getJournalTableName(), opType)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
@@ -2396,7 +2499,7 @@ func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 	return
 }
 
-func (jd *HandleT) recoverFromCrash(goRoutineType string) {
+func (jd *HandleT) recoverFromCrash(journalTable string, goRoutineType string) {
 
 	var opTypes []string
 	switch goRoutineType {
@@ -2411,12 +2514,12 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 	}
 
 	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
-                                	FROM %s_journal
+                                	FROM %s
                                 	WHERE
 									done=False
 									AND
 									operation = ANY($1)
-                                	ORDER BY id`, jd.tablePrefix)
+                                	ORDER BY id`, journalTable)
 
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
@@ -2500,9 +2603,9 @@ func (jd *HandleT) recoverFromCrash(goRoutineType string) {
 	}
 
 	if undoOp {
-		sqlStatement = fmt.Sprintf(`DELETE FROM %s_journal WHERE id=$1`, jd.tablePrefix)
+		sqlStatement = fmt.Sprintf(`DELETE FROM %s WHERE id=$1`, jd.getJournalTableName())
 	} else {
-		sqlStatement = fmt.Sprintf(`UPDATE %s_journal SET done=True WHERE id=$1`, jd.tablePrefix)
+		sqlStatement = fmt.Sprintf(`UPDATE %s SET done=True WHERE id=$1`, jd.getJournalTableName())
 	}
 
 	_, err = jd.dbHandle.Exec(sqlStatement, opID)
@@ -2516,15 +2619,28 @@ const (
 	migratorRoutine = "migrator"
 )
 
+func (jd *HandleT) recoverFromReaderJournal() {
+	jd.recoverFromCrash(fmt.Sprintf("%s_reader_journal", jd.tablePrefix), addDSGoRoutine)
+	jd.recoverFromCrash(fmt.Sprintf("%s_reader_journal", jd.tablePrefix), mainGoRoutine)
+	jd.recoverFromCrash(fmt.Sprintf("%s_reader_journal", jd.tablePrefix), backupGoRoutine)
+}
+
+func (jd *HandleT) recoverFromWriterJournal() {
+	jd.recoverFromCrash(fmt.Sprintf("%s_writer_journal", jd.tablePrefix), addDSGoRoutine)
+	jd.recoverFromCrash(fmt.Sprintf("%s_writer_journal", jd.tablePrefix), mainGoRoutine)
+	jd.recoverFromCrash(fmt.Sprintf("%s_writer_journal", jd.tablePrefix), backupGoRoutine)
+}
+
 func (jd *HandleT) recoverFromJournal() {
-	jd.recoverFromCrash(addDSGoRoutine)
-	jd.recoverFromCrash(mainGoRoutine)
-	jd.recoverFromCrash(backupGoRoutine)
+	jd.recoverFromCrash(fmt.Sprintf("%s_journal", jd.tablePrefix), addDSGoRoutine)
+	jd.recoverFromCrash(fmt.Sprintf("%s_journal", jd.tablePrefix), mainGoRoutine)
+	jd.recoverFromCrash(fmt.Sprintf("%s_journal", jd.tablePrefix), backupGoRoutine)
 }
 
 //RecoverFromMigrationJournal is an exposed function for migrator package to handle journal crashes during migration
 func (jd *HandleT) RecoverFromMigrationJournal() {
-	jd.recoverFromCrash(migratorRoutine)
+	jd.recoverFromCrash(fmt.Sprintf("%s_writer_journal", jd.tablePrefix), migratorRoutine)
+	jd.recoverFromCrash(fmt.Sprintf("%s_journal", jd.tablePrefix), migratorRoutine)
 }
 
 /*

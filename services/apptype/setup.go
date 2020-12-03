@@ -60,9 +60,9 @@ func StartProcessor(clearDB *bool, migrationMode string, enableProcessor bool, g
 
 	if enableProcessor {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
-		routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode, true)
-		batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode, true)
-		procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
+		routerDB.Setup(jobsdb.ReadWrite, *clearDB, "rt", routerDBRetention, migrationMode, true)
+		batchRouterDB.Setup(jobsdb.ReadWrite, *clearDB, "batch_rt", routerDBRetention, migrationMode, true)
+		procErrorDB.Setup(jobsdb.ReadWrite, *clearDB, "proc_error", routerDBRetention, migrationMode, false)
 
 		var processor = processor.NewProcessor()
 		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB)

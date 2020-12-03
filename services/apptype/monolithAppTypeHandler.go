@@ -64,7 +64,7 @@ func (monolith *MonolithAppType) StartRudderCore(options *app.Options) {
 	sourcedebugger.Setup()
 
 	migrationMode := monolith.App.Options().MigrationMode
-	gatewayDB.Setup(options.ClearDB, "gw", gwDBRetention, migrationMode, false)
+	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, false)
 
 	enableGateway := true
 

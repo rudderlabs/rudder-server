@@ -138,7 +138,8 @@ func main() {
 	//application & backend setup should be done before starting any new goroutines.
 	application.Setup()
 
-	appType = getAppType(application, config.GetEnv("APP_TYPE", ""))
+	appTypeStr := config.GetEnv("APP_TYPE", "")
+	appType = getAppType(application, appTypeStr)
 
 	version := versionInfo()
 
@@ -206,13 +207,12 @@ func main() {
 		})
 	}
 
-	//TODO: Handle warehouse later
-	/*// initialize warehouse service after core to handle non-normal recovery modes
-	if canStartWarehouse() {
+	// initialize warehouse service after core to handle non-normal recovery modes
+	if appTypeStr != gatewayAppType && canStartWarehouse() {
 		rruntime.Go(func() {
 			startWarehouseService()
 		})
-	}*/
+	}
 
 	rruntime.Go(admin.StartServer)
 
