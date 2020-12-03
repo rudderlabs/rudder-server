@@ -629,6 +629,22 @@ func CreateGZ(s string) (w GZipWriter, err error) {
 	return
 }
 
+func CreateGZWithBuffer(s string, buffSize int) (w GZipWriter, err error) {
+
+	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	if err != nil {
+		return
+	}
+	gzWriter := gzip.NewWriter(file)
+	bufWriter := bufio.NewWriterSize(gzWriter, buffSize)
+	w = GZipWriter{
+		File:      file,
+		GzWriter:  gzWriter,
+		BufWriter: bufWriter,
+	}
+	return
+}
+
 func (w GZipWriter) WriteGZ(s string) {
 	count, err := w.BufWriter.WriteString(s)
 	if err != nil {
