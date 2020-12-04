@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/rudderlabs/rudder-server/gateway/response"
 	uuid "github.com/satori/go.uuid"
 )
 
@@ -27,12 +28,12 @@ func handleBasicAuth(r *http.Request) error {
 func (manager *EventSchemaManagerT) GetEventModels(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, response.MakeResponse(err.Error()), 400)
 		return
 	}
 
 	if r.Method != http.MethodGet {
-		http.Error(w, "Only HTTP GET method is supported", 400)
+		http.Error(w, response.MakeResponse("Only HTTP GET method is supported"), 400)
 		return
 	}
 
@@ -46,7 +47,7 @@ func (manager *EventSchemaManagerT) GetEventModels(w http.ResponseWriter, r *htt
 
 	eventTypesJSON, err := json.Marshal(eventTypes)
 	if err != nil {
-		http.Error(w, "Internal Error: Failed to Marshal event types", 500)
+		http.Error(w, response.MakeResponse("Internal Error: Failed to Marshal event types"), 500)
 		return
 	}
 
@@ -54,20 +55,21 @@ func (manager *EventSchemaManagerT) GetEventModels(w http.ResponseWriter, r *htt
 }
 
 func (manager *EventSchemaManagerT) GetEventVersions(w http.ResponseWriter, r *http.Request) {
+	//TODO : Authentication may be moved to middleware.
 	err := handleBasicAuth(r)
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, response.MakeResponse(err.Error()), 400)
 		return
 	}
 
 	if r.Method != http.MethodGet {
-		http.Error(w, "Only HTTP GET method is supported", 400)
+		http.Error(w, response.MakeResponse("Only HTTP GET method is supported"), 400)
 		return
 	}
 
 	eventIDs, ok := r.URL.Query()["EventID"]
 	if !ok {
-		http.Error(w, "Mandatory field: EventID missing", 400)
+		http.Error(w, response.MakeResponse("Mandatory field: EventID missing"), 400)
 		return
 	}
 	eventID := eventIDs[0]
@@ -75,7 +77,7 @@ func (manager *EventSchemaManagerT) GetEventVersions(w http.ResponseWriter, r *h
 	schemaVersions := manager.fetchSchemaVersionsByEventID(eventID)
 	schemaVersionsJSON, err := json.Marshal(schemaVersions)
 	if err != nil {
-		http.Error(w, "Internal Error: Failed to Marshal event types", 500)
+		http.Error(w, response.MakeResponse("Internal Error: Failed to Marshal event types"), 500)
 		return
 	}
 
@@ -86,19 +88,19 @@ func (manager *EventSchemaManagerT) GetEventVersions(w http.ResponseWriter, r *h
 func (manager *EventSchemaManagerT) GetKeyCounts(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, response.MakeResponse(err.Error()), 400)
 		return
 	}
 
 	if r.Method != http.MethodGet {
-		http.Error(w, "Only HTTP GET method is supported", 400)
+		http.Error(w, response.MakeResponse("Only HTTP GET method is supported"), 400)
 		return
 	}
 
 	vars := mux.Vars(r)
 	eventID, ok := vars["EventID"]
 	if !ok {
-		http.Error(w, "Mandatory field: EventID missing", 400)
+		http.Error(w, response.MakeResponse("Mandatory field: EventID missing"), 400)
 		return
 	}
 
@@ -106,14 +108,14 @@ func (manager *EventSchemaManagerT) GetKeyCounts(w http.ResponseWriter, r *http.
 	if err != nil {
 		logID := uuid.NewV4().String()
 		pkgLogger.Errorf("logID : %s, err: %s", logID, err.Error())
-		http.Error(w, fmt.Sprintf("Interna Error: An error has been logged with logID : %s", logID), 500)
+		http.Error(w, response.MakeResponse(fmt.Sprintf("Internal Error: An error has been logged with logID : %s", logID)), 500)
 		return
 	}
 	keyCountsJSON, err := json.Marshal(keyCounts)
 	if err != nil {
 		logID := uuid.NewV4().String()
 		pkgLogger.Errorf("logID : %s, err: %s", logID, err.Error())
-		http.Error(w, fmt.Sprintf("Interna Error: An error has been logged with logID : %s", logID), 500)
+		http.Error(w, response.MakeResponse(fmt.Sprintf("Internal Error: An error has been logged with logID : %s", logID)), 500)
 		return
 	}
 
@@ -145,31 +147,31 @@ func (manager *EventSchemaManagerT) getKeyCounts(eventID string) (keyCounts map[
 func (manager *EventSchemaManagerT) GetEventModelMetadata(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, response.MakeResponse(err.Error()), 400)
 		return
 	}
 
 	if r.Method != http.MethodGet {
-		http.Error(w, "Only HTTP GET method is supported", 400)
+		http.Error(w, response.MakeResponse("Only HTTP GET method is supported"), 400)
 		return
 	}
 
 	vars := mux.Vars(r)
 	eventID, ok := vars["EventID"]
 	if !ok {
-		http.Error(w, "Mandatory field: VersionID missing", 400)
+		http.Error(w, response.MakeResponse("Mandatory field: VersionID missing"), 400)
 		return
 	}
 
 	metadata, err := manager.fetchMetadataByEventModelID(eventID)
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, response.MakeResponse(err.Error()), 400)
 		return
 	}
 
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
-		http.Error(w, "Internal Error: Failed to Marshal metadata", 500)
+		http.Error(w, response.MakeResponse("Internal Error: Failed to Marshal metadata"), 500)
 		return
 	}
 
@@ -180,31 +182,31 @@ func (manager *EventSchemaManagerT) GetEventModelMetadata(w http.ResponseWriter,
 func (manager *EventSchemaManagerT) GetSchemaVersionMetadata(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, response.MakeResponse(err.Error()), 400)
 		return
 	}
 
 	if r.Method != http.MethodGet {
-		http.Error(w, "Only HTTP GET method is supported", 400)
+		http.Error(w, response.MakeResponse("Only HTTP GET method is supported"), 400)
 		return
 	}
 
 	vars := mux.Vars(r)
 	versionID, ok := vars["VersionID"]
 	if !ok {
-		http.Error(w, "Mandatory field: VersionID missing", 400)
+		http.Error(w, response.MakeResponse("Mandatory field: VersionID missing"), 400)
 		return
 	}
 
 	metadata, err := manager.fetchMetadataByEventVersionID(versionID)
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, response.MakeResponse(err.Error()), 400)
 		return
 	}
 
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
-		http.Error(w, "Internal Error: Failed to Marshal metadata", 500)
+		http.Error(w, response.MakeResponse("Internal Error: Failed to Marshal metadata"), 500)
 		return
 	}
 
@@ -214,25 +216,25 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMetadata(w http.ResponseWrit
 func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, response.MakeResponse(err.Error()), 400)
 		return
 	}
 
 	if r.Method != http.MethodGet {
-		http.Error(w, "Only HTTP GET method is supported", 400)
+		http.Error(w, response.MakeResponse("Only HTTP GET method is supported"), 400)
 		return
 	}
 
 	vars := mux.Vars(r)
 	versionID, ok := vars["VersionID"]
 	if !ok {
-		http.Error(w, "Mandatory field: VersionID missing", 400)
+		http.Error(w, response.MakeResponse("Mandatory field: VersionID missing"), 400)
 		return
 	}
 
 	schema, err := manager.fetchSchemaVersionByID(versionID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, response.MakeResponse(err.Error()), 500)
 		return
 	}
 
@@ -249,7 +251,7 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseW
 	if err != nil {
 		logID := uuid.NewV4().String()
 		pkgLogger.Errorf("logID : %s, err: %s", logID, err.Error())
-		http.Error(w, fmt.Sprintf("Interna Error: An error has been logged with logID : %s", logID), 500)
+		http.Error(w, response.MakeResponse(fmt.Sprintf("Internal Error: An error has been logged with logID : %s", logID)), 500)
 		return
 	}
 
@@ -257,7 +259,7 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseW
 	if err != nil {
 		logID := uuid.NewV4().String()
 		pkgLogger.Errorf("logID : %s, err: %s", logID, err.Error())
-		http.Error(w, fmt.Sprintf("Interna Error: An error has been logged with logID : %s", logID), 500)
+		http.Error(w, response.MakeResponse(fmt.Sprintf("Internal Error: An error has been logged with logID : %s", logID)), 500)
 		return
 	}
 
@@ -271,7 +273,7 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseW
 
 	missingKeyJSON, err := json.Marshal(missingKeys)
 	if err != nil {
-		http.Error(w, "Internal Error: Failed to Marshal metadata", 500)
+		http.Error(w, response.MakeResponse("Internal Error: Failed to Marshal metadata"), 500)
 		return
 	}
 
