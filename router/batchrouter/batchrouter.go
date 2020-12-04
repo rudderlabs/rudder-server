@@ -36,7 +36,6 @@ import (
 
 var (
 	jobQueryBatchSize                  int
-	maxFailedCountForJob               int
 	mainLoopSleep, diagnosisTickerTime time.Duration
 	uploadFreqInS                      int64
 	configSubscriberLock               sync.RWMutex
@@ -70,6 +69,7 @@ type HandleT struct {
 	batchRequestsMetric     []batchRequestMetric
 	logger                  logger.LoggerI
 	noOfWorkers             int
+	maxFailedCountForJob    int
 }
 
 type BatchDestinationT struct {
@@ -406,7 +406,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 
-		if jobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum >= maxFailedCountForJob && !postToWarehouseErr {
+		if jobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
 			jobState = jobsdb.Aborted.State
 		} else {
 			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
@@ -886,7 +886,6 @@ func (brt *HandleT) collectMetrics() {
 
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
-	maxFailedCountForJob = config.GetInt("BatchRouter.maxFailedCountForJob", 128)
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
@@ -917,6 +916,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.jobsDB = jobsDB
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
+	brt.maxFailedCountForJob = getBatchRouterConfigInt("maxFailedCountForJob", destType, 128)
 
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
