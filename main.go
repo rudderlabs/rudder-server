@@ -138,7 +138,7 @@ func main() {
 	//application & backend setup should be done before starting any new goroutines.
 	application.Setup()
 
-	appTypeStr := config.GetEnv("APP_TYPE", "")
+	appTypeStr := config.GetEnv("APP_TYPE", monolithAppType)
 	appType = getAppType(application, appTypeStr)
 
 	version := versionInfo()
