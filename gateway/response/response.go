@@ -1,7 +1,6 @@
 package response
 
 import (
-	"fmt"
 	"net/http"
 )
 
@@ -95,16 +94,4 @@ func GetStatusCode(key string) int {
 	}
 
 	return 200
-}
-
-//Always returns a valid response json
-func GetResponse(key string) string {
-	if status, ok := statusMap[key]; ok {
-		return fmt.Sprintf(`{"msg": "%s"}`, status.message)
-	}
-	return "{}"
-}
-
-func MakeResponse(msg string) string {
-	return fmt.Sprintf(`{"msg": "%s"}`, msg)
 }
