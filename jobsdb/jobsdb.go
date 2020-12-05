@@ -502,6 +502,13 @@ func (jd *HandleT) readerSetup() {
 }
 
 func (jd *HandleT) writerSetup() {
+	//Don't need locks here
+	jd.getDSList(true)
+	var maxDSIndexAvailable string
+	if len(jd.datasetList) > 0 {
+		maxDSIndexAvailable = jd.datasetList[len(jd.datasetList)-1].Index
+	}
+
 	jd.recoverFromWriterJournal()
 	//This is a thread-safe operation.
 	//Even if two different services (gateway and processor) perform this operation, there should not be any problem.
@@ -514,8 +521,12 @@ func (jd *HandleT) writerSetup() {
 	jd.getDSRangeList(true)
 
 	//If no DS present, add one
-	if len(jd.datasetList) == 0 {
-		jd.addNewDS(appendToDsList, dataSetT{})
+	if jd.shouldAddDS() {
+		if maxDSIndexAvailable != "" {
+			jd.addNewDSonSetup(maxDSIndexAvailable)
+		} else {
+			jd.addNewDS(appendToDsList, dataSetT{})
+		}
 	}
 
 	rruntime.Go(func() {
@@ -530,6 +541,25 @@ func (jd *HandleT) readerWriterSetup() {
 
 	jd.startBackupDSLoop()
 	jd.startMigrateDSLoop()
+}
+
+func (jd *HandleT) shouldAddDS() bool {
+	if len(jd.datasetList) == 0 {
+		//jd.datasetList is empty. Need to add a new DS
+		return true
+	}
+
+	for _, ds := range jd.datasetList {
+		if strings.Contains(ds.Index, "_") {
+			continue
+		}
+
+		//jd.datasetList has a proper first level DS. No need to add new DS.
+		return false
+	}
+
+	//jd.datasetList does not contain a proper first level DS. Need to add new DS.
+	return true
 }
 
 /*
@@ -862,6 +892,20 @@ func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
 	jobTable := fmt.Sprintf("%s_jobs_%s", jd.tablePrefix, dsIdx)
 	jobStatusTable := fmt.Sprintf("%s_job_status_%s", jd.tablePrefix, dsIdx)
 	return jobTable, jobStatusTable
+}
+
+func (jd *HandleT) addNewDSonSetup(idx string) dataSetT {
+	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+
+	queryStat.Start()
+	defer queryStat.End()
+
+	ds := jd.createDS(true, idx)
+
+	jd.statNewDSPeriod.Start()
+	jd.isStatNewDSPeriodInitialized = true
+
+	return ds
 }
 
 func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT {
@@ -2603,9 +2647,9 @@ func (jd *HandleT) recoverFromCrash(journalTable string, goRoutineType string) {
 	}
 
 	if undoOp {
-		sqlStatement = fmt.Sprintf(`DELETE FROM %s WHERE id=$1`, jd.getJournalTableName())
+		sqlStatement = fmt.Sprintf(`DELETE FROM %s WHERE id=$1`, journalTable)
 	} else {
-		sqlStatement = fmt.Sprintf(`UPDATE %s SET done=True WHERE id=$1`, jd.getJournalTableName())
+		sqlStatement = fmt.Sprintf(`UPDATE %s SET done=True WHERE id=$1`, journalTable)
 	}
 
 	_, err = jd.dbHandle.Exec(sqlStatement, opID)
