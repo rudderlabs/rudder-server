@@ -62,6 +62,7 @@ type HandleT struct {
 	statDBR                        stats.RudderStats
 	statDBW                        stats.RudderStats
 	statLoopTime                   stats.RudderStats
+	eventSchemasTime               stats.RudderStats
 	statSessionTransform           stats.RudderStats
 	statUserTransform              stats.RudderStats
 	statDestTransform              stats.RudderStats

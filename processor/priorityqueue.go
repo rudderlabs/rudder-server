@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 //We keep a priority queue of user_id to last event
@@ -136,6 +135,6 @@ func (pq *transformRequestPQ) RemoveTop() {
 
 func (pq *transformRequestPQ) Print() {
 	for _, v := range *pq {
-		logger.Debug(v.ProcessingTime)
+		pkgLogger.Debug(*v)
 	}
 }
