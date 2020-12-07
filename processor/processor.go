@@ -1029,7 +1029,6 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		proc.pStatsDBR.End(0)
 		return false
 	}
-	var writeKeyDupStats = make(map[string]int)
 
 	if enableEventSchemasFeature {
 		for _, unprocessedJob := range unprocessedList {
@@ -1037,73 +1036,20 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
 		}
 	}
-	var uniqueUnprocessedList []*jobsdb.JobT
-	var duplicateList []*jobsdb.JobT
 
 	if enableDedup{
-		allMessageIdsSet := make(map[string]struct{})
-		for _, unprocessedJob := range unprocessedList {
-			body,err := unprocessedJob.EventPayload.MarshalJSON()
-			if err != nil {
-				proc.logger.Infof("Marshalling job payload failed with : %s", err.Error())
-				continue
-			}
-			result := gjson.GetBytes(body, "batch")
-			var index int
-			var reqMessageIDs []string
-			result.ForEach(func(_, _ gjson.Result) bool {
-				reqMessageIDs = append(reqMessageIDs, gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String())
-				index++
-				return true // keep iterating
-			})
-
-			writeKey := gjson.GetBytes(body, "writeKey").Str
-			proc.dedup(&body, reqMessageIDs, allMessageIdsSet, writeKey, writeKeyDupStats)
-			if len(gjson.GetBytes(body, "batch").Array()) == 0 {
-				duplicateList = append(duplicateList, unprocessedJob)
-				continue
-			}
-			addToSet(allMessageIdsSet, reqMessageIDs)
-			uniqueUnprocessedList = append(uniqueUnprocessedList, unprocessedJob)
-		}
-
-		if len(uniqueUnprocessedList) > 0{
-			messageIdsArr := make([]string, 0)
-			for msgId := range allMessageIdsSet{
-				messageIdsArr = append(messageIdsArr, msgId)
-			}
-			rruntime.Go(func() {
-				proc.writeToBadger(messageIdsArr)
-			})
-		}
-		//Mark all as executing so next query doesn't pick it up
-		var statusList []*jobsdb.JobStatusT
-		for _, batchEvent := range duplicateList {
-			newStatus := jobsdb.JobStatusT{
-				JobID:         batchEvent.JobID,
-				JobState:      jobsdb.Succeeded.State,
-				AttemptNum:    1,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				ErrorCode:     "200",
-				ErrorResponse: []byte(`{"success":"OK"}`),
-			}
-			statusList = append(statusList, &newStatus)
-		}
-		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
-
-		proc.updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
+		unprocessedList = proc.jobsDedup(unprocessedList)
 	}
 
 
 	// handle pending jobs
 	proc.statListSort.Start()
 	var combinedList []*jobsdb.JobT
-	if enableDedup {
-		combinedList = append(uniqueUnprocessedList, retryList...)
-	} else {
+	//if enableDedup {
+	//	combinedList = append(uniqueUnprocessedList, retryList...)
+	//} else {
 		combinedList = append(unprocessedList, retryList...)
-	}
+	//}
 	proc.logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total: %v", len(retryList), len(unprocessedList), len(combinedList))
 	proc.pStatsDBR.End(len(combinedList))
 	proc.statGatewayDBR.Count(len(combinedList))
@@ -1244,7 +1190,8 @@ func (proc *HandleT) writeToBadger(messageIDs []string) {
 	}
 }
 
-func (proc *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSet map[string]struct{}, writeKey string, writeKeyDupStats map[string]int) {
+func (proc *HandleT) dedup(body *[]byte, messageIDs []string, writeKey string, writeKeyDupStats map[string]int) {
+	//allMessageIDsSet map[string]struct{},
 	toRemoveMessageIndexesSet := make(map[int]struct{})
 	//Dedup within events batch in a web request
 	messageIDSet := make(map[string]struct{})
@@ -1264,12 +1211,12 @@ func (proc *HandleT) dedup(body *[]byte, messageIDs []string, allMessageIDsSet m
 		}
 	}
 
-	//Dedup within batch of web requests
-	for idx, messageID := range messageIDs {
-		if _, ok := allMessageIDsSet[messageID]; ok {
-			toRemoveMessageIndexesSet[idx] = struct{}{}
-		}
-	}
+	////Dedup within batch of web requests
+	//for idx, messageID := range messageIDs {
+	//	if _, ok := allMessageIDsSet[messageID]; ok {
+	//		toRemoveMessageIndexesSet[idx] = struct{}{}
+	//	}
+	//}
 
 	//Dedup with badgerDB
 	err := proc.badgerDB.View(func(txn *badger.Txn) error {
@@ -1321,4 +1268,63 @@ func SetEnableDedup(b bool) bool {
 	prev := enableDedup
 	enableDedup = b
 	return prev
+}
+
+func (proc *HandleT) jobsDedup(jobList []*jobsdb.JobT)[]*jobsdb.JobT{
+	var uniqueUnprocessedList []*jobsdb.JobT
+	var duplicateList []*jobsdb.JobT
+	var writeKeyDupStats = make(map[string]int)
+	allMessageIdsSet := make(map[string]struct{})
+
+	for _, unprocessedJob := range jobList {
+		body,err := unprocessedJob.EventPayload.MarshalJSON()
+		if err != nil {
+			proc.logger.Infof("Marshalling job payload failed with : %s", err.Error())
+			continue
+		}
+		result := gjson.GetBytes(body, "batch")
+		var index int
+		var reqMessageIDs []string
+		result.ForEach(func(_, _ gjson.Result) bool {
+			reqMessageIDs = append(reqMessageIDs, gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String())
+			index++
+			return true // keep iterating
+		})
+
+		writeKey := gjson.GetBytes(body, "writeKey").Str
+		proc.dedup(&body, reqMessageIDs, writeKey, writeKeyDupStats)
+		if len(gjson.GetBytes(body, "batch").Array()) == 0 {
+			duplicateList = append(duplicateList, unprocessedJob)
+			continue
+		}
+		addToSet(allMessageIdsSet, reqMessageIDs)
+		uniqueUnprocessedList = append(uniqueUnprocessedList, unprocessedJob)
+	}
+
+	if len(uniqueUnprocessedList) > 0{
+		messageIdsArr := make([]string, 0)
+		for msgId := range allMessageIdsSet{
+			messageIdsArr = append(messageIdsArr, msgId)
+		}
+		rruntime.Go(func() {
+			proc.writeToBadger(messageIdsArr)
+		})
+	}
+	//Mark all as executing so next query doesn't pick it up
+	var statusList []*jobsdb.JobStatusT
+	for _, batchEvent := range duplicateList {
+		newStatus := jobsdb.JobStatusT{
+			JobID:         batchEvent.JobID,
+			JobState:      jobsdb.Succeeded.State,
+			AttemptNum:    1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "200",
+			ErrorResponse: []byte(`{"success":"OK"}`),
+		}
+		statusList = append(statusList, &newStatus)
+	}
+	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	proc.updateWriteKeyStats(writeKeyDupStats, "gateway.write_key_duplicate_events")
+	return uniqueUnprocessedList
 }
