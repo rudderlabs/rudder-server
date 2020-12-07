@@ -101,6 +101,8 @@ func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) error {
 		dsStats.err = err
 	}
 	defer dbHandle.Close()
+	// TODO:: seems like sqlx library will be better as it allows to map structs to rows
+	// that way the repeated logic can be brought to a single method
 	getJobCountsByStateAndDestination(dbHandle, dsName, &dsStats)
 	getFailedStatusErrorCodeCountsByDestination(dbHandle, dsName, &dsStats)
 	getJobCountByConnections(dbHandle, dsName, &dsStats)
