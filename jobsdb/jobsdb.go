@@ -158,7 +158,7 @@ type HandleT struct {
 	migrationState                MigrationState
 	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.LoggerI
-	dbType                        DBType
+	ownerType                     OwnerType
 }
 
 //The struct which is written to the journal
@@ -288,12 +288,16 @@ var jobStates []jobStateT = []jobStateT{
 	WontMigrate,
 }
 
-type DBType int
+//OwnerType for this jobsdb instance
+type OwnerType string
 
 const (
-	Read DBType = iota
-	Write
-	ReadWrite
+	//Read : Only Reader of this jobsdb instance
+	Read OwnerType = "READ"
+	//Write : Only Writer of this jobsdb instance
+	Write OwnerType = "WRITE"
+	//ReadWrite : Reader and Writer of this jobsdb instance
+	ReadWrite OwnerType = ""
 )
 
 func getValidStates() (validStates []string) {
@@ -416,9 +420,9 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(dbType DBType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
+func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
 
-	jd.dbType = dbType
+	jd.ownerType = ownerType
 	jd.logger = pkgLogger.Child(tablePrefix)
 	var err error
 	jd.migrationState.migrationMode = migrationMode
@@ -433,7 +437,7 @@ func (jd *HandleT) Setup(dbType DBType, clearAll bool, tablePrefix string, reten
 
 	jd.BackupSettings = jd.getBackUpSettings()
 
-	if jd.dbType == ReadWrite {
+	if jd.ownerType == ReadWrite {
 		//Kill any pending queries
 		jd.terminateQueries()
 	}
@@ -450,7 +454,7 @@ func (jd *HandleT) Setup(dbType DBType, clearAll bool, tablePrefix string, reten
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
 	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
 
-	switch dbType {
+	switch ownerType {
 	case Read:
 		jd.readerSetup()
 	case Write:
@@ -1808,7 +1812,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 }
 
 func (jd *HandleT) useDSCache(ds dataSetT) bool {
-	if jd.dbType == Read && jd.datasetList[len(jd.datasetList)-1].Index == ds.Index {
+	if jd.ownerType == Read && jd.datasetList[len(jd.datasetList)-1].Index == ds.Index {
 		return false
 	}
 	return true
@@ -2460,26 +2464,6 @@ func (jd *HandleT) dropJournal() {
 	sqlStatement := fmt.Sprintf(`DROP TABLE IF EXISTS %s_journal`, jd.tablePrefix)
 	_, err := jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
-
-	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s_reader_journal`, jd.tablePrefix)
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-
-	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s_writer_journal`, jd.tablePrefix)
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-}
-
-func (jd *HandleT) getJournalTableName() string {
-	if jd.dbType == Read {
-		return fmt.Sprintf("%s_reader_journal", jd.tablePrefix)
-	} else if jd.dbType == Write {
-		return fmt.Sprintf("%s_writer_journal", jd.tablePrefix)
-	} else if jd.dbType == ReadWrite {
-		return fmt.Sprintf("%s_journal", jd.tablePrefix)
-	} else {
-		panic(fmt.Errorf("invalid jobsdb dbType. jd.dbType: %v", jd.dbType))
-	}
 }
 
 func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) int64 {
@@ -2493,14 +2477,14 @@ func (jd *HandleT) JournalMarkStart(opType string, opPayload json.RawMessage) in
 		opType == dropDSOperation ||
 		opType == RawDataDestUploadOperation, fmt.Sprintf("opType: %s is not a supported op", opType))
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (operation, done, operation_payload, start_time)
-                                       VALUES ($1, $2, $3, $4) RETURNING id`, jd.getJournalTableName())
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s_journal (operation, done, operation_payload, start_time, owner)
+                                       VALUES ($1, $2, $3, $4, $5) RETURNING id`, jd.tablePrefix)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
 
 	var opID int64
-	err = stmt.QueryRow(opType, false, opPayload, time.Now()).Scan(&opID)
+	err = stmt.QueryRow(opType, false, opPayload, time.Now(), jd.ownerType).Scan(&opID)
 	jd.assertError(err)
 
 	return opID
@@ -2515,8 +2499,8 @@ func (jd *HandleT) JournalMarkDone(opID int64) {
 
 //JournalMarkDoneInTxn marks the end of a journal action in a transaction
 func (jd *HandleT) journalMarkDoneInTxn(txHandler transactionHandler, opID int64) error {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET done=$2, end_time=$3 WHERE id=$1`, jd.getJournalTableName())
-	_, err := txHandler.Exec(sqlStatement, opID, true, time.Now())
+	sqlStatement := fmt.Sprintf(`UPDATE %s_journal SET done=$2, end_time=$3 WHERE id=$1 AND owner=$4`, jd.tablePrefix)
+	_, err := txHandler.Exec(sqlStatement, opID, true, time.Now(), jd.ownerType)
 	if err != nil {
 		return err
 	}
@@ -2524,19 +2508,21 @@ func (jd *HandleT) journalMarkDoneInTxn(txHandler transactionHandler, opID int64
 }
 
 func (jd *HandleT) JournalDeleteEntry(opID int64) {
-	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE id=$1`, jd.getJournalTableName())
-	_, err := jd.dbHandle.Exec(sqlStatement, opID)
+	sqlStatement := fmt.Sprintf(`DELETE FROM %s_journal WHERE id=$1 AND owner=$2`, jd.tablePrefix)
+	_, err := jd.dbHandle.Exec(sqlStatement, opID, jd.ownerType)
 	jd.assertError(err)
 }
 
 func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
-                                	FROM %s
+                                	FROM %s_journal
                                 	WHERE
 									done=False
 									AND
 									operation = '%s'
-									ORDER BY id`, jd.getJournalTableName(), opType)
+									AND
+									owner='%s'
+									ORDER BY id`, jd.tablePrefix, opType, jd.ownerType)
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
 	defer stmt.Close()
@@ -2555,7 +2541,7 @@ func (jd *HandleT) GetJournalEntries(opType string) (entries []JournalEntryT) {
 	return
 }
 
-func (jd *HandleT) recoverFromCrash(journalTable string, goRoutineType string) {
+func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 
 	var opTypes []string
 	switch goRoutineType {
@@ -2570,12 +2556,14 @@ func (jd *HandleT) recoverFromCrash(journalTable string, goRoutineType string) {
 	}
 
 	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
-                                	FROM %s
+                                	FROM %s_journal
                                 	WHERE
 									done=False
 									AND
 									operation = ANY($1)
-                                	ORDER BY id`, journalTable)
+									AND
+									owner = '%s'
+                                	ORDER BY id`, jd.tablePrefix, owner)
 
 	stmt, err := jd.dbHandle.Prepare(sqlStatement)
 	jd.assertError(err)
@@ -2659,9 +2647,9 @@ func (jd *HandleT) recoverFromCrash(journalTable string, goRoutineType string) {
 	}
 
 	if undoOp {
-		sqlStatement = fmt.Sprintf(`DELETE FROM %s WHERE id=$1`, journalTable)
+		sqlStatement = fmt.Sprintf(`DELETE FROM %s_journal WHERE id=$1`, jd.tablePrefix)
 	} else {
-		sqlStatement = fmt.Sprintf(`UPDATE %s SET done=True WHERE id=$1`, journalTable)
+		sqlStatement = fmt.Sprintf(`UPDATE %s_journal SET done=True WHERE id=$1`, jd.tablePrefix)
 	}
 
 	_, err = jd.dbHandle.Exec(sqlStatement, opID)
@@ -2676,27 +2664,27 @@ const (
 )
 
 func (jd *HandleT) recoverFromReaderJournal() {
-	jd.recoverFromCrash(fmt.Sprintf("%s_reader_journal", jd.tablePrefix), addDSGoRoutine)
-	jd.recoverFromCrash(fmt.Sprintf("%s_reader_journal", jd.tablePrefix), mainGoRoutine)
-	jd.recoverFromCrash(fmt.Sprintf("%s_reader_journal", jd.tablePrefix), backupGoRoutine)
+	jd.recoverFromCrash(Read, addDSGoRoutine)
+	jd.recoverFromCrash(Read, mainGoRoutine)
+	jd.recoverFromCrash(Read, backupGoRoutine)
 }
 
 func (jd *HandleT) recoverFromWriterJournal() {
-	jd.recoverFromCrash(fmt.Sprintf("%s_writer_journal", jd.tablePrefix), addDSGoRoutine)
-	jd.recoverFromCrash(fmt.Sprintf("%s_writer_journal", jd.tablePrefix), mainGoRoutine)
-	jd.recoverFromCrash(fmt.Sprintf("%s_writer_journal", jd.tablePrefix), backupGoRoutine)
+	jd.recoverFromCrash(Write, addDSGoRoutine)
+	jd.recoverFromCrash(Write, mainGoRoutine)
+	jd.recoverFromCrash(Write, backupGoRoutine)
 }
 
 func (jd *HandleT) recoverFromJournal() {
-	jd.recoverFromCrash(fmt.Sprintf("%s_journal", jd.tablePrefix), addDSGoRoutine)
-	jd.recoverFromCrash(fmt.Sprintf("%s_journal", jd.tablePrefix), mainGoRoutine)
-	jd.recoverFromCrash(fmt.Sprintf("%s_journal", jd.tablePrefix), backupGoRoutine)
+	jd.recoverFromCrash(ReadWrite, addDSGoRoutine)
+	jd.recoverFromCrash(ReadWrite, mainGoRoutine)
+	jd.recoverFromCrash(ReadWrite, backupGoRoutine)
 }
 
 //RecoverFromMigrationJournal is an exposed function for migrator package to handle journal crashes during migration
 func (jd *HandleT) RecoverFromMigrationJournal() {
-	jd.recoverFromCrash(fmt.Sprintf("%s_writer_journal", jd.tablePrefix), migratorRoutine)
-	jd.recoverFromCrash(fmt.Sprintf("%s_journal", jd.tablePrefix), migratorRoutine)
+	jd.recoverFromCrash(Write, migratorRoutine)
+	jd.recoverFromCrash(ReadWrite, migratorRoutine)
 }
 
 /*
