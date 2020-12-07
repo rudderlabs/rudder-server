@@ -1,6 +1,9 @@
 package apptype
 
 import (
+	"errors"
+	"fmt"
+	"runtime"
 	"sync"
 	"time"
 
@@ -11,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -42,6 +46,26 @@ func loadConfig() {
 	enableRouter = config.GetBool("enableRouter", true)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
+}
+
+func rudderCoreBaseSetup() {
+
+	if !validators.ValidateEnv() {
+		panic(errors.New("Failed to start rudder-server"))
+	}
+	validators.InitializeEnv()
+
+	// Check if there is a probable inconsistent state of Data
+	if diagnostics.EnableServerStartMetric {
+		Diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
+			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
+		})
+	}
+
+	//Reload Config
+	loadConfig()
+
+	runtime.GOMAXPROCS(maxProcess)
 }
 
 //NOTE: StartProcessor and StartRouter should be called in order and from the same thread.

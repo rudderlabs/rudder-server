@@ -2009,9 +2009,9 @@ func (jd *HandleT) refreshDSListLoop() {
 	for {
 		time.Sleep(refreshDSListLoopSleepDuration)
 		jd.logger.Debugf("[[ %s : refreshDSListLoop ]]: Start", jd.tablePrefix)
-		jd.dsListLock.RLock()
+		jd.dsListLock.Lock()
 		jd.getDSList(true)
-		jd.dsListLock.RUnlock()
+		jd.dsListLock.Unlock()
 	}
 }
 

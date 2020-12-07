@@ -1,18 +1,12 @@
 package apptype
 
 import (
-	"errors"
-	"fmt"
 	"net/http"
-	"runtime"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	// This is necessary for compatibility with enterprise features
@@ -30,29 +24,15 @@ func (processor *ProcessorAppType) GetAppType() string {
 }
 
 func (processor *ProcessorAppType) StartRudderCore(options *app.Options) {
-	pkgLogger.Info("Main starting")
+	pkgLogger.Info("Processor starting")
 
-	if !validators.ValidateEnv() {
-		panic(errors.New("Failed to start rudder-server"))
-	}
-	validators.InitializeEnv()
-
-	// Check if there is a probable inconsistent state of Data
-	if diagnostics.EnableServerStartMetric {
-		Diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
-			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
-		})
-	}
-
-	//Reload Config
-	loadConfig()
+	rudderCoreBaseSetup()
 
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
 	var batchRouterDB jobsdb.HandleT
 	var procErrorDB jobsdb.HandleT
 
-	runtime.GOMAXPROCS(maxProcess)
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
 	destinationdebugger.Setup()
@@ -82,5 +62,5 @@ func (processor *ProcessorAppType) StartRudderCore(options *app.Options) {
 }
 
 func (processor *ProcessorAppType) HandleRecovery(options *app.Options) {
-	db.HandleProcessorRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime)
+	db.HandleMicroRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime)
 }
