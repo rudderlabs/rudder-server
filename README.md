@@ -43,7 +43,7 @@ Questions? Please join our [Slack channel](https://resources.rudderstack.com/joi
 
 - **Segment API Compatible**: RudderStack is Segment API compatible. So you don't need to change your app if you are using Segment, just integrate the RudderStack SDKs into your app and your events will keep flowing as before (including data-warehouse).
 
-- **Processing Flexibility**: With RudderStack's powerful JavaScript-based event transformation framework, you can enhance or transform your event data by combining it with your other internal data. Furthermore, since RudderStack runs inside your cloud or on-premise environment, you can easily access your production data to join with the event data.
+- **Processing Flexibility**: With RudderStack's powerful JavaScript-based event transformation framework, you can enhance or transform your event data by combining it with your other internal data.
 
 - **Unlimited Events**: Event volume-based pricing of most of the commercial systems is broken. With RudderStack, you are be able to collect as much data as possible without worrying about overrunning event budgets.
 
