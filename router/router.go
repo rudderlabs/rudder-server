@@ -46,7 +46,7 @@ type HandleT struct {
 	failCount                              uint64
 	failedEventsListMutex                  sync.RWMutex
 	failedEventsList                       *list.List
-	failedJobStatusChan                    chan jobsdb.JobStatusT
+	failedEventsChan                       chan jobsdb.JobStatusT
 	isEnabled                              bool
 	toClearFailJobIDMutex                  sync.Mutex
 	toClearFailJobIDMap                    map[int][]string
@@ -436,7 +436,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 		status.JobState = jobsdb.Failed.State
 
-		worker.rt.failedJobStatusChan <- *status
+		worker.rt.failedEventsChan <- *status
 
 		// TODO: 429 should mark this throttled?
 		if respStatusCode >= 500 || respStatusCode == 429 {
@@ -621,7 +621,7 @@ func (rt *HandleT) addToFailedList(jobStatus jobsdb.JobStatusT) {
 func (rt *HandleT) readFailedJobStatusChan() {
 	for {
 		select {
-		case jobStatus := <-rt.failedJobStatusChan:
+		case jobStatus := <-rt.failedEventsChan:
 			rt.addToFailedList(jobStatus)
 		}
 	}
@@ -1056,7 +1056,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	rt.toClearFailJobIDMap = make(map[int][]string)
 	rt.failedEventsList = list.New()
-	rt.failedJobStatusChan = make(chan jobsdb.JobStatusT)
+	rt.failedEventsChan = make(chan jobsdb.JobStatusT)
 	rt.isEnabled = true
 	rt.netHandle = &NetHandleT{}
 	rt.netHandle.logger = rt.logger.Child("network")
