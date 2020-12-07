@@ -3,6 +3,7 @@ package processor
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -57,8 +58,6 @@ type HandleT struct {
 	transformEventsByTimeMutex     sync.RWMutex
 	destTransformEventsByTimeTaken transformRequestPQ
 	userTransformEventsByTimeTaken transformRequestPQ
-	destTransformEventsByTimeChan  chan *TransformRequestT
-	userTransformEventsByTimeChan  chan *TransformRequestT
 	statJobs                       stats.RudderStats
 	statDBR                        stats.RudderStats
 	statDBW                        stats.RudderStats
@@ -288,15 +287,11 @@ func loadConfig() {
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
 	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
+	maxEventsToProcess = config.GetInt("Processor.maxLoopProcessEvents", 10000)
+	avgEventsInRequest = config.GetInt("Processor.avgEventsInRequest", 1)
+	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
+	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
 	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
-
-	dbReadBatchSize = minDBReadBatchSize
-}
-
-//ResetDBReadBatchSize - resets dbReadBatchSize to minDBReadBatchSize
-//This is written as a helper function for processor tests.
-func (proc *HandleT) ResetDBReadBatchSize() {
-	dbReadBatchSize = minDBReadBatchSize
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -1053,17 +1048,6 @@ func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *t
 	}
 	pq.Add(event)
 }
-
-// Utility for tests
-// func (proc *HandleT) printPQ() {
-// 	for {
-// 		select {
-// 		case <-time.After(1000000000):
-// 			logger.Debug("-----------timer fired--------")
-// 			proc.destTransformEventsByTimeTaken.Print()
-// 		}
-// 	}
-// }
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
 // Returns true if any job is handled, otherwise returns false.
