@@ -658,6 +658,32 @@ func (jd *HandleT) getAllTableNames() []string {
 	return tableNames
 }
 
+func (jd *HandleT) cleanUpJobNamesMap(jobNameMap, jobStatusNameMap map[string]string) (map[string]string, map[string]string) {
+	var deleteKey, key string
+	if len(jobNameMap) > len(jobStatusNameMap) {
+		for key = range jobNameMap {
+			if _, ok := jobStatusNameMap[key]; !ok {
+				deleteKey = key
+				break
+			}
+		}
+		if deleteKey != "" {
+			delete(jobNameMap, key)
+		}
+	} else {
+		for key := range jobStatusNameMap {
+			if _, ok := jobNameMap[key]; !ok {
+				deleteKey = key
+				break
+			}
+		}
+		if deleteKey != "" {
+			delete(jobStatusNameMap, key)
+		}
+	}
+	return jobNameMap, jobStatusNameMap
+}
+
 /*
 Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
@@ -705,6 +731,12 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 	}
 
 	jd.sortDnumList(dnumList)
+
+	//If any service has crashed while creating DS, this may happen. Handling such case gracefully.
+	if len(jobNameMap) != len(jobStatusNameMap) {
+		jd.assert(len(jobNameMap) == len(jobStatusNameMap)+1, fmt.Sprintf("Length of jobNameMap(%d) and length of jobStatusNameMap(%d) differ by more than 1", len(jobNameMap), len(jobStatusNameMap)))
+		jobNameMap, jobStatusNameMap = jd.cleanUpJobNamesMap(jobNameMap, jobStatusNameMap)
+	}
 
 	//Create the structure
 	for _, dnum := range dnumList {
