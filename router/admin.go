@@ -140,6 +140,9 @@ func getJobCountsByStateAndDestination(dbHandle *sql.DB, dsName string, dsStats 
 	}
 
 	dsStats.err = rows.Err()
+	if dsStats.err != nil {
+		return // we return whenever we get an error to stop processing further downstream db requests
+	}
 	dsStats.err = rows.Close()
 	return
 }
@@ -169,6 +172,9 @@ func getFailedStatusErrorCodeCountsByDestination(dbHandle *sql.DB, dsName string
 	}
 
 	dsStats.err = rows.Err()
+	if dsStats.err != nil {
+		return
+	}
 	dsStats.err = rows.Close()
 	return
 }
@@ -196,6 +202,9 @@ func getJobCountByConnections(dbHandle *sql.DB, dsName string, dsStats *DSStats)
 	}
 
 	dsStats.err = rows.Err()
+	if dsStats.err != nil {
+		return
+	}
 	dsStats.err = rows.Close()
 	return
 }
@@ -223,6 +232,9 @@ func getJobStatusCountsByExecTime(dbHandle *sql.DB, dsName string, dsStats *DSSt
 	}
 
 	dsStats.err = rows.Err()
+	if dsStats.err != nil {
+		return
+	}
 	dsStats.err = rows.Close()
 	return
 }
