@@ -1808,7 +1808,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 }
 
 func (jd *HandleT) useDSCache(ds dataSetT) bool {
-	if jd.dbType == Read {
+	if jd.dbType == Read && jd.datasetList[len(jd.datasetList)-1].Index == ds.Index {
 		return false
 	}
 	return true
@@ -2009,9 +2009,21 @@ func (jd *HandleT) refreshDSListLoop() {
 	for {
 		time.Sleep(refreshDSListLoopSleepDuration)
 		jd.logger.Debugf("[[ %s : refreshDSListLoop ]]: Start", jd.tablePrefix)
+
+		//Taking migration lock so that migrations don't kick in before we clear cache.
+		jd.dsMigrationLock.RLock()
+
+		//fetching ds list before refresh.
 		jd.dsListLock.Lock()
+		oldDSList := jd.getDSList(false)
 		jd.getDSList(true)
+
+		if oldDSList[len(oldDSList)-1].Index != jd.datasetList[len(jd.datasetList)-1].Index {
+			jd.markClearEmptyResult(oldDSList[len(oldDSList)-1], []string{}, []string{}, nil, hasJobs, nil)
+		}
+
 		jd.dsListLock.Unlock()
+		jd.dsMigrationLock.RUnlock()
 	}
 }
 
