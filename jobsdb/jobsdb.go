@@ -72,8 +72,6 @@ type JobsDB interface {
 	GetExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
 
 	Status() interface{}
-
-	GetConnectionStringPresent() string
 }
 
 /*
@@ -228,10 +226,6 @@ func (jd *HandleT) assert(cond bool, errorString string) {
 		jd.logger.Fatal(jd.dsEmptyResultCache)
 		panic(errorString)
 	}
-}
-
-func (jd *HandleT) GetConnectionStringPresent() string {
-	return GetConnectionString()
 }
 
 func (jd *HandleT) Status() interface{} {
@@ -754,7 +748,6 @@ func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 	}
 
 	return false
-
 }
 
 /*

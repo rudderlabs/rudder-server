@@ -44,8 +44,8 @@ type HandleT struct {
 	perfStats                              *misc.PerfStats
 	successCount                           uint64
 	failCount                              uint64
-	failedListMutex                        sync.RWMutex
-	failedList                             *list.List
+	failedEventsListMutex                  sync.RWMutex
+	failedEventsList                       *list.List
 	failedJobStatusChan                    chan jobsdb.JobStatusT
 	isEnabled                              bool
 	toClearFailJobIDMutex                  sync.Mutex
@@ -112,7 +112,7 @@ type workerT struct {
 
 var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel            int
-	maxFailedListCount                                                      int
+	failedEventsCacheSize                                                   int
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
 	testSinkURL                                                             string
 	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout                      time.Duration
@@ -149,7 +149,7 @@ func loadConfig() {
 	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
 	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
 	fixedLoopSleep = config.GetDuration("Router.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
-	maxFailedListCount = config.GetInt("Router.failedListCount", 10)
+	failedEventsCacheSize = config.GetInt("Router.failedEventsCacheSize", 10)
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -609,13 +609,13 @@ func durationBeforeNextAttempt(attempt int) (d time.Duration) {
 }
 
 func (rt *HandleT) addToFailedList(jobStatus jobsdb.JobStatusT) {
-	rt.failedListMutex.Lock()
-	defer rt.failedListMutex.Unlock()
-	if rt.failedList.Len() == maxFailedListCount {
-		firstEnqueuedStatus := rt.failedList.Back()
-		rt.failedList.Remove(firstEnqueuedStatus)
+	rt.failedEventsListMutex.Lock()
+	defer rt.failedEventsListMutex.Unlock()
+	if rt.failedEventsList.Len() == failedEventsCacheSize {
+		firstEnqueuedStatus := rt.failedEventsList.Back()
+		rt.failedEventsList.Remove(firstEnqueuedStatus)
 	}
-	rt.failedList.PushFront(jobStatus)
+	rt.failedEventsList.PushFront(jobStatus)
 }
 
 func (rt *HandleT) readFailedJobStatusChan() {
@@ -623,12 +623,6 @@ func (rt *HandleT) readFailedJobStatusChan() {
 		select {
 		case jobStatus := <-rt.failedJobStatusChan:
 			rt.addToFailedList(jobStatus)
-		case <-time.After(200):
-			//fmt.Println("destName:: ", rt.destName, " failedList:: ", rt.failedList.Len())
-			// for e := rt.failedList.Front(); e != nil; e = e.Next() {
-			// 	status, _ := json.Marshal(e.Value)
-			// 	fmt.Println(string(status))
-			// }
 		}
 	}
 }
@@ -1061,7 +1055,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	rt.toClearFailJobIDMap = make(map[int][]string)
-	rt.failedList = list.New()
+	rt.failedEventsList = list.New()
 	rt.failedJobStatusChan = make(chan jobsdb.JobStatusT)
 	rt.isEnabled = true
 	rt.netHandle = &NetHandleT{}

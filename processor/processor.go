@@ -164,12 +164,9 @@ func (proc *HandleT) Status() interface{} {
 	defer proc.transformEventsByTimeMutex.RUnlock()
 	statusRes := make(map[string][]TransformRequestT)
 	for _, pqDestEvent := range proc.destTransformEventsByTimeTaken {
-		fmt.Println(pqDestEvent.ProcessingTime)
 		statusRes["dest-transformer"] = append(statusRes["dest-transformer"], *pqDestEvent)
 	}
-	fmt.Println("--------------")
 	for _, pqUserEvent := range proc.userTransformEventsByTimeTaken {
-		fmt.Println(pqUserEvent.ProcessingTime)
 		statusRes["user-transformer"] = append(statusRes["user-transformer"], *pqUserEvent)
 	}
 	return statusRes
@@ -192,8 +189,8 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.userEventsMap = make(map[string][]types.SingularEventT)
 	proc.userPQItemMap = make(map[string]*pqItemT)
 	proc.userToSessionIDMap = make(map[string]string)
-	proc.userTransformEventsByTimeTaken = make([]*TransformRequestT, 0, maxItemsInTransformEventsByTimePQ)
-	proc.destTransformEventsByTimeTaken = make([]*TransformRequestT, 0, maxItemsInTransformEventsByTimePQ)
+	proc.userTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
+	proc.destTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
 	proc.userJobPQ = make(pqT, 0)
 	proc.pStatsJobs.Setup("ProcessorJobs")
 	proc.pStatsDBR.Setup("ProcessorDBRead")
@@ -275,7 +272,7 @@ var (
 	customDestinations                  []string
 	pkgLogger                           logger.LoggerI
 	enableEventSchemasFeature           bool
-	maxItemsInTransformEventsByTimePQ   int
+	transformTimesPQLength              int
 )
 
 func loadConfig() {
@@ -291,7 +288,7 @@ func loadConfig() {
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
 	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
-	maxItemsInTransformEventsByTimePQ = config.GetInt("Processor.maxItemsInTransformEventsByTimePQ", 5)
+	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
 
 	dbReadBatchSize = minDBReadBatchSize
 }
@@ -870,9 +867,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.destProcessing.Start()
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
-	logger.Debug("[Processor: processJobsForDest] calling transformations")
-	var beforeTransformRequest, afterTransformerRequest time.Time
-	var totalTimeToTransform float64
+	var startedAt, endedAt time.Time
+	var timeTaken float64
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 		destination := eventList[0].Destination
@@ -902,12 +898,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			} else {
 				// We need not worry about breaking up a single user sessions in this case
 				destStat.userTransform.Start()
-				beforeTransformRequest = time.Now()
+				startedAt = time.Now()
 				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, false)
-				afterTransformerRequest = time.Now()
-				totalTimeToTransform = afterTransformerRequest.Sub(beforeTransformRequest).Seconds()
+				endedAt = time.Now()
+				timeTaken = endedAt.Sub(startedAt).Seconds()
 				destStat.userTransform.End()
-				proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: totalTimeToTransform, Index: -1}, &proc.userTransformEventsByTimeTaken)
+				proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: timeTaken, Index: -1}, &proc.userTransformEventsByTimeTaken)
 			}
 
 			eventsToTransform = proc.getDestTransformerEvents(response, metadata, destination)
@@ -928,12 +924,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 		destStat.destTransform.Start()
-		beforeTransformRequest = time.Now()
+		startedAt = time.Now()
 		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
-		afterTransformerRequest = time.Now()
-		totalTimeToTransform = afterTransformerRequest.Sub(beforeTransformRequest).Seconds()
+		endedAt = time.Now()
+		timeTaken = endedAt.Sub(startedAt).Seconds()
 		destStat.destTransform.End()
-		proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventsToTransform, Stage: "destination-transformer", ProcessingTime: totalTimeToTransform, Index: -1}, &proc.destTransformEventsByTimeTaken)
+		proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventsToTransform, Stage: "destination-transformer", ProcessingTime: timeTaken, Index: -1}, &proc.destTransformEventsByTimeTaken)
 
 		destTransformEventList := response.Events
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
@@ -1047,7 +1043,7 @@ func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList
 func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *transformRequestPQ) {
 	proc.transformEventsByTimeMutex.Lock()
 	defer proc.transformEventsByTimeMutex.Unlock()
-	if pq.Len() == maxItemsInTransformEventsByTimePQ {
+	if pq.Len() == transformTimesPQLength {
 		if pq.Top().ProcessingTime < event.ProcessingTime {
 			pq.RemoveTop()
 			pq.Add(event)
@@ -1059,15 +1055,15 @@ func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *t
 }
 
 // Utility for tests
-func (proc *HandleT) printPQ() {
-	for {
-		select {
-		case <-time.After(1000000000):
-			logger.Debug("-----------timer fired--------")
-			proc.destTransformEventsByTimeTaken.Print()
-		}
-	}
-}
+// func (proc *HandleT) printPQ() {
+// 	for {
+// 		select {
+// 		case <-time.After(1000000000):
+// 			logger.Debug("-----------timer fired--------")
+// 			proc.destTransformEventsByTimeTaken.Print()
+// 		}
+// 	}
+// }
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
 // Returns true if any job is handled, otherwise returns false.

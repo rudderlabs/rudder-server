@@ -55,26 +55,25 @@ func (r *SqlRunner) getUniqueSources() []SourceEvents {
 	uniqueSourceValsStmt := fmt.Sprintf(`select count(*) as count, parameters -> 'source_id' as source from %s group by parameters -> 'source_id';`, r.jobTableName)
 	var rows *sql.Rows
 	rows, r.err = r.dbHandle.Query(uniqueSourceValsStmt)
-	//defer rows.Close() // don't need to check error as we are firing read ops/ but for error above this will give error too, so calling at the end
 	if r.err != nil {
 		return sources
 	}
+	defer rows.Close()
 	sourceEvent := SourceEvents{}
 	for rows.Next() {
-		if r.err = rows.Scan(&sourceEvent.Count, &sourceEvent.Source); r.err != nil {
-			return sources
+		r.err = rows.Scan(&sourceEvent.Count, &sourceEvent.Source)
+		if r.err != nil {
+			return sources // defer closing of rows, so return will not memory leak
 		}
 		sources = append(sources, sourceEvent)
 	}
 
-	if r.err = rows.Err(); r.err != nil {
+	r.err = rows.Err()
+	if r.err != nil {
 		return sources
 	}
 
-	if r.err = rows.Close(); r.err != nil {
-		return sources
-	}
-
+	r.err = rows.Close() // rows.close will be called in defer too, but it should be harmless to call multiple times
 	return sources
 }
 
@@ -135,10 +134,11 @@ type DSStats struct {
 // writeKey, count(*)  we want source name to count per ds
 // Num Distinct users per ds
 // Avg Event size = Table_size / (avg Batch size * Total rows) is Table_size correct measure?
+// add job status group by
 func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) error {
 	jobTableName := prefix + dsName
-	dbHandle, err := sql.Open("postgres", g.jobsDB.GetConnectionStringPresent())
-	defer dbHandle.Close()
+	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
+	defer dbHandle.Close() // since this also returns an error, we can explicitly close but not doing
 	runner := &SqlRunner{dbHandle: dbHandle, jobTableName: jobTableName, err: err}
 	sources := runner.getUniqueSources()
 	numUsers := runner.getNumUniqueUsers()
@@ -149,7 +149,7 @@ func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) error {
 	configSubscriberLock.RLock()
 	sourcesEventToCounts := make([]SourceEvents, 0)
 	for _, sourceEvent := range sources {
-		name, found := enabledSourceIDToNameMap[sourceEvent.Source[1:len(sourceEvent.Source)-1]]
+		name, found := sourceIDToNameMap[sourceEvent.Source[1:len(sourceEvent.Source)-1]]
 		if found {
 			sourcesEventToCounts = append(sourcesEventToCounts, SourceEvents{sourceEvent.Count, name})
 		}
@@ -158,6 +158,7 @@ func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) error {
 	response, err := json.MarshalIndent(DSStats{sourcesEventToCounts, numUsers, avgBatchSize, tableSize, numRows}, "", " ")
 	if err != nil {
 		*result = ""
+		runner.err = err
 	} else {
 		*result = string(response)
 	}
