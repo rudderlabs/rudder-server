@@ -73,10 +73,8 @@ maxDBBatchSize = 128
 userWebRequestBatchTimeoutInMS = 15
 dbBatchWriteTimeoutInMS = 5
 maxReqSizeInKB = 4000
-enableDedup = false
 enableRateLimit = false
 enableSuppressUserFeature = true
-dedupWindowInS = 86400
 allowPartialWriteWithErrors = true
 allowReqsWithoutUserIDAndAnonymousID = false
 
@@ -230,6 +228,8 @@ errReadLoopSleepInS = 30
 errDBReadBatchSize = 10000
 noOfErrStashWorkers = 2
 maxFailedCountForErrJob = 3
+enableDedup = false
+dedupWindowInS = 86400
 
 [BackendConfig]
 configFromFile = false

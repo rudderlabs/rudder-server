@@ -212,7 +212,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 		var rateLimiter ratelimiter.HandleT
 
 		rateLimiter.SetUp()
-		gateway.Setup(application, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, clearDB, versionHandler)
+		gateway.Setup(application, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, versionHandler)
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
@@ -239,7 +239,7 @@ func StartProcessor(clearDB *bool, migrationMode string, enableProcessor bool, g
 		procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
 
 		var processor = processor.NewProcessor()
-		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB)
+		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB)
 		processor.Start()
 
 		processorLoaded = true
