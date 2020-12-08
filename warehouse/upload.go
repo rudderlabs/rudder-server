@@ -222,6 +222,12 @@ func (job *UploadJobT) run() (err error) {
 		ch <- struct{}{}
 	}()
 
+	// set last_exec_at to record last upload start time
+	// sync scheduling with syncStartAt depends on this determine to start upload or not
+	job.setUploadColumns(
+		UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
+	)
+
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
 		job.setUploadError(err, job.upload.Status)
