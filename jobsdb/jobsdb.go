@@ -708,71 +708,61 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 	//Reset the global list
 	jd.datasetList = nil
 
-	for {
-		//Read the table names from PG
-		tableNames := jd.getAllTableNames()
+	//Read the table names from PG
+	tableNames := jd.getAllTableNames()
 
-		//Tables are of form jobs_ and job_status_. Iterate
-		//through them and sort them to produce and
-		//ordered list of datasets
+	//Tables are of form jobs_ and job_status_. Iterate
+	//through them and sort them to produce and
+	//ordered list of datasets
 
-		jobNameMap := map[string]string{}
-		jobStatusNameMap := map[string]string{}
-		dnumList := []string{}
+	jobNameMap := map[string]string{}
+	jobStatusNameMap := map[string]string{}
+	dnumList := []string{}
 
-		for _, t := range tableNames {
-			if strings.HasPrefix(t, jd.tablePrefix+"_jobs_") {
-				dnum := t[len(jd.tablePrefix+"_jobs_"):]
-				jobNameMap[dnum] = t
-				dnumList = append(dnumList, dnum)
-				continue
-			}
-			if strings.HasPrefix(t, jd.tablePrefix+"_job_status_") {
-				dnum := t[len(jd.tablePrefix+"_job_status_"):]
-				jobStatusNameMap[dnum] = t
-				continue
-			}
-		}
-
-		jd.sortDnumList(dnumList)
-
-		//If any service has crashed while creating DS, this may happen. Handling such case gracefully.
-		if len(jobNameMap) != len(jobStatusNameMap) {
-			jd.assert(len(jobNameMap) == len(jobStatusNameMap)+1 || len(jobNameMap)+1 == len(jobStatusNameMap), fmt.Sprintf("%s : Length of jobNameMap(%d) and length of jobStatusNameMap(%d) differ by more than 1", jd.tablePrefix, len(jobNameMap), len(jobStatusNameMap)))
-			deletedDNum := cleanUpJobNamesMap(jobNameMap, jobStatusNameMap)
-			//remove deletedDNum from dnumList
-			var idx int
-			var dnum string
-			var foundDeletedDNum bool
-			for idx, dnum = range dnumList {
-				if dnum == deletedDNum {
-					foundDeletedDNum = true
-					break
-				}
-			}
-			if foundDeletedDNum {
-				dnumList = remove(dnumList, idx)
-			}
-		}
-
-		//In case if the table list is empty, sleep and refresh.
-		if len(jobNameMap) == 0 || len(jobStatusNameMap) == 0 || len(dnumList) == 0 {
-			time.Sleep(refreshDSListLoopSleepDuration)
+	for _, t := range tableNames {
+		if strings.HasPrefix(t, jd.tablePrefix+"_jobs_") {
+			dnum := t[len(jd.tablePrefix+"_jobs_"):]
+			jobNameMap[dnum] = t
+			dnumList = append(dnumList, dnum)
 			continue
 		}
-
-		//Create the structure
-		for _, dnum := range dnumList {
-			jobName, ok := jobNameMap[dnum]
-			jd.assert(ok, fmt.Sprintf("%s : dnum %s is not found in jobNameMap", jd.tablePrefix, dnum))
-			jobStatusName, ok := jobStatusNameMap[dnum]
-			jd.assert(ok, fmt.Sprintf("%s : dnum %s is not found in jobStatusNameMap", jd.tablePrefix, dnum))
-			jd.datasetList = append(jd.datasetList,
-				dataSetT{JobTable: jobName,
-					JobStatusTable: jobStatusName, Index: dnum})
+		if strings.HasPrefix(t, jd.tablePrefix+"_job_status_") {
+			dnum := t[len(jd.tablePrefix+"_job_status_"):]
+			jobStatusNameMap[dnum] = t
+			continue
 		}
+	}
 
-		break
+	jd.sortDnumList(dnumList)
+
+	//If any service has crashed while creating DS, this may happen. Handling such case gracefully.
+	if len(jobNameMap) != len(jobStatusNameMap) {
+		jd.assert(len(jobNameMap) == len(jobStatusNameMap)+1 || len(jobNameMap)+1 == len(jobStatusNameMap), fmt.Sprintf("%s : Length of jobNameMap(%d) and length of jobStatusNameMap(%d) differ by more than 1", jd.tablePrefix, len(jobNameMap), len(jobStatusNameMap)))
+		deletedDNum := cleanUpJobNamesMap(jobNameMap, jobStatusNameMap)
+		//remove deletedDNum from dnumList
+		var idx int
+		var dnum string
+		var foundDeletedDNum bool
+		for idx, dnum = range dnumList {
+			if dnum == deletedDNum {
+				foundDeletedDNum = true
+				break
+			}
+		}
+		if foundDeletedDNum {
+			dnumList = remove(dnumList, idx)
+		}
+	}
+
+	//Create the structure
+	for _, dnum := range dnumList {
+		jobName, ok := jobNameMap[dnum]
+		jd.assert(ok, fmt.Sprintf("%s : dnum %s is not found in jobNameMap", jd.tablePrefix, dnum))
+		jobStatusName, ok := jobStatusNameMap[dnum]
+		jd.assert(ok, fmt.Sprintf("%s : dnum %s is not found in jobStatusNameMap", jd.tablePrefix, dnum))
+		jd.datasetList = append(jd.datasetList,
+			dataSetT{JobTable: jobName,
+				JobStatusTable: jobStatusName, Index: dnum})
 	}
 
 	jd.statTableCount.Gauge(len(jd.datasetList))
