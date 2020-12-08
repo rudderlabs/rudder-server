@@ -298,42 +298,36 @@ func compareSchema(sch1, sch2 map[string]map[string]string) bool {
 	return eq
 }
 
-func getSchemaDiff(currentSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.SchemaDiffT) {
-	diff = warehouseutils.SchemaDiffT{
-		Tables:                         []string{},
-		ColumnMaps:                     make(map[string]map[string]string),
-		UpdatedSchema:                  make(map[string]map[string]string),
-		StringColumnsToBeAlteredToText: make(map[string][]string),
+func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
+	diff = warehouseutils.TableSchemaDiffT{
+		ColumnMap:     make(map[string]string),
+		UpdatedSchema: make(map[string]string),
 	}
 
-	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
-	for tableName, columnMap := range map[string]map[string]string(currentSchema) {
-		diff.UpdatedSchema[tableName] = make(map[string]string)
-		for columnName, columnType := range columnMap {
-			diff.UpdatedSchema[tableName][columnName] = columnType
-		}
+	var currentTableSchema map[string]string
+	var ok bool
+	if currentTableSchema, ok = currentSchema[tableName]; !ok {
+		diff.Exists = true
+		diff.TableToBeCreated = true
+		diff.ColumnMap = uploadSchema[tableName]
+		diff.UpdatedSchema = uploadSchema[tableName]
+		return diff
 	}
-	for tableName, uploadColumnMap := range map[string]map[string]string(uploadSchema) {
-		currentColumnsMap, ok := currentSchema[tableName]
-		if !ok {
-			diff.Tables = append(diff.Tables, tableName)
-			diff.ColumnMaps[tableName] = uploadColumnMap
-			diff.UpdatedSchema[tableName] = uploadColumnMap
+
+	for columnName, columnType := range currentSchema[tableName] {
+		diff.UpdatedSchema[columnName] = columnType
+	}
+
+	diff.ColumnMap = make(map[string]string)
+	for columnName, columnType := range uploadSchema[tableName] {
+		if _, ok := currentTableSchema[columnName]; !ok {
+			diff.ColumnMap[columnName] = columnType
+			diff.UpdatedSchema[columnName] = columnType
 			diff.Exists = true
-		} else {
-			diff.ColumnMaps[tableName] = make(map[string]string)
-			for columnName, columnType := range uploadColumnMap {
-				if _, ok := currentColumnsMap[columnName]; !ok {
-					diff.ColumnMaps[tableName][columnName] = columnType
-					diff.UpdatedSchema[tableName][columnName] = columnType
-					diff.Exists = true
-				} else if columnType == "text" && currentColumnsMap[columnName] == "string" {
-					diff.StringColumnsToBeAlteredToText[tableName] = append(diff.StringColumnsToBeAlteredToText[tableName], columnName)
-					diff.Exists = true
-				}
-			}
+		} else if columnType == "text" && currentTableSchema[columnName] == "string" {
+			diff.StringColumnsToBeAlteredToText = append(diff.StringColumnsToBeAlteredToText, columnName)
+			diff.Exists = true
 		}
-
 	}
-	return
+	return diff
 }

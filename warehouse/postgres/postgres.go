@@ -475,13 +475,15 @@ func (pg *HandleT) addColumn(tableName string, columnName string, columnType str
 	return
 }
 
-func (pg *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
-	if len(pg.Uploader.GetSchemaInWarehouse()) == 0 {
-		err = pg.createSchema()
-		if err != nil {
-			return err
-		}
+func (pg *HandleT) CreateSchema() (err error) {
+	if len(pg.Uploader.GetSchemaInWarehouse()) > 0 {
+		return nil
 	}
+	err = pg.createSchema()
+	return err
+}
+
+func (pg *HandleT) MigrateTableSchema(tableName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
 	_, err = pg.Db.Exec(sqlStatement)
@@ -490,33 +492,17 @@ func (pg *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
 	}
 	pkgLogger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
 
-	processedTables := make(map[string]bool)
-	for _, tableName := range diff.Tables {
-		tableExists, err := pg.tableExists(tableName)
+	if tableSchemaDiff.TableToBeCreated {
+		err = pg.createTable(fmt.Sprintf(`%s`, tableName), tableSchemaDiff.ColumnMap)
 		if err != nil {
 			return err
 		}
-		if !tableExists {
-			err = pg.createTable(fmt.Sprintf(`%s`, tableName), diff.ColumnMaps[tableName])
+	} else {
+		for columnName, columnType := range tableSchemaDiff.ColumnMap {
+			err := pg.addColumn(tableName, columnName, columnType)
 			if err != nil {
+				pkgLogger.Errorf("PG: Column %s already exists on %s.%s \nResponse: %v", columnName, pg.Namespace, tableName, err)
 				return err
-			}
-			processedTables[tableName] = true
-		}
-	}
-	for tableName, columnMap := range diff.ColumnMaps {
-		// skip adding columns when table didn't exist previously and was created in the prev statement
-		// this to make sure all columns in the the columnMap exists in the table in snowflake
-		if _, ok := processedTables[tableName]; ok {
-			continue
-		}
-		if len(columnMap) > 0 {
-			for columnName, columnType := range columnMap {
-				err := pg.addColumn(tableName, columnName, columnType)
-				if err != nil {
-					pkgLogger.Errorf("PG: Column %s already exists on %s.%s \nResponse: %v", columnName, pg.Namespace, tableName, err)
-					return err
-				}
 			}
 		}
 	}

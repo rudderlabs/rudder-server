@@ -291,7 +291,7 @@ func (bq *HandleT) loadUserTables() (errorMap map[string]error) {
 		errorMap[warehouseutils.UsersTable] = status.Err()
 		return
 	}
-	return nil
+	return errorMap
 }
 
 type BQCredentialsT struct {
@@ -389,35 +389,29 @@ func (bq *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
-func (bq *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
-	if len(bq.Uploader.GetSchemaInWarehouse()) == 0 {
-		err = bq.createSchema()
+func (bq *HandleT) CreateSchema() (err error) {
+	if len(bq.Uploader.GetSchemaInWarehouse()) > 0 {
+		return nil
+	}
+	err = bq.createSchema()
+	return err
+}
+
+func (bq *HandleT) MigrateTableSchema(tableName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
+	if tableSchemaDiff.TableToBeCreated {
+		err = bq.createTable(tableName, tableSchemaDiff.ColumnMap)
 		if !checkAndIgnoreAlreadyExistError(err) {
 			return err
 		}
-	}
-	processedTables := make(map[string]bool)
-	for _, tableName := range diff.Tables {
-		err = bq.createTable(tableName, diff.ColumnMaps[tableName])
-		if !checkAndIgnoreAlreadyExistError(err) {
-			return err
-		}
-		processedTables[tableName] = true
-	}
-	for tableName, columnMap := range diff.ColumnMaps {
-		if _, ok := processedTables[tableName]; ok {
-			continue
-		}
-		if len(columnMap) > 0 {
-			var err error
-			for columnName, columnType := range columnMap {
-				err = bq.addColumn(tableName, columnName, columnType)
-				if err != nil {
-					if checkAndIgnoreAlreadyExistError(err) {
-						pkgLogger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnName, bq.Namespace, tableName, err)
-					} else {
-						return err
-					}
+	} else {
+		var err error
+		for columnName, columnType := range tableSchemaDiff.ColumnMap {
+			err = bq.addColumn(tableName, columnName, columnType)
+			if err != nil {
+				if checkAndIgnoreAlreadyExistError(err) {
+					pkgLogger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnName, bq.Namespace, tableName, err)
+				} else {
+					return err
 				}
 			}
 		}

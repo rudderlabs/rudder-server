@@ -321,22 +321,19 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 		defer whManager.Cleanup()
 
-		var schemaInWarehouse warehouseutils.SchemaT
-		schemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
+		schemaHandle := SchemaHandleT{
+			warehouse:    job.warehouse,
+			stagingFiles: job.stagingFiles,
+			dbHandle:     job.dbHandle,
+		}
+		job.schemaHandle = &schemaHandle
+
+		job.schemaHandle.schemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, Aborted)
 			return
 		}
-
-		job.setUploadStatus(UpdatedRemoteSchema)
-		diff := getSchemaDiff(schemaInWarehouse, job.upload.Schema)
-		err = whManager.MigrateSchema(diff)
-		if err != nil {
-			job.setUploadError(err, Aborted)
-			return
-		}
-		job.setUploadStatus(UpdatedRemoteSchema)
 
 		job.setUploadStatus(getInProgressState(ExportedData))
 		loadErrors, err := job.loadIdentityTables(true)

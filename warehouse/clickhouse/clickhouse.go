@@ -451,42 +451,26 @@ func (ch *HandleT) addColumn(tableName string, columnName string, columnType str
 	return
 }
 
-func (ch *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
-	if len(ch.Uploader.GetSchemaInWarehouse()) == 0 {
-		err = ch.createSchema()
-		if err != nil {
-			return
-		}
+func (ch *HandleT) CreateSchema() (err error) {
+	if len(ch.Uploader.GetSchemaInWarehouse()) > 0 {
+		return nil
 	}
+	err = ch.createSchema()
+	return err
+}
 
-	processedTables := make(map[string]bool)
-	for _, tableName := range diff.Tables {
-		var tableExists bool
-		tableExists, err = ch.tableExists(tableName)
+func (ch *HandleT) MigrateTableSchema(tableName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
+	if tableSchemaDiff.TableToBeCreated {
+		err = ch.createTable(fmt.Sprintf(`%s`, tableName), tableSchemaDiff.ColumnMap)
 		if err != nil {
-			return
+			return err
 		}
-		if !tableExists {
-			err = ch.createTable(fmt.Sprintf(`%s`, tableName), diff.ColumnMaps[tableName])
+	} else {
+		for columnName, columnType := range tableSchemaDiff.ColumnMap {
+			err = ch.addColumn(tableName, columnName, columnType)
 			if err != nil {
+				pkgLogger.Errorf("CH: Column %s already exists on %s.%s \nResponse: %v", columnName, ch.Namespace, tableName, err)
 				return
-			}
-			processedTables[tableName] = true
-		}
-	}
-	for tableName, columnMap := range diff.ColumnMaps {
-		// skip adding columns when table didn't exist previously and was created in the prev statement
-		// this to make sure all columns in the the columnMap exists in the table in snowflake
-		if _, ok := processedTables[tableName]; ok {
-			continue
-		}
-		if len(columnMap) > 0 {
-			for columnName, columnType := range columnMap {
-				err = ch.addColumn(tableName, columnName, columnType)
-				if err != nil {
-					pkgLogger.Errorf("CH: Column %s already exists on %s.%s \nResponse: %v", columnName, ch.Namespace, tableName, err)
-					return
-				}
 			}
 		}
 	}

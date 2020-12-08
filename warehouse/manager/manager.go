@@ -17,7 +17,8 @@ type ManagerI interface {
 	Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) error
 	CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error)
-	MigrateSchema(diff warehouseutils.SchemaDiffT) (err error)
+	CreateSchema() (err error)
+	MigrateTableSchema(tableName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error)
 	LoadTable(tableName string) error
 	LoadUserTables() map[string]error
 	LoadIdentityMergeRulesTable() error

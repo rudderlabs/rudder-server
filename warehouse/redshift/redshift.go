@@ -564,57 +564,41 @@ func (rs *HandleT) connectToWarehouse() (*sql.DB, error) {
 	})
 }
 
-func (rs *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
-	if len(rs.Uploader.GetSchemaInWarehouse()) == 0 {
-		var schemaExists bool
-		if schemaExists, err = rs.schemaExists(rs.Namespace); !schemaExists {
-			err = rs.createSchema()
-		}
-		if err != nil {
-			return err
-		}
+func (rs *HandleT) CreateSchema() (err error) {
+	if len(rs.Uploader.GetSchemaInWarehouse()) > 0 {
+		return nil
 	}
-	processedTables := make(map[string]bool)
-	for _, tableName := range diff.Tables {
-		tableExists, err := rs.tableExists(tableName)
+	var schemaExists bool
+	if schemaExists, err = rs.schemaExists(rs.Namespace); !schemaExists {
+		err = rs.createSchema()
+	}
+	return err
+}
+
+func (rs *HandleT) MigrateTableSchema(tableName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
+	if tableSchemaDiff.TableToBeCreated {
+		err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), tableSchemaDiff.ColumnMap)
 		if err != nil {
 			return err
 		}
-		if !tableExists {
-			err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), diff.ColumnMaps[tableName])
+	} else {
+		for columnName, columnType := range tableSchemaDiff.ColumnMap {
+			err := rs.addColumn(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName, columnType)
 			if err != nil {
-				return err
-			}
-			processedTables[tableName] = true
-		}
-	}
-	for tableName, columnMap := range diff.ColumnMaps {
-		// skip adding columns when table didn't exist previously and was created in the prev statement
-		// this to make sure all columns in the the columnMap exists in the table in redshift
-		if _, ok := processedTables[tableName]; ok {
-			continue
-		}
-		if len(columnMap) > 0 {
-			for columnName, columnType := range columnMap {
-				err := rs.addColumn(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName, columnType)
-				if err != nil {
-					if checkAndIgnoreAlreadyExistError(err) {
-						pkgLogger.Infof("RS: Column %s already exists on %s.%s \nResponse: %v", columnName, rs.Namespace, tableName, err)
-					} else {
-						return err
-					}
+				if checkAndIgnoreAlreadyExistError(err) {
+					pkgLogger.Infof("RS: Column %s already exists on %s.%s \nResponse: %v", columnName, rs.Namespace, tableName, err)
+				} else {
+					return err
 				}
 			}
 		}
 	}
 	if setVarCharMax {
-		for tableName, stringColumnsToBeAlteredToText := range diff.StringColumnsToBeAlteredToText {
-			if len(stringColumnsToBeAlteredToText) > 0 {
-				for _, columnName := range stringColumnsToBeAlteredToText {
-					err := rs.alterStringToText(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName)
-					if err != nil {
-						return err
-					}
+		if len(tableSchemaDiff.StringColumnsToBeAlteredToText) > 0 {
+			for _, columnName := range tableSchemaDiff.StringColumnsToBeAlteredToText {
+				err := rs.alterStringToText(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName)
+				if err != nil {
+					return err
 				}
 			}
 		}

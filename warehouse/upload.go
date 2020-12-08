@@ -28,7 +28,7 @@ const (
 	CreatedTableUploads       = "created_table_uploads"
 	GeneratedLoadFiles        = "generated_load_files"
 	UpdatedTableUploadsCounts = "updated_table_uploads_counts"
-	UpdatedRemoteSchema       = "updated_remote_schema"
+	CreatedRemoteSchema       = "created_remote_schema"
 	ExportedUserTables        = "exported_user_tables"
 	ExportedData              = "exported_data"
 	ExportedIdentities        = "exported_identities"
@@ -44,10 +44,13 @@ const (
 
 // Table Upload status
 const (
-	TableUploadExecuting       = "executing"
-	TableUploadExporting       = "exporting_data"
-	TableUploadExportingFailed = "exporting_data_failed"
-	TableUploadExported        = "exported_data"
+	TableUploadExecuting            = "executing"
+	TableUploadUpdatingSchema       = "updating_schema"
+	TableUploadUpdatingSchemaFailed = "updating_schema_failed"
+	TableUploadUpdatedSchema        = "updated_schema"
+	TableUploadExporting            = "exporting_data"
+	TableUploadExportingFailed      = "exporting_data_failed"
+	TableUploadExported             = "exported_data"
 )
 
 var stateTransitions map[string]*uploadStateT
@@ -87,6 +90,7 @@ type UploadJobT struct {
 	stagingFiles []*StagingFileT
 	pgNotifier   *pgnotifier.PgNotifierT
 	schemaHandle *SchemaHandleT
+	schemaLock   sync.Mutex
 }
 
 type UploadColumnT struct {
@@ -314,20 +318,13 @@ func (job *UploadJobT) run() (err error) {
 			}
 			newStatus = nextUploadState.completed
 
-		case UpdatedRemoteSchema:
+		case CreatedRemoteSchema:
 			newStatus = nextUploadState.failed
-			diff := getSchemaDiff(schemaHandle.schemaInWarehouse, job.upload.Schema)
-			if diff.Exists {
-				err = whManager.MigrateSchema(diff)
+			if len(schemaHandle.schemaInWarehouse) == 0 {
+				err = whManager.CreateSchema()
 				if err != nil {
 					break
 				}
-				// update all schemas in handle to the updated version from warehouse after successful migration
-				err = schemaHandle.updateLocalSchema(diff.UpdatedSchema)
-				if err != nil {
-					break
-				}
-				schemaHandle.schemaInWarehouse = diff.UpdatedSchema
 			}
 			newStatus = nextUploadState.completed
 
@@ -474,15 +471,31 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 		tName := tableName
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
-			pkgLogger.Infof(`[WH]: Starting load for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+			var err error
+			var failureStage = TableUploadExportingFailed
 			tableUpload := NewTableUpload(job.upload.ID, tName)
-			tableUpload.setStatus(TableUploadExecuting)
-			err := job.whManager.LoadTable(tName)
+			tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
+			if tableSchemaDiff.Exists {
+				pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+				err = job.whManager.MigrateTableSchema(tName, tableSchemaDiff)
+				if err == nil {
+					job.setUpdatedTableSchema(tName, tableSchemaDiff.UpdatedSchema)
+				} else {
+					failureStage = TableUploadUpdatingSchemaFailed
+				}
+			}
+
+			if err == nil {
+				pkgLogger.Infof(`[WH]: Starting load for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+				tableUpload.setStatus(TableUploadExecuting)
+				err = job.whManager.LoadTable(tName)
+			}
+
 			if err != nil {
 				loadErrorLock.Lock()
 				loadErrors = append(loadErrors, err)
 				loadErrorLock.Unlock()
-				tableUpload.setError(TableUploadExportingFailed, err)
+				tableUpload.setError(failureStage, err)
 			} else {
 				tableUpload.setStatus(TableUploadExported)
 				numEvents, queryErr := tableUpload.getNumEvents()
@@ -529,6 +542,20 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 	// Load all user tables
 	for _, tName := range userTables {
 		tableUpload := NewTableUpload(job.upload.ID, tName)
+		tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
+		if tableSchemaDiff.Exists {
+			pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+			tableUpload.setStatus(TableUploadUpdatingSchema)
+			err = job.whManager.MigrateTableSchema(tName, tableSchemaDiff)
+
+			if err != nil {
+				tableUpload.setError(TableUploadUpdatingSchemaFailed, err)
+				errorMap := map[string]error{tName: err}
+				return job.processLoadTableResponse(errorMap)
+			}
+			job.setUpdatedTableSchema(tName, tableSchemaDiff.UpdatedSchema)
+			tableUpload.setStatus(TableUploadUpdatedSchema)
+		}
 		tableUpload.setStatus(TableUploadExecuting)
 	}
 
@@ -552,15 +579,32 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 
 	for _, tableName := range identityTables {
-		loadTable, err := job.shouldTableBeLoaded(tableName)
+		tableUpload := NewTableUpload(job.upload.ID, tableName)
+		loaded, err := tableUpload.hasBeenLoaded()
 		if err != nil {
 			errorMap[tableName] = err
 			break
 		}
 
-		if loadTable {
+		if !loaded {
 			errorMap[tableName] = nil
 			tableUpload := NewTableUpload(job.upload.ID, tableName)
+
+			tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
+			if tableSchemaDiff.Exists {
+				pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tableName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+				tableUpload.setStatus(TableUploadUpdatingSchema)
+				err = job.whManager.MigrateTableSchema(tableName, tableSchemaDiff)
+
+				if err != nil {
+					tableUpload.setError(TableUploadUpdatingSchemaFailed, err)
+					errorMap := map[string]error{tableName: err}
+					return job.processLoadTableResponse(errorMap)
+				}
+				job.setUpdatedTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
+				tableUpload.setStatus(TableUploadUpdatedSchema)
+			}
+
 			err := tableUpload.setStatus(TableUploadExecuting)
 			if err != nil {
 				errorMap[tableName] = err
@@ -580,6 +624,12 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	}
 
 	return job.processLoadTableResponse(errorMap)
+}
+
+func (job *UploadJobT) setUpdatedTableSchema(tableName string, updatedSchema map[string]string) {
+	job.schemaLock.Lock()
+	job.schemaHandle.schemaInWarehouse[tableName] = updatedSchema
+	job.schemaLock.Unlock()
 }
 
 func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (errors []error, tableUploadErr error) {
@@ -1051,12 +1101,12 @@ func initializeStateMachine() {
 	}
 	stateTransitions[UpdatedTableUploadsCounts] = updateTableUploadCountsState
 
-	updateRemoteSchemaState := &uploadStateT{
-		inProgress: "updating_remote_schema",
-		failed:     "updating_remote_schema_failed",
-		completed:  UpdatedRemoteSchema,
+	createRemoteSchemaState := &uploadStateT{
+		inProgress: "creating_remote_schema",
+		failed:     "creating_remote_schema_failed",
+		completed:  CreatedRemoteSchema,
 	}
-	stateTransitions[UpdatedRemoteSchema] = updateRemoteSchemaState
+	stateTransitions[CreatedRemoteSchema] = createRemoteSchemaState
 
 	exportUserTablesState := &uploadStateT{
 		inProgress: "exporting_user_tables",
@@ -1088,8 +1138,8 @@ func initializeStateMachine() {
 	generateUploadSchemaState.nextState = createTableUploadsState
 	createTableUploadsState.nextState = generateLoadFilesState
 	generateLoadFilesState.nextState = updateTableUploadCountsState
-	updateTableUploadCountsState.nextState = updateRemoteSchemaState
-	updateRemoteSchemaState.nextState = exportUserTablesState
+	updateTableUploadCountsState.nextState = createRemoteSchemaState
+	createRemoteSchemaState.nextState = exportUserTablesState
 	exportUserTablesState.nextState = loadIdentitiesState
 	loadIdentitiesState.nextState = exportDataState
 	exportDataState.nextState = nil

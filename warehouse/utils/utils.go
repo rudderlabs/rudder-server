@@ -135,12 +135,12 @@ func IDResolutionEnabled() bool {
 	return enableIDResolution
 }
 
-type SchemaDiffT struct {
+type TableSchemaDiffT struct {
 	Exists                         bool
-	Tables                         []string
-	ColumnMaps                     map[string]map[string]string
-	UpdatedSchema                  map[string]map[string]string
-	StringColumnsToBeAlteredToText map[string][]string
+	TableToBeCreated               bool
+	ColumnMap                      map[string]string
+	UpdatedSchema                  map[string]string
+	StringColumnsToBeAlteredToText []string
 }
 
 type QueryResult struct {
