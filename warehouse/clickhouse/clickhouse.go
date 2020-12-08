@@ -41,6 +41,7 @@ const (
 	secure        = "secure"
 	skipVerify    = "skipVerify"
 	caCertificate = "caCertificate"
+	cluster       = "cluster"
 )
 const partitionField = "received_at"
 
@@ -186,14 +187,24 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 func columnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
+		codec := getClickHouseCodecForColumnType(dataType)
 		if misc.ContainsString(notNullableColumns, columnName) {
-			arr = append(arr, fmt.Sprintf(`%s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], true)))
+			arr = append(arr, fmt.Sprintf(`%s %s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], true), codec))
 		} else {
-			arr = append(arr, fmt.Sprintf(`%s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], false)))
+			arr = append(arr, fmt.Sprintf(`%s %s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], false), codec))
 		}
 
 	}
 	return strings.Join(arr[:], ",")
+}
+
+func getClickHouseCodecForColumnType(columnType string) string {
+	switch columnType {
+	case "datetime":
+		return "Codec(DoubleDelta, LZ4)"
+	default:
+		return ""
+	}
 }
 
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
@@ -360,7 +371,6 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				columnDataType := tableSchemaInUpload[columnName]
 				data := typecastDataFromType(value, columnDataType)
 				recordInterface = append(recordInterface, data)
-
 			}
 
 			_, err = stmt.Exec(recordInterface...)
@@ -398,7 +408,14 @@ func (ch *HandleT) createSchema() (err error) {
 func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"id"}
 	notNullableColumns := []string{"received_at", "id"}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) ENGINE = AggregatingMergeTree() ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, columnsWithDataTypes(name, columns, notNullableColumns), getSortKeyTuple(sortKeyFields), partitionField)
+	clusterClause := ""
+	engine := "AggregatingMergeTree()"
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER %s`, cluster)
+		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
+	}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, columnsWithDataTypes(name, columns, notNullableColumns), engine, getSortKeyTuple(sortKeyFields), partitionField)
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -429,7 +446,14 @@ func (ch *HandleT) createTable(tableName string, columns map[string]string) (err
 	if tableName == warehouseutils.UsersTable {
 		return ch.createUsersTable(tableName, columns)
 	}
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) ENGINE = ReplacingMergeTree() ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, columnsWithDataTypes(tableName, columns, sortKeyFields), getSortKeyTuple(sortKeyFields), partitionField)
+	clusterClause := ""
+	engine := "ReplacingMergeTree()"
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER %s`, cluster)
+		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
+	}
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, columnsWithDataTypes(tableName, columns, sortKeyFields), engine, getSortKeyTuple(sortKeyFields), partitionField)
 
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
