@@ -645,6 +645,7 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 					continue
 				}
 
+				// avoid setting null merge_property_1 to avoid not null constraint in local postgres
 				if anonymousID.Valid {
 					csvRow = append(csvRow, "anonymous_id", anonymousID.String, "user_id", userID.String)
 				} else {
