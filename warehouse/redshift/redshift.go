@@ -432,9 +432,9 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	pkgLogger.Debugf("RS: Creating staging table for users: %s\n", sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
+		pkgLogger.Errorf("RS: Creating staging table for users failed: %s\n", sqlStatement)
 		pkgLogger.Errorf("RS: Error creating users staging table from original table and identifies staging table: %v\n", err)
 		tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
@@ -444,9 +444,10 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	primaryKey := "id"
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
-	pkgLogger.Infof("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
+		pkgLogger.Errorf("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 		pkgLogger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
 		tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
@@ -649,6 +650,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		return
 	}
 	if err == sql.ErrNoRows {
+		pkgLogger.Infof("RS: No rows, while fetching schema from  destination:%v, query: %v", rs.Warehouse.Identifier, sqlStatement)
 		return schema, nil
 	}
 	defer rows.Close()
