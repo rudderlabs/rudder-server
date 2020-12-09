@@ -222,6 +222,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 
 // Start starts this processor's main loops.
 func (proc *HandleT) Start() {
+	//waiting till the backend config is received
+	backendconfig.WaitForConfig()
+
 	rruntime.Go(func() {
 		proc.mainLoop()
 	})
@@ -1087,8 +1090,6 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 }
 
 func (proc *HandleT) mainLoop() {
-	//waiting till the backend config is received
-	backendconfig.WaitForConfig()
 
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)

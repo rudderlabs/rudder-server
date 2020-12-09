@@ -211,6 +211,7 @@ populateHistoricIdentities = false
     poolSize = 10
 
 [Processor]
+webPort = 8086
 loopSleepInMS = 10
 maxLoopSleepInMS = 5000
 maxLoopProcessEvents = 10000
