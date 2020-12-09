@@ -480,11 +480,11 @@ func (jd *HandleT) startMigrateDSLoop() {
 }
 
 func (jd *HandleT) readerSetup() {
-	jd.recoverFromReaderJournal()
+	jd.recoverFromJournal(Read)
 
 	//This is a thread-safe operation.
 	//Even if two different services (gateway and processor) perform this operation, there should not be any problem.
-	jd.recoverFromJournal()
+	jd.recoverFromJournal(ReadWrite)
 
 	//Refresh in memory list. We don't take lock
 	//here because this is called before anything
@@ -508,10 +508,10 @@ func (jd *HandleT) writerSetup() {
 		maxDSIndexAvailable = jd.datasetList[len(jd.datasetList)-1].Index
 	}
 
-	jd.recoverFromWriterJournal()
+	jd.recoverFromJournal(Write)
 	//This is a thread-safe operation.
 	//Even if two different services (gateway and processor) perform this operation, there should not be any problem.
-	jd.recoverFromJournal()
+	jd.recoverFromJournal(ReadWrite)
 
 	//Refresh in memory list. We don't take lock
 	//here because this is called before anything
@@ -534,7 +534,7 @@ func (jd *HandleT) writerSetup() {
 }
 
 func (jd *HandleT) readerWriterSetup() {
-	jd.recoverFromReaderJournal()
+	jd.recoverFromJournal(Read)
 
 	jd.writerSetup()
 
@@ -2743,22 +2743,10 @@ const (
 	migratorRoutine = "migrator"
 )
 
-func (jd *HandleT) recoverFromReaderJournal() {
-	jd.recoverFromCrash(Read, addDSGoRoutine)
-	jd.recoverFromCrash(Read, mainGoRoutine)
-	jd.recoverFromCrash(Read, backupGoRoutine)
-}
-
-func (jd *HandleT) recoverFromWriterJournal() {
-	jd.recoverFromCrash(Write, addDSGoRoutine)
-	jd.recoverFromCrash(Write, mainGoRoutine)
-	jd.recoverFromCrash(Write, backupGoRoutine)
-}
-
-func (jd *HandleT) recoverFromJournal() {
-	jd.recoverFromCrash(ReadWrite, addDSGoRoutine)
-	jd.recoverFromCrash(ReadWrite, mainGoRoutine)
-	jd.recoverFromCrash(ReadWrite, backupGoRoutine)
+func (jd *HandleT) recoverFromJournal(owner OwnerType) {
+	jd.recoverFromCrash(owner, addDSGoRoutine)
+	jd.recoverFromCrash(owner, mainGoRoutine)
+	jd.recoverFromCrash(owner, backupGoRoutine)
 }
 
 //RecoverFromMigrationJournal is an exposed function for migrator package to handle journal crashes during migration

@@ -17,17 +17,17 @@ import (
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//MonolithAppType is the type for monolith type implemention
-type MonolithAppType struct {
+//EmbeddedAppType is the type for embedded type implemention
+type EmbeddedAppType struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
 
-func (monolith *MonolithAppType) GetAppType() string {
+func (embedded *EmbeddedAppType) GetAppType() string {
 	return "rudder-server"
 }
 
-func (monolith *MonolithAppType) StartRudderCore(options *app.Options) {
+func (embedded *EmbeddedAppType) StartRudderCore(options *app.Options) {
 	pkgLogger.Info("Main starting")
 
 	rudderCoreBaseSetup()
@@ -42,12 +42,12 @@ func (monolith *MonolithAppType) StartRudderCore(options *app.Options) {
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
 
-	migrationMode := monolith.App.Options().MigrationMode
+	migrationMode := embedded.App.Options().MigrationMode
 	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, false)
 
 	enableGateway := true
 
-	if monolith.App.Features().Migrator != nil {
+	if embedded.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
 				clearDBBool := false
@@ -59,7 +59,7 @@ func (monolith *MonolithAppType) StartRudderCore(options *app.Options) {
 			enableRouter = false
 			enableProcessor = false
 			enableGateway = (migrationMode != db.EXPORT)
-			monolith.App.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+			embedded.App.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
 		}
 	}
 
@@ -71,12 +71,12 @@ func (monolith *MonolithAppType) StartRudderCore(options *app.Options) {
 		var rateLimiter ratelimiter.HandleT
 
 		rateLimiter.SetUp()
-		gateway.Setup(monolith.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, &options.ClearDB, monolith.VersionHandler)
+		gateway.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, &options.ClearDB, embedded.VersionHandler)
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
-func (monolith *MonolithAppType) HandleRecovery(options *app.Options) {
-	db.HandleMonolithRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime)
+func (embedded *EmbeddedAppType) HandleRecovery(options *app.Options) {
+	db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime)
 }

@@ -6,8 +6,8 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-// HandleMonolithRecovery decides the recovery Mode in which app should run based on earlier crashes
-func HandleMonolithRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode string, currTime int64) {
+// HandleEmbeddedRecovery decides the recovery Mode in which app should run based on earlier crashes
+func HandleEmbeddedRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode string, currTime int64) {
 
 	enabled := config.GetBool("recovery.enabled", false)
 	if !enabled {

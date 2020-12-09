@@ -16,10 +16,9 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 
-	"github.com/rudderlabs/rudder-server/services/apptype"
-
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/app/apptype"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/router"
@@ -48,7 +47,7 @@ var major, minor, commit, buildDate, builtBy, gitURL, patch string
 const (
 	gatewayAppType   = "GATEWAY"
 	processorAppType = "PROCESSOR"
-	monolithAppType  = "MONOLITH"
+	embeddedAppType  = "EMBEDDED"
 )
 
 //AppTypeHandler to be implemented by different app type objects.
@@ -65,8 +64,8 @@ func getAppType(application app.Interface, appType string) AppTypeHandler {
 		handler = &apptype.GatewayAppType{App: application, VersionHandler: versionHandler}
 	case processorAppType:
 		handler = &apptype.ProcessorAppType{App: application, VersionHandler: versionHandler}
-	case monolithAppType:
-		handler = &apptype.MonolithAppType{App: application, VersionHandler: versionHandler}
+	case embeddedAppType:
+		handler = &apptype.EmbeddedAppType{App: application, VersionHandler: versionHandler}
 	default:
 		panic(errors.New("invalid app type"))
 	}
@@ -139,7 +138,7 @@ func main() {
 	//application & backend setup should be done before starting any new goroutines.
 	application.Setup()
 
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", monolithAppType))
+	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", embeddedAppType))
 	appType = getAppType(application, appTypeStr)
 
 	version := versionInfo()
