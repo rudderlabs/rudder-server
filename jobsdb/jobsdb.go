@@ -761,6 +761,14 @@ func (jd *HandleT) getDSListExpectingEmpty(refreshFromDB, expectEmptyList bool) 
 					JobStatusTable: jobStatusName, Index: dnum})
 		}
 
+		//if the owner of this jobsdb is a writer, then shrinking datasetList to have only last two datasets
+		//this shrinked datasetList is used to compute DSRangeList
+		//This is done because, writers don't care about the left datasets in the sorted datasetList
+		if jd.ownerType == Write {
+			if len(jd.datasetList) > 2 {
+				jd.datasetList = jd.datasetList[len(jd.datasetList)-2 : len(jd.datasetList)]
+			}
+		}
 		break
 	}
 
@@ -786,37 +794,23 @@ func (jd *HandleT) getDSRangeListExpectingEmpty(refreshFromDB, expectEmptyList b
 	dsList := jd.getDSListExpectingEmpty(true, expectEmptyList)
 	jd.datasetRangeList = nil
 
-	//if jd is owned by a writer, then computing last but one DS range is enough.
-	if jd.ownerType == Write && len(dsList) > 1 {
-		ds := dsList[len(dsList)-2]
+	for idx, ds := range dsList {
+		jd.assert(ds.Index != "", "ds.Index is empty")
 		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)
 		row := jd.dbHandle.QueryRow(sqlStatement)
 		err := row.Scan(&minID, &maxID)
 		jd.assertError(err)
 		jd.logger.Debug(sqlStatement, minID, maxID)
-		jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
-		jd.datasetRangeList = append(jd.datasetRangeList,
-			dataSetRangeT{minJobID: int64(minID.Int64),
-				maxJobID: int64(maxID.Int64), ds: ds})
-	} else {
-		for idx, ds := range dsList {
-			jd.assert(ds.Index != "", "ds.Index is empty")
-			sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)
-			row := jd.dbHandle.QueryRow(sqlStatement)
-			err := row.Scan(&minID, &maxID)
-			jd.assertError(err)
-			jd.logger.Debug(sqlStatement, minID, maxID)
-			//We store ranges EXCEPT for
-			// 1. the last element (which is being actively written to)
-			// 2. Migration target ds
-			if idx < len(dsList)-1 && (jd.inProgressMigrationTargetDS == nil || jd.inProgressMigrationTargetDS.Index != ds.Index) {
-				jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
-				jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
-				jd.datasetRangeList = append(jd.datasetRangeList,
-					dataSetRangeT{minJobID: int64(minID.Int64),
-						maxJobID: int64(maxID.Int64), ds: ds})
-				prevMax = maxID.Int64
-			}
+		//We store ranges EXCEPT for
+		// 1. the last element (which is being actively written to)
+		// 2. Migration target ds
+		if idx < len(dsList)-1 && (jd.inProgressMigrationTargetDS == nil || jd.inProgressMigrationTargetDS.Index != ds.Index) {
+			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
+			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
+			jd.datasetRangeList = append(jd.datasetRangeList,
+				dataSetRangeT{minJobID: int64(minID.Int64),
+					maxJobID: int64(maxID.Int64), ds: ds})
+			prevMax = maxID.Int64
 		}
 	}
 	return jd.datasetRangeList
@@ -1252,10 +1246,8 @@ func (jd *HandleT) setSequenceNumber(newDSIdx string) dataSetT {
 	dList := jd.getDSList(true)
 	dRangeList := jd.getDSRangeList(true)
 
-	if jd.ownerType != Write {
-		//We should not have range values for the last element (the new DS) and migrationTargetDS (if found)
-		jd.assert(len(dList) == len(dRangeList)+1 || len(dList) == len(dRangeList)+2, fmt.Sprintf("len(dList):%d != len(dRangeList):%d (+1 || +2)", len(dList), len(dRangeList)))
-	}
+	//We should not have range values for the last element (the new DS) and migrationTargetDS (if found)
+	jd.assert(len(dList) == len(dRangeList)+1 || len(dList) == len(dRangeList)+2, fmt.Sprintf("len(dList):%d != len(dRangeList):%d (+1 || +2)", len(dList), len(dRangeList)))
 
 	//Now set the min JobID for the new DS just added to be 1 more than previous max
 	if len(dRangeList) > 0 {
