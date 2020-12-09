@@ -3,10 +3,12 @@ package apptype
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"runtime"
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -32,6 +34,29 @@ var (
 	pkgLogger                        logger.LoggerI
 	Diagnostics                      diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
+
+//AppTypeHandler to be implemented by different app type objects.
+type AppTypeHandler interface {
+	GetAppType() string
+	HandleRecovery(*app.Options)
+	StartRudderCore(*app.Options)
+}
+
+func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppTypeHandler {
+	var handler AppTypeHandler
+	switch appType {
+	case app.GATEWAY:
+		handler = &GatewayAppType{App: application, VersionHandler: versionHandler}
+	case app.PROCESSOR:
+		handler = &ProcessorAppType{App: application, VersionHandler: versionHandler}
+	case app.EMBEDDED:
+		handler = &EmbeddedAppType{App: application, VersionHandler: versionHandler}
+	default:
+		panic(errors.New("invalid app type"))
+	}
+
+	return handler
+}
 
 func init() {
 	loadConfig()

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -38,40 +37,11 @@ var (
 	warehouseMode             string
 	enableSuppressUserFeature bool
 	pkgLogger                 logger.LoggerI
-	appType                   AppTypeHandler
+	appHandler                apptype.AppTypeHandler
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
 var major, minor, commit, buildDate, builtBy, gitURL, patch string
-
-const (
-	gatewayAppType   = "GATEWAY"
-	processorAppType = "PROCESSOR"
-	embeddedAppType  = "EMBEDDED"
-)
-
-//AppTypeHandler to be implemented by different app type objects.
-type AppTypeHandler interface {
-	GetAppType() string
-	HandleRecovery(*app.Options)
-	StartRudderCore(*app.Options)
-}
-
-func getAppType(application app.Interface, appType string) AppTypeHandler {
-	var handler AppTypeHandler
-	switch appType {
-	case gatewayAppType:
-		handler = &apptype.GatewayAppType{App: application, VersionHandler: versionHandler}
-	case processorAppType:
-		handler = &apptype.ProcessorAppType{App: application, VersionHandler: versionHandler}
-	case embeddedAppType:
-		handler = &apptype.EmbeddedAppType{App: application, VersionHandler: versionHandler}
-	default:
-		panic(errors.New("invalid app type"))
-	}
-
-	return handler
-}
 
 // Test Function
 func readIOforResume(router router.HandleT) {
@@ -134,12 +104,11 @@ func main() {
 
 	application = app.New(options)
 
-	//TODO initEnterpriseFeatures based on apptype?
 	//application & backend setup should be done before starting any new goroutines.
 	application.Setup()
 
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", embeddedAppType))
-	appType = getAppType(application, appTypeStr)
+	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
+	appHandler = apptype.GetAppHandler(application, appTypeStr, versionHandler)
 
 	version := versionInfo()
 
@@ -149,7 +118,7 @@ func main() {
 		// The import paths for the Go packages containing your source files
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
-		AppType:      appType.GetAppType(),
+		AppType:      appHandler.GetAppType(),
 		AppVersion:   version["Version"].(string),
 		PanicHandler: func() {},
 	})
@@ -201,14 +170,14 @@ func main() {
 
 	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
-		appType.HandleRecovery(options)
+		appHandler.HandleRecovery(options)
 		rruntime.Go(func() {
-			appType.StartRudderCore(options)
+			appHandler.StartRudderCore(options)
 		})
 	}
 
 	// initialize warehouse service after core to handle non-normal recovery modes
-	if appTypeStr != gatewayAppType && canStartWarehouse() {
+	if appTypeStr != app.GATEWAY && canStartWarehouse() {
 		rruntime.Go(func() {
 			startWarehouseService()
 		})

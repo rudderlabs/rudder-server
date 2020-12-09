@@ -17,6 +17,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
+const (
+	GATEWAY   = "GATEWAY"
+	PROCESSOR = "PROCESSOR"
+	EMBEDDED  = "EMBEDDED"
+)
+
 // App holds the main application's configuration and state
 type App struct {
 	options  *Options
@@ -134,6 +140,7 @@ func HealthHandler(w http.ResponseWriter, r *http.Request, jobsDB jobsdb.JobsDB)
 		backendConfigMode = "JSON"
 	}
 
-	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync)
+	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", EMBEDDED))
+	healthVal := fmt.Sprintf(`{"appType": "%s", "server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync)
 	w.Write([]byte(healthVal))
 }
