@@ -23,7 +23,7 @@ func (jd *HandleT) setupDatabaseTables(clearAll bool) {
 	}
 
 	// collect all existing dataset indices, and create template data
-	datasets := jd.getDSList(true)
+	datasets := jd.getDSListExpectingEmpty(true, true)
 
 	datasetIndices := make([]string, 0)
 	for _, dataset := range datasets {

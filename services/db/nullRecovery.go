@@ -6,8 +6,8 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-// HandleMicroRecovery decides the recovery Mode in which app should run
-func HandleMicroRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode string, currTime int64) {
+// HandleRecovery decides the recovery Mode (normal/migration) in which app should run
+func HandleNullRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode string, currTime int64) {
 
 	enabled := config.GetBool("recovery.enabled", false)
 	if !enabled {

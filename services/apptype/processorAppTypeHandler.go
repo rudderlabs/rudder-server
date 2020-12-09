@@ -62,5 +62,5 @@ func (processor *ProcessorAppType) StartRudderCore(options *app.Options) {
 }
 
 func (processor *ProcessorAppType) HandleRecovery(options *app.Options) {
-	db.HandleMicroRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime)
+	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime)
 }

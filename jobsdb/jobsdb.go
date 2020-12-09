@@ -437,11 +437,6 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 
 	jd.BackupSettings = jd.getBackUpSettings()
 
-	if jd.ownerType == ReadWrite {
-		//Kill any pending queries
-		jd.terminateQueries()
-	}
-
 	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
 
@@ -507,7 +502,7 @@ func (jd *HandleT) readerSetup() {
 
 func (jd *HandleT) writerSetup() {
 	//Don't need locks here
-	jd.getDSList(true)
+	jd.getDSListExpectingEmpty(true, true)
 	var maxDSIndexAvailable string
 	if len(jd.datasetList) > 0 {
 		maxDSIndexAvailable = jd.datasetList[len(jd.datasetList)-1].Index
@@ -521,8 +516,8 @@ func (jd *HandleT) writerSetup() {
 	//Refresh in memory list. We don't take lock
 	//here because this is called before anything
 	//else
-	jd.getDSList(true)
-	jd.getDSRangeList(true)
+	jd.getDSListExpectingEmpty(true, true)
+	jd.getDSRangeListExpectingEmpty(true, true)
 
 	//If no DS present, add one
 	if jd.shouldAddDS() {
@@ -697,6 +692,10 @@ Most callers use the in-memory list of dataset and datasetRanges
 Caller must have the dsListLock readlocked
 */
 func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
+	return jd.getDSListExpectingEmpty(refreshFromDB, false)
+}
+
+func (jd *HandleT) getDSListExpectingEmpty(refreshFromDB, expectEmptyList bool) []dataSetT {
 
 	if !refreshFromDB {
 		return jd.datasetList
@@ -705,64 +704,75 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 	//At this point we MUST have write-locked dsListLock
 	//since we are modiying the list
 
-	//Reset the global list
-	jd.datasetList = nil
+	for {
+		//Reset the global list
+		jd.datasetList = nil
 
-	//Read the table names from PG
-	tableNames := jd.getAllTableNames()
+		//Read the table names from PG
+		tableNames := jd.getAllTableNames()
 
-	//Tables are of form jobs_ and job_status_. Iterate
-	//through them and sort them to produce and
-	//ordered list of datasets
+		//Tables are of form jobs_ and job_status_. Iterate
+		//through them and sort them to produce and
+		//ordered list of datasets
 
-	jobNameMap := map[string]string{}
-	jobStatusNameMap := map[string]string{}
-	dnumList := []string{}
+		jobNameMap := map[string]string{}
+		jobStatusNameMap := map[string]string{}
+		dnumList := []string{}
 
-	for _, t := range tableNames {
-		if strings.HasPrefix(t, jd.tablePrefix+"_jobs_") {
-			dnum := t[len(jd.tablePrefix+"_jobs_"):]
-			jobNameMap[dnum] = t
-			dnumList = append(dnumList, dnum)
-			continue
-		}
-		if strings.HasPrefix(t, jd.tablePrefix+"_job_status_") {
-			dnum := t[len(jd.tablePrefix+"_job_status_"):]
-			jobStatusNameMap[dnum] = t
-			continue
-		}
-	}
-
-	jd.sortDnumList(dnumList)
-
-	//If any service has crashed while creating DS, this may happen. Handling such case gracefully.
-	if len(jobNameMap) != len(jobStatusNameMap) {
-		jd.assert(len(jobNameMap) == len(jobStatusNameMap)+1 || len(jobNameMap)+1 == len(jobStatusNameMap), fmt.Sprintf("Length of jobNameMap(%d) and length of jobStatusNameMap(%d) differ by more than 1", len(jobNameMap), len(jobStatusNameMap)))
-		deletedDNum := cleanUpJobNamesMap(jobNameMap, jobStatusNameMap)
-		//remove deletedDNum from dnumList
-		var idx int
-		var dnum string
-		var foundDeletedDNum bool
-		for idx, dnum = range dnumList {
-			if dnum == deletedDNum {
-				foundDeletedDNum = true
-				break
+		for _, t := range tableNames {
+			if strings.HasPrefix(t, jd.tablePrefix+"_jobs_") {
+				dnum := t[len(jd.tablePrefix+"_jobs_"):]
+				jobNameMap[dnum] = t
+				dnumList = append(dnumList, dnum)
+				continue
+			}
+			if strings.HasPrefix(t, jd.tablePrefix+"_job_status_") {
+				dnum := t[len(jd.tablePrefix+"_job_status_"):]
+				jobStatusNameMap[dnum] = t
+				continue
 			}
 		}
-		if foundDeletedDNum {
-			dnumList = remove(dnumList, idx)
-		}
-	}
 
-	//Create the structure
-	for _, dnum := range dnumList {
-		jobName, ok := jobNameMap[dnum]
-		jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobNameMap", dnum))
-		jobStatusName, ok := jobStatusNameMap[dnum]
-		jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobStatusNameMap", dnum))
-		jd.datasetList = append(jd.datasetList,
-			dataSetT{JobTable: jobName,
-				JobStatusTable: jobStatusName, Index: dnum})
+		jd.sortDnumList(dnumList)
+
+		//If any service has crashed while creating DS, this may happen. Handling such case gracefully.
+		if len(jobNameMap) != len(jobStatusNameMap) {
+			jd.assert(len(jobNameMap) == len(jobStatusNameMap)+1 || len(jobNameMap)+1 == len(jobStatusNameMap), fmt.Sprintf("Length of jobNameMap(%d) and length of jobStatusNameMap(%d) differ by more than 1", len(jobNameMap), len(jobStatusNameMap)))
+			deletedDNum := cleanUpJobNamesMap(jobNameMap, jobStatusNameMap)
+			//remove deletedDNum from dnumList
+			var idx int
+			var dnum string
+			var foundDeletedDNum bool
+			for idx, dnum = range dnumList {
+				if dnum == deletedDNum {
+					foundDeletedDNum = true
+					break
+				}
+			}
+			if foundDeletedDNum {
+				dnumList = remove(dnumList, idx)
+			}
+		}
+
+		if !expectEmptyList {
+			if len(dnumList) == 0 || len(jobNameMap) == 0 || len(jobStatusNameMap) == 0 {
+				time.Sleep(refreshDSListLoopSleepDuration)
+				continue
+			}
+		}
+
+		//Create the structure
+		for _, dnum := range dnumList {
+			jobName, ok := jobNameMap[dnum]
+			jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobNameMap", dnum))
+			jobStatusName, ok := jobStatusNameMap[dnum]
+			jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobStatusNameMap", dnum))
+			jd.datasetList = append(jd.datasetList,
+				dataSetT{JobTable: jobName,
+					JobStatusTable: jobStatusName, Index: dnum})
+		}
+
+		break
 	}
 
 	jd.statTableCount.Gauge(len(jd.datasetList))
@@ -771,6 +781,10 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 
 //Function must be called with read-lock held in dsListLock
 func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
+	return jd.getDSRangeListExpectingEmpty(refreshFromDB, false)
+}
+
+func (jd *HandleT) getDSRangeListExpectingEmpty(refreshFromDB, expectEmptyList bool) []dataSetRangeT {
 
 	var minID, maxID sql.NullInt64
 	var prevMax int64
@@ -780,7 +794,7 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 	}
 
 	//At this point we must have write-locked dsListLock
-	dsList := jd.getDSList(true)
+	dsList := jd.getDSListExpectingEmpty(true, expectEmptyList)
 	jd.datasetRangeList = nil
 
 	//if jd is owned by a writer, then computing last but one DS range is enough.
@@ -1013,7 +1027,7 @@ func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT 
 }
 
 func (jd *HandleT) computeNewIdxForAppend() string {
-	dList := jd.getDSList(true)
+	dList := jd.getDSListExpectingEmpty(true, true)
 	newDSIdx := ""
 	if len(dList) == 0 {
 		newDSIdx = "1"
@@ -1419,14 +1433,14 @@ func (jd *HandleT) dropAllDS() error {
 	jd.dsListLock.Lock()
 	defer jd.dsListLock.Unlock()
 
-	dList := jd.getDSList(true)
+	dList := jd.getDSListExpectingEmpty(true, true)
 	for _, ds := range dList {
 		jd.dropDS(ds, false)
 	}
 
 	//Update the list
-	jd.getDSList(true)
-	jd.getDSRangeList(true)
+	jd.getDSListExpectingEmpty(true, true)
+	jd.getDSRangeListExpectingEmpty(true, true)
 
 	return nil
 }
