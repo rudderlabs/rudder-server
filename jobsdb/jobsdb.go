@@ -671,17 +671,6 @@ func removeExtraKey(map1, map2 map[string]string) string {
 	return deleteKey
 }
 
-//cleanUpJobNamesMap cleans up the maps and makes sure that both the maps have the same keys
-func cleanUpJobNamesMap(jobNameMap, jobStatusNameMap map[string]string) string {
-	if len(jobNameMap) > len(jobStatusNameMap) {
-		return removeExtraKey(jobNameMap, jobStatusNameMap)
-	} else if len(jobNameMap) < len(jobStatusNameMap) {
-		return removeExtraKey(jobStatusNameMap, jobNameMap)
-	}
-
-	return ""
-}
-
 func remove(slice []string, idx int) []string {
 	return append(slice[:idx], slice[idx+1:]...)
 }
@@ -737,8 +726,8 @@ func (jd *HandleT) getDSListExpectingEmpty(refreshFromDB, expectEmptyList bool) 
 
 		//If any service has crashed while creating DS, this may happen. Handling such case gracefully.
 		if len(jobNameMap) != len(jobStatusNameMap) {
-			jd.assert(len(jobNameMap) == len(jobStatusNameMap)+1 || len(jobNameMap)+1 == len(jobStatusNameMap), fmt.Sprintf("Length of jobNameMap(%d) and length of jobStatusNameMap(%d) differ by more than 1", len(jobNameMap), len(jobStatusNameMap)))
-			deletedDNum := cleanUpJobNamesMap(jobNameMap, jobStatusNameMap)
+			jd.assert(len(jobNameMap) == len(jobStatusNameMap)+1, fmt.Sprintf("Length of jobNameMap(%d) - length of jobStatusNameMap(%d) is more than 1", len(jobNameMap), len(jobStatusNameMap)))
+			deletedDNum := removeExtraKey(jobNameMap, jobStatusNameMap)
 			//remove deletedDNum from dnumList
 			var idx int
 			var dnum string
