@@ -519,3 +519,13 @@ func IdentityMappingsUniqueMappingConstraintName(warehouse WarehouseT) string {
 func GetWarehouseIdentifier(destType string, sourceID string, destinationID string) string {
 	return fmt.Sprintf("%s:%s:%s", destType, sourceID, destinationID)
 }
+
+func DoubleQuoteColumnNamesAndJoinByComma(keys []string) (quotedColumnNames string) {
+	for idx, str := range keys {
+		quotedColumnNames += "\"" + str + "\""
+		if idx != len(keys)-1 {
+			quotedColumnNames += ","
+		}
+	}
+	return
+}
