@@ -1,3 +1,5 @@
+TESTING master in branch name 
+
 <p align="center"><a href="https://rudderstack.com"><img src="https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png" alt="RudderStack - An Open Source Customer Data Platform" height="90"/></a></p>
 <h1 align="center"></h1>
 <p align="center"><b>The warehouse-first customer data platform built for devs</b></p>
@@ -7,6 +9,7 @@
     <a href="https://rudderstack.com"><img src="https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver" alt="Release" height="22"/></a>
 </p>
 <br/>
+
 
 # What is RudderStack?
 
