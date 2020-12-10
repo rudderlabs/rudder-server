@@ -191,6 +191,7 @@ func columnsWithDataTypes(tableName string, columns map[string]string, notNullab
 		columnType := getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
 		arr = append(arr, fmt.Sprintf(`%s %s`, columnName, columnType))
 	}
+
 	return strings.Join(arr[:], ",")
 }
 
