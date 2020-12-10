@@ -187,9 +187,9 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 func columnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
-		codec := getClickHouseCodecForColumnType(dataType)
+		//codec := getClickHouseCodecForColumnType(dataType)
 		columnType := getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
-		arr = append(arr, fmt.Sprintf(`%s %s %s`, columnName, columnType, codec))
+		arr = append(arr, fmt.Sprintf(`%s %s`, columnName, columnType))
 	}
 	return strings.Join(arr[:], ",")
 }
