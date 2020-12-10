@@ -228,6 +228,8 @@ errReadLoopSleepInS = 30
 errDBReadBatchSize = 10000
 noOfErrStashWorkers = 2
 maxFailedCountForErrJob = 3
+
+[Dedup]
 enableDedup = false
 dedupWindowInS = 86400
 

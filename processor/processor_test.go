@@ -226,7 +226,6 @@ var _ = Describe("Processor", func() {
 
 		// setup static requirements of dependencies
 		stats.Setup()
-		SetEnableDedup(false)
 		SetEnableEventSchemasFeature(false)
 	})
 
