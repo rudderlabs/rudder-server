@@ -151,12 +151,10 @@ func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) 
 	network.logger.Info("forceHTTP1: ", getRouterConfigBool("forceHTTP1", destID, false))
 	if getRouterConfigBool("forceHTTP1", destID, false) {
 		network.logger.Info("Forcing HTTP1 connection for ", destID)
-		var tlsClientConfigCopy tls.Config
-		misc.Copy(&tlsClientConfigCopy, defaultTransportCopy.TLSClientConfig)
+		tlsClientConfig tls.Config := tls.Config{}
 		defaultTransportCopy.ForceAttemptHTTP2 = false
-		tlsClientConfigCopy.NextProtos = []string{"http/1.1"}
-
-		defaultTransportCopy.TLSClientConfig = &tlsClientConfigCopy
+		tlsClientConfig.NextProtos = []string{"http/1.1"}
+		defaultTransportCopy.TLSClientConfig = &tlsClientConfig
 		network.logger.Info(destID, defaultTransportCopy.TLSClientConfig.NextProtos)
 	}
 	defaultTransportCopy.MaxIdleConns = getRouterConfigInt("httpMaxIdleConns", destID, 100)
