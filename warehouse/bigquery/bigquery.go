@@ -390,9 +390,6 @@ func (bq *HandleT) LoadTable(tableName string) error {
 }
 
 func (bq *HandleT) CreateSchema() (err error) {
-	if len(bq.Uploader.GetSchemaInWarehouse()) > 0 {
-		return nil
-	}
 	err = bq.createSchema()
 	return err
 }

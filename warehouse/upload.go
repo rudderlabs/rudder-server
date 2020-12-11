@@ -460,6 +460,10 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 
 	for _, columnName := range tableSchemaDiff.StringColumnsToBeAlteredToText {
 		err = job.whManager.AlterColumn(tName, columnName, "text")
+		if err != nil {
+			pkgLogger.Errorf("Altering column %s in table: %s.%s failed. Error: %v", columnName, job.warehouse.Namespace, tName, err)
+			break
+		}
 	}
 
 	return err
@@ -479,6 +483,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 	var wg sync.WaitGroup
 	wg.Add(len(uploadSchema))
 
+	var alteredSchema bool
 	loadChan := make(chan struct{}, parallelLoads)
 	for tableName := range uploadSchema {
 		if misc.ContainsString(skipPrevLoadedTableNames, tableName) {
@@ -510,6 +515,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 				// err = job.whManager.MigrateTableSchema(tName, tableSchemaDiff)
 				if err == nil {
 					job.setUpdatedTableSchema(tName, tableSchemaDiff.UpdatedSchema)
+					alteredSchema = true
 				} else {
 					failureStage = TableUploadUpdatingSchemaFailed
 				}
@@ -539,6 +545,10 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 	}
 	wg.Wait()
 
+	if alteredSchema {
+		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
+	}
+
 	return loadErrors
 }
 
@@ -566,6 +576,7 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 		return []error{}, nil
 	}
 
+	var alteredSchema bool
 	loadTimeStat := job.timerStat("user_tables_load_time")
 	loadTimeStat.Start()
 
@@ -582,8 +593,13 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 			}
 			job.setUpdatedTableSchema(tName, tableSchemaDiff.UpdatedSchema)
 			tableUpload.setStatus(TableUploadUpdatedSchema)
+			alteredSchema = true
 		}
 		tableUpload.setStatus(TableUploadExecuting)
+	}
+
+	if alteredSchema {
+		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
 	}
 
 	errorMap := job.whManager.LoadUserTables()
@@ -605,6 +621,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 
+	var alteredSchema bool
 	for _, tableName := range identityTables {
 		tableUpload := NewTableUpload(job.upload.ID, tableName)
 		loaded, err := tableUpload.hasBeenLoaded()
@@ -627,6 +644,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 				}
 				job.setUpdatedTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
 				tableUpload.setStatus(TableUploadUpdatedSchema)
+				alteredSchema = true
 			}
 
 			err := tableUpload.setStatus(TableUploadExecuting)
@@ -645,6 +663,10 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 				break
 			}
 		}
+	}
+
+	if alteredSchema {
+		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
 	}
 
 	return job.processLoadTableResponse(errorMap)

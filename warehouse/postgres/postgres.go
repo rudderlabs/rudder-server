@@ -476,9 +476,6 @@ func (pg *HandleT) addColumn(tableName string, columnName string, columnType str
 }
 
 func (pg *HandleT) CreateSchema() (err error) {
-	if len(pg.Uploader.GetSchemaInWarehouse()) > 0 {
-		return nil
-	}
 	err = pg.createSchema()
 	return err
 }
