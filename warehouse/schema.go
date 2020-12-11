@@ -326,6 +326,7 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 			diff.Exists = true
 		} else if columnType == "text" && currentTableSchema[columnName] == "string" {
 			diff.StringColumnsToBeAlteredToText = append(diff.StringColumnsToBeAlteredToText, columnName)
+			diff.UpdatedSchema[columnName] = columnType
 			diff.Exists = true
 		}
 	}

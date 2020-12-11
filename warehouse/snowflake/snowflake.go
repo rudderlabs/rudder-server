@@ -552,30 +552,35 @@ func (sf *HandleT) CreateSchema() (err error) {
 	return err
 }
 
-func (sf *HandleT) MigrateTableSchema(tableName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
+func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
 	_, err = sf.Db.Exec(sqlStatement)
 	if err != nil {
-		return
+		return err
 	}
 
-	if tableSchemaDiff.TableToBeCreated {
-		err = sf.createTable(fmt.Sprintf(`%s`, tableName), tableSchemaDiff.ColumnMap)
-		if err != nil {
-			return err
-		}
-	} else {
-		for columnName, columnType := range tableSchemaDiff.ColumnMap {
-			err = sf.addColumn(tableName, columnName, columnType)
-			if err != nil {
-				if checkAndIgnoreAlreadyExistError(err) {
-					pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, sf.Namespace, tableName, err)
-				} else {
-					return
-				}
-			}
+	err = sf.createTable(fmt.Sprintf(`%s`, tableName), columnMap)
+	return err
+}
+
+func (sf *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
+	_, err = sf.Db.Exec(sqlStatement)
+	if err != nil {
+		return err
+	}
+
+	err = sf.addColumn(tableName, columnName, columnType)
+	if err != nil {
+		if checkAndIgnoreAlreadyExistError(err) {
+			pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, sf.Namespace, tableName, err)
+			err = nil
 		}
 	}
+	return err
+}
+
+func (sf *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
 	return
 }
 

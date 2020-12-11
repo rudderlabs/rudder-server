@@ -459,21 +459,17 @@ func (ch *HandleT) CreateSchema() (err error) {
 	return err
 }
 
-func (ch *HandleT) MigrateTableSchema(tableName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
-	if tableSchemaDiff.TableToBeCreated {
-		err = ch.createTable(fmt.Sprintf(`%s`, tableName), tableSchemaDiff.ColumnMap)
-		if err != nil {
-			return err
-		}
-	} else {
-		for columnName, columnType := range tableSchemaDiff.ColumnMap {
-			err = ch.addColumn(tableName, columnName, columnType)
-			if err != nil {
-				pkgLogger.Errorf("CH: Column %s already exists on %s.%s \nResponse: %v", columnName, ch.Namespace, tableName, err)
-				return
-			}
-		}
-	}
+func (ch *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+	err = ch.createTable(fmt.Sprintf(`%s`, tableName), columnMap)
+	return err
+}
+
+func (ch *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+	err = ch.addColumn(tableName, columnName, columnType)
+	return err
+}
+
+func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
 	return
 }
 

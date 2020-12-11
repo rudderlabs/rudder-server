@@ -575,35 +575,21 @@ func (rs *HandleT) CreateSchema() (err error) {
 	return err
 }
 
-func (rs *HandleT) MigrateTableSchema(tableName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
-	if tableSchemaDiff.TableToBeCreated {
-		err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), tableSchemaDiff.ColumnMap)
-		if err != nil {
-			return err
-		}
-	} else {
-		for columnName, columnType := range tableSchemaDiff.ColumnMap {
-			err := rs.addColumn(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName, columnType)
-			if err != nil {
-				if checkAndIgnoreAlreadyExistError(err) {
-					pkgLogger.Infof("RS: Column %s already exists on %s.%s \nResponse: %v", columnName, rs.Namespace, tableName, err)
-				} else {
-					return err
-				}
-			}
-		}
+func (rs *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+	err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnMap)
+	return err
+}
+
+func (rs *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+	err = rs.addColumn(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName, columnType)
+	return err
+}
+
+func (rs *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+	if setVarCharMax && columnType == "text" {
+		err = rs.alterStringToText(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName)
 	}
-	if setVarCharMax {
-		if len(tableSchemaDiff.StringColumnsToBeAlteredToText) > 0 {
-			for _, columnName := range tableSchemaDiff.StringColumnsToBeAlteredToText {
-				err := rs.alterStringToText(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName)
-				if err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
+	return
 }
 
 // FetchSchema queries redshift and returns the schema assoiciated with provided namespace

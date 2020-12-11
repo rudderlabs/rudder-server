@@ -435,6 +435,36 @@ func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err e
 	return idr.Resolve()
 }
 
+func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
+	pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+
+	if tableSchemaDiff.TableToBeCreated {
+		err = job.whManager.CreateTable(tName, tableSchemaDiff.ColumnMap)
+		if err != nil {
+			pkgLogger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
+		}
+		return err
+	}
+
+	for columnName, columnType := range tableSchemaDiff.ColumnMap {
+		err = job.whManager.AddColumn(tName, columnName, columnType)
+		if err != nil {
+			pkgLogger.Errorf("Column %s already exists on %s.%s \nResponse: %v", columnName, job.warehouse.Namespace, tName, err)
+			break
+		}
+	}
+
+	if err != nil {
+		return err
+	}
+
+	for _, columnName := range tableSchemaDiff.StringColumnsToBeAlteredToText {
+		err = job.whManager.AlterColumn(tName, columnName, "text")
+	}
+
+	return err
+}
+
 func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []error {
 	uploadSchema := job.upload.Schema
 	var parallelLoads int
@@ -476,8 +506,8 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 			tableUpload := NewTableUpload(job.upload.ID, tName)
 			tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
 			if tableSchemaDiff.Exists {
-				pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
-				err = job.whManager.MigrateTableSchema(tName, tableSchemaDiff)
+				err = job.updateTableSchema(tName, tableSchemaDiff)
+				// err = job.whManager.MigrateTableSchema(tName, tableSchemaDiff)
 				if err == nil {
 					job.setUpdatedTableSchema(tName, tableSchemaDiff.UpdatedSchema)
 				} else {
@@ -544,10 +574,7 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 		tableUpload := NewTableUpload(job.upload.ID, tName)
 		tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
 		if tableSchemaDiff.Exists {
-			pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
-			tableUpload.setStatus(TableUploadUpdatingSchema)
-			err = job.whManager.MigrateTableSchema(tName, tableSchemaDiff)
-
+			err = job.updateTableSchema(tName, tableSchemaDiff)
 			if err != nil {
 				tableUpload.setError(TableUploadUpdatingSchemaFailed, err)
 				errorMap := map[string]error{tName: err}
@@ -592,10 +619,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 
 			tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
 			if tableSchemaDiff.Exists {
-				pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tableName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
-				tableUpload.setStatus(TableUploadUpdatingSchema)
-				err = job.whManager.MigrateTableSchema(tableName, tableSchemaDiff)
-
+				job.updateTableSchema(tableName, tableSchemaDiff)
 				if err != nil {
 					tableUpload.setError(TableUploadUpdatingSchemaFailed, err)
 					errorMap := map[string]error{tableName: err}

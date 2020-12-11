@@ -397,26 +397,24 @@ func (bq *HandleT) CreateSchema() (err error) {
 	return err
 }
 
-func (bq *HandleT) MigrateTableSchema(tableName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
-	if tableSchemaDiff.TableToBeCreated {
-		err = bq.createTable(tableName, tableSchemaDiff.ColumnMap)
-		if !checkAndIgnoreAlreadyExistError(err) {
-			return err
-		}
-	} else {
-		var err error
-		for columnName, columnType := range tableSchemaDiff.ColumnMap {
-			err = bq.addColumn(tableName, columnName, columnType)
-			if err != nil {
-				if checkAndIgnoreAlreadyExistError(err) {
-					pkgLogger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnName, bq.Namespace, tableName, err)
-				} else {
-					return err
-				}
-			}
+func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+	err = bq.createTable(tableName, columnMap)
+	return err
+}
+
+func (bq *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+	err = bq.addColumn(tableName, columnName, columnType)
+	if err != nil {
+		if checkAndIgnoreAlreadyExistError(err) {
+			pkgLogger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnName, bq.Namespace, tableName, err)
+			err = nil
 		}
 	}
-	return nil
+	return err
+}
+
+func (bq *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+	return
 }
 
 // FetchSchema queries bigquery and returns the schema assoiciated with provided namespace

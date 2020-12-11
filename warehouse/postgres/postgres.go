@@ -483,7 +483,7 @@ func (pg *HandleT) CreateSchema() (err error) {
 	return err
 }
 
-func (pg *HandleT) MigrateTableSchema(tableName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
+func (pg *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
 	_, err = pg.Db.Exec(sqlStatement)
@@ -491,22 +491,24 @@ func (pg *HandleT) MigrateTableSchema(tableName string, tableSchemaDiff warehous
 		return err
 	}
 	pkgLogger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
+	err = pg.createTable(fmt.Sprintf(`%s`, tableName), columnMap)
+	return err
+}
 
-	if tableSchemaDiff.TableToBeCreated {
-		err = pg.createTable(fmt.Sprintf(`%s`, tableName), tableSchemaDiff.ColumnMap)
-		if err != nil {
-			return err
-		}
-	} else {
-		for columnName, columnType := range tableSchemaDiff.ColumnMap {
-			err := pg.addColumn(tableName, columnName, columnType)
-			if err != nil {
-				pkgLogger.Errorf("PG: Column %s already exists on %s.%s \nResponse: %v", columnName, pg.Namespace, tableName, err)
-				return err
-			}
-		}
+func (pg *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
+	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
+	_, err = pg.Db.Exec(sqlStatement)
+	if err != nil {
+		return err
 	}
-	return nil
+	pkgLogger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
+	err = pg.addColumn(tableName, columnName, columnType)
+	return err
+}
+
+func (pg *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+	return
 }
 
 func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
