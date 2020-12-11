@@ -520,12 +520,10 @@ func GetWarehouseIdentifier(destType string, sourceID string, destinationID stri
 	return fmt.Sprintf("%s:%s:%s", destType, sourceID, destinationID)
 }
 
-func DoubleQuoteAndJoinByComma(keys []string) (quotedColumnNames string) {
-	for idx, str := range keys {
-		quotedColumnNames += "\"" + str + "\""
-		if idx != len(keys)-1 {
-			quotedColumnNames += ","
-		}
+func DoubleQuoteAndJoinByComma(strs []string) string {
+	var quotedSlice []string
+	for _, str := range strs {
+		quotedSlice = append(quotedSlice, fmt.Sprintf("%q", str))
 	}
-	return
+	return strings.Join(quotedSlice, ",")
 }
