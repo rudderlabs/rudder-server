@@ -799,6 +799,28 @@ var loadFileFormatMap = map[string]string{
 	"CLICKHOUSE": "csv",
 }
 
+func minimalConfigSubscriber() {
+	ch := make(chan utils.DataEvent)
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	for {
+		config := <-ch
+		pkgLogger.Debug("Got config from config-backend", config)
+		sources := config.Data.(backendconfig.SourcesT)
+		for _, source := range sources.Sources {
+			for _, destination := range source.Destinations {
+				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
+					wh := &HandleT{
+						dbHandle: dbHandle,
+						destType: destination.DestinationDefinition.Name,
+					}
+					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
+					destinationsMap[destination.ID] = warehouseutils.WarehouseT{Destination: destination, Namespace: namespace, Type: wh.destType}
+				}
+			}
+		}
+	}
+}
+
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters() {
 	ch := make(chan utils.DataEvent)
@@ -987,6 +1009,10 @@ func Start() {
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
+		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
+		rruntime.Go(func() {
+			minimalConfigSubscriber()
+		})
 		return
 	}
 
