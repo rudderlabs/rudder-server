@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	uuid "github.com/satori/go.uuid"
 )
 
 // Upload Status
@@ -807,6 +808,7 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", publishBatchSize, noOfWorkers, destType, destID)
+	uniqueLoadGenID := uuid.NewV4().String()
 	for i := 0; i < len(stagingFiles); i += publishBatchSize {
 		j := i + publishBatchSize
 		if j > len(stagingFiles) {
@@ -826,6 +828,7 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 				DestinationName:     job.warehouse.Destination.Name,
 				DestinationType:     destType,
 				DestinationConfig:   job.warehouse.Destination.Config,
+				UniqueLoadGenID:     uniqueLoadGenID,
 			}
 
 			payloadJSON, err := json.Marshal(payload)
