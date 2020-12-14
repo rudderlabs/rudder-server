@@ -205,11 +205,16 @@ func getClickHouseCodecForColumnType(columnType string) string {
 
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
 func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string, notNullableKey bool) string {
+	disableNullable := true
 	if notNullableKey {
 		return columnType
 	}
+	// Nullable is not disabled for users and identity table
 	if tableName == warehouseutils.UsersTable {
 		return fmt.Sprintf(`SimpleAggregateFunction(anyLast, Nullable(%s))`, columnType)
+	}
+	if tableName != warehouseutils.IdentifiesTable && disableNullable {
+		fmt.Sprintf(`%s`, columnType)
 	}
 	return fmt.Sprintf(`Nullable(%s)`, columnType)
 }
@@ -390,7 +395,12 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 // createSchema creates a database in clickhouse
 func (ch *HandleT) createSchema() (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS "%s"`, ch.Namespace)
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	clusterClause := ""
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+	}
+	sqlStatement := fmt.Sprintf(`CREATE DATABASE %s IF NOT EXISTS "%s"`, clusterClause, ch.Namespace)
 	pkgLogger.Infof("CH: Creating database in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
