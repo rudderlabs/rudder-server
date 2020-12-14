@@ -180,7 +180,7 @@ func (wh *HandleT) releaseWorker() {
 }
 
 func (wh *HandleT) initWorker(identifier string) chan []*UploadJobT {
-	workerChan := make(chan []*UploadJobT, 100)
+	workerChan := make(chan []*UploadJobT, 1000)
 	rruntime.Go(func() {
 		for {
 			uploads := <-workerChan
