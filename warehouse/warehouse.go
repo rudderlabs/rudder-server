@@ -97,9 +97,10 @@ type HandleT struct {
 	createLoadFilesQ     chan LoadFileJobT
 	isEnabled            bool
 	configSubscriberLock sync.RWMutex
-	workerChannelMap     map[string]chan []*UploadJobT
+	workerChannelMap     map[string]chan *UploadJobT
 	workerChannelMapLock sync.RWMutex
-	uploadJobsQ          chan []*UploadJobT
+	uploadJobsQ          chan *UploadJobT
+	tableUploadStatus    map[string]map[int64]map[string]string
 }
 
 type ErrorResponseT struct {
@@ -179,41 +180,34 @@ func (wh *HandleT) releaseWorker() {
 	activeWorkerCountLock.Unlock()
 }
 
-func (wh *HandleT) initWorker(identifier string) chan []*UploadJobT {
-	workerChan := make(chan []*UploadJobT, 1000)
+func (wh *HandleT) initWorker() chan *UploadJobT {
+	workerChan := make(chan *UploadJobT, 1000)
 	rruntime.Go(func() {
 		for {
-			uploads := <-workerChan
-			err := wh.handleUploadJobs(uploads)
+			uploadJob := <-workerChan
+			err := wh.handleUploadJob(uploadJob)
 			if err != nil {
 				pkgLogger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
 			}
-			setDestInProgress(uploads[0].warehouse, false)
+			setDestInProgress(uploadJob.warehouse, false)
 		}
 	})
 	return workerChan
 }
 
-func (wh *HandleT) handleUploadJobs(jobs []*UploadJobT) error {
-
-	var err error
-	for _, uploadJob := range jobs {
-		// Process the upload job
-		timerStat := uploadJob.timerStat("upload_time")
-		timerStat.Start()
-		err = uploadJob.run()
-		wh.recordDeliveryStatus(uploadJob.warehouse.Destination.ID, uploadJob.upload.ID)
-		if err != nil {
-			// do not process other jobs so that uploads are done in order
-			break
-		}
-		timerStat.End()
-		onSuccessfulUpload(uploadJob.warehouse)
+func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
+	// Process the upload job
+	err = uploadJob.run()
+	if err != nil {
+		// do not process other jobs so that uploads are done in order //TODO-Shanmukh: On error, capture as partial table error and enqueue in the end.
+		return
 	}
+	wh.recordDeliveryStatus(uploadJob.warehouse.Destination.ID, uploadJob.upload.ID)
+	onSuccessfulUpload(uploadJob.warehouse)
 
 	wh.releaseWorker()
 
-	return err
+	return
 }
 
 func (wh *HandleT) backendConfigSubscriber() {
@@ -234,16 +228,22 @@ func (wh *HandleT) backendConfigSubscriber() {
 					continue
 				}
 				namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
-				warehouse := warehouseutils.WarehouseT{Source: source, Destination: destination, Namespace: namespace, Type: wh.destType, Identifier: fmt.Sprintf("%s:%s:%s", wh.destType, source.ID, destination.ID)}
+				warehouse := warehouseutils.WarehouseT{
+					Source:      source,
+					Destination: destination,
+					Namespace:   namespace,
+					Type:        wh.destType,
+					Identifier:  fmt.Sprintf("%s:%s:%s", wh.destType, source.ID, destination.ID),
+				}
 				wh.warehouses = append(wh.warehouses, warehouse)
 
 				workerName := workerIdentifier(warehouse)
 				wh.workerChannelMapLock.Lock()
 				// spawn one worker for each unique destID_namespace
-				// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/4a0a10e5faa2c337c457f14c3ad1c32e2abfb006
+				// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
 				// to avoid creating goroutine for disabled sources/destiantions
 				if _, ok := wh.workerChannelMap[workerName]; !ok {
-					workerChan := wh.initWorker(workerName)
+					workerChan := wh.initWorker()
 					wh.workerChannelMap[workerName] = workerChan
 				}
 				wh.workerChannelMapLock.Unlock()
@@ -305,6 +305,95 @@ func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT
 		namespace = warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
 	}
 	return namespace
+}
+
+// TableUploadStatusT captures the status of each table upload along with its parent upload_job's info like destionation_id and namespace
+type TableUploadStatusT struct {
+	uploadID      int64
+	destinationID string
+	namespace     string
+	tableName     string
+	status        string
+}
+
+func (wh *HandleT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
+	sqlStatement := fmt.Sprintf(`SELECT
+									%[1]s.id,
+									%[1]s.destination_id,
+									%[1]s.namespace,
+									%[2]s.table_name,
+									%[2]s.status
+								FROM
+									%[1]s INNER JOIN %[2]s
+								ON
+									%[1]s.id = %[2]s.wh_upload_id
+								WHERE
+									%[1]s.status != '%[3]s' 
+									AND %[1]s.status != '%[4]s'
+								ORDER BY
+									%[1]s.id ASC`,
+		warehouseutils.WarehouseUploadsTable, warehouseutils.WarehouseTableUploadsTable, ExportedData, Aborted)
+	rows, err := wh.dbHandle.Query(sqlStatement)
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	defer rows.Close()
+
+	tableUploadStatuses := make([]*TableUploadStatusT, 0)
+
+	for rows.Next() {
+		var tableUploadStatus TableUploadStatusT
+		err := rows.Scan(
+			&tableUploadStatus.uploadID,
+			&tableUploadStatus.destinationID,
+			&tableUploadStatus.namespace,
+			&tableUploadStatus.tableName,
+			&tableUploadStatus.status,
+		)
+		if err != nil {
+			panic(err)
+		}
+		tableUploadStatuses = append(tableUploadStatuses, &tableUploadStatus)
+	}
+
+	return tableUploadStatuses
+}
+
+func (wh *HandleT) getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[string]map[int64]map[string]string {
+	tableUploadStatusCache := make(map[string]map[int64]map[string]string)
+	for _, tUploadStatus := range tableUploadStatuses {
+		whIdentifier := fmt.Sprintf(`%s_%s`, tUploadStatus.destinationID, tUploadStatus.namespace)
+
+		if _, ok := tableUploadStatusCache[whIdentifier]; !ok {
+			tableUploadStatusCache[whIdentifier] = make(map[int64]map[string]string)
+		}
+
+		if _, ok := tableUploadStatusCache[whIdentifier][tUploadStatus.uploadID]; !ok {
+			tableUploadStatusCache[whIdentifier][tUploadStatus.uploadID] = make(map[string]string)
+		}
+
+		tableUploadStatusCache[whIdentifier][tUploadStatus.uploadID][tUploadStatus.tableName] = tUploadStatus.status
+	}
+	return tableUploadStatusCache
+}
+
+func (wh *HandleT) getPreviouslyBlockedTables(job *UploadJobT) []string {
+	blockedTableMap := make(map[string]bool)
+	whIdentifier := workerIdentifier(job.warehouse)
+	for uploadID, tableStatusMap := range wh.tableUploadStatus[whIdentifier] {
+		if uploadID < job.upload.ID {
+			for tableName, status := range tableStatusMap {
+				if status == TableUploadExportingFailed {
+					blockedTableMap[tableName] = true
+				}
+			}
+		}
+	}
+	blockedTables := make([]string, 0)
+	for blockedTName := range blockedTableMap {
+		blockedTables = append(blockedTables, blockedTName)
+	}
+	return blockedTables
 }
 
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
@@ -415,7 +504,14 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]UploadT, error) {
 
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, timings->0 as firstTiming, timings->-1 as lastTiming FROM %[1]s WHERE (%[1]s.destination_type='%[2]s' AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id = '%[4]s' AND %[1]s.status != '%[5]s' AND %[1]s.status != '%[6]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, wh.destType, warehouse.Source.ID, warehouse.Destination.ID, ExportedData, Aborted)
+	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, timings->0 as firstTiming, timings->-1 as lastTiming 
+								FROM %[1]s 
+								WHERE (%[1]s.destination_type='%[2]s' 
+									AND %[1]s.source_id='%[3]s' 
+									AND %[1]s.destination_id = '%[4]s' 
+									AND %[1]s.status != '%[5]s' 
+									AND %[1]s.status != '%[6]s') 
+								ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, wh.destType, warehouse.Source.ID, warehouse.Destination.ID, ExportedData, Aborted)
 
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
@@ -533,12 +629,13 @@ func (wh *HandleT) getUploadJobsForNewStagingFiles(warehouse warehouseutils.Ware
 		upload := wh.initUpload(warehouse, stagingFilesList[count:lastIndex])
 
 		job := UploadJobT{
-			upload:       &upload,
-			stagingFiles: stagingFilesList[count:lastIndex],
-			warehouse:    warehouse,
-			whManager:    whManager,
-			dbHandle:     wh.dbHandle,
-			pgNotifier:   &wh.notifier,
+			upload:           &upload,
+			stagingFiles:     stagingFilesList[count:lastIndex],
+			warehouse:        warehouse,
+			whManager:        whManager,
+			dbHandle:         wh.dbHandle,
+			pgNotifier:       &wh.notifier,
+			getBlockedTables: wh.getPreviouslyBlockedTables,
 		}
 
 		uploadJobs = append(uploadJobs, &job)
@@ -718,18 +815,20 @@ func (wh *HandleT) enqueueUploadJobs(uploadJobs []*UploadJobT) bool {
 		pkgLogger.Info("[WH]: Zero upload jobs, not enqueuing")
 		return false
 	}
-	wh.uploadJobsQ <- uploadJobs
+	for _, uploadJob := range uploadJobs {
+		wh.uploadJobsQ <- uploadJob
+	}
 	return true
 }
 
 func (wh *HandleT) runUploadJobAllocator() {
 	for {
-		uploadJobs := <-wh.uploadJobsQ
-		workerName := workerIdentifier(uploadJobs[0].warehouse)
+		uploadJob := <-wh.uploadJobsQ
+		workerName := workerIdentifier(uploadJob.warehouse)
 		// Waits till a worker is available to process
 		wh.waitAndLockAvailableWorker()
 		wh.workerChannelMapLock.Lock()
-		wh.workerChannelMap[workerName] <- uploadJobs
+		wh.workerChannelMap[workerName] <- uploadJob
 		wh.workerChannelMapLock.Unlock()
 	}
 }
@@ -779,8 +878,9 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
-	wh.uploadJobsQ = make(chan []*UploadJobT, 1000)
-	wh.workerChannelMap = make(map[string]chan []*UploadJobT)
+	wh.uploadJobsQ = make(chan *UploadJobT, 10000)
+	wh.workerChannelMap = make(map[string]chan *UploadJobT)
+	wh.tableUploadStatus = wh.getTableUploadStatusMap(wh.fetchPendingUploadTableStatus())
 	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
 	})

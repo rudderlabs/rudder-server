@@ -222,8 +222,11 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 }
 
 func (job *UploadJobT) run() (err error) {
+	timerStat := job.timerStat("upload_time")
+	timerStat.Start()
 	ch := job.trackLongRunningUpload()
 	defer func() {
+		timerStat.End()
 		ch <- struct{}{}
 	}()
 
@@ -383,16 +386,19 @@ func (job *UploadJobT) run() (err error) {
 		case ExportedData:
 			newStatus = nextUploadState.failed
 			skipPrevLoadedTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
+			skipLoadForTables := append(skipPrevLoadedTableNames, job.getBlockedTables(job)...)
+
 			// Export all other tables
 			loadTimeStat := job.timerStat("other_tables_load_time")
 			loadTimeStat.Start()
 
-			loadErrors := job.loadAllTablesExcept(skipPrevLoadedTableNames)
+			loadErrors := job.loadAllTablesExcept(skipLoadForTables)
 
 			if len(loadErrors) > 0 {
 				err = warehouseutils.ConcatErrors(loadErrors)
 				break
 			}
+
 			loadTimeStat.End()
 			job.generateUploadSuccessMetrics()
 			newStatus = nextUploadState.completed
