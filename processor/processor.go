@@ -3,6 +3,7 @@ package processor
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/dedup"
 	"math"
 	"reflect"
 	"sort"
@@ -76,6 +77,7 @@ type HandleT struct {
 	userPQLock                   sync.Mutex
 	logger                       logger.LoggerI
 	eventSchemaHandler           types.EventSchemasI
+	dedupHandler                 dedup.DedupI
 }
 
 type DestStatT struct {
@@ -156,7 +158,7 @@ func NewProcessor() *HandleT {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB) {
+func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool) {
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -206,6 +208,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
 	}
+	if enableDedup {
+		proc.dedupHandler = dedup.GetInstance(clearDB)
+	}
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
@@ -252,6 +257,7 @@ var (
 	customDestinations                  []string
 	pkgLogger                           logger.LoggerI
 	enableEventSchemasFeature           bool
+	enableDedup                         bool
 )
 
 func loadConfig() {
@@ -263,6 +269,8 @@ func loadConfig() {
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
+	// Enable dedup of incoming events by default
+	enableDedup = config.GetBool("Dedup.enableDedup", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
@@ -747,6 +755,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
 
 	proc.marshalSingularEvents.Start()
+	uniqueMessageIds := make(map[string]struct{})
+	var sourceDupStats = make(map[string]int)
+
 	for idx, batchEvent := range jobList {
 
 		var singularEvents []types.SingularEventT
@@ -762,12 +773,27 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		receivedAt := gjson.Get(string(batchEvent.EventPayload), "receivedAt").Time()
 
 		if ok {
+			var duplicateIndexes []int
+			if enableDedup {
+				var allMessageIdsInBatch []string
+				for _, singularEvent := range singularEvents {
+					allMessageIdsInBatch = append(allMessageIdsInBatch, singularEvent["messageId"].(string))
+				}
+				duplicateIndexes = proc.dedupHandler.FindDuplicates(allMessageIdsInBatch, uniqueMessageIds)
+			}
+
 			//Iterate through all the events in the batch
-			for _, singularEvent := range singularEvents {
+			for eventIndex, singularEvent := range singularEvents {
+				messageId := singularEvent["messageId"].(string)
+				if enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
+					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
+					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
+					continue
+				}
+				uniqueMessageIds[messageId] = struct{}{}
 				//We count this as one, not destination specific ones
 				totalEvents++
-
-				eventsByMessageID[singularEvent["messageId"].(string)] = singularEvent
+				eventsByMessageID[messageId] = singularEvent
 
 				//Getting all the destinations which are enabled for this
 				//event
@@ -976,6 +1002,14 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	if enableDedup && len(uniqueMessageIds) > 0 {
+		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
+		var dedupedMessageIdsAcrossJobs []string
+		for k, _ := range uniqueMessageIds {
+			dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
+		}
+		proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
+	}
 	proc.statDBW.End()
 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
@@ -1134,5 +1168,15 @@ func (proc *HandleT) crashRecover() {
 			statusList = append(statusList, &status)
 		}
 		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	}
+}
+
+func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {
+	for sourceTag, count := range sourceStats {
+		tags := map[string]string{
+			"source": sourceTag,
+		}
+		sourceStatsD := proc.stats.NewTaggedStat(bucket, stats.CountType, tags)
+		sourceStatsD.Count(count)
 	}
 }
