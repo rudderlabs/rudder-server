@@ -4,7 +4,6 @@ import (
 	"compress/gzip"
 	"database/sql"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -24,7 +23,6 @@ import (
 
 var (
 	stagingTablePrefix string
-	maxParallelLoads   int
 	pkgLogger          logger.LoggerI
 )
 
@@ -338,7 +336,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	unionStagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), "users_identifies_union"), 127)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), warehouseutils.UsersTable), 127)
 
-	userColMap := pg.Uploader.GetTableSchemaAfterUpload(warehouseutils.UsersTable)
+	userColMap := pg.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "id" {
@@ -540,7 +538,7 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	select {
 	case err = <-pingResultChannel:
 	case <-time.After(timeOut * time.Second):
-		err = errors.New(fmt.Sprintf("connection testing timed out after %v sec", timeOut))
+		err = fmt.Errorf("connection testing timed out after %d sec", timeOut)
 	}
 	return
 }

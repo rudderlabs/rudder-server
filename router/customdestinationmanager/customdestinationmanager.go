@@ -35,11 +35,12 @@ type DestinationManager interface {
 
 // CustomManagerT handles this module
 type CustomManagerT struct {
-	destType           string
-	managerType        string
-	destinationsMap    map[string]*CustomDestination
-	destinationLockMap map[string]*sync.RWMutex
-	latestConfig       map[string]backendconfig.DestinationT
+	destType             string
+	managerType          string
+	destinationsMap      map[string]*CustomDestination
+	destinationLockMap   map[string]*sync.RWMutex
+	latestConfig         map[string]backendconfig.DestinationT
+	configSubscriberLock sync.RWMutex
 }
 
 //CustomDestination keeps the config of a destination and corresponding producer for a stream destination
@@ -54,7 +55,7 @@ func init() {
 }
 
 func loadConfig() {
-	ObjectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB"}
+	ObjectStreamDestinations = []string{"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "CONFLUENT_CLOUD"}
 	KVStoreDestinations = []string{"REDIS"}
 	Destinations = append(ObjectStreamDestinations, KVStoreDestinations...)
 	customManagerMap = make(map[string]*CustomManagerT)
@@ -118,7 +119,9 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType str
 // SendData gets the producer from streamDestinationsMap and sends data
 func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string) {
 
+	customManager.configSubscriberLock.RLock()
 	destLock, ok := customManager.destinationLockMap[destID]
+	customManager.configSubscriberLock.RUnlock()
 	if !ok {
 		panic(fmt.Sprintf("[CDM %s] Unexpected state: Lock missing for %s", customManager.destType, destID))
 	}
@@ -215,6 +218,7 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 	backendconfig.Subscribe(ch, "backendConfig")
 	for {
 		config := <-ch
+		customManager.configSubscriberLock.Lock()
 		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			for _, destination := range source.Destinations {
@@ -231,5 +235,6 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 				}
 			}
 		}
+		customManager.configSubscriberLock.Unlock()
 	}
 }

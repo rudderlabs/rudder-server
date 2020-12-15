@@ -81,8 +81,9 @@ allowPartialWriteWithErrors = true
 allowReqsWithoutUserIDAndAnonymousID = false
 
 [EventSchemas]
-enableEventSchemasFeature = true
+enableEventSchemasFeature = false
 syncIntervalInS = 5
+noOfWorkers = 128
 
 [Gateway.webhook]
 batchTimeoutInMS = 20
@@ -139,22 +140,24 @@ failedOnly=false
 jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
 readSleepInMS = 1000
-noOfWorkers = 64
+fixedLoopSleepInMS = 0
 noOfJobsPerChannel = 1000
 noOfJobsToBatchInAWorker = 20
 jobsBatchTimeoutInSec = 5
-ser = 3
 maxSleepInS = 60
 minSleepInS = 0
 maxStatusUpdateWaitInS = 5
 useTestSink = false
-maxFailedCountForJob = 3
 guaranteeUserEventOrder = true
 kafkaWriteTimeoutInSec = 2
 kafkaDialTimeoutInSec = 10
-retryTimeWindowInMins = 180
 minRetryBackoffInS = 10
 maxRetryBackoffInS = 300
+# Below config variables are supported per destination type too
+noOfWorkers = 64
+allowAbortedUserJobsCountForProcessing=1
+maxFailedCountForJob = 3
+retryTimeWindowInMins = 180
     [Router.BRAZE]
     forceHTTP1=true
     httpTimeoutInS=120
@@ -170,11 +173,12 @@ maxRetryBackoffInS = 300
 
 [BatchRouter]
 mainLoopSleepInS = 2
-noOfWorkers = 8
 jobQueryBatchSize = 100000
 uploadFreqInS = 30
-maxFailedCountForJob = 128
 warehouseServiceMaxRetryTimeinHr = 3
+# Below config variables are supported per destination type too
+noOfWorkers = 8
+maxFailedCountForJob = 128
 
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
@@ -210,8 +214,9 @@ populateHistoricIdentities = false
 [Processor]
 loopSleepInMS = 10
 maxLoopSleepInMS = 5000
-maxDBReadBatchSize = 10000
-minDBReadBatchSize = 100
+fixedLoopSleepInMS = 0
+maxLoopProcessEvents = 10000
+avgEventsInRequest = 1
 transformBatchSize = 100
 userTransformBatchSize = 200
 sessionThresholdEvents = 100
@@ -246,9 +251,6 @@ storagePath = "/tmp/recovery_data.json"
     [recovery.normal]
     crashThreshold = 5
     durationInS = 300
-    [recovery.degraded]
-    crashThreshold = 5
-    durationInS = 300
 
 # logger configuration
 [Logger]
@@ -261,7 +263,7 @@ logFileSize = 100 # in MB
 enableTimestamp=true
 enableFileNameInLog=false
 enableStackTrace=false
-#moduleLevels="processor.transformer=ERROR:batchrouter=ERROR:pgnotifier=ERROR:warehouse=ERROR"
+#moduleLevels="processor.transformer=ERROR:batchrouter=ERROR:pgnotifier=ERROR:warehouse=ERROR:enterprise.migrator=ERROR"
 
 [Diagnostics]
 enableDiagnostics = true

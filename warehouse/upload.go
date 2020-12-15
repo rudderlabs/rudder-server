@@ -3,6 +3,7 @@ package warehouse
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -45,7 +46,7 @@ const (
 const (
 	TableUploadExecuting       = "executing"
 	TableUploadExporting       = "exporting_data"
-	TableUploadExportingFailed = "exporting_data"
+	TableUploadExportingFailed = "exporting_data_failed"
 	TableUploadExported        = "exported_data"
 )
 
@@ -101,6 +102,10 @@ const (
 	UploadTimingsField         = "timings"
 	UploadSchemaField          = "schema"
 	UploadLastExecAtField      = "last_exec_at"
+)
+
+var (
+	alwaysMarkExported = []string{warehouseutils.DiscardsTable}
 )
 
 var maxParallelLoads map[string]int
@@ -179,14 +184,11 @@ func (job *UploadJobT) shouldTableBeLoaded(tableName string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-
-	// TODO: Do we need this?
 	hasLoadfiles, err := job.hasLoadFiles(tableName)
 	if err != nil {
 		return false, err
 	}
-
-	return (!loaded && hasLoadfiles), nil
+	return !loaded && hasLoadfiles, nil
 }
 
 func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
@@ -294,6 +296,7 @@ func (job *UploadJobT) run() (err error) {
 				break
 			}
 			job.setStagingFilesStatus(warehouseutils.StagingFileSucceededState, err)
+			job.recordLoadFileGenerationTimeStat(loadFileIDs[0], loadFileIDs[len(loadFileIDs)-1])
 
 			newStatus = nextUploadState.completed
 
@@ -324,11 +327,7 @@ func (job *UploadJobT) run() (err error) {
 				if err != nil {
 					break
 				}
-				schemaHandle.schemaAfterUpload = diff.UpdatedSchema
-				schemaHandle.schemaInWarehouse = schemaHandle.schemaAfterUpload
-			} else {
-				// no alter done to schema in this upload
-				schemaHandle.schemaAfterUpload = schemaHandle.schemaInWarehouse
+				schemaHandle.schemaInWarehouse = diff.UpdatedSchema
 			}
 			newStatus = nextUploadState.completed
 
@@ -459,16 +458,19 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 			wg.Done()
 			continue
 		}
-		var loadTable bool
 		loadTable, err := job.shouldTableBeLoaded(tableName)
 		if err != nil {
-			panic(err)
+			loadErrors = append(loadErrors, err)
+			continue
 		}
 		if !loadTable {
 			wg.Done()
+			if misc.ContainsString(alwaysMarkExported, tableName) {
+				tableUpload := NewTableUpload(job.upload.ID, tableName)
+				tableUpload.setStatus(TableUploadExported)
+			}
 			continue
 		}
-
 		tName := tableName
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
@@ -483,6 +485,10 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 				tableUpload.setError(TableUploadExportingFailed, err)
 			} else {
 				tableUpload.setStatus(TableUploadExported)
+				numEvents, queryErr := tableUpload.getNumEvents()
+				if queryErr == nil {
+					job.recordTableLoad(tName, numEvents)
+				}
 			}
 			wg.Done()
 			<-loadChan
@@ -588,8 +594,8 @@ func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (erro
 			tableUploadErr = tableUpload.setStatus(TableUploadExported)
 			if tableUploadErr == nil {
 				// Since load is successful, we assume all events in load files are uploaded
-				numEvents, tableUploadErr := tableUpload.getNumEvents()
-				if tableUploadErr == nil {
+				numEvents, queryErr := tableUpload.getNumEvents()
+				if queryErr == nil {
 					job.recordTableLoad(tName, numEvents)
 				}
 			}
@@ -702,7 +708,7 @@ func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
 	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
-	job.counterStat("failed_uploads").Count(1)
+	job.counterStat("warehouse_failed_uploads").Count(1)
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 
 	upload := job.upload
@@ -733,6 +739,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	if errorByState["attempt"].(int) > minRetryAttempts {
 		firstTiming := job.getUploadFirstAttemptTime()
 		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
+			job.counterStat("upload_aborted").Count(1)
 			state = Aborted
 		}
 	}
@@ -790,10 +797,6 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 	destType := job.upload.DestinationType
 	stagingFiles := job.stagingFiles
 
-	// stat for time taken to process staging files in a single job
-	timer := job.timerStat("load_files_creation")
-	timer.Start()
-
 	job.setStagingFilesStatus(warehouseutils.StagingFileExecutingState, nil)
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
@@ -812,7 +815,9 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 				StagingFileLocation: stagingFile.Location,
 				Schema:              job.upload.Schema,
 				SourceID:            job.warehouse.Source.ID,
+				SourceName:          job.warehouse.Source.Name,
 				DestinationID:       destID,
+				DestinationName:     job.warehouse.Destination.Name,
 				DestinationType:     destType,
 				DestinationConfig:   job.warehouse.Destination.Config,
 			}
@@ -858,8 +863,6 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 			loadFileIDs = append(loadFileIDs, ids...)
 		}
 	}
-
-	timer.End()
 
 	if len(loadFileIDs) == 0 {
 		err = fmt.Errorf("No load files generated")
@@ -948,9 +951,12 @@ func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location str
 	)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		pkgLogger.Errorf(`[WH] Error querying for sample load file location: %v`, err)
 	}
-	return
+	if err == sql.ErrNoRows {
+		err = errors.New("Sample load file not found")
+	}
+	return location, err
 }
 
 func (job *UploadJobT) GetSchemaInWarehouse() (schema warehouseutils.SchemaT) {
@@ -960,8 +966,8 @@ func (job *UploadJobT) GetSchemaInWarehouse() (schema warehouseutils.SchemaT) {
 	return job.schemaHandle.schemaInWarehouse
 }
 
-func (job *UploadJobT) GetTableSchemaAfterUpload(tableName string) warehouseutils.TableSchemaT {
-	return job.schemaHandle.schemaAfterUpload[tableName]
+func (job *UploadJobT) GetTableSchemaInWarehouse(tableName string) warehouseutils.TableSchemaT {
+	return job.schemaHandle.schemaInWarehouse[tableName]
 }
 
 func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {

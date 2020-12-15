@@ -1,6 +1,7 @@
 package timeutil
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -29,4 +30,11 @@ func StartOfDay(t time.Time) time.Time {
 // Now returns the current time in UTC.
 func Now() time.Time {
 	return time.Now().UTC()
+}
+
+// GetElapsedMinsInThisDay() returns no of minutes elapsed in this day for the time provided
+func GetElapsedMinsInThisDay(currentTime time.Time) int {
+	hour := currentTime.Hour()
+	minute := currentTime.Minute()
+	return MinsOfDay(fmt.Sprintf("%d:%d", hour, minute))
 }

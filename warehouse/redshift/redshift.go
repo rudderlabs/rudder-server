@@ -32,7 +32,6 @@ var (
 	setVarCharMax         bool
 	warehouseUploadsTable string
 	stagingTablePrefix    string
-	maxParallelLoads      int
 	pkgLogger             logger.LoggerI
 )
 
@@ -236,21 +235,9 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		panic(err)
 	}
 	defer file.Close()
-	var accessKeyID, accessKey string
-	if misc.HasAWSKeysInConfig(rs.Warehouse.Destination.Config) {
-		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, rs.Warehouse)
-		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse)
-	} else {
-		accessKeyID = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-		accessKey = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
-	}
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
-		Config: map[string]interface{}{
-			"bucketName":  warehouseutils.GetConfigValue(AWSBucketNameConfig, rs.Warehouse),
-			"accessKeyID": accessKeyID,
-			"accessKey":   accessKey,
-		},
+		Config:   misc.GetObjectStorageConfig("S3", rs.Warehouse.Destination.Config),
 	})
 
 	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
@@ -361,12 +348,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	var quotedColumnNames string
-	for idx, str := range strkeys {
-		quotedColumnNames += "\"" + str + "\""
-		if idx != len(strkeys)-1 {
-			quotedColumnNames += ","
-		}
-	}
+	quotedColumnNames = warehouseutils.DoubleQuoteAndJoinByComma(strkeys)
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -392,7 +374,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	pkgLogger.Infof("RS: Starting load for identifies and users tables\n")
 
-	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), rs.Uploader.GetTableSchemaAfterUpload(warehouseutils.IdentifiesTable), true)
+	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable), true)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -404,7 +386,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
-	userColMap := rs.Uploader.GetTableSchemaAfterUpload(warehouseutils.UsersTable)
+	userColMap := rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		// do not reference uuid in queries as it can be an autoincrementing field set by segment compatible tables
@@ -412,8 +394,9 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 			continue
 		}
 		userColNames = append(userColNames, colName)
-		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
+		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
+	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), warehouseutils.UsersTable), 127)
 
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
@@ -435,7 +418,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		strings.Join(firstValProps, ","), // 3
 		warehouseutils.UsersTable,        // 4
 		identifyStagingTable,             // 5
-		strings.Join(userColNames, ","),  // 6
+		quotedUserColNames,               // 6
 	)
 
 	// BEGIN TRANSACTION
@@ -466,7 +449,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, warehouseutils.DoubleQuoteAndJoinByComma(append([]string{"id"}, userColNames...)))
 	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 
@@ -716,7 +699,7 @@ func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	select {
 	case err = <-pingResultChannel:
 	case <-time.After(timeOut * time.Second):
-		err = fmt.Errorf("connection testing timed out after %v sec", timeOut)
+		err = fmt.Errorf("connection testing timed out after %d sec", timeOut)
 	}
 	return
 }
@@ -755,7 +738,7 @@ func (rs *HandleT) LoadUserTables() map[string]error {
 }
 
 func (rs *HandleT) LoadTable(tableName string) error {
-	_, err := rs.loadTable(tableName, rs.Uploader.GetTableSchemaInUpload(tableName), rs.Uploader.GetTableSchemaAfterUpload(tableName), false)
+	_, err := rs.loadTable(tableName, rs.Uploader.GetTableSchemaInUpload(tableName), rs.Uploader.GetTableSchemaInWarehouse(tableName), false)
 	return err
 }
 

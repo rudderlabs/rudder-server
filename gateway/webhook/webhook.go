@@ -94,7 +94,7 @@ func parseWriteKey(req *http.Request) (writeKey string, found bool) {
 func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reason string, code int, stat string) {
 	var writeKeyFailStats = make(map[string]int)
 	misc.IncrementMapByKey(writeKeyFailStats, stat, 1)
-	webhook.gwHandle.UpdateWriteKeyStats(writeKeyFailStats, "gateway.write_key_failed_requests")
+	webhook.gwHandle.UpdateSourceStats(writeKeyFailStats, "gateway.write_key_failed_requests")
 	pkgLogger.Debugf("Webhook: Failing request since: %v", reason)
 	statusCode := 400
 	if code != 0 {
@@ -264,12 +264,16 @@ func (webhook *HandleT) Register(name string) {
 	}
 }
 
-func newWebhookStat(destID string) *webhookSourceStatT {
-	numEvents := stats.NewDestStat("webhook_num_events", stats.CountType, destID)
-	numOutputEvents := stats.NewDestStat("webhook_num_output_events", stats.CountType, destID)
-	sourceTransform := stats.NewDestStat("webhook_dest_transform", stats.TimerType, destID)
+//TODO: Check if correct
+func newWebhookStat(sourceType string) *webhookSourceStatT {
+	tags := map[string]string{
+		"sourceType": sourceType,
+	}
+	numEvents := stats.NewTaggedStat("webhook_num_events", stats.CountType, tags)
+	numOutputEvents := stats.NewTaggedStat("webhook_num_output_events", stats.CountType, tags)
+	sourceTransform := stats.NewTaggedStat("webhook_dest_transform", stats.TimerType, tags)
 	return &webhookSourceStatT{
-		id:              destID,
+		id:              sourceType,
 		numEvents:       numEvents,
 		numOutputEvents: numOutputEvents,
 		sourceTransform: sourceTransform,

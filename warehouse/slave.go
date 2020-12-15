@@ -3,6 +3,7 @@ package warehouse
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -135,16 +136,76 @@ func (job *PayloadT) getColumnName(columnName string) string {
 	return warehouseutils.ToProviderCase(job.DestinationType, columnName)
 }
 
-func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile *misc.GZipWriter, tableName string) (filemanager.UploadOutput, error) {
+type loadFileUploadJob struct {
+	tableName  string
+	outputFile misc.GZipWriter
+}
+
+func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 	job := jobRun.job
-	uploadFile.CloseGZ()
-	file, err := os.Open(uploadFile.File.Name())
+	uploader, err := job.getFileManager()
+	if err != nil {
+		return []int64{}, err
+	}
+	var loadFileIDs []int64
+	loadFileIDChan := make(chan int64, len(jobRun.outputFileWritersMap))
+	uploadJobChan := make(chan *loadFileUploadJob, len(jobRun.outputFileWritersMap))
+	// close chan to avoid memory leak ranging over it
+	defer close(uploadJobChan)
+	uploadErrorChan := make(chan error, numLoadFileUploadWorkers)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for i := 0; i < numLoadFileUploadWorkers; i++ {
+		go func(ctx context.Context) {
+			for uploadJob := range uploadJobChan {
+				select {
+				case <-ctx.Done():
+					pkgLogger.Debugf("context is cancelled, stopped processing load file for staging file id %s ", job.StagingFileID)
+					return // stop further processing
+				default:
+					tableName := uploadJob.tableName
+					uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, uploadJob.outputFile, tableName)
+					if err != nil {
+						uploadErrorChan <- err
+						return
+					}
+					fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
+					loadFileIDChan <- fileID
+				}
+
+			}
+		}(ctx)
+	}
+	// Create upload jobs
+	for tableName, loadFile := range jobRun.outputFileWritersMap {
+		uploadJobChan <- &loadFileUploadJob{tableName: tableName, outputFile: loadFile}
+	}
+
+	// Wait for response
+	for {
+		select {
+		case loadFileID := <-loadFileIDChan:
+			loadFileIDs = append(loadFileIDs, loadFileID)
+			if len(loadFileIDs) == len(jobRun.outputFileWritersMap) {
+				return loadFileIDs, nil
+			}
+		case err := <-uploadErrorChan:
+			pkgLogger.Errorf("received error while uploading load file to bucket for staging file id %s, cancelling the context: err %w", job.StagingFileID, err)
+			return []int64{}, err
+		case <-time.After(slaveUploadTimeout):
+			return []int64{}, fmt.Errorf("Load files upload timed out for staging file id: %v", jobRun.job.StagingFileID)
+		}
+	}
+}
+
+func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile misc.GZipWriter, tableName string) (filemanager.UploadOutput, error) {
+	job := jobRun.job
+	file, err := os.Open(uploadFile.File.Name()) // opens file in read mode
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to Open File: %s", uploadFile.File.Name())
 		return filemanager.UploadOutput{}, err
 	}
-
-	defer os.Remove(uploadFile.File.Name())
+	defer file.Close()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
 	uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.BatchID, tableName))
 	return uploadLocation, err
@@ -208,13 +269,9 @@ func (jobRun *JobRunT) cleanup() {
 			pkgLogger.Errorf("[WH]: Failed to remove staging file: %w", err)
 		}
 	}
-
 	if jobRun.outputFileWritersMap != nil {
 		for _, writer := range jobRun.outputFileWritersMap {
-			err := writer.CloseGZ()
-			if err != nil {
-				pkgLogger.Errorf("[WH]: Failed to close output load file: %w", err)
-			}
+			os.Remove(writer.File.Name())
 		}
 	}
 }
@@ -248,6 +305,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		job:          job,
 		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 	}
+
 	defer jobRun.cleanup()
 
 	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
@@ -390,30 +448,16 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		gzWriter.WriteGZ(eventData)
 		jobRun.tableEventCountMap[tableName]++
 	}
-
 	timer.End()
 	misc.PrintMemUsage()
 
 	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
-
-	// Upload each generated load file to ObjectStorage
-	// On successful upload, store the saved fileID in wh_load_files table
-	uploader, err := job.getFileManager()
-	if err != nil {
-		panic(err)
+	for _, loadFile := range jobRun.outputFileWritersMap {
+		loadFile.CloseGZ()
 	}
-
-	for tableName, outputFile := range jobRun.outputFileWritersMap {
-		uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, &outputFile, tableName)
-		if err != nil {
-			// TODO: If we break in between, we have only few load files. How do we handle this?
-			return loadFileIDs, err
-		}
-		fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
-		loadFileIDs = append(loadFileIDs, fileID)
-	}
-	return loadFileIDs, nil
+	loadFileIDs, err = jobRun.uploadLoadFilesToObjectStorage()
+	return loadFileIDs, err
 }
 
 func claimAndProcess(workerIdx int, slaveID string) {

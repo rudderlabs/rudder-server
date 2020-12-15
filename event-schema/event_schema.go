@@ -41,6 +41,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
@@ -102,19 +103,23 @@ type EventSchemaManagerT struct {
 	schemaVersionLock sync.RWMutex
 }
 
-var flushInterval time.Duration
-var adminUser string
-var adminPassword string
+var (
+	flushInterval                   time.Duration
+	adminUser                       string
+	adminPassword                   string
+	reservoirSampleSize             int
+	eventSchemaChannel              chan *GatewayEventBatchT
+	updatedEventModels              map[string]*EventModelT
+	updatedSchemaVersions           map[string]*SchemaVersionT
+	pkgLogger                       logger.LoggerI
+	noOfWorkers                     int
+	shouldCaptureNilAsUnknowns      bool
+	eventModelLimit                 int
+	schemaVersionPerEventModelLimit int
+)
 
 const EVENT_MODELS_TABLE = "event_models"
 const SCHEMA_VERSIONS_TABLE = "schema_versions"
-
-var reservoirSampleSize int
-
-var eventSchemaChannel chan *GatewayEventBatchT
-
-var updatedEventModels map[string]*EventModelT
-var updatedSchemaVersions map[string]*SchemaVersionT
 
 //GatewayEventBatchT : Type sent from gateway
 type GatewayEventBatchT struct {
@@ -137,6 +142,10 @@ func loadConfig() {
 	adminUser = config.GetEnv("RUDDER_ADMIN_USER", "rudder")
 	adminPassword = config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
 	reservoirSampleSize = config.GetInt("EventSchemas.sampleEventsSize", 5)
+	noOfWorkers = config.GetInt("EventSchemas.noOfWorkers", 128)
+	shouldCaptureNilAsUnknowns = config.GetBool("EventSchemas.captureUnknowns", false)
+	eventModelLimit = config.GetInt("EventSchemas.eventModelLimit", 200)
+	schemaVersionPerEventModelLimit = config.GetInt("EventSchemas.schemaVersionPerEventModelLimit", 20)
 
 	if adminPassword == "rudderstack" {
 		fmt.Println("[EventSchemas] You are using default password. Please change it by setting env variable RUDDER_ADMIN_PASSWORD")
@@ -145,11 +154,16 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("event-schema")
 }
 
 //RecordEventSchema : Records event schema for every event in the batch
 func (manager *EventSchemaManagerT) RecordEventSchema(writeKey string, eventBatch string) bool {
-	eventSchemaChannel <- &GatewayEventBatchT{writeKey, eventBatch}
+	select {
+	case eventSchemaChannel <- &GatewayEventBatchT{writeKey, eventBatch}:
+	default:
+		stats.NewTaggedStat("dropped_events_count", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": writeKey}).Increment()
+	}
 	return true
 }
 
@@ -213,7 +227,7 @@ func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *Sche
 func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	eventType, ok := event["type"].(string)
 	if !ok {
-		logger.Debugf("[EventSchemas] Invalid or no eventType")
+		pkgLogger.Debugf("[EventSchemas] Invalid or no eventType")
 		return
 	}
 	eventIdentifier := ""
@@ -225,7 +239,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 		eventIdentifier, ok = event["name"].(string)
 	}
 	if !ok {
-		logger.Debugf("[EventSchemas] Invalid event idenitfier")
+		pkgLogger.Debugf("[EventSchemas] Invalid event idenitfier")
 		return
 	}
 
@@ -234,7 +248,14 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	manager.schemaVersionLock.Lock()
 	defer manager.eventModelLock.Unlock()
 	defer manager.schemaVersionLock.Unlock()
-
+	totalEventModels := 0
+	for _, v := range manager.eventModelMap[writeKey] {
+		totalEventModels += len(v)
+	}
+	if totalEventModels >= eventModelLimit {
+		stats.NewTaggedStat("dropped_event_models_count", stats.CountType, stats.Tags{"module": "event_schemas"}).Increment()
+		return
+	}
 	eventModel, ok := manager.eventModelMap[writeKey][eventType][eventIdentifier]
 	if !ok {
 		eventModelID := uuid.NewV4().String()
@@ -249,12 +270,17 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 
 		manager.updateEventModelCache(eventModel, true)
 	}
+
+	if len(manager.schemaVersionMap[eventModel.UUID]) >= schemaVersionPerEventModelLimit {
+		stats.NewTaggedStat("dropped_schema_versions_count", stats.CountType, stats.Tags{"module": "event_schemas", "eventModelID": eventModel.UUID}).Increment()
+		return
+	}
 	eventModel.LastSeen = time.Now()
 
 	eventMap := map[string]interface{}(event)
 	flattenedEvent, err := flatten.Flatten((eventMap), "", flatten.DotStyle)
 	if err != nil {
-		logger.Debug(fmt.Sprintf("[EventSchemas] Failed to flatten the event +%v with error: %s", eventMap, err.Error()))
+		pkgLogger.Debug(fmt.Sprintf("[EventSchemas] Failed to flatten the event +%v with error: %s", eventMap, err.Error()))
 	}
 
 	schema := getSchema(flattenedEvent)
@@ -299,7 +325,7 @@ func (em *EventModelT) mergeSchema(sv *SchemaVersionT) {
 	}
 
 	if len(errors) > 0 {
-		logger.Errorf("EventModel with ID: %s has encountered following disparities:\n%s", em.ID, strings.Join(errors, "\n"))
+		pkgLogger.Errorf("EventModel with ID: %s has encountered following disparities:\n%s", em.ID, strings.Join(errors, "\n"))
 	}
 
 	masterSchemaJSON, err := json.Marshal(masterSchema)
@@ -344,7 +370,7 @@ func getMetadataJSON(reservoirSample *ReservoirSample, schemaHash string) []byte
 	metadata.Counters = getSchemaVersionCounters(schemaHash)
 
 	metadataJSON, err := json.Marshal(metadata)
-	logger.Debugf("[EventSchemas] Metadata JSON: %s", string(metadataJSON))
+	pkgLogger.Debugf("[EventSchemas] Metadata JSON: %s", string(metadataJSON))
 	assertError(err)
 	return metadataJSON
 }
@@ -355,7 +381,7 @@ func getPrivateDataJSON(schemaHash string) []byte {
 	}
 
 	privateDataJSON, err := json.Marshal(privateData)
-	logger.Debugf("[EventSchemas] Private Data JSON: %s", string(privateDataJSON))
+	pkgLogger.Debugf("[EventSchemas] Private Data JSON: %s", string(privateDataJSON))
 	assertError(err)
 	return privateDataJSON
 
@@ -409,7 +435,8 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 			}
 			_, err = stmt.Exec()
 			assertTxnError(err, txn)
-			logger.Debugf("[EventSchemas][Flush] %d new event types", len(updatedEventModels))
+			stats.NewTaggedStat("update_event_model_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(eventModelIds))
+			pkgLogger.Debugf("[EventSchemas][Flush] %d new event types", len(updatedEventModels))
 		}
 
 		//Handle Schema Versions
@@ -436,7 +463,8 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 			}
 			_, err = stmt.Exec()
 			assertTxnError(err, txn)
-			logger.Debugf("[EventSchemas][Flush] %d new schema versions", len(schemaVersionsInCache))
+			stats.NewTaggedStat("update_schema_version_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(versionIDs))
+			pkgLogger.Debugf("[EventSchemas][Flush] %d new schema versions", len(schemaVersionsInCache))
 		}
 
 		err = txn.Commit()
@@ -475,8 +503,8 @@ func assertError(err error) {
 func assertTxnError(err error, txn *sql.Tx) {
 	if err != nil {
 		txn.Rollback()
-		logger.Info(fmt.Sprintf("%#v\n", err))
-		logger.Info(fmt.Sprintf("%#v\n", txn))
+		pkgLogger.Info(fmt.Sprintf("%#v\n", err))
+		pkgLogger.Info(fmt.Sprintf("%#v\n", txn))
 		panic(err)
 	}
 }
@@ -560,8 +588,10 @@ func getSchema(flattenedEvent map[string]interface{}) map[string]string {
 		if reflectType != nil {
 			schema[k] = reflectType.String()
 		} else {
-			schema[k] = "unknown"
-			logger.Errorf("[EventSchemas] Got invalid reflectType %+v", v)
+			if !(v == nil && !shouldCaptureNilAsUnknowns) {
+				schema[k] = "unknown"
+				pkgLogger.Errorf("[EventSchemas] Got invalid reflectType %+v", v)
+			}
 		}
 	}
 	return schema
@@ -595,7 +625,7 @@ func computeFrequencies(flattenedEvent map[string]interface{}, schemaHash string
 }
 
 func (manager *EventSchemaManagerT) Setup() {
-	logger.Info("[EventSchemas] Setting up eventSchemas...")
+	pkgLogger.Info("[EventSchemas] Setting up eventSchemas...")
 	// Clean this up
 	manager.dbHandle = createDBConnection()
 
@@ -607,15 +637,17 @@ func (manager *EventSchemaManagerT) Setup() {
 	manager.schemaVersionMap = make(SchemaVersionMapT)
 
 	manager.populateEventSchemas()
-	eventSchemaChannel = make(chan *GatewayEventBatchT, 1000)
+	eventSchemaChannel = make(chan *GatewayEventBatchT, 10000)
 
-	rruntime.Go(func() {
-		manager.recordEvents()
-	})
+	for i := 0; i < noOfWorkers; i++ {
+		rruntime.Go(func() {
+			manager.recordEvents()
+		})
+	}
 
 	rruntime.Go(func() {
 		manager.flushEventSchemas()
 	})
 
-	logger.Info("[EventSchemas] Set up eventSchemas successful.")
+	pkgLogger.Info("[EventSchemas] Set up eventSchemas successful.")
 }

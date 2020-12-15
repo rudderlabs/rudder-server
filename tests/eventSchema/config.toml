@@ -38,7 +38,6 @@ noOfWorkers = 8
 noOfJobsPerChannel = 1000
 noOfJobsToBatchInAWorker = 20
 jobsBatchTimeoutInSec = 5
-ser = 3
 maxSleepInS = 60
 minSleepInS = 0
 maxStatusUpdateWaitInS = 1
