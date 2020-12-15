@@ -1,6 +1,7 @@
 package apptype
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -32,7 +33,7 @@ var (
 )
 
 func (processor *ProcessorAppType) GetAppType() string {
-	return "rudder-server-processor"
+	return fmt.Sprintf("rudder-server-%s", app.PROCESSOR)
 }
 
 func (processor *ProcessorAppType) StartRudderCore(options *app.Options) {
@@ -70,7 +71,7 @@ func (processor *ProcessorAppType) StartRudderCore(options *app.Options) {
 }
 
 func (processor *ProcessorAppType) HandleRecovery(options *app.Options) {
-	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime)
+	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
 }
 
 func startHealthWebHandler() {

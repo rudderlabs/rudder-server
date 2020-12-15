@@ -1,6 +1,7 @@
 package apptype
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/app"
@@ -23,7 +24,7 @@ type GatewayAppType struct {
 }
 
 func (gatewayApp *GatewayAppType) GetAppType() string {
-	return "rudder-server-gateway"
+	return fmt.Sprintf("rudder-server-%s", app.GATEWAY)
 }
 
 func (gatewayApp *GatewayAppType) StartRudderCore(options *app.Options) {
@@ -59,5 +60,5 @@ func (gatewayApp *GatewayAppType) StartRudderCore(options *app.Options) {
 }
 
 func (gateway *GatewayAppType) HandleRecovery(options *app.Options) {
-	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime)
+	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.GATEWAY)
 }

@@ -6,8 +6,8 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-// HandleRecovery decides the recovery Mode (normal/migration) in which app should run
-func HandleNullRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode string, currTime int64) {
+// HandleNullRecovery decides the recovery Mode (normal/migration) in which app should run
+func HandleNullRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode string, currTime int64, appType string) {
 
 	enabled := config.GetBool("recovery.enabled", false)
 	if !enabled {
@@ -39,6 +39,6 @@ func HandleNullRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode
 	pkgLogger.Infof("Starting in %s mode", recoveryData.Mode)
 	CurrentMode = recoveryData.Mode
 	rruntime.Go(func() {
-		sendRecoveryModeStat()
+		sendRecoveryModeStat(appType)
 	})
 }

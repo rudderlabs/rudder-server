@@ -1,6 +1,7 @@
 package db
 
 import (
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/rruntime"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -51,6 +52,6 @@ func HandleEmbeddedRecovery(forceNormal bool, forceDegraded bool, forceMigration
 	pkgLogger.Infof("Starting in %s mode", recoveryData.Mode)
 	CurrentMode = recoveryData.Mode
 	rruntime.Go(func() {
-		sendRecoveryModeStat()
+		sendRecoveryModeStat(app.EMBEDDED)
 	})
 }

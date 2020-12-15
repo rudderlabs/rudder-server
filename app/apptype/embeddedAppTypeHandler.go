@@ -1,6 +1,7 @@
 package apptype
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/app"
@@ -24,7 +25,7 @@ type EmbeddedAppType struct {
 }
 
 func (embedded *EmbeddedAppType) GetAppType() string {
-	return "rudder-server"
+	return fmt.Sprintf("rudder-server-%s", app.EMBEDDED)
 }
 
 func (embedded *EmbeddedAppType) StartRudderCore(options *app.Options) {
