@@ -805,7 +805,7 @@ func minimalConfigSubscriber() {
 	for {
 		config := <-ch
 		pkgLogger.Debug("Got config from config-backend", config)
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT)
 		for _, source := range sources.Sources {
 			for _, destination := range source.Destinations {
 				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {

@@ -104,7 +104,7 @@ func (workspaceConfig *WorkspaceConfig) getFromFile() (ConfigT, bool) {
 	pkgLogger.Info("Reading workspace config from JSON file")
 	data, err := IoUtil.ReadFile(configJSONPath)
 	if err != nil {
-		pkgLogger.Errorf("Unable to read backend config from file: %s", configJSONPath)
+		pkgLogger.Errorf("Unable to read backend config from file: %s with error : %s", configJSONPath, err.Error())
 		return ConfigT{}, false
 	}
 	var configJSON ConfigT

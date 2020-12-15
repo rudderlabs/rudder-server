@@ -225,7 +225,7 @@ func GetVersion() string {
 	url := integrations.GetTransformerURL() + "/transformerBuildVersion"
 	resp, err := http.Get(url)
 	if err != nil {
-		logger.Errorf("Unable to make a transfomer build version call with error : %s", err.Error())
+		pkgLogger.Errorf("Unable to make a transfomer build version call with error : %s", err.Error())
 		return ""
 
 	}
@@ -236,7 +236,7 @@ func GetVersion() string {
 	if resp.StatusCode == http.StatusOK {
 		bodyBytes, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			logger.Errorf("Unable to read response into bytes with error : %s", err.Error())
+			pkgLogger.Errorf("Unable to read response into bytes with error : %s", err.Error())
 			return ""
 		}
 		transformerBuildVersion = string(bodyBytes)
