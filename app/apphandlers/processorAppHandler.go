@@ -1,4 +1,4 @@
-package apptype
+package apphandlers
 
 import (
 	"fmt"
@@ -19,8 +19,8 @@ import (
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//ProcessorAppType is the type for Processor type implemention
-type ProcessorAppType struct {
+//ProcessorApp is the type for Processor type implemention
+type ProcessorApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
@@ -32,11 +32,11 @@ var (
 	procErrorDB   jobsdb.HandleT
 )
 
-func (processor *ProcessorAppType) GetAppType() string {
+func (processor *ProcessorApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.PROCESSOR)
 }
 
-func (processor *ProcessorAppType) StartRudderCore(options *app.Options) {
+func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 	pkgLogger.Info("Processor starting")
 
 	rudderCoreBaseSetup()
@@ -70,7 +70,7 @@ func (processor *ProcessorAppType) StartRudderCore(options *app.Options) {
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
-func (processor *ProcessorAppType) HandleRecovery(options *app.Options) {
+func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
 	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
 }
 

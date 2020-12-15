@@ -1,4 +1,4 @@
-package apptype
+package apphandlers
 
 import (
 	"errors"
@@ -35,22 +35,22 @@ var (
 	Diagnostics                      diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
 
-//AppTypeHandler to be implemented by different app type objects.
-type AppTypeHandler interface {
+//AppHandler to be implemented by different app type objects.
+type AppHandler interface {
 	GetAppType() string
 	HandleRecovery(*app.Options)
 	StartRudderCore(*app.Options)
 }
 
-func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppTypeHandler {
-	var handler AppTypeHandler
+func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {
+	var handler AppHandler
 	switch appType {
 	case app.GATEWAY:
-		handler = &GatewayAppType{App: application, VersionHandler: versionHandler}
+		handler = &GatewayApp{App: application, VersionHandler: versionHandler}
 	case app.PROCESSOR:
-		handler = &ProcessorAppType{App: application, VersionHandler: versionHandler}
+		handler = &ProcessorApp{App: application, VersionHandler: versionHandler}
 	case app.EMBEDDED:
-		handler = &EmbeddedAppType{App: application, VersionHandler: versionHandler}
+		handler = &EmbeddedApp{App: application, VersionHandler: versionHandler}
 	default:
 		panic(errors.New("invalid app type"))
 	}
@@ -60,7 +60,7 @@ func GetAppHandler(application app.Interface, appType string, versionHandler fun
 
 func init() {
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("apptype")
+	pkgLogger = logger.NewLogger().Child("apphandlers")
 }
 
 func loadConfig() {

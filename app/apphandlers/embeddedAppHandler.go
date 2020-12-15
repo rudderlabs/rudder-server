@@ -1,4 +1,4 @@
-package apptype
+package apphandlers
 
 import (
 	"fmt"
@@ -18,17 +18,17 @@ import (
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//EmbeddedAppType is the type for embedded type implemention
-type EmbeddedAppType struct {
+//EmbeddedApp is the type for embedded type implemention
+type EmbeddedApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
 
-func (embedded *EmbeddedAppType) GetAppType() string {
+func (embedded *EmbeddedApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.EMBEDDED)
 }
 
-func (embedded *EmbeddedAppType) StartRudderCore(options *app.Options) {
+func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	pkgLogger.Info("Main starting")
 
 	rudderCoreBaseSetup()
@@ -78,6 +78,6 @@ func (embedded *EmbeddedAppType) StartRudderCore(options *app.Options) {
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
-func (embedded *EmbeddedAppType) HandleRecovery(options *app.Options) {
+func (embedded *EmbeddedApp) HandleRecovery(options *app.Options) {
 	db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.EMBEDDED)
 }

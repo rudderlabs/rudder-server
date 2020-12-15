@@ -1,4 +1,4 @@
-package apptype
+package apphandlers
 
 import (
 	"fmt"
@@ -17,17 +17,17 @@ import (
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//GatewayAppType is the type for Gateway type implemention
-type GatewayAppType struct {
+//GatewayApp is the type for Gateway type implemention
+type GatewayApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
 
-func (gatewayApp *GatewayAppType) GetAppType() string {
+func (gatewayApp *GatewayApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.GATEWAY)
 }
 
-func (gatewayApp *GatewayAppType) StartRudderCore(options *app.Options) {
+func (gatewayApp *GatewayApp) StartRudderCore(options *app.Options) {
 	pkgLogger.Info("Gateway starting")
 
 	rudderCoreBaseSetup()
@@ -59,6 +59,6 @@ func (gatewayApp *GatewayAppType) StartRudderCore(options *app.Options) {
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
-func (gateway *GatewayAppType) HandleRecovery(options *app.Options) {
+func (gateway *GatewayApp) HandleRecovery(options *app.Options) {
 	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.GATEWAY)
 }
