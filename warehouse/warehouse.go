@@ -180,7 +180,7 @@ func (wh *HandleT) releaseWorker() {
 }
 
 func (wh *HandleT) initWorker(identifier string) chan []*UploadJobT {
-	workerChan := make(chan []*UploadJobT, 100)
+	workerChan := make(chan []*UploadJobT, 1000)
 	rruntime.Go(func() {
 		for {
 			uploads := <-workerChan
@@ -492,6 +492,7 @@ func setLastExec(warehouse warehouseutils.WarehouseT) {
 func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, pendingUploads []UploadT) ([]*UploadJobT, error) {
 	uploadJobs := []*UploadJobT{}
 	for _, pendingUpload := range pendingUploads {
+		copiedUpload := pendingUpload
 		if !wh.canStartPendingUpload(pendingUpload, warehouse) {
 			pkgLogger.Debugf("[WH]: Skipping pending upload for %s since current time less than next retry time", warehouse.Identifier)
 			break
@@ -502,7 +503,7 @@ func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.Wareh
 		}
 
 		uploadJob := UploadJobT{
-			upload:       &pendingUpload,
+			upload:       &copiedUpload,
 			stagingFiles: stagingFilesList,
 			warehouse:    warehouse,
 			whManager:    whManager,

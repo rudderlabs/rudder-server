@@ -157,8 +157,8 @@ func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) 
 		tlsClientConfigCopy.NextProtos = []string{"http/1.1"}
 
 		defaultTransportCopy.TLSClientConfig = &tlsClientConfigCopy
+		network.logger.Info(destID, defaultTransportCopy.TLSClientConfig.NextProtos)
 	}
-	network.logger.Info(destID, defaultTransportCopy.TLSClientConfig.NextProtos)
 	defaultTransportCopy.MaxIdleConns = getRouterConfigInt("httpMaxIdleConns", destID, 100)
 	defaultTransportCopy.MaxIdleConnsPerHost = getRouterConfigInt("httpMaxIdleConnsPerHost", destID, 100)
 	network.logger.Info(destID, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
