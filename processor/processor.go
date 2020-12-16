@@ -58,6 +58,7 @@ type HandleT struct {
 	statDBR                      stats.RudderStats
 	statDBW                      stats.RudderStats
 	statLoopTime                 stats.RudderStats
+	eventSchemasTime             stats.RudderStats
 	statSessionTransform         stats.RudderStats
 	statUserTransform            stats.RudderStats
 	statDestTransform            stats.RudderStats
@@ -185,6 +186,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statDBW = proc.stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
 	proc.statProcErrDBW = proc.stats.NewStat("processor.proc_err_db_write", stats.CountType)
 	proc.statLoopTime = proc.stats.NewStat("processor.loop_time", stats.TimerType)
+	proc.eventSchemasTime = proc.stats.NewStat("processor.event_schemas_time", stats.TimerType)
 	proc.statSessionTransform = proc.stats.NewStat("processor.session_transform_time", stats.TimerType)
 	proc.statUserTransform = proc.stats.NewStat("processor.user_transform_time", stats.TimerType)
 	proc.statDestTransform = proc.stats.NewStat("processor.dest_transform_time", stats.TimerType)
@@ -233,6 +235,7 @@ func (proc *HandleT) Start() {
 var (
 	loopSleep                           time.Duration
 	maxLoopSleep                        time.Duration
+	fixedLoopSleep                      time.Duration
 	maxEventsToProcess                  int
 	avgEventsInRequest                  int
 	dbReadBatchSize                     int
@@ -254,6 +257,7 @@ var (
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
 	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
+	fixedLoopSleep = config.GetDuration("Processor.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
@@ -278,7 +282,7 @@ func (proc *HandleT) backendConfigSubscriber() {
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		destinationIDtoTypeMap = make(map[string]string)
 		destinationTransformationEnabledMap = make(map[string]bool)
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT)
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				writeKeyDestinationMap[source.WriteKey] = source.Destinations
@@ -769,6 +773,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				//event
 				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
+				workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+				workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
 
 				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
 				if len(enabledDestTypes) == 0 {
@@ -786,7 +792,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy := transformer.TransformerEventT{}
 						shallowEventCopy.Message = singularEvent
 						shallowEventCopy.Destination = reflect.ValueOf(destination).Interface().(backendconfig.DestinationT)
-
+						shallowEventCopy.Libraries = workspaceLibraries
+						//TODO: Test for multiple workspaces ex: hosted data plane
 						/* Stream destinations does not need config in transformer. As the Kafka destination config
 						holds the ca-certificate and it depends on user input, it may happen that they provide entire
 						certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
@@ -1035,12 +1042,14 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		proc.pStatsDBR.End(0)
 		return false
 	}
+	proc.eventSchemasTime.Start()
 	if enableEventSchemasFeature {
 		for _, unprocessedJob := range unprocessedList {
 			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
 			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
 		}
 	}
+	proc.eventSchemasTime.End()
 	// handle pending jobs
 	proc.statListSort.Start()
 	combinedList := append(unprocessedList, retryList...)
@@ -1097,9 +1106,10 @@ func (proc *HandleT) mainLoop() {
 			if currLoopSleep > maxLoopSleep {
 				currLoopSleep = maxLoopSleep
 			}
-
 			time.Sleep(currLoopSleep)
 		}
+		time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
+
 	}
 }
 
