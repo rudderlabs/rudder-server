@@ -1,0 +1,56 @@
+version: 0.2
+env:
+  parameter-store:
+    # The SSH deploy key with enterprise rudder server repo
+    ssh_key: "/codebuild/github/ssh-key"
+    INTEGRATION_TESTS_WORKSPACE_TOKEN: "/codebuild/integration-tests-workspace-token"
+
+phases:
+  install:
+    runtime-versions:
+      golang: 1.13
+  pre_build:
+    commands:
+      - mkdir -p ~/.ssh
+      - echo "$ssh_key" > ~/.ssh/ssh_key
+      - chmod 600 ~/.ssh/ssh_key
+      - eval "$(ssh-agent -s)"
+      - ssh-add ~/.ssh/ssh_key
+      - (cd && go get github.com/onsi/ginkgo/ginkgo)
+      - (cd && go get github.com/golang/mock/mockgen)
+  build:
+    commands:
+      - export GO111MODULE=on
+      - VERSION="master"
+      - DATE=$(date "+%F,%T")
+      - git submodule init
+      - git submodule update --recursive
+
+      - sed -i -e 's/^CONFIG_BACKEND_URL=.*$/CONFIG_BACKEND_URL=https:\/\/api.rudderlabs.com/' build/docker.env
+      - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/config_overrides.toml > tests/e2e/config.toml
+      - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' build/docker.env
+      - cat build/docker.env
+      - cat tests/e2e/config.toml
+      - docker-compose -f build/docker-compose.codebuild.yml up -d
+      - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo -mod vendor tests/e2e"
+      - docker-compose down
+      #- go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/warehouse/config_overrides.toml > tests/e2e/warehouse/config.toml
+      #- sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/warehouse\/config.toml/' build/docker.env
+      #- docker-compose -f build/docker-compose.codebuild.yml up -d
+      #- docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo -mod vendor tests/e2e/warehouse"
+      #- docker-compose down
+
+      # Build Enterprise version
+      - make enterprise-init
+      - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' build/docker.env
+      - docker-compose -f build/docker-compose.codebuild.yml up -d
+      - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo -mod vendor tests/e2e"
+      - docker-compose down
+      #- sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/warehouse\/config.toml/' build/docker.env
+      #- docker-compose -f build/docker-compose.codebuild.yml up -d
+      #- docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo -mod vendor tests/e2e/warehouse"
+      #- docker-compose down
+
+artifacts:
+  files:
+    - "**/*"

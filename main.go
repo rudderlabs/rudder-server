@@ -16,6 +16,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 
+	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -101,7 +102,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 
 	for {
 		config := <-ch
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
 			for _, destination := range source.Destinations {
@@ -135,7 +136,7 @@ func init() {
 }
 
 func versionInfo() map[string]interface{} {
-	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL}
+	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL, "TransformerVersion": transformer.GetVersion()}
 }
 
 func versionHandler(w http.ResponseWriter, r *http.Request) {
@@ -184,15 +185,22 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 	sourcedebugger.Setup()
 
 	migrationMode := application.Options().MigrationMode
+
+	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode, false)
+	if enableProcessor {
+		//setting up router, batch router, proc error DBs only if processor is enabled.
+		routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode, true)
+		batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode, true)
+		procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
+	}
 
 	enableGateway := true
 
 	if application.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
-				clearDBBool := false
-				StartProcessor(&clearDBBool, migrationMode, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			startRouterFunc := func() {
 				StartRouter(enableRouter, &routerDB, &batchRouterDB)
@@ -204,7 +212,7 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 		}
 	}
 
-	StartProcessor(clearDB, migrationMode, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 	StartRouter(enableRouter, &routerDB, &batchRouterDB)
 
 	if enableGateway {
@@ -218,13 +226,8 @@ func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
-//NOTE: StartProcessor and StartRouter should be called in order and from the same thread.
-//StartProcessor sets up router, batch router, proc error DBs, which router also depends on.
-//enableRouter will be true only if enableProcessor is true. This is a must.
-//If otherwise, server may crash because setup of router and batch router DB is not called.
-
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(clearDB *bool, migrationMode string, enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT) {
+func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
 
@@ -233,11 +236,6 @@ func StartProcessor(clearDB *bool, migrationMode string, enableProcessor bool, g
 	}
 
 	if enableProcessor {
-		//setting up router, batch router, proc error DBs only if processor is enabled.
-		routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode, true)
-		batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode, true)
-		procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
-
 		var processor = processor.NewProcessor()
 		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB)
 		processor.Start()
@@ -271,7 +269,6 @@ func canStartWarehouse() bool {
 
 func main() {
 	version := versionInfo()
-
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),
