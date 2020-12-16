@@ -152,6 +152,9 @@ kafkaWriteTimeoutInSec = 2
 kafkaDialTimeoutInSec = 10
 minRetryBackoffInS = 10
 maxRetryBackoffInS = 300
+enableDrainJobs = true
+minDrainJobID = 10
+maxDrainJobID = 15
 # Below config variables are supported per destination type too
 noOfWorkers = 64
 allowAbortedUserJobsCountForProcessing=1

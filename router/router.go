@@ -72,6 +72,9 @@ type HandleT struct {
 	backendConfigInitialized               chan bool
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
+	enableDrainJobs                        bool
+	minDrainJobID                          int
+	maxDrainJobID                          int
 }
 
 type jobResponseT struct {
@@ -965,11 +968,28 @@ func (rt *HandleT) generatorLoop() {
 		}
 
 		var statusList []*jobsdb.JobStatusT
+		var drainList []*jobsdb.JobStatusT
+
 		var toProcess []workerJobT
 
 		rt.throttledUserMap = make(map[string]struct{})
 		//Identify jobs which can be processed
 		for _, job := range combinedList {
+			if rt.enableDrainJobs && rt.minDrainJobID < int(job.JobID) && int(job.JobID) < rt.maxDrainJobID {
+				rt.logger.Infof("Drain: Destination: %s , draining job identified : %d ", rt.destName, job.JobID)
+
+				status := jobsdb.JobStatusT{
+					JobID:         job.JobID,
+					AttemptNum:    job.LastJobStatus.AttemptNum,
+					JobState:      jobsdb.Succeeded.State,
+					ExecTime:      time.Now(),
+					RetryTime:     time.Now(),
+					ErrorCode:     "",
+					ErrorResponse: []byte(`{}`), // check
+				}
+				drainList = append(drainList, &status)
+				continue
+			}
 			w := rt.findWorker(job)
 			if w != nil {
 				status := jobsdb.JobStatusT{
@@ -989,6 +1009,8 @@ func (rt *HandleT) generatorLoop() {
 
 		//Mark the jobs as executing
 		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
+		rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
+		rt.logger.Infof("Drain: Destination: %s , job Count : %d ", rt.destName, len(drainList))
 
 		//Send the jobs to the jobQ
 		for _, wrkJob := range toProcess {
@@ -1040,6 +1062,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	rt.maxFailedCountForJob = getRouterConfigInt("maxFailedCountForJob", destName, 3)
 	rt.retryTimeWindow = getRouterConfigDuration("retryTimeWindowInMins", destName, time.Duration(180)) * time.Minute
+	rt.enableDrainJobs = getRouterConfigBool("enableDrainJobs", rt.destName, false)
+	rt.minDrainJobID = getRouterConfigInt("minDrainJobID", rt.destName, 0)
+	rt.maxDrainJobID = getRouterConfigInt("maxDrainJobID", rt.destName, 0)
 
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 
