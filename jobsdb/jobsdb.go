@@ -378,7 +378,7 @@ func loadConfig() {
 	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
 	maxMigrateDSProbe = config.GetInt("JobsDB.maxMigrateDSProbe", 10)
 	maxTableSize = (config.GetInt64("JobsDB.maxTableSizeInMB", 300) * 1000000)
-	backupRowsBatchSize = config.GetInt64("JobsDB.backupRowsBatchSize", 10000)
+	backupRowsBatchSize = config.GetInt64("JobsDB.backupRowsBatchSize", 1000)
 	migrateDSLoopSleepDuration = (config.GetDuration("JobsDB.migrateDSLoopSleepDurationInS", time.Duration(30)) * time.Second)
 	addNewDSLoopSleepDuration = (config.GetDuration("JobsDB.addNewDSLoopSleepDurationInS", time.Duration(5)) * time.Second)
 	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
