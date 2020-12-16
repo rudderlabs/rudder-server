@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -82,9 +83,12 @@ func (jd *HandleT) CheckpointInTxn(txHandler transactionHandler, migrationCheckp
 	var sqlStatement string
 	var checkpointType string
 	if migrationCheckpoint.ID > 0 {
+		pkgLogger.Infof("[MIG_DEBUG] udpating %s", jd.getCheckpointTableName())
+		debug.PrintStack()
 		sqlStatement = fmt.Sprintf(`UPDATE %s SET status = $1, start_sequence = $2, payload = $3 WHERE id = $4 RETURNING id`, jd.getCheckpointTableName())
 		checkpointType = "update"
 	} else {
+		pkgLogger.Infof("[MIG_DEBUG] inserting %s", jd.getCheckpointTableName())
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (migration_type, from_node, to_node, jobs_count, file_location, status, start_sequence, payload, time_stamp)
 									VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT ON CONSTRAINT %s DO UPDATE SET status=EXCLUDED.status RETURNING id`, jd.getCheckpointTableName(), jd.getUniqueConstraintName())
 		checkpointType = "insert"
