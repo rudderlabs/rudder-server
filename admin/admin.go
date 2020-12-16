@@ -42,6 +42,7 @@ import (
 	"runtime/pprof"
 	"strings"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -183,6 +184,12 @@ func (a Admin) GetLoggingConfig(noArgs struct{}, reply *string) (err error) {
 	formattedOutput, err := json.MarshalIndent(loggingConfigMap, "", "  ")
 	*reply = string(formattedOutput)
 	return err
+}
+
+//GetFormattedEnv return the formatted env
+func (a Admin) GetFormattedEnv(env string, reply *string) (err error) {
+	*reply = config.TransformKey(env)
+	return nil
 }
 
 // StartServer starts an http server listening on unix socket and serving rpc communication
