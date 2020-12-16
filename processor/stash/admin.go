@@ -14,6 +14,15 @@ type StashRpcHandler struct {
 
 var prefix = "proc_error_jobs_"
 
+/*
+ProcErrorsByDestinationCount
+================================================================================
+│───────│─────────────│
+│ COUNT │ DESTINATION │
+│───────│─────────────│
+│     1 │ GA          │
+│───────│─────────────│
+*/
 func (s *StashRpcHandler) GetDSStats(dsName string, result *string) error {
 	jobTableName := prefix + dsName
 	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
