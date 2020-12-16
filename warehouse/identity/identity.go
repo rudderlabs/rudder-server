@@ -453,7 +453,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 			return
 		}
 		totalMappingRecords += count
-		if idx%10 == 0 {
+		if idx%1000 == 0 {
 			pkgLogger.Infof(`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namepsace: %s, Destination: %s:%s`, idx+1, len(ruleIDs), totalMappingRecords, idr.Warehouse.Namespace, idr.Warehouse.Type, idr.Warehouse.Destination.ID)
 		}
 	}
