@@ -7,6 +7,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type RouterAdmin struct {
@@ -14,6 +15,7 @@ type RouterAdmin struct {
 }
 
 var adminInstance *RouterAdmin
+var routerJobsTableName, routerJobStatusTableName string
 
 func init() {
 	adminInstance = &RouterAdmin{
@@ -72,7 +74,7 @@ type JobCountByConnections struct {
 	DestinationId string
 }
 
-type JobStatusCountsByExecTime struct {
+type LatestJobStatusCounts struct {
 	Count int
 	State string
 	Rank  int
@@ -82,9 +84,8 @@ type DSStats struct {
 	JobCountsByStateAndDestination           []JobCountsByStateAndDestination
 	FailedStatusErrorCodeCountsByDestination []FailedStatusErrorCodeCountsByDestination
 	JobCountByConnections                    []JobCountByConnections
-	JobStatusCountsByExecTime                []JobStatusCountsByExecTime
+	LatestJobStatusCounts                    []LatestJobStatusCounts
 	UnprocessedJobCounts                     int
-	err                                      error `json:"-"`
 }
 
 // group_by job_status
@@ -94,158 +95,227 @@ type DSStats struct {
 // Router jobs status flow ⇒ ordered by rank
 // unprocessed_params ⇒ Num jobs not yet picked
 func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) error {
+	var completeErr error
 	dsStats := DSStats{make([]JobCountsByStateAndDestination, 0), make([]FailedStatusErrorCodeCountsByDestination, 0), make([]JobCountByConnections, 0),
-		make([]JobStatusCountsByExecTime, 0), 0, nil}
+		make([]LatestJobStatusCounts, 0), 0}
 	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
 	if err != nil {
-		dsStats.err = err
+		return err
 	}
 	defer dbHandle.Close()
 	// TODO:: seems like sqlx library will be better as it allows to map structs to rows
 	// that way the repeated logic can be brought to a single method
-	getJobCountsByStateAndDestination(dbHandle, dsName, &dsStats)
-	getFailedStatusErrorCodeCountsByDestination(dbHandle, dsName, &dsStats)
-	getJobCountByConnections(dbHandle, dsName, &dsStats)
-	getJobStatusCountsByExecTime(dbHandle, dsName, &dsStats)
-	getUnprocessedJobCounts(dbHandle, dsName, &dsStats)
-	response, err := json.MarshalIndent(dsStats, "", " ")
+	err = getJobCountsByStateAndDestination(dbHandle, dsName, &dsStats)
+	if err != nil {
+		misc.AppendError("getJobCountsByStateAndDestination", &completeErr, &err)
+	}
+	err = getFailedStatusErrorCodeCountsByDestination(dbHandle, dsName, &dsStats)
+	if err != nil {
+		misc.AppendError("getFailedStatusErrorCodeCountsByDestination", &completeErr, &err)
+	}
+	err = getJobCountByConnections(dbHandle, dsName, &dsStats)
+	if err != nil {
+		misc.AppendError("getJobCountByConnections", &completeErr, &err)
+	}
+	err = getLatestJobStatusCounts(dbHandle, dsName, &dsStats)
+	if err != nil {
+		misc.AppendError("getLatestJobStatusCounts", &completeErr, &err)
+	}
+	err = getUnprocessedJobCounts(dbHandle, dsName, &dsStats)
+	if err != nil {
+		misc.AppendError("getUnprocessedJobCounts", &completeErr, &err)
+	}
+
+	var response []byte
+	response, err = json.MarshalIndent(dsStats, "", " ")
 	if err != nil {
 		*result = ""
-		dsStats.err = err
+		misc.AppendError("MarshalIndent", &completeErr, &err)
 	} else {
 		*result = string(response)
 	}
-	return dsStats.err
+	// Since we try to execute each query independently once we are connected to db
+	// this tries to captures errors that happened on all the execution paths
+	return completeErr
 }
 
-func getJobCountsByStateAndDestination(dbHandle *sql.DB, dsName string, dsStats *DSStats) {
-	if dsStats.err != nil {
-		return
-	}
-	routerTableName := "rt_jobs_" + dsName
-	routerStatusTableNmae := "rt_job_status_" + dsName
+/*
+JobCountsByStateAndDestination
+================================================================================
+│─────────────│───────────│─────────────│
+│ COUNT (10)  │ STATE     │ DESTINATION │
+│─────────────│───────────│─────────────│
+│         323 │ aborted   │ AM          │
+│          68 │ waiting   │ AM          │
+│         646 │ failed    │ AM          │
+│        1.3K │ executing │ AM          │
+│         323 │ executing │ GA          │
+│         323 │ succeeded │ GA          │
+│         577 │ executing │ KISSMETRICS │
+│          51 │ waiting   │ KISSMETRICS │
+│         203 │ failed    │ KISSMETRICS │
+│         323 │ succeeded │ KISSMETRICS │
+│─────────────│───────────│─────────────│
+*/
+func getJobCountsByStateAndDestination(dbHandle *sql.DB, dsName string, dsStats *DSStats) error {
+	routerJobsTableName = "rt_jobs_" + dsName
+	routerJobStatusTableName = "rt_job_status_" + dsName
 	sqlStmt := fmt.Sprintf(`select count(*), st.job_state, rt.custom_val from  %[1]s rt inner join  %[2]s st
-	                        on st.job_id=rt.job_id group by rt.custom_val, st.job_state order by rt.custom_val`, routerTableName, routerStatusTableNmae)
+	                        on st.job_id=rt.job_id group by rt.custom_val, st.job_state order by rt.custom_val`, routerJobsTableName, routerJobStatusTableName)
 	var rows *sql.Rows
-	rows, dsStats.err = dbHandle.Query(sqlStmt)
-	if dsStats.err != nil {
-		return
+	var err error
+	rows, err = dbHandle.Query(sqlStmt)
+	if err != nil {
+		return err
 	}
 	defer rows.Close()
 	result := JobCountsByStateAndDestination{}
 	for rows.Next() {
-		dsStats.err = rows.Scan(&result.Count, &result.State, &result.Destination)
-		if dsStats.err != nil {
-			return
+		err = rows.Scan(&result.Count, &result.State, &result.Destination)
+		if err != nil {
+			return err
 		}
 		dsStats.JobCountsByStateAndDestination = append(dsStats.JobCountsByStateAndDestination, result)
 	}
 
-	dsStats.err = rows.Err()
-	if dsStats.err != nil {
-		return // we return whenever we get an error to stop processing further downstream db requests
+	err = rows.Err()
+	if err != nil {
+		return err // we return whenever we get an error to stop processing further downstream db requests
 	}
-	dsStats.err = rows.Close()
-	return
+	err = rows.Close()
+	return err
 }
 
-func getFailedStatusErrorCodeCountsByDestination(dbHandle *sql.DB, dsName string, dsStats *DSStats) {
-	if dsStats.err != nil {
-		return
-	}
-	routerTableName := "rt_jobs_" + dsName
-	routerStatusTableNmae := "rt_job_status_" + dsName
+/*
+FailedStatusErrorCodeCountsByDestination
+================================================================================
+│───────│────────────│─────────────│
+│ COUNT │ ERROR CODE │ DESTINATION │
+│───────│────────────│─────────────│
+│    92 │ 504        │ AM          │
+│   323 │ 400        │ AM          │
+│   190 │ 504        │ KISSMETRICS │
+│───────│────────────│─────────────│
+*/
+func getFailedStatusErrorCodeCountsByDestination(dbHandle *sql.DB, dsName string, dsStats *DSStats) error {
+	routerJobsTableName = "rt_jobs_" + dsName
+	routerJobStatusTableName = "rt_job_status_" + dsName
 	sqlStmt := fmt.Sprintf(`select count(*), a.error_code, a.custom_val from (select count(*), rt.job_id, st.error_code as error_code ,
 							rt.custom_val as custom_val from %[1]s rt inner join %[2]s st  on st.job_id=rt.job_id where st.job_state in 
-							('failed', 'aborted') group by rt.job_id, st.error_code, rt.custom_val) as  a group by a.custom_val, a.error_code order by a.custom_val;`, routerTableName, routerStatusTableNmae)
+							('failed', 'aborted') group by rt.job_id, st.error_code, rt.custom_val) as  a group by a.custom_val, a.error_code order by a.custom_val;`, routerJobsTableName, routerJobStatusTableName)
 	var rows *sql.Rows
-	rows, dsStats.err = dbHandle.Query(sqlStmt)
-	if dsStats.err != nil {
-		return
+	var err error
+	rows, err = dbHandle.Query(sqlStmt)
+	if err != nil {
+		return err
 	}
 	defer rows.Close()
 	result := FailedStatusErrorCodeCountsByDestination{}
 	for rows.Next() {
-		dsStats.err = rows.Scan(&result.Count, &result.ErrorCode, &result.Destination)
-		if dsStats.err != nil {
-			return
+		err = rows.Scan(&result.Count, &result.ErrorCode, &result.Destination)
+		if err != nil {
+			return err
 		}
 		dsStats.FailedStatusErrorCodeCountsByDestination = append(dsStats.FailedStatusErrorCodeCountsByDestination, result)
 	}
 
-	dsStats.err = rows.Err()
-	if dsStats.err != nil {
-		return
+	err = rows.Err()
+	if err != nil {
+		return err
 	}
-	dsStats.err = rows.Close()
-	return
+	err = rows.Close()
+	return err
 }
 
-func getJobCountByConnections(dbHandle *sql.DB, dsName string, dsStats *DSStats) {
-	if dsStats.err != nil {
-		return
-	}
-	routerTableName := "rt_jobs_" + dsName
+/*JobCountByConnections
+================================================================================
+│───────│───────────────────────────────│───────────────────────────────│
+│ COUNT │ SOURCEID                      │ DESTINATIONID                 │
+│───────│───────────────────────────────│───────────────────────────────│
+│   323 │ "1kXnQTrRjEmjU2wH8KjRR8EJ3gm" │ "1kXo508bX4OAynyYkEBpH6aQYHP" │
+│   323 │ "1kXnQTrRjEmjU2wH8KjRR8EJ3gm" │ "1kYW7q5ApiMkIG9TGsSZb7PIlrf" │
+│   323 │ "1kXnQTrRjEmjU2wH8KjRR8EJ3gm" │ "1kgadfXiXiZPM8oKAtkPFxFjm0P" │
+│───────│───────────────────────────────│───────────────────────────────│
+*/
+func getJobCountByConnections(dbHandle *sql.DB, dsName string, dsStats *DSStats) error {
+	routerJobsTableName = "rt_jobs_" + dsName
 	sqlStmt := fmt.Sprintf(`select count(*), parameters->'source_id' as s, parameters -> 'destination_id' as d 
-							from %[1]s group by parameters->'source_id', parameters->'destination_id' order by parameters->'destination_id';`, routerTableName)
+							from %[1]s group by parameters->'source_id', parameters->'destination_id' order by parameters->'destination_id';`, routerJobsTableName)
 	var rows *sql.Rows
-	rows, dsStats.err = dbHandle.Query(sqlStmt)
-	if dsStats.err != nil {
-		return
+	var err error
+	rows, err = dbHandle.Query(sqlStmt)
+	if err != nil {
+		return err
 	}
 	defer rows.Close()
 	result := JobCountByConnections{}
 	for rows.Next() {
-		dsStats.err = rows.Scan(&result.Count, &result.SourceId, &result.DestinationId)
-		if dsStats.err != nil {
-			return
+		err = rows.Scan(&result.Count, &result.SourceId, &result.DestinationId)
+		if err != nil {
+			return err
 		}
 		dsStats.JobCountByConnections = append(dsStats.JobCountByConnections, result)
 	}
 
-	dsStats.err = rows.Err()
-	if dsStats.err != nil {
-		return
+	err = rows.Err()
+	if err != nil {
+		return err
 	}
-	dsStats.err = rows.Close()
-	return
+	err = rows.Close()
+	return err
 }
 
-func getJobStatusCountsByExecTime(dbHandle *sql.DB, dsName string, dsStats *DSStats) {
-	if dsStats.err != nil {
-		return
-	}
-	routerStatusTableName := "rt_job_status_" + dsName
+/*
+LatestJobStatusCounts
+================================================================================
+│─────────────│───────────│──────│
+│ COUNT (10)  │ STATE     │ RANK │
+│─────────────│───────────│──────│
+│         323 │ aborted   │ 1    │
+│         646 │ succeeded │ 1    │
+│         969 │ executing │ 2    │
+│         513 │ failed    │ 3    │
+│          51 │ waiting   │ 3    │
+│         564 │ executing │ 4    │
+│         336 │ failed    │ 5    │
+│         336 │ executing │ 6    │
+│          68 │ waiting   │ 7    │
+│          68 │ executing │ 8    │
+│─────────────│───────────│──────│
+*/
+func getLatestJobStatusCounts(dbHandle *sql.DB, dsName string, dsStats *DSStats) error {
+	routerJobStatusTableName = "rt_job_status_" + dsName
 	sqlStmt := fmt.Sprintf(`SELECT COUNT(*), job_state, rank FROM (SELECT job_state, RANK() OVER(PARTITION BY job_id 
-							ORDER BY exec_time DESC) as rank, job_id from %s) as inner_table GROUP BY rank, job_state order by rank, job_state`, routerStatusTableName)
+							ORDER BY exec_time DESC) as rank, job_id from %s) as inner_table GROUP BY rank, job_state order by rank, job_state`, routerJobStatusTableName)
 	var rows *sql.Rows
-	rows, dsStats.err = dbHandle.Query(sqlStmt)
-	if dsStats.err != nil {
-		return
+	var err error
+	rows, err = dbHandle.Query(sqlStmt)
+	if err != nil {
+		return err
 	}
 	defer rows.Close()
-	result := JobStatusCountsByExecTime{}
+	result := LatestJobStatusCounts{}
 	for rows.Next() {
-		dsStats.err = rows.Scan(&result.Count, &result.State, &result.Rank)
-		if dsStats.err != nil {
-			return
+		err = rows.Scan(&result.Count, &result.State, &result.Rank)
+		if err != nil {
+			return err
 		}
-		dsStats.JobStatusCountsByExecTime = append(dsStats.JobStatusCountsByExecTime, result)
+		dsStats.LatestJobStatusCounts = append(dsStats.LatestJobStatusCounts, result)
 	}
 
-	dsStats.err = rows.Err()
-	if dsStats.err != nil {
-		return
+	err = rows.Err()
+	if err != nil {
+		return err
 	}
-	dsStats.err = rows.Close()
-	return
+	err = rows.Close()
+	return err
 }
 
-func getUnprocessedJobCounts(dbHandle *sql.DB, dsName string, dsStats *DSStats) {
-	routerTableName := "rt_jobs_" + dsName
-	routerStatusTableNmae := "rt_job_status_" + dsName
-	sqlStatement := fmt.Sprintf(`select count(*) from %[1]s rt inner join %[2]s st on st.job_id=rt.job_id where st.job_id is NULL;`, routerTableName, routerStatusTableNmae)
+func getUnprocessedJobCounts(dbHandle *sql.DB, dsName string, dsStats *DSStats) error {
+	routerJobsTableName = "rt_jobs_" + dsName
+	routerJobStatusTableName = "rt_job_status_" + dsName
+	sqlStatement := fmt.Sprintf(`select count(*) from %[1]s rt inner join %[2]s st on st.job_id=rt.job_id where st.job_id is NULL;`, routerJobsTableName, routerJobStatusTableName)
 	row := dbHandle.QueryRow(sqlStatement)
-	dsStats.err = row.Scan(&dsStats.UnprocessedJobCounts)
-	return
+	err := row.Scan(&dsStats.UnprocessedJobCounts)
+	return err
 }

@@ -1039,15 +1039,15 @@ func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList
 func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *transformRequestPQ) {
 	proc.transformEventsByTimeMutex.Lock()
 	defer proc.transformEventsByTimeMutex.Unlock()
-	if pq.Len() == transformTimesPQLength {
-		if pq.Top().ProcessingTime < event.ProcessingTime {
-			pq.RemoveTop()
-			pq.Add(event)
-
-		}
+	if pq.Len() < transformTimesPQLength {
+		pq.Add(event)
 		return
 	}
-	pq.Add(event)
+	if pq.Top().ProcessingTime < event.ProcessingTime {
+		pq.RemoveTop()
+		pq.Add(event)
+
+	}
 }
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
