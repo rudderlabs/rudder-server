@@ -31,6 +31,7 @@ var (
 	poolSize           string
 	pkgLogger          logger.LoggerI
 )
+var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
 const (
 	host          = "host"
@@ -214,7 +215,7 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string
 		return fmt.Sprintf(`SimpleAggregateFunction(anyLast, Nullable(%s))`, columnType)
 	}
 	if tableName != warehouseutils.IdentifiesTable && disableNullable {
-		fmt.Sprintf(`%s`, columnType)
+		return fmt.Sprintf(`%s`, columnType)
 	}
 	return fmt.Sprintf(`Nullable(%s)`, columnType)
 }
@@ -275,28 +276,41 @@ func generateArgumentString(arg string, length int) string {
 
 // typecastDataFromType typeCasts string data to the mentioned data type
 func typecastDataFromType(data string, dataType string) interface{} {
+	disableNullable := true
 	switch dataType {
 	case "int":
 		i, err := strconv.Atoi(data)
 		if err != nil {
+			if disableNullable {
+				return 0
+			}
 			return nil
 		}
 		return i
 	case "float":
 		f, err := strconv.ParseFloat(data, 64)
 		if err != nil {
+			if disableNullable {
+				return 0.0
+			}
 			return nil
 		}
 		return f
 	case "datetime":
 		t, err := time.Parse(time.RFC3339, data)
 		if err != nil {
+			if disableNullable {
+				return clikhouseDefaultDateTime
+			}
 			return nil
 		}
 		return t
 	case "boolean":
 		b, err := strconv.ParseBool(data)
 		if err != nil {
+			if disableNullable {
+				return 0
+			}
 			return nil
 		}
 		if b {
@@ -326,10 +340,10 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		pkgLogger.Errorf("CH: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
 		return
 	}
-
-	stmt, err := txn.Prepare(fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys))))
+	sqlQuery := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
+	stmt, err := txn.Prepare(sqlQuery)
 	if err != nil {
-		pkgLogger.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: %v", tableName, err)
+		pkgLogger.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: query:%s %v", tableName, sqlQuery, err)
 		return
 	}
 
@@ -400,7 +414,7 @@ func (ch *HandleT) createSchema() (err error) {
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 	}
-	sqlStatement := fmt.Sprintf(`CREATE DATABASE %s IF NOT EXISTS "%s"`, clusterClause, ch.Namespace)
+	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS "%s" %s`, ch.Namespace, clusterClause)
 	pkgLogger.Infof("CH: Creating database in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -415,13 +429,15 @@ func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err
 	sortKeyFields := []string{"id"}
 	notNullableColumns := []string{"received_at", "id"}
 	clusterClause := ""
-	engine := "AggregatingMergeTree()"
+	engine := "AggregatingMergeTree"
+	engineOptions := ""
 	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %s`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
+		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, columnsWithDataTypes(name, columns, notNullableColumns), engine, getSortKeyTuple(sortKeyFields), partitionField)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, columnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -453,13 +469,15 @@ func (ch *HandleT) createTable(tableName string, columns map[string]string) (err
 		return ch.createUsersTable(tableName, columns)
 	}
 	clusterClause := ""
-	engine := "ReplacingMergeTree()"
+	engine := "ReplacingMergeTree"
+	engineOptions := ""
 	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %s`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
+		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, columnsWithDataTypes(tableName, columns, sortKeyFields), engine, getSortKeyTuple(sortKeyFields), partitionField)
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, columnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
