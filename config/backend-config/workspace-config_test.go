@@ -64,7 +64,7 @@ var _ = Describe("workspace-config", func() {
 			mockLogger.EXPECT().Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %w, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
 			config, ok := backendConfig.Get()
-			Expect(config).To(Equal(SourcesT{}))
+			Expect(config).To(Equal(ConfigT{}))
 			Expect(ok).To(BeFalse())
 		})
 
@@ -77,7 +77,7 @@ var _ = Describe("workspace-config", func() {
 			mockLogger.EXPECT().Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %w, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
 			config, ok := backendConfig.Get()
-			Expect(config).To(Equal(SourcesT{}))
+			Expect(config).To(Equal(ConfigT{}))
 			Expect(ok).To(BeFalse())
 		})
 	})
@@ -95,10 +95,11 @@ var _ = Describe("workspace-config", func() {
 		It("Expect to make the correct actions in case of error when reading the config file", func() {
 			configFromFile = true
 			mockLogger.EXPECT().Info("Reading workspace config from JSON file").Times(1)
-			mockLogger.EXPECT().Errorf("Unable to read backend config from file: %s", configJSONPath).Times(1)
-			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, errors.New("TestError")).Times(1)
+			fileErr := errors.New("TestError")
+			mockLogger.EXPECT().Errorf("Unable to read backend config from file: %s with error : %s", configJSONPath, fileErr.Error()).Times(1)
+			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(nil, fileErr).Times(1)
 			config, ok := backendConfig.Get()
-			Expect(config).To(Equal(SourcesT{}))
+			Expect(config).To(Equal(ConfigT{}))
 			Expect(ok).To(BeFalse())
 		})
 
@@ -109,7 +110,7 @@ var _ = Describe("workspace-config", func() {
 			mockIoUtil.EXPECT().ReadFile(configJSONPath).Return(data, nil).Times(1)
 			mockLogger.EXPECT().Errorf("Unable to parse backend config from file: %s", configJSONPath).Times(1)
 			config, ok := backendConfig.Get()
-			Expect(config).To(Equal(SourcesT{}))
+			Expect(config).To(Equal(ConfigT{}))
 			Expect(ok).To(BeFalse())
 		})
 		It("Expect to make the correct actions in case of successfull reading of the config file and return the correct value", func() {
