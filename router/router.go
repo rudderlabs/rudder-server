@@ -1130,7 +1130,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		rt.configSubscriberLock.Lock()
 		rt.destinationsMap = map[string]backendconfig.DestinationT{}
-		allSources := config.Data.(backendconfig.SourcesT)
+		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {

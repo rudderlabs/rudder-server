@@ -930,7 +930,7 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		enabledWriteKeysSourceMap = map[string]backendconfig.SourceT{}
 		enabledWriteKeyWebhookMap = map[string]string{}
 		sourceIDToNameMap = map[string]string{}
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT)
 		for _, source := range sources.Sources {
 			sourceIDToNameMap[source.ID] = source.Name
 			if source.Enabled {

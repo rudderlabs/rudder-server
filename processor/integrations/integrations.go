@@ -105,6 +105,11 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 	return
 }
 
+//GetTransformerURL gets the transfomer base url endpoint
+func GetTransformerURL() string {
+	return destTransformURL
+}
+
 //GetDestinationURL returns node URL
 func GetDestinationURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))

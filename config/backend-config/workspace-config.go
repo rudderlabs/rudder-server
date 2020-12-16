@@ -12,8 +12,9 @@ import (
 
 type WorkspaceConfig struct {
 	CommonBackendConfig
-	workspaceID     string
-	workspaceIDLock sync.RWMutex
+	workspaceID               string
+	workspaceIDToLibrariesMap map[string]LibrariesT
+	workspaceIDLock           sync.RWMutex
 }
 
 func (workspaceConfig *WorkspaceConfig) SetUp() {
@@ -26,8 +27,18 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey strin
 	return workspaceConfig.workspaceID
 }
 
+//GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
+func (workspaceConfig *WorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+	workspaceConfig.workspaceIDLock.RLock()
+	defer workspaceConfig.workspaceIDLock.RUnlock()
+	if workspaceConfig.workspaceIDToLibrariesMap[workspaceID] == nil {
+		return LibrariesT{}
+	}
+	return workspaceConfig.workspaceIDToLibrariesMap[workspaceID]
+}
+
 //Get returns sources from the workspace
-func (workspaceConfig *WorkspaceConfig) Get() (SourcesT, bool) {
+func (workspaceConfig *WorkspaceConfig) Get() (ConfigT, bool) {
 	if configFromFile {
 		return workspaceConfig.getFromFile()
 	} else {
@@ -45,7 +56,7 @@ func (workspaceConfig *WorkspaceConfig) GetRegulations() (RegulationsT, bool) {
 }
 
 // getFromApi gets the workspace config from api
-func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
+func (workspaceConfig *WorkspaceConfig) getFromAPI() (ConfigT, bool) {
 	url := fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL)
 
 	var respBody []byte
@@ -64,7 +75,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
-		return SourcesT{}, false
+		return ConfigT{}, false
 	}
 
 	configEnvHandler := workspaceConfig.CommonBackendConfig.configEnvHandler
@@ -72,33 +83,35 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (SourcesT, bool) {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
 
-	var sourcesJSON SourcesT
+	var sourcesJSON ConfigT
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
 		pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
-		return SourcesT{}, false
+		return ConfigT{}, false
 	}
 
 	workspaceConfig.workspaceIDLock.Lock()
 	workspaceConfig.workspaceID = sourcesJSON.WorkspaceID
+	workspaceConfig.workspaceIDToLibrariesMap = make(map[string]LibrariesT)
+	workspaceConfig.workspaceIDToLibrariesMap[sourcesJSON.WorkspaceID] = sourcesJSON.Libraries
 	workspaceConfig.workspaceIDLock.Unlock()
 
 	return sourcesJSON, true
 }
 
 // getFromFile reads the workspace config from JSON file
-func (workspaceConfig *WorkspaceConfig) getFromFile() (SourcesT, bool) {
+func (workspaceConfig *WorkspaceConfig) getFromFile() (ConfigT, bool) {
 	pkgLogger.Info("Reading workspace config from JSON file")
 	data, err := IoUtil.ReadFile(configJSONPath)
 	if err != nil {
-		pkgLogger.Errorf("Unable to read backend config from file: %s", configJSONPath)
-		return SourcesT{}, false
+		pkgLogger.Errorf("Unable to read backend config from file: %s with error : %s", configJSONPath, err.Error())
+		return ConfigT{}, false
 	}
-	var configJSON SourcesT
+	var configJSON ConfigT
 	error := json.Unmarshal(data, &configJSON)
 	if error != nil {
 		pkgLogger.Errorf("Unable to parse backend config from file: %s", configJSONPath)
-		return SourcesT{}, false
+		return ConfigT{}, false
 	}
 	return configJSON, true
 }
