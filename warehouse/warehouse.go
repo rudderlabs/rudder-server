@@ -714,7 +714,7 @@ func (wh *HandleT) mainLoop() {
 
 func (wh *HandleT) enqueueUploadJobs(uploadJobs []*UploadJobT) bool {
 	if len(uploadJobs) == 0 {
-		pkgLogger.Errorf("[WH]: Zero upload jobs, not enqueuing")
+		pkgLogger.Info("[WH]: Zero upload jobs, not enqueuing")
 		return false
 	}
 	wh.uploadJobsQ <- uploadJobs
