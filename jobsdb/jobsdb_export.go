@@ -8,16 +8,11 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
-var (
-	nonExportedJobsCountByDS   map[string]int64
-	doesDSHaveJobsToMigrateMap map[string]bool
-)
-
 //SetupForExport is used to setup jobsdb for export or for import or for both
 func (jd *HandleT) SetupForExport() {
 	jd.migrationState.lastDsForExport = jd.findOrCreateDsFromSetupCheckpoint(ExportOp)
-	nonExportedJobsCountByDS = make(map[string]int64)
-	doesDSHaveJobsToMigrateMap = make(map[string]bool)
+	jd.migrationState.nonExportedJobsCountByDS = make(map[string]int64)
+	jd.migrationState.doesDSHaveJobsToMigrateMap = make(map[string]bool)
 	jd.logger.Infof("[[ %s-JobsDB Export ]] Last ds for export : %v", jd.GetTablePrefix(), jd.migrationState.lastDsForExport)
 }
 
@@ -35,7 +30,7 @@ func (jd *HandleT) getLastDsForExport(dsList []dataSetT) dataSetT {
 
 //GetNonMigratedAndMarkMigrating all jobs with no filters
 func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
-	queryStat := stats.NewTaggedStat("get_for_export_and_update_status", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("get_for_export_and_update_status", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -50,6 +45,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	jd.logger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated and got locks", jd.GetTablePrefix())
 
 	dsList := jd.getDSList(false)
+	pkgLogger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated - dsList: %+v", jd.tablePrefix, dsList)
 	outJobs := make([]*JobT, 0)
 	jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
 	if count == 0 {
@@ -68,7 +64,8 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 
-		doesDSHaveJobsToMigrate, found := doesDSHaveJobsToMigrateMap[ds.Index]
+		pkgLogger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated - doesDSHaveJobsToMigrateMap: %+v", jd.tablePrefix, jd.migrationState.doesDSHaveJobsToMigrateMap)
+		doesDSHaveJobsToMigrate, found := jd.migrationState.doesDSHaveJobsToMigrateMap[ds.Index]
 		if found && !doesDSHaveJobsToMigrate {
 			continue
 		}
@@ -78,6 +75,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 		if err != nil {
 			break
 		}
+		pkgLogger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated - len(jobs): %d", jd.tablePrefix, len(jobs))
 
 		var statusList []*JobStatusT
 		for _, job := range jobs {
@@ -92,7 +90,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 		updatedStatesByDS[ds] = updatedStates
 
 		if len(jobs) == 0 {
-			doesDSHaveJobsToMigrateMap[ds.Index] = false
+			jd.migrationState.doesDSHaveJobsToMigrateMap[ds.Index] = false
 		}
 
 		outJobs = append(outJobs, jobs...)
@@ -148,7 +146,7 @@ type SQLJobStatusT struct {
 }
 
 func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, error) {
-	queryStat := stats.NewTaggedStat("get_for_export_and_update_status_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("get_for_export_and_update_status_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -209,7 +207,7 @@ func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, er
 
 //UpdateJobStatusAndCheckpoint does update job status and checkpoint in a single transaction
 func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNodeID string, toNodeID string, jobsCount int64, uploadLocation string) {
-	queryStat := stats.NewTaggedStat("update_status_and_checkpoint", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("update_status_and_checkpoint", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 	txn, err := jd.dbHandle.Begin()
@@ -232,7 +230,7 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 
 //IsMigrating returns true if there are non zero jobs with status = 'migrating'
 func (jd *HandleT) IsMigrating() bool {
-	queryStat := stats.NewTaggedStat("is_migrating_check", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("is_migrating_check", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -251,10 +249,10 @@ func (jd *HandleT) IsMigrating() bool {
 	}
 
 	for _, ds := range dsList {
-		nonExportedCount, found := nonExportedJobsCountByDS[ds.Index]
+		nonExportedCount, found := jd.migrationState.nonExportedJobsCountByDS[ds.Index]
 		if !found || nonExportedCount > 0 {
 			nonExportedCount = jd.getNonExportedJobsCountDS(ds)
-			nonExportedJobsCountByDS[ds.Index] = nonExportedCount
+			jd.migrationState.nonExportedJobsCountByDS[ds.Index] = nonExportedCount
 		}
 		if nonExportedCount > 0 {
 			return true
@@ -267,7 +265,7 @@ func (jd *HandleT) IsMigrating() bool {
 }
 
 func (jd *HandleT) getNonExportedJobsCountDS(ds dataSetT) int64 {
-	queryStat := stats.NewTaggedStat("get_non_exported_job_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("get_non_exported_job_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -299,7 +297,7 @@ func (jd *HandleT) getNonExportedJobsCountDS(ds dataSetT) int64 {
 
 //PreExportCleanup removes all the entries from job_status_tables that are of state 'migrating'
 func (jd *HandleT) PreExportCleanup() {
-	queryStat := stats.NewTaggedStat("pre_export_cleanup", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("pre_export_cleanup", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 	jd.dsListLock.RLock()
@@ -314,7 +312,7 @@ func (jd *HandleT) PreExportCleanup() {
 
 //PostExportCleanup removes all the entries from job_status_tables that are of state 'wont_migrate' or 'migrating'
 func (jd *HandleT) PostExportCleanup() {
-	queryStat := stats.NewTaggedStat("post_export_cleanup", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("post_export_cleanup", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 	jd.dsListLock.RLock()

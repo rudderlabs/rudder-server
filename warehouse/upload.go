@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	uuid "github.com/satori/go.uuid"
 )
 
 // Upload Status
@@ -221,6 +222,12 @@ func (job *UploadJobT) run() (err error) {
 	defer func() {
 		ch <- struct{}{}
 	}()
+
+	// set last_exec_at to record last upload start time
+	// sync scheduling with syncStartAt depends on this determine to start upload or not
+	job.setUploadColumns(
+		UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
+	)
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
@@ -801,6 +808,7 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", publishBatchSize, noOfWorkers, destType, destID)
+	uniqueLoadGenID := uuid.NewV4().String()
 	for i := 0; i < len(stagingFiles); i += publishBatchSize {
 		j := i + publishBatchSize
 		if j > len(stagingFiles) {
@@ -820,6 +828,7 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 				DestinationName:     job.warehouse.Destination.Name,
 				DestinationType:     destType,
 				DestinationConfig:   job.warehouse.Destination.Config,
+				UniqueLoadGenID:     uniqueLoadGenID,
 			}
 
 			payloadJSON, err := json.Marshal(payload)

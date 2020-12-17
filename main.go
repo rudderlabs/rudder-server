@@ -15,6 +15,8 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 
+	"github.com/rudderlabs/rudder-server/processor/transformer"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
@@ -67,7 +69,7 @@ func init() {
 }
 
 func versionInfo() map[string]interface{} {
-	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL}
+	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL, "TransformerVersion": transformer.GetVersion()}
 }
 
 func versionHandler(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +113,6 @@ func main() {
 	appHandler = apphandlers.GetAppHandler(application, appTypeStr, versionHandler)
 
 	version := versionInfo()
-
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),

@@ -124,13 +124,15 @@ type dataSetRangeT struct {
 
 //MigrationState maintains the state required during the migration process
 type MigrationState struct {
-	dsForNewEvents  dataSetT
-	dsForImport     dataSetT
-	lastDsForExport dataSetT
-	importLock      sync.RWMutex
-	migrationMode   string
-	fromVersion     int
-	toVersion       int
+	dsForNewEvents             dataSetT
+	dsForImport                dataSetT
+	lastDsForExport            dataSetT
+	importLock                 sync.RWMutex
+	migrationMode              string
+	fromVersion                int
+	toVersion                  int
+	nonExportedJobsCountByDS   map[string]int64
+	doesDSHaveJobsToMigrateMap map[string]bool
 }
 
 /*

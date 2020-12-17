@@ -14,12 +14,13 @@ import (
 type MultiWorkspaceConfig struct {
 	CommonBackendConfig
 	writeKeyToWorkspaceIDMap  map[string]string
+	workspaceIDToLibrariesMap map[string]LibrariesT
 	workspaceWriteKeysMapLock sync.RWMutex
 }
 
 //WorkspacesT holds sources of workspaces
 type WorkspacesT struct {
-	WorkspaceSourcesMap map[string][]SourceT `json:"-"`
+	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
 }
 type WorkspaceT struct {
 	WorkspaceID string `json:"id"`
@@ -51,8 +52,19 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForWriteKey(writ
 	return ""
 }
 
+//GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
+func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
+	multiWorkspaceConfig.workspaceWriteKeysMapLock.RLock()
+	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+
+	if workspaceLibraries, ok := multiWorkspaceConfig.workspaceIDToLibrariesMap[workspaceID]; ok {
+		return workspaceLibraries
+	}
+	return LibrariesT{}
+}
+
 //Get returns sources from all hosted workspaces
-func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
+func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 
 	var respBody []byte
@@ -71,27 +83,30 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (SourcesT, bool) {
 
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
-		return SourcesT{}, false
+		return ConfigT{}, false
 	}
 	var workspaces WorkspacesT
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
 		pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
-		return SourcesT{}, false
+		return ConfigT{}, false
 	}
 
 	writeKeyToWorkspaceIDMap := make(map[string]string)
-	sourcesJSON := SourcesT{}
+	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
+	sourcesJSON := ConfigT{}
 	sourcesJSON.Sources = make([]SourceT, 0)
-	for workspaceID, sourceArr := range workspaces.WorkspaceSourcesMap {
-		for _, source := range sourceArr {
+	for workspaceID, workspaceConfig := range workspaces.WorkspaceSourcesMap {
+		for _, source := range workspaceConfig.Sources {
 			writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID
+			workspaceIDToLibrariesMap[workspaceID] = workspaceConfig.Libraries
 		}
-		sourcesJSON.Sources = append(sourcesJSON.Sources, sourceArr...)
+		sourcesJSON.Sources = append(sourcesJSON.Sources, workspaceConfig.Sources...)
 	}
 
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.Lock()
 	multiWorkspaceConfig.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
+	multiWorkspaceConfig.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.Unlock()
 
 	return sourcesJSON, true

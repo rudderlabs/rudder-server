@@ -180,7 +180,7 @@ func (wh *HandleT) releaseWorker() {
 }
 
 func (wh *HandleT) initWorker(identifier string) chan []*UploadJobT {
-	workerChan := make(chan []*UploadJobT, 100)
+	workerChan := make(chan []*UploadJobT, 1000)
 	rruntime.Go(func() {
 		for {
 			uploads := <-workerChan
@@ -223,7 +223,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
-		allSources := config.Data.(backendconfig.SourcesT)
+		allSources := config.Data.(backendconfig.ConfigT)
 
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) == 0 {
@@ -492,6 +492,7 @@ func setLastExec(warehouse warehouseutils.WarehouseT) {
 func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, pendingUploads []UploadT) ([]*UploadJobT, error) {
 	uploadJobs := []*UploadJobT{}
 	for _, pendingUpload := range pendingUploads {
+		copiedUpload := pendingUpload
 		if !wh.canStartPendingUpload(pendingUpload, warehouse) {
 			pkgLogger.Debugf("[WH]: Skipping pending upload for %s since current time less than next retry time", warehouse.Identifier)
 			break
@@ -502,7 +503,7 @@ func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.Wareh
 		}
 
 		uploadJob := UploadJobT{
-			upload:       &pendingUpload,
+			upload:       &copiedUpload,
 			stagingFiles: stagingFilesList,
 			warehouse:    warehouse,
 			whManager:    whManager,
@@ -799,6 +800,28 @@ var loadFileFormatMap = map[string]string{
 	"CLICKHOUSE": "csv",
 }
 
+func minimalConfigSubscriber() {
+	ch := make(chan utils.DataEvent)
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	for {
+		config := <-ch
+		pkgLogger.Debug("Got config from config-backend", config)
+		sources := config.Data.(backendconfig.ConfigT)
+		for _, source := range sources.Sources {
+			for _, destination := range source.Destinations {
+				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
+					wh := &HandleT{
+						dbHandle: dbHandle,
+						destType: destination.DestinationDefinition.Name,
+					}
+					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
+					destinationsMap[destination.ID] = warehouseutils.WarehouseT{Destination: destination, Namespace: namespace, Type: wh.destType}
+				}
+			}
+		}
+	}
+}
+
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters() {
 	ch := make(chan utils.DataEvent)
@@ -808,7 +831,7 @@ func monitorDestRouters() {
 	for {
 		config := <-ch
 		pkgLogger.Debug("Got config from config-backend", config)
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
 			for _, destination := range source.Destinations {
@@ -987,6 +1010,10 @@ func Start() {
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
+		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
+		rruntime.Go(func() {
+			minimalConfigSubscriber()
+		})
 		return
 	}
 
