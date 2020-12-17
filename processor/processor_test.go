@@ -76,6 +76,7 @@ const (
 	WriteKeyEnabled       = "enabled-write-key"
 	WriteKeyEnabledNoUT   = "enabled-write-key-no-ut"
 	WriteKeyEnabledOnlyUT = "enabled-write-key-only-ut"
+	WorkspaceID           = "some-workspace-id"
 	SourceIDEnabled       = "enabled-source"
 	SourceIDDisabled      = "disabled-source"
 	DestinationIDEnabledA = "enabled-destination-a" // test destination router
@@ -96,7 +97,7 @@ func SetEnableEventSchemasFeature(b bool) bool {
 }
 
 // This configuration is assumed by all processor tests and, is returned on Subscribe of mocked backend config
-var sampleBackendConfig = backendconfig.SourcesT{
+var sampleBackendConfig = backendconfig.ConfigT{
 	Sources: []backendconfig.SourceT{
 		{
 			ID:       SourceIDDisabled,
@@ -133,10 +134,7 @@ var sampleBackendConfig = backendconfig.SourcesT{
 					},
 					Transformations: []backendconfig.TransformationT{
 						{
-							ID:          "transformation-id",
-							Name:        "transformation-name",
-							Description: "transformation-description",
-							VersionID:   "transformation-version-id",
+							VersionID: "transformation-version-id",
 						},
 					},
 				},
@@ -205,10 +203,7 @@ var sampleBackendConfig = backendconfig.SourcesT{
 					},
 					Transformations: []backendconfig.TransformationT{
 						{
-							ID:          "transformation-id",
-							Name:        "transformation-name",
-							Description: "transformation-description",
-							VersionID:   "transformation-version-id",
+							VersionID: "transformation-version-id",
 						},
 					},
 				},
@@ -493,11 +488,11 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2003
 					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
-
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
-
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledNoUT).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 			processorSetupAndAssertJobHandling(processor, c)
 		})
 
@@ -675,7 +670,8 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2003
 					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
-
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledOnlyUT).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
@@ -1220,6 +1216,8 @@ var _ = Describe("Processor", func() {
 						assertErrStoreJob(job, i, "value-enabled-destination-a")
 					}
 				})
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
@@ -1330,7 +1328,8 @@ var _ = Describe("Processor", func() {
 						assertErrStoreJob(job)
 					}
 				})
-
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}

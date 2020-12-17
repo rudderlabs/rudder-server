@@ -180,7 +180,7 @@ func (wh *HandleT) releaseWorker() {
 }
 
 func (wh *HandleT) initWorker(identifier string) chan []*UploadJobT {
-	workerChan := make(chan []*UploadJobT, 100)
+	workerChan := make(chan []*UploadJobT, 1000)
 	rruntime.Go(func() {
 		for {
 			uploads := <-workerChan
@@ -223,7 +223,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
-		allSources := config.Data.(backendconfig.SourcesT)
+		allSources := config.Data.(backendconfig.ConfigT)
 
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) == 0 {
@@ -492,6 +492,7 @@ func setLastExec(warehouse warehouseutils.WarehouseT) {
 func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, pendingUploads []UploadT) ([]*UploadJobT, error) {
 	uploadJobs := []*UploadJobT{}
 	for _, pendingUpload := range pendingUploads {
+		copiedUpload := pendingUpload
 		if !wh.canStartPendingUpload(pendingUpload, warehouse) {
 			pkgLogger.Debugf("[WH]: Skipping pending upload for %s since current time less than next retry time", warehouse.Identifier)
 			break
@@ -502,7 +503,7 @@ func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.Wareh
 		}
 
 		uploadJob := UploadJobT{
-			upload:       &pendingUpload,
+			upload:       &copiedUpload,
 			stagingFiles: stagingFilesList,
 			warehouse:    warehouse,
 			whManager:    whManager,
@@ -805,7 +806,7 @@ func minimalConfigSubscriber() {
 	for {
 		config := <-ch
 		pkgLogger.Debug("Got config from config-backend", config)
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT)
 		for _, source := range sources.Sources {
 			for _, destination := range source.Destinations {
 				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
@@ -830,7 +831,7 @@ func monitorDestRouters() {
 	for {
 		config := <-ch
 		pkgLogger.Debug("Got config from config-backend", config)
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
 			for _, destination := range source.Destinations {

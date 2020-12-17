@@ -54,7 +54,7 @@ const (
 var testTimeout = 15 * time.Second
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
-var sampleBackendConfig = backendconfig.SourcesT{
+var sampleBackendConfig = backendconfig.ConfigT{
 	Sources: []backendconfig.SourceT{
 		{
 			ID:       SourceIDDisabled,
