@@ -69,7 +69,7 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 	reqFailed := false
 
 	for {
-		url := getBatchURL("AM")
+		url := getBatchURL()
 		trans.transformRequestTimerStat.Start()
 		resp, err = trans.client.Post(url, "application/json; charset=utf-8",
 			bytes.NewBuffer(rawJSON))
@@ -126,6 +126,6 @@ func (trans *HandleT) Setup() {
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 }
 
-func getBatchURL(destType string) string {
+func getBatchURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/batch"
 }
