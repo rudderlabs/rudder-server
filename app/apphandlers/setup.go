@@ -93,13 +93,8 @@ func rudderCoreBaseSetup() {
 	runtime.GOMAXPROCS(maxProcess)
 }
 
-//NOTE: StartProcessor and StartRouter should be called in order and from the same thread.
-//StartProcessor sets up router, batch router, proc error DBs, which router also depends on.
-//enableRouter will be true only if enableProcessor is true. This is a must.
-//If otherwise, server may crash because setup of router and batch router DB is not called.
-
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(clearDB *bool, migrationMode string, enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT) {
+func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
 
@@ -108,11 +103,6 @@ func StartProcessor(clearDB *bool, migrationMode string, enableProcessor bool, g
 	}
 
 	if enableProcessor {
-		//setting up router, batch router, proc error DBs only if processor is enabled.
-		routerDB.Setup(jobsdb.ReadWrite, *clearDB, "rt", routerDBRetention, migrationMode, true)
-		batchRouterDB.Setup(jobsdb.ReadWrite, *clearDB, "batch_rt", routerDBRetention, migrationMode, true)
-		procErrorDB.Setup(jobsdb.ReadWrite, *clearDB, "proc_error", routerDBRetention, migrationMode, false)
-
 		var processor = processor.NewProcessor()
 		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB)
 		processor.Start()
@@ -146,7 +136,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 
 	for {
 		config := <-ch
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
 			for _, destination := range source.Destinations {

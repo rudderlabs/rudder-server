@@ -44,15 +44,22 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	sourcedebugger.Setup()
 
 	migrationMode := embedded.App.Options().MigrationMode
+
+	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, false)
+	if enableProcessor {
+		//setting up router, batch router, proc error DBs only if processor is enabled.
+		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true)
+		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true)
+		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false)
+	}
 
 	enableGateway := true
 
 	if embedded.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
-				clearDBBool := false
-				StartProcessor(&clearDBBool, migrationMode, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			startRouterFunc := func() {
 				StartRouter(enableRouter, &routerDB, &batchRouterDB)
@@ -64,7 +71,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 		}
 	}
 
-	StartProcessor(&options.ClearDB, migrationMode, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 	StartRouter(enableRouter, &routerDB, &batchRouterDB)
 
 	if enableGateway {
