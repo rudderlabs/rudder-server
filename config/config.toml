@@ -118,6 +118,7 @@ maxMigrateDSProbe = 10
 maxTableSizeInMB = 300
 migrateDSLoopSleepDurationInS = 30
 addNewDSLoopSleepDurationInS = 5
+refreshDSListLoopSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
 backupRowsBatchSize = 1000
 
@@ -212,6 +213,7 @@ populateHistoricIdentities = false
     poolSize = 10
 
 [Processor]
+webPort = 8086
 loopSleepInMS = 10
 maxLoopSleepInMS = 5000
 fixedLoopSleepInMS = 0

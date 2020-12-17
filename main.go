@@ -3,39 +3,28 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"strings"
 
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
 
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/gateway"
-	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor"
-	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
-	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/db"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
-	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/services/validators"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -46,38 +35,15 @@ import (
 )
 
 var (
-	application                      app.Interface
-	warehouseMode                    string
-	maxProcess                       int
-	gwDBRetention, routerDBRetention time.Duration
-	enableProcessor, enableRouter    bool
-	enabledDestinations              []backendconfig.DestinationT
-	configSubscriberLock             sync.RWMutex
-	objectStorageDestinations        []string
-	warehouseDestinations            []string
-	moduleLoadLock                   sync.Mutex
-	routerLoaded                     bool
-	processorLoaded                  bool
-	enableSuppressUserFeature        bool
-	pkgLogger                        logger.LoggerI
-	Diagnostics                      diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	application               app.Interface
+	warehouseMode             string
+	enableSuppressUserFeature bool
+	pkgLogger                 logger.LoggerI
+	appHandler                apphandlers.AppHandler
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
 var major, minor, commit, buildDate, builtBy, gitURL, patch string
-
-func loadConfig() {
-	maxProcess = config.GetInt("maxProcess", 12)
-	gwDBRetention = config.GetDuration("gwDBRetentionInHr", 0) * time.Hour
-	routerDBRetention = config.GetDuration("routerDBRetention", 0)
-	enableProcessor = config.GetBool("enableProcessor", true)
-	enableRouter = config.GetBool("enableRouter", true)
-	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
-	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	// Enable suppress user feature. false by default
-	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
-}
 
 // Test Function
 func readIOforResume(router router.HandleT) {
@@ -92,42 +58,9 @@ func readIOforResume(router router.HandleT) {
 	}
 }
 
-// Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
-	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
-	dstToRouter := make(map[string]*router.HandleT)
-	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
-	// dstToWhRouter := make(map[string]*warehouse.HandleT)
-
-	for {
-		config := <-ch
-		sources := config.Data.(backendconfig.ConfigT)
-		enabledDestinations := make(map[string]bool)
-		for _, source := range sources.Sources {
-			for _, destination := range source.Destinations {
-				enabledDestinations[destination.DestinationDefinition.Name] = true
-				//For batch router destinations
-				if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
-					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
-					if !ok {
-						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
-						var brt batchrouter.HandleT
-						brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
-						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
-					}
-				} else {
-					_, ok := dstToRouter[destination.DestinationDefinition.Name]
-					if !ok {
-						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
-						var router router.HandleT
-						router.Setup(routerDB, destination.DestinationDefinition.Name)
-						dstToRouter[destination.DestinationDefinition.Name] = &router
-					}
-				}
-			}
-		}
-	}
+func loadConfig() {
+	warehouseMode = config.GetString("Warehouse.mode", "embedded")
+	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
 }
 
 func init() {
@@ -155,111 +88,8 @@ func startWarehouseService() {
 	warehouse.Start()
 }
 
-func startRudderCore(clearDB *bool, normalMode bool, degradedMode bool) {
-	pkgLogger.Info("Main starting")
-
-	if !validators.ValidateEnv() {
-		panic(errors.New("Failed to start rudder-server"))
-	}
-	validators.InitializeEnv()
-
-	// Check if there is a probable inconsistent state of Data
-	if diagnostics.EnableServerStartMetric {
-		Diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
-			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
-		})
-	}
-
-	//Reload Config
-	loadConfig()
-
-	var gatewayDB jobsdb.HandleT
-	var routerDB jobsdb.HandleT
-	var batchRouterDB jobsdb.HandleT
-	var procErrorDB jobsdb.HandleT
-
-	runtime.GOMAXPROCS(maxProcess)
-	pkgLogger.Info("Clearing DB ", *clearDB)
-
-	destinationdebugger.Setup()
-	sourcedebugger.Setup()
-
-	migrationMode := application.Options().MigrationMode
-
-	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
-	gatewayDB.Setup(*clearDB, "gw", gwDBRetention, migrationMode, false)
-	if enableProcessor {
-		//setting up router, batch router, proc error DBs only if processor is enabled.
-		routerDB.Setup(*clearDB, "rt", routerDBRetention, migrationMode, true)
-		batchRouterDB.Setup(*clearDB, "batch_rt", routerDBRetention, migrationMode, true)
-		procErrorDB.Setup(*clearDB, "proc_error", routerDBRetention, migrationMode, false)
-	}
-
-	enableGateway := true
-
-	if application.Features().Migrator != nil {
-		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startProcessorFunc := func() {
-				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
-			}
-			startRouterFunc := func() {
-				StartRouter(enableRouter, &routerDB, &batchRouterDB)
-			}
-			enableRouter = false
-			enableProcessor = false
-			enableGateway = (migrationMode != db.EXPORT)
-			application.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
-		}
-	}
-
-	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
-	StartRouter(enableRouter, &routerDB, &batchRouterDB)
-
-	if enableGateway {
-		var gateway gateway.HandleT
-		var rateLimiter ratelimiter.HandleT
-
-		rateLimiter.SetUp()
-		gateway.Setup(application, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, clearDB, versionHandler)
-		gateway.StartWebHandler()
-	}
-	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
-}
-
-//StartProcessor atomically starts processor process if not already started
-func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT) {
-	moduleLoadLock.Lock()
-	defer moduleLoadLock.Unlock()
-
-	if processorLoaded {
-		return
-	}
-
-	if enableProcessor {
-		var processor = processor.NewProcessor()
-		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB)
-		processor.Start()
-
-		processorLoaded = true
-	}
-}
-
-//StartRouter atomically starts router process if not already started
-func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
-	moduleLoadLock.Lock()
-	defer moduleLoadLock.Unlock()
-
-	if routerLoaded {
-		return
-	}
-
-	if enableRouter {
-		go monitorDestRouters(routerDB, batchRouterDB)
-		routerLoaded = true
-	}
-}
-
 func canStartServer() bool {
+	pkgLogger.Info("warehousemode ", warehouseMode)
 	return warehouseMode == config.EmbeddedMode || warehouseMode == config.OffMode
 }
 
@@ -268,6 +98,20 @@ func canStartWarehouse() bool {
 }
 
 func main() {
+	options := app.LoadOptions()
+	if options.VersionFlag {
+		printVersion()
+		return
+	}
+
+	application = app.New(options)
+
+	//application & backend setup should be done before starting any new goroutines.
+	application.Setup()
+
+	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
+	appHandler = apphandlers.GetAppHandler(application, appTypeStr, versionHandler)
+
 	version := versionInfo()
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
@@ -275,7 +119,7 @@ func main() {
 		// The import paths for the Go packages containing your source files
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
-		AppType:      "rudder-server",
+		AppType:      appHandler.GetAppType(),
 		AppVersion:   version["Version"].(string),
 		PanicHandler: func() {},
 	})
@@ -295,19 +139,6 @@ func main() {
 
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
-
-	options := app.LoadOptions()
-	if options.VersionFlag {
-		printVersion()
-		return
-	}
-
-	application = app.New(options)
-
-	http.HandleFunc("/version", versionHandler)
-
-	//application & backend setup should be done before starting any new goroutines.
-	application.Setup()
 
 	var pollRegulations bool
 	if enableSuppressUserFeature {
@@ -340,15 +171,14 @@ func main() {
 
 	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
-		db.HandleRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime)
-
+		appHandler.HandleRecovery(options)
 		rruntime.Go(func() {
-			startRudderCore(&options.ClearDB, options.NormalMode, options.DegradedMode)
+			appHandler.StartRudderCore(options)
 		})
 	}
 
 	// initialize warehouse service after core to handle non-normal recovery modes
-	if canStartWarehouse() {
+	if appTypeStr != app.GATEWAY && canStartWarehouse() {
 		rruntime.Go(func() {
 			startWarehouseService()
 		})

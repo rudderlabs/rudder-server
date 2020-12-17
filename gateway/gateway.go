@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,7 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -841,21 +839,7 @@ func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, re
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
-	var dbService string = "UP"
-	var enabledRouter string = "TRUE"
-	var backendConfigMode string = "API"
-	if !gateway.jobsDB.CheckPGHealth() {
-		dbService = "DOWN"
-	}
-	if !config.GetBool("enableRouter", true) {
-		enabledRouter = "FALSE"
-	}
-	if config.GetBool("BackendConfig.configFromFile", false) {
-		backendConfigMode = "JSON"
-	}
-
-	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync)
-	w.Write([]byte(healthVal))
+	app.HealthHandler(w, r, gateway.jobsDB)
 }
 
 func reflectOrigin(origin string) bool {
