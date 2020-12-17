@@ -420,7 +420,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 
 func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	if len(sf.Uploader.GetTableSchemaInUpload(identifiesTable)) == 0 {
-		return
+		return errorMap
 	}
 	errorMap = map[string]error{identifiesTable: nil}
 	pkgLogger.Infof("SF: Starting load for identifies and users tables\n")
@@ -428,12 +428,12 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	resp, err := sf.loadTable(identifiesTable, sf.Uploader.GetTableSchemaInUpload(identifiesTable), nil, true)
 	if err != nil {
 		errorMap[identifiesTable] = err
-		return
+		return errorMap
 	}
 	defer resp.dbHandle.Close()
 
 	if len(sf.Uploader.GetTableSchemaInUpload(usersTable)) == 0 {
-		return
+		return errorMap
 	}
 	errorMap[usersTable] = nil
 
@@ -468,30 +468,32 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		resp.stagingTable,                // 5
 		strings.Join(userColNames, ","),  // 6
 	)
-	pkgLogger.Debugf("SF: Creating staging table for users: %s\n", sqlStatement)
+	pkgLogger.Infof("SF: Creating staging table for users: %s\n", sqlStatement)
 	_, err = resp.dbHandle.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("SF: Error creating temporary table for table:%s: %v\n", usersTable, err)
-		return
+		errorMap[usersTable] = err
+		return errorMap
 	}
 
-	primaryKey := "ID"
-	columnNames := append([]string{"ID"}, userColNames...)
+	primaryKey := `"ID"`
+	columnNames := append([]string{`"ID"`}, userColNames...)
 	columnNamesStr := strings.Join(columnNames, ",")
-	columnsWithValuesArr := []string{}
-	stagingColumnValuesArr := []string{}
-	for _, colName := range columnNames {
-		columnsWithValuesArr = append(columnsWithValuesArr, fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, colName))
-		stagingColumnValuesArr = append(stagingColumnValuesArr, fmt.Sprintf(`staging."%s"`, colName))
+	var columnsWithValues, stagingColumnValues string
+	for idx, colName := range columnNames {
+		columnsWithValues += fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName)
+		stagingColumnValues += fmt.Sprintf(`staging.%s`, colName)
+		if idx != len(columnNames)-1 {
+			columnsWithValues += fmt.Sprintf(`,`)
+			stagingColumnValues += fmt.Sprintf(`,`)
+		}
 	}
-	columnsWithValues := strings.Join(columnsWithValuesArr, ",")
-	stagingColumnValues := strings.Join(stagingColumnValuesArr, ",")
 
 	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s" AS original
 									USING (
 										SELECT %[3]s FROM "%[2]s"
 									) AS staging
-									ON (original."%[4]s" = staging."%[4]s")
+									ON (original.%[4]s = staging.%[4]s)
 									WHEN MATCHED THEN
 									UPDATE SET %[5]s
 									WHEN NOT MATCHED THEN
@@ -500,9 +502,11 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	_, err = resp.dbHandle.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
-		return
+		errorMap[usersTable] = err
+		return errorMap
 	}
-	return
+	pkgLogger.Infof("SF: Complete load for table:%s", usersTable)
+	return errorMap
 }
 
 type SnowflakeCredentialsT struct {
