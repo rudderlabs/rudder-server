@@ -109,9 +109,9 @@ var primaryKeyMap = map[string]string{
 }
 
 var partitionKeyMap = map[string]string{
-	usersTable:      "ID",
-	identifiesTable: "ID",
-	discardsTable:   "ROW_ID, COLUMN_NAME, TABLE_NAME",
+	usersTable:      `"ID"`,
+	identifiesTable: `"ID"`,
+	discardsTable:   `"ROW_ID", "COLUMN_NAME", "TABLE_NAME"`,
 }
 
 var (
@@ -278,7 +278,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		primaryKey = column
 	}
 
-	partitionKey := "ID"
+	partitionKey := `"ID"`
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
 	}
@@ -303,7 +303,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s" AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY "%[8]s" ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM "%[2]s"
+											SELECT *, row_number() OVER (PARTITION BY %[8]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM "%[2]s"
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
 									ON (original."%[3]s" = staging."%[3]s" %[7]s)
