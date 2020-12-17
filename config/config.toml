@@ -119,7 +119,7 @@ maxTableSizeInMB = 300
 migrateDSLoopSleepDurationInS = 30
 addNewDSLoopSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
-backupRowsBatchSize = 10000
+backupRowsBatchSize = 1000
 
 [JobsDB.backup]
 enabled = true
