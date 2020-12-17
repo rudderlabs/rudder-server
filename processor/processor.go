@@ -1006,13 +1006,15 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
-	if enableDedup && len(uniqueMessageIds) > 0 {
+	if enableDedup {
 		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
-		var dedupedMessageIdsAcrossJobs []string
-		for k, _ := range uniqueMessageIds {
-			dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
+		if len(uniqueMessageIds) > 0 {
+			var dedupedMessageIdsAcrossJobs []string
+			for k, _ := range uniqueMessageIds {
+				dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
+			}
+			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
-		proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 	}
 	proc.statDBW.End()
 
