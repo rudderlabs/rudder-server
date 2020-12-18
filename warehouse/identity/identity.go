@@ -73,7 +73,8 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 	pkgLogger.Debugf(`IDR: Fetching all rudder_id's corresponding to the merge_rule: %v`, sqlStatement)
 	err = txn.QueryRow(sqlStatement).Scan(pq.Array(&rudderIDs))
 	if err != nil {
-		panic(err)
+		pkgLogger.Errorf(`IDR: Error fetching all rudder_id's corresponding to the merge_rule: %v`, sqlStatement)
+		return
 	}
 
 	currentTimeString := time.Now().Format(misc.RFC3339Milli)
@@ -399,9 +400,9 @@ func (idr *HandleT) uploadFile(filePath string, txn *sql.Tx, tableName string, t
 	pkgLogger.Infof(`IDR: Updating load file location for table: %s: %s `, tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
-		panic(err)
+		pkgLogger.Errorf(`IDR: Error updating load file location for table: %s: %v`, tableName, err)
 	}
-	return
+	return err
 }
 
 func (idr *HandleT) createTempGzFile(dirName string) (gzWriter misc.GZipWriter, path string) {
