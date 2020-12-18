@@ -59,7 +59,8 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	if embedded.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
-				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+				clearDB := false
+				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			startRouterFunc := func() {
 				StartRouter(enableRouter, &routerDB, &batchRouterDB)
@@ -71,7 +72,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 		}
 	}
 
-	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 	StartRouter(enableRouter, &routerDB, &batchRouterDB)
 
 	if enableGateway {
@@ -79,7 +80,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 		var rateLimiter ratelimiter.HandleT
 
 		rateLimiter.SetUp()
-		gateway.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, &options.ClearDB, embedded.VersionHandler)
+		gateway.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI

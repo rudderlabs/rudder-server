@@ -94,7 +94,7 @@ func rudderCoreBaseSetup() {
 }
 
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT) {
+func StartProcessor(clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
 
@@ -104,7 +104,7 @@ func StartProcessor(enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jo
 
 	if enableProcessor {
 		var processor = processor.NewProcessor()
-		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB)
+		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB)
 		processor.Start()
 
 		processorLoaded = true

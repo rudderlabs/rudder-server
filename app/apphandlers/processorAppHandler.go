@@ -59,7 +59,8 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
-				StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+				clearDB := false
+				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			startRouterFunc := func() {
 				StartRouter(enableRouter, &routerDB, &batchRouterDB)
@@ -70,7 +71,7 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 		}
 	}
 
-	StartProcessor(enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 	StartRouter(enableRouter, &routerDB, &batchRouterDB)
 
 	startHealthWebHandler()
