@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -16,7 +17,6 @@ import (
 
 var (
 	scheduledTimesCache map[string][]int
-	nextRetryTimeCache  map[string]time.Time
 	minUploadBackoff    time.Duration
 	maxUploadBackoff    time.Duration
 	startUploadAlways   bool
@@ -24,7 +24,6 @@ var (
 
 func init() {
 	scheduledTimesCache = map[string][]int{}
-	nextRetryTimeCache = map[string]time.Time{}
 	minUploadBackoff = config.GetDuration("Warehouse.minUploadBackoffInS", time.Duration(60)) * time.Second
 	maxUploadBackoff = config.GetDuration("Warehouse.maxUploadBackoffInS", time.Duration(1800)) * time.Second
 }
@@ -174,15 +173,7 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	return false
 }
 
-func burstRetryCache(warehouse warehouseutils.WarehouseT) {
-	delete(nextRetryTimeCache, warehouse.Identifier)
-}
-
-func onSuccessfulUpload(warehouse warehouseutils.WarehouseT) {
-	burstRetryCache(warehouse)
-}
-
-func durationBeforeNextAttempt(attempt int64) time.Duration {
+func durationBeforeNextAttempt(attempt int64) time.Duration { //Add state(retryable/non-retryable) as an argument to decide backoff etc)
 	var d time.Duration
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = minUploadBackoff
@@ -210,13 +201,17 @@ func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutil
 		return true
 	}
 
+	var metadata map[string]string
+	json.Unmarshal(upload.Metadata, &metadata)
+
 	// check in cache
-	if nextRetryTime, ok := nextRetryTimeCache[warehouse.Identifier]; ok {
-		canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
-		// delete in cache if is going to be started
-		if canStart {
-			delete(nextRetryTimeCache, warehouse.Identifier)
+	if nextRetryTimeStr, ok := metadata["nextRetryTime"]; ok {
+		nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr)
+		if err != nil {
+			pkgLogger.Errorf("Unable to parse time from %s", nextRetryTimeStr)
+			return true //TODO: Review this carefully
 		}
+		canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
 		return canStart
 	}
 
@@ -228,8 +223,8 @@ func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutil
 	canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
 	// set in cache if not staring, to access on next hit
 	if !canStart {
-		pkgLogger.Infof("[WH]: Setting in nextRetryTimeCache for %s:%s, will retry again around %v", warehouse.Destination.Name, warehouse.Destination.ID, nextRetryTime)
-		nextRetryTimeCache[warehouse.Identifier] = nextRetryTime
+		pkgLogger.Infof("[WH]: Setting nextRetryTime in uploadJob for %s:%s, will retry again around %v", warehouse.Destination.Name, warehouse.Destination.ID, nextRetryTime)
+		//TODO: Update job, set nextRetryTime
 	}
 
 	return canStart

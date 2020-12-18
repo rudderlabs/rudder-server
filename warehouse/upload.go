@@ -81,6 +81,7 @@ type UploadT struct {
 	FirstAttemptAt     time.Time
 	LastAttemptAt      time.Time
 	Attempts           int64
+	Metadata           json.RawMessage
 }
 
 type UploadJobT struct {
@@ -386,13 +387,18 @@ func (job *UploadJobT) run() (err error) {
 		case ExportedData:
 			newStatus = nextUploadState.failed
 			skipPrevLoadedTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
-			skipLoadForTables := append(skipPrevLoadedTableNames, job.getTablesToSkip()...)
+			previouslyFailedTables := job.getTablesToSkip()
+			skipLoadForTables := append(skipPrevLoadedTableNames, previouslyFailedTables...)
 
 			// Export all other tables
 			loadTimeStat := job.timerStat("other_tables_load_time")
 			loadTimeStat.Start()
 
 			loadErrors := job.loadAllTablesExcept(skipLoadForTables)
+
+			if len(previouslyFailedTables) > 0 {
+				loadErrors = append(loadErrors, fmt.Errorf("skipping the following tables because they failed previously : %+v", previouslyFailedTables))
+			}
 
 			if len(loadErrors) > 0 {
 				err = warehouseutils.ConcatErrors(loadErrors)
@@ -959,9 +965,17 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 			state = Aborted
 		}
 	}
+
+	var metadata map[string]string
+	metadata["nextRetryTime"] = upload.LastAttemptAt.Add(durationBeforeNextAttempt(upload.Attempts)).Format(time.RFC3339)
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		metadataJSON = []byte("{}")
+	}
+
 	serializedErr, _ := json.Marshal(&e)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseutils.WarehouseUploadsTable)
-	_, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, timeutil.Now(), upload.ID)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, metadata=$3, updated_at=$4 WHERE id=$5`, warehouseutils.WarehouseUploadsTable)
+	_, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, metadataJSON, timeutil.Now(), upload.ID)
 
 	job.upload.Status = state
 	job.upload.Error = serializedErr
