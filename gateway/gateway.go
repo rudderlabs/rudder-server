@@ -123,6 +123,7 @@ type HandleT struct {
 	rateLimiter                                   ratelimiter.RateLimiter
 	stats                                         stats.Stats
 	batchSizeStat                                 stats.RudderStats
+	requestSizeStat                               stats.RudderStats
 	dbWritesStat                                  stats.RudderStats
 	dbWorkersBufferFullStat, dbWorkersTimeOutStat stats.RudderStats
 	trackSuccessCount                             int
@@ -342,6 +343,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				continue
 			}
+			gateway.requestSizeStat.Count(len(body))
 			if req.reqType != "batch" {
 				body, _ = sjson.SetBytes(body, "type", req.reqType)
 				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
@@ -872,6 +874,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 
 	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
+	gateway.requestSizeStat = gateway.stats.NewStat("gateway.request_size", stats.CountType)
 	gateway.dbWritesStat = gateway.stats.NewStat("gateway.db_writes", stats.CountType)
 	gateway.dbWorkersBufferFullStat = gateway.stats.NewStat("gateway.db_workers_buffer_full", stats.CountType)
 	gateway.dbWorkersTimeOutStat = gateway.stats.NewStat("gateway.db_workers_time_out", stats.CountType)
