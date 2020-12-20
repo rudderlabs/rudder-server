@@ -33,6 +33,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/router/drain"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -181,6 +182,33 @@ func (a Admin) GetLoggingConfig(noArgs struct{}, reply *string) (err error) {
 	}()
 	loggingConfigMap := logger.GetLoggingConfig()
 	formattedOutput, err := json.MarshalIndent(loggingConfigMap, "", "  ")
+	*reply = string(formattedOutput)
+	return err
+}
+
+func (a Admin) SetDrainJobsConfig(dHandle drain.DrainHandleT, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = errors.New("Internal Rudder Server Error")
+		}
+	}()
+	drainHandler, err := drain.SetDrainJobIDs(dHandle.MinDrainJobID, dHandle.MaxDrainJobID, dHandle.DrainDestinationID)
+	if err == nil {
+		*reply = fmt.Sprintf("Drain config set to : MinJobID : %d, MaxJobID : %d, DestID : %s", drainHandler.MinDrainJobID, drainHandler.MaxDrainJobID, drainHandler.DrainDestinationID)
+	}
+	return err
+}
+
+func (a Admin) GetDrainJobsConfig(noArgs struct{}, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = errors.New("Internal Rudder Server Error")
+		}
+	}()
+	drainHandler := drain.GetDrainJobHandler()
+	formattedOutput, err := json.MarshalIndent(drainHandler, "", "  ")
 	*reply = string(formattedOutput)
 	return err
 }

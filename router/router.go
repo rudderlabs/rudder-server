@@ -3,6 +3,8 @@ package router
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/router/drain"
+	"github.com/tidwall/gjson"
 	"math"
 	"math/rand"
 	"sort"
@@ -72,9 +74,7 @@ type HandleT struct {
 	backendConfigInitialized               chan bool
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
-	enableDrainJobs                        bool
-	minDrainJobID                          int
-	maxDrainJobID                          int
+	drainJobHandler                        drain.DrainI
 }
 
 type jobResponseT struct {
@@ -975,7 +975,7 @@ func (rt *HandleT) generatorLoop() {
 		rt.throttledUserMap = make(map[string]struct{})
 		//Identify jobs which can be processed
 		for _, job := range combinedList {
-			if rt.enableDrainJobs && rt.minDrainJobID < int(job.JobID) && int(job.JobID) < rt.maxDrainJobID {
+			if rt.drainJobHandler.CanJobBeDrained(job.JobID, gjson.GetBytes(job.Parameters, "destination_id").String()) {
 				rt.logger.Infof("Drain: Destination: %s , draining job identified : %d ", rt.destName, job.JobID)
 
 				status := jobsdb.JobStatusT{
@@ -1062,10 +1062,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	rt.maxFailedCountForJob = getRouterConfigInt("maxFailedCountForJob", destName, 3)
 	rt.retryTimeWindow = getRouterConfigDuration("retryTimeWindowInMins", destName, time.Duration(180)) * time.Minute
-	rt.enableDrainJobs = getRouterConfigBool("enableDrainJobs", rt.destName, false)
-	rt.minDrainJobID = getRouterConfigInt("minDrainJobID", rt.destName, 0)
-	rt.maxDrainJobID = getRouterConfigInt("maxDrainJobID", rt.destName, 0)
-
+	rt.drainJobHandler = drain.GetDrainJobHandler()
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
