@@ -75,12 +75,8 @@ type ClaimResponseT struct {
 	Err     error
 }
 
-func New(connectionInfo string) (notifier PgNotifierT, err error) {
+func New(connectionInfo string, dbHandle *sql.DB) (notifier PgNotifierT, err error) {
 	pkgLogger.Infof("PgNotifier: Initializing PgNotifier...")
-	dbHandle, err := sql.Open("postgres", connectionInfo)
-	if err != nil {
-		return
-	}
 	notifier = PgNotifierT{
 		dbHandle: dbHandle,
 		URI:      connectionInfo,
@@ -114,15 +110,16 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 								WHERE id IN  (
 								SELECT id
 								FROM %[1]s
-								WHERE status='%[3]s' OR status='%[4]s'
+								WHERE status!='%[4]s' AND status!='%[5]s'
 								ORDER BY id
 								FOR UPDATE SKIP LOCKED
-								LIMIT %[5]v
+								LIMIT %[6]v
 								);`,
 			queueName,
 			GetCurrentSQLTimestamp(),
 			WaitingState,
-			FailedState,
+			SucceededState,
+			AbortedState,
 			retriggerCount)
 		pkgLogger.Debugf("PgNotifier: triggering pending jobs")
 		_, err := notifier.dbHandle.Exec(stmt)
@@ -178,8 +175,9 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 	})
 }
 
-func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan ClaimResponseT) {
+func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT) {
 	rruntime.Go(func() {
+		defer notifier.dbHandle.Exec(fmt.Sprintf(`SELECT pg_advisory_unlock(%d)`, id))
 		response := <-ch
 		var err error
 		if response.Err != nil {
@@ -190,53 +188,45 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 									ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
 									END), attempt = attempt + 1, updated_at = '%[5]s', error = %[6]s
 									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), misc.QuoteLiteral(response.Err.Error()), id)
-			_, err = tx.Exec(stmt)
+			_, err = notifier.dbHandle.Exec(stmt)
 		} else {
 			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
-			_, err = tx.Exec(stmt)
+			_, err = notifier.dbHandle.Exec(stmt)
 		}
 
-		if err == nil {
-			tx.Commit()
-		} else {
-			// TODO: verify rollback is necessary on error
-			tx.Rollback()
+		if err != nil {
 			pkgLogger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
 		}
 	})
 }
 
-func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool) {
-	//Begin Transaction
-	tx, err := notifier.dbHandle.Begin()
-	if err != nil {
-		return
-	}
-
+func (notifier *PgNotifierT) Claim(jobID int64, workerID string) (claim ClaimT, claimed bool) {
 	var claimedID int64
 	var batchID, status string
 	var payload json.RawMessage
-	// Dont panic if acquire fails -- Just rollback & return the worker to free state again
+
+	err := notifier.dbHandle.QueryRow(fmt.Sprintf(`SELECT pg_try_advisory_lock(%d)`, jobID)).Scan(&claimed)
+
+	if err != nil {
+		pkgLogger.Errorf("PgNotifier: Failed to query getting advisory lock: %v", err)
+		claimed = false
+	}
+
+	if !claimed {
+		return
+	}
+
 	stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s',
 						updated_at = '%[3]s',
 						last_exec_time = '%[3]s',
 						worker_id = '%[4]v'
-						WHERE id = (
-						SELECT id
-						FROM %[1]s
-						WHERE status='%[5]s' OR status='%[6]s'
-						ORDER BY id
-						FOR UPDATE SKIP LOCKED
-						LIMIT 1
-						)
-						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState)
-	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
-
+						WHERE id = %[5]d
+						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, jobID)
+	err = notifier.dbHandle.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 	if err != nil {
 		pkgLogger.Errorf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
-		// TODO: verify rollback is necessary on error
-		tx.Rollback()
-		return
+		notifier.dbHandle.Exec(fmt.Sprintf(`SELECT pg_advisory_unlock(%d)`, jobID))
+		return claim, false
 	}
 
 	responseChan := make(chan ClaimResponseT, 1)
@@ -247,7 +237,7 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 		Payload:           payload,
 		ClaimResponseChan: responseChan,
 	}
-	notifier.updateClaimedEvent(claimedID, tx, responseChan)
+	notifier.updateClaimedEvent(claimedID, responseChan)
 	return claim, true
 }
 

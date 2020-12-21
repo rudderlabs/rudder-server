@@ -110,15 +110,20 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 		pkgLogger.Errorf("[WH]: Failed to download file")
 		return err
 	}
-	file.Close()
+	err = file.Close()
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error clsoing downloaded staging file %s: %v", filePath, err)
+		return err
+	}
 	timer.End()
 
 	fi, err := os.Stat(filePath)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error getting file size of downloaded staging file: ", err)
+	} else {
+		fileSize := fi.Size()
+		pkgLogger.Debugf("[WH]: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
 	}
-	fileSize := fi.Size()
-	pkgLogger.Debugf("[WH]: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
 
 	return nil
 }
@@ -266,12 +271,15 @@ func (jobRun *JobRunT) cleanup() {
 	if jobRun.stagingFilePath != "" {
 		err := os.Remove(jobRun.stagingFilePath)
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to remove staging file: %w", err)
+			pkgLogger.Errorf("[WH]: Failed to remove staging file: %v", err)
 		}
 	}
 	if jobRun.outputFileWritersMap != nil {
 		for _, writer := range jobRun.outputFileWritersMap {
-			os.Remove(writer.File.Name())
+			err := os.Remove(writer.File.Name())
+			if err != nil {
+				pkgLogger.Errorf("[WH]: Failed to remove local load file: %v", err)
+			}
 		}
 	}
 }
@@ -460,10 +468,10 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	return loadFileIDs, err
 }
 
-func claimAndProcess(workerIdx int, slaveID string) {
+func claimAndProcess(workerIdx int, slaveID string, jobID int64) {
 	pkgLogger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
 	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
-	claim, claimed := notifier.Claim(workerID)
+	claim, claimed := notifier.Claim(jobID, workerID)
 	if claimed {
 		pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claim.ID, workerIdx, slaveID)
 		var payload PayloadT
@@ -494,6 +502,7 @@ func setupSlave() {
 	rruntime.Go(func() {
 		jobNotificationChannel, err := notifier.Subscribe(StagingFilesPGNotifierChannel)
 		if err != nil {
+			pkgLogger.Errorf("[WH]: Failed to subscribe to pg notification channel: %v", err)
 			panic(err)
 		}
 		for {
@@ -504,7 +513,7 @@ func setupSlave() {
 					slaveWorkerRoutineBusy[workerIdx-1] = true
 					idx := workerIdx
 					rruntime.Go(func() {
-						claimAndProcess(idx, slaveID)
+						claimAndProcess(idx, slaveID, ev.ID)
 					})
 					break
 				}

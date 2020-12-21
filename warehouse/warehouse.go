@@ -68,6 +68,7 @@ var (
 	pkgLogger                           logger.LoggerI
 	numLoadFileUploadWorkers            int
 	slaveUploadTimeout                  time.Duration
+	maxSlaveDBConnections               int
 )
 
 var (
@@ -143,6 +144,7 @@ func loadConfig() {
 	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
 	slaveUploadTimeout = config.GetDuration("Warehouse.slaveUploadTimeoutInMin", time.Duration(10)) * time.Minute
 	numLoadFileUploadWorkers = config.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
+	maxSlaveDBConnections = config.GetInt("Warehouse.maxSlaveDBConnections", 1)
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -869,14 +871,20 @@ func monitorDestRouters() {
 	}
 }
 
-func setupTables(dbHandle *sql.DB) {
+func setupTables(psqlInfo string) {
+	dbHandle, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	defer dbHandle.Close()
+
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
 		MigrationsTable:            "wh_schema_migrations",
 		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", false),
 	}
 
-	err := m.Migrate("warehouse")
+	err = m.Migrate("warehouse")
 	if err != nil {
 		panic(fmt.Errorf("Could not run warehouse database migrations: %w", err))
 	}
@@ -993,6 +1001,11 @@ func Start() {
 		panic(err)
 	}
 
+	// if running slave in standalone mode, set maxOpenConns to 1 by default
+	if isSlave() && isStandAlone() && !isMaster() {
+		dbHandle.SetMaxOpenConns(maxSlaveDBConnections)
+	}
+
 	isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)
 	if err != nil {
 		panic(err)
@@ -1004,7 +1017,7 @@ func Start() {
 		panic(err)
 	}
 
-	setupTables(dbHandle)
+	setupTables(psqlInfo)
 
 	defer startWebHandler()
 
@@ -1017,7 +1030,7 @@ func Start() {
 		return
 	}
 
-	notifier, err = pgnotifier.New(psqlInfo)
+	notifier, err = pgnotifier.New(getConnectionString(), dbHandle)
 	if err != nil {
 		panic(err)
 	}
