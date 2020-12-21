@@ -415,7 +415,7 @@ func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err
 	engineOptions := ""
 	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
-		clusterClause = fmt.Sprintf(`ON CLUSTER %s`, cluster)
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
 		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
@@ -455,7 +455,7 @@ func (ch *HandleT) createTable(tableName string, columns map[string]string) (err
 	engineOptions := ""
 	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
-		clusterClause = fmt.Sprintf(`ON CLUSTER %s`, cluster)
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
 		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
