@@ -209,7 +209,7 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations, _ := ch.Uploader.GetLoadFileLocations(tableName)
+	objectLocations := ch.Uploader.GetLoadFileLocations(tableName)
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		object, err := warehouseutils.GetObjectName(objectLocation, ch.Warehouse.Destination.Config, ch.ObjectStorage)

@@ -1,7 +1,7 @@
 package manager
 
 import (
-	"errors"
+	"fmt"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
@@ -32,6 +32,7 @@ type ManagerI interface {
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
 }
 
+//New is a Factory function that returns a ManagerI of a given destination-type
 func New(destType string) (ManagerI, error) {
 	switch destType {
 	case "RS":
@@ -51,5 +52,5 @@ func New(destType string) (ManagerI, error) {
 		return &ch, nil
 	}
 
-	return nil, errors.New("no provider configured for WarehouseManager")
+	return nil, fmt.Errorf("Provider of type %s is not configured for WarehouseManager", destType)
 }

@@ -84,13 +84,13 @@ func (sHandle *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Sch
 			return
 		}
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 		}
 	}
 	var schemaMapInterface map[string]interface{}
 	err = json.Unmarshal(rawSchema, &schemaMapInterface)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", rawSchema, err))
 	}
 	currentSchema = warehouseutils.SchemaT{}
 	for tname, columnMapInterface := range schemaMapInterface {
@@ -251,7 +251,7 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 		sqlStatement := fmt.Sprintf(`SELECT schema FROM %s WHERE id IN (%s)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(ids, ","))
 		rows, err := sh.dbHandle.Query(sqlStatement)
 		if err != nil && err != sql.ErrNoRows {
-			panic(err)
+			panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 		}
 
 		var schemas []warehouseutils.SchemaT
@@ -259,12 +259,12 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 			var s json.RawMessage
 			err := rows.Scan(&s)
 			if err != nil {
-				panic(err)
+				panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 			}
 			var schema warehouseutils.SchemaT
 			err = json.Unmarshal(s, &schema)
 			if err != nil {
-				panic(err)
+				panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(s), err))
 			}
 
 			schemas = append(schemas, schema)

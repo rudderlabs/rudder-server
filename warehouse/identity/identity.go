@@ -73,7 +73,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 	pkgLogger.Debugf(`IDR: Fetching all rudder_id's corresponding to the merge_rule: %v`, sqlStatement)
 	err = txn.QueryRow(sqlStatement).Scan(pq.Array(&rudderIDs))
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error fetching all rudder_id's corresponding to the merge_rule: %v`, sqlStatement)
+		pkgLogger.Errorf("IDR: Error fetching all rudder_id's corresponding to the merge_rule: %v\nwith Error: %w", sqlStatement, err)
 		return
 	}
 
@@ -338,7 +338,7 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 }
 
 func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations, _ := idr.Uploader.GetLoadFileLocations(tableName)
+	objectLocations := idr.Uploader.GetLoadFileLocations(tableName)
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		objectName, err := warehouseutils.GetObjectName(objectLocation, idr.Warehouse.Destination.Config, warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config))

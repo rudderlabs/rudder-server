@@ -204,10 +204,7 @@ type S3ManifestT struct {
 }
 
 func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
-	csvObjectLocations, err := rs.Uploader.GetLoadFileLocations(tableName)
-	if err != nil {
-		panic(err)
-	}
+	csvObjectLocations := rs.Uploader.GetLoadFileLocations(tableName)
 	csvS3Locations := warehouseutils.GetS3Locations(csvObjectLocations)
 	var manifest S3ManifestT
 	for _, location := range csvS3Locations {
@@ -525,7 +522,7 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
 	rows, err := rs.Db.Query(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("WH: RS:  Error dropping dangling staging tables in redshift: %v\n", err)
+		pkgLogger.Errorf("WH: RS: Error dropping dangling staging tables in redshift: %v\nQuery: %s\n", err, sqlStatement)
 		return false
 	}
 	defer rows.Close()
@@ -535,7 +532,7 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 		var tableName string
 		err := rows.Scan(&tableName)
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}

@@ -954,7 +954,7 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 			var payload map[string]interface{}
 			err = json.Unmarshal(resp.Payload, &payload)
 			if err != nil {
-				panic(err)
+				panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(resp.Payload), err))
 			}
 			respIDs, ok := payload["LoadFileIDs"].([]interface{})
 			if !ok {
@@ -1003,7 +1003,7 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	return
 }
 
-func (job *UploadJobT) GetLoadFileLocations(tableName string) (locations []string, err error) {
+func (job *UploadJobT) GetLoadFileLocations(tableName string) (locations []string) {
 	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
 		SELECT  staging_file_id, MAX(id) AS id FROM wh_load_files
 		WHERE ( source_id='%[2]s'
@@ -1022,7 +1022,7 @@ func (job *UploadJobT) GetLoadFileLocations(tableName string) (locations []strin
 	)
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
 	defer rows.Close()
 
@@ -1030,7 +1030,7 @@ func (job *UploadJobT) GetLoadFileLocations(tableName string) (locations []strin
 		var location string
 		err := rows.Scan(&location)
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		locations = append(locations, location)
 	}
@@ -1106,7 +1106,7 @@ func getNextUploadState(dbStatus string) *uploadStateT {
 func getInProgressState(state string) string {
 	uploadState, ok := stateTransitions[state]
 	if !ok {
-		panic("Invalid Upload state")
+		panic(fmt.Errorf("Invalid Upload state: %s", state))
 	}
 	return uploadState.inProgress
 }
@@ -1114,7 +1114,7 @@ func getInProgressState(state string) string {
 func getFailedState(state string) string {
 	uploadState, ok := stateTransitions[state]
 	if !ok {
-		panic("Invalid Upload state")
+		panic(fmt.Errorf("Invalid Upload state : %s", state))
 	}
 	return uploadState.failed
 }
