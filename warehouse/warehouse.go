@@ -70,7 +70,6 @@ var (
 	pkgLogger                           logger.LoggerI
 	numLoadFileUploadWorkers            int
 	slaveUploadTimeout                  time.Duration
-	maxSlaveDBConnections               int
 )
 
 var (
@@ -146,7 +145,6 @@ func loadConfig() {
 	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
 	slaveUploadTimeout = config.GetDuration("Warehouse.slaveUploadTimeoutInMin", time.Duration(10)) * time.Minute
 	numLoadFileUploadWorkers = config.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
-	maxSlaveDBConnections = config.GetInt("Warehouse.maxSlaveDBConnections", 1)
 	slaveClaimedJobsMap = map[int64]string{}
 }
 
@@ -1006,7 +1004,7 @@ func Start() {
 
 	// if running slave in standalone mode, set maxOpenConns to 1 by default
 	if isSlave() && isStandAlone() && !isMaster() {
-		dbHandle.SetMaxOpenConns(maxSlaveDBConnections)
+		dbHandle.SetMaxOpenConns(1)
 	}
 
 	isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)

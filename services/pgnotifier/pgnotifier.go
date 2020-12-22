@@ -107,21 +107,27 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 		time.Sleep(retriggerInterval)
 		stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[3]s',
 								updated_at = '%[2]s'
-								WHERE id IN  (
-								SELECT id
-								FROM %[1]s
-								WHERE status!='%[4]s' AND status!='%[5]s'
-								ORDER BY id
-								FOR UPDATE SKIP LOCKED
-								LIMIT %[6]v
-								);`,
+								WHERE id IN (
+									SELECT id FROM %[1]s
+										WHERE status != '%[4]s' AND status != '%[5]s'
+										ORDER BY
+											CASE status
+												WHEN '%[6]s' THEN 1
+												WHEN '%[3]s' THEN 2
+												WHEN '%[7]s' THEN 3
+												ELSE 4
+											END, id
+										LIMIT %[8]v
+								)`,
 			queueName,
 			GetCurrentSQLTimestamp(),
 			WaitingState,
 			SucceededState,
 			AbortedState,
+			FailedState,
+			ExecutingState,
 			retriggerCount)
-		pkgLogger.Debugf("PgNotifier: triggering pending jobs")
+		pkgLogger.Debugf("PgNotifier: triggering pending jobs: %v", stmt)
 		_, err := notifier.dbHandle.Exec(stmt)
 		if err != nil {
 			panic(err)
@@ -216,12 +222,13 @@ func (notifier *PgNotifierT) Claim(jobID int64, workerID string) (claim ClaimT, 
 		return
 	}
 
+	// check if status is not succeeded/aborted to avoid reprocessing finished job
 	stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s',
 						updated_at = '%[3]s',
 						last_exec_time = '%[3]s',
 						worker_id = '%[4]v'
-						WHERE id = %[5]d
-						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, jobID)
+						WHERE id = %[5]d AND status!='%[6]s' AND status!='%[7]s'
+						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, jobID, SucceededState, AbortedState)
 	err = notifier.dbHandle.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 	if err != nil {
 		pkgLogger.Errorf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
