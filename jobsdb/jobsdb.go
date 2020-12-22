@@ -58,14 +58,46 @@ type BackupSettingsT struct {
 	PathPrefix    string
 }
 
+//GetGlobalDBHandle returns a sql.DB handle to be used across jobsdb instances
+func GetGlobalDBHandle() *sql.DB {
+	psqlInfo := GetConnectionString()
+
+	dbHandle, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+
+	return dbHandle
+}
+
+//BeginTransaction starts a transaction
+func BeginTransaction(dbHandle *sql.DB) *sql.Tx {
+	txn, err := dbHandle.Begin()
+	if err != nil {
+		panic(err)
+	}
+
+	return txn
+}
+
+//CommitTransaction commits the passed transaction
+func CommitTransaction(txn *sql.Tx) {
+	err := txn.Commit()
+	if err != nil {
+		panic(err)
+	}
+}
+
 /*
 JobsDB interface contains public methods to access JobsDB data
 */
 type JobsDB interface {
+	StoreInTxn(txHandler *sql.Tx, jobList []*JobT)
 	Store(jobList []*JobT)
 	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
 	CheckPGHealth() bool
 	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT)
+	UpdateJobStatusInTxn(txHandler *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT)
 
 	GetToRetry(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
 	GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
@@ -2685,6 +2717,25 @@ func (jd *HandleT) RecoverFromMigrationJournal() {
 }
 
 /*
+UpdateJobStatusInTxn updates the status of a batch of jobs in the passed transaction
+customValFilters[] is passed so we can efficinetly mark empty cache
+Later we can move this to query
+*/
+func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) {
+
+	if len(statusList) == 0 {
+		return
+	}
+
+	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList)
+	jd.assertErrorAndRollbackTx(err, txn)
+
+	for ds, stateList := range updatedStatesByDS {
+		jd.markClearEmptyResult(ds, stateList, customValFilters, parameterFilters, hasJobs, nil)
+	}
+}
+
+/*
 UpdateJobStatus updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
@@ -2799,6 +2850,28 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 		}
 	}
 	return
+}
+
+/*
+StoreInTxn call is used to create new Jobs in transaction
+*/
+func (jd *HandleT) StoreInTxn(txHandler *sql.Tx, jobList []*JobT) {
+	//Only locks the list
+	jd.dsListLock.RLock()
+	defer jd.dsListLock.RUnlock()
+
+	queryStat := stats.NewTaggedStat("store_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat.Start()
+	defer queryStat.End()
+
+	dsList := jd.getDSList(false)
+	ds := dsList[len(dsList)-1]
+	err := jd.storeJobsDSInTxn(txHandler, ds, false, jobList)
+	jd.assertErrorAndRollbackTx(err, txHandler)
+
+	//Empty customValFilters means we want to clear for all
+	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
+	// fmt.Println("Bursting CACHE")
 }
 
 /*

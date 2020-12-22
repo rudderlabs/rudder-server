@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -35,6 +36,7 @@ import (
 
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
+	jobsdbHandle                 *sql.DB
 	backendConfig                backendconfig.BackendConfig
 	processSessions              bool
 	sessionThresholdEvents       int
@@ -93,6 +95,7 @@ type DestStatT struct {
 type DBWritePayloadT struct {
 	jobs []*jobsdb.JobT
 	wg   *sync.WaitGroup
+	txn  *sql.Tx
 }
 
 var (
@@ -172,6 +175,7 @@ func NewProcessor() *HandleT {
 
 //Setup initializes the module
 func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool) {
+	proc.jobsdbHandle = jobsdb.GetGlobalDBHandle()
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -894,12 +898,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
 
 	transformationBatchSize := int(math.Max(float64(transformBatchSize), float64(userTransformBatchSize)))
-	totalBatches := 0
-	for _, eventList := range groupedEvents {
-		totalBatches += int(math.Ceil(float64(len(eventList)) / float64(transformationBatchSize)))
-	}
 	var wg sync.WaitGroup
-	wg.Add(totalBatches)
+	txn := jobsdb.BeginTransaction(proc.jobsdbHandle)
 
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
@@ -955,7 +955,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			}
 
 			if len(eventsToTransform) == 0 {
-				wg.Done()
 				continue
 			}
 
@@ -1011,11 +1010,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			}
 
 			if len(outputJobs) == 0 {
-				wg.Done()
 				continue
 			}
 
-			payload := DBWritePayloadT{jobs: outputJobs, wg: &wg}
+			wg.Add(1)
+			payload := DBWritePayloadT{jobs: outputJobs, wg: &wg, txn: txn}
 			if misc.Contains(rawDataDestinations, outputJobs[0].CustomVal) {
 				totalRouterEvents += len(outputJobs)
 				batchRouterDBWriterChan <- &payload
@@ -1055,7 +1054,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
 
-	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{gateway.CustomVal}, nil)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 
 	if enableDedup {
@@ -1068,6 +1067,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
+
+	jobsdb.CommitTransaction(txn)
 
 	proc.statDBW.End()
 	proc.pStatsDBW.End(len(statusList))
@@ -1085,8 +1086,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 func (proc *HandleT) routerDBWriterLoop() {
 	for {
 		payload := <-routerDBWriterChan
-		// TODO: Need to do all writes in a transaction
-		proc.routerDB.Store(payload.jobs)
+		proc.routerDB.StoreInTxn(payload.txn, payload.jobs)
 		payload.wg.Done()
 	}
 }
@@ -1094,8 +1094,7 @@ func (proc *HandleT) routerDBWriterLoop() {
 func (proc *HandleT) batchRouterDBWriterLoop() {
 	for {
 		payload := <-batchRouterDBWriterChan
-		// TODO: Need to do all writes in a transaction
-		proc.batchRouterDB.Store(payload.jobs)
+		proc.batchRouterDB.StoreInTxn(payload.txn, payload.jobs)
 		payload.wg.Done()
 	}
 }
