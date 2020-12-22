@@ -981,7 +981,7 @@ func (rt *HandleT) generatorLoop() {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
-					JobState:      jobsdb.Succeeded.State,
+					JobState:      jobsdb.Aborted.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
@@ -1136,4 +1136,8 @@ func (rt *HandleT) backendConfigSubscriber() {
 		}
 		rt.configSubscriberLock.Unlock()
 	}
+}
+
+func (rt *HandleT) MaxJobId() int64{
+	return rt.jobsDB.GetLastJobIDBeforeImport()
 }

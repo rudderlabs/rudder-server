@@ -186,16 +186,17 @@ func (a Admin) GetLoggingConfig(noArgs struct{}, reply *string) (err error) {
 	return err
 }
 
-func (a Admin) SetDrainJobsConfig(dHandle drain.DrainHandleT, reply *string) (err error) {
+func (a Admin) SetDrainJobsConfig(dHandle drain.DrainConfig, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
 			err = errors.New("Internal Rudder Server Error")
 		}
 	}()
-	drainHandler, err := drain.SetDrainJobIDs(dHandle.MinDrainJobID, dHandle.MaxDrainJobID, dHandle.DrainDestinationID)
+
+	_, err = drain.SetDrainJobIDs(dHandle.MinDrainJobID, dHandle.MaxDrainJobID, dHandle.DrainDestinationID)
 	if err == nil {
-		*reply = fmt.Sprintf("Drain config set to : MinJobID : %d, MaxJobID : %d, DestID : %s", drainHandler.MinDrainJobID, drainHandler.MaxDrainJobID, drainHandler.DrainDestinationID)
+		*reply = fmt.Sprintf("Drain config updated")
 	}
 	return err
 }
