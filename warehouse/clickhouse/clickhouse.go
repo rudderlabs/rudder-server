@@ -187,9 +187,9 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 func columnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
-		codec := getClickHouseCodecForColumnType(dataType)
+		//codec := getClickHouseCodecForColumnType(dataType)
 		columnType := getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
-		arr = append(arr, fmt.Sprintf(`%s %s %s`, columnName, columnType, codec))
+		arr = append(arr, fmt.Sprintf(`%s %s`, columnName, columnType))
 	}
 	return strings.Join(arr[:], ",")
 }
@@ -390,7 +390,12 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 // createSchema creates a database in clickhouse
 func (ch *HandleT) createSchema() (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS "%s"`, ch.Namespace)
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	clusterClause := ""
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+	}
+	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS "%s" %s`, ch.Namespace, clusterClause)
 	pkgLogger.Infof("CH: Creating database in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -405,13 +410,15 @@ func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err
 	sortKeyFields := []string{"id"}
 	notNullableColumns := []string{"received_at", "id"}
 	clusterClause := ""
-	engine := "AggregatingMergeTree()"
+	engine := "AggregatingMergeTree"
+	engineOptions := ""
 	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
-		clusterClause = fmt.Sprintf(`ON CLUSTER %s`, cluster)
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
+		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, columnsWithDataTypes(name, columns, notNullableColumns), engine, getSortKeyTuple(sortKeyFields), partitionField)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, columnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -443,13 +450,15 @@ func (ch *HandleT) createTable(tableName string, columns map[string]string) (err
 		return ch.createUsersTable(tableName, columns)
 	}
 	clusterClause := ""
-	engine := "ReplacingMergeTree()"
+	engine := "ReplacingMergeTree"
+	engineOptions := ""
 	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
-		clusterClause = fmt.Sprintf(`ON CLUSTER %s`, cluster)
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
+		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
 	}
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, columnsWithDataTypes(tableName, columns, sortKeyFields), engine, getSortKeyTuple(sortKeyFields), partitionField)
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, columnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
