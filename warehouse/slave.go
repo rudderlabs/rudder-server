@@ -462,19 +462,36 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 
 func claimAndProcess(workerIdx int, slaveID string) {
 	pkgLogger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
+
+	freeWorker := func() {
+		slaveWorkerRoutineBusy[workerIdx-1] = false
+		pkgLogger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
+	}
+	defer freeWorker()
+
+	handleErr := func(err error, claim pgnotifier.ClaimT) {
+		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
+		response := pgnotifier.ClaimResponseT{
+			Err: err,
+		}
+		claim.ClaimResponseChan <- response
+	}
+
 	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
 	claim, claimed := notifier.Claim(workerID)
 	if claimed {
 		pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claim.ID, workerIdx, slaveID)
 		var payload PayloadT
-		json.Unmarshal(claim.Payload, &payload)
+		err := json.Unmarshal(claim.Payload, &payload)
+		if err != nil {
+			handleErr(err, claim)
+			return
+		}
 		payload.BatchID = claim.BatchID
 		ids, err := processStagingFile(payload)
 		if err != nil {
-			response := pgnotifier.ClaimResponseT{
-				Err: err,
-			}
-			claim.ClaimResponseChan <- response
+			handleErr(err, claim)
+			return
 		}
 		payload.LoadFileIDs = ids
 		output, err := json.Marshal(payload)
@@ -484,8 +501,6 @@ func claimAndProcess(workerIdx int, slaveID string) {
 		}
 		claim.ClaimResponseChan <- response
 	}
-	slaveWorkerRoutineBusy[workerIdx-1] = false
-	pkgLogger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
 }
 
 func setupSlave() {
