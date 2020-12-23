@@ -496,13 +496,15 @@ func claimAndProcess(workerIdx int, slaveID string, jobID int64) {
 	pkgLogger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
 	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
 	claim, claimed := notifier.Claim(jobID, workerID)
+	var err error
 	if claimed {
 		setInJobStatusMap(jobID, SlaveClaimedJobStatus)
 		pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claim.ID, workerIdx, slaveID)
 		var payload PayloadT
 		json.Unmarshal(claim.Payload, &payload)
 		payload.BatchID = claim.BatchID
-		ids, err := processStagingFile(payload)
+		var ids []int64
+		ids, err = processStagingFile(payload)
 		if err != nil {
 			response := pgnotifier.ClaimResponseT{
 				Err: err,
@@ -510,19 +512,18 @@ func claimAndProcess(workerIdx int, slaveID string, jobID int64) {
 			claim.ClaimResponseChan <- response
 		}
 		payload.LoadFileIDs = ids
-		output, err := json.Marshal(payload)
+		var output []byte
+		output, err = json.Marshal(payload)
 		response := pgnotifier.ClaimResponseT{
 			Err:     err,
 			Payload: output,
 		}
 		claim.ClaimResponseChan <- response
-		if err != nil {
-			removeJobFromStatusMap(jobID)
-		} else {
-			setInJobStatusMap(jobID, SlaveProcessedJobStatus)
-		}
-	} else {
+	}
+	if err != nil {
 		removeJobFromStatusMap(jobID)
+	} else {
+		setInJobStatusMap(jobID, SlaveProcessedJobStatus)
 	}
 	slaveWorkerRoutineBusy[workerIdx-1] = false
 	pkgLogger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
