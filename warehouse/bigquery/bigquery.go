@@ -235,7 +235,7 @@ func (bq *HandleT) loadUserTables() (errorMap map[string]error) {
 		return ""
 	}
 
-	userColMap := bq.Uploader.GetTableSchemaAfterUpload("users")
+	userColMap := bq.Uploader.GetTableSchemaInWarehouse("users")
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "id" {
@@ -450,6 +450,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		if e, ok := err.(*googleapi.Error); ok {
 			// if dataset resource is not found, return empty schema
 			if e.Code == 404 {
+				pkgLogger.Infof("BQ: No rows, while fetching schema from  destination:%v, query: %v", bq.Warehouse.Identifier, query)
 				return schema, nil
 			}
 			pkgLogger.Errorf("BQ: Error in fetching schema from bigquery destination:%v, query: %v", bq.Warehouse.Destination.ID, query)

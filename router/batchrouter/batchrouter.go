@@ -36,7 +36,6 @@ import (
 
 var (
 	jobQueryBatchSize                  int
-	maxFailedCountForJob               int
 	mainLoopSleep, diagnosisTickerTime time.Duration
 	uploadFreqInS                      int64
 	configSubscriberLock               sync.RWMutex
@@ -70,6 +69,7 @@ type HandleT struct {
 	batchRequestsMetric     []batchRequestMetric
 	logger                  logger.LoggerI
 	noOfWorkers             int
+	maxFailedCountForJob    int
 }
 
 type BatchDestinationT struct {
@@ -92,7 +92,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		configSubscriberLock.Lock()
 		brt.destinationsMap = map[string]*BatchDestinationT{}
-		allSources := config.Data.(backendconfig.SourcesT)
+		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
@@ -250,6 +250,9 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 		firstEventAt = firstEventAtWithTimeZone.UTC().Format(time.RFC3339)
 		lastEventAt = lastEventAtWithTimeZone.UTC().Format(time.RFC3339)
+	} else {
+		firstEventAt = gjson.GetBytes(batchJobs.Jobs[0].EventPayload, "receivedAt").String()
+		lastEventAt = gjson.GetBytes(batchJobs.Jobs[len(batchJobs.Jobs)-1].EventPayload, "receivedAt").String()
 	}
 
 	brt.logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
@@ -403,7 +406,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 
-		if jobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum >= maxFailedCountForJob && !postToWarehouseErr {
+		if jobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
 			jobState = jobsdb.Aborted.State
 		} else {
 			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
@@ -833,6 +836,14 @@ func (brt *HandleT) crashRecover() {
 	}
 }
 
+func IsObjectStorageDestination(destType string) bool {
+	return misc.Contains(objectStorageDestinations, destType)
+}
+
+func IsWarehouseDestination(destType string) bool {
+	return misc.Contains(warehouseDestinations, destType)
+}
+
 func getWarehouseURL() (url string) {
 	if warehouseMode == config.EmbeddedMode {
 		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
@@ -875,7 +886,6 @@ func (brt *HandleT) collectMetrics() {
 
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
-	maxFailedCountForJob = config.GetInt("BatchRouter.maxFailedCountForJob", 128)
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
@@ -906,6 +916,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.jobsDB = jobsDB
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
+	brt.maxFailedCountForJob = getBatchRouterConfigInt("maxFailedCountForJob", destType, 128)
 
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}

@@ -25,10 +25,6 @@ func loadConfig() {
 	CustomVal = config.GetString("Gateway.CustomVal", "GW")
 	// Maximum request size to gateway
 	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 4000) * 1024
-	// Enable dedup of incoming events by default
-	enableDedup = config.GetBool("Gateway.enableDedup", false)
-	// Dedup time window in hours
-	dedupWindow = config.GetDuration("Gateway.dedupWindowInS", time.Duration(86400))
 	// Enable rate limit on incoming events. false by default
 	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
 	// Enable suppress user feature. false by default
@@ -71,12 +67,5 @@ func SetEnableRateLimit(b bool) bool {
 func SetEnableSuppressUserFeature(b bool) bool {
 	prev := enableSuppressUserFeature
 	enableSuppressUserFeature = b
-	return prev
-}
-
-//SetEnableDedup overrides enableDedup configuration and returns previous value
-func SetEnableDedup(b bool) bool {
-	prev := enableDedup
-	enableDedup = b
 	return prev
 }

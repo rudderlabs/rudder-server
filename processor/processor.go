@@ -3,6 +3,7 @@ package processor
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/dedup"
 	"math"
 	"reflect"
 	"sort"
@@ -19,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -57,6 +59,7 @@ type HandleT struct {
 	statDBR                      stats.RudderStats
 	statDBW                      stats.RudderStats
 	statLoopTime                 stats.RudderStats
+	eventSchemasTime             stats.RudderStats
 	statSessionTransform         stats.RudderStats
 	statUserTransform            stats.RudderStats
 	statDestTransform            stats.RudderStats
@@ -74,6 +77,7 @@ type HandleT struct {
 	userPQLock                   sync.Mutex
 	logger                       logger.LoggerI
 	eventSchemaHandler           types.EventSchemasI
+	dedupHandler                 dedup.DedupI
 }
 
 type DestStatT struct {
@@ -85,14 +89,27 @@ type DestStatT struct {
 	destTransform    stats.RudderStats
 }
 
-func (proc *HandleT) newDestinationStat(destID string) *DestStatT {
-	numEvents := proc.stats.NewTaggedStat("proc_num_events", stats.CountType, stats.Tags{"destID": destID})
-	numOutputEvents := proc.stats.NewTaggedStat("proc_num_output_events", stats.CountType, stats.Tags{"destID": destID})
-	sessionTransform := proc.stats.NewTaggedStat("proc_session_transform", stats.TimerType, stats.Tags{"destID": destID})
-	userTransform := proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, stats.Tags{"destID": destID})
-	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, stats.Tags{"destID": destID})
+func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) *DestStatT {
+	destinationTag := misc.GetTagName(destination.ID, destination.Name)
+	var module = "router"
+	if batchrouter.IsObjectStorageDestination(destination.DestinationDefinition.Name) {
+		module = "batch_router"
+	}
+	if batchrouter.IsWarehouseDestination(destination.DestinationDefinition.Name) {
+		module = "warehouse"
+	}
+	tags := map[string]string{
+		"module":      module,
+		"destination": destinationTag,
+		"destType":    destination.DestinationDefinition.Name,
+	}
+	numEvents := proc.stats.NewTaggedStat("proc_num_events", stats.CountType, tags)
+	numOutputEvents := proc.stats.NewTaggedStat("proc_num_output_events", stats.CountType, tags)
+	sessionTransform := proc.stats.NewTaggedStat("proc_session_transform", stats.TimerType, tags)
+	userTransform := proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
+	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
 	return &DestStatT{
-		id:               destID,
+		id:               destination.ID,
 		numEvents:        numEvents,
 		numOutputEvents:  numOutputEvents,
 		sessionTransform: sessionTransform,
@@ -141,10 +158,10 @@ func NewProcessor() *HandleT {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, s stats.Stats) {
+func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool) {
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
-	proc.stats = s
+	proc.stats = stats.DefaultStats
 
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
@@ -171,6 +188,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statDBW = proc.stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
 	proc.statProcErrDBW = proc.stats.NewStat("processor.proc_err_db_write", stats.CountType)
 	proc.statLoopTime = proc.stats.NewStat("processor.loop_time", stats.TimerType)
+	proc.eventSchemasTime = proc.stats.NewStat("processor.event_schemas_time", stats.TimerType)
 	proc.statSessionTransform = proc.stats.NewStat("processor.session_transform_time", stats.TimerType)
 	proc.statUserTransform = proc.stats.NewStat("processor.user_transform_time", stats.TimerType)
 	proc.statDestTransform = proc.stats.NewStat("processor.dest_transform_time", stats.TimerType)
@@ -190,6 +208,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
 	}
+	if enableDedup {
+		proc.dedupHandler = dedup.GetInstance(clearDB)
+	}
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
@@ -206,6 +227,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 
 // Start starts this processor's main loops.
 func (proc *HandleT) Start() {
+
 	rruntime.Go(func() {
 		proc.mainLoop()
 	})
@@ -219,6 +241,7 @@ func (proc *HandleT) Start() {
 var (
 	loopSleep                           time.Duration
 	maxLoopSleep                        time.Duration
+	fixedLoopSleep                      time.Duration
 	maxEventsToProcess                  int
 	avgEventsInRequest                  int
 	dbReadBatchSize                     int
@@ -235,18 +258,22 @@ var (
 	customDestinations                  []string
 	pkgLogger                           logger.LoggerI
 	enableEventSchemasFeature           bool
+	enableDedup                         bool
 )
 
 func loadConfig() {
 	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
 	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
+	fixedLoopSleep = config.GetDuration("Processor.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
 	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
 	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
+	// Enable dedup of incoming events by default
+	enableDedup = config.GetBool("Dedup.enableDedup", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
-	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB"}
+	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
 	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
 	maxEventsToProcess = config.GetInt("Processor.maxLoopProcessEvents", 10000)
@@ -264,7 +291,7 @@ func (proc *HandleT) backendConfigSubscriber() {
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		destinationIDtoTypeMap = make(map[string]string)
 		destinationTransformationEnabledMap = make(map[string]bool)
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT)
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				writeKeyDestinationMap[source.WriteKey] = source.Destinations
@@ -273,7 +300,7 @@ func (proc *HandleT) backendConfigSubscriber() {
 					destinationTransformationEnabledMap[destination.ID] = len(destination.Transformations) > 0
 					_, ok := proc.destStats[destination.ID]
 					if !ok {
-						proc.destStats[destination.ID] = proc.newDestinationStat(destination.ID)
+						proc.destStats[destination.ID] = proc.newDestinationStat(destination)
 					}
 				}
 			}
@@ -729,6 +756,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
 
 	proc.marshalSingularEvents.Start()
+	uniqueMessageIds := make(map[string]struct{})
+	var sourceDupStats = make(map[string]int)
+
 	for idx, batchEvent := range jobList {
 
 		var singularEvents []types.SingularEventT
@@ -744,17 +774,34 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		receivedAt := gjson.Get(string(batchEvent.EventPayload), "receivedAt").Time()
 
 		if ok {
+			var duplicateIndexes []int
+			if enableDedup {
+				var allMessageIdsInBatch []string
+				for _, singularEvent := range singularEvents {
+					allMessageIdsInBatch = append(allMessageIdsInBatch, singularEvent["messageId"].(string))
+				}
+				duplicateIndexes = proc.dedupHandler.FindDuplicates(allMessageIdsInBatch, uniqueMessageIds)
+			}
+
 			//Iterate through all the events in the batch
-			for _, singularEvent := range singularEvents {
+			for eventIndex, singularEvent := range singularEvents {
+				messageId := singularEvent["messageId"].(string)
+				if enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
+					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
+					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
+					continue
+				}
+				uniqueMessageIds[messageId] = struct{}{}
 				//We count this as one, not destination specific ones
 				totalEvents++
-
-				eventsByMessageID[singularEvent["messageId"].(string)] = singularEvent
+				eventsByMessageID[messageId] = singularEvent
 
 				//Getting all the destinations which are enabled for this
 				//event
 				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
+				workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+				workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
 
 				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
 				if len(enabledDestTypes) == 0 {
@@ -772,7 +819,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy := transformer.TransformerEventT{}
 						shallowEventCopy.Message = singularEvent
 						shallowEventCopy.Destination = reflect.ValueOf(destination).Interface().(backendconfig.DestinationT)
-
+						shallowEventCopy.Libraries = workspaceLibraries
+						//TODO: Test for multiple workspaces ex: hosted data plane
 						/* Stream destinations does not need config in transformer. As the Kafka destination config
 						holds the ca-certificate and it depends on user input, it may happen that they provide entire
 						certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
@@ -958,6 +1006,16 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	if enableDedup {
+		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
+		if len(uniqueMessageIds) > 0 {
+			var dedupedMessageIdsAcrossJobs []string
+			for k, _ := range uniqueMessageIds {
+				dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
+			}
+			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
+		}
+	}
 	proc.statDBW.End()
 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
@@ -1021,12 +1079,14 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		proc.pStatsDBR.End(0)
 		return false
 	}
+	proc.eventSchemasTime.Start()
 	if enableEventSchemasFeature {
 		for _, unprocessedJob := range unprocessedList {
 			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
 			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
 		}
 	}
+	proc.eventSchemasTime.End()
 	// handle pending jobs
 	proc.statListSort.Start()
 	combinedList := append(unprocessedList, retryList...)
@@ -1070,7 +1130,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 func (proc *HandleT) mainLoop() {
 	//waiting till the backend config is received
-	backendconfig.WaitForConfig()
+	proc.backendConfig.WaitForConfig()
 
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
@@ -1083,9 +1143,10 @@ func (proc *HandleT) mainLoop() {
 			if currLoopSleep > maxLoopSleep {
 				currLoopSleep = maxLoopSleep
 			}
-
 			time.Sleep(currLoopSleep)
 		}
+		time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
+
 	}
 }
 
@@ -1113,5 +1174,15 @@ func (proc *HandleT) crashRecover() {
 			statusList = append(statusList, &status)
 		}
 		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	}
+}
+
+func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {
+	for sourceTag, count := range sourceStats {
+		tags := map[string]string{
+			"source": sourceTag,
+		}
+		sourceStatsD := proc.stats.NewTaggedStat(bucket, stats.CountType, tags)
+		sourceStatsD.Count(count)
 	}
 }

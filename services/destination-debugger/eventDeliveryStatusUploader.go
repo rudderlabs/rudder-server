@@ -208,7 +208,7 @@ func flushJobs() {
 	}
 }
 
-func updateConfig(sources backendconfig.SourcesT) {
+func updateConfig(sources backendconfig.ConfigT) {
 	configSubscriberLock.Lock()
 	uploadEnabledDestinationIDs = make(map[string]bool)
 	for _, source := range sources.Sources {
@@ -228,6 +228,6 @@ func backendConfigSubscriber() {
 	backendconfig.Subscribe(configChannel, "backendConfig")
 	for {
 		config := <-configChannel
-		updateConfig(config.Data.(backendconfig.SourcesT))
+		updateConfig(config.Data.(backendconfig.ConfigT))
 	}
 }

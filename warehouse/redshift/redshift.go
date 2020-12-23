@@ -348,12 +348,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	var quotedColumnNames string
-	for idx, str := range strkeys {
-		quotedColumnNames += "\"" + str + "\""
-		if idx != len(strkeys)-1 {
-			quotedColumnNames += ","
-		}
-	}
+	quotedColumnNames = warehouseutils.DoubleQuoteAndJoinByComma(strkeys)
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -379,7 +374,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	pkgLogger.Infof("RS: Starting load for identifies and users tables\n")
 
-	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), rs.Uploader.GetTableSchemaAfterUpload(warehouseutils.IdentifiesTable), true)
+	identifyStagingTable, err := rs.loadTable(warehouseutils.IdentifiesTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable), true)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -391,7 +386,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
-	userColMap := rs.Uploader.GetTableSchemaAfterUpload(warehouseutils.UsersTable)
+	userColMap := rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		// do not reference uuid in queries as it can be an autoincrementing field set by segment compatible tables
@@ -399,8 +394,9 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 			continue
 		}
 		userColNames = append(userColNames, colName)
-		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
+		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
+	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), warehouseutils.UsersTable), 127)
 
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
@@ -422,7 +418,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		strings.Join(firstValProps, ","), // 3
 		warehouseutils.UsersTable,        // 4
 		identifyStagingTable,             // 5
-		strings.Join(userColNames, ","),  // 6
+		quotedUserColNames,               // 6
 	)
 
 	// BEGIN TRANSACTION
@@ -432,9 +428,9 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	pkgLogger.Debugf("RS: Creating staging table for users: %s\n", sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
+		pkgLogger.Errorf("RS: Creating staging table for users failed: %s\n", sqlStatement)
 		pkgLogger.Errorf("RS: Error creating users staging table from original table and identifies staging table: %v\n", err)
 		tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
@@ -444,16 +440,17 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	primaryKey := "id"
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
-	pkgLogger.Infof("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
+		pkgLogger.Errorf("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 		pkgLogger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
 		tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, warehouseutils.DoubleQuoteAndJoinByComma(append([]string{"id"}, userColNames...)))
 	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 
@@ -649,6 +646,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		return
 	}
 	if err == sql.ErrNoRows {
+		pkgLogger.Infof("RS: No rows, while fetching schema from  destination:%v, query: %v", rs.Warehouse.Identifier, sqlStatement)
 		return schema, nil
 	}
 	defer rows.Close()
@@ -742,7 +740,7 @@ func (rs *HandleT) LoadUserTables() map[string]error {
 }
 
 func (rs *HandleT) LoadTable(tableName string) error {
-	_, err := rs.loadTable(tableName, rs.Uploader.GetTableSchemaInUpload(tableName), rs.Uploader.GetTableSchemaAfterUpload(tableName), false)
+	_, err := rs.loadTable(tableName, rs.Uploader.GetTableSchemaInUpload(tableName), rs.Uploader.GetTableSchemaInWarehouse(tableName), false)
 	return err
 }
 

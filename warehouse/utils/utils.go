@@ -124,7 +124,7 @@ type StagingFileT struct {
 
 type UploaderI interface {
 	GetSchemaInWarehouse() SchemaT
-	GetTableSchemaAfterUpload(tableName string) TableSchemaT
+	GetTableSchemaInWarehouse(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
 	GetLoadFileLocations(tableName string) ([]string, error)
 	GetSampleLoadFileLocation(tableName string) (string, error)
@@ -518,4 +518,12 @@ func IdentityMappingsUniqueMappingConstraintName(warehouse WarehouseT) string {
 
 func GetWarehouseIdentifier(destType string, sourceID string, destinationID string) string {
 	return fmt.Sprintf("%s:%s:%s", destType, sourceID, destinationID)
+}
+
+func DoubleQuoteAndJoinByComma(strs []string) string {
+	var quotedSlice []string
+	for _, str := range strs {
+		quotedSlice = append(quotedSlice, fmt.Sprintf("%q", str))
+	}
+	return strings.Join(quotedSlice, ",")
 }

@@ -336,7 +336,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	unionStagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), "users_identifies_union"), 127)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), warehouseutils.UsersTable), 127)
 
-	userColMap := pg.Uploader.GetTableSchemaAfterUpload(warehouseutils.UsersTable)
+	userColMap := pg.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "id" {
@@ -578,6 +578,7 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		return
 	}
 	if err == sql.ErrNoRows {
+		pkgLogger.Infof("PG: No rows, while fetching schema from  destination:%v, query: %v", pg.Warehouse.Identifier, sqlStatement)
 		return schema, nil
 	}
 	defer rows.Close()

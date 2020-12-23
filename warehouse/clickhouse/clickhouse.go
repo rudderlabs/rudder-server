@@ -41,6 +41,7 @@ const (
 	secure        = "secure"
 	skipVerify    = "skipVerify"
 	caCertificate = "caCertificate"
+	cluster       = "cluster"
 )
 const partitionField = "received_at"
 
@@ -186,14 +187,20 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 func columnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
-		if misc.ContainsString(notNullableColumns, columnName) {
-			arr = append(arr, fmt.Sprintf(`%s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], true)))
-		} else {
-			arr = append(arr, fmt.Sprintf(`%s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], false)))
-		}
-
+		//codec := getClickHouseCodecForColumnType(dataType)
+		columnType := getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
+		arr = append(arr, fmt.Sprintf(`%s %s`, columnName, columnType))
 	}
 	return strings.Join(arr[:], ",")
+}
+
+func getClickHouseCodecForColumnType(columnType string) string {
+	switch columnType {
+	case "datetime":
+		return "Codec(DoubleDelta, LZ4)"
+	default:
+		return ""
+	}
 }
 
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
@@ -314,10 +321,10 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		pkgLogger.Errorf("CH: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
 		return
 	}
-
-	stmt, err := txn.Prepare(fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys))))
+	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
+	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: %v", tableName, err)
+		pkgLogger.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: query:%s error:%v", tableName, sqlStatement, err)
 		return
 	}
 
@@ -360,7 +367,6 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				columnDataType := tableSchemaInUpload[columnName]
 				data := typecastDataFromType(value, columnDataType)
 				recordInterface = append(recordInterface, data)
-
 			}
 
 			_, err = stmt.Exec(recordInterface...)
@@ -384,7 +390,12 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 // createSchema creates a database in clickhouse
 func (ch *HandleT) createSchema() (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS "%s"`, ch.Namespace)
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	clusterClause := ""
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+	}
+	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS "%s" %s`, ch.Namespace, clusterClause)
 	pkgLogger.Infof("CH: Creating database in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -398,7 +409,16 @@ func (ch *HandleT) createSchema() (err error) {
 func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"id"}
 	notNullableColumns := []string{"received_at", "id"}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) ENGINE = AggregatingMergeTree() ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, columnsWithDataTypes(name, columns, notNullableColumns), getSortKeyTuple(sortKeyFields), partitionField)
+	clusterClause := ""
+	engine := "AggregatingMergeTree"
+	engineOptions := ""
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
+		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
+	}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, columnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -429,7 +449,16 @@ func (ch *HandleT) createTable(tableName string, columns map[string]string) (err
 	if tableName == warehouseutils.UsersTable {
 		return ch.createUsersTable(tableName, columns)
 	}
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) ENGINE = ReplacingMergeTree() ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, columnsWithDataTypes(tableName, columns, sortKeyFields), getSortKeyTuple(sortKeyFields), partitionField)
+	clusterClause := ""
+	engine := "ReplacingMergeTree"
+	engineOptions := ""
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
+		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
+	}
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, columnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
@@ -549,6 +578,7 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		return
 	}
 	if err == sql.ErrNoRows {
+		pkgLogger.Infof("CH: No rows, while fetching schema from  destination:%v, query: %v", ch.Warehouse.Identifier, sqlStatement)
 		return schema, nil
 	}
 	defer rows.Close()

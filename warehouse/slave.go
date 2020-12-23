@@ -150,8 +150,11 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 	var loadFileIDs []int64
 	loadFileIDChan := make(chan int64, len(jobRun.outputFileWritersMap))
 	uploadJobChan := make(chan *loadFileUploadJob, len(jobRun.outputFileWritersMap))
+	// close chan to avoid memory leak ranging over it
+	defer close(uploadJobChan)
 	uploadErrorChan := make(chan error, numLoadFileUploadWorkers)
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	for i := 0; i < numLoadFileUploadWorkers; i++ {
 		go func(ctx context.Context) {
 			for uploadJob := range uploadJobChan {
@@ -188,14 +191,11 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 			}
 		case err := <-uploadErrorChan:
 			pkgLogger.Errorf("received error while uploading load file to bucket for staging file id %s, cancelling the context: err %w", job.StagingFileID, err)
-			cancel()
 			return []int64{}, err
-		case <-time.After(3 * time.Hour):
+		case <-time.After(slaveUploadTimeout):
 			return []int64{}, fmt.Errorf("Load files upload timed out for staging file id: %v", jobRun.job.StagingFileID)
 		}
 	}
-	return loadFileIDs, nil
-
 }
 
 func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile misc.GZipWriter, tableName string) (filemanager.UploadOutput, error) {
@@ -207,7 +207,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	}
 	defer file.Close()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
-	uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.BatchID, tableName))
+	uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
 	return uploadLocation, err
 }
 

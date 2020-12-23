@@ -68,6 +68,10 @@ type HandleT struct {
 	noOfWorkers                            int
 	allowAbortedUserJobsCountForProcessing int
 	throttledUserMap                       map[string]struct{} // used before calling findWorker. A temp storage to save <userid> whose job can be throttled.
+	isBackendConfigInitialized             bool
+	backendConfigInitialized               chan bool
+	maxFailedCountForJob                   int
+	retryTimeWindow                        time.Duration
 }
 
 type jobResponseT struct {
@@ -103,14 +107,14 @@ type workerT struct {
 }
 
 var (
-	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel, ser       int
-	maxFailedCountForJob                                                    int
+	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel            int
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
 	testSinkURL                                                             string
-	retryTimeWindow, minRetryBackoff, maxRetryBackoff, jobsBatchTimeout     time.Duration
+	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout                      time.Duration
 	noOfJobsToBatchInAWorker                                                int
 	pkgLogger                                                               logger.LoggerI
 	Diagnostics                                                             diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	fixedLoopSleep                                                          time.Duration
 )
 
 type requestMetric struct {
@@ -131,17 +135,15 @@ func loadConfig() {
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	noOfJobsToBatchInAWorker = config.GetInt("Router.noOfJobsToBatchInAWorker", 20)
 	jobsBatchTimeout = config.GetDuration("Router.jobsBatchTimeoutInSec", time.Duration(5)) * time.Second
-	ser = config.GetInt("Router.ser", 3)
 	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(60)) * time.Second
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
-	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 3)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
-	retryTimeWindow = config.GetDuration("Router.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
 	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
+	fixedLoopSleep = config.GetDuration("Router.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -313,12 +315,22 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 			// END: request to destination endpoint
 
+			destinationTag := misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name)
 			routerResponseStat := stats.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
 				"destType":       worker.rt.destName,
 				"respStatusCode": strconv.Itoa(respStatusCode),
+				"destination":    destinationTag,
 			})
-
 			routerResponseStat.Count(len(destinationJob.JobMetadataArray))
+
+			if isSuccessStatus(respStatusCode) {
+				eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
+					"module":      "router",
+					"destType":    worker.rt.destName,
+					"destination": destinationTag,
+				})
+				eventsDeliveredStat.Count(len(destinationJob.JobMetadataArray))
+			}
 
 			worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
 		} else {
@@ -346,7 +358,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 			worker.postStatusOnResponseQ(respStatusCode, respBody, &destinationJobMetadata, &status)
 
-			worker.sendEventDeliveryStat(&destinationJobMetadata, &status)
+			worker.sendEventDeliveryStat(&destinationJobMetadata, &status, &destinationJob.Destination)
 
 			worker.sendDestinationResponseToConfigBackend(destinationJob.Message, &destinationJobMetadata, &status)
 		}
@@ -431,7 +443,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 			// TODO: timeElapsed should be ideally from first attempt
 			timeElapsed := time.Now().Sub(createdAt)
-			if timeElapsed > retryTimeWindow && status.AttemptNum >= maxFailedCountForJob {
+			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
 				addToFailedMap = false
 				worker.retryForJobMapMutex.Lock()
@@ -443,7 +455,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 				worker.retryForJobMapMutex.Unlock()
 			}
 		} else {
-			if status.AttemptNum >= maxFailedCountForJob {
+			if status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
 				addToFailedMap = false
 				worker.rt.eventsAbortedStat.Increment()
@@ -487,16 +499,17 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	}
 }
 
-func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
+func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
 	if destinationJobMetadata.ReceivedAt != "" {
 		if status.JobState == jobsdb.Succeeded.State {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
 			if err == nil {
+				destinationTag := misc.GetTagName(destination.ID, destination.Name)
 				eventsDeliveryTimeStat := stats.NewTaggedStat(
-					"event_delivery_time", stats.TimerType, stats.Tags{
-						"module":   "router",
-						"destType": worker.rt.destName,
-						"id":       destinationJobMetadata.DestinationID,
+					"event_delivery_time", stats.TimerType, map[string]string{
+						"module":      "router",
+						"destType":    worker.rt.destName,
+						"destination": destinationTag,
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Now().Sub(receivedTime))
@@ -614,8 +627,8 @@ func (rt *HandleT) initWorkers() {
 			routerJobs:       make([]types.RouterJobT, 0),
 			destinationJobs:  make([]types.DestinationJobT, 0),
 			rt:               rt,
-			deliveryTimeStat: stats.NewStat(fmt.Sprintf("router.%s_delivery_time", rt.destName), stats.TimerType),
-			batchTimeStat:    stats.NewStat(fmt.Sprintf("router.%s_batch_time", rt.destName), stats.TimerType),
+			deliveryTimeStat: stats.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			batchTimeStat:    stats.NewTaggedStat("router_batch_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
 			abortedUserIDMap: make(map[string]int)}
 		rt.workers[i] = worker
 		rruntime.Go(func() {
@@ -740,8 +753,8 @@ func (rt *HandleT) statusInsertLoop() {
 	//Wait for the responses from statusQ
 	lastUpdate := time.Now()
 
-	statusStat := stats.NewStat("router.status_loop", stats.TimerType)
-	countStat := stats.NewStat("router.status_events", stats.CountType)
+	statusStat := stats.NewTaggedStat("router_status_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
+	countStat := stats.NewTaggedStat("router_status_events", stats.CountType, stats.Tags{"destType": rt.destName})
 
 	for {
 		rt.perfStats.Start()
@@ -895,8 +908,8 @@ func (rt *HandleT) generatorLoop() {
 
 	rt.logger.Info("Generator started")
 
-	generatorStat := stats.NewStat("router.generator_loop", stats.TimerType)
-	countStat := stats.NewStat("router.generator_events", stats.CountType)
+	generatorStat := stats.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
+	countStat := stats.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": rt.destName})
 
 	for {
 		generatorStat.Start()
@@ -990,6 +1003,7 @@ func (rt *HandleT) generatorLoop() {
 
 		countStat.Count(len(combinedList))
 		generatorStat.End()
+		time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
 	}
 }
 
@@ -1024,6 +1038,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
+	rt.maxFailedCountForJob = getRouterConfigInt("maxFailedCountForJob", destName, 3)
+	rt.retryTimeWindow = getRouterConfigDuration("retryTimeWindowInMins", destName, time.Duration(180)) * time.Minute
+
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
@@ -1038,10 +1055,12 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 		"destType": rt.destName,
 	})
 
-	rt.retryAttemptsStat = stats.NewStat(
-		fmt.Sprintf("router.%s_retry_attempts", rt.destName), stats.CountType)
-	rt.eventsAbortedStat = stats.NewStat(
-		fmt.Sprintf("router.%s_events_aborted", rt.destName), stats.CountType)
+	rt.retryAttemptsStat = stats.NewTaggedStat(`router_retry_attempts`, stats.CountType, stats.Tags{
+		"destType": rt.destName,
+	})
+	rt.eventsAbortedStat = stats.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
+		"destType": rt.destName,
+	})
 
 	rt.transformer = transformer.NewTransformer()
 	rt.transformer.Setup()
@@ -1052,6 +1071,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.throttler = &throttler
 	rt.generatorThrottler = &generatorThrottler
 
+	rt.isBackendConfigInitialized = false
+	rt.backendConfigInitialized = make(chan bool)
+
 	rt.initWorkers()
 	rruntime.Go(func() {
 		rt.collectMetrics()
@@ -1060,6 +1082,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 		rt.statusInsertLoop()
 	})
 	rruntime.Go(func() {
+		<-rt.backendConfigInitialized
 		rt.generatorLoop()
 	})
 	rruntime.Go(func() {
@@ -1075,7 +1098,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		rt.configSubscriberLock.Lock()
 		rt.destinationsMap = map[string]backendconfig.DestinationT{}
-		allSources := config.Data.(backendconfig.SourcesT)
+		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
@@ -1084,6 +1107,10 @@ func (rt *HandleT) backendConfigSubscriber() {
 					}
 				}
 			}
+		}
+		if !rt.isBackendConfigInitialized {
+			rt.isBackendConfigInitialized = true
+			rt.backendConfigInitialized <- true
 		}
 		rt.configSubscriberLock.Unlock()
 	}

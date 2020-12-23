@@ -73,16 +73,15 @@ maxDBBatchSize = 128
 userWebRequestBatchTimeoutInMS = 15
 dbBatchWriteTimeoutInMS = 5
 maxReqSizeInKB = 4000
-enableDedup = false
 enableRateLimit = false
 enableSuppressUserFeature = true
-dedupWindowInS = 86400
 allowPartialWriteWithErrors = true
 allowReqsWithoutUserIDAndAnonymousID = false
 
 [EventSchemas]
 enableEventSchemasFeature = false
 syncIntervalInS = 5
+noOfWorkers = 128
 
 [Gateway.webhook]
 batchTimeoutInMS = 20
@@ -117,8 +116,9 @@ maxMigrateDSProbe = 10
 maxTableSizeInMB = 300
 migrateDSLoopSleepDurationInS = 30
 addNewDSLoopSleepDurationInS = 5
+refreshDSListLoopSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
-backupRowsBatchSize = 10000
+backupRowsBatchSize = 1000
 
 [JobsDB.backup]
 enabled = true
@@ -139,23 +139,24 @@ failedOnly=false
 jobQueryBatchSize = 10000
 updateStatusBatchSize = 1000
 readSleepInMS = 1000
-noOfWorkers = 64
+fixedLoopSleepInMS = 0
 noOfJobsPerChannel = 1000
 noOfJobsToBatchInAWorker = 20
 jobsBatchTimeoutInSec = 5
-ser = 3
 maxSleepInS = 60
 minSleepInS = 0
 maxStatusUpdateWaitInS = 5
 useTestSink = false
-maxFailedCountForJob = 3
 guaranteeUserEventOrder = true
 kafkaWriteTimeoutInSec = 2
 kafkaDialTimeoutInSec = 10
-retryTimeWindowInMins = 180
 minRetryBackoffInS = 10
 maxRetryBackoffInS = 300
+# Below config variables are supported per destination type too
+noOfWorkers = 64
 allowAbortedUserJobsCountForProcessing=1
+maxFailedCountForJob = 3
+retryTimeWindowInMins = 180
     [Router.BRAZE]
     forceHTTP1=true
     httpTimeoutInS=120
@@ -171,11 +172,12 @@ allowAbortedUserJobsCountForProcessing=1
 
 [BatchRouter]
 mainLoopSleepInS = 2
-noOfWorkers = 8
 jobQueryBatchSize = 100000
 uploadFreqInS = 30
-maxFailedCountForJob = 128
 warehouseServiceMaxRetryTimeinHr = 3
+# Below config variables are supported per destination type too
+noOfWorkers = 8
+maxFailedCountForJob = 128
 
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
@@ -209,8 +211,10 @@ populateHistoricIdentities = false
     poolSize = 10
 
 [Processor]
+webPort = 8086
 loopSleepInMS = 10
 maxLoopSleepInMS = 5000
+fixedLoopSleepInMS = 0
 maxLoopProcessEvents = 10000
 avgEventsInRequest = 1
 transformBatchSize = 100
@@ -226,6 +230,10 @@ errReadLoopSleepInS = 30
 errDBReadBatchSize = 10000
 noOfErrStashWorkers = 2
 maxFailedCountForErrJob = 3
+
+[Dedup]
+enableDedup = false
+dedupWindowInS = 86400
 
 [BackendConfig]
 configFromFile = false
@@ -245,9 +253,6 @@ enabled = true
 errorStorePath = "/tmp/error_store.json"
 storagePath = "/tmp/recovery_data.json"
     [recovery.normal]
-    crashThreshold = 5
-    durationInS = 300
-    [recovery.degraded]
     crashThreshold = 5
     durationInS = 300
 

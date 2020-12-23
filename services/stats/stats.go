@@ -1,8 +1,5 @@
 package stats
 
-//go:generate mockgen -destination=../../mocks/stats/mock_stats.go -package=mocks_stats github.com/rudderlabs/rudder-server/services/stats Stats
-//go:generate mockgen -destination=../../mocks/stats/mock_rudderstats.go -package=mocks_stats github.com/rudderlabs/rudder-server/services/stats RudderStats
-
 import (
 	"fmt"
 	"strings"
@@ -22,26 +19,12 @@ const (
 )
 
 var client *statsd.Client
-var writeKeyClientsMap = make(map[string]*statsd.Client)
-var batchDestClientsMap = make(map[string]*statsd.Client)
-var destClientsMap = make(map[string]*statsd.Client)
-var routerClientsMap = make(map[string]*statsd.Client)
-var procErrorClientsMap = make(map[string]*statsd.Client)
 var taggedClientsMap = make(map[string]*statsd.Client)
-var jobsdbClientsMap = make(map[string]*statsd.Client)
-var migratorsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
 var statsdServerURL string
 var instanceID string
 var conn statsd.Option
-var writeKeyClientsMapLock sync.Mutex
-var batchDestClientsMapLock sync.Mutex
-var destClientsMapLock sync.Mutex
-var routerClientsMapLock sync.Mutex
-var procErrorClientsMapLock sync.Mutex
-var taggedClientsMapLock sync.Mutex
-var jobsdbClientsMapLock sync.Mutex
-var migratorsMapLock sync.Mutex
+var taggedClientsMapLock sync.RWMutex
 var enabled bool
 var statsCollectionInterval int64
 var enableCPUStats bool
@@ -97,7 +80,6 @@ type RudderStatsT struct {
 	Name        string
 	StatType    string
 	Timing      statsd.Timing
-	writeKey    string
 	DestID      string
 	Client      *statsd.Client
 	dontProcess bool
@@ -152,16 +134,32 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 
 	tags["instanceName"] = instanceID
 	tagStr := StatType
-	tagVals := make([]string, 0, len(tags)*2)
+	tags["instanceName"] = instanceID
 	for tagName, tagVal := range tags {
 		tagName = strings.ReplaceAll(tagName, ":", "-")
-		tagVal = strings.ReplaceAll(tagVal, ":", "-")
 		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
-		tagVals = append(tagVals, tagName, tagVal)
 	}
-	if _, found := taggedClientsMap[tagStr]; !found {
+
+	taggedClientsMapLock.RLock()
+	taggedClient, found := taggedClientsMap[tagStr]
+	taggedClientsMapLock.RUnlock()
+
+	if !found {
+		taggedClientsMapLock.Lock()
+		tagVals := make([]string, 0, len(tags)*2)
+		for tagName, tagVal := range tags {
+			tagName = strings.ReplaceAll(tagName, ":", "-")
+			tagVal = strings.ReplaceAll(tagVal, ":", "-")
+			tagVals = append(tagVals, tagName, tagVal)
+		}
 		var err error
+<<<<<<< HEAD
 		taggedClientsMap[tagStr], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+=======
+		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...))
+		taggedClientsMap[tagStr] = taggedClient
+		taggedClientsMapLock.Unlock()
+>>>>>>> origin/master
 		if err != nil {
 			pkgLogger.Error(err)
 		}
@@ -170,7 +168,7 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 	return &RudderStatsT{
 		Name:        Name,
 		StatType:    StatType,
-		Client:      taggedClientsMap[tagStr],
+		Client:      taggedClient,
 		dontProcess: false,
 	}
 }
@@ -179,6 +177,7 @@ func NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats)
 	return DefaultStats.NewTaggedStat(Name, StatType, tags)
 }
 
+<<<<<<< HEAD
 func NewSampledTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
 	return DefaultStats.NewSampledTaggedStat(Name, StatType, tags, samplingRate)
 }
@@ -209,6 +208,8 @@ func (s *HandleT) NewWriteKeyStat(Name string, StatType string, writeKey string)
 	}
 }
 
+=======
+>>>>>>> origin/master
 // Count increases the stat by n. Only applies to CountType stats
 func (rStats *RudderStatsT) Count(n int) {
 	if !statsEnabled || rStats.dontProcess {
