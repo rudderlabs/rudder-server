@@ -3128,3 +3128,12 @@ func (jd *HandleT) CheckPGHealth() bool {
 	defer rows.Close()
 	return true
 }
+
+func (jd *HandleT) GetLastJobID() int64 {
+	jd.dsListLock.Lock()
+	dsList := jd.getDSList(false)
+	jd.dsListLock.Unlock()
+
+	maxDSID := jd.GetMaxDSIndex()
+	return jd.GetMaxIDForDs(dsList[maxDSID-1])
+}

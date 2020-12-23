@@ -3,7 +3,6 @@ package router
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/router/drain"
 	"github.com/tidwall/gjson"
 	"math"
 	"math/rand"
@@ -74,7 +73,7 @@ type HandleT struct {
 	backendConfigInitialized               chan bool
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
-	drainJobHandler                        drain.DrainI
+	drainJobHandler                        DrainI//drain.DrainI
 }
 
 type jobResponseT struct {
@@ -108,6 +107,22 @@ type workerT struct {
 	abortedUserIDMap    map[string]int // aborted user to count of jobs allowed map
 	abortedUserMutex    sync.Mutex
 }
+type DrainI interface {
+	//CanJobBeDrained(id int64) bool
+	//CanJobBeDrained(job *jobsdb.JobT) bool
+	CanJobBeDrained(jobID int64, destID string) bool
+}
+
+type DrainConfig struct {
+	MinDrainJobID      int64  `json:"minDrainJobID"`
+	MaxDrainJobID      int64  `json:"maxDrainJobID"`
+	DrainDestinationID string `json:"drainDestinationID"`
+}
+type DrainHandleT struct {
+	DrainConfigs 		[]*DrainConfig
+	drainUpdateLock    sync.RWMutex
+	rt 					*HandleT
+}
 
 var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel            int
@@ -118,6 +133,8 @@ var (
 	pkgLogger                                                               logger.LoggerI
 	Diagnostics                                                             diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                          time.Duration
+	drainHandler 															*DrainHandleT
+
 )
 
 type requestMetric struct {
@@ -1062,7 +1079,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	rt.maxFailedCountForJob = getRouterConfigInt("maxFailedCountForJob", destName, 3)
 	rt.retryTimeWindow = getRouterConfigDuration("retryTimeWindowInMins", destName, time.Duration(180)) * time.Minute
-	rt.drainJobHandler = drain.GetDrainJobHandler()
+	rt.drainJobHandler = setup(rt)//drain.GetDrainJobHandler()
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
@@ -1138,6 +1155,44 @@ func (rt *HandleT) backendConfigSubscriber() {
 	}
 }
 
-func (rt *HandleT) MaxJobId() int64{
-	return rt.jobsDB.GetLastJobIDBeforeImport()
+//func (rt *HandleT) MaxJobId() int64{
+//	return rt.jobsDB.GetLastJobIDBeforeImport()
+//}
+
+func setup(rtHandle *HandleT) *DrainHandleT{
+	drainHandler = &DrainHandleT{
+		rt: rtHandle,
+	}
+	return drainHandler
+}
+
+func SetDrainJobIDs(minID int64, maxID int64, destID string) (*DrainHandleT, error) {
+	if maxID == 0 {
+		maxID = drainHandler.rt.jobsDB.GetLastJobID()
+	}
+	if(maxID < minID) {
+		return drainHandler, fmt.Errorf("maxID : %d < minID : %d ,skipping drain config update", maxID, minID)
+	}
+	drainHandler.drainUpdateLock.Lock()
+	newDrainConfig := &DrainConfig{MinDrainJobID: minID, MaxDrainJobID: maxID, DrainDestinationID: destID}
+	drainHandler.DrainConfigs = append(drainHandler.DrainConfigs, newDrainConfig)
+	drainHandler.drainUpdateLock.Unlock()
+
+	pkgLogger.Infof(" New Drain config added : MinJobID : %d, MaxJobID : %d, DestID : %s", newDrainConfig.MinDrainJobID, newDrainConfig.MaxDrainJobID, newDrainConfig.DrainDestinationID)
+	return drainHandler, nil
+}
+
+func GetDrainJobHandler() *DrainHandleT {
+	return drainHandler
+}
+
+
+func (d *DrainHandleT) CanJobBeDrained(jobID int64, destID string) bool {
+	for _, dConfig := range d.DrainConfigs{
+		pkgLogger.Info("Checking against : ", dConfig.MinDrainJobID, dConfig.MaxDrainJobID, dConfig.DrainDestinationID, "current Jon : ", jobID)
+		if dConfig.DrainDestinationID == destID && dConfig.MinDrainJobID <= jobID && jobID < dConfig.MaxDrainJobID {
+			return true
+		}
+	}
+	return false
 }

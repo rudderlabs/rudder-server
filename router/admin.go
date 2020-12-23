@@ -1,6 +1,10 @@
 package router
 
-import "github.com/rudderlabs/rudder-server/admin"
+import (
+	"encoding/json"
+	"fmt"
+	"github.com/rudderlabs/rudder-server/admin"
+)
 
 type RouterAdmin struct {
 	handles map[string]*HandleT
@@ -13,6 +17,7 @@ func init() {
 		handles: make(map[string]*HandleT),
 	}
 	admin.RegisterStatusHandler("routers", adminInstance)
+	admin.RegisterAdminHandler("Router", &RouterRpcHandler{})
 }
 
 func (ra *RouterAdmin) registerRouter(name string, handle *HandleT) {
@@ -30,4 +35,35 @@ func (ra *RouterAdmin) Status() interface{} {
 		statusList = append(statusList, routerStatus)
 	}
 	return statusList
+}
+
+type RouterRpcHandler struct {
+}
+
+func (r *RouterRpcHandler) SetDrainJobsConfig(dHandle DrainConfig, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+
+	_, err = SetDrainJobIDs(dHandle.MinDrainJobID, dHandle.MaxDrainJobID, dHandle.DrainDestinationID)
+	if err == nil {
+		*reply = fmt.Sprintf("Drain config updated")
+	}
+	return err
+}
+
+func (r *RouterRpcHandler) GetDrainJobsConfig(noArgs struct{}, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	drainHandler := GetDrainJobHandler()
+	formattedOutput, err := json.MarshalIndent(drainHandler, "", "  ")
+	*reply = string(formattedOutput)
+	return err
 }
