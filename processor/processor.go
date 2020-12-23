@@ -93,14 +93,21 @@ type DestStatT struct {
 }
 
 type DBWritePayloadT struct {
-	jobs []*jobsdb.JobT
-	wg   *sync.WaitGroup
-	txn  *sql.Tx
+	destCategory destCategory
+	jobs         []*jobsdb.JobT
+	wg           *sync.WaitGroup
+	txn          *sql.Tx
 }
 
+type destCategory string
+
+const (
+	httpRouter  destCategory = "rt"
+	batchRouter destCategory = "brt"
+)
+
 var (
-	routerDBWriterChan      chan *DBWritePayloadT
-	batchRouterDBWriterChan chan *DBWritePayloadT
+	dbWriterChan chan *DBWritePayloadT
 )
 
 func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) *DestStatT {
@@ -160,8 +167,7 @@ func (proc *HandleT) Print() {
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("processor")
-	routerDBWriterChan = make(chan *DBWritePayloadT, 10000)
-	batchRouterDBWriterChan = make(chan *DBWritePayloadT, 10000)
+	dbWriterChan = make(chan *DBWritePayloadT, 10000)
 }
 
 // NewProcessor creates a new Processor intanstace
@@ -245,11 +251,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 // Start starts this processor's main loops.
 func (proc *HandleT) Start() {
 	rruntime.Go(func() {
-		proc.routerDBWriterLoop()
-	})
-
-	rruntime.Go(func() {
-		proc.batchRouterDBWriterLoop()
+		proc.destDBWriterLoop()
 	})
 
 	rruntime.Go(func() {
@@ -1016,12 +1018,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			wg.Add(1)
 			payload := DBWritePayloadT{jobs: outputJobs, wg: &wg, txn: txn}
 			if misc.Contains(rawDataDestinations, outputJobs[0].CustomVal) {
-				totalRouterEvents += len(outputJobs)
-				batchRouterDBWriterChan <- &payload
-			} else {
+				payload.destCategory = batchRouter
 				totalBatchRouterEvents += len(outputJobs)
-				routerDBWriterChan <- &payload
+			} else {
+				payload.destCategory = httpRouter
+				totalRouterEvents += len(outputJobs)
 			}
+			dbWriterChan <- &payload
 		}
 	}
 
@@ -1036,11 +1039,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Start()
 
 	if totalRouterEvents > 0 {
-		proc.logger.Debug("[Processor] Total jobs written to router : ", totalRouterEvents)
+		proc.logger.Debugf("[Processor] Total jobs written to router : %d", totalRouterEvents)
 		proc.statDestNumOutputEvents.Count(totalRouterEvents)
 	}
 	if totalBatchRouterEvents > 0 {
-		proc.logger.Debug("[Processor] Total jobs written to batch router : ", totalBatchRouterEvents)
+		proc.logger.Debugf("[Processor] Total jobs written to batch router : %d", totalBatchRouterEvents)
 		proc.statBatchDestNumOutputEvents.Count(totalBatchRouterEvents)
 	}
 
@@ -1083,18 +1086,14 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Print()
 }
 
-func (proc *HandleT) routerDBWriterLoop() {
+func (proc *HandleT) destDBWriterLoop() {
 	for {
-		payload := <-routerDBWriterChan
-		proc.routerDB.StoreInTxn(payload.txn, payload.jobs)
-		payload.wg.Done()
-	}
-}
-
-func (proc *HandleT) batchRouterDBWriterLoop() {
-	for {
-		payload := <-batchRouterDBWriterChan
-		proc.batchRouterDB.StoreInTxn(payload.txn, payload.jobs)
+		payload := <-dbWriterChan
+		if payload.destCategory == httpRouter {
+			proc.routerDB.StoreInTxn(payload.txn, payload.jobs)
+		} else if payload.destCategory == batchRouter {
+			proc.batchRouterDB.StoreInTxn(payload.txn, payload.jobs)
+		}
 		payload.wg.Done()
 	}
 }
