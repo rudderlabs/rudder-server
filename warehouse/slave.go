@@ -10,9 +10,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/patrickmn/go-cache"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -27,6 +29,10 @@ const (
 	SlaveProcessedJobStatus = "processed"
 	SlaveClaimingJobStatus  = "claiming"
 	SlaveClaimedJobStatus   = "claimed"
+)
+
+var (
+	statusCache *cache.Cache
 )
 
 // Temporary store for processing staging file to load file
@@ -475,15 +481,15 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 }
 
 func removeJobFromStatusMap(jobID int64) {
-	slaveClaimedJobsMapLock.Lock()
-	delete(slaveClaimedJobsMap, jobID)
-	slaveClaimedJobsMapLock.Unlock()
+	statusCache.Delete(strconv.FormatInt(jobID, 10))
 }
 
 func setInJobStatusMap(jobID int64, status string) {
-	slaveClaimedJobsMapLock.Lock()
-	slaveClaimedJobsMap[jobID] = status
-	slaveClaimedJobsMapLock.Unlock()
+	expiration := cache.DefaultExpiration
+	if status == SlaveProcessedJobStatus {
+		expiration = config.GetDuration("Warehouse.slaveStatusCacheExpiryInMins", time.Duration(30)) * time.Minute
+	}
+	statusCache.Set(strconv.FormatInt(jobID, 10), status, expiration)
 }
 
 func claimAndProcess(workerIdx int, slaveID string, jobID int64) {
@@ -523,6 +529,7 @@ func claimAndProcess(workerIdx int, slaveID string, jobID int64) {
 }
 
 func setupSlave() {
+	statusCache = cache.New(cache.NoExpiration, 5*time.Minute)
 	slaveWorkerRoutineBusy = make([]bool, noOfSlaveWorkerRoutines)
 	slaveID := uuid.NewV4().String()
 	rruntime.Go(func() {
@@ -533,14 +540,10 @@ func setupSlave() {
 		}
 		for {
 			ev := <-jobNotificationChannel
-			slaveClaimedJobsMapLock.Lock()
-			// TODO: when to remove processed jobs from statusMap. use map with key expiry?
-			if status, ok := slaveClaimedJobsMap[ev.ID]; ok {
+			if status, ok := statusCache.Get(strconv.FormatInt(ev.ID, 10)); ok {
 				pkgLogger.Debugf("Skipping claim of %d since its %s", ev.ID, status)
-				slaveClaimedJobsMapLock.Unlock()
 				continue
 			}
-			slaveClaimedJobsMapLock.Unlock()
 			pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
 			for workerIdx := 1; workerIdx <= noOfSlaveWorkerRoutines; workerIdx++ {
 				if !slaveWorkerRoutineBusy[workerIdx-1] {

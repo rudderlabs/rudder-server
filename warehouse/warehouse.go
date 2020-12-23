@@ -43,8 +43,6 @@ var (
 	noOfWorkers                         int
 	noOfSlaveWorkerRoutines             int
 	slaveWorkerRoutineBusy              []bool //Busy-true
-	slaveClaimedJobsMap                 map[int64]string
-	slaveClaimedJobsMapLock             sync.RWMutex
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
 	mainLoopSleep                       time.Duration
@@ -145,7 +143,6 @@ func loadConfig() {
 	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
 	slaveUploadTimeout = config.GetDuration("Warehouse.slaveUploadTimeoutInMin", time.Duration(10)) * time.Minute
 	numLoadFileUploadWorkers = config.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
-	slaveClaimedJobsMap = map[int64]string{}
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
