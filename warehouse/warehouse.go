@@ -999,9 +999,11 @@ func Start() {
 		panic(err)
 	}
 
+	var slaveDBMaxConns int
 	// if running slave in standalone mode, set maxOpenConns to 1 by default
 	if isSlave() && isStandAlone() && !isMaster() {
 		dbHandle.SetMaxOpenConns(1)
+		slaveDBMaxConns = 1
 	}
 
 	isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)
@@ -1028,7 +1030,7 @@ func Start() {
 		return
 	}
 
-	notifier, err = pgnotifier.New(getConnectionString(), dbHandle)
+	notifier, err = pgnotifier.New(getConnectionString(), dbHandle, slaveDBMaxConns)
 	if err != nil {
 		panic(err)
 	}

@@ -42,8 +42,9 @@ func init() {
 }
 
 type PgNotifierT struct {
-	URI      string
-	dbHandle *sql.DB
+	URI              string
+	dbHandle         *sql.DB
+	dbHandleForLocks *sql.DB
 }
 
 type MessageT struct {
@@ -75,11 +76,20 @@ type ClaimResponseT struct {
 	Err     error
 }
 
-func New(connectionInfo string, dbHandle *sql.DB) (notifier PgNotifierT, err error) {
+func New(connectionInfo string, dbHandle *sql.DB, maxConnsSet int) (notifier PgNotifierT, err error) {
 	pkgLogger.Infof("PgNotifier: Initializing PgNotifier...")
+	dbHandleForLocks := dbHandle
+	if maxConnsSet != 1 {
+		dbHandleForLocks, err = sql.Open("postgres", connectionInfo)
+		if err != nil {
+			panic(err)
+		}
+		dbHandleForLocks.SetMaxOpenConns(1)
+	}
 	notifier = PgNotifierT{
-		dbHandle: dbHandle,
-		URI:      connectionInfo,
+		URI:              connectionInfo,
+		dbHandle:         dbHandle,
+		dbHandleForLocks: dbHandleForLocks,
 	}
 	err = notifier.setupQueue()
 	return
@@ -183,7 +193,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 
 func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT) {
 	rruntime.Go(func() {
-		defer notifier.dbHandle.Exec(fmt.Sprintf(`SELECT pg_advisory_unlock(%d)`, id))
+		defer notifier.dbHandleForLocks.Exec(fmt.Sprintf(`SELECT pg_advisory_unlock(%d)`, id))
 		response := <-ch
 		var err error
 		if response.Err != nil {
@@ -211,7 +221,7 @@ func (notifier *PgNotifierT) Claim(jobID int64, workerID string) (claim ClaimT, 
 	var batchID, status string
 	var payload json.RawMessage
 
-	err := notifier.dbHandle.QueryRow(fmt.Sprintf(`SELECT pg_try_advisory_lock(%d)`, jobID)).Scan(&claimed)
+	err := notifier.dbHandleForLocks.QueryRow(fmt.Sprintf(`SELECT pg_try_advisory_lock(%d)`, jobID)).Scan(&claimed)
 
 	if err != nil {
 		pkgLogger.Errorf("PgNotifier: Failed to query getting advisory lock: %v", err)
@@ -232,7 +242,7 @@ func (notifier *PgNotifierT) Claim(jobID int64, workerID string) (claim ClaimT, 
 	err = notifier.dbHandle.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 	if err != nil {
 		pkgLogger.Errorf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
-		notifier.dbHandle.Exec(fmt.Sprintf(`SELECT pg_advisory_unlock(%d)`, jobID))
+		notifier.dbHandleForLocks.Exec(fmt.Sprintf(`SELECT pg_advisory_unlock(%d)`, jobID))
 		return claim, false
 	}
 
