@@ -74,7 +74,6 @@ var (
 	diagnosisTickerTime                                         time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                        bool
 	pkgLogger                                                   logger.LoggerI
-	latencyStatSamplingRate                                     float64
 	Diagnostics                                                 diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
 
@@ -524,7 +523,7 @@ func (gateway *HandleT) printStats() {
 
 func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		latencyStat := gateway.stats.NewSampledTaggedStat("gateway.response_time", stats.TimerType, stats.Tags{}, float32(latencyStatSamplingRate))
+		latencyStat := gateway.stats.NewSampledTaggedStat("gateway.response_time", stats.TimerType, stats.Tags{})
 		latencyStat.Start()
 		wrappedFunc(w, r)
 		latencyStat.End()

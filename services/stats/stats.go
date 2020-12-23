@@ -32,6 +32,7 @@ var enableMemStats bool
 var enableGCStats bool
 var rc runtimeStatsCollector
 var pkgLogger logger.LoggerI
+var statsSamplingRate float32
 
 // DefaultStats is a common implementation of StatsD stats managements
 var DefaultStats Stats
@@ -45,6 +46,8 @@ func init() {
 	enableCPUStats = config.GetBool("RuntimeStats.enableCPUStats", true)
 	enableMemStats = config.GetBool("RuntimeStats.enabledMemStats", true)
 	enableGCStats = config.GetBool("RuntimeStats.enableGCStats", true)
+	statsSamplingRate = float32(config.GetFloat64("statsSamplingRate", 0.2))
+
 	pkgLogger = logger.NewLogger().Child("stats")
 
 }
@@ -55,7 +58,7 @@ type Tags map[string]string
 type Stats interface {
 	NewStat(Name string, StatType string) (rStats RudderStats)
 	NewTaggedStat(Name string, StatType string, tags Tags) RudderStats
-	NewSampledTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) RudderStats
+	NewSampledTaggedStat(Name string, StatType string, tags Tags) RudderStats
 }
 
 // HandleT is the default implementation of Stats
@@ -124,15 +127,11 @@ func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats
 	return newTaggedStat(Name, StatType, tags, 1)
 }
 
-func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
-	return newTaggedStat(Name, StatType, tags, samplingRate)
+func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
+	return newTaggedStat(Name, StatType, tags, statsSamplingRate)
 }
 
 func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
-	taggedClientsMapLock.Lock()
-	defer taggedClientsMapLock.Unlock()
-
-	tags["instanceName"] = instanceID
 	tagStr := StatType
 	tags["instanceName"] = instanceID
 	for tagName, tagVal := range tags {
@@ -153,13 +152,9 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 			tagVals = append(tagVals, tagName, tagVal)
 		}
 		var err error
-<<<<<<< HEAD
-		taggedClientsMap[tagStr], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
-=======
-		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...))
+		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
 		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
->>>>>>> origin/master
 		if err != nil {
 			pkgLogger.Error(err)
 		}
@@ -177,39 +172,6 @@ func NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats)
 	return DefaultStats.NewTaggedStat(Name, StatType, tags)
 }
 
-<<<<<<< HEAD
-func NewSampledTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
-	return DefaultStats.NewSampledTaggedStat(Name, StatType, tags, samplingRate)
-}
-
-/*
-NewWriteKeyStat is used to create new writekey specific stat.
-Writekey is added as the value of 'writekey' tags in this case.
-If writekey has been used on this function before, a RudderStats with the same underlying client will be returned.
-*/
-func (s *HandleT) NewWriteKeyStat(Name string, StatType string, writeKey string) (rStats RudderStats) {
-	writeKeyClientsMapLock.Lock()
-	defer writeKeyClientsMapLock.Unlock()
-	if _, found := writeKeyClientsMap[writeKey]; !found {
-		var err error
-		writeKeyClientsMap[writeKey], err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "writekey", writeKey))
-		if err != nil {
-			// If nothing is listening on the target port, an error is returned and
-			// the returned client does nothing but is still usable. So we can
-			// just log the error and go on.
-			pkgLogger.Error(err)
-		}
-	}
-	return &RudderStatsT{
-		Name:     Name,
-		StatType: StatType,
-		writeKey: writeKey,
-		Client:   writeKeyClientsMap[writeKey],
-	}
-}
-
-=======
->>>>>>> origin/master
 // Count increases the stat by n. Only applies to CountType stats
 func (rStats *RudderStatsT) Count(n int) {
 	if !statsEnabled || rStats.dontProcess {
