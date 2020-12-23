@@ -58,21 +58,26 @@ type BackupSettingsT struct {
 	PathPrefix    string
 }
 
-//GetGlobalDBHandle returns a sql.DB handle to be used across jobsdb instances
-func GetGlobalDBHandle() *sql.DB {
+var globalDBHandle *sql.DB
+
+//initGlobalDBHandle inits a sql.DB handle to be used across jobsdb instances
+func (jd *HandleT) initGlobalDBHandle() {
+	if globalDBHandle != nil {
+		return
+	}
+
 	psqlInfo := GetConnectionString()
 
-	dbHandle, err := sql.Open("postgres", psqlInfo)
+	var err error
+	globalDBHandle, err = sql.Open("postgres", psqlInfo)
 	if err != nil {
 		panic(err)
 	}
-
-	return dbHandle
 }
 
-//BeginTransaction starts a transaction
-func BeginTransaction(dbHandle *sql.DB) *sql.Tx {
-	txn, err := dbHandle.Begin()
+//BeginGlobalTransaction starts a transaction on the globalDBHandle to be used across jobsdb instances
+func (jd *HandleT) BeginGlobalTransaction() *sql.Tx {
+	txn, err := globalDBHandle.Begin()
 	if err != nil {
 		panic(err)
 	}
@@ -81,7 +86,7 @@ func BeginTransaction(dbHandle *sql.DB) *sql.Tx {
 }
 
 //CommitTransaction commits the passed transaction
-func CommitTransaction(txn *sql.Tx) {
+func (jd *HandleT) CommitTransaction(txn *sql.Tx) {
 	err := txn.Commit()
 	if err != nil {
 		panic(err)
@@ -92,6 +97,8 @@ func CommitTransaction(txn *sql.Tx) {
 JobsDB interface contains public methods to access JobsDB data
 */
 type JobsDB interface {
+	BeginGlobalTransaction() *sql.Tx
+	CommitTransaction(txn *sql.Tx)
 	StoreInTxn(txHandler *sql.Tx, jobList []*JobT)
 	Store(jobList []*JobT)
 	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
@@ -456,6 +463,7 @@ in the retention time
 */
 func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
 
+	jd.initGlobalDBHandle()
 	jd.ownerType = ownerType
 	jd.logger = pkgLogger.Child(tablePrefix)
 	var err error

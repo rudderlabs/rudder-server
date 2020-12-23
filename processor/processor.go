@@ -36,7 +36,6 @@ import (
 
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
-	jobsdbHandle                 *sql.DB
 	backendConfig                backendconfig.BackendConfig
 	processSessions              bool
 	sessionThresholdEvents       int
@@ -81,6 +80,7 @@ type HandleT struct {
 	logger                       logger.LoggerI
 	eventSchemaHandler           types.EventSchemasI
 	dedupHandler                 dedup.DedupI
+	dbWriterChan                 chan *DBWritePayloadT
 }
 
 type DestStatT struct {
@@ -104,10 +104,6 @@ type destCategory string
 const (
 	httpRouter  destCategory = "rt"
 	batchRouter destCategory = "brt"
-)
-
-var (
-	dbWriterChan chan *DBWritePayloadT
 )
 
 func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) *DestStatT {
@@ -167,7 +163,6 @@ func (proc *HandleT) Print() {
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("processor")
-	dbWriterChan = make(chan *DBWritePayloadT, 10000)
 }
 
 // NewProcessor creates a new Processor intanstace
@@ -181,7 +176,6 @@ func NewProcessor() *HandleT {
 
 //Setup initializes the module
 func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool) {
-	proc.jobsdbHandle = jobsdb.GetGlobalDBHandle()
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -190,6 +184,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
 	proc.errorDB = errorDB
+
+	proc.dbWriterChan = make(chan *DBWritePayloadT, 10000)
+
 	proc.pStatsJobs = &misc.PerfStats{}
 	proc.pStatsDBR = &misc.PerfStats{}
 	proc.pStatsDBW = &misc.PerfStats{}
@@ -246,13 +243,14 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 			proc.createSessions()
 		})
 	}
+
+	rruntime.Go(func() {
+		proc.destDBWriterLoop()
+	})
 }
 
 // Start starts this processor's main loops.
 func (proc *HandleT) Start() {
-	rruntime.Go(func() {
-		proc.destDBWriterLoop()
-	})
 
 	rruntime.Go(func() {
 		proc.mainLoop()
@@ -901,7 +899,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	transformationBatchSize := int(math.Max(float64(transformBatchSize), float64(userTransformBatchSize)))
 	var wg sync.WaitGroup
-	txn := jobsdb.BeginTransaction(proc.jobsdbHandle)
+	txn := proc.gatewayDB.BeginGlobalTransaction()
 
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
@@ -1024,7 +1022,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				payload.destCategory = httpRouter
 				totalRouterEvents += len(outputJobs)
 			}
-			dbWriterChan <- &payload
+			proc.dbWriterChan <- &payload
 		}
 	}
 
@@ -1053,7 +1051,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 	if len(procErrorJobs) > 0 {
 		proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobs))
-		proc.errorDB.Store(procErrorJobs)
+		proc.errorDB.StoreInTxn(txn, procErrorJobs)
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
 
@@ -1071,7 +1069,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 	}
 
-	jobsdb.CommitTransaction(txn)
+	proc.gatewayDB.CommitTransaction(txn)
 
 	proc.statDBW.End()
 	proc.pStatsDBW.End(len(statusList))
@@ -1088,7 +1086,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 func (proc *HandleT) destDBWriterLoop() {
 	for {
-		payload := <-dbWriterChan
+		payload := <-proc.dbWriterChan
 		if payload.destCategory == httpRouter {
 			proc.routerDB.StoreInTxn(payload.txn, payload.jobs)
 		} else if payload.destCategory == batchRouter {

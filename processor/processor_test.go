@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -447,6 +448,8 @@ var _ = Describe("Processor", func() {
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1)
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 
+			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
+
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledA: {
 					events:                    3,
@@ -471,16 +474,16 @@ var _ = Describe("Processor", func() {
 			}
 
 			// One Store call is expected for all events
-			callStoreRouter := c.mockRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).
-				Do(func(jobs []*jobsdb.JobT) {
+			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTxn(nil, gomock.Any()).Times(1).
+				Do(func(txn *sql.Tx, jobs []*jobsdb.JobT) {
 					Expect(jobs).To(HaveLen(2))
 					for i, job := range jobs {
 						assertStoreJob(job, i, "value-enabled-destination-a")
 					}
 				})
 
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter).
-				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter).
+				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
 					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1) // id 1002
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1) // id 1010
@@ -488,6 +491,9 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2003
 					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
+
+			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil)
+
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
@@ -610,6 +616,8 @@ var _ = Describe("Processor", func() {
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1)
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 
+			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
+
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledB: {
 					events:                    3,
@@ -653,16 +661,16 @@ var _ = Describe("Processor", func() {
 				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer", "received_at": ""}`))
 			}
 
-			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).
-				Do(func(jobs []*jobsdb.JobT) {
+			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().StoreInTxn(nil, gomock.Any()).Times(1).
+				Do(func(txn *sql.Tx, jobs []*jobsdb.JobT) {
 					Expect(jobs).To(HaveLen(2))
 					for i, job := range jobs {
 						assertStoreJob(job, i, "value-enabled-destination-b")
 					}
 				})
 
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
-				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
+				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
 					assertJobStatus(unprocessedJobsList[1], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1) // id 1002
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1) // id 1010
@@ -670,6 +678,9 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2003
 					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
+
+			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil)
+
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledOnlyUT).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 			var processor *HandleT = &HandleT{
@@ -1190,6 +1201,8 @@ var _ = Describe("Processor", func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
 
+			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
+
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
@@ -1202,20 +1215,23 @@ var _ = Describe("Processor", func() {
 					FailedEvents: transformerResponses,
 				})
 
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
-				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
 				})
 
 			// One Store call is expected for all events
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
-				Do(func(jobs []*jobsdb.JobT) {
+			c.mockProcErrorsDB.EXPECT().StoreInTxn(nil, gomock.Any()).Times(1).
+				Do(func(txn *sql.Tx, jobs []*jobsdb.JobT) {
 					Expect(jobs).To(HaveLen(2))
 					for i, job := range jobs {
 						assertErrStoreJob(job, i, "value-enabled-destination-a")
 					}
 				})
+
+			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
+
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
@@ -1301,6 +1317,8 @@ var _ = Describe("Processor", func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
 
+			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
+
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
@@ -1314,20 +1332,23 @@ var _ = Describe("Processor", func() {
 					FailedEvents: transformerResponses,
 				})
 
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
-				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
+				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
 				})
 
 			// One Store call is expected for all events
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
-				Do(func(jobs []*jobsdb.JobT) {
+			c.mockProcErrorsDB.EXPECT().StoreInTxn(nil, gomock.Any()).Times(1).
+				Do(func(txn *sql.Tx, jobs []*jobsdb.JobT) {
 					Expect(jobs).To(HaveLen(1))
 					for _, job := range jobs {
 						assertErrStoreJob(job)
 					}
 				})
+
+			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
+
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 			var processor *HandleT = &HandleT{
