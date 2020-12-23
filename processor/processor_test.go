@@ -449,6 +449,8 @@ var _ = Describe("Processor", func() {
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 
 			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().AcquireStoreLock().Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().AcquireStoreLock().Times(1)
 
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledA: {
@@ -482,6 +484,8 @@ var _ = Describe("Processor", func() {
 					}
 				})
 
+			c.mockProcErrorsDB.EXPECT().AcquireStoreLock().Times(1)
+			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter).
 				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
@@ -492,7 +496,11 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
 
-			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil)
+			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().ReleaseStoreLock().Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().ReleaseStoreLock().Times(1)
+			c.mockProcErrorsDB.EXPECT().ReleaseStoreLock().Times(1)
+			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
 
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
@@ -617,6 +625,8 @@ var _ = Describe("Processor", func() {
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
 
 			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().AcquireStoreLock().Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().AcquireStoreLock().Times(1)
 
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledB: {
@@ -669,6 +679,8 @@ var _ = Describe("Processor", func() {
 					}
 				})
 
+			c.mockProcErrorsDB.EXPECT().AcquireStoreLock().Times(1)
+			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
 				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
@@ -679,7 +691,11 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
 
-			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil)
+			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().ReleaseStoreLock().Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().ReleaseStoreLock().Times(1)
+			c.mockProcErrorsDB.EXPECT().ReleaseStoreLock().Times(1)
+			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
 
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledOnlyUT).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
@@ -1202,6 +1218,8 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
 
 			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().AcquireStoreLock().Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().AcquireStoreLock().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
@@ -1215,6 +1233,8 @@ var _ = Describe("Processor", func() {
 					FailedEvents: transformerResponses,
 				})
 
+			c.mockProcErrorsDB.EXPECT().AcquireStoreLock().Times(1)
+			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
 				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
@@ -1231,6 +1251,10 @@ var _ = Describe("Processor", func() {
 				})
 
 			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().ReleaseStoreLock().Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().ReleaseStoreLock().Times(1)
+			c.mockProcErrorsDB.EXPECT().ReleaseStoreLock().Times(1)
+			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
 
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
@@ -1318,6 +1342,8 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
 
 			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().AcquireStoreLock().Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().AcquireStoreLock().Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
@@ -1332,6 +1358,8 @@ var _ = Describe("Processor", func() {
 					FailedEvents: transformerResponses,
 				})
 
+			c.mockProcErrorsDB.EXPECT().AcquireStoreLock().Times(1)
+			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
 				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
@@ -1348,6 +1376,10 @@ var _ = Describe("Processor", func() {
 				})
 
 			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().ReleaseStoreLock().Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().ReleaseStoreLock().Times(1)
+			c.mockProcErrorsDB.EXPECT().ReleaseStoreLock().Times(1)
+			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
 
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()

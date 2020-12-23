@@ -900,6 +900,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	transformationBatchSize := int(math.Max(float64(transformBatchSize), float64(userTransformBatchSize)))
 	var wg sync.WaitGroup
 	txn := proc.gatewayDB.BeginGlobalTransaction()
+	proc.routerDB.AcquireStoreLock()
+	proc.batchRouterDB.AcquireStoreLock()
 
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
@@ -1049,12 +1051,15 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	for _, jobs := range procErrorJobsByDestID {
 		procErrorJobs = append(procErrorJobs, jobs...)
 	}
+
+	proc.errorDB.AcquireStoreLock()
 	if len(procErrorJobs) > 0 {
 		proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobs))
 		proc.errorDB.StoreInTxn(txn, procErrorJobs)
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
 
+	proc.gatewayDB.AcquireUpdateJobStatusLocks()
 	proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{gateway.CustomVal}, nil)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 
@@ -1070,6 +1075,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 
 	proc.gatewayDB.CommitTransaction(txn)
+	proc.routerDB.ReleaseStoreLock()
+	proc.batchRouterDB.ReleaseStoreLock()
+	proc.errorDB.ReleaseStoreLock()
+	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 
 	proc.statDBW.End()
 	proc.pStatsDBW.End(len(statusList))

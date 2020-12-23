@@ -35,6 +35,30 @@ func (m *MockJobsDB) EXPECT() *MockJobsDBMockRecorder {
 	return m.recorder
 }
 
+// AcquireStoreLock mocks base method
+func (m *MockJobsDB) AcquireStoreLock() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "AcquireStoreLock")
+}
+
+// AcquireStoreLock indicates an expected call of AcquireStoreLock
+func (mr *MockJobsDBMockRecorder) AcquireStoreLock() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AcquireStoreLock", reflect.TypeOf((*MockJobsDB)(nil).AcquireStoreLock))
+}
+
+// AcquireUpdateJobStatusLocks mocks base method
+func (m *MockJobsDB) AcquireUpdateJobStatusLocks() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "AcquireUpdateJobStatusLocks")
+}
+
+// AcquireUpdateJobStatusLocks indicates an expected call of AcquireUpdateJobStatusLocks
+func (mr *MockJobsDBMockRecorder) AcquireUpdateJobStatusLocks() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AcquireUpdateJobStatusLocks", reflect.TypeOf((*MockJobsDB)(nil).AcquireUpdateJobStatusLocks))
+}
+
 // BeginGlobalTransaction mocks base method
 func (m *MockJobsDB) BeginGlobalTransaction() *sql.Tx {
 	m.ctrl.T.Helper()
@@ -115,6 +139,30 @@ func (m *MockJobsDB) GetUnprocessed(arg0 []string, arg1 int, arg2 []jobsdb.Param
 func (mr *MockJobsDBMockRecorder) GetUnprocessed(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUnprocessed", reflect.TypeOf((*MockJobsDB)(nil).GetUnprocessed), arg0, arg1, arg2)
+}
+
+// ReleaseStoreLock mocks base method
+func (m *MockJobsDB) ReleaseStoreLock() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "ReleaseStoreLock")
+}
+
+// ReleaseStoreLock indicates an expected call of ReleaseStoreLock
+func (mr *MockJobsDBMockRecorder) ReleaseStoreLock() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReleaseStoreLock", reflect.TypeOf((*MockJobsDB)(nil).ReleaseStoreLock))
+}
+
+// ReleaseUpdateJobStatusLocks mocks base method
+func (m *MockJobsDB) ReleaseUpdateJobStatusLocks() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "ReleaseUpdateJobStatusLocks")
+}
+
+// ReleaseUpdateJobStatusLocks indicates an expected call of ReleaseUpdateJobStatusLocks
+func (mr *MockJobsDBMockRecorder) ReleaseUpdateJobStatusLocks() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReleaseUpdateJobStatusLocks", reflect.TypeOf((*MockJobsDB)(nil).ReleaseUpdateJobStatusLocks))
 }
 
 // Status mocks base method
