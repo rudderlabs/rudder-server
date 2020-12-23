@@ -617,11 +617,11 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 		return job.processLoadTableResponse(map[string]error{job.usersTableName(): err})
 	}
 
-	if alteredIdentitySchema || alteredUserSchema{
+	errorMap := job.whManager.LoadUserTables()
+
+	if alteredIdentitySchema || alteredUserSchema {
 		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
 	}
-
-	errorMap := job.whManager.LoadUserTables()
 	return job.processLoadTableResponse(errorMap)
 }
 
