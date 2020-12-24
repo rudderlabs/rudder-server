@@ -68,6 +68,7 @@ type HandleT struct {
 	statListSort                 stats.RudderStats
 	marshalSingularEvents        stats.RudderStats
 	destProcessing               stats.RudderStats
+	lockWaitTime                 stats.RudderStats
 	statNumDests                 stats.RudderStats
 	statNumRequests              stats.RudderStats
 	statNumEvents                stats.RudderStats
@@ -215,6 +216,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statListSort = proc.stats.NewStat("processor.job_list_sort", stats.TimerType)
 	proc.marshalSingularEvents = proc.stats.NewStat("processor.marshal_singular_events", stats.TimerType)
 	proc.destProcessing = proc.stats.NewStat("processor.dest_processing", stats.TimerType)
+	proc.lockWaitTime = proc.stats.NewStat("processor.lock_wait_time", stats.TimerType)
 	proc.statNumRequests = proc.stats.NewStat("processor.num_requests", stats.CountType)
 	proc.statNumEvents = proc.stats.NewStat("processor.num_events", stats.CountType)
 	// Add a separate tag for batch router
@@ -891,17 +893,19 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.marshalSingularEvents.End()
 
-	//Now do the actual transformation. We call it in batches, once
-	//for each destination ID
-
-	proc.destProcessing.Start()
-	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
-
+	proc.lockWaitTime.Start()
 	transformationBatchSize := int(math.Max(float64(transformBatchSize), float64(userTransformBatchSize)))
 	var wg sync.WaitGroup
 	txn := proc.gatewayDB.BeginGlobalTransaction()
 	proc.routerDB.AcquireStoreLock()
 	proc.batchRouterDB.AcquireStoreLock()
+	proc.lockWaitTime.End()
+
+	//Now do the actual transformation. We call it in batches, once
+	//for each destination ID
+
+	proc.destProcessing.Start()
+	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
 
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
