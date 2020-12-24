@@ -202,8 +202,10 @@ func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutil
 	}
 
 	var metadata map[string]string
-	json.Unmarshal(upload.Metadata, &metadata)
-
+	err := json.Unmarshal(upload.Metadata, &metadata)
+	if err != nil {
+		metadata = make(map[string]string)
+	}
 	// check in cache
 	if nextRetryTimeStr, ok := metadata["nextRetryTime"]; ok {
 		nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr)
