@@ -464,7 +464,7 @@ func claimAndProcess(workerIdx int, slaveID string) {
 	pkgLogger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
 
 	freeWorker := func() {
-		slaveWorkerRoutineBusy[workerIdx-1] = false
+		slaveWorkerRoutineBusy[workerIdx] = false
 		pkgLogger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
 	}
 	defer freeWorker()
@@ -514,9 +514,9 @@ func setupSlave() {
 		for {
 			ev := <-jobNotificationChannel
 			pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
-			for workerIdx := 1; workerIdx <= noOfSlaveWorkerRoutines; workerIdx++ {
-				if !slaveWorkerRoutineBusy[workerIdx-1] {
-					slaveWorkerRoutineBusy[workerIdx-1] = true
+			for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
+				if !slaveWorkerRoutineBusy[workerIdx] {
+					slaveWorkerRoutineBusy[workerIdx] = true
 					idx := workerIdx
 					rruntime.Go(func() {
 						claimAndProcess(idx, slaveID)

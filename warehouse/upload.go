@@ -806,7 +806,7 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 
 	job.setStagingFilesStatus(warehouseutils.StagingFileExecutingState, nil)
 
-	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 2)
+	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", publishBatchSize, noOfWorkers, destType, destID)
 	uniqueLoadGenID := uuid.NewV4().String()
 
@@ -850,12 +850,14 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 		if err != nil {
 			panic(err)
 		}
+		// set messages to nil to release mem allocated
+		messages = nil
 		wg.Add(1)
-		batchStartNumber := i
-		batchEndNumber := j
+		batchStartIdx := i
+		batchEndIdx := j
 		rruntime.Go(func() {
 			responses := <-ch
-			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", stagingFiles[batchStartNumber].ID, stagingFiles[batchEndNumber-1].ID, destType, destID)
+			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", stagingFiles[batchStartIdx].ID, stagingFiles[batchEndIdx-1].ID, destType, destID)
 			for _, resp := range responses {
 				// TODO: make it aborted
 				if resp.Status == "aborted" {

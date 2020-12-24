@@ -113,7 +113,7 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 		time.Sleep(retriggerInterval)
 		stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[3]s',
 								updated_at = '%[2]s'
-								WHERE ID IN (
+								WHERE id IN (
 									SELECT id FROM %[1]s
 									WHERE status='%[3]s' OR status='%[4]s' OR (status='%[5]s' AND last_exec_time <= NOW() - INTERVAL '%[6]v seconds')
 									ORDER BY id
