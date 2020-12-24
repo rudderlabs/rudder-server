@@ -49,10 +49,11 @@ import (
  */
 
 type webRequestT struct {
-	request *http.Request
-	writer  *http.ResponseWriter
-	done    chan<- string
-	reqType string
+	done           chan<- string
+	reqType        string
+	requestPayload []byte
+	writeKey       string
+	ipAddr         string
 }
 
 type batchWebRequestT struct {
@@ -300,25 +301,25 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		var eventBatchesToRecord []string
 		userWebRequestWorker.batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
-			writeKey, _, ok := req.request.BasicAuth()
+			writeKey := req.writeKey
 			sourceName := gateway.getSourceNameForWriteKey(writeKey)
 			sourceTag := misc.GetTagName(writeKey, sourceName)
 			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
-			if !ok || writeKey == "" {
-				req.done <- response.GetStatus(response.NoWriteKeyInBasicAuth)
-				preDbStoreCount++
-				misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
-				continue
-			}
+			// if !ok || writeKey == "" {
+			// 	req.done <- response.GetStatus(response.NoWriteKeyInBasicAuth)
+			// 	preDbStoreCount++
+			// 	misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
+			// 	continue
+			// }
 
-			ipAddr := misc.GetIPFromReq(req.request)
-			if req.request.Body == nil {
+			ipAddr := req.ipAddr
+
+			body := req.requestPayload
+			if len(body) == 0 {
 				req.done <- response.GetStatus(response.RequestBodyNil)
 				preDbStoreCount++
 				continue
 			}
-			body, err := ioutil.ReadAll(req.request.Body)
-			req.request.Body.Close()
 
 			if enableRateLimit {
 				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
@@ -331,12 +332,12 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 			}
 
-			if err != nil {
-				req.done <- response.GetStatus(response.RequestBodyReadFailed)
-				preDbStoreCount++
-				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-				continue
-			}
+			// if err != nil {
+			// 	req.done <- response.GetStatus(response.RequestBodyReadFailed)
+			// 	preDbStoreCount++
+			// 	misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
+			// 	continue
+			// }
 			if !gjson.ValidBytes(body) {
 				req.done <- response.GetStatus(response.InvalidJSON)
 				preDbStoreCount++
@@ -541,36 +542,68 @@ func (gateway *HandleT) eventSchemaWebHandler(wrappedFunc func(http.ResponseWrit
 	}
 }
 
+func (gateway *HandleT) getPayloadFromRequest(w http.ResponseWriter, r *http.Request) []byte {
+	payload, err := ioutil.ReadAll(r.Body)
+	r.Body.Close()
+	if err != nil {
+		gateway.logger.Debug(err)
+		http.Error(w, "Invalid Json", 400)
+	}
+	return payload
+}
+
 func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.webHandler(w, r, "batch")
+	payload := gateway.getPayloadFromRequest(w, r)
+	usersPayload := gateway.getUsersPayload(payload)
+	gateway.webHandler(w, r, "batch", usersPayload)
+}
+
+func (gateway *HandleT) webImportHandler(w http.ResponseWriter, r *http.Request) {
+	payload := gateway.getPayloadFromRequest(w, r)
+	usersPayload := gateway.getUsersPayload(payload)
+	gateway.webHandler(w, r, "batch", usersPayload)
 }
 
 func (gateway *HandleT) webIdentifyHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.webHandler(w, r, "identify")
+	payload := gateway.getPayloadFromRequest(w, r)
+	usersPayload := gateway.getUsersPayload(payload)
+	gateway.webHandler(w, r, "identify", usersPayload)
 }
 
 func (gateway *HandleT) webTrackHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.webHandler(w, r, "track")
+	payload := gateway.getPayloadFromRequest(w, r)
+	usersPayload := gateway.getUsersPayload(payload)
+	gateway.webHandler(w, r, "track", usersPayload)
 }
 
 func (gateway *HandleT) webPageHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.webHandler(w, r, "page")
+	payload := gateway.getPayloadFromRequest(w, r)
+	usersPayload := gateway.getUsersPayload(payload)
+	gateway.webHandler(w, r, "page", usersPayload)
 }
 
 func (gateway *HandleT) webScreenHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.webHandler(w, r, "screen")
+	payload := gateway.getPayloadFromRequest(w, r)
+	usersPayload := gateway.getUsersPayload(payload)
+	gateway.webHandler(w, r, "screen", usersPayload)
 }
 
 func (gateway *HandleT) webAliasHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.webHandler(w, r, "alias")
+	payload := gateway.getPayloadFromRequest(w, r)
+	usersPayload := gateway.getUsersPayload(payload)
+	gateway.webHandler(w, r, "alias", usersPayload)
 }
 
 func (gateway *HandleT) webMergeHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.webHandler(w, r, "merge")
+	payload := gateway.getPayloadFromRequest(w, r)
+	usersPayload := gateway.getUsersPayload(payload)
+	gateway.webHandler(w, r, "merge", usersPayload)
 }
 
 func (gateway *HandleT) webGroupHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.webHandler(w, r, "group")
+	payload := gateway.getPayloadFromRequest(w, r)
+	usersPayload := gateway.getUsersPayload(payload)
+	gateway.webHandler(w, r, "group", usersPayload)
 }
 
 func (gateway *HandleT) pixelPageHandler(w http.ResponseWriter, r *http.Request) {
@@ -585,16 +618,30 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
-func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
+func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string, usersPayload map[string][]byte) {
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
+	errorMessage := ""
+	count := len(usersPayload)
 	done := make(chan string, 1)
-	gateway.AddToWebRequestQ(r, &w, done, reqType)
+	for key := range usersPayload {
+		gateway.AddToWebRequestQ(r, &w, done, reqType, usersPayload[key])
+		atomic.AddUint64(&gateway.ackCount, 1)
+	}
+	for index := 0; index < count; index++ {
+		interimerrorMessage := <-done
+		errorMessage = errorMessage + interimerrorMessage
+	}
+	gateway.trackRequestMetrics(errorMessage)
+	//if reqType != "import" && err == nil {
+	//	gateway.AddToWebRequestQ(r, &w, done, reqType, payload)
 
 	//Wait for batcher process to be done
-	errorMessage := <-done
-	atomic.AddUint64(&gateway.ackCount, 1)
-	gateway.trackRequestMetrics(errorMessage)
+	//	errorMessage := <-done
+	//	atomic.AddUint64(&gateway.ackCount, 1)
+	//	gateway.trackRequestMetrics(errorMessage)
+	//}
+
 	if errorMessage != "" {
 		gateway.logger.Debug(errorMessage)
 		http.Error(w, errorMessage, 400)
@@ -602,6 +649,35 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 		gateway.logger.Debug(response.GetStatus(response.Ok))
 		w.Write([]byte(response.GetStatus(response.Ok)))
 	}
+}
+
+func (gateway *HandleT) getUsersPayload(requestPayload []byte) map[string][]byte {
+	//count := int(gjson.Get(string(requestPayload), "batch.#").Num)
+	userMap := make(map[string][][]byte)
+	var index int
+
+	result := gjson.GetBytes(requestPayload, "batch")
+
+	result.ForEach(func(_, _ gjson.Result) bool {
+		anonIDFromReq := strings.TrimSpace(gjson.GetBytes(requestPayload, fmt.Sprintf(`batch.%v.anonymousId`, index)).String())
+		userIDFromReq := strings.TrimSpace(gjson.GetBytes(requestPayload, fmt.Sprintf(`batch.%v.userId`, index)).String())
+		rudderID, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		if err != nil {
+			return false
+		}
+		userMap[rudderID.String()] = append(userMap[rudderID.String()], []byte(gjson.GetBytes(requestPayload, fmt.Sprintf(`batch.%v`, index)).String()))
+		index++
+		return true
+	})
+	recontructedUserMap := make(map[string][]byte)
+	for key := range userMap {
+		var tempValue string
+		for index = 0; index < len(userMap[key]); index++ {
+			tempValue, _ = sjson.SetRaw(tempValue, fmt.Sprintf("batch.%v", index), string(userMap[key][index]))
+		}
+		recontructedUserMap[key] = []byte(tempValue)
+	}
+	return recontructedUserMap
 }
 
 func (gateway *HandleT) trackRequestMetrics(errorMessage string) {
@@ -698,7 +774,9 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 			}
 
 			// send req to webHandler
-			gateway.webHandler(w, req, reqType)
+			payload := gateway.getPayloadFromRequest(w, r)
+			usersPayload := gateway.getUsersPayload(payload)
+			gateway.webHandler(w, req, reqType, usersPayload)
 		} else {
 			http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
 		}
@@ -716,7 +794,9 @@ func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, re
 		delete(queryParams, "writeKey")
 
 		// send req to webHandler
-		gateway.webHandler(w, r, reqType)
+		payload := gateway.getPayloadFromRequest(w, r)
+		usersPayload := gateway.getUsersPayload(payload)
+		gateway.webHandler(w, r, reqType, usersPayload)
 	} else {
 		http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
 	}
@@ -748,6 +828,7 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/v1/merge", gateway.stat(gateway.webMergeHandler))
 	srvMux.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
 	srvMux.HandleFunc("/health", gateway.healthHandler)
+	srvMux.HandleFunc("/import", gateway.stat(gateway.webImportHandler))
 	srvMux.HandleFunc("/", gateway.healthHandler)
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
@@ -815,7 +896,7 @@ Public methods on GatewayWebhookI
 */
 
 // AddToWebRequestQ provides access to add a request to the gateway's webRequestQ
-func (gateway *HandleT) AddToWebRequestQ(req *http.Request, writer *http.ResponseWriter, done chan string, reqType string) {
+func (gateway *HandleT) AddToWebRequestQ(req *http.Request, writer *http.ResponseWriter, done chan string, reqType string, requestPayload []byte) {
 
 	userIDHeader := req.Header.Get("AnonymousId")
 	//If necessary fetch userID from request body.
@@ -824,8 +905,12 @@ func (gateway *HandleT) AddToWebRequestQ(req *http.Request, writer *http.Respons
 		userIDHeader = uuid.NewV4().String()
 	}
 	userWebRequestWorker := gateway.findUserWebRequestWorker(userIDHeader)
-
-	webReq := webRequestT{request: req, writer: writer, done: done, reqType: reqType}
+	writeKey, _, ok := req.BasicAuth()
+	ipAddr := misc.GetIPFromReq(req)
+	if !ok || writeKey == "" {
+		done <- response.GetStatus(response.NoWriteKeyInBasicAuth)
+	}
+	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, writeKey: writeKey, ipAddr: ipAddr}
 	userWebRequestWorker.webRequestQ <- &webReq
 }
 
