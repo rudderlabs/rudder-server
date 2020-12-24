@@ -46,7 +46,7 @@ func init() {
 	enableCPUStats = config.GetBool("RuntimeStats.enableCPUStats", true)
 	enableMemStats = config.GetBool("RuntimeStats.enabledMemStats", true)
 	enableGCStats = config.GetBool("RuntimeStats.enableGCStats", true)
-	statsSamplingRate = float32(config.GetFloat64("statsSamplingRate", 0.2))
+	statsSamplingRate = float32(config.GetFloat64("statsSamplingRate", 1))
 
 	pkgLogger = logger.NewLogger().Child("stats")
 
