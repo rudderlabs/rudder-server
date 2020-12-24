@@ -248,7 +248,12 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) {
 	// set write key in basic auth header
 	req.request.SetBasicAuth(req.writeKey, "")
 	done := make(chan string)
-	webhook.gwHandle.AddToWebRequestQ(req.request, req.writer, done, "batch")
+	payload, err := ioutil.ReadAll(req.request.Body)
+	req.request.Body.Close()
+	if err == nil {
+		done <- "Invalid JSON"
+	}
+	webhook.gwHandle.AddToWebRequestQ(req.request, req.writer, done, "batch", payload)
 
 	//Wait for batcher process to be done
 	errorMessage := <-done
