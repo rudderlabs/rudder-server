@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -104,42 +105,38 @@ func (sHandle *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Sch
 	return currentSchema
 }
 
+// createSchemaVersion create a schema version in wh_schema_versions whenever the local schema in wh_schemas is updated
+func createSchemaVersion(schemaId int64, schema []byte, updatedAt time.Time) error {
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_schema_id, schema, created_at)
+										VALUES ($1, $2, $3)`, warehouseutils.WarehouseSchemaVersionsTable)
+	_, err := dbHandle.Exec(sqlStatement, schemaId, schema, updatedAt)
+	return err
+}
+
 func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT) error {
 	namespace := sHandle.warehouse.Namespace
 	sourceID := sHandle.warehouse.Source.ID
 	destID := sHandle.warehouse.Destination.ID
 	destType := sHandle.warehouse.Type
-
-	var count int
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE source_id='%s' AND destination_id='%s' AND namespace='%s'`, warehouseutils.WarehouseSchemasTable, sourceID, destID, namespace)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&count)
-	if err != nil {
-		return err
-	}
-
 	marshalledSchema, err := json.Marshal(updatedSchema)
 	if err != nil {
 		return err
 	}
 
-	if count == 0 {
-		sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, schema, created_at)
-									   VALUES ($1, $2, $3, $4, $5, $6)`, warehouseutils.WarehouseSchemasTable)
-		stmt, err := dbHandle.Prepare(sqlStatement)
-		if err != nil {
-			return err
-		}
-		defer stmt.Close()
-
-		_, err = stmt.Exec(sourceID, namespace, destID, destType, marshalledSchema, timeutil.Now())
-	} else {
-		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3 AND namespace=$4`, warehouseutils.WarehouseSchemasTable)
-		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, sourceID, destID, namespace)
-	}
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, schema, created_at, updated_at)
+								VALUES ($1, $2, $3, $4, $5, $6, $7)
+								ON CONFLICT (source_id, destination_id, namespace)
+								DO
+								UPDATE SET schema=$5, updated_at = $7 RETURNING id
+								`, warehouseutils.WarehouseSchemasTable)
+	updatedAt := timeutil.Now()
+	row := dbHandle.QueryRow(sqlStatement, sourceID, namespace, destID, destType, marshalledSchema, timeutil.Now(), updatedAt)
+	var schemaId int64
+	err = row.Scan(&schemaId)
 	if err != nil {
 		return err
 	}
-
+	err = createSchemaVersion(schemaId, marshalledSchema, updatedAt)
 	return err
 }
 

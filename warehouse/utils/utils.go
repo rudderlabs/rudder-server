@@ -39,11 +39,12 @@ const (
 
 // warehouse table names
 const (
-	WarehouseStagingFilesTable = "wh_staging_files"
-	WarehouseLoadFilesTable    = "wh_load_files"
-	WarehouseUploadsTable      = "wh_uploads"
-	WarehouseTableUploadsTable = "wh_table_uploads"
-	WarehouseSchemasTable      = "wh_schemas"
+	WarehouseStagingFilesTable   = "wh_staging_files"
+	WarehouseLoadFilesTable      = "wh_load_files"
+	WarehouseUploadsTable        = "wh_uploads"
+	WarehouseTableUploadsTable   = "wh_table_uploads"
+	WarehouseSchemasTable        = "wh_schemas"
+	WarehouseSchemaVersionsTable = "wh_schema_versions"
 )
 
 const (
