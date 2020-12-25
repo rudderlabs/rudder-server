@@ -63,29 +63,33 @@ func createTableUploads(uploadID int64, tableNames []string) (err error) {
 
 	stmt, err := txn.Prepare(pq.CopyIn(warehouseutils.WarehouseTableUploadsTable, "wh_upload_id", "table_name", "status", "error", "created_at", "updated_at"))
 	if err != nil {
+		pkgLogger.Errorf(`[WH]: Error preparing txn: %v Error: %v`, stmt, err)
 		return
 	}
+	defer stmt.Close()
 
 	now := timeutil.Now()
 	for _, table := range tableNames {
 		_, err = stmt.Exec(uploadID, table, "waiting", "{}", now, now)
 		if err != nil {
+			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for table: %s Error: %v`, table, err)
+			txn.Rollback()
 			return
 		}
+		pkgLogger.Infof(`[WH]: Copied rows in pq.CopyIn for table: %s in upload: %v`, table, uploadID)
 	}
+	pkgLogger.Infof(`[WH]: Copied all rows in pq.CopyIn for upload: %v`, uploadID)
 
 	_, err = stmt.Exec()
 	if err != nil {
-		return
-	}
-
-	err = stmt.Close()
-	if err != nil {
+		pkgLogger.Errorf(`[WH]: Error running exec on all rows: %v`, err)
+		txn.Rollback()
 		return
 	}
 
 	err = txn.Commit()
 	if err != nil {
+		pkgLogger.Errorf(`[WH]: Error commiting txn: %v`, err)
 		return
 	}
 	return
