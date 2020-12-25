@@ -420,7 +420,7 @@ func getSortKeyTuple(sortKeyFields []string) string {
 
 // createTable creates table with engine ReplacingMergeTree(), this is used for dedupe event data and replace it will latest data if duplicate data found. This logic is handled by clickhouse
 // The engine differs from MergeTree in that it removes duplicate entries with the same sorting key value.
-func (ch *HandleT) createTable(tableName string, columns map[string]string) (err error) {
+func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"received_at", "id"}
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"received_at"}
@@ -443,8 +443,8 @@ func (ch *HandleT) tableExists(tableName string) (exists bool, err error) {
 	return
 }
 
-// addColumn adds column:columnName with dataType columnType to the tableName
-func (ch *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+// AddColumn adds column:columnName with dataType columnType to the tableName
+func (ch *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[columnType], false))
 	pkgLogger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
@@ -456,16 +456,6 @@ func (ch *HandleT) CreateSchema() (err error) {
 		return nil
 	}
 	err = ch.createSchema()
-	return err
-}
-
-func (ch *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	err = ch.createTable(fmt.Sprintf(`%s`, tableName), columnMap)
-	return err
-}
-
-func (ch *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
-	err = ch.addColumn(tableName, columnName, columnType)
 	return err
 }
 

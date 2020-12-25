@@ -436,7 +436,7 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
-func (pg *HandleT) createSchema() (err error) {
+func (pg *HandleT) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, pg.Namespace)
 	pkgLogger.Infof("PG: Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
@@ -473,11 +473,6 @@ func (pg *HandleT) addColumn(tableName string, columnName string, columnType str
 	pkgLogger.Infof("PG: Adding column in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
-}
-
-func (pg *HandleT) CreateSchema() (err error) {
-	err = pg.createSchema()
-	return err
 }
 
 func (pg *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {

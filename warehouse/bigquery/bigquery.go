@@ -80,40 +80,39 @@ func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 	}
 	return schema
 }
-
-func (bq *HandleT) createTable(name string, columns map[string]string) (err error) {
-	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", name, bq.Namespace, bq.ProjectID)
-	sampleSchema := getTableSchema(columns)
+func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
+	sampleSchema := getTableSchema(columnMap)
 	metaData := &bigquery.TableMetadata{
 		Schema:           sampleSchema,
 		TimePartitioning: &bigquery.TimePartitioning{},
 	}
-	tableRef := bq.Db.Dataset(bq.Namespace).Table(name)
+	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
 	err = tableRef.Create(bq.BQContext, metaData)
 	if !checkAndIgnoreAlreadyExistError(err) {
 		return err
 	}
 
 	partitionKey := "id"
-	if column, ok := partitionKeyMap[name]; ok {
+	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
 	}
 
 	var viewOrderByStmt string
-	if _, ok := columns["loaded_at"]; ok {
+	if _, ok := columnMap["loaded_at"]; ok {
 		viewOrderByStmt = " ORDER BY loaded_at DESC "
 	}
 
 	// assuming it has field named id upon which dedup is done in view
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + name + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + tableName + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
 					AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
 			)
 		WHERE __row_number = 1`
 	metaData = &bigquery.TableMetadata{
 		ViewQuery: viewQuery,
 	}
-	tableRef = bq.Db.Dataset(bq.Namespace).Table(name + "_view")
+	tableRef = bq.Db.Dataset(bq.Namespace).Table(tableName + "_view")
 	err = tableRef.Create(bq.BQContext, metaData)
 	return
 }
@@ -135,7 +134,7 @@ func (bq *HandleT) addColumn(tableName string, columnName string, columnType str
 	return
 }
 
-func (bq *HandleT) createSchema() (err error) {
+func (bq *HandleT) CreateSchema() (err error) {
 	pkgLogger.Infof("BQ: Creating bigquery dataset: %s in project: %s", bq.Namespace, bq.ProjectID)
 	location := strings.TrimSpace(warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse))
 	if location == "" {
@@ -199,7 +198,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool) (partitionDate st
 	return
 }
 
-func (bq *HandleT) loadUserTables() (errorMap map[string]error) {
+func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	pkgLogger.Infof("BQ: Starting load for identifies and users tables\n")
 	partitionDate, err := bq.loadTable(warehouseutils.IdentifiesTable, true)
@@ -377,22 +376,8 @@ func (bq *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	return
 }
 
-func (bq *HandleT) LoadUserTables() map[string]error {
-	return bq.loadUserTables()
-}
-
 func (bq *HandleT) LoadTable(tableName string) error {
 	_, err := bq.loadTable(tableName, false)
-	return err
-}
-
-func (bq *HandleT) CreateSchema() (err error) {
-	err = bq.createSchema()
-	return err
-}
-
-func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	err = bq.createTable(tableName, columnMap)
 	return err
 }
 

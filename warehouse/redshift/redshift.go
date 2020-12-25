@@ -126,7 +126,8 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr[:], ",")
 }
 
-func (rs *HandleT) createTable(name string, columns map[string]string) (err error) {
+func (rs *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
+	name := fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName)
 	sortKeyField := "received_at"
 	if _, ok := columns["received_at"]; !ok {
 		sortKeyField = "uuid_ts"
@@ -160,7 +161,8 @@ func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	return
 }
 
-func (rs *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+func (rs *HandleT) AddColumn(name string, columnName string, columnType string) (err error) {
+	tableName := fmt.Sprintf(`"%s"."%s"`, rs.Namespace, name)
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, getRSDataType(columnType))
 	pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
@@ -279,7 +281,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
-	err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), tableSchemaAfterUpload)
+	err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
 		return
 	}
@@ -563,16 +565,6 @@ func (rs *HandleT) CreateSchema() (err error) {
 	if schemaExists, err = rs.schemaExists(rs.Namespace); err != nil && !schemaExists {
 		err = rs.createSchema()
 	}
-	return err
-}
-
-func (rs *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnMap)
-	return err
-}
-
-func (rs *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
-	err = rs.addColumn(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName, columnType)
 	return err
 }
 
