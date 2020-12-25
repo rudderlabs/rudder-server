@@ -159,16 +159,15 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	}
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
-	if syncFrequency != "" && syncStartAt != "" {
-		prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
-		lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
-		// start upload only if no upload has started in current window
-		// eg. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
-		if lastUploadExecTime.Before(prevScheduledTime) {
-			return true
-		}
-	} else {
+	if syncFrequency == "" || syncStartAt == "" {
 		return !uploadFrequencyExceeded(warehouse, syncFrequency)
+	}
+	prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
+	lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
+	// start upload only if no upload has started in current window
+	// eg. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
+	if lastUploadExecTime.Before(prevScheduledTime) {
+		return true
 	}
 	return false
 }
@@ -206,28 +205,18 @@ func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutil
 	if err != nil {
 		metadata = make(map[string]string)
 	}
-	// check in cache
-	if nextRetryTimeStr, ok := metadata["nextRetryTime"]; ok {
-		nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr)
-		if err != nil {
-			pkgLogger.Errorf("Unable to parse time from %s", nextRetryTimeStr)
-			return true //TODO: Review this carefully
-		}
-		canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
-		return canStart
+
+	nextRetryTimeStr, ok := metadata["nextRetryTime"]
+	if !ok {
+		return upload.LastAttemptAt.IsZero()
 	}
 
-	if upload.LastAttemptAt.IsZero() {
-		return true
+	nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr)
+	if err != nil {
+		pkgLogger.Errorf("Unable to parse time from %s", nextRetryTimeStr)
+		return true //TODO: Review this carefully
 	}
 
-	nextRetryTime := upload.LastAttemptAt.Add(durationBeforeNextAttempt(upload.Attempts))
 	canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
-	// set in cache if not staring, to access on next hit
-	if !canStart {
-		pkgLogger.Infof("[WH]: Setting nextRetryTime in uploadJob for %s:%s, will retry again around %v", warehouse.Destination.Name, warehouse.Destination.ID, nextRetryTime)
-		//TODO: Update job, set nextRetryTime
-	}
-
 	return canStart
 }

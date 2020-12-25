@@ -604,12 +604,12 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 			wg.Done()
 			continue
 		}
-		loadTable, err := job.shouldTableBeLoaded(tableName)
+		hasLoadFiles, err := job.hasLoadFiles(tableName)
 		if err != nil {
 			loadErrors = append(loadErrors, err)
 			continue
 		}
-		if !loadTable {
+		if !hasLoadFiles {
 			wg.Done()
 			if misc.ContainsString(alwaysMarkExported, tableName) {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)

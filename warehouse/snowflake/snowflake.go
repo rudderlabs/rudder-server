@@ -702,19 +702,18 @@ func (sf *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 		if err != nil {
 			return
 		}
-		if exists {
-			sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"."%s"`, sf.Namespace, tableName)
-			var count int64
-			err = sf.Db.QueryRow(sqlStatement).Scan(&count)
-			if err != nil {
-				return
-			}
-			if count > 0 {
-				empty = false
-				return
-			}
-		} else {
+		if !exists {
 			continue
+		}
+		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"."%s"`, sf.Namespace, tableName)
+		var count int64
+		err = sf.Db.QueryRow(sqlStatement).Scan(&count)
+		if err != nil {
+			return
+		}
+		if count > 0 {
+			empty = false
+			return
 		}
 	}
 	return

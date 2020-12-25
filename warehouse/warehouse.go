@@ -490,6 +490,7 @@ func setLastExec(warehouse warehouseutils.WarehouseT) {
 	lastExecMap[warehouse.Identifier] = timeutil.Now().Unix()
 }
 
+//TODO: Clean this up
 func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, pendingUploads []UploadT) (*UploadJobT, error) {
 	for _, pendingUpload := range pendingUploads {
 		copiedUpload := pendingUpload
@@ -500,34 +501,31 @@ func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.Wareh
 				//If we don't process the first pending upload, it doesn't make sense to attempt the following jobs. Hence we return here.
 				return nil, fmt.Errorf("[WH]: Not a retriable job. Moving on to next unprocessed jobs")
 			}
-
 			continue
-		} else {
-			stagingFilesList, err := wh.getStagingFiles(warehouse, pendingUpload.StartStagingFileID, pendingUpload.EndStagingFileID)
-			if err != nil {
-				return nil, err
-			}
-
-			uploadJob := UploadJobT{
-				upload:       &copiedUpload,
-				stagingFiles: stagingFilesList,
-				warehouse:    warehouse,
-				whManager:    whManager,
-				dbHandle:     wh.dbHandle,
-				pgNotifier:   &wh.notifier,
-			}
-
-			pkgLogger.Debugf("[WH]: Adding job %+v", uploadJob)
-			return &uploadJob, nil
 		}
+
+		stagingFilesList, err := wh.getStagingFiles(warehouse, pendingUpload.StartStagingFileID, pendingUpload.EndStagingFileID)
+		if err != nil {
+			return nil, err
+		}
+
+		uploadJob := UploadJobT{
+			upload:       &copiedUpload,
+			stagingFiles: stagingFilesList,
+			warehouse:    warehouse,
+			whManager:    whManager,
+			dbHandle:     wh.dbHandle,
+			pgNotifier:   &wh.notifier,
+		}
+
+		pkgLogger.Debugf("[WH]: Adding job %+v", uploadJob)
+		return &uploadJob, nil
 
 	}
 
-	return nil, fmt.Errorf("")
+	return nil, fmt.Errorf("No upload job eligible")
 }
 
-//TODO Shanmukh: Create only one upload job instead of all of them.
-//TODO Shanmukh: Skip stagingFilesBatchSize logic here. Move it in getPendingStagingFiles
 func (wh *HandleT) getUploadJobForNewStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT) (*UploadJobT, error) {
 	// Expects one batch of staging files
 	if len(stagingFilesList) > stagingFilesBatchSize {
