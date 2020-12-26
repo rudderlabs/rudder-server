@@ -4,13 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"reflect"
-	"time"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"reflect"
 )
 
 type SchemaHandleT struct {
@@ -105,14 +103,6 @@ func (sHandle *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Sch
 	return currentSchema
 }
 
-// createSchemaVersion create a schema version in wh_schema_versions whenever the local schema in wh_schemas is updated
-func createSchemaVersion(schemaId int64, schema []byte, updatedAt time.Time) error {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_schema_id, schema, created_at)
-										VALUES ($1, $2, $3)`, warehouseutils.WarehouseSchemaVersionsTable)
-	_, err := dbHandle.Exec(sqlStatement, schemaId, schema, updatedAt)
-	return err
-}
-
 func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT) error {
 	namespace := sHandle.warehouse.Namespace
 	sourceID := sHandle.warehouse.Source.ID
@@ -130,13 +120,7 @@ func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Sch
 								UPDATE SET schema=$5, updated_at = $7 RETURNING id
 								`, warehouseutils.WarehouseSchemasTable)
 	updatedAt := timeutil.Now()
-	row := dbHandle.QueryRow(sqlStatement, sourceID, namespace, destID, destType, marshalledSchema, timeutil.Now(), updatedAt)
-	var schemaId int64
-	err = row.Scan(&schemaId)
-	if err != nil {
-		return err
-	}
-	err = createSchemaVersion(schemaId, marshalledSchema, updatedAt)
+	_, err = dbHandle.Exec(sqlStatement, sourceID, namespace, destID, destType, marshalledSchema, timeutil.Now(), updatedAt)
 	return err
 }
 
