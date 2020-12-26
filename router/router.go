@@ -73,7 +73,7 @@ type HandleT struct {
 	backendConfigInitialized               chan bool
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
-	drainJobHandler                        DrainI//drain.DrainI
+	drainJobHandler                        DrainI
 }
 
 type jobResponseT struct {
@@ -108,8 +108,6 @@ type workerT struct {
 	abortedUserMutex    sync.Mutex
 }
 type DrainI interface {
-	//CanJobBeDrained(id int64) bool
-	//CanJobBeDrained(job *jobsdb.JobT) bool
 	CanJobBeDrained(jobID int64, destID string) bool
 }
 
@@ -119,9 +117,9 @@ type DrainConfig struct {
 	DrainDestinationID string `json:"drainDestinationID"`
 }
 type DrainHandleT struct {
-	DrainConfigs 		[]*DrainConfig
-	drainUpdateLock    sync.RWMutex
-	rt 					*HandleT
+	DrainConfigs    []*DrainConfig
+	drainUpdateLock sync.RWMutex
+	rt              *HandleT
 }
 
 var (
@@ -133,8 +131,7 @@ var (
 	pkgLogger                                                               logger.LoggerI
 	Diagnostics                                                             diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                          time.Duration
-	drainHandler 															*DrainHandleT
-
+	drainHandler                                                            *DrainHandleT
 )
 
 type requestMetric struct {
@@ -993,8 +990,6 @@ func (rt *HandleT) generatorLoop() {
 		//Identify jobs which can be processed
 		for _, job := range combinedList {
 			if rt.drainJobHandler.CanJobBeDrained(job.JobID, gjson.GetBytes(job.Parameters, "destination_id").String()) {
-				rt.logger.Infof("Drain: Destination: %s , draining job identified : %d ", rt.destName, job.JobID)
-
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -1002,7 +997,7 @@ func (rt *HandleT) generatorLoop() {
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
-					ErrorResponse: []byte(`{}`), // check
+					ErrorResponse: []byte(`{}`),
 				}
 				drainList = append(drainList, &status)
 				continue
@@ -1027,7 +1022,6 @@ func (rt *HandleT) generatorLoop() {
 		//Mark the jobs as executing
 		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
 		rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
-		rt.logger.Infof("Drain: Destination: %s , job Count : %d ", rt.destName, len(drainList))
 
 		//Send the jobs to the jobQ
 		for _, wrkJob := range toProcess {
@@ -1079,7 +1073,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	rt.maxFailedCountForJob = getRouterConfigInt("maxFailedCountForJob", destName, 3)
 	rt.retryTimeWindow = getRouterConfigDuration("retryTimeWindowInMins", destName, time.Duration(180)) * time.Minute
-	rt.drainJobHandler = setup(rt)//drain.GetDrainJobHandler()
+	rt.drainJobHandler = setup(rt)
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
@@ -1155,11 +1149,10 @@ func (rt *HandleT) backendConfigSubscriber() {
 	}
 }
 
-//func (rt *HandleT) MaxJobId() int64{
-//	return rt.jobsDB.GetLastJobIDBeforeImport()
-//}
-
-func setup(rtHandle *HandleT) *DrainHandleT{
+func setup(rtHandle *HandleT) *DrainHandleT {
+	if drainHandler != nil {
+		return drainHandler
+	}
 	drainHandler = &DrainHandleT{
 		rt: rtHandle,
 	}
@@ -1170,7 +1163,7 @@ func SetDrainJobIDs(minID int64, maxID int64, destID string) (*DrainHandleT, err
 	if maxID == 0 {
 		maxID = drainHandler.rt.jobsDB.GetLastJobID()
 	}
-	if(maxID < minID) {
+	if maxID < minID {
 		return drainHandler, fmt.Errorf("maxID : %d < minID : %d ,skipping drain config update", maxID, minID)
 	}
 	drainHandler.drainUpdateLock.Lock()
@@ -1186,10 +1179,8 @@ func GetDrainJobHandler() *DrainHandleT {
 	return drainHandler
 }
 
-
 func (d *DrainHandleT) CanJobBeDrained(jobID int64, destID string) bool {
-	for _, dConfig := range d.DrainConfigs{
-		pkgLogger.Info("Checking against : ", dConfig.MinDrainJobID, dConfig.MaxDrainJobID, dConfig.DrainDestinationID, "current Jon : ", jobID)
+	for _, dConfig := range d.DrainConfigs {
 		if dConfig.DrainDestinationID == destID && dConfig.MinDrainJobID <= jobID && jobID < dConfig.MaxDrainJobID {
 			return true
 		}
