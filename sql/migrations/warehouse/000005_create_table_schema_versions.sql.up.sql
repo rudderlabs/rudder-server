@@ -5,8 +5,13 @@
 CREATE TABLE IF NOT EXISTS wh_schema_versions (
                                           id BIGSERIAL PRIMARY KEY,
                                           wh_schema_id BIGSERIAL NOT NULL,
+                                          source_id VARCHAR(64) NOT NULL,
+                                          namespace VARCHAR(64) NOT NULL,
+                                          destination_id VARCHAR(64) NOT NULL,
+                                          destination_type VARCHAR(64) NOT NULL,
                                           schema JSONB NOT NULL,
-                                          created_at TIMESTAMP NOT NULL);
+                                          error TEXT,
+                                          changed_at TIMESTAMP NOT NULL);
 
 CREATE INDEX IF NOT EXISTS wh_schema_versions_wh_schema_id_index ON wh_schema_versions (wh_schema_id);
 
@@ -17,8 +22,8 @@ CREATE OR REPLACE FUNCTION warehouse_schema_history()
 AS
 $$
 BEGIN
-    INSERT INTO wh_schema_versions("wh_schema_id","schema","created_at")
-    VALUES(new.id, new.schema, new.updated_at);
+    INSERT INTO wh_schema_versions("wh_schema_id","source_id", "namespace","destination_id", "destination_type","schema","error","changed_at")
+    VALUES(new.id, new.source_id, new.namespace, new.destination_id, new.destination_type, new.schema, new.error, new.updated_at);
     RETURN new;
 END ;
 $$;
