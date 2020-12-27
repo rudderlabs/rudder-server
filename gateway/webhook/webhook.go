@@ -243,7 +243,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 }
 
 func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) {
-	// repalce body with transformed event (it comes in a batch format)
+	// replace body with transformed event (it comes in a batch format)
 	req.request.Body = ioutil.NopCloser(bytes.NewReader(payload))
 	// set write key in basic auth header
 	req.request.SetBasicAuth(req.writeKey, "")
@@ -253,7 +253,7 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) {
 	if err == nil {
 		done <- "Invalid JSON"
 	}
-	webhook.gwHandle.AddToWebRequestQ(req.request, req.writer, done, "batch", payload)
+	webhook.gwHandle.AddToWebRequestQ(req.request, req.writer, done, "batch", payload, req.writeKey)
 
 	//Wait for batcher process to be done
 	errorMessage := <-done

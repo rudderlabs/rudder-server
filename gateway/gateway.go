@@ -542,10 +542,13 @@ func (gateway *HandleT) eventSchemaWebHandler(wrappedFunc func(http.ResponseWrit
 	}
 }
 
-func (gateway *HandleT) getPayloadFromRequest(w http.ResponseWriter, r *http.Request) ([]byte, error) {
-	payload, err := ioutil.ReadAll(r.Body)
-	r.Body.Close()
-	return payload, err
+func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
+	if r.Body != nil {
+		payload, err := ioutil.ReadAll(r.Body)
+		r.Body.Close()
+		return payload, err
+	}
+	return []byte{}, errors.New("RequestBodyNil")
 }
 
 func (gateway *HandleT) webImportHandler(w http.ResponseWriter, r *http.Request) {
@@ -596,25 +599,40 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
+func (gateway *HandleT) cleanWebHandler(w http.ResponseWriter, r *http.Request, payload []byte, reqType string, err error) string {
+	var sourceFailStats = make(map[string]int)
+	var errorMessage = ""
+	writeKey, _, ok := r.BasicAuth()
+	if !ok || writeKey == "" {
+		errorMessage = response.GetStatus(response.NoWriteKeyInBasicAuth)
+		misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests")
+		return errorMessage
+	}
+	if err == nil {
+		if reqType == "import" {
+			usersPayload := gateway.getUsersPayload(payload)
+			errorMessage = gateway.userWebImportHandler(w, r, "batch", usersPayload, writeKey)
+		} else {
+			done := make(chan string, 1)
+			gateway.AddToWebRequestQ(r, &w, done, reqType, payload, writeKey)
+			//Wait for batcher process to be done
+			errorMessage = <-done
+		}
+	} else if err.Error() == "RequestBodyNil" {
+		errorMessage = response.GetStatus(response.RequestBodyNil)
+	} else {
+		errorMessage = response.GetStatus(response.RequestBodyReadFailed)
+	}
+	return errorMessage
+}
+
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
-	payload, err := gateway.getPayloadFromRequest(w, r)
-	if err == nil {
-		if reqType == "import" {
-			usersPayload := gateway.getUsersPayload(payload)
-			errorMessage = gateway.userWebImportHandler(w, r, "batch", usersPayload)
-		} else {
-			done := make(chan string, 1)
-			gateway.AddToWebRequestQ(r, &w, done, reqType, payload)
-			//Wait for batcher process to be done
-			errorMessage = <-done
-		}
-	} else {
-		errorMessage = response.GetStatus(response.RequestBodyReadFailed)
-	}
-
+	payload, err := gateway.getPayloadFromRequest(r)
+	errorMessage = gateway.cleanWebHandler(w, r, payload, reqType, err)
 	atomic.AddUint64(&gateway.ackCount, 1)
 	gateway.trackRequestMetrics(errorMessage)
 	if errorMessage != "" {
@@ -626,12 +644,12 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	}
 }
 
-func (gateway *HandleT) userWebImportHandler(w http.ResponseWriter, r *http.Request, reqType string, usersPayload map[string][]byte) string {
+func (gateway *HandleT) userWebImportHandler(w http.ResponseWriter, r *http.Request, reqType string, usersPayload map[string][]byte, writeKey string) string {
 	errorMessage := ""
 	count := len(usersPayload)
 	done := make(chan string, 1)
 	for key := range usersPayload {
-		gateway.AddToWebRequestQ(r, &w, done, reqType, usersPayload[key])
+		gateway.AddToWebRequestQ(r, &w, done, reqType, usersPayload[key], writeKey)
 	}
 
 	for index := 0; index < count; index++ {
@@ -643,7 +661,6 @@ func (gateway *HandleT) userWebImportHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (gateway *HandleT) getUsersPayload(requestPayload []byte) map[string][]byte {
-	//count := int(gjson.Get(string(requestPayload), "batch.#").Num)
 	userMap := make(map[string][][]byte)
 	var index int
 
@@ -883,8 +900,7 @@ Public methods on GatewayWebhookI
 */
 
 // AddToWebRequestQ provides access to add a request to the gateway's webRequestQ
-func (gateway *HandleT) AddToWebRequestQ(req *http.Request, writer *http.ResponseWriter, done chan string, reqType string, requestPayload []byte) {
-
+func (gateway *HandleT) AddToWebRequestQ(req *http.Request, writer *http.ResponseWriter, done chan string, reqType string, requestPayload []byte, writeKey string) {
 	userIDHeader := req.Header.Get("AnonymousId")
 	//If necessary fetch userID from request body.
 	if userIDHeader == "" {
@@ -892,18 +908,6 @@ func (gateway *HandleT) AddToWebRequestQ(req *http.Request, writer *http.Respons
 		userIDHeader = uuid.NewV4().String()
 	}
 	userWebRequestWorker := gateway.findUserWebRequestWorker(userIDHeader)
-
-	writeKey, _, ok := req.BasicAuth()
-	if !ok || writeKey == "" {
-		done <- response.GetStatus(response.NoWriteKeyInBasicAuth)
-		//misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
-		return
-	}
-
-	if requestPayload == nil || len(requestPayload) == 0 {
-		done <- response.GetStatus(response.RequestBodyNil)
-		return
-	}
 
 	//TODO sourcefailstat
 

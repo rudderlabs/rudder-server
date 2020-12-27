@@ -13,6 +13,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
@@ -142,6 +143,24 @@ func (c *context) Finish() {
 	c.asyncHelper.WaitWithTimeout(testTimeout)
 	c.mockCtrl.Finish()
 }
+
+var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
+	var (
+		gateway = &HandleT{}
+	)
+	var _ = DescribeTable("newDSIdx tests",
+		func(inputKey, value string) {
+			testValidBody := `{"batch":[{"anonymousId":"anon_id_1","event":"event_1_1"},{"anonymousId":"anon_id_2","event":"event_2_1"},{"anonymousId":"anon_id_3","event":"event_3_1"},{"anonymousId":"anon_id_1","event":"event_1_2"},{"anonymousId":"anon_id_2","event":"event_2_2"},{"anonymousId":"anon_id_1","event":"event_1_3"}]}`
+			response := gateway.getUsersPayload([]byte(testValidBody))
+			key, err := misc.GetMD5UUID((inputKey))
+			Expect(string(response[key.String()])).To(Equal(value))
+			Expect(err).To(BeNil())
+		},
+		Entry("Expected JSON for Key 1 Test 1 : ", ":anon_id_1", `{"batch":[{"anonymousId":"anon_id_1","event":"event_1_1"},{"anonymousId":"anon_id_1","event":"event_1_2"},{"anonymousId":"anon_id_1","event":"event_1_3"}]}`),
+		Entry("Expected JSON for Key 2 Test 1 : ", ":anon_id_2", `{"batch":[{"anonymousId":"anon_id_2","event":"event_2_1"},{"anonymousId":"anon_id_2","event":"event_2_2"}]}`),
+		Entry("Expected JSON for Key 3 Test 1 : ", ":anon_id_3", `{"batch":[{"anonymousId":"anon_id_3","event":"event_3_1"}]}`),
+	)
+})
 
 var _ = Describe("Gateway Enterprise", func() {
 	var c *context
@@ -525,6 +544,8 @@ func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, response
 		body := string(bodyBytes)
 
 		Expect(rr.Result().StatusCode).To(Equal(responseStatus))
+		// fmt.Println(body)
+		// fmt.Println(rr.Result().StatusCode)
 		Expect(body).To(Equal(responseBody))
 	}, testTimeout)
 }
