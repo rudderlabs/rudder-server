@@ -13,7 +13,7 @@ type GatewayI interface {
 	IncrementAckCount(count uint64)
 	UpdateSourceStats(writeKeyStats map[string]int, bucket string)
 	TrackRequestMetrics(errorMessage string)
-	AddToWebRequestQ(req *http.Request, writer *http.ResponseWriter, done chan string, reqType string, requestPayload []byte)
+	AddToWebRequestQ(req *http.Request, writer *http.ResponseWriter, done chan string, reqType string, requestPayload []byte, writeKey string)
 	GetWebhookSourceDefName(writeKey string) (name string, ok bool)
 }
 
