@@ -102,7 +102,7 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) t
 	sqlStatement := fmt.Sprintf(`select last_exec_at from %s where source_id='%s' and destination_id='%s' order by id desc limit 1`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID)
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&t)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
 	if err == sql.ErrNoRows || !t.Valid {
 		return time.Time{} // zero value
