@@ -62,10 +62,11 @@ type JobCountsByStateAndDestination struct {
 	Destination string
 }
 
-type FailedStatusErrorCodeCountsByDestination struct {
-	Count       int
-	ErrorCode   string
-	Destination string
+type ErrorCodeCountsByDestination struct {
+	Count         int
+	ErrorCode     string
+	Destination   string
+	DestinationID string
 }
 
 type JobCountByConnections struct {
@@ -81,11 +82,11 @@ type LatestJobStatusCounts struct {
 }
 
 type DSStats struct {
-	JobCountsByStateAndDestination           []JobCountsByStateAndDestination
-	FailedStatusErrorCodeCountsByDestination []FailedStatusErrorCodeCountsByDestination
-	JobCountByConnections                    []JobCountByConnections
-	LatestJobStatusCounts                    []LatestJobStatusCounts
-	UnprocessedJobCounts                     int
+	JobCountsByStateAndDestination []JobCountsByStateAndDestination
+	ErrorCodeCountsByDestination   []ErrorCodeCountsByDestination
+	JobCountByConnections          []JobCountByConnections
+	LatestJobStatusCounts          []LatestJobStatusCounts
+	UnprocessedJobCounts           int
 }
 
 // group_by job_status
@@ -96,7 +97,7 @@ type DSStats struct {
 // unprocessed_params ⇒ Num jobs not yet picked
 func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) error {
 	var completeErr error
-	dsStats := DSStats{make([]JobCountsByStateAndDestination, 0), make([]FailedStatusErrorCodeCountsByDestination, 0), make([]JobCountByConnections, 0),
+	dsStats := DSStats{make([]JobCountsByStateAndDestination, 0), make([]ErrorCodeCountsByDestination, 0), make([]JobCountByConnections, 0),
 		make([]LatestJobStatusCounts, 0), 0}
 	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
 	if err != nil {
@@ -200,9 +201,9 @@ FailedStatusErrorCodeCountsByDestination
 func getFailedStatusErrorCodeCountsByDestination(dbHandle *sql.DB, dsName string, dsStats *DSStats) error {
 	routerJobsTableName = "rt_jobs_" + dsName
 	routerJobStatusTableName = "rt_job_status_" + dsName
-	sqlStmt := fmt.Sprintf(`select count(*), a.error_code, a.custom_val from (select count(*), rt.job_id, st.error_code as error_code ,
-							rt.custom_val as custom_val from %[1]s rt inner join %[2]s st  on st.job_id=rt.job_id where st.job_state in 
-							('failed', 'aborted') group by rt.job_id, st.error_code, rt.custom_val) as  a group by a.custom_val, a.error_code order by a.custom_val;`, routerJobsTableName, routerJobStatusTableName)
+	sqlStmt := fmt.Sprintf(`select count(*), a.error_code, a.custom_val, a.d from (select count(*), rt.job_id, st.error_code as error_code ,
+							rt.custom_val as custom_val, rt.parameters -> 'destination_id' as d from %[1]s rt inner join %[2]s st  on st.job_id=rt.job_id where st.job_state in
+							('failed', 'aborted') group by rt.job_id, st.error_code, rt.custom_val, rt.parameters -> 'destination_id') as  a group by a.custom_val, a.error_code, a.d order by a.custom_val;`, routerJobsTableName, routerJobStatusTableName)
 	var rows *sql.Rows
 	var err error
 	rows, err = dbHandle.Query(sqlStmt)
@@ -210,17 +211,16 @@ func getFailedStatusErrorCodeCountsByDestination(dbHandle *sql.DB, dsName string
 		return err
 	}
 	defer rows.Close()
-	result := FailedStatusErrorCodeCountsByDestination{}
+	result := ErrorCodeCountsByDestination{}
 	for rows.Next() {
-		err = rows.Scan(&result.Count, &result.ErrorCode, &result.Destination)
+		err = rows.Scan(&result.Count, &result.ErrorCode, &result.Destination, &result.DestinationID)
 		if err != nil {
 			return err
 		}
-		dsStats.FailedStatusErrorCodeCountsByDestination = append(dsStats.FailedStatusErrorCodeCountsByDestination, result)
+		dsStats.ErrorCodeCountsByDestination = append(dsStats.ErrorCodeCountsByDestination, result)
 	}
 
-	err = rows.Err()
-	if err != nil {
+	if err = rows.Err(); err != nil {
 		return err
 	}
 	err = rows.Close()
@@ -239,7 +239,7 @@ func getFailedStatusErrorCodeCountsByDestination(dbHandle *sql.DB, dsName string
 */
 func getJobCountByConnections(dbHandle *sql.DB, dsName string, dsStats *DSStats) error {
 	routerJobsTableName = "rt_jobs_" + dsName
-	sqlStmt := fmt.Sprintf(`select count(*), parameters->'source_id' as s, parameters -> 'destination_id' as d 
+	sqlStmt := fmt.Sprintf(`select count(*), parameters->'source_id' as s, parameters -> 'destination_id' as d
 							from %[1]s group by parameters->'source_id', parameters->'destination_id' order by parameters->'destination_id';`, routerJobsTableName)
 	var rows *sql.Rows
 	var err error
@@ -285,7 +285,7 @@ LatestJobStatusCounts
 */
 func getLatestJobStatusCounts(dbHandle *sql.DB, dsName string, dsStats *DSStats) error {
 	routerJobStatusTableName = "rt_job_status_" + dsName
-	sqlStmt := fmt.Sprintf(`SELECT COUNT(*), job_state, rank FROM (SELECT job_state, RANK() OVER(PARTITION BY job_id 
+	sqlStmt := fmt.Sprintf(`SELECT COUNT(*), job_state, rank FROM (SELECT job_state, RANK() OVER(PARTITION BY job_id
 							ORDER BY exec_time DESC) as rank, job_id from %s) as inner_table GROUP BY rank, job_state order by rank, job_state`, routerJobStatusTableName)
 	var rows *sql.Rows
 	var err error

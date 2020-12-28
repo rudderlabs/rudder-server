@@ -43,8 +43,9 @@ type SqlRunner struct {
 }
 
 type SourceEvents struct {
-	Count  int
-	Source string
+	Count int
+	Name  string
+	ID    string
 }
 
 func (r *SqlRunner) getUniqueSources() ([]SourceEvents, error) {
@@ -59,19 +60,17 @@ func (r *SqlRunner) getUniqueSources() ([]SourceEvents, error) {
 	defer rows.Close()
 	sourceEvent := SourceEvents{}
 	for rows.Next() {
-		err = rows.Scan(&sourceEvent.Count, &sourceEvent.Source)
+		err = rows.Scan(&sourceEvent.Count, &sourceEvent.ID)
 		if err != nil {
 			return sources, err // defer closing of rows, so return will not memory leak
 		}
 		sources = append(sources, sourceEvent)
 	}
 
-	err = rows.Err()
-	if err != nil {
+	if err = rows.Err(); err != nil {
 		return sources, err
 	}
 
-	err = rows.Close() // rows.close will be called in defer too, but it should be harmless to call multiple times
 	return sources, err
 }
 
@@ -148,33 +147,33 @@ func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) error {
 	}
 	defer dbHandle.Close() // since this also returns an error, we can explicitly close but not doing
 	runner := &SqlRunner{dbHandle: dbHandle, jobTableName: jobTableName}
-	sources, serr := runner.getUniqueSources()
-	if serr != nil {
-		misc.AppendError("getUniqueSources", &completeErr, &serr)
+	sources, err := runner.getUniqueSources()
+	if err != nil {
+		misc.AppendError("getUniqueSources", &completeErr, &err)
 	}
-	numUsers, uerr := runner.getNumUniqueUsers()
-	if serr != nil {
-		misc.AppendError("getNumUniqueUsers", &completeErr, &uerr)
+	numUsers, err := runner.getNumUniqueUsers()
+	if err != nil {
+		misc.AppendError("getNumUniqueUsers", &completeErr, &err)
 	}
-	avgBatchSize, berr := runner.getAvgBatchSize()
-	if serr != nil {
-		misc.AppendError("getAvgBatchSize", &completeErr, &berr)
+	avgBatchSize, err := runner.getAvgBatchSize()
+	if err != nil {
+		misc.AppendError("getAvgBatchSize", &completeErr, &err)
 	}
-	tableSize, tserr := runner.getTableSize()
-	if serr != nil {
-		misc.AppendError("getTableSize", &completeErr, &tserr)
+	tableSize, err := runner.getTableSize()
+	if err != nil {
+		misc.AppendError("getTableSize", &completeErr, &err)
 	}
-	numRows, rerr := runner.getTableRowCount()
-	if serr != nil {
-		misc.AppendError("getTableRowCount", &completeErr, &rerr)
+	numRows, err := runner.getTableRowCount()
+	if err != nil {
+		misc.AppendError("getTableRowCount", &completeErr, &err)
 	}
 
 	configSubscriberLock.RLock()
 	sourcesEventToCounts := make([]SourceEvents, 0)
 	for _, sourceEvent := range sources {
-		name, found := sourceIDToNameMap[sourceEvent.Source[1:len(sourceEvent.Source)-1]]
+		name, found := sourceIDToNameMap[sourceEvent.ID[1:len(sourceEvent.ID)-1]]
 		if found {
-			sourcesEventToCounts = append(sourcesEventToCounts, SourceEvents{sourceEvent.Count, name})
+			sourcesEventToCounts = append(sourcesEventToCounts, SourceEvents{sourceEvent.Count, name, sourceEvent.ID})
 		}
 	}
 	configSubscriberLock.RUnlock()
@@ -186,7 +185,7 @@ func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) error {
 		*result = string(response)
 	}
 
-	return err
+	return completeErr
 }
 
 func runSQL(runner *SqlRunner, query string, reciever interface{}) error {
@@ -194,7 +193,7 @@ func runSQL(runner *SqlRunner, query string, reciever interface{}) error {
 	err := row.Scan(reciever)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			fmt.Println("Zero rows found")
+			return nil //"Zero rows found"
 		}
 	}
 	return err

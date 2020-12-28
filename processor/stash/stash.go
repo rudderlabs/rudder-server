@@ -68,7 +68,7 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
 	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.statErrDBW = st.stats.NewStat("processor.err_db_write_time", stats.TimerType)
 	st.crashRecover()
-	admin.RegisterAdminHandler("Stash", &StashRpcHandler{errorDB})
+	admin.RegisterAdminHandler("ProcErrors", &StashRpcHandler{errorDB})
 }
 
 func (st *HandleT) crashRecover() {

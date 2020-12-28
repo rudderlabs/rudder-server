@@ -43,11 +43,12 @@ func (s *StashRpcHandler) GetDSStats(dsName string, result *string) error {
 type DestinationCountResult struct {
 	Count    int
 	DestName string
+	Error    string
 }
 
 func (s *StashRpcHandler) getErrorCountByDest(dbHandle *sql.DB, jobTableName string) ([]DestinationCountResult, error) {
 	results := make([]DestinationCountResult, 0)
-	uniqueSourceValsStmt := fmt.Sprintf(`select count(*) as count, custom_val as dest from %s group by custom_val`, jobTableName)
+	uniqueSourceValsStmt := fmt.Sprintf(`select count(*) as count, custom_val as dest, parameters -> 'error' as error from %s group by custom_val, parameters -> 'error'`, jobTableName)
 	var rows *sql.Rows
 	var err error
 	rows, err = dbHandle.Query(uniqueSourceValsStmt)
@@ -57,20 +58,18 @@ func (s *StashRpcHandler) getErrorCountByDest(dbHandle *sql.DB, jobTableName str
 	defer rows.Close()
 	singleResult := DestinationCountResult{}
 	for rows.Next() {
-		err = rows.Scan(&singleResult.Count, &singleResult.DestName)
+		err = rows.Scan(&singleResult.Count, &singleResult.DestName, &singleResult.Error)
 		if err != nil {
 			return results, err
 		}
 		results = append(results, singleResult)
 	}
 
-	err = rows.Err()
-	if err != nil {
+	if err = rows.Err(); err != nil {
 		return results, err
 	}
 
-	err = rows.Close()
-	if err != nil {
+	if err = rows.Close(); err != nil {
 		return results, err
 	}
 
