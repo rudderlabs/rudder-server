@@ -116,6 +116,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 	fi, err := os.Stat(filePath)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error getting file size of downloaded staging file: ", err)
+		return err
 	}
 	fileSize := fi.Size()
 	pkgLogger.Debugf("[WH]: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
