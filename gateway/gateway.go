@@ -622,7 +622,10 @@ func (gateway *HandleT) cleanWebHandler(w http.ResponseWriter, r *http.Request, 
 	} else if err.Error() == "RequestBodyNil" {
 		errorMessage = response.GetStatus(response.RequestBodyNil)
 	} else {
+		sourceName := gateway.getSourceNameForWriteKey(writeKey)
+		sourceTag := misc.GetTagName(writeKey, sourceName)
 		errorMessage = response.GetStatus(response.RequestBodyReadFailed)
+		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 	}
 	return errorMessage
 }
