@@ -209,6 +209,7 @@ populateHistoricIdentities = false
     queryDebugLogs = false
     blockSize = 1000
     poolSize = 10
+    disableNullable = false
 
 [Processor]
 loopSleepInMS = 10
