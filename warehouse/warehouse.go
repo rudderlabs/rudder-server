@@ -180,7 +180,7 @@ func (wh *HandleT) releaseWorker() {
 }
 
 func (wh *HandleT) initWorker(identifier string) chan []*UploadJobT {
-	workerChan := make(chan []*UploadJobT, 100)
+	workerChan := make(chan []*UploadJobT, 1000)
 	rruntime.Go(func() {
 		for {
 			uploads := <-workerChan
@@ -223,7 +223,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
-		allSources := config.Data.(backendconfig.SourcesT)
+		allSources := config.Data.(backendconfig.ConfigT)
 
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) == 0 {
@@ -315,7 +315,7 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
 		warehouseutils.WarehouseStagingFilesTable, startID, endID, warehouse.Source.ID, warehouse.Destination.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 	defer rows.Close()
 
@@ -324,7 +324,7 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
 		var jsonUpload StagingFileT
 		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location)
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		stagingFilesList = append(stagingFilesList, &jsonUpload)
 	}
@@ -338,7 +338,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileID)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 
 	sqlStatement = fmt.Sprintf(`SELECT id, location, first_event_at, last_event_at
@@ -348,7 +348,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		warehouseutils.WarehouseStagingFilesTable, lastStagingFileID, warehouse.Source.ID, warehouse.Destination.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 	defer rows.Close()
 
@@ -358,7 +358,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		var jsonUpload StagingFileT
 		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &firstEventAt, &lastEventAt)
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		jsonUpload.FirstEventAt = firstEventAt.Time
 		jsonUpload.LastEventAt = lastEventAt.Time
@@ -435,7 +435,7 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]Upl
 		var lastTiming sql.NullString
 		err := rows.Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error, &firstTiming, &lastTiming)
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
 
@@ -492,6 +492,7 @@ func setLastExec(warehouse warehouseutils.WarehouseT) {
 func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, pendingUploads []UploadT) ([]*UploadJobT, error) {
 	uploadJobs := []*UploadJobT{}
 	for _, pendingUpload := range pendingUploads {
+		copiedUpload := pendingUpload
 		if !wh.canStartPendingUpload(pendingUpload, warehouse) {
 			pkgLogger.Debugf("[WH]: Skipping pending upload for %s since current time less than next retry time", warehouse.Identifier)
 			break
@@ -502,7 +503,7 @@ func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.Wareh
 		}
 
 		uploadJob := UploadJobT{
-			upload:       &pendingUpload,
+			upload:       &copiedUpload,
 			stagingFiles: stagingFilesList,
 			warehouse:    warehouse,
 			whManager:    whManager,
@@ -714,7 +715,7 @@ func (wh *HandleT) mainLoop() {
 
 func (wh *HandleT) enqueueUploadJobs(uploadJobs []*UploadJobT) bool {
 	if len(uploadJobs) == 0 {
-		pkgLogger.Errorf("[WH]: Zero upload jobs, not enqueuing")
+		pkgLogger.Info("[WH]: Zero upload jobs, not enqueuing")
 		return false
 	}
 	wh.uploadJobsQ <- uploadJobs
@@ -747,14 +748,14 @@ func (wh *HandleT) Disable() {
 	wh.isEnabled = false
 }
 
-func (wh *HandleT) setInterruptedDestinations() (err error) {
+func (wh *HandleT) setInterruptedDestinations() {
 	if !misc.Contains(crashRecoverWarehouses, wh.destType) {
 		return
 	}
 	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s')`, warehouseutils.WarehouseUploadsTable, wh.destType, getInProgressState(ExportedData), getFailedState(ExportedData))
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 	defer rows.Close()
 
@@ -762,11 +763,11 @@ func (wh *HandleT) setInterruptedDestinations() (err error) {
 		var destID string
 		err := rows.Scan(&destID)
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		inRecoveryMap[destID] = true
 	}
-	return err
+	return
 }
 
 func (wh *HandleT) Setup(whType string) {
@@ -799,6 +800,28 @@ var loadFileFormatMap = map[string]string{
 	"CLICKHOUSE": "csv",
 }
 
+func minimalConfigSubscriber() {
+	ch := make(chan utils.DataEvent)
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	for {
+		config := <-ch
+		pkgLogger.Debug("Got config from config-backend", config)
+		sources := config.Data.(backendconfig.ConfigT)
+		for _, source := range sources.Sources {
+			for _, destination := range source.Destinations {
+				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
+					wh := &HandleT{
+						dbHandle: dbHandle,
+						destType: destination.DestinationDefinition.Name,
+					}
+					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
+					destinationsMap[destination.ID] = warehouseutils.WarehouseT{Destination: destination, Namespace: namespace, Type: wh.destType}
+				}
+			}
+		}
+	}
+}
+
 // Gets the config from config backend and extracts enabled writekeys
 func monitorDestRouters() {
 	ch := make(chan utils.DataEvent)
@@ -808,7 +831,7 @@ func monitorDestRouters() {
 	for {
 		config := <-ch
 		pkgLogger.Debug("Got config from config-backend", config)
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT)
 		enabledDestinations := make(map[string]bool)
 		for _, source := range sources.Sources {
 			for _, destination := range source.Destinations {
@@ -987,6 +1010,10 @@ func Start() {
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
+		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
+		rruntime.Go(func() {
+			minimalConfigSubscriber()
+		})
 		return
 	}
 

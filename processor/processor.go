@@ -3,6 +3,7 @@ package processor
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/dedup"
 	"math"
 	"reflect"
 	"sort"
@@ -76,6 +77,7 @@ type HandleT struct {
 	userPQLock                   sync.Mutex
 	logger                       logger.LoggerI
 	eventSchemaHandler           types.EventSchemasI
+	dedupHandler                 dedup.DedupI
 }
 
 type DestStatT struct {
@@ -156,7 +158,7 @@ func NewProcessor() *HandleT {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB) {
+func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool) {
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -206,6 +208,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
 	}
+	if enableDedup {
+		proc.dedupHandler = dedup.GetInstance(clearDB)
+	}
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
@@ -222,6 +227,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 
 // Start starts this processor's main loops.
 func (proc *HandleT) Start() {
+
 	rruntime.Go(func() {
 		proc.mainLoop()
 	})
@@ -252,6 +258,7 @@ var (
 	customDestinations                  []string
 	pkgLogger                           logger.LoggerI
 	enableEventSchemasFeature           bool
+	enableDedup                         bool
 )
 
 func loadConfig() {
@@ -263,6 +270,8 @@ func loadConfig() {
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
+	// Enable dedup of incoming events by default
+	enableDedup = config.GetBool("Dedup.enableDedup", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
@@ -282,7 +291,7 @@ func (proc *HandleT) backendConfigSubscriber() {
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		destinationIDtoTypeMap = make(map[string]string)
 		destinationTransformationEnabledMap = make(map[string]bool)
-		sources := config.Data.(backendconfig.SourcesT)
+		sources := config.Data.(backendconfig.ConfigT)
 		for _, source := range sources.Sources {
 			if source.Enabled {
 				writeKeyDestinationMap[source.WriteKey] = source.Destinations
@@ -747,6 +756,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
 
 	proc.marshalSingularEvents.Start()
+	uniqueMessageIds := make(map[string]struct{})
+	var sourceDupStats = make(map[string]int)
+
 	for idx, batchEvent := range jobList {
 
 		var singularEvents []types.SingularEventT
@@ -762,17 +774,34 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		receivedAt := gjson.Get(string(batchEvent.EventPayload), "receivedAt").Time()
 
 		if ok {
+			var duplicateIndexes []int
+			if enableDedup {
+				var allMessageIdsInBatch []string
+				for _, singularEvent := range singularEvents {
+					allMessageIdsInBatch = append(allMessageIdsInBatch, singularEvent["messageId"].(string))
+				}
+				duplicateIndexes = proc.dedupHandler.FindDuplicates(allMessageIdsInBatch, uniqueMessageIds)
+			}
+
 			//Iterate through all the events in the batch
-			for _, singularEvent := range singularEvents {
+			for eventIndex, singularEvent := range singularEvents {
+				messageId := singularEvent["messageId"].(string)
+				if enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
+					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
+					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
+					continue
+				}
+				uniqueMessageIds[messageId] = struct{}{}
 				//We count this as one, not destination specific ones
 				totalEvents++
-
-				eventsByMessageID[singularEvent["messageId"].(string)] = singularEvent
+				eventsByMessageID[messageId] = singularEvent
 
 				//Getting all the destinations which are enabled for this
 				//event
 				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
+				workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+				workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
 
 				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
 				if len(enabledDestTypes) == 0 {
@@ -790,7 +819,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy := transformer.TransformerEventT{}
 						shallowEventCopy.Message = singularEvent
 						shallowEventCopy.Destination = reflect.ValueOf(destination).Interface().(backendconfig.DestinationT)
-
+						shallowEventCopy.Libraries = workspaceLibraries
+						//TODO: Test for multiple workspaces ex: hosted data plane
 						/* Stream destinations does not need config in transformer. As the Kafka destination config
 						holds the ca-certificate and it depends on user input, it may happen that they provide entire
 						certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
@@ -976,6 +1006,16 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 
 	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	if enableDedup {
+		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
+		if len(uniqueMessageIds) > 0 {
+			var dedupedMessageIdsAcrossJobs []string
+			for k, _ := range uniqueMessageIds {
+				dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
+			}
+			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
+		}
+	}
 	proc.statDBW.End()
 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
@@ -1090,7 +1130,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 func (proc *HandleT) mainLoop() {
 	//waiting till the backend config is received
-	backendconfig.WaitForConfig()
+	proc.backendConfig.WaitForConfig()
 
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
@@ -1134,5 +1174,15 @@ func (proc *HandleT) crashRecover() {
 			statusList = append(statusList, &status)
 		}
 		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	}
+}
+
+func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {
+	for sourceTag, count := range sourceStats {
+		tags := map[string]string{
+			"source": sourceTag,
+		}
+		sourceStatsD := proc.stats.NewTaggedStat(bucket, stats.CountType, tags)
+		sourceStatsD.Count(count)
 	}
 }

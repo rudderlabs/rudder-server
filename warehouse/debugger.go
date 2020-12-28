@@ -28,14 +28,17 @@ func (wh *HandleT) recordDeliveryStatus(destID string, uploadID int64) {
 	successfulTableUploads := make([]string, 0)
 	failedTableUploads := make([]string, 0)
 
-	row := wh.dbHandle.QueryRow(fmt.Sprintf(`select source_id, destination_id, status, error, updated_at from %s where id=%d`, warehouseutils.WarehouseUploadsTable, uploadID))
+	sqlStatement := fmt.Sprintf(`select source_id, destination_id, status, error, updated_at from %s where id=%d`, warehouseutils.WarehouseUploadsTable, uploadID)
+	row := wh.dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&sourceID, &destinationID, &status, &errorResp, &updatedAt)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
-	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select table_name, status from %s where wh_upload_id=%d`, warehouseutils.WarehouseTableUploadsTable, uploadID))
+
+	sqlStatement = fmt.Sprintf(`select table_name, status from %s where wh_upload_id=%d`, warehouseutils.WarehouseTableUploadsTable, uploadID)
+	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -50,7 +53,7 @@ func (wh *HandleT) recordDeliveryStatus(destID string, uploadID int64) {
 	var errJSON map[string]map[string]interface{}
 	err = json.Unmarshal([]byte(errorResp), &errJSON)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", errorResp, err))
 	}
 	if stateErr, ok := errJSON[status]; ok {
 		if attempt, ok := stateErr["attempt"]; ok {
@@ -94,15 +97,19 @@ func (wh *HandleT) recordDeliveryStatus(destID string, uploadID int64) {
 // syncLiveWarehouseStatus fetch last 10 records order by updated_at desc and sends uploadIds in reverse order to recordDeliveryStatus.
 // that way we can fetch last 10 records order by updated_at asc
 func (wh *HandleT) syncLiveWarehouseStatus(sourceID string, destinationID string) {
-	rows, err := wh.dbHandle.Query(fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at desc limit %d`, warehouseutils.WarehouseUploadsTable, sourceID, destinationID, warehouseSyncPreFetchCount))
+	sqlStatement := fmt.Sprintf(`select id from %s where source_id='%s' and destination_id='%s' order by updated_at desc limit %d`, warehouseutils.WarehouseUploadsTable, sourceID, destinationID, warehouseSyncPreFetchCount)
+	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
 	defer rows.Close()
 	var uploadIDs []int64
 	for rows.Next() {
 		var uploadID int64
-		rows.Scan(&uploadID)
+		err = rows.Scan(&uploadID)
+		if err != nil {
+			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+		}
 		uploadIDs = append(uploadIDs, uploadID)
 	}
 

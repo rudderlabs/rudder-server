@@ -84,13 +84,13 @@ func (sHandle *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Sch
 			return
 		}
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 		}
 	}
 	var schemaMapInterface map[string]interface{}
 	err = json.Unmarshal(rawSchema, &schemaMapInterface)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", rawSchema, err))
 	}
 	currentSchema = warehouseutils.SchemaT{}
 	for tname, columnMapInterface := range schemaMapInterface {
@@ -251,7 +251,7 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 		sqlStatement := fmt.Sprintf(`SELECT schema FROM %s WHERE id IN (%s)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(ids, ","))
 		rows, err := sh.dbHandle.Query(sqlStatement)
 		if err != nil && err != sql.ErrNoRows {
-			panic(err)
+			panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 		}
 
 		var schemas []warehouseutils.SchemaT
@@ -259,12 +259,12 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 			var s json.RawMessage
 			err := rows.Scan(&s)
 			if err != nil {
-				panic(err)
+				panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 			}
 			var schema warehouseutils.SchemaT
 			err = json.Unmarshal(s, &schema)
 			if err != nil {
-				panic(err)
+				panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(s), err))
 			}
 
 			schemas = append(schemas, schema)
@@ -298,42 +298,37 @@ func compareSchema(sch1, sch2 map[string]map[string]string) bool {
 	return eq
 }
 
-func getSchemaDiff(currentSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.SchemaDiffT) {
-	diff = warehouseutils.SchemaDiffT{
-		Tables:                         []string{},
-		ColumnMaps:                     make(map[string]map[string]string),
-		UpdatedSchema:                  make(map[string]map[string]string),
-		StringColumnsToBeAlteredToText: make(map[string][]string),
+func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
+	diff = warehouseutils.TableSchemaDiffT{
+		ColumnMap:     make(map[string]string),
+		UpdatedSchema: make(map[string]string),
 	}
 
-	// deep copy currentschema to avoid mutating currentSchema by doing diff.UpdatedSchema = currentSchema
-	for tableName, columnMap := range map[string]map[string]string(currentSchema) {
-		diff.UpdatedSchema[tableName] = make(map[string]string)
-		for columnName, columnType := range columnMap {
-			diff.UpdatedSchema[tableName][columnName] = columnType
-		}
+	var currentTableSchema map[string]string
+	var ok bool
+	if currentTableSchema, ok = currentSchema[tableName]; !ok {
+		diff.Exists = true
+		diff.TableToBeCreated = true
+		diff.ColumnMap = uploadSchema[tableName]
+		diff.UpdatedSchema = uploadSchema[tableName]
+		return diff
 	}
-	for tableName, uploadColumnMap := range map[string]map[string]string(uploadSchema) {
-		currentColumnsMap, ok := currentSchema[tableName]
-		if !ok {
-			diff.Tables = append(diff.Tables, tableName)
-			diff.ColumnMaps[tableName] = uploadColumnMap
-			diff.UpdatedSchema[tableName] = uploadColumnMap
+
+	for columnName, columnType := range currentSchema[tableName] {
+		diff.UpdatedSchema[columnName] = columnType
+	}
+
+	diff.ColumnMap = make(map[string]string)
+	for columnName, columnType := range uploadSchema[tableName] {
+		if _, ok := currentTableSchema[columnName]; !ok {
+			diff.ColumnMap[columnName] = columnType
+			diff.UpdatedSchema[columnName] = columnType
 			diff.Exists = true
-		} else {
-			diff.ColumnMaps[tableName] = make(map[string]string)
-			for columnName, columnType := range uploadColumnMap {
-				if _, ok := currentColumnsMap[columnName]; !ok {
-					diff.ColumnMaps[tableName][columnName] = columnType
-					diff.UpdatedSchema[tableName][columnName] = columnType
-					diff.Exists = true
-				} else if columnType == "text" && currentColumnsMap[columnName] == "string" {
-					diff.StringColumnsToBeAlteredToText[tableName] = append(diff.StringColumnsToBeAlteredToText[tableName], columnName)
-					diff.Exists = true
-				}
-			}
+		} else if columnType == "text" && currentTableSchema[columnName] == "string" {
+			diff.StringColumnsToBeAlteredToText = append(diff.StringColumnsToBeAlteredToText, columnName)
+			diff.UpdatedSchema[columnName] = columnType
+			diff.Exists = true
 		}
-
 	}
-	return
+	return diff
 }
