@@ -305,12 +305,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			sourceName := gateway.getSourceNameForWriteKey(writeKey)
 			sourceTag := misc.GetTagName(writeKey, sourceName)
 			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
-			// if !ok || writeKey == "" {
-			// 	req.done <- response.GetStatus(response.NoWriteKeyInBasicAuth)
-			// 	preDbStoreCount++
-			// 	misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
-			// 	continue
-			// }
 
 			ipAddr := req.ipAddr
 
@@ -332,12 +326,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 			}
 
-			// if err != nil {
-			// 	req.done <- response.GetStatus(response.RequestBodyReadFailed)
-			// 	preDbStoreCount++
-			// 	misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-			// 	continue
-			// }
 			if !gjson.ValidBytes(body) {
 				req.done <- response.GetStatus(response.InvalidJSON)
 				preDbStoreCount++
