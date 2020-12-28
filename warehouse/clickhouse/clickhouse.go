@@ -216,7 +216,7 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations, _ := ch.Uploader.GetLoadFileLocations(tableName)
+	objectLocations := ch.Uploader.GetLoadFileLocations(tableName)
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		object, err := warehouseutils.GetObjectName(objectLocation, ch.Warehouse.Destination.Config, ch.ObjectStorage)
@@ -440,7 +440,7 @@ func getSortKeyTuple(sortKeyFields []string) string {
 
 // createTable creates table with engine ReplacingMergeTree(), this is used for dedupe event data and replace it will latest data if duplicate data found. This logic is handled by clickhouse
 // The engine differs from MergeTree in that it removes duplicate entries with the same sorting key value.
-func (ch *HandleT) createTable(tableName string, columns map[string]string) (err error) {
+func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"received_at", "id"}
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"received_at"}
@@ -472,53 +472,23 @@ func (ch *HandleT) tableExists(tableName string) (exists bool, err error) {
 	return
 }
 
-// addColumn adds column:columnName with dataType columnType to the tableName
-func (ch *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+// AddColumn adds column:columnName with dataType columnType to the tableName
+func (ch *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[columnType], false))
 	pkgLogger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
 }
 
-func (ch *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
-	if len(ch.Uploader.GetSchemaInWarehouse()) == 0 {
-		err = ch.createSchema()
-		if err != nil {
-			return
-		}
+func (ch *HandleT) CreateSchema() (err error) {
+	if len(ch.Uploader.GetSchemaInWarehouse()) > 0 {
+		return nil
 	}
+	err = ch.createSchema()
+	return err
+}
 
-	processedTables := make(map[string]bool)
-	for _, tableName := range diff.Tables {
-		var tableExists bool
-		tableExists, err = ch.tableExists(tableName)
-		if err != nil {
-			return
-		}
-		if !tableExists {
-			err = ch.createTable(fmt.Sprintf(`%s`, tableName), diff.ColumnMaps[tableName])
-			if err != nil {
-				return
-			}
-			processedTables[tableName] = true
-		}
-	}
-	for tableName, columnMap := range diff.ColumnMaps {
-		// skip adding columns when table didn't exist previously and was created in the prev statement
-		// this to make sure all columns in the the columnMap exists in the table in snowflake
-		if _, ok := processedTables[tableName]; ok {
-			continue
-		}
-		if len(columnMap) > 0 {
-			for columnName, columnType := range columnMap {
-				err = ch.addColumn(tableName, columnName, columnType)
-				if err != nil {
-					pkgLogger.Errorf("CH: Column %s already exists on %s.%s \nResponse: %v", columnName, ch.Namespace, tableName, err)
-					return
-				}
-			}
-		}
-	}
+func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
 	return
 }
 
