@@ -612,8 +612,8 @@ func (gateway *HandleT) cleanWebHandler(w http.ResponseWriter, r *http.Request, 
 	}
 	if err == nil {
 		if reqType == "import" {
-			usersPayload := gateway.getUsersPayload(payload)
-			errorMessage = gateway.userWebImportHandler(w, r, "batch", usersPayload, writeKey)
+			usersPayload, payloadError := gateway.getUsersPayload(payload)
+			errorMessage = gateway.userWebImportHandler(w, r, "batch", usersPayload, writeKey, payloadError)
 		} else {
 			done := make(chan string, 1)
 			gateway.AddToWebRequestQ(r, &w, done, reqType, payload, writeKey)
@@ -645,8 +645,11 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	}
 }
 
-func (gateway *HandleT) userWebImportHandler(w http.ResponseWriter, r *http.Request, reqType string, usersPayload map[string][]byte, writeKey string) string {
+func (gateway *HandleT) userWebImportHandler(w http.ResponseWriter, r *http.Request, reqType string, usersPayload map[string][]byte, writeKey string, payloadError error) string {
 	errorMessage := ""
+	if payloadError != nil {
+		return payloadError.Error()
+	}
 	count := len(usersPayload)
 	done := make(chan string, 1)
 	for key := range usersPayload {
@@ -661,9 +664,13 @@ func (gateway *HandleT) userWebImportHandler(w http.ResponseWriter, r *http.Requ
 	return errorMessage
 }
 
-func (gateway *HandleT) getUsersPayload(requestPayload []byte) map[string][]byte {
+func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byte, error) {
 	userMap := make(map[string][][]byte)
 	var index int
+
+	if !gjson.ValidBytes(requestPayload) {
+		return make(map[string][]byte), errors.New(response.InvalidJSON)
+	}
 
 	result := gjson.GetBytes(requestPayload, "batch")
 
@@ -686,7 +693,7 @@ func (gateway *HandleT) getUsersPayload(requestPayload []byte) map[string][]byte
 		}
 		recontructedUserMap[key] = []byte(tempValue)
 	}
-	return recontructedUserMap
+	return recontructedUserMap, nil
 }
 
 func (gateway *HandleT) trackRequestMetrics(errorMessage string) {
