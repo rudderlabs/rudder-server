@@ -3130,10 +3130,8 @@ func (jd *HandleT) CheckPGHealth() bool {
 }
 
 func (jd *HandleT) GetLastJobID() int64 {
-	jd.dsListLock.Lock()
+	jd.dsListLock.RLock()
 	dsList := jd.getDSList(false)
-	jd.dsListLock.Unlock()
-
-	maxDSID := jd.GetMaxDSIndex()
-	return jd.GetMaxIDForDs(dsList[maxDSID-1])
+	jd.dsListLock.RUnlock()
+	return jd.GetMaxIDForDs(dsList[len(dsList)-1])
 }

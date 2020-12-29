@@ -64,6 +64,20 @@ func (r *RouterRpcHandler) GetDrainJobsConfig(noArgs struct{}, reply *string) (e
 	}()
 	drainHandler := GetDrainJobHandler()
 	formattedOutput, err := json.MarshalIndent(drainHandler, "", "  ")
-	*reply = string(formattedOutput)
+	if err == nil {
+		*reply = string(formattedOutput)
+	}
+	return err
+}
+
+func (r *RouterRpcHandler) FlushDrainJobsConfig(destID string, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+
+	*reply = FlushDrainJobConfig(destID)
 	return err
 }
