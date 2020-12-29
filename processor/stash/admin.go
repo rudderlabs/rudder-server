@@ -17,13 +17,19 @@ var prefix = "proc_error_jobs_"
 /*
 ProcErrorsByDestinationCount
 ================================================================================
-│───────│─────────────│
-│ COUNT │ DESTINATION │
-│───────│─────────────│
-│     1 │ GA          │
-│───────│─────────────│
+│───────│─────────────│──────────────────────────────────│
+│ COUNT │ DESTINATION │ ERROR                            │
+│───────│─────────────│──────────────────────────────────│
+│     3 │ GA          │ "server side identify is not on" │
+│───────│─────────────│──────────────────────────────────│
 */
-func (s *StashRpcHandler) GetDSStats(dsName string, result *string) error {
+func (s *StashRpcHandler) GetDSStats(dsName string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
 	jobTableName := prefix + dsName
 	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
 	defer dbHandle.Close()

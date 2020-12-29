@@ -118,6 +118,7 @@ type DSStats struct {
 	NumRows      int
 }
 
+// TODO :
 // first_event, last_event min--maxid to event: available in dsrange
 // Average batch size ⇒ num_events we want per ds
 // writeKey, count(*)  we want source name to count per ds
@@ -127,18 +128,26 @@ type DSStats struct {
 /*
 EventsBySource
 ================================================================================
-│───────│────────│
-│ COUNT │ SOURCE │
-│───────│────────│
-│   448 │ tr-2   │
-│───────│────────│
+│───────│───────────│───────────────────────────────│
+│ COUNT │ NAME      │ ID                            │
+│───────│───────────│───────────────────────────────│
+│     7 │ test-dev  │ "1jEZBT9aChBgbVkfKBjtLau8XAM" │
+│     1 │ and-raid  │ "1lBkol38t4m5Xz3zZAeSZ0P26QU" │
+│───────│───────────│───────────────────────────────│
 ================================================================================
-NumUsers :  228
-NumUsers :  1.2589285714285714
-NumUsers :  1351680
-NumUsers :  448
+NumUsers :  2
+AvgBatchSize :  1
+TableSize :  65536
+NumRows :  8
 */
-func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) error {
+func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+
 	var completeErr error
 	jobTableName := prefix + dsName
 	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
