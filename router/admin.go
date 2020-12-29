@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/router/drain"
 )
 
 type RouterAdmin struct {
@@ -40,7 +41,7 @@ func (ra *RouterAdmin) Status() interface{} {
 type RouterRpcHandler struct {
 }
 
-func (r *RouterRpcHandler) SetDrainJobsConfig(dHandle DrainConfig, reply *string) (err error) {
+func (r *RouterRpcHandler) SetDrainJobsConfig(dHandle drain.DrainConfig, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -48,7 +49,7 @@ func (r *RouterRpcHandler) SetDrainJobsConfig(dHandle DrainConfig, reply *string
 		}
 	}()
 
-	_, err = SetDrainJobIDs(dHandle.MinDrainJobID, dHandle.MaxDrainJobID, dHandle.DrainDestinationID)
+	_, err = drain.SetDrainJobIDs(dHandle.MinDrainJobID, dHandle.MaxDrainJobID, dHandle.DrainDestinationID)
 	if err == nil {
 		*reply = fmt.Sprintf("Drain config updated")
 	}
@@ -62,7 +63,7 @@ func (r *RouterRpcHandler) GetDrainJobsConfig(noArgs struct{}, reply *string) (e
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
-	drainHandler := GetDrainJobHandler()
+	drainHandler := drain.GetDrainJobHandler()
 	formattedOutput, err := json.MarshalIndent(drainHandler, "", "  ")
 	if err == nil {
 		*reply = string(formattedOutput)
@@ -78,6 +79,6 @@ func (r *RouterRpcHandler) FlushDrainJobsConfig(destID string, reply *string) (e
 		}
 	}()
 
-	*reply = FlushDrainJobConfig(destID)
+	*reply = drain.FlushDrainJobConfig(destID)
 	return err
 }

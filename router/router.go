@@ -3,6 +3,7 @@ package router
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/router/drain"
 	"github.com/tidwall/gjson"
 	"math"
 	"math/rand"
@@ -73,7 +74,7 @@ type HandleT struct {
 	backendConfigInitialized               chan bool
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
-	drainJobHandler                        DrainI
+	drainJobHandler                        drain.DrainI
 }
 
 type jobResponseT struct {
@@ -107,20 +108,6 @@ type workerT struct {
 	abortedUserIDMap    map[string]int // aborted user to count of jobs allowed map
 	abortedUserMutex    sync.Mutex
 }
-type DrainI interface {
-	CanJobBeDrained(jobID int64, destID string) bool
-}
-
-type DrainConfig struct {
-	MinDrainJobID      int64  `json:"minDrainJobID"`
-	MaxDrainJobID      int64  `json:"maxDrainJobID"`
-	DrainDestinationID string `json:"drainDestinationID"`
-}
-type DrainHandleT struct {
-	DrainConfigs    []*DrainConfig
-	drainUpdateLock sync.RWMutex
-	rt              *HandleT
-}
 
 var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel            int
@@ -131,7 +118,6 @@ var (
 	pkgLogger                                                               logger.LoggerI
 	Diagnostics                                                             diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                          time.Duration
-	drainHandler                                                            *DrainHandleT
 )
 
 type requestMetric struct {
@@ -1073,7 +1059,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	rt.maxFailedCountForJob = getRouterConfigInt("maxFailedCountForJob", destName, 3)
 	rt.retryTimeWindow = getRouterConfigDuration("retryTimeWindowInMins", destName, time.Duration(180)) * time.Minute
-	rt.drainJobHandler = setup(rt)
+	rt.drainJobHandler = drain.Setup(rt.jobsDB)
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
@@ -1147,88 +1133,4 @@ func (rt *HandleT) backendConfigSubscriber() {
 		}
 		rt.configSubscriberLock.Unlock()
 	}
-}
-
-func setup(rtHandle *HandleT) *DrainHandleT {
-	if drainHandler != nil {
-		return drainHandler
-	}
-	drainHandler = &DrainHandleT{
-		rt: rtHandle,
-	}
-	return drainHandler
-}
-
-func SetDrainJobIDs(minID int64, maxID int64, destID string) (*DrainHandleT, error) {
-	if maxID == 0 {
-		maxID = drainHandler.rt.jobsDB.GetLastJobID()
-	}
-	if maxID < minID {
-		return drainHandler, fmt.Errorf("maxID : %d < minID : %d ,skipping drain config update", maxID, minID)
-	}
-	drainHandler.drainUpdateLock.Lock()
-	defer drainHandler.drainUpdateLock.Unlock()
-	overridedConfig := false
-	for _, dConfig := range drainHandler.DrainConfigs {
-		if dConfig.DrainDestinationID == destID {
-			dConfig.MaxDrainJobID = maxID
-			dConfig.MinDrainJobID = minID
-			pkgLogger.Infof(" Drain config overrided : MinJobID : %d, MaxJobID : %d, DestID : %s", minID, maxID, destID)
-			overridedConfig = true
-			break
-		}
-	}
-	if !overridedConfig {
-		newDrainConfig := &DrainConfig{MinDrainJobID: minID, MaxDrainJobID: maxID, DrainDestinationID: destID}
-		drainHandler.DrainConfigs = append(drainHandler.DrainConfigs, newDrainConfig)
-		pkgLogger.Infof(" New Drain config added : MinJobID : %d, MaxJobID : %d, DestID : %s", newDrainConfig.MinDrainJobID, newDrainConfig.MaxDrainJobID, newDrainConfig.DrainDestinationID)
-	}
-	return drainHandler, nil
-}
-
-func GetDrainJobHandler() *DrainHandleT {
-	return drainHandler
-}
-
-func FlushDrainJobConfig(destID string) string {
-	reply := ""
-	drainHandler.drainUpdateLock.Lock()
-	defer drainHandler.drainUpdateLock.Unlock()
-
-	if destID == "" {
-		reply = fmt.Sprintf("Pass all/<dest-id>")
-		return reply
-	}
-	if destID == "all" {
-		drainHandler.DrainConfigs = nil
-		reply = fmt.Sprintf("Flushed all DrainConfig")
-		pkgLogger.Info(reply)
-		return reply
-	}
-	var newDrainConfigs []*DrainConfig
-	isDestIDPresent := false
-	for _, dConfig := range drainHandler.DrainConfigs {
-		if dConfig.DrainDestinationID == destID {
-			isDestIDPresent = true
-			continue
-		}
-		newDrainConfigs = append(newDrainConfigs, dConfig)
-	}
-	if isDestIDPresent {
-		drainHandler.DrainConfigs = newDrainConfigs
-		reply = fmt.Sprintf("Flushed drain config for : %s", destID)
-		pkgLogger.Info(reply)
-	} else {
-		reply = fmt.Sprintf("No drain config found for : %s", destID)
-	}
-	return reply
-}
-
-func (d *DrainHandleT) CanJobBeDrained(jobID int64, destID string) bool {
-	for _, dConfig := range d.DrainConfigs {
-		if dConfig.DrainDestinationID == destID && dConfig.MinDrainJobID <= jobID && jobID < dConfig.MaxDrainJobID {
-			return true
-		}
-	}
-	return false
 }
