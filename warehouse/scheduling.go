@@ -208,7 +208,7 @@ func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutil
 
 	nextRetryTimeStr, ok := metadata["nextRetryTime"]
 	if !ok {
-		return upload.LastAttemptAt.IsZero()
+		return true
 	}
 
 	nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr)

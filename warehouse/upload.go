@@ -621,7 +621,6 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
 			alteredSchema, err := job.loadTable(tName)
-
 			if alteredSchema {
 				alteredSchemaInAtleastOneTable = true
 			}
@@ -966,7 +965,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 		}
 	}
 
-	var metadata map[string]string
+	metadata := make(map[string]string)
 	metadata["nextRetryTime"] = upload.LastAttemptAt.Add(durationBeforeNextAttempt(upload.Attempts)).Format(time.RFC3339)
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
