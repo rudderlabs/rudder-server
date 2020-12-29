@@ -29,6 +29,12 @@ END ;
 $$;
 
 -- create a trigger when there is a insert or update on wh_schemas
-create trigger warehouse_schema_history_trigger AFTER INSERT OR UPDATE ON "wh_schemas" FOR EACH ROW EXECUTE PROCEDURE warehouse_schema_history()
+-- creates a transaction. if the trigger already exists then does nothing
+DO $$
+    BEGIN
+        create trigger  warehouse_schema_history_trigger AFTER INSERT OR UPDATE ON "wh_schemas" FOR EACH ROW EXECUTE PROCEDURE warehouse_schema_history();
+    EXCEPTION
+        when others then null;
+    END $$
 
 
