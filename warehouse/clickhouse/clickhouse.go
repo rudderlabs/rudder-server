@@ -57,6 +57,13 @@ var rudderDataTypesMapToClickHouse = map[string]string{
 	"boolean":  "UInt8",
 }
 
+var datatypeDefaultValuesMap = map[string]interface{}{
+	"int":      0,
+	"float":    0.0,
+	"bool":     0,
+	"datetime": clikhouseDefaultDateTime,
+}
+
 var clickhouseDataTypesMapToRudder = map[string]string{
 	"Int8":               "int",
 	"Int16":              "int",
@@ -217,7 +224,7 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string
 		return fmt.Sprintf(`SimpleAggregateFunction(anyLast, Nullable(%s))`, columnType)
 	}
 	if tableName != warehouseutils.IdentifiesTable && disableNullable {
-		return fmt.Sprintf(`%s`, columnType)
+		return columnType
 	}
 	return fmt.Sprintf(`Nullable(%s)`, columnType)
 }
@@ -284,7 +291,7 @@ func typecastDataFromType(data string, dataType string) interface{} {
 		i, err := strconv.Atoi(data)
 		if err != nil {
 			if disableNullable {
-				return 0
+				return datatypeDefaultValuesMap[dataType]
 			}
 			return nil
 		}
@@ -293,7 +300,7 @@ func typecastDataFromType(data string, dataType string) interface{} {
 		f, err := strconv.ParseFloat(data, 64)
 		if err != nil {
 			if disableNullable {
-				return 0.0
+				return datatypeDefaultValuesMap[dataType]
 			}
 			return nil
 		}
@@ -302,7 +309,7 @@ func typecastDataFromType(data string, dataType string) interface{} {
 		t, err := time.Parse(time.RFC3339, data)
 		if err != nil {
 			if disableNullable {
-				return clikhouseDefaultDateTime
+				return datatypeDefaultValuesMap[dataType]
 			}
 			return nil
 		}
@@ -311,7 +318,7 @@ func typecastDataFromType(data string, dataType string) interface{} {
 		b, err := strconv.ParseBool(data)
 		if err != nil {
 			if disableNullable {
-				return 0
+				return datatypeDefaultValuesMap[dataType]
 			}
 			return nil
 		}
