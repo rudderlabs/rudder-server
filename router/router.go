@@ -975,7 +975,7 @@ func (rt *HandleT) generatorLoop() {
 		rt.throttledUserMap = make(map[string]struct{})
 		//Identify jobs which can be processed
 		for _, job := range combinedList {
-			if rt.drainJobHandler.CanJobBeDrained(job.JobID, gjson.GetBytes(job.Parameters, "destination_id").String()) {
+			if rt.drainJobHandler.CanJobBeDrained(job.JobID, destIDExtractor([]byte(job.Parameters))) {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -1023,6 +1023,12 @@ func (rt *HandleT) generatorLoop() {
 		countStat.Count(len(combinedList))
 		generatorStat.End()
 		time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
+	}
+}
+
+func destIDExtractor(body []byte) func()string{
+	return func()string{
+		return gjson.GetBytes(body, "destination_id").String()
 	}
 }
 

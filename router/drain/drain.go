@@ -8,7 +8,7 @@ import (
 )
 
 type DrainI interface {
-	CanJobBeDrained(jobID int64, destID string) bool
+	CanJobBeDrained(jobID int64, destIDExtractFn func() string) bool
 }
 
 type DrainConfig struct {
@@ -106,9 +106,9 @@ func FlushDrainJobConfig(destID string) string {
 	return reply
 }
 
-func (d *DrainHandleT) CanJobBeDrained(jobID int64, destID string) bool {
+func (d *DrainHandleT) CanJobBeDrained(jobID int64, destIDExtractFn func() string) bool {
 	for _, dConfig := range d.DrainConfigs {
-		if dConfig.DrainDestinationID == destID && dConfig.MinDrainJobID <= jobID && jobID < dConfig.MaxDrainJobID {
+		if dConfig.DrainDestinationID == destIDExtractFn() && dConfig.MinDrainJobID <= jobID && jobID < dConfig.MaxDrainJobID {
 			return true
 		}
 	}
