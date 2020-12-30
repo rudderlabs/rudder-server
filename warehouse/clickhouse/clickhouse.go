@@ -285,49 +285,30 @@ func generateArgumentString(arg string, length int) string {
 
 // typecastDataFromType typeCasts string data to the mentioned data type
 func typecastDataFromType(data string, dataType string) interface{} {
-
+	var dataI interface{}
+	var err error
 	switch dataType {
 	case "int":
-		i, err := strconv.Atoi(data)
-		if err != nil {
-			if disableNullable {
-				return datatypeDefaultValuesMap[dataType]
-			}
-			return nil
-		}
-		return i
+		dataI, err = strconv.Atoi(data)
 	case "float":
-		f, err := strconv.ParseFloat(data, 64)
-		if err != nil {
-			if disableNullable {
-				return datatypeDefaultValuesMap[dataType]
-			}
-			return nil
-		}
-		return f
+		dataI, err = strconv.ParseFloat(data, 64)
 	case "datetime":
-		t, err := time.Parse(time.RFC3339, data)
-		if err != nil {
-			if disableNullable {
-				return datatypeDefaultValuesMap[dataType]
-			}
-			return nil
-		}
-		return t
+		dataI, err = time.Parse(time.RFC3339, data)
 	case "boolean":
-		b, err := strconv.ParseBool(data)
-		if err != nil {
-			if disableNullable {
-				return datatypeDefaultValuesMap[dataType]
-			}
-			return nil
-		}
+		var b bool
+		b, err = strconv.ParseBool(data)
+		dataI = 0
 		if b {
-			return 1
+			dataI = 1
 		}
-		return 0
 	}
-	return data
+	if err != nil {
+		if disableNullable {
+			return datatypeDefaultValuesMap[dataType]
+		}
+		return nil
+	}
+	return dataI
 }
 
 // loadTable loads table to clickhouse from the load files
