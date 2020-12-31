@@ -105,6 +105,15 @@ func saveErrorStore(errorStore ErrorStoreT) {
 	}
 }
 
+//AppendError creates or appends second error to first error
+func AppendError(callingMethodName string, firstError *error, secondError *error) {
+	if *firstError != nil {
+		*firstError = fmt.Errorf("%v ; %v : %w", (*firstError).Error(), callingMethodName, *secondError)
+	} else {
+		*firstError = fmt.Errorf("%v : %w", callingMethodName, *secondError)
+	}
+}
+
 //RecordAppError appends the error occured to error_store.json
 func RecordAppError(err error) {
 	if err == nil {

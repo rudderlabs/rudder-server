@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
@@ -34,50 +35,53 @@ import (
 
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
-	backendConfig                backendconfig.BackendConfig
-	processSessions              bool
-	sessionThresholdEvents       int
-	stats                        stats.Stats
-	gatewayDB                    jobsdb.JobsDB
-	routerDB                     jobsdb.JobsDB
-	batchRouterDB                jobsdb.JobsDB
-	errorDB                      jobsdb.JobsDB
-	transformer                  transformer.Transformer
-	pStatsJobs                   *misc.PerfStats
-	pStatsDBR                    *misc.PerfStats
-	statGatewayDBR               stats.RudderStats
-	pStatsDBW                    *misc.PerfStats
-	statGatewayDBW               stats.RudderStats
-	statRouterDBW                stats.RudderStats
-	statBatchRouterDBW           stats.RudderStats
-	statProcErrDBW               stats.RudderStats
-	statActiveUsers              stats.RudderStats
-	userJobListMap               map[string][]*jobsdb.JobT
-	userEventsMap                map[string][]types.SingularEventT
-	userPQItemMap                map[string]*pqItemT
-	statJobs                     stats.RudderStats
-	statDBR                      stats.RudderStats
-	statDBW                      stats.RudderStats
-	statLoopTime                 stats.RudderStats
-	eventSchemasTime             stats.RudderStats
-	statSessionTransform         stats.RudderStats
-	statUserTransform            stats.RudderStats
-	statDestTransform            stats.RudderStats
-	statListSort                 stats.RudderStats
-	marshalSingularEvents        stats.RudderStats
-	destProcessing               stats.RudderStats
-	statNumDests                 stats.RudderStats
-	statNumRequests              stats.RudderStats
-	statNumEvents                stats.RudderStats
-	statDestNumOutputEvents      stats.RudderStats
-	statBatchDestNumOutputEvents stats.RudderStats
-	destStats                    map[string]*DestStatT
-	userToSessionIDMap           map[string]string
-	userJobPQ                    pqT
-	userPQLock                   sync.Mutex
-	logger                       logger.LoggerI
-	eventSchemaHandler           types.EventSchemasI
-	dedupHandler                 dedup.DedupI
+	backendConfig                  backendconfig.BackendConfig
+	processSessions                bool
+	sessionThresholdEvents         int
+	stats                          stats.Stats
+	gatewayDB                      jobsdb.JobsDB
+	routerDB                       jobsdb.JobsDB
+	batchRouterDB                  jobsdb.JobsDB
+	errorDB                        jobsdb.JobsDB
+	transformer                    transformer.Transformer
+	pStatsJobs                     *misc.PerfStats
+	pStatsDBR                      *misc.PerfStats
+	statGatewayDBR                 stats.RudderStats
+	pStatsDBW                      *misc.PerfStats
+	statGatewayDBW                 stats.RudderStats
+	statRouterDBW                  stats.RudderStats
+	statBatchRouterDBW             stats.RudderStats
+	statProcErrDBW                 stats.RudderStats
+	statActiveUsers                stats.RudderStats
+	userJobListMap                 map[string][]*jobsdb.JobT
+	userEventsMap                  map[string][]types.SingularEventT
+	userPQItemMap                  map[string]*pqItemT
+	transformEventsByTimeMutex     sync.RWMutex
+	destTransformEventsByTimeTaken transformRequestPQ
+	userTransformEventsByTimeTaken transformRequestPQ
+	statJobs                       stats.RudderStats
+	statDBR                        stats.RudderStats
+	statDBW                        stats.RudderStats
+	statLoopTime                   stats.RudderStats
+	eventSchemasTime               stats.RudderStats
+	statSessionTransform           stats.RudderStats
+	statUserTransform              stats.RudderStats
+	statDestTransform              stats.RudderStats
+	statListSort                   stats.RudderStats
+	marshalSingularEvents          stats.RudderStats
+	destProcessing                 stats.RudderStats
+	statNumDests                   stats.RudderStats
+	statNumRequests                stats.RudderStats
+	statNumEvents                  stats.RudderStats
+	statDestNumOutputEvents        stats.RudderStats
+	statBatchDestNumOutputEvents   stats.RudderStats
+	destStats                      map[string]*DestStatT
+	userToSessionIDMap             map[string]string
+	userJobPQ                      pqT
+	userPQLock                     sync.Mutex
+	logger                         logger.LoggerI
+	eventSchemaHandler             types.EventSchemasI
+	dedupHandler                   dedup.DedupI
 }
 
 type DestStatT struct {
@@ -157,6 +161,19 @@ func NewProcessor() *HandleT {
 	}
 }
 
+func (proc *HandleT) Status() interface{} {
+	proc.transformEventsByTimeMutex.RLock()
+	defer proc.transformEventsByTimeMutex.RUnlock()
+	statusRes := make(map[string][]TransformRequestT)
+	for _, pqDestEvent := range proc.destTransformEventsByTimeTaken {
+		statusRes["dest-transformer"] = append(statusRes["dest-transformer"], *pqDestEvent)
+	}
+	for _, pqUserEvent := range proc.userTransformEventsByTimeTaken {
+		statusRes["user-transformer"] = append(statusRes["user-transformer"], *pqUserEvent)
+	}
+	return statusRes
+}
+
 //Setup initializes the module
 func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool) {
 	proc.logger = pkgLogger
@@ -174,6 +191,8 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.userEventsMap = make(map[string][]types.SingularEventT)
 	proc.userPQItemMap = make(map[string]*pqItemT)
 	proc.userToSessionIDMap = make(map[string]string)
+	proc.userTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
+	proc.destTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
 	proc.userJobPQ = make(pqT, 0)
 	proc.pStatsJobs.Setup("ProcessorJobs")
 	proc.pStatsDBR.Setup("ProcessorDBRead")
@@ -204,6 +223,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statBatchDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "batch_router",
 	})
+	admin.RegisterStatusHandler("processor", proc)
 	proc.destStats = make(map[string]*DestStatT)
 	if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
@@ -259,6 +279,7 @@ var (
 	pkgLogger                           logger.LoggerI
 	enableEventSchemasFeature           bool
 	enableDedup                         bool
+	transformTimesPQLength              int
 )
 
 func loadConfig() {
@@ -280,6 +301,7 @@ func loadConfig() {
 	avgEventsInRequest = config.GetInt("Processor.avgEventsInRequest", 1)
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
 	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
+	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -871,6 +893,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.destProcessing.Start()
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
+	var startedAt, endedAt time.Time
+	var timeTaken float64
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 		destination := eventList[0].Destination
@@ -900,8 +924,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			} else {
 				// We need not worry about breaking up a single user sessions in this case
 				destStat.userTransform.Start()
+				startedAt = time.Now()
 				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, false)
+				endedAt = time.Now()
+				timeTaken = endedAt.Sub(startedAt).Seconds()
 				destStat.userTransform.End()
+				proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: timeTaken, Index: -1}, &proc.userTransformEventsByTimeTaken)
 			}
 
 			eventsToTransform = proc.getDestTransformerEvents(response, metadata, destination)
@@ -922,8 +950,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 		destStat.destTransform.Start()
+		startedAt = time.Now()
 		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+		endedAt = time.Now()
+		timeTaken = endedAt.Sub(startedAt).Seconds()
 		destStat.destTransform.End()
+		proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventsToTransform, Stage: "destination-transformer", ProcessingTime: timeTaken, Index: -1}, &proc.destTransformEventsByTimeTaken)
 
 		destTransformEventList := response.Events
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
@@ -1042,6 +1074,20 @@ func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList
 		}
 	}
 	return jobList, totalEvents
+}
+
+func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *transformRequestPQ) {
+	proc.transformEventsByTimeMutex.Lock()
+	defer proc.transformEventsByTimeMutex.Unlock()
+	if pq.Len() < transformTimesPQLength {
+		pq.Add(event)
+		return
+	}
+	if pq.Top().ProcessingTime < event.ProcessingTime {
+		pq.RemoveTop()
+		pq.Add(event)
+
+	}
 }
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
