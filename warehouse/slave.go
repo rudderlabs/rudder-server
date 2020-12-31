@@ -218,12 +218,13 @@ func (job *PayloadT) markLoadFileUploadSuccess(tableName string, uploadLocation 
 	if err != nil {
 		panic(err)
 	}
+	defer stmt.Close()
+
 	var fileID int64
 	err = stmt.QueryRow(job.StagingFileID, uploadLocation, job.SourceID, job.DestinationID, job.DestinationType, tableName, numEvents, timeutil.Now()).Scan(&fileID)
 	if err != nil {
 		panic(err)
 	}
-	stmt.Close()
 	return fileID
 }
 

@@ -68,6 +68,7 @@ func createTableUploads(uploadID int64, tableNames []string) (err error) {
 	if err != nil {
 		return
 	}
+	defer stmt.Close()
 
 	now := timeutil.Now()
 	for _, table := range tableNames {
@@ -78,11 +79,6 @@ func createTableUploads(uploadID int64, tableNames []string) (err error) {
 	}
 
 	_, err = stmt.Exec()
-	if err != nil {
-		return
-	}
-
-	err = stmt.Close()
 	if err != nil {
 		return
 	}
